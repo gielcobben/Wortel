@@ -33,6 +33,14 @@ final class Session {
         return base.isEmpty ? "/" : base
     }
 
+    /// Tilde-abbreviated working directory, shown under the title in the
+    /// sidebar. Empty when unknown or identical to the display name (home).
+    var abbreviatedPath: String {
+        guard let cwd, !cwd.isEmpty else { return "" }
+        let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
+        return abbreviated == displayName ? "" : abbreviated
+    }
+
     @discardableResult
     func ensureSurfaceView(runtime: GhosttyRuntime) -> SurfaceView {
         if let surfaceView { return surfaceView }

@@ -22,11 +22,7 @@ final class SidebarViewController: NSViewController {
     private let scrollView = NSScrollView()
     private var isSyncingSelection = false
 
-    private static let headerRow = 0
-    private func tableRow(forSession index: Int) -> Int { index + 1 }
-    private func sessionIndex(forTableRow row: Int) -> Int? {
-        row == Self.headerRow ? nil : row - 1
-    }
+    // No section header: table rows map 1:1 to session indices.
 
     override func loadView() {
         tableView.style = .sourceList
@@ -104,68 +100,50 @@ final class SidebarViewController: NSViewController {
     // MARK: - Row updates (driven by the window controller, in session indices)
 
     func insertRow(at index: Int) {
-        tableView.insertRows(at: IndexSet(integer: tableRow(forSession: index)), withAnimation: [])
+        tableView.insertRows(at: IndexSet(integer: index), withAnimation: [])
     }
 
     func removeRow(at index: Int) {
-        tableView.removeRows(at: IndexSet(integer: tableRow(forSession: index)), withAnimation: [])
+        tableView.removeRows(at: IndexSet(integer: index), withAnimation: [])
     }
 
     func reloadRow(at index: Int) {
-        tableView.reloadData(forRowIndexes: IndexSet(integer: tableRow(forSession: index)),
+        tableView.reloadData(forRowIndexes: IndexSet(integer: index),
                              columnIndexes: IndexSet(integer: 0))
     }
 
     func selectRow(at index: Int) {
         isSyncingSelection = true
-        tableView.selectRowIndexes(IndexSet(integer: tableRow(forSession: index)),
-                                   byExtendingSelection: false)
+        tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         isSyncingSelection = false
     }
 }
 
 extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int {
-        (sessionProvider?().count ?? 0) + 1 // +1 for the section header
-    }
-
-    func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
-        row == Self.headerRow
-    }
-
-    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
-        row != Self.headerRow
+        sessionProvider?().count ?? 0
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        row == Self.headerRow ? 24 : 30
+        48 // two lines: title + path
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        if row == Self.headerRow {
-            let id = NSUserInterfaceItemIdentifier("HeaderCell")
-            let cell = tableView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView
-                ?? SidebarHeaderView(identifier: id)
-            (cell as? SidebarHeaderView)?.configure(title: "Sessions")
-            return cell
-        }
-
-        guard let sessions = sessionProvider?(),
-              let index = sessionIndex(forTableRow: row),
-              sessions.indices.contains(index) else { return nil }
-        let session = sessions[index]
+        guard let sessions = sessionProvider?(), sessions.indices.contains(row) else { return nil }
+        let session = sessions[row]
 
         let id = NSUserInterfaceItemIdentifier("SessionCell")
         let cell = tableView.makeView(withIdentifier: id, owner: nil) as? SessionCellView
             ?? SessionCellView(identifier: id)
-        cell.configure(title: session.displayName, hasBell: session.hasBell)
+        cell.configure(title: session.displayName, path: session.abbreviatedPath, hasBell: session.hasBell)
         return cell
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard !isSyncingSelection else { return }
-        guard let index = sessionIndex(forTableRow: tableView.selectedRow) else { return }
-        onSelectRow?(index)
+        let row = tableView.selectedRow
+        guard row >= 0 else { return }
+        onSelectRow?(row)
     }
 }
 
@@ -175,38 +153,12 @@ private final class SidebarTableView: NSTableView {
     override var acceptsFirstResponder: Bool { false }
 }
 
-/// A Finder-style section header row (small, uppercase, secondary color).
-final class SidebarHeaderView: NSTableCellView {
-    private let label = NSTextField(labelWithString: "")
-
-    init(identifier: NSUserInterfaceItemIdentifier) {
-        super.init(frame: .zero)
-        self.identifier = identifier
-
-        label.font = .systemFont(ofSize: 11, weight: .semibold)
-        label.textColor = .secondaryLabelColor
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-        textField = label
-
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not supported") }
-
-    func configure(title: String) {
-        label.stringValue = title
-    }
-}
-
-/// One sidebar row: SF Symbol terminal icon + directory name + bell badge.
+/// One sidebar row: SF Symbol terminal icon + two lines (directory name on
+/// top, abbreviated path below) + bell badge.
 final class SessionCellView: NSTableCellView {
     private let icon = NSImageView()
-    private let label = NSTextField(labelWithString: "")
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let pathLabel = NSTextField(labelWithString: "")
     private let bellDot = NSView()
 
     init(identifier: NSUserInterfaceItemIdentifier) {
@@ -215,17 +167,23 @@ final class SessionCellView: NSTableCellView {
 
         icon.image = NSImage(systemSymbolName: "apple.terminal", accessibilityDescription: nil)
             ?? NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)
-        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
         icon.contentTintColor = .secondaryLabelColor
         icon.translatesAutoresizingMaskIntoConstraints = false
         addSubview(icon)
         imageView = icon
 
-        label.font = .systemFont(ofSize: 13)
-        label.lineBreakMode = .byTruncatingTail
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-        textField = label
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+        textField = titleLabel
+
+        pathLabel.font = .systemFont(ofSize: 11)
+        pathLabel.textColor = .secondaryLabelColor
+        pathLabel.lineBreakMode = .byTruncatingMiddle
+        pathLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(pathLabel)
 
         bellDot.wantsLayer = true
         bellDot.layer?.cornerRadius = 3
@@ -234,17 +192,22 @@ final class SessionCellView: NSTableCellView {
         bellDot.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bellDot)
 
+        let textLeading = icon.trailingAnchor
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.widthAnchor.constraint(equalToConstant: 20),
 
-            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: bellDot.leadingAnchor, constant: -6),
+            titleLabel.leadingAnchor.constraint(equalTo: textLeading, constant: 8),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: bellDot.leadingAnchor, constant: -6),
+
+            pathLabel.leadingAnchor.constraint(equalTo: textLeading, constant: 8),
+            pathLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
+            pathLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
 
             bellDot.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            bellDot.centerYAnchor.constraint(equalTo: centerYAnchor),
+            bellDot.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             bellDot.widthAnchor.constraint(equalToConstant: 6),
             bellDot.heightAnchor.constraint(equalToConstant: 6),
         ])
@@ -253,8 +216,10 @@ final class SessionCellView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not supported") }
 
-    func configure(title: String, hasBell: Bool) {
-        label.stringValue = title
+    func configure(title: String, path: String, hasBell: Bool) {
+        titleLabel.stringValue = title
+        pathLabel.stringValue = path
+        pathLabel.isHidden = path.isEmpty
         bellDot.isHidden = !hasBell
     }
 }

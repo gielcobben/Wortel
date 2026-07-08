@@ -22,6 +22,11 @@ final class SidebarViewController: NSViewController {
 
     override func loadView() {
         tableView.style = .sourceList
+        // The inset, rounded "floating pill" selection (Finder). Not applied
+        // automatically here because the table isn't inside an
+        // NSSplitViewController sidebar (we build the vibrancy by hand), so
+        // set it explicitly.
+        tableView.selectionHighlightStyle = .sourceList
         tableView.headerView = nil
         tableView.allowsEmptySelection = false
         tableView.allowsMultipleSelection = false

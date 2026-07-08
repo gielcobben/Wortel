@@ -128,8 +128,16 @@ final class SessionManager {
                 session.title = title
                 self.delegate?.sessionManager(self, didUpdateSessionAt: index)
             }
-            view.onPwdChange = { [weak session] pwd in
-                session?.cwd = pwd
+            view.onPwdChange = { [weak self, weak session] pwd in
+                guard let self, let session else { return }
+                let changedName = session.displayName
+                session.cwd = pwd
+                // Refresh the sidebar row only when the directory name (not
+                // just the full path) actually changed.
+                if session.displayName != changedName,
+                   let index = self.sessions.firstIndex(where: { $0.id == session.id }) {
+                    self.delegate?.sessionManager(self, didUpdateSessionAt: index)
+                }
             }
             view.onBell = { [weak self, weak session] in
                 guard let self, let session,

@@ -7,6 +7,8 @@ import AppKit
 /// the session closes — switching sessions never rebuilds views.
 final class Session {
     let id: UUID
+    /// Full title reported by the shell (user@host:cwd, or the running
+    /// program). Shown in the window title.
     var title: String
     var cwd: String?
     var hasBell: Bool = false
@@ -20,6 +22,15 @@ final class Session {
         self.id = id
         self.title = title
         self.cwd = cwd
+    }
+
+    /// Short, Finder-like label for the sidebar: the working directory's
+    /// last path component (~ for home). Falls back to the shell title.
+    var displayName: String {
+        guard let cwd, !cwd.isEmpty else { return title }
+        if cwd == NSHomeDirectory() { return "~" }
+        let base = (cwd as NSString).lastPathComponent
+        return base.isEmpty ? "/" : base
     }
 
     @discardableResult

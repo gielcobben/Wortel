@@ -9,6 +9,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private let sidebarVC = SidebarViewController()
     private let hostVC = TerminalHostViewController()
+    private let splitVC = NSSplitViewController()
 
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
@@ -16,17 +17,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false)
         window.title = "Vellum"
         window.tabbingMode = .disallowed
+        // Unified toolbar over a vibrant sidebar that runs to the top edge.
+        window.titlebarAppearsTransparent = false
+        window.toolbarStyle = .unified
 
         super.init(window: window)
         window.delegate = self
 
         // Split view: collapsible sidebar + terminal host.
-        let splitVC = NSSplitViewController()
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 320
@@ -50,6 +53,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window.center()
         }
 
+        setupToolbar(window: window)
+
         sessionManager.delegate = self
         sidebarVC.sessionProvider = { [weak self] in self?.sessionManager.sessions ?? [] }
         sidebarVC.onSelectRow = { [weak self] row in self?.sessionManager.select(index: row) }
@@ -59,6 +64,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    // MARK: - Toolbar
+
+    private func setupToolbar(window: NSWindow) {
+        let toolbar = NSToolbar(identifier: "main")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.showsBaselineSeparator = true
+        window.toolbar = toolbar
+    }
 
     // MARK: - Persistence
 
@@ -163,7 +179,7 @@ extension MainWindowController: SessionManagerDelegate {
     func sessionManager(_ manager: SessionManager, didUpdateSessionAt index: Int) {
         sidebarVC.reloadRow(at: index)
         if index == manager.selectedIndex, let session = manager.selected {
-            window?.title = session.title
+            updateWindowTitle(for: session)
         }
         scheduleSave()
     }
@@ -171,13 +187,68 @@ extension MainWindowController: SessionManagerDelegate {
     func sessionManager(_ manager: SessionManager, didSelect session: Session, at index: Int) {
         sidebarVC.selectRow(at: index)
         hostVC.show(session, runtime: runtime)
-        window?.title = session.title
+        updateWindowTitle(for: session)
         scheduleSave()
+    }
+
+    /// Finder-like title bar: directory name as the title, abbreviated path
+    /// as the subtitle.
+    private func updateWindowTitle(for session: Session) {
+        window?.title = session.displayName
+        if let cwd = session.cwd, !cwd.isEmpty {
+            window?.subtitle = (cwd as NSString).abbreviatingWithTildeInPath
+        } else {
+            window?.subtitle = ""
+        }
     }
 
     func sessionManagerDidClose(_ manager: SessionManager) {
         // Last session closed -> quit (window close terminates the app).
         saveSessionsNow()
         close()
+    }
+}
+
+// MARK: - NSToolbarDelegate
+
+private extension NSToolbarItem.Identifier {
+    static let newSession = NSToolbarItem.Identifier("newSession")
+}
+
+extension MainWindowController: NSToolbarDelegate {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, .newSession]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case .newSession:
+            let item = NSToolbarItem(itemIdentifier: .newSession)
+            item.label = "New Session"
+            item.toolTip = "New Session (⌘T)"
+            item.isBordered = true
+            item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Session")
+            item.target = self
+            item.action = #selector(newSession(_:))
+            return item
+        case .sidebarTrackingSeparator:
+            // Aligns the toolbar's separator line with the sidebar divider,
+            // and moves it as the user drags the divider (the Finder look).
+            return NSTrackingSeparatorToolbarItem(
+                identifier: .sidebarTrackingSeparator,
+                splitView: splitVC.splitView,
+                dividerIndex: 0)
+        default:
+            // .toggleSidebar / .flexibleSpace are system-provided.
+            return NSToolbarItem(itemIdentifier: itemIdentifier)
+        }
     }
 }

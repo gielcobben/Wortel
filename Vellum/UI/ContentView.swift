@@ -11,17 +11,24 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $manager.selectedID) {
+            // No List(selection:): we draw an accent "pill" ourselves so the
+            // selection stays accent-colored regardless of focus (the sidebar
+            // never holds keyboard focus — the terminal does). A single tap
+            // selects.
+            List {
                 ForEach(manager.sessions) { session in
                     SessionRow(
                         session: session,
+                        isSelected: manager.selectedID == session.id,
                         isEditing: manager.editingID == session.id,
                         commit: { newName in
                             manager.rename(session, to: newName)
                             manager.editingID = nil
                         },
                         cancel: { manager.editingID = nil })
-                    .tag(session.id)
+                    .listRowBackground(selectionPill(for: session))
+                    .contentShape(Rectangle())
+                    .onTapGesture { manager.selectedID = session.id }
                     .contextMenu {
                         Button("Rename") { manager.editingID = session.id }
                         Button("Close Session") { manager.close(session) }
@@ -52,12 +59,26 @@ struct ContentView: View {
                 .navigationSubtitle(manager.selected?.abbreviatedPath ?? "")
         }
     }
+
+    /// Native-looking accent selection pill, drawn for the selected row.
+    @ViewBuilder
+    private func selectionPill(for session: Session) -> some View {
+        if manager.selectedID == session.id {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.accentColor)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+        } else {
+            Color.clear
+        }
+    }
 }
 
 /// One sidebar row: terminal icon, session name (double-click to rename), and
 /// the path below it.
 private struct SessionRow: View {
     let session: Session
+    let isSelected: Bool
     let isEditing: Bool
     let commit: (String) -> Void
     let cancel: () -> Void
@@ -65,15 +86,20 @@ private struct SessionRow: View {
     @State private var draft = ""
     @FocusState private var fieldFocused: Bool
 
+    // White on the accent pill, standard colors otherwise.
+    private var primaryColor: Color { isSelected ? .white : .primary }
+    private var secondaryColor: Color { isSelected ? .white.opacity(0.75) : .secondary }
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "terminal")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
                     TextField("Name", text: $draft)
                         .textFieldStyle(.plain)
+                        .foregroundStyle(primaryColor)
                         .focused($fieldFocused)
                         .onSubmit { commit(draft) }
                         .onExitCommand { cancel() }
@@ -87,11 +113,12 @@ private struct SessionRow: View {
                         }
                 } else {
                     Text(session.name)
+                        .foregroundStyle(primaryColor)
                 }
                 if !session.abbreviatedPath.isEmpty {
                     Text(session.abbreviatedPath)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(secondaryColor)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -99,7 +126,7 @@ private struct SessionRow: View {
             Spacer(minLength: 4)
             if session.hasBell {
                 Circle()
-                    .fill(Color.accentColor)
+                    .fill(isSelected ? Color.white : Color.accentColor)
                     .frame(width: 6, height: 6)
             }
         }

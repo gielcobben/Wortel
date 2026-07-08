@@ -17,16 +17,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false)
         window.title = "Vellum"
         window.tabbingMode = .disallowed
         window.titleVisibility = .hidden
-        // A unified toolbar makes AppKit give the split view's sidebar item the
-        // system's native sidebar treatment — the floating/inset translucent
-        // panel (Liquid Glass on macOS 26). We don't reproduce this by hand.
-        window.toolbarStyle = .unified
+        // No toolbar. On macOS 26 the split view's .sidebar item still gets the
+        // native floating/inset translucent panel. Transparent full-size
+        // titlebar so there's no toolbar band and the terminal fills the top.
+        window.titlebarAppearsTransparent = true
 
         super.init(window: window)
         window.delegate = self
@@ -49,13 +49,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window.setContentSize(NSSize(width: 1100, height: 700))
             window.center()
         }
-
-        // Empty toolbar: no items, no separator — invisible, but enables the
-        // native sidebar treatment.
-        let toolbar = NSToolbar(identifier: "main")
-        toolbar.delegate = self
-        toolbar.showsBaselineSeparator = false
-        window.toolbar = toolbar
 
         sessionManager.delegate = self
         sidebarVC.sessionProvider = { [weak self] in self?.sessionManager.sessions ?? [] }
@@ -194,11 +187,4 @@ extension MainWindowController: SessionManagerDelegate {
         saveSessionsNow()
         close()
     }
-}
-
-// MARK: - NSToolbarDelegate (empty toolbar, present only for the native sidebar)
-
-extension MainWindowController: NSToolbarDelegate {
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
 }

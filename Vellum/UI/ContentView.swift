@@ -60,10 +60,12 @@ struct ContentView: View {
         }
     }
 
-    /// Native-looking accent selection pill, drawn for the selected row.
+    /// Native-looking accent selection pill for the selected row — but not
+    /// while it's being renamed (the inline edit field wants a normal
+    /// background, like Finder).
     @ViewBuilder
     private func selectionPill(for session: Session) -> some View {
-        if manager.selectedID == session.id {
+        if manager.selectedID == session.id, manager.editingID != session.id {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.accentColor)
                 .padding(.horizontal, 6)
@@ -86,9 +88,11 @@ private struct SessionRow: View {
     @State private var draft = ""
     @FocusState private var fieldFocused: Bool
 
-    // White on the accent pill, standard colors otherwise.
-    private var primaryColor: Color { isSelected ? .white : .primary }
-    private var secondaryColor: Color { isSelected ? .white.opacity(0.75) : .secondary }
+    // White on the accent pill; standard colors otherwise and while editing
+    // (the edit field sits on a normal background, not the accent pill).
+    private var onAccent: Bool { isSelected && !isEditing }
+    private var primaryColor: Color { onAccent ? .white : .primary }
+    private var secondaryColor: Color { onAccent ? .white.opacity(0.75) : .secondary }
 
     var body: some View {
         HStack(spacing: 8) {

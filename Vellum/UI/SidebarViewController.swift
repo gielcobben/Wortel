@@ -13,6 +13,7 @@ import AppKit
 /// window controller only ever speaks in session indices.
 final class SidebarViewController: NSViewController {
     var onSelectRow: ((Int) -> Void)?
+    var onAddSession: (() -> Void)?
 
     /// Row data is pulled on demand from this provider.
     var sessionProvider: (() -> [Session])?
@@ -49,8 +50,52 @@ final class SidebarViewController: NSViewController {
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.automaticallyAdjustsContentInsets = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-        view = scrollView
+        // Native "add" affordance at the bottom of the sidebar (Mail /
+        // Reminders / Xcode navigator). Keeps the terminal top clear.
+        let addButton = NSButton()
+        addButton.bezelStyle = .accessoryBarAction
+        addButton.isBordered = false
+        addButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Session")
+        addButton.imageScaling = .scaleProportionallyDown
+        addButton.contentTintColor = .secondaryLabelColor
+        addButton.toolTip = "New Session (⌘T)"
+        addButton.target = self
+        addButton.action = #selector(addTapped)
+        addButton.refusesFirstResponder = true
+        addButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let footer = NSView()
+        footer.translatesAutoresizingMaskIntoConstraints = false
+        footer.addSubview(addButton)
+
+        let container = NSView()
+        container.addSubview(scrollView)
+        container.addSubview(footer)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: footer.topAnchor),
+
+            footer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            footer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            footer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            footer.heightAnchor.constraint(equalToConstant: 32),
+
+            addButton.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 10),
+            addButton.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+            addButton.widthAnchor.constraint(equalToConstant: 24),
+            addButton.heightAnchor.constraint(equalToConstant: 24),
+        ])
+
+        view = container
+    }
+
+    @objc private func addTapped() {
+        onAddSession?()
     }
 
     // MARK: - Row updates (driven by the window controller, in session indices)

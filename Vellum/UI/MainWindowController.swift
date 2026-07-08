@@ -28,7 +28,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // light/dark switch), while the terminal text sits below the toolbar.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.toolbarStyle = .unified
+        window.toolbarStyle = .unifiedCompact
 
         super.init(window: window)
         window.delegate = self
@@ -62,6 +62,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sessionManager.delegate = self
         sidebarVC.sessionProvider = { [weak self] in self?.sessionManager.sessions ?? [] }
         sidebarVC.onSelectRow = { [weak self] row in self?.sessionManager.select(index: row) }
+        sidebarVC.onAddSession = { [weak self] in self?.sessionManager.newSession() }
 
         restoreSessions()
     }
@@ -215,13 +216,12 @@ extension MainWindowController: SessionManagerDelegate {
 
 // MARK: - NSToolbarDelegate
 
-private extension NSToolbarItem.Identifier {
-    static let newSession = NSToolbarItem.Identifier("newSession")
-}
-
 extension MainWindowController: NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, .newSession]
+        // Only the sidebar toggle + tracking separator. "New session" lives at
+        // the bottom of the sidebar (native Mail/Reminders/Xcode pattern), so
+        // nothing floats over the terminal and it can run to the top.
+        [.toggleSidebar, .sidebarTrackingSeparator]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -234,15 +234,6 @@ extension MainWindowController: NSToolbarDelegate {
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
         switch itemIdentifier {
-        case .newSession:
-            let item = NSToolbarItem(itemIdentifier: .newSession)
-            item.label = "New Session"
-            item.toolTip = "New Session (⌘T)"
-            item.isBordered = true
-            item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Session")
-            item.target = self
-            item.action = #selector(newSession(_:))
-            return item
         case .sidebarTrackingSeparator:
             return NSTrackingSeparatorToolbarItem(
                 identifier: .sidebarTrackingSeparator,

@@ -8,13 +8,27 @@ import SwiftUI
 struct ContentView: View {
     let runtime: GhosttyRuntime
     @Bindable var manager: SessionManager
+    /// The session whose name is being edited inline (double-click / Rename).
+    @State private var editingID: Session.ID?
 
     var body: some View {
         NavigationSplitView {
             List(selection: $manager.selectedID) {
                 ForEach(manager.sessions) { session in
-                    SessionRow(session: session)
-                        .tag(session.id)
+                    SessionRow(
+                        session: session,
+                        isEditing: editingID == session.id,
+                        commit: { newName in
+                            manager.rename(session, to: newName)
+                            editingID = nil
+                        },
+                        cancel: { editingID = nil })
+                    .tag(session.id)
+                    .contextMenu {
+                        Button("Rename") { editingID = session.id }
+                        Button("Close Session") { manager.close(session) }
+                    }
+                    .onTapGesture(count: 2) { editingID = session.id }
                 }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 320)
@@ -42,9 +56,16 @@ struct ContentView: View {
     }
 }
 
-/// One sidebar row: terminal icon, session name, and the path below it.
+/// One sidebar row: terminal icon, session name (double-click to rename), and
+/// the path below it.
 private struct SessionRow: View {
     let session: Session
+    let isEditing: Bool
+    let commit: (String) -> Void
+    let cancel: () -> Void
+
+    @State private var draft = ""
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -52,7 +73,23 @@ private struct SessionRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
-                Text(session.name)
+                if isEditing {
+                    TextField("Name", text: $draft)
+                        .textFieldStyle(.plain)
+                        .focused($fieldFocused)
+                        .onSubmit { commit(draft) }
+                        .onExitCommand { cancel() }
+                        .onChange(of: fieldFocused) { _, focused in
+                            // Commit when focus leaves the field (click away).
+                            if !focused { commit(draft) }
+                        }
+                        .task {
+                            draft = session.name
+                            fieldFocused = true
+                        }
+                } else {
+                    Text(session.name)
+                }
                 if !session.abbreviatedPath.isEmpty {
                     Text(session.abbreviatedPath)
                         .font(.caption)

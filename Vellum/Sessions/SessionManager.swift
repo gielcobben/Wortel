@@ -106,6 +106,13 @@ final class SessionManager {
         close(selected)
     }
 
+    func rename(_ session: Session, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != session.name else { return }
+        session.name = trimmed
+        scheduleSave()
+    }
+
     func select(index: Int) {
         guard sessions.indices.contains(index) else { return }
         selectedID = sessions[index].id

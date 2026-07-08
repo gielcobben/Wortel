@@ -194,8 +194,9 @@ final class SessionCellView: NSTableCellView {
         addSubview(bellDot)
 
         NSLayoutConstraint.activate([
+            // Icon aligns with the title line; the path sits below both.
             icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 20),
 
             textStack.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
@@ -203,7 +204,7 @@ final class SessionCellView: NSTableCellView {
             textStack.trailingAnchor.constraint(lessThanOrEqualTo: bellDot.leadingAnchor, constant: -6),
 
             bellDot.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            bellDot.centerYAnchor.constraint(equalTo: centerYAnchor),
+            bellDot.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             bellDot.widthAnchor.constraint(equalToConstant: 6),
             bellDot.heightAnchor.constraint(equalToConstant: 6),
         ])

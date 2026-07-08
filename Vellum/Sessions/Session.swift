@@ -37,12 +37,12 @@ final class Session {
         return base.isEmpty ? "/" : base
     }
 
-    /// Tilde-abbreviated working directory, shown under the title in the
-    /// sidebar. Empty when unknown or identical to the display name (home).
+    /// Tilde-abbreviated working directory, shown under the session name in
+    /// the sidebar. Empty only when the cwd is unknown (before the shell's
+    /// first prompt reports it).
     var abbreviatedPath: String {
         guard let cwd, !cwd.isEmpty else { return "" }
-        let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
-        return abbreviated == displayName ? "" : abbreviated
+        return (cwd as NSString).abbreviatingWithTildeInPath
     }
 
     @discardableResult

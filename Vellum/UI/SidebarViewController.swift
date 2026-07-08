@@ -49,10 +49,10 @@ final class SidebarViewController: NSViewController {
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
-        // Automatic safe-area inset pushes the "Sessions" header below the
-        // floating traffic lights — no toolbar, no hairline, just the vibrant
-        // sidebar with the window buttons over it.
-        scrollView.automaticallyAdjustsContentInsets = true
+        // Manual top inset pushes "Sessions" below the floating traffic lights
+        // (the sidebar runs to the very top, there's no toolbar to reserve it).
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(top: 38, left: 0, bottom: 0, right: 0)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         // Native "add" affordance at the bottom of the sidebar (Mail /

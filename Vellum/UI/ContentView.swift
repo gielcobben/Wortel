@@ -8,8 +8,6 @@ import SwiftUI
 struct ContentView: View {
     let runtime: GhosttyRuntime
     @Bindable var manager: SessionManager
-    /// The session whose name is being edited inline (double-click / Rename).
-    @State private var editingID: Session.ID?
 
     var body: some View {
         NavigationSplitView {
@@ -17,18 +15,18 @@ struct ContentView: View {
                 ForEach(manager.sessions) { session in
                     SessionRow(
                         session: session,
-                        isEditing: editingID == session.id,
+                        isEditing: manager.editingID == session.id,
                         commit: { newName in
                             manager.rename(session, to: newName)
-                            editingID = nil
+                            manager.editingID = nil
                         },
-                        cancel: { editingID = nil })
+                        cancel: { manager.editingID = nil })
                     .tag(session.id)
                     .contextMenu {
-                        Button("Rename") { editingID = session.id }
+                        Button("Rename") { manager.editingID = session.id }
                         Button("Close Session") { manager.close(session) }
                     }
-                    .onTapGesture(count: 2) { editingID = session.id }
+                    .onTapGesture(count: 2) { manager.editingID = session.id }
                 }
                 .onMove { manager.move(fromOffsets: $0, toOffset: $1) }
             }

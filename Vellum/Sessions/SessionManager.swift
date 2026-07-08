@@ -24,6 +24,10 @@ final class SessionManager {
         }
     }
 
+    /// The session whose name is being edited inline (nil = none). Observed by
+    /// the sidebar so double-click, the context menu, and ⌘R all drive one path.
+    var editingID: Session.ID?
+
     /// Called when the last session closes (the window should close).
     @ObservationIgnored var onAllClosed: (() -> Void)?
 
@@ -111,6 +115,11 @@ final class SessionManager {
         guard !trimmed.isEmpty, trimmed != session.name else { return }
         session.name = trimmed
         scheduleSave()
+    }
+
+    /// Begin inline-renaming the selected session (⌘R / menu).
+    func beginRenameSelected() {
+        editingID = selectedID
     }
 
     /// Drag-to-reorder from the sidebar. Selection (by id) and live surfaces

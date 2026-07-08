@@ -64,6 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager.closeSelected()
     }
 
+    @objc func renameSession(_ sender: Any?) {
+        manager.beginRenameSelected()
+    }
+
     @objc func selectNextSession(_ sender: Any?) {
         manager.selectNext()
     }

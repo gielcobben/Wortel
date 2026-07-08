@@ -30,6 +30,27 @@ enum MainMenu {
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
 
+        // Session menu — the heart of the app, all keyboard-driven.
+        let sessionItem = NSMenuItem()
+        main.addItem(sessionItem)
+        let sessionMenu = NSMenu(title: "Session")
+        sessionItem.submenu = sessionMenu
+        sessionMenu.addItem(withTitle: "New Session", action: #selector(MainWindowController.newSession(_:)), keyEquivalent: "t")
+        sessionMenu.addItem(withTitle: "Close Session", action: #selector(MainWindowController.closeSession(_:)), keyEquivalent: "w")
+        sessionMenu.addItem(.separator())
+        let next = sessionMenu.addItem(withTitle: "Next Session", action: #selector(MainWindowController.selectNextSession(_:)), keyEquivalent: "}")
+        next.keyEquivalentModifierMask = [.command]
+        let prev = sessionMenu.addItem(withTitle: "Previous Session", action: #selector(MainWindowController.selectPreviousSession(_:)), keyEquivalent: "{")
+        prev.keyEquivalentModifierMask = [.command]
+        sessionMenu.addItem(.separator())
+        for i in 1...9 {
+            let item = sessionMenu.addItem(
+                withTitle: "Session \(i)",
+                action: #selector(MainWindowController.selectSessionAtIndex(_:)),
+                keyEquivalent: "\(i)")
+            item.tag = i - 1
+        }
+
         // View menu (font size; session-local)
         let viewItem = NSMenuItem()
         main.addItem(viewItem)
@@ -40,6 +61,9 @@ enum MainMenu {
         let smaller = viewMenu.addItem(withTitle: "Decrease Font Size", action: #selector(SurfaceView.decreaseFontSize(_:)), keyEquivalent: "-")
         smaller.keyEquivalentModifierMask = [.command]
         viewMenu.addItem(withTitle: "Reset Font Size", action: #selector(SurfaceView.resetFontSize(_:)), keyEquivalent: "0")
+        viewMenu.addItem(.separator())
+        let toggleSidebar = viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
+        toggleSidebar.keyEquivalentModifierMask = [.command, .option]
 
         // Window menu
         let windowItem = NSMenuItem()

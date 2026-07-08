@@ -116,6 +116,7 @@ final class SurfaceView: NSView {
         ghostty_surface_set_display_id(surface, window.screen?.displayID ?? 0)
         viewDidChangeBackingProperties()
         sizeDidChange(frame.size)
+        viewDidChangeEffectiveAppearance()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -160,6 +161,13 @@ final class SurfaceView: NSView {
             let scaled = convertToBacking(contentSize)
             setSurfaceSize(width: UInt32(max(0, scaled.width)), height: UInt32(max(0, scaled.height)))
         }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        guard let surface else { return }
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        ghostty_surface_set_color_scheme(surface, isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT)
     }
 
     @objc private func windowDidChangeScreen(_ notification: Notification) {

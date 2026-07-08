@@ -12,6 +12,7 @@ final class GhosttyRuntime {
     private(set) var app: ghostty_app_t!
     private let config: ghostty_config_t
     private var observers: [NSObjectProtocol] = []
+    private var appearanceObservation: NSKeyValueObservation?
 
     /// argv passed to ghostty_init. Ghostty stores these pointers process-wide
     /// (std.os.argv), so they must stay alive for the process lifetime.
@@ -118,6 +119,17 @@ final class GhosttyRuntime {
             guard let self else { return }
             ghostty_app_keyboard_changed(self.app)
         })
+
+        // -- System appearance forwarding (app-level) --------------------------
+        let applyAppearance = { (appearance: NSAppearance) in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ghostty_app_set_color_scheme(
+                appHandle, isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT)
+        }
+        applyAppearance(NSApp.effectiveAppearance)
+        appearanceObservation = NSApp.observe(\.effectiveAppearance) { app, _ in
+            applyAppearance(app.effectiveAppearance)
+        }
 
         // Prime the mailbox once.
         ghostty_app_tick(appHandle)

@@ -14,10 +14,16 @@ final class TerminalHostViewController: NSViewController {
     }
 
     func show(_ session: Session, runtime: GhosttyRuntime) {
-        Signposts.interval("session-switch") {
-            let surfaceView = session.ensureSurfaceView(runtime: runtime)
+        let surfaceView = session.ensureSurfaceView(runtime: runtime)
 
-            if let currentView, currentView !== surfaceView {
+        // SwiftUI calls updateNSViewController on any observable change (pwd,
+        // rename, bell…), not just session switches. If we're already showing
+        // this surface, do nothing — re-running would steal first responder
+        // back from the rename field.
+        guard surfaceView !== currentView else { return }
+
+        Signposts.interval("session-switch") {
+            if let currentView {
                 currentView.isHidden = true
                 currentView.occlusionDidChange(visible: false)
             }
@@ -29,11 +35,26 @@ final class TerminalHostViewController: NSViewController {
             }
 
             surfaceView.isHidden = false
-            surfaceView.occlusionDidChange(visible: view.window?.occlusionState.contains(.visible) ?? true)
+            // The shown surface is visible by definition — always render it.
+            // (Gating on window.occlusionState left it paused on launch, so the
+            // terminal looked frozen until a keypress woke it.)
+            surfaceView.occlusionDidChange(visible: true)
             currentView = surfaceView
 
-            // Synchronously in the same runloop turn: keystrokes land immediately.
-            view.window?.makeFirstResponder(surfaceView)
+            focusTerminal(surfaceView)
+        }
+    }
+
+    /// Make the terminal first responder so keystrokes land. During launch the
+    /// view may not be in a window yet — retry on the next runloop turn.
+    private func focusTerminal(_ surfaceView: SurfaceView) {
+        if let window = view.window {
+            window.makeFirstResponder(surfaceView)
+        } else {
+            DispatchQueue.main.async { [weak self, weak surfaceView] in
+                guard let surfaceView, let window = self?.view.window else { return }
+                window.makeFirstResponder(surfaceView)
+            }
         }
     }
 }

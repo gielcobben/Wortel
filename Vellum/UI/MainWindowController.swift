@@ -22,13 +22,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false)
         window.title = "Vellum"
         window.tabbingMode = .disallowed
-        // Transparent unified toolbar: the terminal background fills the full
-        // window height behind it (Ghostty fills the top window-padding with
-        // the theme background, so it looks seamless and re-themes on
-        // light/dark switch), while the terminal text sits below the toolbar.
+        // No toolbar: the sidebar is one clean vibrant panel top-to-bottom and
+        // the terminal runs full height. The transparent titlebar keeps the
+        // traffic lights and provides a drag strip at the very top; combined
+        // with isMovableByWindowBackground you can also drag by the sidebar's
+        // empty area. Sidebar toggle = ⌘⌥S, New Session = ⌘T (both in menus).
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.toolbarStyle = .unifiedCompact
+        window.isMovableByWindowBackground = true
 
         super.init(window: window)
         window.delegate = self
@@ -57,8 +58,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window.center()
         }
 
-        setupToolbar(window: window)
-
         sessionManager.delegate = self
         sidebarVC.sessionProvider = { [weak self] in self?.sessionManager.sessions ?? [] }
         sidebarVC.onSelectRow = { [weak self] row in self?.sessionManager.select(index: row) }
@@ -69,17 +68,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not supported") }
-
-    // MARK: - Toolbar
-
-    private func setupToolbar(window: NSWindow) {
-        let toolbar = NSToolbar(identifier: "main")
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        toolbar.allowsUserCustomization = false
-        toolbar.showsBaselineSeparator = false
-        window.toolbar = toolbar
-    }
 
     // MARK: - Persistence
 
@@ -211,36 +199,5 @@ extension MainWindowController: SessionManagerDelegate {
         // Last session closed -> quit (window close terminates the app).
         saveSessionsNow()
         close()
-    }
-}
-
-// MARK: - NSToolbarDelegate
-
-extension MainWindowController: NSToolbarDelegate {
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        // Only the sidebar toggle + tracking separator. "New session" lives at
-        // the bottom of the sidebar (native Mail/Reminders/Xcode pattern), so
-        // nothing floats over the terminal and it can run to the top.
-        [.toggleSidebar, .sidebarTrackingSeparator]
-    }
-
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar)
-    }
-
-    func toolbar(
-        _ toolbar: NSToolbar,
-        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
-        willBeInsertedIntoToolbar flag: Bool
-    ) -> NSToolbarItem? {
-        switch itemIdentifier {
-        case .sidebarTrackingSeparator:
-            return NSTrackingSeparatorToolbarItem(
-                identifier: .sidebarTrackingSeparator,
-                splitView: splitVC.splitView,
-                dividerIndex: 0)
-        default:
-            return NSToolbarItem(itemIdentifier: itemIdentifier)
-        }
     }
 }

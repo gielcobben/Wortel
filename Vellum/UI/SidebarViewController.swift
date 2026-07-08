@@ -135,7 +135,7 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
         let id = NSUserInterfaceItemIdentifier("SessionCell")
         let cell = tableView.makeView(withIdentifier: id, owner: nil) as? SessionCellView
             ?? SessionCellView(identifier: id)
-        cell.configure(title: session.displayName, path: session.abbreviatedPath, hasBell: session.hasBell)
+        cell.configure(title: session.name, path: session.abbreviatedPath, hasBell: session.hasBell)
         return cell
     }
 

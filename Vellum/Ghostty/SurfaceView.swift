@@ -83,6 +83,11 @@ final class SurfaceView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    /// The window is movable-by-background (so you can drag it by the sidebar),
+    /// but the terminal must keep click-drags for text selection instead of
+    /// moving the window.
+    override var mouseDownCanMoveWindow: Bool { false }
+
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if result { focusDidChange(true) }

@@ -2,9 +2,24 @@ import Foundation
 
 struct PersistedSession: Codable {
     let id: UUID
+    let name: String
     let title: String
     let cwd: String?
     let selected: Bool
+
+    // Tolerate older files without a `name` field.
+    enum CodingKeys: String, CodingKey { case id, name, title, cwd, selected }
+    init(id: UUID, name: String, title: String, cwd: String?, selected: Bool) {
+        self.id = id; self.name = name; self.title = title; self.cwd = cwd; self.selected = selected
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? "shell"
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Session"
+        cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
+        selected = try c.decodeIfPresent(Bool.self, forKey: .selected) ?? false
+    }
 }
 
 /// Persists the session list (order, titles, cwds, selection) to

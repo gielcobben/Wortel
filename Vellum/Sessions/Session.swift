@@ -7,8 +7,11 @@ import AppKit
 /// the session closes — switching sessions never rebuilds views.
 final class Session {
     let id: UUID
+    /// User-facing name shown as the sidebar row's primary line and the
+    /// window title. Defaults to "Session N"; renamable later.
+    var name: String
     /// Full title reported by the shell (user@host:cwd, or the running
-    /// program). Shown in the window title.
+    /// program). Kept for reference; not currently shown.
     var title: String
     var cwd: String?
     var hasBell: Bool = false
@@ -18,14 +21,15 @@ final class Session {
     /// lazy). The SessionManager wires the view's callbacks here.
     var onSurfaceCreated: ((SurfaceView) -> Void)?
 
-    init(id: UUID = UUID(), title: String = "shell", cwd: String? = nil) {
+    init(id: UUID = UUID(), name: String = "Session", title: String = "shell", cwd: String? = nil) {
         self.id = id
+        self.name = name
         self.title = title
         self.cwd = cwd
     }
 
-    /// Short, Finder-like label for the sidebar: the working directory's
-    /// last path component (~ for home). Falls back to the shell title.
+    /// Short, Finder-like label: the working directory's last path component
+    /// (~ for home). Falls back to the shell title.
     var displayName: String {
         guard let cwd, !cwd.isEmpty else { return title }
         if cwd == NSHomeDirectory() { return "~" }

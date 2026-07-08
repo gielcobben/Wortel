@@ -130,7 +130,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         for entry in persisted {
             sessionManager.appendRestored(
-                Session(id: entry.id, title: entry.title, cwd: entry.cwd))
+                Session(id: entry.id, name: entry.name, title: entry.title, cwd: entry.cwd))
         }
         let selectedIndex = persisted.firstIndex(where: \.selected) ?? 0
 
@@ -145,7 +145,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func persistedSessions() -> [PersistedSession] {
         let selected = sessionManager.selected
         return sessionManager.sessions.map {
-            PersistedSession(id: $0.id, title: $0.title, cwd: $0.cwd, selected: $0 === selected)
+            PersistedSession(id: $0.id, name: $0.name, title: $0.title, cwd: $0.cwd, selected: $0 === selected)
         }
     }
 
@@ -234,15 +234,10 @@ extension MainWindowController: SessionManagerDelegate {
         scheduleSave()
     }
 
-    /// Finder-like title bar: directory name as the title, abbreviated path
-    /// as the subtitle.
+    /// Session name as the window title, abbreviated path as the subtitle.
     private func updateWindowTitle(for session: Session) {
-        window?.title = session.displayName
-        if let cwd = session.cwd, !cwd.isEmpty {
-            window?.subtitle = (cwd as NSString).abbreviatingWithTildeInPath
-        } else {
-            window?.subtitle = ""
-        }
+        window?.title = session.name
+        window?.subtitle = session.abbreviatedPath
     }
 
     func sessionManagerDidClose(_ manager: SessionManager) {

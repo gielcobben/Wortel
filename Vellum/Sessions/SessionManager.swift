@@ -22,6 +22,9 @@ final class SessionManager {
     private(set) var sessions: [Session] = []
     private(set) var selectedIndex: Int = -1
 
+    /// Monotonic counter for default "Session N" names.
+    private var sessionCounter = 0
+
     var selected: Session? {
         guard sessions.indices.contains(selectedIndex) else { return nil }
         return sessions[selectedIndex]
@@ -37,7 +40,8 @@ final class SessionManager {
     /// session's working directory when none is given.
     @discardableResult
     func newSession(cwd: String? = nil) -> Session {
-        let session = Session(cwd: cwd ?? selected?.cwd)
+        sessionCounter += 1
+        let session = Session(name: "Session \(sessionCounter)", cwd: cwd ?? selected?.cwd)
         session.title = Self.defaultTitle(forCwd: session.cwd)
         wire(session)
         sessions.append(session)
@@ -48,9 +52,19 @@ final class SessionManager {
 
     /// Append a restored session without selecting or creating its surface.
     func appendRestored(_ session: Session) {
+        // Keep the default-name counter ahead of any restored "Session N".
+        if let n = Self.sessionNumber(from: session.name) {
+            sessionCounter = max(sessionCounter, n)
+        }
         wire(session)
         sessions.append(session)
         delegate?.sessionManager(self, didInsertSessionAt: sessions.count - 1)
+    }
+
+    private static func sessionNumber(from name: String) -> Int? {
+        let prefix = "Session "
+        guard name.hasPrefix(prefix) else { return nil }
+        return Int(name.dropFirst(prefix.count))
     }
 
     func close(_ session: Session) {

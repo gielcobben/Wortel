@@ -62,7 +62,7 @@ enum MainMenu {
         smaller.keyEquivalentModifierMask = [.command]
         viewMenu.addItem(withTitle: "Reset Font Size", action: #selector(SurfaceView.resetFontSize(_:)), keyEquivalent: "0")
         viewMenu.addItem(.separator())
-        let toggleSidebar = viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(MainWindowController.toggleSidebar(_:)), keyEquivalent: "s")
+        let toggleSidebar = viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
         toggleSidebar.keyEquivalentModifierMask = [.command, .option]
 
         // Window menu

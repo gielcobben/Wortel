@@ -9,14 +9,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private let sidebarVC = SidebarViewController()
     private let hostVC = TerminalHostViewController()
-
-    /// The vibrant sidebar panel. Built by hand (rather than via
-    /// NSSplitViewController) so it reliably fills the full window height —
-    /// including behind the traffic lights, so they sit ON the sidebar like
-    /// Finder.
-    private let sidebarEffect = NSVisualEffectView()
-    private var sidebarWidthConstraint: NSLayoutConstraint!
-    private var expandedSidebarWidth: CGFloat = 250
+    private let splitVC = NSSplitViewController()
 
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
@@ -24,77 +17,45 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
         window.title = "Vellum"
         window.tabbingMode = .disallowed
-        // fullSizeContentView + transparent titlebar so the content fills the
-        // full window; the vibrant sidebar below runs to the very top and the
-        // traffic lights float over it (Finder). Drag via the top strip or the
-        // sidebar's empty area.
-        window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = true
+        // A unified toolbar makes AppKit give the split view's sidebar item the
+        // system's native sidebar treatment — the floating/inset translucent
+        // panel (Liquid Glass on macOS 26). We don't reproduce this by hand.
+        window.toolbarStyle = .unified
 
         super.init(window: window)
         window.delegate = self
 
-        // --- Manual sidebar + terminal layout, both pinned to the top --------
-        let root = NSView()
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
+        sidebarItem.minimumThickness = 200
+        sidebarItem.maximumThickness = 320
+        sidebarItem.canCollapse = true
+        splitVC.addSplitViewItem(sidebarItem)
 
-        sidebarEffect.material = .sidebar
-        sidebarEffect.blendingMode = .behindWindow
-        sidebarEffect.state = .followsWindowActiveState
-        sidebarEffect.translatesAutoresizingMaskIntoConstraints = false
+        let contentItem = NSSplitViewItem(viewController: hostVC)
+        contentItem.minimumThickness = 360
+        splitVC.addSplitViewItem(contentItem)
+        splitVC.splitView.autosaveName = "split"
 
-        let sidebarContent = sidebarVC.view
-        sidebarContent.translatesAutoresizingMaskIntoConstraints = false
-        sidebarEffect.addSubview(sidebarContent)
-
-        let divider = NSView()
-        divider.wantsLayer = true
-        divider.layer?.backgroundColor = NSColor.separatorColor.cgColor
-        divider.translatesAutoresizingMaskIntoConstraints = false
-
-        let terminal = hostVC.view
-        terminal.translatesAutoresizingMaskIntoConstraints = false
-
-        root.addSubview(sidebarEffect)
-        root.addSubview(divider)
-        root.addSubview(terminal)
-
-        sidebarWidthConstraint = sidebarEffect.widthAnchor.constraint(equalToConstant: expandedSidebarWidth)
-
-        NSLayoutConstraint.activate([
-            sidebarEffect.topAnchor.constraint(equalTo: root.topAnchor),
-            sidebarEffect.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            sidebarEffect.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            sidebarWidthConstraint,
-
-            sidebarContent.topAnchor.constraint(equalTo: sidebarEffect.topAnchor),
-            sidebarContent.leadingAnchor.constraint(equalTo: sidebarEffect.leadingAnchor),
-            sidebarContent.trailingAnchor.constraint(equalTo: sidebarEffect.trailingAnchor),
-            sidebarContent.bottomAnchor.constraint(equalTo: sidebarEffect.bottomAnchor),
-
-            divider.leadingAnchor.constraint(equalTo: sidebarEffect.trailingAnchor),
-            divider.topAnchor.constraint(equalTo: root.topAnchor),
-            divider.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            divider.widthAnchor.constraint(equalToConstant: 1),
-
-            terminal.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
-            terminal.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            terminal.topAnchor.constraint(equalTo: root.topAnchor),
-            terminal.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-        ])
-
-        window.contentView = root
-        window.contentMinSize = NSSize(width: 520, height: 320)
+        window.contentViewController = splitVC
+        window.contentMinSize = NSSize(width: 560, height: 320)
         let restored = window.setFrameAutosaveName("main")
         if !restored || window.frame.height < 320 {
             window.setContentSize(NSSize(width: 1100, height: 700))
             window.center()
         }
+
+        // Empty toolbar: no items, no separator — invisible, but enables the
+        // native sidebar treatment.
+        let toolbar = NSToolbar(identifier: "main")
+        toolbar.delegate = self
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
 
         sessionManager.delegate = self
         sidebarVC.sessionProvider = { [weak self] in self?.sessionManager.sessions ?? [] }
@@ -102,18 +63,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sidebarVC.onAddSession = { [weak self] in self?.sessionManager.newSession() }
 
         restoreSessions()
-    }
-
-    // MARK: - Sidebar toggle (⌘⌥S / menu)
-
-    @objc func toggleSidebar(_ sender: Any?) {
-        let collapsed = sidebarWidthConstraint.constant < 1
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.18
-            ctx.allowsImplicitAnimation = true
-            sidebarWidthConstraint.animator().constant = collapsed ? expandedSidebarWidth : 0
-            window?.contentView?.layoutSubtreeIfNeeded()
-        }
     }
 
     @available(*, unavailable)
@@ -245,4 +194,11 @@ extension MainWindowController: SessionManagerDelegate {
         saveSessionsNow()
         close()
     }
+}
+
+// MARK: - NSToolbarDelegate (empty toolbar, present only for the native sidebar)
+
+extension MainWindowController: NSToolbarDelegate {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
 }

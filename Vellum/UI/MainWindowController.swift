@@ -22,12 +22,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false)
         window.title = "Vellum"
         window.tabbingMode = .disallowed
-        // No toolbar: the terminal fills the full window height and the
-        // vibrant sidebar runs edge-to-edge to the top, traffic lights
-        // floating over it (the Ghostty look). New Session = ⌘T, toggle
-        // sidebar = ⌘⌥S (both also in the menus).
+        // Transparent unified toolbar: the terminal background fills the full
+        // window height behind it (Ghostty fills the top window-padding with
+        // the theme background, so it looks seamless and re-themes on
+        // light/dark switch), while the terminal text sits below the toolbar.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        window.toolbarStyle = .unified
 
         super.init(window: window)
         window.delegate = self
@@ -56,6 +57,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window.center()
         }
 
+        setupToolbar(window: window)
+
         sessionManager.delegate = self
         sidebarVC.sessionProvider = { [weak self] in self?.sessionManager.sessions ?? [] }
         sidebarVC.onSelectRow = { [weak self] row in self?.sessionManager.select(index: row) }
@@ -65,6 +68,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    // MARK: - Toolbar
+
+    private func setupToolbar(window: NSWindow) {
+        let toolbar = NSToolbar(identifier: "main")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+    }
 
     // MARK: - Persistence
 
@@ -196,5 +210,46 @@ extension MainWindowController: SessionManagerDelegate {
         // Last session closed -> quit (window close terminates the app).
         saveSessionsNow()
         close()
+    }
+}
+
+// MARK: - NSToolbarDelegate
+
+private extension NSToolbarItem.Identifier {
+    static let newSession = NSToolbarItem.Identifier("newSession")
+}
+
+extension MainWindowController: NSToolbarDelegate {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, .newSession]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case .newSession:
+            let item = NSToolbarItem(itemIdentifier: .newSession)
+            item.label = "New Session"
+            item.toolTip = "New Session (⌘T)"
+            item.isBordered = true
+            item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Session")
+            item.target = self
+            item.action = #selector(newSession(_:))
+            return item
+        case .sidebarTrackingSeparator:
+            return NSTrackingSeparatorToolbarItem(
+                identifier: .sidebarTrackingSeparator,
+                splitView: splitVC.splitView,
+                dividerIndex: 0)
+        default:
+            return NSToolbarItem(itemIdentifier: itemIdentifier)
+        }
     }
 }

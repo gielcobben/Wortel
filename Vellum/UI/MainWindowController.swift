@@ -17,16 +17,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
         window.title = "Vellum"
         window.tabbingMode = .disallowed
-        window.titleVisibility = .hidden
-        // No toolbar. On macOS 26 the split view's .sidebar item still gets the
-        // native floating/inset translucent panel. Transparent full-size
-        // titlebar so there's no toolbar band and the terminal fills the top.
-        window.titlebarAppearsTransparent = true
+        // Opslan/Mail pattern: floating full-height sidebar, and the session
+        // name/path shown as the window title in the content area next to the
+        // sidebar (the sidebar tracking separator places it there).
+        window.toolbarStyle = .unified
+        window.titleVisibility = .visible
 
         super.init(window: window)
         window.delegate = self
@@ -49,6 +49,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window.setContentSize(NSSize(width: 1100, height: 700))
             window.center()
         }
+
+        let toolbar = NSToolbar(identifier: "main")
+        toolbar.delegate = self
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
 
         sessionManager.delegate = self
         sidebarVC.sessionProvider = { [weak self] in self?.sessionManager.sessions ?? [] }
@@ -186,5 +191,33 @@ extension MainWindowController: SessionManagerDelegate {
         // Last session closed -> quit (window close terminates the app).
         saveSessionsNow()
         close()
+    }
+}
+
+// MARK: - NSToolbarDelegate
+
+extension MainWindowController: NSToolbarDelegate {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        // The tracking separator splits the toolbar at the sidebar divider, so
+        // the window title renders in the content area next to the sidebar.
+        [.sidebarTrackingSeparator]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.sidebarTrackingSeparator]
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        if itemIdentifier == .sidebarTrackingSeparator {
+            return NSTrackingSeparatorToolbarItem(
+                identifier: .sidebarTrackingSeparator,
+                splitView: splitVC.splitView,
+                dividerIndex: 0)
+        }
+        return NSToolbarItem(itemIdentifier: itemIdentifier)
     }
 }

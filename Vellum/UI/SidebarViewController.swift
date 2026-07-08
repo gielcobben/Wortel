@@ -7,10 +7,6 @@ import AppKit
 /// Deliberately dumb: no bindings, no diffable data source — the window
 /// controller tells it exactly which rows changed. Nothing here observes
 /// terminal state, so terminal output can never trigger sidebar work.
-///
-/// Row 0 is the non-selectable section header; session `i` lives at table
-/// row `i + 1`. The offset is contained entirely within this file — the
-/// window controller only ever speaks in session indices.
 final class SidebarViewController: NSViewController {
     var onSelectRow: ((Int) -> Void)?
     var onAddSession: (() -> Void)?

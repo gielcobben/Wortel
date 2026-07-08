@@ -14,24 +14,26 @@ final class TerminalHostViewController: NSViewController {
     }
 
     func show(_ session: Session, runtime: GhosttyRuntime) {
-        let surfaceView = session.ensureSurfaceView(runtime: runtime)
+        Signposts.interval("session-switch") {
+            let surfaceView = session.ensureSurfaceView(runtime: runtime)
 
-        if let currentView, currentView !== surfaceView {
-            currentView.isHidden = true
-            currentView.occlusionDidChange(visible: false)
+            if let currentView, currentView !== surfaceView {
+                currentView.isHidden = true
+                currentView.occlusionDidChange(visible: false)
+            }
+
+            if surfaceView.superview !== view {
+                surfaceView.frame = view.bounds
+                surfaceView.autoresizingMask = [.width, .height]
+                view.addSubview(surfaceView)
+            }
+
+            surfaceView.isHidden = false
+            surfaceView.occlusionDidChange(visible: view.window?.occlusionState.contains(.visible) ?? true)
+            currentView = surfaceView
+
+            // Synchronously in the same runloop turn: keystrokes land immediately.
+            view.window?.makeFirstResponder(surfaceView)
         }
-
-        if surfaceView.superview !== view {
-            surfaceView.frame = view.bounds
-            surfaceView.autoresizingMask = [.width, .height]
-            view.addSubview(surfaceView)
-        }
-
-        surfaceView.isHidden = false
-        surfaceView.occlusionDidChange(visible: view.window?.occlusionState.contains(.visible) ?? true)
-        currentView = surfaceView
-
-        // Synchronously in the same runloop turn: keystrokes land immediately.
-        view.window?.makeFirstResponder(surfaceView)
     }
 }

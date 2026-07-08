@@ -136,19 +136,18 @@ final class SessionManager {
         session.onSurfaceCreated = { [weak self, weak session] view in
             guard let self, let session else { return }
 
-            view.onTitleChange = { [weak self, weak session] title in
-                guard let self, let session,
-                      let index = self.sessions.firstIndex(where: { $0.id == session.id }) else { return }
-                session.title = title
-                self.delegate?.sessionManager(self, didUpdateSessionAt: index)
+            view.onTitleChange = { [weak session] title in
+                // Just record it. The shell rewrites the title on every prompt
+                // (and vim/tmux/progress tools animate it), but nothing in the
+                // UI displays session.title — so no sidebar/window/save churn.
+                session?.title = title
             }
             view.onPwdChange = { [weak self, weak session] pwd in
                 guard let self, let session else { return }
-                let changedName = session.displayName
+                // Refresh only when the *displayed* path actually changes.
+                let oldPath = session.abbreviatedPath
                 session.cwd = pwd
-                // Refresh the sidebar row only when the directory name (not
-                // just the full path) actually changed.
-                if session.displayName != changedName,
+                if session.abbreviatedPath != oldPath,
                    let index = self.sessions.firstIndex(where: { $0.id == session.id }) {
                     self.delegate?.sessionManager(self, didUpdateSessionAt: index)
                 }

@@ -11,6 +11,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let hostVC = TerminalHostViewController()
     private let splitVC = NSSplitViewController()
 
+    // Title shown as a toolbar item on the CONTENT side (right of the sidebar
+    // tracking separator) — the Opslan/NavigationSplitView look. Not the
+    // window title, which always renders over the sidebar.
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let subtitleLabel = NSTextField(labelWithString: "")
+
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
         self.sessionManager = SessionManager(runtime: runtime)
@@ -22,11 +28,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false)
         window.title = "Vellum"
         window.tabbingMode = .disallowed
-        // Opslan/Mail pattern: floating full-height sidebar, and the session
-        // name/path shown as the window title in the content area next to the
-        // sidebar (the sidebar tracking separator places it there).
+        // Opslan/Mail pattern: floating full-height sidebar; the session
+        // name/path is a toolbar item on the content side (see the toolbar
+        // delegate). The window title itself is hidden — it would render over
+        // the sidebar, not next to it.
         window.toolbarStyle = .unified
-        window.titleVisibility = .visible
+        window.titleVisibility = .hidden
 
         super.init(window: window)
         window.delegate = self
@@ -181,10 +188,11 @@ extension MainWindowController: SessionManagerDelegate {
         scheduleSave()
     }
 
-    /// Session name as the window title, abbreviated path as the subtitle.
+    /// Session name + path, shown in the content-side toolbar title item.
     private func updateWindowTitle(for session: Session) {
-        window?.title = session.name
-        window?.subtitle = session.abbreviatedPath
+        titleLabel.stringValue = session.name
+        subtitleLabel.stringValue = session.abbreviatedPath
+        subtitleLabel.isHidden = session.abbreviatedPath.isEmpty
     }
 
     func sessionManagerDidClose(_ manager: SessionManager) {
@@ -196,15 +204,18 @@ extension MainWindowController: SessionManagerDelegate {
 
 // MARK: - NSToolbarDelegate
 
+private extension NSToolbarItem.Identifier {
+    static let sessionTitle = NSToolbarItem.Identifier("sessionTitle")
+}
+
 extension MainWindowController: NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        // The tracking separator splits the toolbar at the sidebar divider, so
-        // the window title renders in the content area next to the sidebar.
-        [.sidebarTrackingSeparator]
+        // Separator at the sidebar divider, then the title on the content side.
+        [.sidebarTrackingSeparator, .sessionTitle]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.sidebarTrackingSeparator]
+        [.sidebarTrackingSeparator, .sessionTitle]
     }
 
     func toolbar(
@@ -212,12 +223,32 @@ extension MainWindowController: NSToolbarDelegate {
         itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
-        if itemIdentifier == .sidebarTrackingSeparator {
+        switch itemIdentifier {
+        case .sidebarTrackingSeparator:
             return NSTrackingSeparatorToolbarItem(
                 identifier: .sidebarTrackingSeparator,
                 splitView: splitVC.splitView,
                 dividerIndex: 0)
+
+        case .sessionTitle:
+            titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+            titleLabel.lineBreakMode = .byTruncatingTail
+            subtitleLabel.font = .systemFont(ofSize: 11)
+            subtitleLabel.textColor = .secondaryLabelColor
+            subtitleLabel.lineBreakMode = .byTruncatingMiddle
+
+            let stack = NSStackView(views: [titleLabel, subtitleLabel])
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 0
+
+            let item = NSToolbarItem(itemIdentifier: .sessionTitle)
+            item.view = stack
+            item.visibilityPriority = .high
+            return item
+
+        default:
+            return NSToolbarItem(itemIdentifier: itemIdentifier)
         }
-        return NSToolbarItem(itemIdentifier: itemIdentifier)
     }
 }

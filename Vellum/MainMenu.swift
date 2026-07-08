@@ -35,18 +35,18 @@ enum MainMenu {
         main.addItem(sessionItem)
         let sessionMenu = NSMenu(title: "Session")
         sessionItem.submenu = sessionMenu
-        sessionMenu.addItem(withTitle: "New Session", action: #selector(MainWindowController.newSession(_:)), keyEquivalent: "n")
-        sessionMenu.addItem(withTitle: "Close Session", action: #selector(MainWindowController.closeSession(_:)), keyEquivalent: "w")
+        sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "n")
+        sessionMenu.addItem(withTitle: "Close Session", action: #selector(AppDelegate.closeSession(_:)), keyEquivalent: "w")
         sessionMenu.addItem(.separator())
-        let next = sessionMenu.addItem(withTitle: "Next Session", action: #selector(MainWindowController.selectNextSession(_:)), keyEquivalent: "}")
+        let next = sessionMenu.addItem(withTitle: "Next Session", action: #selector(AppDelegate.selectNextSession(_:)), keyEquivalent: "}")
         next.keyEquivalentModifierMask = [.command]
-        let prev = sessionMenu.addItem(withTitle: "Previous Session", action: #selector(MainWindowController.selectPreviousSession(_:)), keyEquivalent: "{")
+        let prev = sessionMenu.addItem(withTitle: "Previous Session", action: #selector(AppDelegate.selectPreviousSession(_:)), keyEquivalent: "{")
         prev.keyEquivalentModifierMask = [.command]
         sessionMenu.addItem(.separator())
         for i in 1...9 {
             let item = sessionMenu.addItem(
                 withTitle: "Session \(i)",
-                action: #selector(MainWindowController.selectSessionAtIndex(_:)),
+                action: #selector(AppDelegate.selectSessionAtIndex(_:)),
                 keyEquivalent: "\(i)")
             item.tag = i - 1
         }

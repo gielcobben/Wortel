@@ -1,12 +1,14 @@
 import AppKit
+import SwiftUI
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var runtime: GhosttyRuntime!
-    private var mainWindowController: MainWindowController?
+    private var manager: SessionManager!
+    private var window: NSWindow!
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // Menu must exist before the app finishes launching so key
-        // equivalents resolve from the very first event.
+        // Menu must exist before launch so key equivalents resolve immediately.
         NSApp.mainMenu = MainMenu.build()
     }
 
@@ -16,9 +18,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.runtime = runtime
 
-        let controller = MainWindowController(runtime: runtime)
-        self.mainWindowController = controller
-        controller.showWindow(nil)
+        let manager = SessionManager(runtime: runtime)
+        self.manager = manager
+
+        // AppKit window hosting a SwiftUI NavigationSplitView (the Opslan
+        // layout). fullSizeContentView so the sidebar runs to the top; SwiftUI
+        // drives the title/toolbar/floating sidebar itself.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false)
+        window.tabbingMode = .disallowed
+        window.contentViewController = NSHostingController(
+            rootView: ContentView(runtime: runtime, manager: manager))
+        window.setFrameAutosaveName("main")
+        if window.frame.height < 320 {
+            window.setContentSize(NSSize(width: 1100, height: 700))
+            window.center()
+        }
+        self.window = window
+
+        manager.onAllClosed = { [weak self] in self?.window?.close() }
+        manager.restore()
+
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -27,6 +51,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        mainWindowController?.saveSessionsNow()
+        manager?.saveNow()
+    }
+
+    // MARK: - Menu actions (reached via the responder chain, target nil)
+
+    @objc func newSession(_ sender: Any?) {
+        manager.newSession()
+    }
+
+    @objc func closeSession(_ sender: Any?) {
+        manager.closeSelected()
+    }
+
+    @objc func selectNextSession(_ sender: Any?) {
+        manager.selectNext()
+    }
+
+    @objc func selectPreviousSession(_ sender: Any?) {
+        manager.selectPrevious()
+    }
+
+    @objc func selectSessionAtIndex(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem else { return }
+        manager.select(index: item.tag)
     }
 }

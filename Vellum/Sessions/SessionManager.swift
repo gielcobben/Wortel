@@ -1,43 +1,66 @@
 import AppKit
+import Observation
 
-@MainActor
-protocol SessionManagerDelegate: AnyObject {
-    func sessionManager(_ manager: SessionManager, didInsertSessionAt index: Int)
-    func sessionManager(_ manager: SessionManager, didRemoveSessionAt index: Int)
-    func sessionManager(_ manager: SessionManager, didUpdateSessionAt index: Int)
-    /// Fired after `selected` changed. The delegate shows the session's view
-    /// and moves first responder.
-    func sessionManager(_ manager: SessionManager, didSelect session: Session, at index: Int)
-    /// Last session closed.
-    func sessionManagerDidClose(_ manager: SessionManager)
-}
-
-/// Owns the session list and selection. Pure model + surface lifecycle;
-/// all UI flows through the delegate. Main thread only.
+/// Owns the session list, selection, and persistence. `@Observable` so the
+/// SwiftUI shell (NavigationSplitView) reflects changes automatically — no
+/// delegate. Main thread only.
+@Observable
 @MainActor
 final class SessionManager {
-    private let runtime: GhosttyRuntime
-    weak var delegate: SessionManagerDelegate?
+    @ObservationIgnored private let runtime: GhosttyRuntime
+    @ObservationIgnored private let store = SessionStore()
 
     private(set) var sessions: [Session] = []
-    private(set) var selectedIndex: Int = -1
 
-    /// Monotonic counter for default "Session N" names.
-    private var sessionCounter = 0
+    /// Bound to the sidebar List's selection. `didSet` lazily creates the
+    /// selected session's surface and clears its bell — so both user clicks
+    /// and programmatic selection (menu shortcuts) go through one path.
+    var selectedID: Session.ID? {
+        didSet {
+            guard selectedID != oldValue, let session = selected else { return }
+            if session.hasBell { session.hasBell = false }
+            session.ensureSurfaceView(runtime: runtime)
+            scheduleSave()
+        }
+    }
+
+    /// Called when the last session closes (the window should close).
+    @ObservationIgnored var onAllClosed: (() -> Void)?
+
+    @ObservationIgnored private var sessionCounter = 0
 
     var selected: Session? {
-        guard sessions.indices.contains(selectedIndex) else { return nil }
-        return sessions[selectedIndex]
+        sessions.first { $0.id == selectedID }
     }
 
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
     }
 
+    // MARK: - Restore
+
+    /// Restore persisted sessions (or create the first). Only the selected
+    /// session's shell spawns before the first frame; the rest warm up shortly
+    /// after so launch stays lean.
+    func restore() {
+        let persisted = store.load()
+        guard !persisted.isEmpty else {
+            newSession()
+            return
+        }
+        for entry in persisted {
+            appendRestored(Session(id: entry.id, name: entry.name, title: entry.title, cwd: entry.cwd))
+        }
+        selectedID = (persisted.first(where: \.selected) ?? persisted[0]).id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.warmRemainingSurfaces()
+        }
+    }
+
     // MARK: - Operations
 
-    /// Create a session and select it. New sessions inherit the current
-    /// session's working directory when none is given.
+    /// Create a session and select it; new sessions inherit the current
+    /// working directory.
     @discardableResult
     func newSession(cwd: String? = nil) -> Session {
         sessionCounter += 1
@@ -45,45 +68,37 @@ final class SessionManager {
         session.title = Self.defaultTitle(forCwd: session.cwd)
         wire(session)
         sessions.append(session)
-        delegate?.sessionManager(self, didInsertSessionAt: sessions.count - 1)
-        select(index: sessions.count - 1)
+        selectedID = session.id
+        scheduleSave()
         return session
     }
 
-    /// Append a restored session without selecting or creating its surface.
-    func appendRestored(_ session: Session) {
+    private func appendRestored(_ session: Session) {
         // Keep the default-name counter ahead of any restored "Session N".
         if let n = Self.sessionNumber(from: session.name) {
             sessionCounter = max(sessionCounter, n)
         }
         wire(session)
         sessions.append(session)
-        delegate?.sessionManager(self, didInsertSessionAt: sessions.count - 1)
-    }
-
-    private static func sessionNumber(from name: String) -> Int? {
-        let prefix = "Session "
-        guard name.hasPrefix(prefix) else { return nil }
-        return Int(name.dropFirst(prefix.count))
     }
 
     func close(_ session: Session) {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
+        let wasSelected = session.id == selectedID
         session.close()
         sessions.remove(at: index)
-        delegate?.sessionManager(self, didRemoveSessionAt: index)
 
         guard !sessions.isEmpty else {
-            selectedIndex = -1
-            delegate?.sessionManagerDidClose(self)
+            selectedID = nil
+            saveNow()
+            onAllClosed?()
             return
         }
 
-        // Keep selection sensible: prefer the session that took this slot's
-        // place, else the new last one.
-        let newIndex = min(index, sessions.count - 1)
-        selectedIndex = -1 // force reselect even if the number didn't change
-        select(index: newIndex)
+        if wasSelected {
+            selectedID = sessions[min(index, sessions.count - 1)].id
+        }
+        scheduleSave()
     }
 
     func closeSelected() {
@@ -92,76 +107,73 @@ final class SessionManager {
     }
 
     func select(index: Int) {
-        guard sessions.indices.contains(index), index != selectedIndex else { return }
-        selectedIndex = index
-        let session = sessions[index]
-        if session.hasBell {
-            session.hasBell = false
-            delegate?.sessionManager(self, didUpdateSessionAt: index)
-        }
-        session.ensureSurfaceView(runtime: runtime)
-        delegate?.sessionManager(self, didSelect: session, at: index)
+        guard sessions.indices.contains(index) else { return }
+        selectedID = sessions[index].id
     }
 
     func selectNext() {
-        guard sessions.count > 1 else { return }
-        select(index: (selectedIndex + 1) % sessions.count)
+        guard let i = selectedIndex, sessions.count > 1 else { return }
+        selectedID = sessions[(i + 1) % sessions.count].id
     }
 
     func selectPrevious() {
-        guard sessions.count > 1 else { return }
-        select(index: (selectedIndex - 1 + sessions.count) % sessions.count)
+        guard let i = selectedIndex, sessions.count > 1 else { return }
+        selectedID = sessions[(i - 1 + sessions.count) % sessions.count].id
     }
 
-    /// Create surfaces for restored sessions that don't have one yet, one
-    /// per runloop turn, so launch stays lean but every session is warm
-    /// within a couple of seconds.
+    private var selectedIndex: Int? {
+        sessions.firstIndex { $0.id == selectedID }
+    }
+
+    /// Create surfaces for restored sessions that don't have one yet, one per
+    /// runloop turn, so every session is warm within a couple of seconds.
     func warmRemainingSurfaces(limit: Int = 20) {
-        let cold = sessions.filter { $0.surfaceView == nil }.prefix(limit)
-        guard let first = cold.first else { return }
-        first.ensureSurfaceView(runtime: runtime)
-        delegate?.sessionManager(self, didUpdateSessionAt: sessions.firstIndex { $0.id == first.id } ?? 0)
-        if cold.count > 1 {
-            DispatchQueue.main.async { [weak self] in
-                self?.warmRemainingSurfaces(limit: limit - 1)
-            }
+        guard limit > 0, let cold = sessions.first(where: { $0.surfaceView == nil }) else { return }
+        cold.ensureSurfaceView(runtime: runtime)
+        DispatchQueue.main.async { [weak self] in
+            self?.warmRemainingSurfaces(limit: limit - 1)
         }
+    }
+
+    // MARK: - Persistence
+
+    private func persistedSessions() -> [PersistedSession] {
+        sessions.map {
+            PersistedSession(id: $0.id, name: $0.name, title: $0.title, cwd: $0.cwd,
+                             selected: $0.id == selectedID)
+        }
+    }
+
+    private func scheduleSave() {
+        store.scheduleSave { [weak self] in self?.persistedSessions() ?? [] }
+    }
+
+    func saveNow() {
+        store.saveNow(persistedSessions())
     }
 
     // MARK: - Wiring
 
     private func wire(_ session: Session) {
         let id = session.id
-
         session.onSurfaceCreated = { [weak self, weak session] view in
             guard let self, let session else { return }
 
             view.onTitleChange = { [weak session] title in
-                // Just record it. The shell rewrites the title on every prompt
-                // (and vim/tmux/progress tools animate it), but nothing in the
-                // UI displays session.title — so no sidebar/window/save churn.
+                // Recorded but not displayed; bursty, so no save/UI churn.
                 session?.title = title
             }
             view.onPwdChange = { [weak self, weak session] pwd in
                 guard let self, let session else { return }
-                // Refresh only when the *displayed* path actually changes.
-                let oldPath = session.abbreviatedPath
-                session.cwd = pwd
-                if session.abbreviatedPath != oldPath,
-                   let index = self.sessions.firstIndex(where: { $0.id == session.id }) {
-                    self.delegate?.sessionManager(self, didUpdateSessionAt: index)
-                }
+                session.cwd = pwd // observed → sidebar row + navigation subtitle update
+                self.scheduleSave()
             }
             view.onBell = { [weak self, weak session] in
-                guard let self, let session,
-                      let index = self.sessions.firstIndex(where: { $0.id == session.id }) else { return }
-                guard session !== self.selected else { return }
-                session.hasBell = true
-                self.delegate?.sessionManager(self, didUpdateSessionAt: index)
+                guard let self, let session, session.id != self.selectedID else { return }
+                session.hasBell = true // observed → sidebar badge
             }
             view.onCloseRequest = { [weak self] in
-                guard let self,
-                      let session = self.sessions.first(where: { $0.id == id }) else { return }
+                guard let self, let session = self.sessions.first(where: { $0.id == id }) else { return }
                 self.close(session)
             }
         }
@@ -169,8 +181,13 @@ final class SessionManager {
 
     static func defaultTitle(forCwd cwd: String?) -> String {
         guard let cwd, !cwd.isEmpty else { return "~" }
-        let home = NSHomeDirectory()
-        if cwd == home { return "~" }
+        if cwd == NSHomeDirectory() { return "~" }
         return (cwd as NSString).lastPathComponent
+    }
+
+    private static func sessionNumber(from name: String) -> Int? {
+        let prefix = "Session "
+        guard name.hasPrefix(prefix) else { return nil }
+        return Int(name.dropFirst(prefix.count))
     }
 }

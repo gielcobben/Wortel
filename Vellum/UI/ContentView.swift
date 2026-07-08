@@ -36,7 +36,6 @@ struct ContentView: View {
             }
         } detail: {
             TerminalContainer(runtime: runtime, session: manager.selected)
-                .ignoresSafeArea()
                 .navigationTitle(manager.selected?.name ?? "Vellum")
                 .navigationSubtitle(manager.selected?.abbreviatedPath ?? "")
         }

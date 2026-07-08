@@ -21,12 +21,11 @@ final class SidebarViewController: NSViewController {
     // No section header: table rows map 1:1 to session indices.
 
     override func loadView() {
-        tableView.style = .sourceList
-        // The inset, rounded "floating pill" selection (Finder). Not applied
-        // automatically here because the table isn't inside an
-        // NSSplitViewController sidebar (we build the vibrancy by hand), so
-        // set it explicitly.
-        tableView.selectionHighlightStyle = .sourceList
+        tableView.style = .plain
+        // We draw the selection ourselves (SessionRowView) as an inset pill
+        // with Finder's metrics — .sourceList's auto-inset is too small here
+        // since the table isn't inside an NSSplitViewController sidebar.
+        tableView.selectionHighlightStyle = .regular
         tableView.headerView = nil
         tableView.allowsEmptySelection = false
         tableView.allowsMultipleSelection = false
@@ -129,6 +128,12 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
         48 // two lines: title + path
     }
 
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        let id = NSUserInterfaceItemIdentifier("SessionRow")
+        return tableView.makeView(withIdentifier: id, owner: nil) as? SessionRowView
+            ?? SessionRowView(identifier: id)
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard let sessions = sessionProvider?(), sessions.indices.contains(row) else { return nil }
         let session = sessions[row]
@@ -152,6 +157,33 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
 /// steal typing from the terminal.
 private final class SidebarTableView: NSTableView {
     override var acceptsFirstResponder: Bool { false }
+}
+
+/// Draws the selection as an inset rounded "pill" with Finder's metrics.
+/// Always uses the unemphasized (gray) selection color — the sidebar never
+/// takes keyboard focus, so it should never show the blue focused state.
+final class SessionRowView: NSTableRowView {
+    static let horizontalInset: CGFloat = 8
+    static let verticalInset: CGFloat = 3
+    static let cornerRadius: CGFloat = 7
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        let rect = bounds.insetBy(dx: Self.horizontalInset, dy: Self.verticalInset)
+        let path = NSBezierPath(roundedRect: rect,
+                                xRadius: Self.cornerRadius,
+                                yRadius: Self.cornerRadius)
+        NSColor.unemphasizedSelectedContentBackgroundColor.setFill()
+        path.fill()
+    }
 }
 
 /// One sidebar row: a leading terminal glyph and two lines (session name on
@@ -198,9 +230,11 @@ final class SessionCellView: NSTableCellView {
         bellDot.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bellDot)
 
+        // Content sits inside the selection pill (inset + a little padding).
+        let contentInset = SessionRowView.horizontalInset + 6
         NSLayoutConstraint.activate([
             // Icon aligns with the title line; the path sits below both.
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: contentInset),
             icon.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 20),
 
@@ -208,7 +242,7 @@ final class SessionCellView: NSTableCellView {
             textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
             textStack.trailingAnchor.constraint(lessThanOrEqualTo: bellDot.leadingAnchor, constant: -6),
 
-            bellDot.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            bellDot.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -contentInset),
             bellDot.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             bellDot.widthAnchor.constraint(equalToConstant: 6),
             bellDot.heightAnchor.constraint(equalToConstant: 6),

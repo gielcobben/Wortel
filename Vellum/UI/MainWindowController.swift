@@ -22,13 +22,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false)
         window.title = "Vellum"
         window.tabbingMode = .disallowed
-        // No toolbar: the sidebar is one clean vibrant panel top-to-bottom and
-        // the terminal runs full height. The transparent titlebar keeps the
-        // traffic lights and provides a drag strip at the very top; combined
-        // with isMovableByWindowBackground you can also drag by the sidebar's
-        // empty area. Sidebar toggle = ⌘⌥S, New Session = ⌘T (both in menus).
+        // Finder look with no visible chrome: an EMPTY, transparent toolbar.
+        // The toolbar's mere presence is what makes AppKit extend the sidebar's
+        // vibrant material up behind the traffic lights (so they sit ON the
+        // sidebar, like Finder) — but it has no items and no separator, so
+        // nothing is drawn and the terminal still runs to the very top.
+        // Sidebar toggle = ⌘⌥S, New Session = ⌘T / sidebar-footer +.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        window.toolbarStyle = .unifiedCompact
         window.isMovableByWindowBackground = true
 
         super.init(window: window)
@@ -57,6 +59,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window.setContentSize(NSSize(width: 1100, height: 700))
             window.center()
         }
+
+        // Empty toolbar: no items, no separator — invisible, but enables the
+        // Finder sidebar-under-titlebar look.
+        let toolbar = NSToolbar(identifier: "main")
+        toolbar.delegate = self
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
 
         sessionManager.delegate = self
         sidebarVC.sessionProvider = { [weak self] in self?.sessionManager.sessions ?? [] }
@@ -200,4 +209,11 @@ extension MainWindowController: SessionManagerDelegate {
         saveSessionsNow()
         close()
     }
+}
+
+// MARK: - NSToolbarDelegate (empty toolbar, present only for the sidebar look)
+
+extension MainWindowController: NSToolbarDelegate {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
 }

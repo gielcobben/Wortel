@@ -59,7 +59,7 @@ final class SidebarViewController: NSViewController {
         addButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Session")
         addButton.imageScaling = .scaleProportionallyDown
         addButton.contentTintColor = .secondaryLabelColor
-        addButton.toolTip = "New Session (⌘T)"
+        addButton.toolTip = "New Session (⌘N)"
         addButton.target = self
         addButton.action = #selector(addTapped)
         addButton.refusesFirstResponder = true
@@ -153,8 +153,8 @@ private final class SidebarTableView: NSTableView {
     override var acceptsFirstResponder: Bool { false }
 }
 
-/// One sidebar row: SF Symbol terminal icon + two lines (directory name on
-/// top, abbreviated path below) + bell badge.
+/// One sidebar row: a leading terminal glyph and two lines (session name on
+/// top, abbreviated path below), all centered vertically as one group.
 final class SessionCellView: NSTableCellView {
     private let icon = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
@@ -165,9 +165,8 @@ final class SessionCellView: NSTableCellView {
         super.init(frame: .zero)
         self.identifier = identifier
 
-        icon.image = NSImage(systemSymbolName: "apple.terminal", accessibilityDescription: nil)
-            ?? NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)
-        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        icon.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
         icon.contentTintColor = .secondaryLabelColor
         icon.translatesAutoresizingMaskIntoConstraints = false
         addSubview(icon)
@@ -176,14 +175,20 @@ final class SessionCellView: NSTableCellView {
         titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(titleLabel)
-        textField = titleLabel
 
         pathLabel.font = .systemFont(ofSize: 11)
         pathLabel.textColor = .secondaryLabelColor
         pathLabel.lineBreakMode = .byTruncatingMiddle
         pathLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(pathLabel)
+
+        // Stack the two lines and center the pair vertically in the row.
+        let textStack = NSStackView(views: [titleLabel, pathLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 1
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(textStack)
+        textField = titleLabel
 
         bellDot.wantsLayer = true
         bellDot.layer?.cornerRadius = 3
@@ -192,22 +197,17 @@ final class SessionCellView: NSTableCellView {
         bellDot.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bellDot)
 
-        let textLeading = icon.trailingAnchor
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 20),
 
-            titleLabel.leadingAnchor.constraint(equalTo: textLeading, constant: 8),
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: bellDot.leadingAnchor, constant: -6),
-
-            pathLabel.leadingAnchor.constraint(equalTo: textLeading, constant: 8),
-            pathLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
-            pathLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
+            textStack.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
+            textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            textStack.trailingAnchor.constraint(lessThanOrEqualTo: bellDot.leadingAnchor, constant: -6),
 
             bellDot.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            bellDot.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            bellDot.centerYAnchor.constraint(equalTo: centerYAnchor),
             bellDot.widthAnchor.constraint(equalToConstant: 6),
             bellDot.heightAnchor.constraint(equalToConstant: 6),
         ])

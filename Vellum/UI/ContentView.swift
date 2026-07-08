@@ -26,7 +26,6 @@ struct ContentView: View {
                         Button("Rename") { manager.editingID = session.id }
                         Button("Close Session") { manager.close(session) }
                     }
-                    .onTapGesture(count: 2) { manager.editingID = session.id }
                 }
                 .onMove { manager.move(fromOffsets: $0, toOffset: $1) }
             }

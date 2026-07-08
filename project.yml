@@ -32,6 +32,17 @@ targets:
     platform: macOS
     sources:
       - Vellum
+      # Folder references: land in Contents/Resources/{terminfo,ghostty}.
+      # The Zig core finds them via the terminfo/78/xterm-ghostty sentinel
+      # (src/os/resourcesdir.zig) -> themes + shell-integration + TERMINFO.
+      - path: Resources/terminfo
+        type: folder
+        buildPhase: resources
+      - path: Resources/ghostty
+        type: folder
+        buildPhase: resources
+      - path: Resources/vellum.conf
+        buildPhase: resources
     dependencies:
       - package: GhosttyKit
         product: GhosttyKit

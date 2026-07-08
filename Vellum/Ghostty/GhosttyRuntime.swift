@@ -14,20 +14,21 @@ final class GhosttyRuntime {
     private var observers: [NSObjectProtocol] = []
     private var appearanceObservation: NSKeyValueObservation?
 
-    /// argv passed to ghostty_init. Ghostty stores these pointers process-wide
-    /// (std.os.argv), so they must stay alive for the process lifetime.
-    private static var argvStorage: [UnsafeMutablePointer<CChar>?] = []
-
     init?() {
-        // -- ghostty_init with synthetic argv ---------------------------------
-        Self.argvStorage = GhosttyConfig.defaults.map { strdup($0) }
-        guard ghostty_init(UInt(Self.argvStorage.count), &Self.argvStorage) == GHOSTTY_SUCCESS else {
+        guard ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS else {
             return nil
         }
 
-        // -- Config: CLI args only, never the user's config files -------------
+        // -- Config: the bundled vellum.conf only ------------------------------
+        // Never ghostty_config_load_default_files (the user's real
+        // ~/.config/ghostty must not leak in) and never load_cli_args (on
+        // macOS it reads NSProcessInfo.arguments, i.e. Xcode debug flags).
         guard let config = ghostty_config_new() else { return nil }
-        ghostty_config_load_cli_args(config)
+        if let confPath = Bundle.main.path(forResource: "vellum", ofType: "conf") {
+            ghostty_config_load_file(config, confPath)
+        } else {
+            assertionFailure("vellum.conf missing from bundle")
+        }
         ghostty_config_finalize(config)
         self.config = config
 

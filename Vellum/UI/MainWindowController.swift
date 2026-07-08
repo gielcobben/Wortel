@@ -19,8 +19,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
-        window.center()
-        window.setFrameAutosaveName("main")
         window.title = "Vellum"
         window.tabbingMode = .disallowed
 
@@ -38,7 +36,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let contentItem = NSSplitViewItem(viewController: hostVC)
         contentItem.minimumThickness = 320
         splitVC.addSplitViewItem(contentItem)
+        splitVC.splitView.autosaveName = "split"
+
+        // ORDER MATTERS: assigning contentViewController resizes the window
+        // to the VC's preferred size (tiny, since plain NSViews have none).
+        // Restore the autosaved frame AFTER, and reject degenerate frames
+        // (an early bug saved a collapsed one).
         window.contentViewController = splitVC
+        window.contentMinSize = NSSize(width: 500, height: 300)
+        let restored = window.setFrameAutosaveName("main")
+        if !restored || window.frame.height < 300 {
+            window.setContentSize(NSSize(width: 1100, height: 700))
+            window.center()
+        }
 
         sessionManager.delegate = self
         sidebarVC.sessionProvider = { [weak self] in self?.sessionManager.sessions ?? [] }

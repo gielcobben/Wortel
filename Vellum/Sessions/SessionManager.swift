@@ -113,6 +113,13 @@ final class SessionManager {
         scheduleSave()
     }
 
+    /// Drag-to-reorder from the sidebar. Selection (by id) and live surfaces
+    /// are unaffected — only the array order changes.
+    func move(fromOffsets: IndexSet, toOffset: Int) {
+        sessions.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        scheduleSave()
+    }
+
     func select(index: Int) {
         guard sessions.indices.contains(index) else { return }
         selectedID = sessions[index].id

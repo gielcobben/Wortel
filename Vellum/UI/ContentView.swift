@@ -30,6 +30,7 @@ struct ContentView: View {
                     }
                     .onTapGesture(count: 2) { editingID = session.id }
                 }
+                .onMove { manager.move(fromOffsets: $0, toOffset: $1) }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 320)
             .safeAreaInset(edge: .bottom) {

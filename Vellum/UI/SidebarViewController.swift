@@ -49,23 +49,11 @@ final class SidebarViewController: NSViewController {
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
-        // The header bar provides the top space (for the traffic lights), so
-        // the table doesn't add its own safe-area inset.
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = NSEdgeInsetsZero
+        // Automatic safe-area inset pushes the "Sessions" header below the
+        // floating traffic lights — no toolbar, no hairline, just the vibrant
+        // sidebar with the window buttons over it.
+        scrollView.automaticallyAdjustsContentInsets = true
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-
-        // Finder-style top: a clean bar over the sidebar giving the traffic
-        // lights their own space, with a hairline below. The terminal side
-        // has no such bar and runs to the very top. This bar is also a drag
-        // handle (isMovableByWindowBackground).
-        let headerBar = NSView()
-        headerBar.translatesAutoresizingMaskIntoConstraints = false
-
-        let hairline = NSBox()
-        hairline.boxType = .separator
-        hairline.translatesAutoresizingMaskIntoConstraints = false
-        headerBar.addSubview(hairline)
 
         // Native "add" affordance at the bottom of the sidebar (Mail /
         // Reminders / Xcode navigator). Keeps the terminal top clear.
@@ -86,23 +74,11 @@ final class SidebarViewController: NSViewController {
         footer.addSubview(addButton)
 
         let container = NSView()
-        container.addSubview(headerBar)
         container.addSubview(scrollView)
         container.addSubview(footer)
 
         NSLayoutConstraint.activate([
-            // Header bar: sits under the traffic lights, matches the window's
-            // titlebar height (measured 32pt).
-            headerBar.topAnchor.constraint(equalTo: container.topAnchor),
-            headerBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            headerBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            headerBar.heightAnchor.constraint(equalToConstant: 38),
-
-            hairline.leadingAnchor.constraint(equalTo: headerBar.leadingAnchor),
-            hairline.trailingAnchor.constraint(equalTo: headerBar.trailingAnchor),
-            hairline.bottomAnchor.constraint(equalTo: headerBar.bottomAnchor),
-
-            scrollView.topAnchor.constraint(equalTo: headerBar.bottomAnchor),
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: footer.topAnchor),

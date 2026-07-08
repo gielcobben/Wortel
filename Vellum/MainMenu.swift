@@ -28,7 +28,12 @@ enum MainMenu {
         editMenu.addItem(withTitle: "Copy", action: #selector(SurfaceView.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(SurfaceView.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
+        // Cmd+Shift+A, not Cmd+A: Cmd+A is a keybind in vellum.conf that clears
+        // the input line (a terminal can't select just the typed command). The
+        // menu is authoritative for key equivalents, so freeing Cmd+A here is
+        // what lets that keybind reach the surface.
+        let selectAll = editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
+        selectAll.keyEquivalentModifierMask = [.command, .shift]
 
         // Session menu — the heart of the app, all keyboard-driven.
         let sessionItem = NSMenuItem()

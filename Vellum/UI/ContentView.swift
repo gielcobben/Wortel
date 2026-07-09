@@ -11,11 +11,15 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            // No List(selection:): we draw an accent "pill" ourselves so the
-            // selection stays accent-colored regardless of focus (the sidebar
-            // never holds keyboard focus — the terminal does). A single tap
-            // selects.
-            List {
+            // List(selection:) drives selection and gives native drag-to-
+            // reorder (the insertion-line drag that fires `.onMove`) for free —
+            // a custom per-row tap gesture would starve that reorder drag, so we
+            // let List own selection instead. We still draw our own accent
+            // "pill" via `.listRowBackground` (below) so the selection stays
+            // accent-colored regardless of focus — the sidebar never holds
+            // keyboard focus, the terminal does, and the native highlight would
+            // otherwise go gray when unfocused.
+            List(selection: $manager.selectedID) {
                 ForEach(manager.sessions) { session in
                     SessionRow(
                         session: session,
@@ -27,8 +31,6 @@ struct ContentView: View {
                         },
                         cancel: { manager.editingID = nil })
                     .listRowBackground(selectionPill(for: session))
-                    .contentShape(Rectangle())
-                    .onTapGesture { manager.selectedID = session.id }
                     .contextMenu {
                         Button("Rename") { manager.editingID = session.id }
                         Button("Close Session") { manager.requestClose(session) }

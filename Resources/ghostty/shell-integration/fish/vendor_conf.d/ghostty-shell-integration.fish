@@ -216,6 +216,9 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     function __ghostty_mark_output_start --on-event fish_preexec
         set --global __ghostty_prompt_state pre-exec
         echo -en "\e]133;C\a"
+        # Vellum: mark the session busy for the sidebar indicator (ConEmu OSC
+        # 9;4;3, "indeterminate progress"). Clears at the next prompt (133;D).
+        echo -en "\e]9;4;3;\a"
     end
 
     function __ghostty_mark_output_end --on-event fish_postexec

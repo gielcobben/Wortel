@@ -18,7 +18,7 @@ final class SessionManager {
     var selectedID: Session.ID? {
         didSet {
             guard selectedID != oldValue, let session = selected else { return }
-            if session.hasBell { session.hasBell = false }
+            if session.needsAttention { session.needsAttention = false }
             session.ensureSurfaceView(runtime: runtime)
             scheduleSave()
         }
@@ -38,6 +38,16 @@ final class SessionManager {
     @ObservationIgnored var confirmClose: ((Session, @escaping (Bool) -> Void) -> Void)?
 
     @ObservationIgnored private var sessionCounter = 0
+
+    /// Busy is shown only after a command has been running this long, so
+    /// instant commands (ls, cd, git status) never flash the spinner.
+    private static let busyShowDelay: TimeInterval = 0.15
+    /// A command that ran at least this long and finished while its session was
+    /// unselected raises the attention dot.
+    private static let attentionAfterNs: UInt64 = 10_000_000_000 // 10s
+    /// Pending "show busy" work items, keyed by session; cancelled if the
+    /// command finishes before the delay elapses.
+    @ObservationIgnored private var busyTimers: [Session.ID: DispatchWorkItem] = [:]
 
     var selected: Session? {
         sessions.first { $0.id == selectedID }
@@ -95,6 +105,7 @@ final class SessionManager {
     func close(_ session: Session) {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
         let wasSelected = session.id == selectedID
+        busyTimers.removeValue(forKey: session.id)?.cancel()
         session.close()
         sessions.remove(at: index)
 
@@ -185,6 +196,29 @@ final class SessionManager {
         }
     }
 
+    // MARK: - Busy state (debounced)
+
+    /// A command started: show busy after a short delay so instant commands
+    /// don't flicker. Coalesces repeat progress reports for a running command.
+    private func markBusy(_ session: Session) {
+        guard busyTimers[session.id] == nil, !session.isBusy else { return }
+        let id = session.id
+        let work = DispatchWorkItem { [weak self, weak session] in
+            guard let self, let session else { return }
+            self.busyTimers[id] = nil
+            session.isBusy = true
+        }
+        busyTimers[id] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.busyShowDelay, execute: work)
+    }
+
+    /// A command finished (or progress was cleared): cancel any pending show
+    /// and drop busy immediately.
+    private func clearBusy(_ session: Session) {
+        busyTimers.removeValue(forKey: session.id)?.cancel()
+        if session.isBusy { session.isBusy = false }
+    }
+
     // MARK: - Persistence
 
     private func persistedSessions() -> [PersistedSession] {
@@ -220,7 +254,24 @@ final class SessionManager {
             }
             view.onBell = { [weak self, weak session] in
                 guard let self, let session, session.id != self.selectedID else { return }
-                session.hasBell = true // observed → sidebar badge
+                session.needsAttention = true // observed → sidebar dot
+            }
+            view.onProgress = { [weak self, weak session] active in
+                guard let self, let session else { return }
+                if active { self.markBusy(session) } else { self.clearBusy(session) }
+            }
+            view.onCommandFinished = { [weak self, weak session] _, durationNs in
+                guard let self, let session else { return }
+                self.clearBusy(session)
+                // A long command that finished while you were elsewhere wants
+                // your eyes (e.g. an agent that ran for a while and is done).
+                if session.id != self.selectedID, durationNs >= Self.attentionAfterNs {
+                    session.needsAttention = true
+                }
+            }
+            view.onNotification = { [weak self, weak session] _, _ in
+                guard let self, let session, session.id != self.selectedID else { return }
+                session.needsAttention = true
             }
             view.onCloseRequest = { [weak self] in
                 guard let self, let session = self.sessions.first(where: { $0.id == id }) else { return }

@@ -17,7 +17,15 @@ final class Session: Identifiable {
     /// program). Kept for reference; not currently shown.
     var title: String
     var cwd: String?
-    var hasBell: Bool = false
+    /// A background session wants your eyes: it rang the bell, posted a desktop
+    /// notification, or finished a long-running command while unselected.
+    /// Cleared when the session is selected. Drives the sidebar attention dot.
+    var needsAttention: Bool = false
+    /// A foreground command is currently running in this session. Debounced by
+    /// the manager so instant commands never flicker, and cleared
+    /// authoritatively on command-finished so it can never get stuck. Drives
+    /// the sidebar busy spinner.
+    var isBusy: Bool = false
     /// The live terminal view. Not observed by SwiftUI (it's an NSView we host
     /// directly), so exclude it from observation tracking.
     @ObservationIgnored private(set) var surfaceView: SurfaceView?

@@ -30,6 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false)
         window.tabbingMode = .disallowed
+        // Drop the hairline the system draws under the titlebar/toolbar so the
+        // terminal and sidebar run edge-to-edge with no border bottom.
+        window.titlebarSeparatorStyle = .none
         window.contentViewController = NSHostingController(
             rootView: ContentView(runtime: runtime, manager: manager))
         window.setFrameAutosaveName("main")

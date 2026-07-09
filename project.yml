@@ -50,8 +50,8 @@ targets:
       path: Vellum/Info.plist
       properties:
         CFBundleDisplayName: Vellum
-        CFBundleShortVersionString: "0.2.0"
-        CFBundleVersion: "2"
+        CFBundleShortVersionString: "0.3.0"
+        CFBundleVersion: "3"
         LSMinimumSystemVersion: "14.0"
         NSPrincipalClass: NSApplication
         NSHumanReadableCopyright: "© Giel Cobben"

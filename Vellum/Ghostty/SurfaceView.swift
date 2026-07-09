@@ -18,6 +18,16 @@ final class SurfaceView: NSView {
     var onPwdChange: ((String) -> Void)?
     var onBell: (() -> Void)?
     var onCloseRequest: (() -> Void)?
+    /// A foreground command's progress state changed (OSC 9;4). `active` is
+    /// true while a command is running (set / indeterminate / error / pause),
+    /// false when cleared. Drives the per-session busy indicator; the start
+    /// edge comes from the bundled shell integration's preexec hook.
+    var onProgress: ((_ active: Bool) -> Void)?
+    /// The running command finished (OSC 133;D). `exitCode` is -1 if unknown;
+    /// `durationNs` is how long it ran, in nanoseconds. Authoritative "idle".
+    var onCommandFinished: ((_ exitCode: Int, _ durationNs: UInt64) -> Void)?
+    /// The program asked for a desktop notification (OSC 9 / 777 / 99).
+    var onNotification: ((_ title: String, _ body: String) -> Void)?
 
     private(set) var pwd: String?
     private(set) var focused: Bool = false

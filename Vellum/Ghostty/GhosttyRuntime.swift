@@ -268,6 +268,34 @@ final class GhosttyRuntime {
             }
             return true
 
+        case GHOSTTY_ACTION_PROGRESS_REPORT:
+            // OSC 9;4 (ConEmu). Any state other than REMOVE means a command is
+            // actively working; REMOVE clears it. The bundled shell integration
+            // emits an indeterminate report at preexec so this fires for every
+            // command, not just tools that report their own progress.
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            let active = action.action.progress_report.state != GHOSTTY_PROGRESS_STATE_REMOVE
+            DispatchQueue.main.async { view.onProgress?(active) }
+            return true
+
+        case GHOSTTY_ACTION_COMMAND_FINISHED:
+            // OSC 133;D. Authoritative "back at a prompt" — fires at every
+            // command boundary, so the busy state can never get stuck.
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            let finished = action.action.command_finished
+            let exitCode = Int(finished.exit_code)
+            let durationNs = finished.duration
+            DispatchQueue.main.async { view.onCommandFinished?(exitCode, durationNs) }
+            return true
+
+        case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            let note = action.action.desktop_notification
+            let title = note.title.map { String(cString: $0) } ?? ""
+            let body = note.body.map { String(cString: $0) } ?? ""
+            DispatchQueue.main.async { view.onNotification?(title, body) }
+            return true
+
         default:
             // Tabs, splits, inspector, command palette, search UI, etc.
             return false

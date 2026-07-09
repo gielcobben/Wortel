@@ -230,6 +230,10 @@ _ghostty_deferred_init() {
         # belonging to the command (as if the user typed it into zle) rather
         # than command output.
         builtin print -nu $_ghostty_fd '\e]133;C\a'
+        # Vellum: mark the session busy for the sidebar indicator. OSC 9;4;3 is
+        # ConEmu's "indeterminate progress"; Ghostty forwards it as a progress
+        # report. It clears automatically at the next prompt (OSC 133;D).
+        builtin print -nu $_ghostty_fd '\e]9;4;3;\a'
         (( _ghostty_state = 1 ))
     }
 

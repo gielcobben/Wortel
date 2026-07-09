@@ -128,13 +128,28 @@ private struct SessionRow: View {
                 }
             }
             Spacer(minLength: 4)
-            if session.hasBell {
-                Circle()
-                    .fill(isSelected ? Color.white : Color.accentColor)
-                    .frame(width: 6, height: 6)
-            }
+            activityIndicator
         }
         .padding(.vertical, 3)
+    }
+
+    /// Trailing status glyph. Attention (bell / notification / long command
+    /// done while unselected) wins over busy — once you select the session the
+    /// attention clears and the spinner shows if a command is still running.
+    @ViewBuilder
+    private var activityIndicator: some View {
+        if session.needsAttention {
+            Circle()
+                .fill(isSelected ? Color.white : Color.orange)
+                .frame(width: 7, height: 7)
+        } else if session.isBusy {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .controlSize(.small)
+                .scaleEffect(0.7)
+                .frame(width: 12, height: 12)
+                .tint(onAccent ? .white : .secondary)
+        }
     }
 }
 

@@ -260,6 +260,9 @@ function __ghostty_preexec() {
 
   # End of input, start of output.
   builtin printf "\e]133;C;\a"
+  # Vellum: mark the session busy for the sidebar indicator (ConEmu OSC 9;4;3,
+  # "indeterminate progress"). Clears at the next prompt via OSC 133;D.
+  builtin printf "\e]9;4;3;\a"
   _ghostty_executing=1
 }
 

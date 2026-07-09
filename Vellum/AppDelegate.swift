@@ -40,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
 
         manager.onAllClosed = { [weak self] in self?.window?.close() }
+        manager.confirmClose = { [weak self] session, completion in
+            self?.confirmClose(session, completion: completion)
+        }
         manager.restore()
 
         window.makeKeyAndOrderFront(nil)
@@ -54,6 +57,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager?.saveNow()
     }
 
+    // MARK: - Close confirmation
+
+    /// Sheets a warning when closing a session that still has a running
+    /// process. `completion(true)` proceeds with the close. Falls back to
+    /// closing immediately if there's no window to sheet onto.
+    private func confirmClose(_ session: Session, completion: @escaping (Bool) -> Void) {
+        guard let window else {
+            completion(true)
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Close “\(session.name)”?"
+        alert.informativeText =
+            "A process is still running in this session. Closing it will terminate the process."
+        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            completion(response == .alertFirstButtonReturn)
+        }
+    }
+
     // MARK: - Menu actions (reached via the responder chain, target nil)
 
     @objc func newSession(_ sender: Any?) {
@@ -61,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func closeSession(_ sender: Any?) {
-        manager.closeSelected()
+        manager.requestCloseSelected()
     }
 
     @objc func renameSession(_ sender: Any?) {

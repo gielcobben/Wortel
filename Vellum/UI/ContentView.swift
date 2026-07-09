@@ -31,7 +31,7 @@ struct ContentView: View {
                     .onTapGesture { manager.selectedID = session.id }
                     .contextMenu {
                         Button("Rename") { manager.editingID = session.id }
-                        Button("Close Session") { manager.close(session) }
+                        Button("Close Session") { manager.requestClose(session) }
                     }
                 }
                 .onMove { manager.move(fromOffsets: $0, toOffset: $1) }

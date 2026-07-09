@@ -50,6 +50,13 @@ final class Session: Identifiable {
         return (cwd as NSString).abbreviatingWithTildeInPath
     }
 
+    /// Whether closing this session would kill a still-running process, so the
+    /// UI should confirm first. A session with no surface (never opened) has
+    /// nothing to confirm.
+    var needsConfirmClose: Bool {
+        surfaceView?.needsConfirmClose ?? false
+    }
+
     @discardableResult
     func ensureSurfaceView(runtime: GhosttyRuntime) -> SurfaceView {
         if let surfaceView { return surfaceView }

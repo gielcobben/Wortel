@@ -31,6 +31,12 @@ final class SessionManager {
     /// Called when the last session closes (the window should close).
     @ObservationIgnored var onAllClosed: (() -> Void)?
 
+    /// Presents a modal confirmation for closing a session that still has a
+    /// running process, calling back with `true` to proceed. Set by the app
+    /// layer (it owns the window to sheet onto). When nil, closes without
+    /// asking.
+    @ObservationIgnored var confirmClose: ((Session, @escaping (Bool) -> Void) -> Void)?
+
     @ObservationIgnored private var sessionCounter = 0
 
     var selected: Session? {
@@ -103,6 +109,27 @@ final class SessionManager {
             selectedID = sessions[min(index, sessions.count - 1)].id
         }
         scheduleSave()
+    }
+
+    /// Interactive close (menu / context menu / ⌘W): confirms first if the
+    /// session still has a running process, otherwise closes immediately.
+    func requestClose(_ session: Session) {
+        guard session.needsConfirmClose, let confirmClose else {
+            close(session)
+            return
+        }
+        confirmClose(session) { [weak self] proceed in
+            guard proceed else { return }
+            // Re-check membership: the sheet is async, the session may have
+            // gone away (e.g. the shell exited while it was open).
+            guard let self, self.sessions.contains(where: { $0.id == session.id }) else { return }
+            self.close(session)
+        }
+    }
+
+    func requestCloseSelected() {
+        guard let selected else { return }
+        requestClose(selected)
     }
 
     func closeSelected() {

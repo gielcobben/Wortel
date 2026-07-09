@@ -59,10 +59,20 @@ final class GhosttyRuntime {
             // Synchronous by contract: fetch pasteboard text and complete.
             guard location == GHOSTTY_CLIPBOARD_STANDARD,
                   let view = GhosttyRuntime.surfaceView(fromUserdata: userdata),
-                  let surface = view.surface,
-                  let string = NSPasteboard.general.string(forType: .string)
+                  let surface = view.surface
             else { return false }
-            string.withCString { ptr in
+            let pasteboard = NSPasteboard.general
+            // Text wins; otherwise paste an image/file as its path so agents
+            // receive pasted screenshots (matches drag & drop).
+            let payload: String?
+            if let string = pasteboard.string(forType: .string) {
+                payload = string
+            } else {
+                let paths = DropPasteboard.insertablePaths(from: pasteboard)
+                payload = paths.isEmpty ? nil : paths.joined(separator: " ")
+            }
+            guard let payload else { return false }
+            payload.withCString { ptr in
                 ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
             }
             return true

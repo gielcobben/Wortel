@@ -59,6 +59,10 @@ final class SurfaceView: NSView {
             name: NSWindow.didChangeScreenNotification,
             object: nil)
 
+        // Accept dropped files/images: we insert their paths at the prompt
+        // (see performDragOperation) so agents can read them.
+        registerForDraggedTypes([.fileURL, .png, .tiff])
+
         updateTrackingAreas()
     }
 
@@ -238,6 +242,35 @@ final class SurfaceView: NSView {
 
     @objc func paste(_ sender: Any?) {
         performBinding("paste_from_clipboard")
+    }
+
+    // MARK: - Drag & drop
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        DropPasteboard.hasInsertableContent(sender.draggingPasteboard) ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        DropPasteboard.hasInsertableContent(sender.draggingPasteboard) ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let paths = DropPasteboard.insertablePaths(from: sender.draggingPasteboard)
+        guard !paths.isEmpty else { return false }
+        // Trailing space so the user can keep typing a prompt after the path.
+        sendText(paths.joined(separator: " ") + " ")
+        return true
+    }
+
+    /// Write text straight to the surface, as a paste would. Not for keyDown —
+    /// that path routes through `keyTextAccumulator` (see `insertText`).
+    func sendText(_ string: String) {
+        guard let surface else { return }
+        let len = string.utf8CString.count
+        guard len > 1 else { return }
+        string.withCString { ptr in
+            ghostty_surface_text(surface, ptr, UInt(len - 1))
+        }
     }
 
     @objc override func selectAll(_ sender: Any?) {

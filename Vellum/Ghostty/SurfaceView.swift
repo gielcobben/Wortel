@@ -184,7 +184,6 @@ final class SurfaceView: NSView {
         super.viewDidChangeEffectiveAppearance()
         guard let surface else { return }
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        NSLog("VELLUM_DEBUG surface viewDidChangeEffectiveAppearance isDark=%d", isDark ? 1 : 0)
         ghostty_surface_set_color_scheme(surface, isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT)
     }
 

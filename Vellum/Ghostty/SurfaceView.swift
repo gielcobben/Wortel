@@ -71,6 +71,14 @@ final class SurfaceView: NSView {
         if let surface { ghostty_surface_free(surface) }
     }
 
+    /// True when the surface still has a process running that ghostty thinks
+    /// warrants a confirmation before closing (per `confirm-close-surface`).
+    /// False once the child has exited, or before the shell has spawned.
+    var needsConfirmClose: Bool {
+        guard let surface else { return false }
+        return ghostty_surface_needs_confirm_quit(surface)
+    }
+
     /// Explicit teardown (deinit ordering with AppKit view hierarchies is
     /// unreliable; call this when the session closes).
     func close() {
@@ -172,6 +180,7 @@ final class SurfaceView: NSView {
         super.viewDidChangeEffectiveAppearance()
         guard let surface else { return }
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        NSLog("VELLUM_DEBUG surface viewDidChangeEffectiveAppearance isDark=%d", isDark ? 1 : 0)
         ghostty_surface_set_color_scheme(surface, isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT)
     }
 
@@ -330,6 +339,11 @@ final class SurfaceView: NSView {
 
     override func mouseExited(with event: NSEvent) {
         guard let surface else { return }
+        // mouse-hide-while-typing hides the cursor app-wide via NSCursor.hide().
+        // Once the pointer leaves the surface, libghostty stops sending mouse
+        // events and never fires the unhide, so the cursor would stay hidden
+        // over the sidebar and the rest of the UI. Restore it on exit.
+        if !cursorVisible { NSCursor.unhide(); cursorVisible = true }
         // If dragging we keep getting mouseDragged outside the view.
         if NSEvent.pressedMouseButtons != 0 { return }
         // Negative values tell ghostty the cursor left the viewport.

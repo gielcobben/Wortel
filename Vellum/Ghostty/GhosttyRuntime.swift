@@ -173,6 +173,14 @@ final class GhosttyRuntime {
         return Unmanaged<SurfaceView>.fromOpaque(userdata).takeUnretainedValue()
     }
 
+    /// Recover the owning runtime from the app handle's userdata (set to
+    /// `self` in `init`). Lets the static action callback reach instance state
+    /// like the bundled config.
+    private static func runtime(fromApp app: ghostty_app_t) -> GhosttyRuntime? {
+        guard let userdata = ghostty_app_userdata(app) else { return nil }
+        return Unmanaged<GhosttyRuntime>.fromOpaque(userdata).takeUnretainedValue()
+    }
+
     private static func surfaceView(fromTarget target: ghostty_target_s) -> SurfaceView? {
         guard target.tag == GHOSTTY_TARGET_SURFACE,
               let surface = target.target.surface,
@@ -231,6 +239,23 @@ final class GhosttyRuntime {
 
         case GHOSTTY_ACTION_QUIT:
             DispatchQueue.main.async { NSApp.terminate(nil) }
+            return true
+
+        case GHOSTTY_ACTION_RELOAD_CONFIG:
+            // libghostty asks the apprt to re-hand it the config. The case that
+            // matters for Vellum: when a surface's light/dark color scheme
+            // changes, the conditional `theme = light:…,dark:…` must be
+            // re-derived, and the core signals that via a *soft* reload here.
+            // Vellum is zero-config, so there is nothing to reload from disk —
+            // we simply re-apply the single bundled config, which makes the
+            // core re-derive conditionals for the surface's current scheme.
+            guard let app, let runtime = runtime(fromApp: app) else { return false }
+            let config = runtime.config
+            if target.tag == GHOSTTY_TARGET_SURFACE, let surface = target.target.surface {
+                DispatchQueue.main.async { ghostty_surface_update_config(surface, config) }
+            } else {
+                DispatchQueue.main.async { ghostty_app_update_config(app, config) }
+            }
             return true
 
         default:

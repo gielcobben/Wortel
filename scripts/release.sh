@@ -35,7 +35,10 @@ echo "==> Signing identity: $IDENTITY"
 # --- Build ------------------------------------------------------------------
 echo "==> Regenerating project + building Release"
 command -v xcodegen >/dev/null && xcodegen generate
+# Build a universal binary so it runs on both Apple Silicon and Intel Macs.
+# (A single-arch build shows "app is damaged" on the other architecture.)
 if ! xcodebuild -project Vellum.xcodeproj -scheme Vellum -configuration Release \
+      ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
       clean build > build/xcodebuild.log 2>&1; then
   echo "Build failed — last lines:" >&2
   tail -30 build/xcodebuild.log >&2
@@ -60,15 +63,24 @@ if [ "$NOTARIZE" = 1 ]; then
   # Shared across all your apps (the profile is tied to your Apple ID + team,
   # not to Vellum). Override with VELLUM_NOTARY_PROFILE if you use another name.
   PROFILE="${VELLUM_NOTARY_PROFILE:-notary}"
-  echo "==> Notarizing with keychain profile '$PROFILE' (a few minutes)…"
+  echo "==> Notarizing the app with keychain profile '$PROFILE' (a few minutes)…"
   ditto -c -k --keepParent "$APP" build/Vellum.zip
   xcrun notarytool submit build/Vellum.zip --keychain-profile "$PROFILE" --wait
-  xcrun stapler staple "$APP"
-  # Prove it: the staple is attached and Gatekeeper accepts it offline.
+  xcrun stapler staple "$APP"          # ticket travels inside the .app -> works offline
   xcrun stapler validate "$APP"
   spctl -a -vv --type exec "$APP"
+
+  echo "==> Building, signing, and notarizing the DMG…"
   rm -f build/Vellum.dmg
   hdiutil create -volname Vellum -srcfolder "$APP" -ov -format UDZO build/Vellum.dmg >/dev/null
+  # The DMG wrapper needs its OWN Developer ID signature + notarization, or a
+  # downloaded .dmg is rejected by Gatekeeper ("no usable signature") even
+  # though the app inside is fine. So: sign -> notarize -> staple the dmg too.
+  codesign --force --sign "$IDENTITY" --timestamp build/Vellum.dmg
+  xcrun notarytool submit build/Vellum.dmg --keychain-profile "$PROFILE" --wait
+  xcrun stapler staple build/Vellum.dmg
+  xcrun stapler validate build/Vellum.dmg
+  spctl -a -vv -t open --context context:primary-signature build/Vellum.dmg
   echo "==> Notarized + stapled. Distributable: build/Vellum.dmg"
 fi
 

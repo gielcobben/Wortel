@@ -15,8 +15,12 @@ settings:
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: targeted
     MACOSX_DEPLOYMENT_TARGET: "14.0"
+    # Debug builds sign ad-hoc (fast, no identity needed). Release signing is
+    # done by scripts/release.sh (Developer ID + optional notarization) so that
+    # dev builds stay frictionless. DEVELOPMENT_TEAM is set for completeness.
     CODE_SIGN_IDENTITY: "-"
     CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: "76D2KX7X2M"
     DEAD_CODE_STRIPPING: true
     ENABLE_HARDENED_RUNTIME: false
     ENABLE_APP_SANDBOX: false

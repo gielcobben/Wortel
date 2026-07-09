@@ -18,7 +18,7 @@ final class SessionManager {
     var selectedID: Session.ID? {
         didSet {
             guard selectedID != oldValue, let session = selected else { return }
-            if session.needsAttention { session.needsAttention = false }
+            if session.needsAttention { session.needsAttention = false; refreshDockBadge() }
             session.ensureSurfaceView(runtime: runtime)
             scheduleSave()
         }
@@ -36,6 +36,17 @@ final class SessionManager {
     /// layer (it owns the window to sheet onto). When nil, closes without
     /// asking.
     @ObservationIgnored var confirmClose: ((Session, @escaping (Bool) -> Void) -> Void)?
+
+    /// A background session raised attention (a program asked for you — e.g.
+    /// Claude Code emits OSC 777 on a permission/idle prompt, or a bell). The
+    /// app layer turns this into a native macOS notification. `title`/`body`
+    /// come from the program when it's a notification, or are synthesized.
+    @ObservationIgnored var onNeedsAttention: ((Session, _ title: String, _ body: String) -> Void)?
+
+    /// Whether Vellum is the frontmost app. A session the user is *actively
+    /// viewing* (app active + selected) never raises attention — they can see
+    /// it. Set by the app layer on activate/resign.
+    @ObservationIgnored var appIsActive = true
 
     @ObservationIgnored private var sessionCounter = 0
 
@@ -105,9 +116,11 @@ final class SessionManager {
     func close(_ session: Session) {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
         let wasSelected = session.id == selectedID
+        let hadAttention = session.needsAttention
         busyTimers.removeValue(forKey: session.id)?.cancel()
         session.close()
         sessions.remove(at: index)
+        if hadAttention { refreshDockBadge() }
 
         guard !sessions.isEmpty else {
             selectedID = nil
@@ -172,6 +185,12 @@ final class SessionManager {
         selectedID = sessions[index].id
     }
 
+    /// Select a session by id (e.g. from tapping its attention notification).
+    func select(id: Session.ID) {
+        guard sessions.contains(where: { $0.id == id }) else { return }
+        selectedID = id
+    }
+
     func selectNext() {
         guard let i = selectedIndex, sessions.count > 1 else { return }
         selectedID = sessions[(i + 1) % sessions.count].id
@@ -219,6 +238,45 @@ final class SessionManager {
         if session.isBusy { session.isBusy = false }
     }
 
+    // MARK: - Attention
+
+    /// The user can already see this session (Vellum is frontmost and the
+    /// session is selected), so it never needs to shout for attention.
+    private func isActivelyViewing(_ session: Session) -> Bool {
+        appIsActive && session.id == selectedID
+    }
+
+    /// A session wants the user: raise the sidebar dot (which overrides the
+    /// busy spinner), badge the Dock, and post a native notification — unless
+    /// the user is already looking at it. Safe to call repeatedly; the app
+    /// layer keys notifications by session so they replace, not stack.
+    private func raiseAttention(_ session: Session, title: String, body: String) {
+        guard !isActivelyViewing(session) else { return }
+        session.needsAttention = true // observed → sidebar dot
+        refreshDockBadge()
+        onNeedsAttention?(session, title, body)
+    }
+
+    /// Vellum became frontmost: the user is now looking at the selected
+    /// session, so clear its attention.
+    func appDidBecomeActive() {
+        appIsActive = true
+        if let selected, selected.needsAttention {
+            selected.needsAttention = false
+            refreshDockBadge()
+        }
+    }
+
+    func appDidResignActive() {
+        appIsActive = false
+    }
+
+    /// Dock badge = number of background sessions waiting on the user.
+    private func refreshDockBadge() {
+        let count = sessions.reduce(into: 0) { $0 += $1.needsAttention ? 1 : 0 }
+        NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
+    }
+
     // MARK: - Persistence
 
     private func persistedSessions() -> [PersistedSession] {
@@ -253,8 +311,8 @@ final class SessionManager {
                 self.scheduleSave()
             }
             view.onBell = { [weak self, weak session] in
-                guard let self, let session, session.id != self.selectedID else { return }
-                session.needsAttention = true // observed → sidebar dot
+                guard let self, let session else { return }
+                self.raiseAttention(session, title: session.name, body: "Bell")
             }
             view.onProgress = { [weak self, weak session] active in
                 guard let self, let session else { return }
@@ -265,13 +323,17 @@ final class SessionManager {
                 self.clearBusy(session)
                 // A long command that finished while you were elsewhere wants
                 // your eyes (e.g. an agent that ran for a while and is done).
-                if session.id != self.selectedID, durationNs >= Self.attentionAfterNs {
-                    session.needsAttention = true
+                if durationNs >= Self.attentionAfterNs {
+                    self.raiseAttention(session, title: session.name, body: "Command finished")
                 }
             }
-            view.onNotification = { [weak self, weak session] _, _ in
-                guard let self, let session, session.id != self.selectedID else { return }
-                session.needsAttention = true
+            view.onNotification = { [weak self, weak session] title, body in
+                guard let self, let session else { return }
+                // Program-authored "needs you" (OSC 9/777/99) — e.g. Claude Code
+                // on a permission or idle prompt. The most reliable signal.
+                self.raiseAttention(session,
+                                    title: title.isEmpty ? session.name : title,
+                                    body: body)
             }
             view.onCloseRequest = { [weak self] in
                 guard let self, let session = self.sessions.first(where: { $0.id == id }) else { return }

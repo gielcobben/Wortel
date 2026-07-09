@@ -28,6 +28,15 @@ open ~/Library/Developer/Xcode/DerivedData/Vellum-*/Build/Products/Debug/Vellum.
 ```
 
 - Release build (used by benchmarks): `-configuration Release`.
+- **Proper signed release:** `./scripts/release.sh` builds Release, signs it
+  with your Developer ID (auto-detected), installs to `/Applications`, and
+  launches it. This is required for anything that needs a real, registered app
+  rather than an ad-hoc Debug build — notably **macOS notifications**: an
+  ad-hoc-signed build in DerivedData is *not* registered with the notification
+  daemon (`usernoted`), so `UNUserNotificationCenter` reports `granted` and
+  accepts posts with no error, but nothing is ever displayed. `--notarize` adds
+  hardened runtime + notarization + a `.dmg` for distributing to other Macs
+  (needs a `notarytool` keychain profile — see the script footer).
 - There is no test target and no linter config; "verify" means building and
   running the app.
 - Performance checks live in `bench/`: `./bench/measure.sh` (cold-launch time +

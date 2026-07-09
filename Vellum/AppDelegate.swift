@@ -1,8 +1,12 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    /// Notification userInfo key carrying the session UUID string, so a tap can
+    /// route back to the right session.
+    private static let sessionKey = "sessionID"
     private(set) var runtime: GhosttyRuntime!
     private var manager: SessionManager!
     private var window: NSWindow!
@@ -46,10 +50,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
+        manager.onNeedsAttention = { [weak self] session, title, body in
+            self?.postAttentionNotification(session, title: title, body: body)
+        }
+
+        // Native "a session needs you" notifications. The signal is
+        // program-authored (e.g. Claude Code emits OSC 777 on a permission/idle
+        // prompt because libghostty sets TERM_PROGRAM=ghostty) — we just relay
+        // it. Ask once; if the user declines, the sidebar dot + Dock badge still
+        // work.
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+
         manager.restore()
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // MARK: - Focus tracking (drives "actively viewing" → no attention shout)
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        manager?.appDidBecomeActive()
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        manager?.appDidResignActive()
+    }
+
+    // MARK: - Attention notifications
+
+    /// Post (or replace) the "needs you" notification for a session. Uses the
+    /// session id as the request identifier so a chatty program updates one
+    /// notification instead of stacking many.
+    private func postAttentionNotification(_ session: Session, title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.userInfo = [Self.sessionKey: session.id.uuidString]
+        let request = UNNotificationRequest(
+            identifier: session.id.uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Foreground delivery: still show the banner (the user is in another
+    /// session, or away from the keyboard) — we only get here when the session
+    /// isn't the actively-viewed one.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    /// Tapping the notification jumps to that session and brings Vellum front.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        if let idString = response.notification.request.content.userInfo[Self.sessionKey] as? String,
+           let id = UUID(uuidString: idString) {
+            manager?.select(id: id)
+            NSApp.activate(ignoringOtherApps: true)
+            window?.makeKeyAndOrderFront(nil)
+        }
+        completionHandler()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

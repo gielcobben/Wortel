@@ -3,6 +3,17 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>0.3.2</title>
+            <pubDate>Fri, 10 Jul 2026 14:23:52 -0400</pubDate>
+            <sparkle:version>0.3.2</sparkle:version>
+            <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://updates.wortel.sh/Wortel-0.3.2.zip" length="9812579" type="application/octet-stream" sparkle:edSignature="H4F2B9R4pIYlFac5ZwlDWhQEwr3sf4PYD+n+Gy5QrHf/qMxZ6z2TmDSc45s57tIM6mHPnJ5kd4h6kwbyGyo1AQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://updates.wortel.sh/Wortel0.3.2-0.3.1.delta" sparkle:deltaFrom="0.3.1" length="332530" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="drjJeok8R7Ky32xv/xn2iJJwKAOJvhcvBxmhVrDpR/bNmWz8Ky6/DbFSvX6R/QR34BJknSxaxeFGjPi6n7Y7Bw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.3.1</title>
             <pubDate>Fri, 10 Jul 2026 10:45:45 -0400</pubDate>
             <sparkle:version>0.3.1</sparkle:version>

@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound])
     }
 
-    /// Tapping the notification jumps to that session and brings Vellum front.
+    /// Tapping the notification jumps to that session and brings Wortel front.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,

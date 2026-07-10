@@ -1,6 +1,6 @@
-# Vellum performance verification
+# Wortel performance verification
 
-Vellum embeds Ghostty's real engine (GhosttyKit): the VT parser, Metal
+Wortel embeds Ghostty's real engine (GhosttyKit): the VT parser, Metal
 renderer, glyph atlas, and per-surface IO threads are all Ghostty's. So raw
 terminal throughput / render / latency are inherently Ghostty-class — the job
 of these checks is to confirm **the app shell adds no overhead** and that
@@ -21,7 +21,7 @@ Current (Apple Silicon, 1 session):
 `./bench/gen.sh` writes three streams to `bench/data/` (gitignored):
 `scrolling.txt` (plain), `colors.txt` (24-bit truecolor), `cursor.txt` (SGR churn).
 
-Run the same command in **Vellum** and in **Ghostty.app**, compare wall time:
+Run the same command in **Wortel** and in **Ghostty.app**, compare wall time:
 ```
 time cat bench/data/scrolling.txt
 time cat bench/data/colors.txt
@@ -37,7 +37,7 @@ Core Animation FPS.
 
 ## Typing latency
 
-[Typometer](https://pavelfatin.com/typometer/): run ≥5 passes in Vellum and in
+[Typometer](https://pavelfatin.com/typometer/): run ≥5 passes in Wortel and in
 Ghostty.app, same display, same font size. Distributions should overlap. This
 is the metric a native shell can actually win — keep the responder path direct
 (SurfaceView is first responder, no event monitors between NSEvent and

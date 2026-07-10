@@ -6,7 +6,7 @@ import GhosttyKit
 ///
 /// Threading: libghostty may invoke callbacks from its IO/render threads.
 /// Callbacks copy any C-pointer data synchronously, then hop to the main
-/// thread for anything that touches AppKit. Everything Vellum owns runs on
+/// thread for anything that touches AppKit. Everything Wortel owns runs on
 /// the main thread.
 final class GhosttyRuntime {
     private(set) var app: ghostty_app_t!
@@ -19,15 +19,15 @@ final class GhosttyRuntime {
             return nil
         }
 
-        // -- Config: the bundled vellum.conf only ------------------------------
+        // -- Config: the bundled wortel.conf only ------------------------------
         // Never ghostty_config_load_default_files (the user's real
         // ~/.config/ghostty must not leak in) and never load_cli_args (on
         // macOS it reads NSProcessInfo.arguments, i.e. Xcode debug flags).
         guard let config = ghostty_config_new() else { return nil }
-        if let confPath = Bundle.main.path(forResource: "vellum", ofType: "conf") {
+        if let confPath = Bundle.main.path(forResource: "wortel", ofType: "conf") {
             ghostty_config_load_file(config, confPath)
         } else {
-            assertionFailure("vellum.conf missing from bundle")
+            assertionFailure("wortel.conf missing from bundle")
         }
         ghostty_config_finalize(config)
         self.config = config
@@ -200,7 +200,7 @@ final class GhosttyRuntime {
     }
 
     /// Returns true when the action was handled. Returning false for tabs,
-    /// splits, inspector, etc. is deliberate: it's Vellum's "those features
+    /// splits, inspector, etc. is deliberate: it's Wortel's "those features
     /// don't exist" enforcement.
     private static func handleAction(
         app: ghostty_app_t?,
@@ -253,10 +253,10 @@ final class GhosttyRuntime {
 
         case GHOSTTY_ACTION_RELOAD_CONFIG:
             // libghostty asks the apprt to re-hand it the config. The case that
-            // matters for Vellum: when a surface's light/dark color scheme
+            // matters for Wortel: when a surface's light/dark color scheme
             // changes, the conditional `theme = light:…,dark:…` must be
             // re-derived, and the core signals that via a *soft* reload here.
-            // Vellum is zero-config, so there is nothing to reload from disk —
+            // Wortel is zero-config, so there is nothing to reload from disk —
             // we simply re-apply the single bundled config, which makes the
             // core re-derive conditionals for the surface's current scheme.
             guard let app, let runtime = runtime(fromApp: app) else { return false }

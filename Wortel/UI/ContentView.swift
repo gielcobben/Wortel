@@ -57,7 +57,7 @@ struct ContentView: View {
             }
         } detail: {
             TerminalContainer(runtime: runtime, session: manager.selected)
-                .navigationTitle(manager.selected?.name ?? "Vellum")
+                .navigationTitle(manager.selected?.name ?? "Wortel")
                 .navigationSubtitle(manager.selected?.abbreviatedPath ?? "")
         }
     }

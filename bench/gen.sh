@@ -35,7 +35,7 @@ PY
 echo "Generated:"
 ls -lh data/
 echo
-echo "Run each inside Vellum AND Ghostty.app and compare:"
+echo "Run each inside Wortel AND Ghostty.app and compare:"
 echo "  time cat bench/data/scrolling.txt"
 echo "  time cat bench/data/colors.txt"
 echo "  time cat bench/data/cursor.txt"

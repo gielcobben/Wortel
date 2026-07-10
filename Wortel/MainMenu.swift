@@ -11,13 +11,13 @@ enum MainMenu {
         main.addItem(appItem)
         let appMenu = NSMenu()
         appItem.submenu = appMenu
-        appMenu.addItem(withTitle: "About Vellum", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About Wortel", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Vellum", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide Wortel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Vellum", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Wortel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         // Edit menu (copy/paste route to the focused SurfaceView via the
         // responder chain; SurfaceView implements these selectors).
@@ -28,7 +28,7 @@ enum MainMenu {
         editMenu.addItem(withTitle: "Copy", action: #selector(SurfaceView.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(SurfaceView.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(.separator())
-        // Cmd+Shift+A, not Cmd+A: Cmd+A is a keybind in vellum.conf that clears
+        // Cmd+Shift+A, not Cmd+A: Cmd+A is a keybind in wortel.conf that clears
         // the input line (a terminal can't select just the typed command). The
         // menu is authoritative for key equivalents, so freeing Cmd+A here is
         // what lets that keybind reach the surface.

@@ -1,4 +1,4 @@
-name: Vellum
+name: Wortel
 options:
   bundleIdPrefix: com.gielcobben
   deploymentTarget:
@@ -31,11 +31,11 @@ settings:
       COPY_PHASE_STRIP: true
 
 targets:
-  Vellum:
+  Wortel:
     type: application
     platform: macOS
     sources:
-      - Vellum
+      - Wortel
       # Folder references: land in Contents/Resources/{terminfo,ghostty}.
       # The Zig core finds them via the terminfo/78/xterm-ghostty sentinel
       # (src/os/resourcesdir.zig) -> themes + shell-integration + TERMINFO.
@@ -45,15 +45,15 @@ targets:
       - path: Resources/ghostty
         type: folder
         buildPhase: resources
-      - path: Resources/vellum.conf
+      - path: Resources/wortel.conf
         buildPhase: resources
     dependencies:
       - package: GhosttyKit
         product: GhosttyKit
     info:
-      path: Vellum/Info.plist
+      path: Wortel/Info.plist
       properties:
-        CFBundleDisplayName: Vellum
+        CFBundleDisplayName: Wortel
         CFBundleShortVersionString: "0.3.0"
         CFBundleVersion: "3"
         LSMinimumSystemVersion: "14.0"

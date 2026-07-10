@@ -43,7 +43,7 @@ final class SessionManager {
     /// come from the program when it's a notification, or are synthesized.
     @ObservationIgnored var onNeedsAttention: ((Session, _ title: String, _ body: String) -> Void)?
 
-    /// Whether Vellum is the frontmost app. A session the user is *actively
+    /// Whether Wortel is the frontmost app. A session the user is *actively
     /// viewing* (app active + selected) never raises attention — they can see
     /// it. Set by the app layer on activate/resign.
     @ObservationIgnored var appIsActive = true
@@ -240,7 +240,7 @@ final class SessionManager {
 
     // MARK: - Attention
 
-    /// The user can already see this session (Vellum is frontmost and the
+    /// The user can already see this session (Wortel is frontmost and the
     /// session is selected), so it never needs to shout for attention.
     private func isActivelyViewing(_ session: Session) -> Bool {
         appIsActive && session.id == selectedID
@@ -257,7 +257,7 @@ final class SessionManager {
         onNeedsAttention?(session, title, body)
     }
 
-    /// Vellum became frontmost: the user is now looking at the selected
+    /// Wortel became frontmost: the user is now looking at the selected
     /// session, so clear its attention.
     func appDidBecomeActive() {
         appIsActive = true

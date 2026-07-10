@@ -2,7 +2,7 @@ import AppKit
 import GhosttyKit
 
 /// The NSView hosting one ghostty surface (one terminal). Ported from
-/// Ghostty.app's SurfaceView_AppKit.swift (v1.3.1), trimmed to Vellum's
+/// Ghostty.app's SurfaceView_AppKit.swift (v1.3.1), trimmed to Wortel's
 /// scope: no splits, no drag/drop, no inspector, no context menu.
 ///
 /// The Zig core installs its own IOSurface-backed CALayer on this view
@@ -541,7 +541,7 @@ final class SurfaceView: NSView {
         guard focused else { return false }
         guard let surface else { return false }
 
-        // Vellum's menu wins over ghostty's default keybinds (both usually
+        // Wortel's menu wins over ghostty's default keybinds (both usually
         // agree, e.g. super+c == copy, but the menu is the source of truth).
         if let menu = NSApp.mainMenu, menu.performKeyEquivalent(with: event) {
             return true

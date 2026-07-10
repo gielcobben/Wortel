@@ -49,7 +49,7 @@ enum DropPasteboard {
               let png = rep.representation(using: .png, properties: [:])
         else { return nil }
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("vellum-\(UUID().uuidString).png")
+            .appendingPathComponent("wortel-\(UUID().uuidString).png")
         do {
             try png.write(to: url)
             return url

@@ -112,14 +112,27 @@ final class SurfaceView: NSView {
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { focusDidChange(true) }
+        if result { updateFocus(firstResponder: true) }
         return result
     }
 
     override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
-        if result { focusDidChange(false) }
+        if result { updateFocus(firstResponder: false) }
         return result
+    }
+
+    /// Effective focus = first responder AND key window. Both states feed
+    /// libghostty, which forwards focus-in/out (DECSET 1004) to the child —
+    /// agents like Codex only emit their "needs you" notification while the
+    /// terminal reports unfocused, so app/window deactivation must reach them.
+    private func updateFocus(firstResponder: Bool? = nil) {
+        let isFirstResponder = firstResponder ?? (window?.firstResponder === self)
+        focusDidChange(isFirstResponder && (window?.isKeyWindow ?? false))
+    }
+
+    @objc private func windowKeyStateChanged(_ notification: Notification) {
+        updateFocus()
     }
 
     func focusDidChange(_ focused: Bool) {
@@ -139,6 +152,18 @@ final class SurfaceView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // Track key-window state so effective focus (and thus the child's
+        // DECSET 1004 focus reporting) drops when the app deactivates.
+        // Selector-based observers auto-unregister on dealloc.
+        let center = NotificationCenter.default
+        center.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
+        center.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
+        if let window {
+            center.addObserver(self, selector: #selector(windowKeyStateChanged(_:)),
+                               name: NSWindow.didBecomeKeyNotification, object: window)
+            center.addObserver(self, selector: #selector(windowKeyStateChanged(_:)),
+                               name: NSWindow.didResignKeyNotification, object: window)
+        }
         guard let window, let surface else { return }
         ghostty_surface_set_display_id(surface, window.screen?.displayID ?? 0)
         viewDidChangeBackingProperties()

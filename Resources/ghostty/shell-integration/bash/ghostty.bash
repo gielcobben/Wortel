@@ -247,6 +247,60 @@ function __ghostty_precmd() {
   _ghostty_executing=0
 }
 
+# Wortel: true if the command line launches a long-lived interactive program
+# (agent CLI, editor, pager, REPL, system monitor, TUI) that sits at its own
+# prompt instead of returning to the shell. For those the synthetic busy spinner
+# (OSC 9;4;3 in preexec) would never clear until you quit — no OSC 133;D fires —
+# so we skip it and let the program report its own progress. Builds/tests spin.
+function __ghostty_wortel_interactive() {
+  builtin local -a words
+  builtin read -ra words <<< "$1"
+  builtin local w cmd=""
+  builtin local -i i=0 n=${#words[@]}
+  # Skip leading env assignments (FOO=bar) and command wrappers.
+  while (( i < n )); do
+    w="${words[i]}"
+    case "$w" in
+      *=*)                                              ((i++)); continue ;;
+      sudo|doas|command|builtin|exec|nohup|nice|stdbuf|setsid|env)
+                                                        ((i++)); continue ;;
+      -*)                                               ((i++)); continue ;;
+      *)                                                cmd="$w"; break ;;
+    esac
+  done
+  [[ -z $cmd ]] && return 1
+  cmd="${cmd##*/}"
+  case "$cmd" in
+    claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp) return 0 ;;
+    vi|vim|nvim|vis|nano|emacs|emacsclient|helix|hx|kak|micro|ne|joe) return 0 ;;
+    less|more|most|moar|man|bat|w3m|lynx) return 0 ;;
+    top|htop|btop|btm|glances|gtop|nvtop|s-tui) return 0 ;;
+    ssh|mosh|telnet|tmux|screen|zellij|dtach|abduco) return 0 ;;
+    watch|journalctl|dmesg) return 0 ;;
+    fzf|sk|gitui|lazygit|lazydocker|k9s|tig|ranger|nnn|yazi|lf|vifm|mc|broot|xplr) return 0 ;;
+    gdb|lldb|pdb) return 0 ;;
+    psql|mysql|mariadb|sqlite3|litecli|pgcli|mycli|redis-cli|mongosh|mongo|usql|duckdb|clickhouse-client|cqlsh) return 0 ;;
+    python|python2|python3|ipython|bpython|ptpython|node|nodejs|bun|deno|irb|pry|php|lua|luajit|julia|R|ghci|iex|erl|scala|clj|clojure)
+      # Dual-use: a bare REPL is interactive, but `python script.py`,
+      # `node app.js`, `python -m mod` and `-c ...` are batch jobs that
+      # should keep the spinner. Interactive only with no such arg.
+      builtin local a
+      builtin local -i j=$((i+1))
+      while (( j < n )); do
+        a="${words[j]}"
+        case "$a" in
+          -i|-q|-u|-B|-E|-O|-OO|-s|-S|-I|--) ((j++)); continue ;;
+          -c|-m)             return 1 ;;
+          *[\<\>\|\&\;]*)    return 0 ;;
+          -*)                ((j++)); continue ;;
+          *)                 return 1 ;;
+        esac
+      done
+      return 0 ;;
+  esac
+  return 1
+}
+
 function __ghostty_preexec() {
   builtin local cmd="$1"
 
@@ -260,9 +314,13 @@ function __ghostty_preexec() {
 
   # End of input, start of output.
   builtin printf "\e]133;C;\a"
-  # Vellum: mark the session busy for the sidebar indicator (ConEmu OSC 9;4;3,
-  # "indeterminate progress"). Clears at the next prompt via OSC 133;D.
-  builtin printf "\e]9;4;3;\a"
+  # Wortel: mark the session busy for the sidebar spinner (ConEmu OSC 9;4;3,
+  # "indeterminate progress"). Clears at the next prompt via OSC 133;D — but
+  # long-lived interactive programs never return to the prompt, so we skip it
+  # for those (see __ghostty_wortel_interactive).
+  if ! __ghostty_wortel_interactive "$cmd"; then
+    builtin printf "\e]9;4;3;\a"
+  fi
   _ghostty_executing=1
 }
 

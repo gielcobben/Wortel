@@ -71,10 +71,16 @@ private struct SessionRow: View {
     @State private var draft = ""
     @FocusState private var fieldFocused: Bool
 
+    // The native selection background is grey (the sidebar never holds keyboard
+    // focus — the terminal does). Like Finder's sidebar, the selected row's name
+    // and icon take the accent color so the selection still reads clearly. Not
+    // while editing: the rename field wants normal editable text.
+    private var accentIfSelected: Bool { isSelected && !isEditing }
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "terminal")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(accentIfSelected ? Color.accentColor : .secondary)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
@@ -93,6 +99,7 @@ private struct SessionRow: View {
                         }
                 } else {
                     Text(session.name)
+                        .foregroundStyle(accentIfSelected ? Color.accentColor : .primary)
                 }
                 if !session.abbreviatedPath.isEmpty {
                     Text(session.abbreviatedPath)
@@ -115,7 +122,7 @@ private struct SessionRow: View {
     private var activityIndicator: some View {
         if session.needsAttention {
             Circle()
-                .fill(isSelected ? Color.white : Color.orange)
+                .fill(Color.orange)
                 .frame(width: 7, height: 7)
         } else if session.isBusy {
             ProgressView()
@@ -123,7 +130,7 @@ private struct SessionRow: View {
                 .controlSize(.small)
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
-                .tint(isSelected ? .white : .secondary)
+                .tint(isSelected ? Color.accentColor : .secondary)
         }
     }
 }

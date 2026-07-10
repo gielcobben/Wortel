@@ -11,14 +11,11 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            // List(selection:) drives selection and gives native drag-to-
-            // reorder (the insertion-line drag that fires `.onMove`) for free —
-            // a custom per-row tap gesture would starve that reorder drag, so we
-            // let List own selection instead. We still draw our own accent
-            // "pill" via `.listRowBackground` (below) so the selection stays
-            // accent-colored regardless of focus — the sidebar never holds
-            // keyboard focus, the terminal does, and the native highlight would
-            // otherwise go gray when unfocused.
+            // List(selection:) drives selection and gives the native sidebar
+            // highlight plus native drag-to-reorder (the insertion-line drag
+            // that fires `.onMove`) for free. The highlight greys out when the
+            // sidebar isn't the focused column (the terminal usually holds
+            // focus) — that's standard macOS source-list behavior.
             List(selection: $manager.selectedID) {
                 ForEach(manager.sessions) { session in
                     SessionRow(
@@ -30,7 +27,6 @@ struct ContentView: View {
                             manager.editingID = nil
                         },
                         cancel: { manager.editingID = nil })
-                    .listRowBackground(selectionPill(for: session))
                     .contextMenu {
                         Button("Rename") { manager.editingID = session.id }
                         Button("Close Session") { manager.requestClose(session) }
@@ -61,21 +57,6 @@ struct ContentView: View {
                 .navigationSubtitle(manager.selected?.abbreviatedPath ?? "")
         }
     }
-
-    /// Native-looking accent selection pill for the selected row — but not
-    /// while it's being renamed (the inline edit field wants a normal
-    /// background, like Finder).
-    @ViewBuilder
-    private func selectionPill(for session: Session) -> some View {
-        if manager.selectedID == session.id, manager.editingID != session.id {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.accentColor)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-        } else {
-            Color.clear
-        }
-    }
 }
 
 /// One sidebar row: terminal icon, session name (double-click to rename), and
@@ -90,22 +71,15 @@ private struct SessionRow: View {
     @State private var draft = ""
     @FocusState private var fieldFocused: Bool
 
-    // White on the accent pill; standard colors otherwise and while editing
-    // (the edit field sits on a normal background, not the accent pill).
-    private var onAccent: Bool { isSelected && !isEditing }
-    private var primaryColor: Color { onAccent ? .white : .primary }
-    private var secondaryColor: Color { onAccent ? .white.opacity(0.75) : .secondary }
-
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "terminal")
-                .foregroundStyle(secondaryColor)
+                .foregroundStyle(.secondary)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
                     TextField("Name", text: $draft)
                         .textFieldStyle(.plain)
-                        .foregroundStyle(primaryColor)
                         .focused($fieldFocused)
                         .onSubmit { commit(draft) }
                         .onExitCommand { cancel() }
@@ -119,12 +93,11 @@ private struct SessionRow: View {
                         }
                 } else {
                     Text(session.name)
-                        .foregroundStyle(primaryColor)
                 }
                 if !session.abbreviatedPath.isEmpty {
                     Text(session.abbreviatedPath)
                         .font(.caption)
-                        .foregroundStyle(secondaryColor)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -150,7 +123,7 @@ private struct SessionRow: View {
                 .controlSize(.small)
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
-                .tint(onAccent ? .white : .secondary)
+                .tint(isSelected ? .white : .secondary)
         }
     }
 }

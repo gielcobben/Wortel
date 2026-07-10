@@ -6,11 +6,18 @@
 #
 #   ./scripts/release.sh                signed Release -> /Applications -> launch
 #   ./scripts/release.sh --notarize     + hardened runtime, notarize, staple, .dmg
-#   ./scripts/release.sh --publish X.Y.Z  full release: stamp version X.Y.Z,
-#                                         notarize, EdDSA-sign a zip, regenerate
-#                                         the appcast, and upload to the
+#   ./scripts/release.sh --publish [N]  full release: stamp version N, notarize,
+#                                         EdDSA-sign a zip, regenerate the
+#                                         appcast, and upload to the
 #                                         wortel-updates R2 bucket (Sparkle feed).
 #                                         Implies --notarize.
+#
+# Versions are a single incrementing integer (build number). Sparkle's update
+# check compares CFBundleVersion, which we stamp = this integer (verified: its
+# comparator ranks 9<10, 99<100, and 0.3.x<4, so the sequence never regresses).
+# Omit N to auto-increment from releases/BUILD; pass N to force a specific build
+# (must be a positive integer). CFBundleShortVersionString is stamped to the same
+# value so the update dialog reads "Wortel 5 is available — you have 4".
 #
 # The signing identity is auto-detected (Developer ID Application, else Apple
 # Development). Override with WORTEL_SIGN_IDENTITY. Notarization uses a stored
@@ -30,13 +37,28 @@ RELEASES_DIR="$ROOT/releases"           # canonical archive store; appcast regen
 NOTARIZE=0
 PUBLISH=0
 VERSION=""
+BUILD_FILE="$RELEASES_DIR/BUILD"        # tracked counter: last published integer build
 case "${1:-}" in
   --notarize) NOTARIZE=1 ;;
   --publish)
     PUBLISH=1
     NOTARIZE=1                          # publishing a non-notarized zip fails Gatekeeper on other Macs
     VERSION="${2:-}"
-    [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "Usage: $0 --publish <version>   e.g. $0 --publish 0.3.1" >&2; exit 1; }
+    if [ -z "$VERSION" ]; then
+      # Auto-increment: next = last published + 1. Bootstrap at 3 so the first
+      # integer release is 4 (the 0.3.x line counted as builds 1–3); Sparkle's
+      # comparator still ranks 4 above the installed 0.3.2.
+      last=$(cat "$BUILD_FILE" 2>/dev/null || echo 3)
+      [[ "$last" =~ ^[0-9]+$ ]] || { echo "✗ $BUILD_FILE is not an integer: '$last'" >&2; exit 1; }
+      VERSION=$((last + 1))
+    fi
+    [[ "$VERSION" =~ ^[0-9]+$ ]] || { echo "Usage: $0 --publish [build]   build is a positive integer, e.g. $0 --publish 7 (omit to auto-increment)" >&2; exit 1; }
+    # Guard against a regression that would make Sparkle never offer the update.
+    if [ -f "$BUILD_FILE" ]; then
+      prev=$(cat "$BUILD_FILE")
+      [ "$VERSION" -gt "$prev" ] || { echo "✗ Build $VERSION is not greater than the last published build $prev" >&2; exit 1; }
+    fi
+    echo "==> Publishing build $VERSION"
     ;;
   "") ;;
   *) echo "Unknown argument: $1" >&2; exit 1 ;;
@@ -157,6 +179,10 @@ if [ "$PUBLISH" = 1 ]; then
     --content-type application/zip \
     --content-disposition 'attachment; filename="Wortel.zip"' \
     --cache-control 'public, max-age=300' --remote
+
+  # Record the build only after every upload succeeded, so a failed run doesn't
+  # burn a number. Commit this file alongside appcast.xml.
+  echo "$VERSION" > "$BUILD_FILE"
 
   echo "==> Published $VERSION"
   echo "    Appcast:         $FEED_BASE/appcast.xml"

@@ -3,3 +3,9 @@ xcuserdata/
 *.xcodeproj
 DerivedData/
 build/
+.wrangler/
+
+# Sparkle release archives — large binaries; R2 (wortel-updates) is the
+# canonical store. releases/appcast.xml stays tracked as a record of the feed.
+releases/*.zip
+releases/*.delta

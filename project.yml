@@ -9,12 +9,21 @@ packages:
   GhosttyKit:
     url: https://github.com/Lakr233/libghostty-spm
     exactVersion: 1.2.9
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.9.0"
 
 settings:
   base:
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: targeted
     MACOSX_DEPLOYMENT_TARGET: "14.0"
+    # Version is stamped by scripts/release.sh (it passes MARKETING_VERSION /
+    # CURRENT_PROJECT_VERSION), and the Info.plist keys below reference these so
+    # Sparkle's update comparison (which keys off CFBundleVersion) increments
+    # every release. Bump just these two — kept equal, like Wakker/Opslan.
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "0.3.0"
     # Debug builds sign ad-hoc (fast, no identity needed). Release signing is
     # done by scripts/release.sh (Developer ID + optional notarization) so that
     # dev builds stay frictionless. DEVELOPMENT_TEAM is set for completeness.
@@ -50,14 +59,20 @@ targets:
     dependencies:
       - package: GhosttyKit
         product: GhosttyKit
+      - package: Sparkle
     info:
       path: Wortel/Info.plist
       properties:
         CFBundleDisplayName: Wortel
-        CFBundleShortVersionString: "0.3.0"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
         NSPrincipalClass: NSApplication
         NSHumanReadableCopyright: "© Giel Cobben"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSSupportsSuddenTermination: false
+        # Sparkle auto-update feed (served from the wortel-updates R2 bucket).
+        SUFeedURL: https://updates.wortel.sh/appcast.xml
+        # EdDSA public key — private half lives in the login Keychain (shared
+        # publisher key, same as Wakker/Opslan).
+        SUPublicEDKey: +IarWSgiwu1pxk25kk/8Rcl9Mf/AXwH/Z2qFoOYXEGI=

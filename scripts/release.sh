@@ -4,8 +4,13 @@
 # registration, and Gatekeeper behave (an ad-hoc Debug build in DerivedData
 # does not register with the notification daemon).
 #
-#   ./scripts/release.sh              signed Release -> /Applications -> launch
-#   ./scripts/release.sh --notarize   + hardened runtime, notarize, staple, .dmg
+#   ./scripts/release.sh                signed Release -> /Applications -> launch
+#   ./scripts/release.sh --notarize     + hardened runtime, notarize, staple, .dmg
+#   ./scripts/release.sh --publish X.Y.Z  full release: stamp version X.Y.Z,
+#                                         notarize, EdDSA-sign a zip, regenerate
+#                                         the appcast, and upload to the
+#                                         wortel-updates R2 bucket (Sparkle feed).
+#                                         Implies --notarize.
 #
 # The signing identity is auto-detected (Developer ID Application, else Apple
 # Development). Override with WORTEL_SIGN_IDENTITY. Notarization uses a stored
@@ -16,8 +21,26 @@ cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 mkdir -p build
 
+# --- Sparkle / distribution config ------------------------------------------
+BUCKET="wortel-updates"                 # R2 bucket served at updates.wortel.sh
+FEED_BASE="https://updates.wortel.sh"
+RELEASES_DIR="$ROOT/releases"           # canonical archive store; appcast regenerated from it
+
+# --- Args -------------------------------------------------------------------
 NOTARIZE=0
-[ "${1:-}" = "--notarize" ] && NOTARIZE=1
+PUBLISH=0
+VERSION=""
+case "${1:-}" in
+  --notarize) NOTARIZE=1 ;;
+  --publish)
+    PUBLISH=1
+    NOTARIZE=1                          # publishing a non-notarized zip fails Gatekeeper on other Macs
+    VERSION="${2:-}"
+    [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "Usage: $0 --publish <version>   e.g. $0 --publish 0.3.1" >&2; exit 1; }
+    ;;
+  "") ;;
+  *) echo "Unknown argument: $1" >&2; exit 1 ;;
+esac
 
 # --- Signing identity -------------------------------------------------------
 IDENTITY="${WORTEL_SIGN_IDENTITY:-}"
@@ -35,10 +58,18 @@ echo "==> Signing identity: $IDENTITY"
 # --- Build ------------------------------------------------------------------
 echo "==> Regenerating project + building Release"
 command -v xcodegen >/dev/null && xcodegen generate
+# When publishing, stamp both version fields from the argument so Sparkle (which
+# compares CFBundleVersion) sees each release as newer. Otherwise use the
+# versions baked into project.yml.
+VERSION_ARGS=()
+if [ "$PUBLISH" = 1 ]; then
+  VERSION_ARGS=(MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION")
+fi
 # Build a universal binary so it runs on both Apple Silicon and Intel Macs.
 # (A single-arch build shows "app is damaged" on the other architecture.)
 if ! xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Release \
       ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+      ${VERSION_ARGS[@]+"${VERSION_ARGS[@]}"} \
       clean build > build/xcodebuild.log 2>&1; then
   echo "Build failed — last lines:" >&2
   tail -30 build/xcodebuild.log >&2
@@ -82,6 +113,54 @@ if [ "$NOTARIZE" = 1 ]; then
   xcrun stapler validate build/Wortel.dmg
   spctl -a -vv -t open --context context:primary-signature build/Wortel.dmg
   echo "==> Notarized + stapled. Distributable: build/Wortel.dmg"
+fi
+
+# --- Publish to the Sparkle feed (optional) ---------------------------------
+# Runs only for --publish. The app is already notarized + stapled above, so we
+# just zip it, EdDSA-sign every archive into the appcast, and push to R2.
+if [ "$PUBLISH" = 1 ]; then
+  # Confirm the build actually picked up the version we stamped.
+  BUILT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+  [ "$BUILT" = "$VERSION" ] || { echo "✗ Built version ($BUILT) ≠ requested ($VERSION)" >&2; exit 1; }
+
+  # Sparkle's CLI tools ship inside the resolved SPM artifact bundle.
+  SPARKLE_BIN="$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path '*artifacts/sparkle/Sparkle/bin' 2>/dev/null | head -1)"
+  [ -n "$SPARKLE_BIN" ] || { echo "✗ Sparkle tools not found. Open Wortel.xcodeproj in Xcode once to resolve packages." >&2; exit 1; }
+
+  mkdir -p "$RELEASES_DIR"
+  ZIP="$RELEASES_DIR/Wortel-${VERSION}.zip"
+
+  # --norsrc keeps AppleDouble (._*) xattr entries out of the zip; without it
+  # Gatekeeper rejects the extracted app ("unsealed contents present…").
+  echo "==> Packaging $ZIP"
+  rm -f "$ZIP"
+  ditto -c -k --norsrc --keepParent "$APP" "$ZIP"
+
+  # Regenerate the appcast — EdDSA-signs every archive in RELEASES_DIR using the
+  # shared publisher private key in the login Keychain.
+  echo "==> Generating appcast"
+  "$SPARKLE_BIN/generate_appcast" --download-url-prefix "$FEED_BASE/" "$RELEASES_DIR"
+
+  # Upload to R2. --remote is REQUIRED — without it wrangler writes to the local
+  # simulator and the custom domain serves nothing (silent 404).
+  echo "==> Uploading to R2 ($BUCKET)"
+  npx wrangler r2 object put "$BUCKET/Wortel-${VERSION}.zip" --file "$ZIP" --content-type application/zip --remote
+  for delta in "$RELEASES_DIR"/*.delta; do
+    [ -e "$delta" ] || continue
+    npx wrangler r2 object put "$BUCKET/$(basename "$delta")" --file "$delta" --content-type application/octet-stream --remote
+  done
+  npx wrangler r2 object put "$BUCKET/appcast.xml" --file "$RELEASES_DIR/appcast.xml" --content-type application/xml --remote
+
+  # Stable "latest" download for the website: same bytes as the versioned zip,
+  # overwritten every release, short TTL, saved by browsers as Wortel.zip.
+  npx wrangler r2 object put "$BUCKET/Wortel-latest.zip" --file "$ZIP" \
+    --content-type application/zip \
+    --content-disposition 'attachment; filename="Wortel.zip"' \
+    --cache-control 'public, max-age=300' --remote
+
+  echo "==> Published $VERSION"
+  echo "    Appcast:         $FEED_BASE/appcast.xml"
+  echo "    Latest download: $FEED_BASE/Wortel-latest.zip"
 fi
 
 # --- Install + launch -------------------------------------------------------

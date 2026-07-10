@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.3.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
@@ -30,5 +30,9 @@
 	<string>NSApplication</string>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>SUFeedURL</key>
+	<string>https://updates.wortel.sh/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>+IarWSgiwu1pxk25kk/8Rcl9Mf/AXwH/Z2qFoOYXEGI=</string>
 </dict>
 </plist>

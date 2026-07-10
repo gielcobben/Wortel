@@ -1,0 +1,14 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Wortel</title>
+        <item>
+            <title>0.3.1</title>
+            <pubDate>Fri, 10 Jul 2026 10:45:45 -0400</pubDate>
+            <sparkle:version>0.3.1</sparkle:version>
+            <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://updates.wortel.sh/Wortel-0.3.1.zip" length="9799757" type="application/octet-stream" sparkle:edSignature="9K7U6dmP+KNnuBMUu5ncHR+PaUf+X8uKEEi5v0ZcH3zIvKwnRJ3Iu+cAby2SBa4WQ3Snw967EkdMBo56aDKiDQ=="/>
+        </item>
+    </channel>
+</rss>

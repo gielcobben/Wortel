@@ -10,6 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private(set) var runtime: GhosttyRuntime!
     private var manager: SessionManager!
     private var window: NSWindow!
+    /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
+    /// background update checks start at launch; the "Check for Updates…" menu
+    /// item drives manual checks through it.
+    private let updater = Updater()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Menu must exist before launch so key equivalents resolve immediately.
@@ -176,5 +180,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func selectSessionAtIndex(_ sender: Any?) {
         guard let item = sender as? NSMenuItem else { return }
         manager.select(index: item.tag)
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        updater.checkForUpdates()
+    }
+
+    /// Grey out "Check for Updates…" while a check is already in flight (Sparkle
+    /// drops `canCheckForUpdates` to false for the duration).
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdates(_:)) {
+            return updater.canCheckForUpdates
+        }
+        return true
     }
 }

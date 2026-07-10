@@ -3,6 +3,18 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.28.1</title>
+            <pubDate>Fri, 10 Jul 2026 15:34:06 -0400</pubDate>
+            <sparkle:version>2026.28.1</sparkle:version>
+            <sparkle:shortVersionString>2026.28.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.28.1.zip" length="9812672" type="application/octet-stream" sparkle:edSignature="N5LptdpLUQehEZBiqLMIKg53mepR2rFaN4JgagUVlUk4gFS/lqvwak3qWUAQYSR3gw6nolq4Rdo6kZaLdDzkDA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://updates.wortel.sh/Wortel2026.28.1-0.3.2.delta" sparkle:deltaFrom="0.3.2" length="210010" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="KetqvwwwE6AeuhmeB4IwNBwbdfWUUf9VSEBM7evIxd4TPYNmi4htHdfSZjuvcde7GjnZvBec3pljq64LP9I/Bw=="/>
+                <enclosure url="https://updates.wortel.sh/Wortel2026.28.1-0.3.1.delta" sparkle:deltaFrom="0.3.1" length="333054" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="SmabKEKwYiriEdzXJvKn6lh/sHUvBYSyK4P3dhbFI19h4GqjyNwcc9kSxtQwLXL88UuRxK5Wc6rFEZiHoM10Dg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.3.2</title>
             <pubDate>Fri, 10 Jul 2026 14:23:52 -0400</pubDate>
             <sparkle:version>0.3.2</sparkle:version>

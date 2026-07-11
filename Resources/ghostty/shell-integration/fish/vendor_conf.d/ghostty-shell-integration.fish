@@ -213,12 +213,87 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
         echo -en $__ghostty_prompt_start_mark
     end
 
+    # Wortel: true if the command line launches a long-lived interactive program
+    # (agent CLI, editor, pager, REPL, system monitor, TUI) that sits at its own
+    # prompt instead of returning to the shell. For those the synthetic busy
+    # spinner (OSC 9;4;3 below) would never clear until you quit — no OSC 133;D
+    # fires — so we skip it. Builds and tests still spin.
+    function __ghostty_wortel_interactive
+        set --local words (string split --no-empty ' ' -- $argv[1])
+        set --local n (count $words)
+        set --local i 1
+        set --local cmd ''
+        # Skip leading env assignments (FOO=bar) and command wrappers.
+        while test $i -le $n
+            set --local w $words[$i]
+            switch $w
+                case '*=*'
+                    set i (math $i + 1)
+                case sudo doas command builtin exec nohup nice stdbuf setsid env
+                    set i (math $i + 1)
+                case '-*'
+                    set i (math $i + 1)
+                case '*'
+                    set cmd $w
+                    break
+            end
+        end
+        test -z "$cmd"; and return 1
+        set cmd (string replace --regex '^.*/' '' -- $cmd)
+        switch $cmd
+            case claude pi aider codex cursor-agent gemini opencode goose cline ollama llm crush amp
+                return 0
+            case vi vim nvim vis nano emacs emacsclient helix hx kak micro ne joe
+                return 0
+            case less more most moar man bat w3m lynx
+                return 0
+            case top htop btop btm glances gtop nvtop s-tui
+                return 0
+            case ssh mosh telnet tmux screen zellij dtach abduco
+                return 0
+            case watch journalctl dmesg
+                return 0
+            case fzf sk gitui lazygit lazydocker k9s tig ranger nnn yazi lf vifm mc broot xplr
+                return 0
+            case gdb lldb pdb
+                return 0
+            case psql mysql mariadb sqlite3 litecli pgcli mycli redis-cli mongosh mongo usql duckdb clickhouse-client cqlsh
+                return 0
+            case python python2 python3 ipython bpython ptpython node nodejs bun deno irb pry php lua luajit julia R ghci iex erl scala clj clojure
+                # Dual-use: a bare REPL is interactive, but `python script.py`,
+                # `python -m mod` and `-c ...` are batch jobs that keep the
+                # spinner. Interactive only with no such argument.
+                set --local j (math $i + 1)
+                while test $j -le $n
+                    set --local a $words[$j]
+                    switch $a
+                        case -i -q -u -B -E -O -OO -s -S -I --
+                            set j (math $j + 1)
+                        case -c -m
+                            return 1
+                        case '*<*' '*>*' '*|*' '*&*' '*;*'
+                            return 0
+                        case '-*'
+                            set j (math $j + 1)
+                        case '*'
+                            return 1
+                    end
+                end
+                return 0
+        end
+        return 1
+    end
+
     function __ghostty_mark_output_start --on-event fish_preexec
         set --global __ghostty_prompt_state pre-exec
         echo -en "\e]133;C\a"
-        # Vellum: mark the session busy for the sidebar indicator (ConEmu OSC
-        # 9;4;3, "indeterminate progress"). Clears at the next prompt (133;D).
-        echo -en "\e]9;4;3;\a"
+        # Wortel: mark the session busy for the sidebar spinner (ConEmu OSC
+        # 9;4;3, "indeterminate progress"). Clears at the next prompt (133;D) —
+        # but long-lived interactive programs never return to the prompt, so
+        # skip it for those (see __ghostty_wortel_interactive).
+        if not __ghostty_wortel_interactive $argv[1]
+            echo -en "\e]9;4;3;\a"
+        end
     end
 
     function __ghostty_mark_output_end --on-event fish_postexec

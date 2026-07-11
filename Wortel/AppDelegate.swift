@@ -57,6 +57,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.onNeedsAttention = { [weak self] session, title, body in
             self?.postAttentionNotification(session, title: title, body: body)
         }
+        manager.onAttentionCleared = { session in
+            // The user answered (or the session closed) — pull the banner out
+            // of Notification Center instead of leaving it stale.
+            let center = UNUserNotificationCenter.current()
+            let id = session.id.uuidString
+            center.removeDeliveredNotifications(withIdentifiers: [id])
+            center.removePendingNotificationRequests(withIdentifiers: [id])
+        }
+
+        // Occlusion drives "can the user actually see the window": an active
+        // app with a miniaturized or fully covered window should still get
+        // attention signals for its selected session.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowOcclusionChanged(_:)),
+            name: NSWindow.didChangeOcclusionStateNotification, object: window)
 
         // Native "a session needs you" notifications. The signal is
         // program-authored (e.g. Claude Code emits OSC 777 on a permission/idle
@@ -81,6 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidResignActive(_ notification: Notification) {
         manager?.appDidResignActive()
+    }
+
+    @objc private func windowOcclusionChanged(_ notification: Notification) {
+        guard let window else { return }
+        manager?.windowVisibilityChanged(window.occlusionState.contains(.visible))
     }
 
     // MARK: - Attention notifications

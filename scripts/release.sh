@@ -6,11 +6,21 @@
 #
 #   ./scripts/release.sh                signed Release -> /Applications -> launch
 #   ./scripts/release.sh --notarize     + hardened runtime, notarize, staple, .dmg
-#   ./scripts/release.sh --publish X.Y.Z  full release: stamp version X.Y.Z,
+#   ./scripts/release.sh --publish      full release: derive a CalVer version,
 #                                         notarize, EdDSA-sign a zip, regenerate
 #                                         the appcast, and upload to the
 #                                         wortel-updates R2 bucket (Sparkle feed).
 #                                         Implies --notarize.
+#   ./scripts/release.sh --publish 2026.30.1   force a specific version
+#
+# Versioning is CalVer (Framer-style): <ISO-week-year>.<ISO-week>.<Nth release
+# that week>, e.g. 2026.28.3 — auto-derived from the date, so there's no version
+# to pick per release. Sparkle's update check compares CFBundleVersion, which we
+# stamp = this string (verified against its comparator: numeric components, week
+# and year rollovers, and the 0.3.x -> 2026.x transition all rank forward, so the
+# sequence never regresses). CFBundleShortVersionString is stamped to the same
+# value, so the update dialog reads "2026.28.3 is available — you have 2026.27.1".
+# releases/BUILD records the last published version.
 #
 # The signing identity is auto-detected (Developer ID Application, else Apple
 # Development). Override with WORTEL_SIGN_IDENTITY. Notarization uses a stored
@@ -30,13 +40,36 @@ RELEASES_DIR="$ROOT/releases"           # canonical archive store; appcast regen
 NOTARIZE=0
 PUBLISH=0
 VERSION=""
+BUILD_FILE="$RELEASES_DIR/BUILD"        # tracked record: last published version string
 case "${1:-}" in
   --notarize) NOTARIZE=1 ;;
   --publish)
     PUBLISH=1
     NOTARIZE=1                          # publishing a non-notarized zip fails Gatekeeper on other Macs
     VERSION="${2:-}"
-    [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "Usage: $0 --publish <version>   e.g. $0 --publish 0.3.1" >&2; exit 1; }
+    last=$(cat "$BUILD_FILE" 2>/dev/null || echo "")
+    if [ -z "$VERSION" ]; then
+      # CalVer, auto-derived (Framer-style): <ISO-week-year>.<ISO-week>.<Nth
+      # release that week>. %G/%V are the ISO week-numbering year and week, so
+      # the triple only ever moves forward — Sparkle's comparator ranks it
+      # numerically (verified: 09<10, week and year rollovers, 0.3.x < 2026.x).
+      YEAR=$(date +%G); WEEK=$((10#$(date +%V)))
+      if [[ "$last" == "$YEAR.$WEEK."* ]]; then
+        VERSION="$YEAR.$WEEK.$(( ${last##*.} + 1 ))"   # another release this week
+      else
+        VERSION="$YEAR.$WEEK.1"                        # first release this week
+      fi
+    fi
+    # Explicit override must be dot-separated integers (still CalVer-shaped).
+    [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]] || { echo "Usage: $0 --publish [version]   version is dot-separated integers, e.g. $0 --publish 2026.30.1 (omit to auto-derive)" >&2; exit 1; }
+    # Guard against a version that isn't strictly newer than the last published
+    # one — that would make Sparkle silently never offer the update. sort -V
+    # orders dotted-numeric versions the same way Sparkle's comparator does.
+    if [ -n "$last" ]; then
+      newest=$(printf '%s\n%s\n' "$last" "$VERSION" | sort -V | tail -1)
+      { [ "$VERSION" != "$last" ] && [ "$newest" = "$VERSION" ]; } || { echo "✗ Version $VERSION is not newer than the last published $last" >&2; exit 1; }
+    fi
+    echo "==> Publishing $VERSION"
     ;;
   "") ;;
   *) echo "Unknown argument: $1" >&2; exit 1 ;;
@@ -157,6 +190,10 @@ if [ "$PUBLISH" = 1 ]; then
     --content-type application/zip \
     --content-disposition 'attachment; filename="Wortel.zip"' \
     --cache-control 'public, max-age=300' --remote
+
+  # Record the version only after every upload succeeded, so a failed run
+  # doesn't advance the record. Commit this file alongside appcast.xml.
+  echo "$VERSION" > "$BUILD_FILE"
 
   echo "==> Published $VERSION"
   echo "    Appcast:         $FEED_BASE/appcast.xml"

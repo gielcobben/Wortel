@@ -11,11 +11,14 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            // List(selection:) drives selection and gives the native sidebar
-            // highlight plus native drag-to-reorder (the insertion-line drag
-            // that fires `.onMove`) for free. The highlight greys out when the
-            // sidebar isn't the focused column (the terminal usually holds
-            // focus) — that's standard macOS source-list behavior.
+            // Native list: List(selection:) gives click-select, keyboard nav,
+            // drag-reorder (.onMove), a11y, and the system owns all row spacing.
+            // The one override: the native highlight greys out when the sidebar
+            // isn't the focused column (the terminal always is). We don't want
+            // that here — the selection marks "the session you're viewing," not
+            // "where the keyboard is" — so SidebarSelectionStyler turns the
+            // system highlight off and we draw an always-accent pill behind the
+            // row instead. Spacing stays fully native.
             List(selection: $manager.selectedID) {
                 ForEach(manager.sessions) { session in
                     SessionRow(
@@ -27,6 +30,7 @@ struct ContentView: View {
                             manager.editingID = nil
                         },
                         cancel: { manager.editingID = nil })
+                    .listRowBackground(selectionPill(for: session))
                     .contextMenu {
                         Button("Rename") { manager.editingID = session.id }
                         Button("Close Session") { manager.requestClose(session) }
@@ -34,6 +38,7 @@ struct ContentView: View {
                 }
                 .onMove { manager.move(fromOffsets: $0, toOffset: $1) }
             }
+            .background(SidebarSelectionStyler())
             .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 320)
             .safeAreaInset(edge: .bottom) {
                 HStack {
@@ -57,10 +62,63 @@ struct ContentView: View {
                 .navigationSubtitle(manager.selected?.abbreviatedPath ?? "")
         }
     }
+
+    /// Always-accent selection fill, matched to the native selection pill:
+    /// inset 10pt from the row edges (the native highlight is turned off by
+    /// SidebarSelectionStyler). Suppressed while renaming so the inline edit
+    /// field sits on a normal background.
+    @ViewBuilder
+    private func selectionPill(for session: Session) -> some View {
+        if manager.selectedID == session.id, manager.editingID != session.id {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.accentColor)
+                .padding(.horizontal, 10)
+        } else {
+            Color.clear
+        }
+    }
 }
 
-/// One sidebar row: terminal icon, session name (double-click to rename), and
-/// the path below it.
+/// Turns off the AppKit selection highlight on the List backing the sidebar so
+/// our always-accent pill is the only selection visual, while List keeps native
+/// click-select, keyboard nav, drag-reorder, and accessibility (selection state
+/// still updates; only the system highlight is suppressed). If SwiftUI's view
+/// tree ever changes shape this finds nothing and the native highlight returns —
+/// no crash.
+private struct SidebarSelectionStyler: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        disableHighlight(from: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        disableHighlight(from: nsView) // re-apply; SwiftUI can reset it
+    }
+
+    private func disableHighlight(from view: NSView) {
+        DispatchQueue.main.async {
+            guard let root = view.window?.contentView else { return }
+            for table in root.tableViews() where table.selectionHighlightStyle != .none {
+                table.selectionHighlightStyle = .none
+            }
+        }
+    }
+}
+
+private extension NSView {
+    /// Every NSTableView (incl. NSOutlineView) in this view's subtree.
+    func tableViews() -> [NSTableView] {
+        var found: [NSTableView] = []
+        for sub in subviews {
+            if let table = sub as? NSTableView { found.append(table) }
+            found.append(contentsOf: sub.tableViews())
+        }
+        return found
+    }
+}
+
+/// One sidebar row: session name with the path below it.
 private struct SessionRow: View {
     let session: Session
     let isSelected: Bool
@@ -71,17 +129,16 @@ private struct SessionRow: View {
     @State private var draft = ""
     @FocusState private var fieldFocused: Bool
 
-    // The native selection background is grey (the sidebar never holds keyboard
-    // focus — the terminal does). Like Finder's sidebar, the selected row's name
-    // and icon take the accent color so the selection still reads clearly. Not
-    // while editing: the rename field wants normal editable text.
-    private var accentIfSelected: Bool { isSelected && !isEditing }
+    // The selected row sits on an always-accent pill, so its content is white.
+    // Not while editing: the rename field sits on a normal background.
+    private var onAccent: Bool { isSelected && !isEditing }
+    private var subtleColor: Color { onAccent ? .white.opacity(0.85) : .secondary }
 
     var body: some View {
+        // Content padded inside an inset accent pill (~6pt from the cell edges,
+        // so it's not edge-to-edge). The indicator is centered against the whole
+        // row, not pinned to the title line.
         HStack(spacing: 8) {
-            Image(systemName: "terminal")
-                .foregroundStyle(accentIfSelected ? Color.accentColor : .secondary)
-                .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
                     TextField("Name", text: $draft)
@@ -99,12 +156,12 @@ private struct SessionRow: View {
                         }
                 } else {
                     Text(session.name)
-                        .foregroundStyle(accentIfSelected ? Color.accentColor : .primary)
+                        .foregroundStyle(onAccent ? .white : .primary)
                 }
                 if !session.abbreviatedPath.isEmpty {
                     Text(session.abbreviatedPath)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(subtleColor)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -112,7 +169,7 @@ private struct SessionRow: View {
             Spacer(minLength: 4)
             activityIndicator
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 6)
     }
 
     /// Trailing status glyph. Attention (bell / notification / long command
@@ -122,7 +179,7 @@ private struct SessionRow: View {
     private var activityIndicator: some View {
         if session.needsAttention {
             Circle()
-                .fill(Color.orange)
+                .fill(onAccent ? Color.white : Color.orange)
                 .frame(width: 7, height: 7)
         } else if session.isBusy {
             ProgressView()
@@ -130,7 +187,7 @@ private struct SessionRow: View {
                 .controlSize(.small)
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
-                .tint(isSelected ? Color.accentColor : .secondary)
+                .tint(onAccent ? .white : .secondary)
         }
     }
 }

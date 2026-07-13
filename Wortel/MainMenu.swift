@@ -74,6 +74,10 @@ enum MainMenu {
         viewMenu.addItem(.separator())
         let toggleSidebar = viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
         toggleSidebar.keyEquivalentModifierMask = [.command, .option]
+        // ⌘⌥G, not ⌘G: ⌘⌥S is already Toggle Sidebar above, and ⌘G is free of a
+        // wortel.conf keybind. Routes through the responder chain to AppDelegate.
+        let sourceControl = viewMenu.addItem(withTitle: "Show Source Control", action: #selector(AppDelegate.toggleSourceControl(_:)), keyEquivalent: "g")
+        sourceControl.keyEquivalentModifierMask = [.command, .option]
 
         // Window menu
         let windowItem = NSMenuItem()

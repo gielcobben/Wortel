@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private(set) var runtime: GhosttyRuntime!
     private var manager: SessionManager!
     private var window: NSWindow!
+    /// Drives the trailing source-control panel (hidden by default).
+    private let gitPanel = GitPanelModel()
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
     /// background update checks start at launch; the "Check for Updates…" menu
     /// item drives manual checks through it.
@@ -42,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // terminal and sidebar run edge-to-edge with no border bottom.
         window.titlebarSeparatorStyle = .none
         window.contentViewController = NSHostingController(
-            rootView: ContentView(runtime: runtime, manager: manager))
+            rootView: ContentView(runtime: runtime, manager: manager, git: gitPanel))
         window.setFrameAutosaveName("main")
         if window.frame.height < 320 {
             window.setContentSize(NSSize(width: 1100, height: 700))
@@ -56,6 +58,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         manager.onNeedsAttention = { [weak self] session, title, body in
             self?.postAttentionNotification(session, title: title, body: body)
+        }
+        // A command finished in the selected session → refresh the git panel
+        // (it debounces and no-ops while hidden).
+        manager.onCommandFinished = { [weak self] session in
+            guard let self, session.id == self.manager.selectedID else { return }
+            self.gitPanel.refreshCurrent()
         }
         manager.onAttentionCleared = { session in
             // The user answered (or the session closed) — pull the banner out
@@ -83,6 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
         manager.restore()
+        // Seed the panel with the selected session's cwd so the first toggle
+        // resolves the right repo (no git work runs while it's hidden).
+        gitPanel.focus(cwd: manager.selected?.cwd)
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -200,6 +211,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func selectSessionAtIndex(_ sender: Any?) {
         guard let item = sender as? NSMenuItem else { return }
         manager.select(index: item.tag)
+    }
+
+    @objc func toggleSourceControl(_ sender: Any?) {
+        gitPanel.toggle()
     }
 
     @objc func checkForUpdates(_ sender: Any?) {

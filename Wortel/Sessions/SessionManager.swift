@@ -48,6 +48,10 @@ final class SessionManager {
     /// Notification Center so stale "needs you" banners don't linger.
     @ObservationIgnored var onAttentionCleared: ((Session) -> Void)?
 
+    /// A foreground command finished in a session — its work tree may have
+    /// changed. The app layer uses this to refresh the source-control panel.
+    @ObservationIgnored var onCommandFinished: ((Session) -> Void)?
+
     /// Whether Wortel is the frontmost app. A session the user is *actively
     /// viewing* (app active + window visible + selected) never raises
     /// attention — they can see it. Set by the app layer on activate/resign.
@@ -451,6 +455,9 @@ final class SessionManager {
                 // that a 9;4;0 just scheduled. A duplicate raise is harmless —
                 // notifications are keyed per session and replace.
                 self.clearBusy(session)
+                // A command likely touched files — nudge the git panel to
+                // re-read status/diff (it debounces and no-ops when hidden).
+                self.onCommandFinished?(session)
                 // A long command that finished while you were elsewhere wants
                 // your eyes (e.g. an agent that ran for a while and is done).
                 if durationNs >= Self.attentionAfterNs {

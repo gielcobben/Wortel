@@ -8,6 +8,7 @@ import SwiftUI
 struct ContentView: View {
     let runtime: GhosttyRuntime
     @Bindable var manager: SessionManager
+    @Bindable var git: GitPanelModel
 
     var body: some View {
         NavigationSplitView {
@@ -31,14 +32,13 @@ struct ContentView: View {
                         },
                         cancel: { manager.editingID = nil })
                     .listRowBackground(selectionPill(for: session))
-                    // Double-click a row to inline-rename it, same as ⌘R. Select
-                    // first (matching beginRenameSelected, which renames the
-                    // selected session), then start editing. count: 2 leaves the
-                    // List's single-click selection untouched.
-                    .onTapGesture(count: 2) {
-                        manager.selectedID = session.id
-                        manager.editingID = session.id
-                    }
+                    // NB: no SwiftUI double-tap gesture here. A `.onTapGesture(
+                    // count: 2)` on the row makes SwiftUI hold every single click
+                    // for the double-click interval before letting List's native
+                    // selection through, so clicking sessions feels laggy.
+                    // Double-click-to-rename is wired natively on the backing
+                    // NSTableView instead (SidebarSelectionStyler), which leaves
+                    // single-click selection fully native and instant.
                     .contextMenu {
                         Button("Rename") { manager.editingID = session.id }
                         Button("Close Session") { manager.requestClose(session) }
@@ -46,7 +46,12 @@ struct ContentView: View {
                 }
                 .onMove { manager.move(fromOffsets: $0, toOffset: $1) }
             }
-            .background(SidebarSelectionStyler())
+            .background(SidebarSelectionStyler(onRowDoubleClick: { row in
+                guard row >= 0, row < manager.sessions.count else { return }
+                let session = manager.sessions[row]
+                manager.selectedID = session.id
+                manager.editingID = session.id
+            }))
             .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 320)
             .safeAreaInset(edge: .bottom) {
                 HStack {
@@ -65,9 +70,7 @@ struct ContentView: View {
                 .padding(.vertical, 6)
             }
         } detail: {
-            TerminalContainer(runtime: runtime, session: manager.selected)
-                .navigationTitle(manager.selected?.name ?? "Wortel")
-                .navigationSubtitle(manager.selected?.abbreviatedPath ?? "")
+            DetailView(runtime: runtime, manager: manager, git: git)
         }
     }
 
@@ -87,29 +90,70 @@ struct ContentView: View {
     }
 }
 
-/// Turns off the AppKit selection highlight on the List backing the sidebar so
-/// our always-accent pill is the only selection visual, while List keeps native
-/// click-select, keyboard nav, drag-reorder, and accessibility (selection state
-/// still updates; only the system highlight is suppressed). If SwiftUI's view
-/// tree ever changes shape this finds nothing and the native highlight returns —
-/// no crash.
+/// Reaches into the NSTableView backing the sidebar List to do two things
+/// SwiftUI can't express cleanly:
+///
+///  1. Turn off the AppKit selection highlight, so our always-accent pill is the
+///     only selection visual (the native highlight greys out when the sidebar
+///     isn't the focused column — but the terminal always is).
+///  2. Wire double-click-to-rename on the table's native `doubleAction`, rather
+///     than a SwiftUI `.onTapGesture(count: 2)` on each row. The gesture form
+///     forces every single click to wait out the double-click interval before
+///     List's native selection registers, which makes switching sessions by
+///     click feel laggy; the native doubleAction leaves single-click selection
+///     untouched and instant.
+///
+/// List keeps native click-select, keyboard nav, drag-reorder, and a11y. If
+/// SwiftUI's view tree ever changes shape this finds nothing and both effects
+/// simply no-op — no crash.
 private struct SidebarSelectionStyler: NSViewRepresentable {
+    /// Called with the clicked row index on a native double-click.
+    let onRowDoubleClick: (Int) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onRowDoubleClick: onRowDoubleClick) }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
-        disableHighlight(from: view)
+        context.coordinator.apply(from: view)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        disableHighlight(from: nsView) // re-apply; SwiftUI can reset it
+        context.coordinator.onRowDoubleClick = onRowDoubleClick
+        context.coordinator.apply(from: nsView) // re-apply; SwiftUI can reset it
     }
 
-    private func disableHighlight(from view: NSView) {
-        DispatchQueue.main.async {
-            guard let root = view.window?.contentView else { return }
-            for table in root.tableViews() where table.selectionHighlightStyle != .none {
-                table.selectionHighlightStyle = .none
+    @MainActor
+    final class Coordinator: NSObject {
+        var onRowDoubleClick: (Int) -> Void
+
+        init(onRowDoubleClick: @escaping (Int) -> Void) {
+            self.onRowDoubleClick = onRowDoubleClick
+        }
+
+        func apply(from view: NSView) {
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let root = view?.window?.contentView else { return }
+                for table in root.tableViews() {
+                    // The git diff view is also an NSTableView living in this
+                    // same window — never treat it as the session list.
+                    if table.identifier == DiffView.tableIdentifier { continue }
+                    if table.selectionHighlightStyle != .none {
+                        table.selectionHighlightStyle = .none
+                    }
+                    // (Re-)assert our double-click handler; SwiftUI may reset it.
+                    if table.target !== self || table.doubleAction != #selector(self.handleDoubleClick(_:)) {
+                        table.target = self
+                        table.doubleAction = #selector(self.handleDoubleClick(_:))
+                    }
+                }
             }
+        }
+
+        @objc private func handleDoubleClick(_ sender: NSTableView) {
+            let row = sender.clickedRow
+            guard row >= 0 else { return }
+            onRowDoubleClick(row)
         }
     }
 }
@@ -208,6 +252,44 @@ private struct SessionRow: View {
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
                 .tint(onAccent ? .white : .secondary)
+        }
+    }
+}
+
+/// The detail column: the terminal, with the source-control panel split in on
+/// the trailing edge when shown. Extracted from ContentView's body so each
+/// view stays small enough for the SwiftUI type-checker.
+private struct DetailView: View {
+    let runtime: GhosttyRuntime
+    @Bindable var manager: SessionManager
+    @Bindable var git: GitPanelModel
+
+    var body: some View {
+        HSplitView {
+            TerminalContainer(runtime: runtime, session: manager.selected)
+                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+            if git.isVisible {
+                SourceControlPanel(panel: git)
+                    .frame(minWidth: 300, idealWidth: 360, maxWidth: 640, maxHeight: .infinity)
+            }
+        }
+        .navigationTitle(manager.selected?.name ?? "Wortel")
+        .navigationSubtitle(manager.selected?.abbreviatedPath ?? "")
+        .onChange(of: manager.selectedID) { _, _ in
+            git.focus(cwd: manager.selected?.cwd)
+        }
+        .onChange(of: manager.selected?.cwd) { _, cwd in
+            git.focus(cwd: cwd)
+        }
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    git.toggle()
+                } label: {
+                    Image(systemName: "arrow.triangle.branch")
+                }
+                .help("Source Control (⌘⌥G)")
+            }
         }
     }
 }

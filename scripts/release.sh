@@ -170,18 +170,19 @@ if [ "$PUBLISH" = 1 ]; then
   ditto -c -k --norsrc --keepParent "$APP" "$ZIP"
 
   # Regenerate the appcast — EdDSA-signs every archive in RELEASES_DIR using the
-  # shared publisher private key in the login Keychain.
+  # shared publisher private key in the login Keychain. --maximum-deltas 0
+  # disables Sparkle's binary delta patches entirely: every version ships as a
+  # single full zip and the appcast stays plain (one <item> per release, no
+  # <sparkle:deltas> blocks). Deltas produced an O(n²) pile of tiny patch files
+  # in the bucket for negligible benefit on a small app — we don't want them.
   echo "==> Generating appcast"
-  "$SPARKLE_BIN/generate_appcast" --download-url-prefix "$FEED_BASE/" "$RELEASES_DIR"
+  "$SPARKLE_BIN/generate_appcast" --maximum-deltas 0 --download-url-prefix "$FEED_BASE/" "$RELEASES_DIR"
 
   # Upload to R2. --remote is REQUIRED — without it wrangler writes to the local
-  # simulator and the custom domain serves nothing (silent 404).
+  # simulator and the custom domain serves nothing (silent 404). Only the full
+  # zip + appcast go up; there are no deltas to upload.
   echo "==> Uploading to R2 ($BUCKET)"
   npx wrangler r2 object put "$BUCKET/Wortel-${VERSION}.zip" --file "$ZIP" --content-type application/zip --remote
-  for delta in "$RELEASES_DIR"/*.delta; do
-    [ -e "$delta" ] || continue
-    npx wrangler r2 object put "$BUCKET/$(basename "$delta")" --file "$delta" --content-type application/octet-stream --remote
-  done
   npx wrangler r2 object put "$BUCKET/appcast.xml" --file "$RELEASES_DIR/appcast.xml" --content-type application/xml --remote
 
   # Stable "latest" download for the website: same bytes as the versioned zip,

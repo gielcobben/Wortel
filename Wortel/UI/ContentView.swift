@@ -31,6 +31,14 @@ struct ContentView: View {
                         },
                         cancel: { manager.editingID = nil })
                     .listRowBackground(selectionPill(for: session))
+                    // Double-click a row to inline-rename it, same as ⌘R. Select
+                    // first (matching beginRenameSelected, which renames the
+                    // selected session), then start editing. count: 2 leaves the
+                    // List's single-click selection untouched.
+                    .onTapGesture(count: 2) {
+                        manager.selectedID = session.id
+                        manager.editingID = session.id
+                    }
                     .contextMenu {
                         Button("Rename") { manager.editingID = session.id }
                         Button("Close Session") { manager.requestClose(session) }
@@ -127,6 +135,7 @@ private struct SessionRow: View {
     let cancel: () -> Void
 
     @State private var draft = ""
+    @State private var cancelling = false
     @FocusState private var fieldFocused: Bool
 
     // The selected row sits on an always-accent pill, so its content is white.
@@ -144,13 +153,24 @@ private struct SessionRow: View {
                     TextField("Name", text: $draft)
                         .textFieldStyle(.plain)
                         .focused($fieldFocused)
-                        .onSubmit { commit(draft) }
-                        .onExitCommand { cancel() }
+                        // Route *every* way of ending an edit — Return, Escape,
+                        // and clicking away — through one focus-resignation
+                        // path. If the field is torn out of the tree (editingID
+                        // = nil) while it's still first responder, AppKit's
+                        // field editor is left dangling and the sidebar stops
+                        // receiving clicks. Dropping focus first, then letting
+                        // onChange commit/cancel, avoids that.
+                        .onSubmit { fieldFocused = false }
+                        .onExitCommand {
+                            cancelling = true
+                            fieldFocused = false
+                        }
                         .onChange(of: fieldFocused) { _, focused in
-                            // Commit when focus leaves the field (click away).
-                            if !focused { commit(draft) }
+                            guard !focused else { return }
+                            if cancelling { cancel() } else { commit(draft) }
                         }
                         .task {
+                            cancelling = false
                             draft = session.name
                             fieldFocused = true
                         }

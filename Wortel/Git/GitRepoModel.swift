@@ -64,6 +64,26 @@ final class GitRepoModel {
 
     // MARK: - Selection
 
+    /// The changes in the order the panel lists them (staged section first,
+    /// then unstaged) — the order ↑/↓ navigation walks.
+    var orderedChanges: [GitFileChange] {
+        status.stagedChanges + status.unstagedChanges
+    }
+
+    /// Move the selection by `delta` rows within `orderedChanges` (clamped at the
+    /// ends). With nothing selected yet, selects the first change.
+    func selectAdjacent(_ delta: Int) {
+        let ordered = orderedChanges
+        guard !ordered.isEmpty else { return }
+        guard let id = selectedChangeID,
+              let index = ordered.firstIndex(where: { $0.id == id }) else {
+            select(ordered.first?.id)
+            return
+        }
+        let next = max(0, min(ordered.count - 1, index + delta))
+        if next != index { select(ordered[next].id) }
+    }
+
     func select(_ id: String?) {
         selectedChangeID = id
         guard let id, let change = status.changes.first(where: { $0.id == id }) else {

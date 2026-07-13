@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// Carries the changes list's intrinsic content height up so the panel can size
+/// it to fit until it hits the 50% cap.
+private struct ListContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// The trailing source-control panel: branch header, the staged/unstaged
 /// changes list, the diff of the selected file, and a commit box. Bound to
 /// `GitPanelModel`, which points it at the selected session's repo.
@@ -35,22 +44,37 @@ struct SourceControlPanel: View {
 
 private struct RepoView: View {
     @Bindable var repo: GitRepoModel
+    @FocusState private var listFocused: Bool
+    /// Measured intrinsic height of the changes list content, used to size the
+    /// list to fit until it would exceed half the panel.
+    @State private var listContentHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            // Files and diff share the panel 50/50 to start, and the divider is
-            // draggable from there.
-            VSplitView {
-                changesList
-                    .frame(minHeight: 100, maxHeight: .infinity)
-                diffPane
-                    .frame(minHeight: 100, maxHeight: .infinity)
+            // The changes list sizes to its content, but never grows past half
+            // the available height — so a couple of files leave the diff most of
+            // the room, while a long list caps at 50% and scrolls internally.
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    changesList
+                        .frame(height: listHeight(available: geo.size.height))
+                    Divider()
+                    diffPane
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
             Divider()
             commitBar
         }
+    }
+
+    private func listHeight(available: CGFloat) -> CGFloat {
+        let cap = available * 0.5
+        // Before the first measurement, fall back to the cap rather than
+        // collapsing to zero.
+        return listContentHeight > 0 ? min(listContentHeight, cap) : cap
     }
 
     // MARK: Header
@@ -92,32 +116,60 @@ private struct RepoView: View {
     // MARK: Changes list
 
     private var changesList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if repo.status.isClean {
-                    Text("No changes")
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 24)
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Regular VStack (not Lazy) so its background GeometryReader
+                // reports the *full* content height for the fit-to-content sizing
+                // — the changes list is short; the heavy view is the diff, which
+                // has its own virtualized NSTableView.
+                VStack(alignment: .leading, spacing: 0) {
+                    if repo.status.isClean {
+                        Text("No changes")
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 24)
+                    }
+                    changeSection(
+                        title: "Staged Changes",
+                        changes: repo.status.stagedChanges,
+                        actionIcon: "minus",
+                        sectionAction: repo.status.stagedChanges.isEmpty ? nil : { Task { await repo.unstageAll() } },
+                        sectionActionHelp: "Unstage All",
+                        rowAction: { change in Task { await repo.unstage(change) } })
+                    changeSection(
+                        title: "Changes",
+                        changes: repo.status.unstagedChanges,
+                        actionIcon: "plus",
+                        sectionAction: repo.status.unstagedChanges.isEmpty ? nil : { Task { await repo.stageAll() } },
+                        sectionActionHelp: "Stage All",
+                        rowAction: { change in Task { await repo.stage(change) } })
                 }
-                changeSection(
-                    title: "Staged Changes",
-                    changes: repo.status.stagedChanges,
-                    actionIcon: "minus",
-                    sectionAction: repo.status.stagedChanges.isEmpty ? nil : { Task { await repo.unstageAll() } },
-                    sectionActionHelp: "Unstage All",
-                    rowAction: { change in Task { await repo.unstage(change) } })
-                changeSection(
-                    title: "Changes",
-                    changes: repo.status.unstagedChanges,
-                    actionIcon: "plus",
-                    sectionAction: repo.status.unstagedChanges.isEmpty ? nil : { Task { await repo.stageAll() } },
-                    sectionActionHelp: "Stage All",
-                    rowAction: { change in Task { await repo.stage(change) } })
+                .padding(.vertical, 4)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: ListContentHeightKey.self, value: proxy.size.height)
+                })
             }
-            .padding(.vertical, 4)
+            // Keep the selected row visible as ↑/↓ (or a click) moves it.
+            .onChange(of: repo.selectedChangeID) { _, id in
+                guard let id else { return }
+                withAnimation(.easeOut(duration: 0.12)) {
+                    proxy.scrollTo(id, anchor: .center)
+                }
+            }
         }
+        .onPreferenceChange(ListContentHeightKey.self) { listContentHeight = $0 }
+        // Focus management: the list only claims the keyboard once you click a
+        // file (which sets listFocused), so the terminal keeps its arrow keys
+        // until then. While focused, ↑/↓ walk the changes and load each diff.
+        .focusable()
+        .focused($listFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.upArrow) { repo.selectAdjacent(-1); return .handled }
+        .onKeyPress(.downArrow) { repo.selectAdjacent(1); return .handled }
+        .overlay(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .strokeBorder(listFocused ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 2))
         .background(.clear)
     }
 
@@ -153,8 +205,14 @@ private struct RepoView: View {
                     change: change,
                     isSelected: repo.selectedChangeID == change.id,
                     actionIcon: actionIcon,
-                    select: { repo.select(change.id) },
+                    // Clicking a file both selects it and gives the list keyboard
+                    // focus, so ↑/↓ work immediately afterward.
+                    select: {
+                        repo.select(change.id)
+                        listFocused = true
+                    },
                     action: { rowAction(change) })
+                .id(change.id)
             }
         }
     }

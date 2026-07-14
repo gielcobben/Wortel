@@ -109,8 +109,16 @@ if ! xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Release 
   exit 1
 fi
 
-APP=$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 1 -name 'Wortel-*' | head -1)/Build/Products/Release/Wortel.app
-[ -d "$APP" ] || { echo "Release .app not found (see build/xcodebuild.log)" >&2; exit 1; }
+# There can be several Wortel-* DerivedData folders (a git worktree gets its
+# own), and only one holds this build's Release product — so pick the newest
+# Release .app that actually exists, not just the first directory found.
+APP=""
+while IFS= read -r dir; do
+  cand="$dir/Build/Products/Release/Wortel.app"
+  [ -d "$cand" ] || continue
+  if [ -z "$APP" ] || [ "$cand" -nt "$APP" ]; then APP="$cand"; fi
+done < <(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 1 -name 'Wortel-*')
+[ -n "$APP" ] || { echo "Release .app not found (see build/xcodebuild.log)" >&2; exit 1; }
 echo "==> Built $APP"
 
 # --- Sign -------------------------------------------------------------------

@@ -181,6 +181,7 @@ private struct SessionRow: View {
     @State private var draft = ""
     @State private var cancelling = false
     @FocusState private var fieldFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // The selected row sits on an always-accent pill, so its content is white.
     // Not while editing: the rename field sits on a normal background.
@@ -236,15 +237,22 @@ private struct SessionRow: View {
         .padding(.vertical, 6)
     }
 
-    /// Trailing status glyph. Attention (bell / notification / long command
+    /// Trailing status glyph. Attention (blocked on you / failed / long command
     /// done while unselected) wins over busy — once you select the session the
     /// attention clears and the spinner shows if a command is still running.
+    /// The dot's colour encodes *why*: amber = waiting on you, red = failed,
+    /// mint = an agent finished its turn, blue = a plain command finished. On
+    /// the accent selection pill everything goes white for contrast (but a
+    /// selected row has already cleared its attention). A non-selected session
+    /// you haven't caught up with shows a quiet hollow ring instead.
     @ViewBuilder
     private var activityIndicator: some View {
-        if session.needsAttention {
-            Circle()
-                .fill(onAccent ? Color.white : Color.orange)
-                .frame(width: 7, height: 7)
+        if let kind = session.attention {
+            // Urgent states (waiting on you / failed) breathe to catch the eye
+            // in peripheral vision; a clean finish sits still.
+            AttentionDot(
+                color: onAccent ? .white : Self.attentionColor(kind),
+                pulses: kind.pulses && !reduceMotion)
         } else if session.isBusy {
             ProgressView()
                 .progressViewStyle(.circular)
@@ -252,6 +260,93 @@ private struct SessionRow: View {
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
                 .tint(onAccent ? .white : .secondary)
+        } else if let kind = session.unread, !isSelected {
+            // Quiet "you haven't caught up here" trail: a hollow ring in the
+            // kind's colour, no pulse. Hidden on the selected row (you're on it,
+            // the dwell clock is running).
+            Circle()
+                .stroke(Self.attentionColor(kind).opacity(0.8), lineWidth: 1.5)
+                .frame(width: 7, height: 7)
+        }
+    }
+
+    private static func attentionColor(_ kind: AttentionKind) -> Color {
+        switch kind {
+        case .needsInput: return .orange
+        case .failed: return .red
+        case .turnDone: return .mint
+        case .finished: return .blue
+        }
+    }
+}
+
+/// A 7pt status dot that optionally "breathes" (opacity + a touch of scale) to
+/// draw peripheral attention. The animation starts on appear and stops on its
+/// own when the dot leaves the tree (attention cleared).
+private struct AttentionDot: View {
+    let color: Color
+    let pulses: Bool
+    @State private var animating = false
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .opacity(pulses && animating ? 0.35 : 1)
+            .scaleEffect(pulses && animating ? 1.18 : 1)
+            // Start on appear *and* when the kind is upgraded in place (a steady
+            // "finished" dot becoming a pulsing "needs input" without ever
+            // leaving the tree), so the pulse never gets stuck off.
+            .onAppear { syncPulse() }
+            .onChange(of: pulses) { _, _ in syncPulse() }
+    }
+
+    private func syncPulse() {
+        if pulses {
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                animating = true
+            }
+        } else {
+            withAnimation(.linear(duration: 0.15)) { animating = false }
+        }
+    }
+}
+
+/// A brief coloured ring drawn over the terminal when you switch into a session
+/// that was waiting on you — a quick "this is the one" cue. Invisible at rest;
+/// each fresh `flash.id` fades a ring in fast and back out. Purely decorative,
+/// so it never intercepts clicks.
+private struct AttentionFlashOverlay: View {
+    let flash: AttentionFlash?
+    @State private var opacity: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(color, lineWidth: 2.5)
+            .padding(1.5)
+            .opacity(opacity)
+            .allowsHitTesting(false)
+            .onChange(of: flash?.id) { _, id in
+                guard id != nil else { return }
+                if reduceMotion {
+                    opacity = 0.85
+                    withAnimation(.easeIn(duration: 0.5).delay(0.4)) { opacity = 0 }
+                } else {
+                    opacity = 0
+                    withAnimation(.easeOut(duration: 0.12)) { opacity = 0.85 }
+                    withAnimation(.easeIn(duration: 0.7).delay(0.12)) { opacity = 0 }
+                }
+            }
+    }
+
+    private var color: Color {
+        switch flash?.kind {
+        case .needsInput: return .orange
+        case .failed: return .red
+        case .turnDone: return .mint
+        case .finished: return .blue
+        case nil: return .clear
         }
     }
 }
@@ -268,6 +363,7 @@ private struct DetailView: View {
         HSplitView {
             TerminalContainer(runtime: runtime, session: manager.selected)
                 .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                .overlay { AttentionFlashOverlay(flash: manager.attentionFlash) }
             if git.isVisible {
                 SourceControlPanel(panel: git)
                     .frame(minWidth: 320, idealWidth: 440, maxWidth: 680, maxHeight: .infinity)

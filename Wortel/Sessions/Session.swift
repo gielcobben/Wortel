@@ -1,6 +1,84 @@
 import AppKit
 import Observation
 
+/// Why a background session is asking for the user's eyes. Ordered by urgency
+/// (`priority`) so that when several signals could apply at once the most
+/// important one wins the sidebar dot; each kind also decides whether its
+/// native notification makes a sound. Colours are mapped in the UI layer so the
+/// model stays AppKit-only.
+enum AttentionKind {
+    /// A program is *blocked on the user* — it made an explicit request: a
+    /// permission / confirmation prompt, an "action required" title marker, a
+    /// bell, or a program-authored desktop notification. Nothing proceeds until
+    /// you answer, so this is the loudest state.
+    case needsInput
+    /// A command exited non-zero while the session was unselected.
+    case failed
+    /// An agent finished its turn and went quiet, with no explicit request —
+    /// inferred from its own progress reporting stopping (which only long-lived
+    /// programs emit; plain commands clear via a command-finished mark instead).
+    /// It's your move, but nothing is blocked, so it arrives calmly and silent.
+    case turnDone
+    /// A plain long-running command finished cleanly while unselected. Purely
+    /// informational.
+    case finished
+
+    /// Higher wins when two signals race (see `SessionManager.raiseAttention`),
+    /// so an explicit request can never be masked by an inferred turn-end.
+    var priority: Int {
+        switch self {
+        case .needsInput: return 4
+        case .failed: return 3
+        case .turnDone: return 2
+        case .finished: return 1
+        }
+    }
+
+    /// A blocked prompt or an outright failure is worth a sound; an inferred
+    /// turn-end and an informational finish arrive silently.
+    var playsSound: Bool {
+        switch self {
+        case .needsInput, .failed: return true
+        case .turnDone, .finished: return false
+        }
+    }
+
+    /// Whether the sidebar dot should breathe. Anything that wants your next
+    /// action pulls the eye; a plain clean finish is calm and steady.
+    var pulses: Bool {
+        switch self {
+        case .needsInput, .failed, .turnDone: return true
+        case .finished: return false
+        }
+    }
+
+    /// Classify a program-authored desktop notification (OSC 9 / 777 / 99). An
+    /// explicit notification usually means the program wants you *now*, so the
+    /// default is the blocking `.needsInput`; it's only softened to `.turnDone`
+    /// when the text clearly reads as a completion with nothing left to approve.
+    /// Keyword matching only has to break the tie for this one ambiguous source —
+    /// every other signal is classified by where it comes from.
+    static func classify(notificationTitle title: String, body: String) -> AttentionKind {
+        let text = (title + " " + body).lowercased()
+        let blocking = ["permission", "approve", "allow", "confirm", "authoriz",
+                        "waiting", "input", "action required", "review",
+                        "continue", "proceed", "respond", "y/n", "question"]
+        if blocking.contains(where: text.contains) { return .needsInput }
+        let completion = ["completed", "complete", "finished", "done", "success"]
+        if completion.contains(where: text.contains) { return .turnDone }
+        return .needsInput
+    }
+}
+
+/// A one-shot "you just switched into a session that was waiting on you" event.
+/// The detail view watches `id` to flash a brief orienting ring in `kind`'s
+/// colour, so the eye lands on why the session pinged. A fresh `id` each time
+/// re-triggers the animation even for the same kind.
+struct AttentionFlash: Identifiable {
+    let id = UUID()
+    let kind: AttentionKind
+}
+
 /// One sidebar entry = one shell = one ghostty surface.
 ///
 /// The SurfaceView is created lazily (`ensureSurfaceView`) so restored
@@ -17,10 +95,19 @@ final class Session: Identifiable {
     /// program). Kept for reference; not currently shown.
     var title: String
     var cwd: String?
-    /// A background session wants your eyes: it rang the bell, posted a desktop
-    /// notification, or finished a long-running command while unselected.
-    /// Cleared when the session is selected. Drives the sidebar attention dot.
-    var needsAttention: Bool = false
+    /// A background session wants your eyes *now*, and *why*: it's blocked on
+    /// you, something failed, or a long command finished while unselected. `nil`
+    /// once you select it (you've seen the ping). Drives the loud sidebar dot
+    /// (colour + pulse per kind), the Dock badge, and the notification.
+    var attention: AttentionKind?
+    /// The quieter second tier: this session had activity you haven't actually
+    /// *engaged* with yet. Set whenever attention is raised, but — unlike
+    /// `attention` — it survives a mere glance and only clears once you've
+    /// dwelled on the session. Drives a small hollow "unread" dot so a quick
+    /// click-through to triage doesn't lose track of what you skipped past.
+    var unread: AttentionKind?
+    /// Convenience for the count-based Dock badge and close bookkeeping.
+    var needsAttention: Bool { attention != nil }
     /// A foreground command is currently running in this session. Debounced by
     /// the manager so instant commands never flicker, and cleared
     /// authoritatively on command-finished so it can never get stuck. Drives

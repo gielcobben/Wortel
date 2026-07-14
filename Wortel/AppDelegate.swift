@@ -56,8 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
-        manager.onNeedsAttention = { [weak self] session, title, body in
-            self?.postAttentionNotification(session, title: title, body: body)
+        manager.onNeedsAttention = { [weak self] session, kind, title, body, alert in
+            self?.postAttentionNotification(session, kind: kind, title: title, body: body, alert: alert)
         }
         // A command finished in the selected session → refresh the git panel
         // (it debounces and no-ops while hidden).
@@ -118,12 +118,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Post (or replace) the "needs you" notification for a session. Uses the
     /// session id as the request identifier so a chatty program updates one
-    /// notification instead of stacking many.
-    private func postAttentionNotification(_ session: Session, title: String, body: String) {
+    /// notification instead of stacking many. Informational "finished" pings
+    /// arrive silently; blocked prompts and failures make a sound.
+    private func postAttentionNotification(_ session: Session, kind: AttentionKind, title: String, body: String, alert: Bool) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.sound = .default
+        // Sound only on an escalation the manager flagged, so a program that
+        // re-fires the same kind updates the banner text without re-dinging.
+        content.sound = (alert && kind.playsSound) ? .default : nil
         content.userInfo = [Self.sessionKey: session.id.uuidString]
         let request = UNNotificationRequest(
             identifier: session.id.uuidString, content: content, trigger: nil)
@@ -208,6 +211,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.selectPrevious()
     }
 
+    @objc func selectNextAttentionSession(_ sender: Any?) {
+        manager.selectNextAttention()
+    }
+
     @objc func selectSessionAtIndex(_ sender: Any?) {
         guard let item = sender as? NSMenuItem else { return }
         manager.select(index: item.tag)
@@ -234,6 +241,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(toggleSourceControl(_:)) {
             menuItem.title = gitPanel.isVisible ? "Hide Source Control" : "Show Source Control"
             return true
+        }
+        // Only offer "Next Waiting Session" when something is actually waiting.
+        if menuItem.action == #selector(selectNextAttentionSession(_:)) {
+            return manager?.hasAttention ?? false
         }
         return true
     }

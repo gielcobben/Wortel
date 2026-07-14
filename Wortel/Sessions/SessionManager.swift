@@ -18,11 +18,25 @@ final class SessionManager {
     var selectedID: Session.ID? {
         didSet {
             guard selectedID != oldValue, let session = selected else { return }
+            // Switching into a waiting session: flash a ring in the detail view
+            // to orient the eye before the dot clears.
+            if let kind = session.attention {
+                attentionFlash = AttentionFlash(kind: kind)
+            }
             clearAttention(session)
+            // Left the previous session before it could count as read; start the
+            // caught-up clock on the one you just landed on.
+            cancelCaughtUp(oldValue)
+            scheduleCaughtUp(session)
             session.ensureSurfaceView(runtime: runtime)
             scheduleSave()
         }
     }
+
+    /// The most recent "switched into a waiting session" event; the detail view
+    /// flashes an orienting ring on each fresh value. Never cleared — at rest
+    /// the overlay is simply invisible.
+    private(set) var attentionFlash: AttentionFlash?
 
     /// The session whose name is being edited inline (nil = none). Observed by
     /// the sidebar so double-click, the context menu, and ⌘R all drive one path.
@@ -41,7 +55,7 @@ final class SessionManager {
     /// Claude Code emits OSC 777 on a permission/idle prompt, or a bell). The
     /// app layer turns this into a native macOS notification. `title`/`body`
     /// come from the program when it's a notification, or are synthesized.
-    @ObservationIgnored var onNeedsAttention: ((Session, _ title: String, _ body: String) -> Void)?
+    @ObservationIgnored var onNeedsAttention: ((Session, _ kind: AttentionKind, _ title: String, _ body: String, _ alert: Bool) -> Void)?
 
     /// A session's attention was answered (selected / app came front / closed).
     /// The app layer uses this to retract the session's notification from
@@ -98,6 +112,13 @@ final class SessionManager {
     /// Sessions whose terminal title currently shows a "working" marker
     /// (see `titleChanged`).
     @ObservationIgnored private var titleShowsWorking: Set<Session.ID> = []
+    /// How long a session must stay actively-viewed before its "unread" mark
+    /// clears. Long enough that a quick click-through to triage doesn't count as
+    /// catching up, short enough that actually landing on it clears promptly.
+    private static let unreadDwellDelay: TimeInterval = 1.0
+    /// Pending "you've now caught up → drop the unread mark" work items, keyed
+    /// by session; cancelled the moment you navigate away.
+    @ObservationIgnored private var unreadDwellTimers: [Session.ID: DispatchWorkItem] = [:]
 
     var selected: Session? {
         sessions.first { $0.id == selectedID }
@@ -158,6 +179,7 @@ final class SessionManager {
         let hadAttention = session.needsAttention
         busyTimers.removeValue(forKey: session.id)?.cancel()
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
+        unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
         busyStartedAt.removeValue(forKey: session.id)
         lastBusyInterval.removeValue(forKey: session.id)
         titleShowsWorking.remove(session.id)
@@ -242,6 +264,27 @@ final class SessionManager {
         selectedID = sessions[(i + 1) % sessions.count].id
     }
 
+    /// Whether any session is currently waiting on the user (drives menu
+    /// enablement for "Next Waiting Session").
+    var hasAttention: Bool {
+        sessions.contains { $0.attention != nil }
+    }
+
+    /// Jump to the next session (cyclically from the current selection) that's
+    /// waiting on the user — "take me to whatever needs me." No-op when nothing
+    /// is waiting. Selecting it clears its attention and flashes the ring.
+    func selectNextAttention() {
+        guard !sessions.isEmpty else { return }
+        let start = selectedIndex ?? -1
+        for offset in 1...sessions.count {
+            let candidate = sessions[(start + offset) % sessions.count]
+            if candidate.attention != nil {
+                selectedID = candidate.id
+                return
+            }
+        }
+    }
+
     func selectPrevious() {
         guard let i = selectedIndex, sessions.count > 1 else { return }
         selectedID = sessions[(i - 1 + sessions.count) % sessions.count].id
@@ -312,7 +355,7 @@ final class SessionManager {
         if trimmed.hasPrefix("✋") || trimmed.contains("Action Required") {
             titleShowsWorking.remove(session.id)
             clearBusy(session)
-            raiseAttention(session, title: session.name, body: "Action required")
+            raiseAttention(session, kind: .needsInput, title: session.name, body: "Action required")
         } else if Self.hasWorkingMarker(trimmed) {
             titleShowsWorking.insert(session.id)
             markBusy(session)
@@ -344,7 +387,11 @@ final class SessionManager {
         let work = DispatchWorkItem { [weak self, weak session] in
             guard let self, let session else { return }
             self.quiesceTimers[id] = nil
-            self.raiseAttention(session, title: session.name, body: "Ready for your input")
+            // The agent went quiet without an explicit prompt — inferred
+            // turn-end. If it *did* prompt (a notification / action-required
+            // title), that already raised a louder .needsInput which priority
+            // keeps from being downgraded here.
+            self.raiseAttention(session, kind: .turnDone, title: session.name, body: "Finished — your move")
         }
         quiesceTimers[id] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiesceSettleDelay, execute: work)
@@ -362,32 +409,74 @@ final class SessionManager {
     /// Attention answered: drop the sidebar dot, re-count the Dock badge, and
     /// let the app layer retract the session's notification.
     private func clearAttention(_ session: Session) {
-        guard session.needsAttention else { return }
-        session.needsAttention = false
+        guard session.attention != nil else { return }
+        session.attention = nil
         refreshDockBadge()
         onAttentionCleared?(session)
     }
 
     /// A session wants the user: raise the sidebar dot (which overrides the
     /// busy spinner), badge the Dock, and post a native notification — unless
-    /// the user is already looking at it. Safe to call repeatedly; the app
-    /// layer keys notifications by session so they replace, not stack.
-    private func raiseAttention(_ session: Session, title: String, body: String) {
+    /// the user is already looking at it. A lower-priority signal never
+    /// downgrades a louder one already showing (a "finished" ping can't mask a
+    /// pending "needs input"). Safe to call repeatedly; the app layer keys
+    /// notifications by session so they replace, not stack.
+    private func raiseAttention(_ session: Session, kind: AttentionKind, title: String, body: String) {
         guard !isActivelyViewing(session) else { return }
-        session.needsAttention = true // observed → sidebar dot
+        let current = session.attention
+        if let current, current.priority > kind.priority { return }
+        // Play a sound only when the state actually escalates — a fresh episode
+        // or a jump to a louder kind. A program that re-emits the same kind
+        // (some agents fire a notification per tool call) updates the banner
+        // text silently instead of spamming dings.
+        let alert = current.map { kind.priority > $0.priority } ?? true
+        session.attention = kind // observed → sidebar dot
+        // The quieter tier: mark it unread too, at the highest kind seen, so the
+        // trail survives past the loud dot until you've actually engaged.
+        if session.unread.map({ kind.priority > $0.priority }) ?? true {
+            session.unread = kind
+        }
         refreshDockBadge()
-        onNeedsAttention?(session, title, body)
+        onNeedsAttention?(session, kind, title, body, alert)
+    }
+
+    /// Start the "caught up" clock for a session: if it stays actively-viewed
+    /// for the dwell window, drop its unread mark. A glance shorter than the
+    /// dwell (or navigating away) leaves the mark in place. Safe to call
+    /// repeatedly — it restarts the clock.
+    private func scheduleCaughtUp(_ session: Session) {
+        unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
+        guard session.unread != nil, isActivelyViewing(session) else { return }
+        let id = session.id
+        let work = DispatchWorkItem { [weak self, weak session] in
+            guard let self, let session else { return }
+            self.unreadDwellTimers[id] = nil
+            session.unread = nil // caught up → drop the hollow dot
+        }
+        unreadDwellTimers[id] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.unreadDwellDelay, execute: work)
+    }
+
+    /// You navigated away (or backgrounded) before the dwell elapsed — keep the
+    /// unread mark.
+    private func cancelCaughtUp(_ id: Session.ID?) {
+        guard let id else { return }
+        unreadDwellTimers.removeValue(forKey: id)?.cancel()
     }
 
     /// Wortel became frontmost: the user is now looking at the selected
-    /// session, so clear its attention.
+    /// session, so clear its attention and start its caught-up clock.
     func appDidBecomeActive() {
         appIsActive = true
-        if let selected { clearAttention(selected) }
+        if let selected {
+            clearAttention(selected)
+            scheduleCaughtUp(selected)
+        }
     }
 
     func appDidResignActive() {
         appIsActive = false
+        cancelCaughtUp(selectedID)
     }
 
     /// The main window's on-screen visibility changed (occlusion state /
@@ -395,7 +484,12 @@ final class SessionManager {
     /// now see the selected session — clear its attention, same as activate.
     func windowVisibilityChanged(_ visible: Bool) {
         windowIsVisible = visible
-        if visible, appIsActive, let selected { clearAttention(selected) }
+        if visible, appIsActive, let selected {
+            clearAttention(selected)
+            scheduleCaughtUp(selected)
+        } else {
+            cancelCaughtUp(selectedID)
+        }
     }
 
     /// Dock badge = number of background sessions waiting on the user.
@@ -441,34 +535,43 @@ final class SessionManager {
             }
             view.onBell = { [weak self, weak session] in
                 guard let self, let session else { return }
-                self.raiseAttention(session, title: session.name, body: "Bell")
+                self.raiseAttention(session, kind: .needsInput, title: session.name, body: "Bell")
             }
             view.onProgress = { [weak self, weak session] active in
                 guard let self, let session else { return }
                 if active { self.markBusy(session) } else { self.progressEnded(session) }
             }
-            view.onCommandFinished = { [weak self, weak session] _, durationNs in
+            view.onCommandFinished = { [weak self, weak session] exitCode, durationNs in
                 guard let self, let session else { return }
                 // Note: deliberately does NOT cancel a pending quiesce raise.
-                // Pi's OSC 133 zone marks synthesize finished events mid-turn;
-                // cancelling here would eat the legit "agent is done" attention
-                // that a 9;4;0 just scheduled. A duplicate raise is harmless —
-                // notifications are keyed per session and replace.
+                // Some shells' OSC 133 zone marks synthesize finished events
+                // mid-turn; cancelling here would eat the legit "agent is done"
+                // attention that a 9;4;0 just scheduled. A duplicate raise is
+                // harmless, and priority keeps a "needs input" from being
+                // downgraded to a plain "finished".
                 self.clearBusy(session)
                 // A command likely touched files — nudge the git panel to
                 // re-read status/diff (it debounces and no-ops when hidden).
                 self.onCommandFinished?(session)
                 // A long command that finished while you were elsewhere wants
-                // your eyes (e.g. an agent that ran for a while and is done).
-                if durationNs >= Self.attentionAfterNs {
-                    self.raiseAttention(session, title: session.name, body: "Command finished")
+                // your eyes — and a non-zero exit is worth flagging red, not
+                // just "done". Exit code -1 means the shell didn't report one.
+                guard durationNs >= Self.attentionAfterNs else { return }
+                if exitCode > 0 {
+                    self.raiseAttention(session, kind: .failed, title: session.name,
+                                        body: "Command failed (exit \(exitCode))")
+                } else {
+                    self.raiseAttention(session, kind: .finished, title: session.name,
+                                        body: "Command finished")
                 }
             }
             view.onNotification = { [weak self, weak session] title, body in
                 guard let self, let session else { return }
-                // Program-authored "needs you" (OSC 9/777/99) — e.g. Claude Code
+                // Program-authored "needs you" (OSC 9/777/99) — e.g. an agent CLI
                 // on a permission or idle prompt. The most reliable signal.
-                self.raiseAttention(session,
+                // Text tells apart a blocking request from a "task done" ping.
+                let kind = AttentionKind.classify(notificationTitle: title, body: body)
+                self.raiseAttention(session, kind: kind,
                                     title: title.isEmpty ? session.name : title,
                                     body: body)
             }

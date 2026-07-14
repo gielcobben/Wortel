@@ -52,6 +52,10 @@ enum MainMenu {
         next.keyEquivalentModifierMask = [.command]
         let prev = sessionMenu.addItem(withTitle: "Previous Session", action: #selector(AppDelegate.selectPreviousSession(_:)), keyEquivalent: "{")
         prev.keyEquivalentModifierMask = [.command]
+        // Jump straight to whatever is waiting on you, wherever it sits in the
+        // list. Disabled (via AppDelegate.validateMenuItem) when nothing waits.
+        let nextAlert = sessionMenu.addItem(withTitle: "Next Waiting Session", action: #selector(AppDelegate.selectNextAttentionSession(_:)), keyEquivalent: "]")
+        nextAlert.keyEquivalentModifierMask = [.command, .option]
         sessionMenu.addItem(.separator())
         for i in 1...9 {
             let item = sessionMenu.addItem(

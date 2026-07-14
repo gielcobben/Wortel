@@ -1,14 +1,5 @@
 import SwiftUI
 
-/// Carries the changes list's intrinsic content height up so the panel can size
-/// it to fit until it hits the 50% cap.
-private struct ListContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// The trailing source-control panel: branch header, the staged/unstaged
 /// changes list, the diff of the selected file, and a commit box. Bound to
 /// `GitPanelModel`, which points it at the selected session's repo.
@@ -50,25 +41,19 @@ private struct RepoView: View {
     @FocusState private var listFocused: Bool
     @FocusState private var messageFocused: Bool
     @State private var lastHandledFocusRequest = 0
-    /// Measured intrinsic height of the changes list content, used to size the
-    /// list to fit until it would exceed half the panel.
-    @State private var listContentHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            // The changes list sizes to its content, but never grows past half
-            // the available height — so a couple of files leave the diff most of
-            // the room, while a long list caps at 50% and scrolls internally.
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    changesList
-                        .frame(height: listHeight(available: geo.size.height))
-                    Divider()
-                    diffPane
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+            // Native, draggable split between the files list and the diff — the
+            // system owns the divider and its sizing. Defaults to a compact file
+            // list so the diff gets most of the room; drag to taste.
+            VSplitView {
+                changesList
+                    .frame(minHeight: 80, idealHeight: 200, maxHeight: .infinity)
+                diffPane
+                    .frame(minHeight: 120, maxHeight: .infinity)
             }
             Divider()
             commitBar
@@ -89,18 +74,6 @@ private struct RepoView: View {
         // Next runloop turn: the focusable list is reliably installed by then,
         // even when this request is what just revealed the panel.
         DispatchQueue.main.async { listFocused = true }
-    }
-
-    private func listHeight(available: CGFloat) -> CGFloat {
-        // Cap at half the area; scroll past that. Give the list a little more
-        // than exact fit-content (breathing room below the last row, and a
-        // comfortable floor so a single file isn't cramped) — all still clamped
-        // to the 50% cap.
-        let cap = available * 0.5
-        // Before the first measurement, fall back to the cap rather than
-        // collapsing to zero.
-        guard listContentHeight > 0 else { return cap }
-        return min(max(listContentHeight + 20, 96), cap)
     }
 
     // MARK: Header
@@ -144,11 +117,7 @@ private struct RepoView: View {
     private var changesList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                // Regular VStack (not Lazy) so its background GeometryReader
-                // reports the *full* content height for the fit-to-content sizing
-                // — the changes list is short; the heavy view is the diff, which
-                // has its own virtualized NSTableView.
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if repo.status.isClean {
                         Text("No changes")
                             .font(.callout)
@@ -172,9 +141,6 @@ private struct RepoView: View {
                         rowAction: { change in Task { await repo.stage(change) } })
                 }
                 .padding(.vertical, 4)
-                .background(GeometryReader { proxy in
-                    Color.clear.preference(key: ListContentHeightKey.self, value: proxy.size.height)
-                })
             }
             // Keep the selected row visible as ↑/↓ (or a click) moves it.
             .onChange(of: repo.selectedChangeID) { _, id in
@@ -184,7 +150,6 @@ private struct RepoView: View {
                 }
             }
         }
-        .onPreferenceChange(ListContentHeightKey.self) { listContentHeight = $0 }
         // Focus management: the list only claims the keyboard once you click a
         // file (which sets listFocused), so the terminal keeps its arrow keys
         // until then. While focused, ↑/↓ walk the changes and load each diff.
@@ -288,6 +253,9 @@ private struct RepoView: View {
                     .focused($messageFocused)
                     .lineLimit(3...8)
                     .frame(minHeight: 52, alignment: .topLeading)
+                if repo.canGenerateMessage || repo.isGeneratingMessage {
+                    generateButton
+                }
                 commitButton
             }
             .padding(8)
@@ -303,6 +271,30 @@ private struct RepoView: View {
                     .stroke(messageFocused ? Color.accentColor.opacity(0.5) : Color(nsColor: .separatorColor)))
         }
         .padding(12)
+    }
+
+    /// On-device (Apple Intelligence) commit-message drafter. Only shown when
+    /// the model is available and something is staged.
+    private var generateButton: some View {
+        Button {
+            Task { await repo.generateCommitMessage() }
+        } label: {
+            Group {
+                if repo.isGeneratingMessage {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.plain)
+        .disabled(!repo.canGenerateMessage)
+        .help("Draft a message from staged changes (on-device)")
     }
 
     private var commitButton: some View {

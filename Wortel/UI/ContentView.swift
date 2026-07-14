@@ -382,7 +382,7 @@ private struct DetailView: View {
                 Button {
                     git.toggle()
                 } label: {
-                    Image(systemName: "arrow.triangle.branch")
+                    Image(systemName: "sidebar.right")
                 }
                 .help("Source Control (⌘⌥G)")
             }

@@ -241,8 +241,10 @@ private struct SessionRow: View {
     /// done while unselected) wins over busy — once you select the session the
     /// attention clears and the spinner shows if a command is still running.
     /// The dot's colour encodes *why*: amber = waiting on you, red = failed,
-    /// blue = finished. On the accent selection pill everything goes white for
-    /// contrast (but a selected row has already cleared its attention).
+    /// mint = an agent finished its turn, blue = a plain command finished. On
+    /// the accent selection pill everything goes white for contrast (but a
+    /// selected row has already cleared its attention). A non-selected session
+    /// you haven't caught up with shows a quiet hollow ring instead.
     @ViewBuilder
     private var activityIndicator: some View {
         if let kind = session.attention {

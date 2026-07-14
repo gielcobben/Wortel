@@ -139,8 +139,12 @@ final class SessionManager {
             newSession()
             return
         }
+        // Markers left by agents that were still running at quit — resume them.
+        let resume = AgentResumeStore.consumeSnapshot()
         for entry in persisted {
-            appendRestored(Session(id: entry.id, name: entry.name, title: entry.title, cwd: entry.cwd))
+            let session = Session(id: entry.id, name: entry.name, title: entry.title, cwd: entry.cwd)
+            session.pendingResumeInput = resume[entry.id]
+            appendRestored(session)
         }
         selectedID = (persisted.first(where: \.selected) ?? persisted[0]).id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -183,6 +187,9 @@ final class SessionManager {
         busyStartedAt.removeValue(forKey: session.id)
         lastBusyInterval.removeValue(forKey: session.id)
         titleShowsWorking.remove(session.id)
+        // The killed shell never reaches its prompt to clear its own agent
+        // marker; drop it so a closed session isn't resumed on next launch.
+        AgentResumeStore.remove(sessionID: session.id)
         session.close()
         sessions.remove(at: index)
         if hadAttention { refreshDockBadge() }

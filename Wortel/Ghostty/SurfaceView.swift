@@ -52,7 +52,8 @@ final class SurfaceView: NSView {
 
     // MARK: - Lifecycle
 
-    init(runtime: GhosttyRuntime, workingDirectory: String? = nil, fontSize: Float = 0) {
+    init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
+         sessionID: UUID? = nil, initialInput: String? = nil, fontSize: Float = 0) {
         self.runtime = runtime
 
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
@@ -61,6 +62,8 @@ final class SurfaceView: NSView {
         self.surface = runtime.newSurface(
             view: self,
             workingDirectory: workingDirectory,
+            sessionID: sessionID,
+            initialInput: initialInput,
             fontSize: fontSize)
 
         NotificationCenter.default.addObserver(

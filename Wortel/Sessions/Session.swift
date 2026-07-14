@@ -117,6 +117,12 @@ final class Session: Identifiable {
     /// directly), so exclude it from observation tracking.
     @ObservationIgnored private(set) var surfaceView: SurfaceView?
 
+    /// A command to auto-run when this session's shell first spawns — set during
+    /// restore to resume an agent CLI (e.g. "claude --continue\n") that was
+    /// running at quit. Consumed once by `ensureSurfaceView`. Transient (not
+    /// persisted, not observed). See AgentResumeStore.
+    @ObservationIgnored var pendingResumeInput: String?
+
     /// Called whenever a surface view is created for this session (eager or
     /// lazy). The SessionManager wires the view's callbacks here.
     @ObservationIgnored var onSurfaceCreated: ((SurfaceView) -> Void)?
@@ -155,7 +161,9 @@ final class Session: Identifiable {
     @discardableResult
     func ensureSurfaceView(runtime: GhosttyRuntime) -> SurfaceView {
         if let surfaceView { return surfaceView }
-        let view = SurfaceView(runtime: runtime, workingDirectory: cwd)
+        let view = SurfaceView(runtime: runtime, workingDirectory: cwd,
+                               sessionID: id, initialInput: pendingResumeInput)
+        pendingResumeInput = nil // consumed once
         surfaceView = view
         onSurfaceCreated?(view)
         return view

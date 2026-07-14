@@ -267,6 +267,45 @@ _ghostty_deferred_init() {
         return 1
     }
 
+    # Wortel: echo the agent-CLI basename if the command line launches one, else
+    # nothing. Same launcher/env-assignment skipping as _ghostty_wortel_interactive,
+    # but matches only the resumable agent subset. Wortel records this per session
+    # (keyed by WORTEL_SESSION_ID) so a relaunch can resume the agent.
+    _ghostty_wortel_agent() {
+        builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+        builtin local -a words
+        words=(${(z)1})
+        builtin local -i i=1 n=$#words
+        builtin local w cmd=
+        while (( i <= n )); do
+            w=$words[i]
+            case $w in
+                *=*)                                              (( i++ )); continue ;;
+                sudo|doas|command|builtin|exec|nohup|nice|stdbuf|setsid|env)
+                                                                  (( i++ )); continue ;;
+                -*)                                               (( i++ )); continue ;;
+                *)                                                cmd=$w; break ;;
+            esac
+        done
+        [[ -z $cmd ]] && return
+        cmd=${cmd:t}
+        case $cmd in
+            claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp)
+                builtin print -r -- $cmd ;;
+        esac
+    }
+
+    # Wortel: directory shared with the app (AgentResumeStore) for agent markers.
+    _ghostty_wortel_agent_dir="$HOME/Library/Application Support/Wortel/agents"
+
+    # Wortel: clear this session's agent marker. Runs at every prompt (registered
+    # into precmd below), so a marker only survives while an agent is actually
+    # running — which is precisely when no prompt fires.
+    _ghostty_wortel_clear_agent() {
+        [[ -n $WORTEL_SESSION_ID ]] || return
+        command rm -f "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+    }
+
     _ghostty_preexec() {
         builtin emulate -L zsh -o no_warn_create_global -o no_aliases
 
@@ -294,6 +333,16 @@ _ghostty_deferred_init() {
         if ! _ghostty_wortel_interactive "$1"; then
             builtin print -nu $_ghostty_fd '\e]9;4;3;\a'
         fi
+        # Wortel: record a launched agent CLI so a relaunch can resume it. Keyed
+        # by the surface's session id; cleared at the next prompt. A marker that
+        # outlives the app means the agent was still running at quit.
+        if [[ -n $WORTEL_SESSION_ID ]]; then
+            builtin local _wortel_agent="$(_ghostty_wortel_agent "$1")"
+            if [[ -n $_wortel_agent ]]; then
+                command mkdir -p "$_ghostty_wortel_agent_dir" 2>/dev/null
+                builtin print -r -- "$_wortel_agent" > "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+            fi
+        fi
         (( _ghostty_state = 1 ))
     }
 
@@ -306,6 +355,9 @@ _ghostty_deferred_init() {
     functions[_ghostty_precmd]+="
         _ghostty_report_pwd"
     _ghostty_report_pwd
+    # Wortel: clear the agent marker at every prompt (see _ghostty_wortel_clear_agent).
+    functions[_ghostty_precmd]+="
+        _ghostty_wortel_clear_agent"
 
     if [[ "$GHOSTTY_SHELL_FEATURES" == *"title"* ]]; then
       # Enable terminal title changes, formatted for user-friendly display.

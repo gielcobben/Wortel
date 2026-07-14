@@ -156,7 +156,9 @@ final class GhosttyRuntime {
 
     /// Create a new surface attached to `view`. The view is the surface
     /// userdata for all callbacks.
-    func newSurface(view: SurfaceView, workingDirectory: String? = nil, fontSize: Float = 0) -> ghostty_surface_t? {
+    func newSurface(view: SurfaceView, workingDirectory: String? = nil,
+                    sessionID: UUID? = nil, initialInput: String? = nil,
+                    fontSize: Float = 0) -> ghostty_surface_t? {
         var cfg = ghostty_surface_config_new()
         cfg.platform_tag = GHOSTTY_PLATFORM_MACOS
         cfg.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
@@ -167,13 +169,35 @@ final class GhosttyRuntime {
         cfg.font_size = fontSize
         cfg.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
 
-        if let workingDirectory {
-            return workingDirectory.withCString { cwdPtr in
-                cfg.working_directory = cwdPtr
-                return ghostty_surface_new(app, &cfg)
-            }
+        // libghostty copies these into the surface during the _new call, so the
+        // C strings only need to outlive that call — strdup here, free after.
+        var allocations: [UnsafeMutablePointer<CChar>] = []
+        func dup(_ s: String) -> UnsafePointer<CChar> {
+            let p = strdup(s)!
+            allocations.append(p)
+            return UnsafePointer(p)
         }
-        return ghostty_surface_new(app, &cfg)
+        defer { allocations.forEach { free($0) } }
+
+        if let workingDirectory { cfg.working_directory = dup(workingDirectory) }
+        // Auto-run a resume command (e.g. "claude --continue") in a restored
+        // session whose agent was still running at quit. Fed as startup input.
+        if let initialInput { cfg.initial_input = dup(initialInput) }
+
+        // Tag the shell so the bundled integration can key its agent marker file
+        // to this session (see AgentResumeStore).
+        var envVars: [ghostty_env_var_s] = []
+        if let sessionID {
+            envVars.append(ghostty_env_var_s(
+                key: dup("WORTEL_SESSION_ID"), value: dup(sessionID.uuidString)))
+        }
+        return envVars.withUnsafeMutableBufferPointer { buf in
+            if let base = buf.baseAddress {
+                cfg.env_vars = base
+                cfg.env_var_count = buf.count
+            }
+            return ghostty_surface_new(app, &cfg)
+        }
     }
 
     // MARK: - Action dispatch

@@ -236,14 +236,17 @@ private struct SessionRow: View {
         .padding(.vertical, 6)
     }
 
-    /// Trailing status glyph. Attention (bell / notification / long command
+    /// Trailing status glyph. Attention (blocked on you / failed / long command
     /// done while unselected) wins over busy — once you select the session the
     /// attention clears and the spinner shows if a command is still running.
+    /// The dot's colour encodes *why*: amber = waiting on you, red = failed,
+    /// blue = finished. On the accent selection pill everything goes white for
+    /// contrast (but a selected row has already cleared its attention).
     @ViewBuilder
     private var activityIndicator: some View {
-        if session.needsAttention {
+        if let kind = session.attention {
             Circle()
-                .fill(onAccent ? Color.white : Color.orange)
+                .fill(onAccent ? Color.white : Self.attentionColor(kind))
                 .frame(width: 7, height: 7)
         } else if session.isBusy {
             ProgressView()
@@ -252,6 +255,14 @@ private struct SessionRow: View {
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
                 .tint(onAccent ? .white : .secondary)
+        }
+    }
+
+    private static func attentionColor(_ kind: AttentionKind) -> Color {
+        switch kind {
+        case .needsInput: return .orange
+        case .failed: return .red
+        case .finished: return .blue
         }
     }
 }

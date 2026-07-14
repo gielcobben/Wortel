@@ -41,7 +41,7 @@ final class SessionManager {
     /// Claude Code emits OSC 777 on a permission/idle prompt, or a bell). The
     /// app layer turns this into a native macOS notification. `title`/`body`
     /// come from the program when it's a notification, or are synthesized.
-    @ObservationIgnored var onNeedsAttention: ((Session, _ title: String, _ body: String) -> Void)?
+    @ObservationIgnored var onNeedsAttention: ((Session, _ kind: AttentionKind, _ title: String, _ body: String) -> Void)?
 
     /// A session's attention was answered (selected / app came front / closed).
     /// The app layer uses this to retract the session's notification from
@@ -312,7 +312,7 @@ final class SessionManager {
         if trimmed.hasPrefix("✋") || trimmed.contains("Action Required") {
             titleShowsWorking.remove(session.id)
             clearBusy(session)
-            raiseAttention(session, title: session.name, body: "Action required")
+            raiseAttention(session, kind: .needsInput, title: session.name, body: "Action required")
         } else if Self.hasWorkingMarker(trimmed) {
             titleShowsWorking.insert(session.id)
             markBusy(session)
@@ -344,7 +344,7 @@ final class SessionManager {
         let work = DispatchWorkItem { [weak self, weak session] in
             guard let self, let session else { return }
             self.quiesceTimers[id] = nil
-            self.raiseAttention(session, title: session.name, body: "Ready for your input")
+            self.raiseAttention(session, kind: .needsInput, title: session.name, body: "Ready for your input")
         }
         quiesceTimers[id] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiesceSettleDelay, execute: work)
@@ -362,21 +362,24 @@ final class SessionManager {
     /// Attention answered: drop the sidebar dot, re-count the Dock badge, and
     /// let the app layer retract the session's notification.
     private func clearAttention(_ session: Session) {
-        guard session.needsAttention else { return }
-        session.needsAttention = false
+        guard session.attention != nil else { return }
+        session.attention = nil
         refreshDockBadge()
         onAttentionCleared?(session)
     }
 
     /// A session wants the user: raise the sidebar dot (which overrides the
     /// busy spinner), badge the Dock, and post a native notification — unless
-    /// the user is already looking at it. Safe to call repeatedly; the app
-    /// layer keys notifications by session so they replace, not stack.
-    private func raiseAttention(_ session: Session, title: String, body: String) {
+    /// the user is already looking at it. A lower-priority signal never
+    /// downgrades a louder one already showing (a "finished" ping can't mask a
+    /// pending "needs input"). Safe to call repeatedly; the app layer keys
+    /// notifications by session so they replace, not stack.
+    private func raiseAttention(_ session: Session, kind: AttentionKind, title: String, body: String) {
         guard !isActivelyViewing(session) else { return }
-        session.needsAttention = true // observed → sidebar dot
+        if let current = session.attention, current.priority > kind.priority { return }
+        session.attention = kind // observed → sidebar dot
         refreshDockBadge()
-        onNeedsAttention?(session, title, body)
+        onNeedsAttention?(session, kind, title, body)
     }
 
     /// Wortel became frontmost: the user is now looking at the selected
@@ -441,34 +444,41 @@ final class SessionManager {
             }
             view.onBell = { [weak self, weak session] in
                 guard let self, let session else { return }
-                self.raiseAttention(session, title: session.name, body: "Bell")
+                self.raiseAttention(session, kind: .needsInput, title: session.name, body: "Bell")
             }
             view.onProgress = { [weak self, weak session] active in
                 guard let self, let session else { return }
                 if active { self.markBusy(session) } else { self.progressEnded(session) }
             }
-            view.onCommandFinished = { [weak self, weak session] _, durationNs in
+            view.onCommandFinished = { [weak self, weak session] exitCode, durationNs in
                 guard let self, let session else { return }
                 // Note: deliberately does NOT cancel a pending quiesce raise.
-                // Pi's OSC 133 zone marks synthesize finished events mid-turn;
-                // cancelling here would eat the legit "agent is done" attention
-                // that a 9;4;0 just scheduled. A duplicate raise is harmless —
-                // notifications are keyed per session and replace.
+                // Some shells' OSC 133 zone marks synthesize finished events
+                // mid-turn; cancelling here would eat the legit "agent is done"
+                // attention that a 9;4;0 just scheduled. A duplicate raise is
+                // harmless, and priority keeps a "needs input" from being
+                // downgraded to a plain "finished".
                 self.clearBusy(session)
                 // A command likely touched files — nudge the git panel to
                 // re-read status/diff (it debounces and no-ops when hidden).
                 self.onCommandFinished?(session)
                 // A long command that finished while you were elsewhere wants
-                // your eyes (e.g. an agent that ran for a while and is done).
-                if durationNs >= Self.attentionAfterNs {
-                    self.raiseAttention(session, title: session.name, body: "Command finished")
+                // your eyes — and a non-zero exit is worth flagging red, not
+                // just "done". Exit code -1 means the shell didn't report one.
+                guard durationNs >= Self.attentionAfterNs else { return }
+                if exitCode > 0 {
+                    self.raiseAttention(session, kind: .failed, title: session.name,
+                                        body: "Command failed (exit \(exitCode))")
+                } else {
+                    self.raiseAttention(session, kind: .finished, title: session.name,
+                                        body: "Command finished")
                 }
             }
             view.onNotification = { [weak self, weak session] title, body in
                 guard let self, let session else { return }
-                // Program-authored "needs you" (OSC 9/777/99) — e.g. Claude Code
+                // Program-authored "needs you" (OSC 9/777/99) — e.g. an agent CLI
                 // on a permission or idle prompt. The most reliable signal.
-                self.raiseAttention(session,
+                self.raiseAttention(session, kind: .needsInput,
                                     title: title.isEmpty ? session.name : title,
                                     body: body)
             }

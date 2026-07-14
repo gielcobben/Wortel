@@ -1,6 +1,42 @@
 import AppKit
 import Observation
 
+/// Why a background session is asking for the user's eyes. Ordered by urgency
+/// (`priority`) so that when several signals could apply at once the most
+/// important one wins the sidebar dot; each kind also decides whether its
+/// native notification makes a sound. Colours are mapped in the UI layer so the
+/// model stays AppKit-only.
+enum AttentionKind {
+    /// A program is blocked on the user: a permission / confirmation prompt, an
+    /// "action required" marker, a bell, a program-authored desktop
+    /// notification, or an agent that finished its turn and is now waiting. The
+    /// user is the bottleneck — the loudest state.
+    case needsInput
+    /// A command exited non-zero while the session was unselected.
+    case failed
+    /// A long-running command finished cleanly while the session was
+    /// unselected. Purely informational.
+    case finished
+
+    /// Higher wins when two signals race (see `SessionManager.raiseAttention`).
+    var priority: Int {
+        switch self {
+        case .needsInput: return 3
+        case .failed: return 2
+        case .finished: return 1
+        }
+    }
+
+    /// Informational "it's done" arrives silently; a blocked prompt or an
+    /// outright failure is worth a sound.
+    var playsSound: Bool {
+        switch self {
+        case .needsInput, .failed: return true
+        case .finished: return false
+        }
+    }
+}
+
 /// One sidebar entry = one shell = one ghostty surface.
 ///
 /// The SurfaceView is created lazily (`ensureSurfaceView`) so restored
@@ -17,10 +53,13 @@ final class Session: Identifiable {
     /// program). Kept for reference; not currently shown.
     var title: String
     var cwd: String?
-    /// A background session wants your eyes: it rang the bell, posted a desktop
-    /// notification, or finished a long-running command while unselected.
-    /// Cleared when the session is selected. Drives the sidebar attention dot.
-    var needsAttention: Bool = false
+    /// A background session wants your eyes, and *why*: it's blocked on you,
+    /// something failed, or a long command finished while unselected. `nil` when
+    /// the session is caught up. Cleared when the session is selected. Drives
+    /// the sidebar attention dot (colour + pulse per kind).
+    var attention: AttentionKind?
+    /// Convenience for the count-based Dock badge and close bookkeeping.
+    var needsAttention: Bool { attention != nil }
     /// A foreground command is currently running in this session. Debounced by
     /// the manager so instant commands never flicker, and cleared
     /// authoritatively on command-finished so it can never get stuck. Drives

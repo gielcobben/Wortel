@@ -189,6 +189,27 @@ final class GitRepoModel {
         await refresh()
     }
 
+    // MARK: - File actions
+
+    /// Discard a file's changes (destructive — the caller confirms first).
+    func discard(_ change: GitFileChange) async {
+        _ = await GitService.discard(root: root, change: change)
+        // Its diff no longer applies; drop the selection if it was this row.
+        if selectedChangeID == change.id { select(nil) }
+        await refresh()
+    }
+
+    /// Add the file to the repo's `.gitignore`.
+    func ignore(_ change: GitFileChange) async {
+        await GitService.addToGitignore(root: root, path: change.path)
+        await refresh()
+    }
+
+    /// Absolute filesystem path for a change, for Finder/open/copy actions.
+    func absoluteURL(for change: GitFileChange) -> URL {
+        URL(fileURLWithPath: root).appendingPathComponent(change.path)
+    }
+
     // MARK: - Commit
 
     func commit() async {

@@ -185,6 +185,40 @@ enum GitService {
         await run(["commit", "-m", message], in: root)
     }
 
+    /// Throw away a file's changes. Untracked → delete the file; staged → reset
+    /// both index and worktree to HEAD; unstaged tracked → restore the worktree
+    /// from the index. Destructive; callers gate it behind a confirmation.
+    static func discard(root: String, change: GitFileChange) async -> CommandResult {
+        if change.untracked {
+            return await run(["clean", "-f", "--", change.path], in: root)
+        }
+        if change.staged {
+            return await run(
+                ["restore", "--staged", "--worktree", "--source=HEAD", "--", change.path],
+                in: root)
+        }
+        return await run(["restore", "--", change.path], in: root)
+    }
+
+    /// Append a root-anchored pattern for `path` to the repo's `.gitignore`,
+    /// creating the file if needed and keeping one entry per line. IO runs off
+    /// the main thread.
+    static func addToGitignore(root: String, path: String) async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let url = URL(fileURLWithPath: root).appendingPathComponent(".gitignore")
+                let entry = "/" + path + "\n"
+                let existing = (try? Data(contentsOf: url)) ?? Data()
+                var data = existing
+                // Separate from any prior last line that lacks a trailing newline.
+                if let last = existing.last, last != 0x0A { data.append(0x0A) }
+                data.append(Data(entry.utf8))
+                try? data.write(to: url)
+                continuation.resume()
+            }
+        }
+    }
+
     /// Push the current branch. On a branch with no upstream yet, set one on
     /// `origin` so the first push just works; otherwise a plain `push`.
     static func push(root: String, setUpstream: Bool) async -> CommandResult {

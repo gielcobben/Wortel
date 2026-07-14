@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The trailing source-control panel: branch header, the staged/unstaged
@@ -216,6 +217,7 @@ private struct RepoView: View {
             ForEach(changes) { change in
                 ChangeRow(
                     change: change,
+                    repo: repo,
                     isSelected: repo.selectedChangeID == change.id,
                     actionIcon: actionIcon,
                     // Clicking a file both selects it and gives the list keyboard
@@ -355,12 +357,14 @@ private struct RepoView: View {
 
 private struct ChangeRow: View {
     let change: GitFileChange
+    let repo: GitRepoModel
     let isSelected: Bool
     let actionIcon: String
     let select: () -> Void
     let action: () -> Void
 
     @State private var hovering = false
+    @State private var confirmingDiscard = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -392,6 +396,95 @@ private struct ChangeRow: View {
         .background(isSelected ? Color.accentColor.opacity(0.18) : .clear)
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }
+        // Native right-click: an AppKit overlay that selects the row (so the
+        // diff follows) and pops the menu. SwiftUI's own `.contextMenu` can't be
+        // used to also select — its content closure is rebuilt on every render,
+        // so any selection side effect there fires for every row and thrashes.
+        .overlay(RightClickCatcher(onRightClick: rightClickSelect, makeMenu: makeContextMenu))
+        .confirmationDialog(
+            "Discard changes to “\(change.fileName)”?",
+            isPresented: $confirmingDiscard,
+            titleVisibility: .visible
+        ) {
+            Button("Discard Changes", role: .destructive) {
+                Task { await repo.discard(change) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(change.untracked
+                ? "This deletes the untracked file. This cannot be undone."
+                : "Your changes to this file will be permanently lost.")
+        }
+    }
+
+    // MARK: Context menu
+
+    private var fileURL: URL { repo.absoluteURL(for: change) }
+
+    /// Whether the row's file is present on disk (deleted rows and staged
+    /// deletions have nothing to open or reveal).
+    private var fileExists: Bool {
+        FileManager.default.fileExists(atPath: fileURL.path)
+    }
+
+    /// Applications the Launch Services database offers for this file.
+    private var openerApps: [URL] {
+        guard fileExists else { return [] }
+        return NSWorkspace.shared.urlsForApplications(toOpen: fileURL)
+    }
+
+    /// Select the row when it's right-clicked, so the diff pane follows it.
+    private func rightClickSelect() {
+        if !isSelected { select() }
+    }
+
+    /// Build the native right-click menu, freshly each time it opens.
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        // Respect our explicit isEnabled flags rather than AppKit's validation.
+        menu.autoenablesItems = false
+
+        let open = ClosureMenuItem(title: "Open") { NSWorkspace.shared.open(fileURL) }
+        open.isEnabled = fileExists
+        menu.addItem(open)
+
+        let apps = openerApps
+        let openWith = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
+        openWith.isEnabled = !apps.isEmpty
+        if !apps.isEmpty {
+            let submenu = NSMenu()
+            for app in apps {
+                let icon = NSWorkspace.shared.icon(forFile: app.path)
+                icon.size = NSSize(width: 16, height: 16)
+                let item = ClosureMenuItem(title: FileManager.default.displayName(atPath: app.path)) {
+                    NSWorkspace.shared.open(
+                        [fileURL], withApplicationAt: app,
+                        configuration: NSWorkspace.OpenConfiguration())
+                }
+                item.image = icon
+                submenu.addItem(item)
+            }
+            openWith.submenu = submenu
+        }
+        menu.addItem(openWith)
+
+        menu.addItem(ClosureMenuItem(title: "Show in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+        })
+
+        menu.addItem(.separator())
+
+        menu.addItem(ClosureMenuItem(title: "Discard Changes…") { confirmingDiscard = true })
+
+        menu.addItem(.separator())
+
+        menu.addItem(ClosureMenuItem(title: "Ignore") { Task { await repo.ignore(change) } })
+        menu.addItem(ClosureMenuItem(title: "Copy Path") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(fileURL.path, forType: .string)
+        })
+
+        return menu
     }
 
     private var statusColor: Color {
@@ -405,6 +498,62 @@ private struct ChangeRow: View {
         default: return .secondary
         }
     }
+}
+
+// MARK: - Native right-click
+
+/// A transparent AppKit overlay that owns the row's right-click: it selects the
+/// row and pops a freshly-built menu. It's invisible to every other event —
+/// `hitTest` only claims right-mouse events, so SwiftUI keeps left-clicks and
+/// hover. This avoids SwiftUI's `.contextMenu`, whose content is rebuilt on
+/// every render (making it impossible to select a row without thrashing).
+private struct RightClickCatcher: NSViewRepresentable {
+    let onRightClick: () -> Void
+    let makeMenu: () -> NSMenu
+
+    func makeNSView(context: Context) -> CatcherView {
+        let view = CatcherView()
+        view.onRightClick = onRightClick
+        view.makeMenu = makeMenu
+        return view
+    }
+
+    func updateNSView(_ view: CatcherView, context: Context) {
+        view.onRightClick = onRightClick
+        view.makeMenu = makeMenu
+    }
+
+    final class CatcherView: NSView {
+        var onRightClick: () -> Void = {}
+        var makeMenu: () -> NSMenu = { NSMenu() }
+
+        override func rightMouseDown(with event: NSEvent) {
+            onRightClick()
+            NSMenu.popUpContextMenu(makeMenu(), with: event, for: self)
+        }
+
+        // Participate only in right-clicks; let clicks and hover fall through to
+        // the SwiftUI content beneath.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            NSApp.currentEvent?.type == .rightMouseDown ? self : nil
+        }
+    }
+}
+
+/// An `NSMenuItem` that runs a closure when chosen, so the menu can be built
+/// inline without a separate target/selector object.
+private final class ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @objc private func fire() { handler() }
 }
 
 // MARK: - Image diff

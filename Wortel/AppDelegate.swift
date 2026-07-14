@@ -56,8 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
-        manager.onNeedsAttention = { [weak self] session, kind, title, body in
-            self?.postAttentionNotification(session, kind: kind, title: title, body: body)
+        manager.onNeedsAttention = { [weak self] session, kind, title, body, alert in
+            self?.postAttentionNotification(session, kind: kind, title: title, body: body, alert: alert)
         }
         // A command finished in the selected session → refresh the git panel
         // (it debounces and no-ops while hidden).
@@ -120,11 +120,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// session id as the request identifier so a chatty program updates one
     /// notification instead of stacking many. Informational "finished" pings
     /// arrive silently; blocked prompts and failures make a sound.
-    private func postAttentionNotification(_ session: Session, kind: AttentionKind, title: String, body: String) {
+    private func postAttentionNotification(_ session: Session, kind: AttentionKind, title: String, body: String, alert: Bool) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.sound = kind.playsSound ? .default : nil
+        // Sound only on an escalation the manager flagged, so a program that
+        // re-fires the same kind updates the banner text without re-dinging.
+        content.sound = (alert && kind.playsSound) ? .default : nil
         content.userInfo = [Self.sessionKey: session.id.uuidString]
         let request = UNNotificationRequest(
             identifier: session.id.uuidString, content: content, trigger: nil)

@@ -51,7 +51,7 @@ final class SessionManager {
     /// Claude Code emits OSC 777 on a permission/idle prompt, or a bell). The
     /// app layer turns this into a native macOS notification. `title`/`body`
     /// come from the program when it's a notification, or are synthesized.
-    @ObservationIgnored var onNeedsAttention: ((Session, _ kind: AttentionKind, _ title: String, _ body: String) -> Void)?
+    @ObservationIgnored var onNeedsAttention: ((Session, _ kind: AttentionKind, _ title: String, _ body: String, _ alert: Bool) -> Void)?
 
     /// A session's attention was answered (selected / app came front / closed).
     /// The app layer uses this to retract the session's notification from
@@ -411,10 +411,16 @@ final class SessionManager {
     /// notifications by session so they replace, not stack.
     private func raiseAttention(_ session: Session, kind: AttentionKind, title: String, body: String) {
         guard !isActivelyViewing(session) else { return }
-        if let current = session.attention, current.priority > kind.priority { return }
+        let current = session.attention
+        if let current, current.priority > kind.priority { return }
+        // Play a sound only when the state actually escalates — a fresh episode
+        // or a jump to a louder kind. A program that re-emits the same kind
+        // (some agents fire a notification per tool call) updates the banner
+        // text silently instead of spamming dings.
+        let alert = current.map { kind.priority > $0.priority } ?? true
         session.attention = kind // observed → sidebar dot
         refreshDockBadge()
-        onNeedsAttention?(session, kind, title, body)
+        onNeedsAttention?(session, kind, title, body, alert)
     }
 
     /// Wortel became frontmost: the user is now looking at the selected

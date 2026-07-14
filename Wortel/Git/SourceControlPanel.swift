@@ -253,6 +253,9 @@ private struct RepoView: View {
                     .focused($messageFocused)
                     .lineLimit(3...8)
                     .frame(minHeight: 52, alignment: .topLeading)
+                if repo.canGenerateMessage || repo.isGeneratingMessage {
+                    generateButton
+                }
                 commitButton
             }
             .padding(8)
@@ -268,6 +271,30 @@ private struct RepoView: View {
                     .stroke(messageFocused ? Color.accentColor.opacity(0.5) : Color(nsColor: .separatorColor)))
         }
         .padding(12)
+    }
+
+    /// On-device (Apple Intelligence) commit-message drafter. Only shown when
+    /// the model is available and something is staged.
+    private var generateButton: some View {
+        Button {
+            Task { await repo.generateCommitMessage() }
+        } label: {
+            Group {
+                if repo.isGeneratingMessage {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.plain)
+        .disabled(!repo.canGenerateMessage)
+        .help("Draft a message from staged changes (on-device)")
     }
 
     private var commitButton: some View {

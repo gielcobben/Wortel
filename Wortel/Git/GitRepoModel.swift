@@ -21,6 +21,7 @@ final class GitRepoModel {
     private(set) var status = GitStatus()
     private(set) var isRefreshing = false
     private(set) var isCommitting = false
+    private(set) var isGeneratingMessage = false
     /// stderr from the last failed action (commit conflicts, hook rejects…).
     private(set) var lastError: String?
 
@@ -64,6 +65,35 @@ final class GitRepoModel {
         !status.stagedChanges.isEmpty
             && !commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isCommitting
+    }
+
+    /// Whether the on-device commit-message drafter can run right now (model
+    /// available and something staged to describe).
+    var canGenerateMessage: Bool {
+        guard !status.stagedChanges.isEmpty, !isGeneratingMessage else { return false }
+        if #available(macOS 26.0, *) { return CommitMessageGenerator.isAvailable }
+        return false
+    }
+
+    /// Draft a commit message from the staged diff with the on-device model and
+    /// drop it into the message field.
+    func generateCommitMessage() async {
+        guard #available(macOS 26.0, *) else { return }
+        guard !status.stagedChanges.isEmpty, !isGeneratingMessage else { return }
+        isGeneratingMessage = true
+        defer { isGeneratingMessage = false }
+
+        let diff = await GitService.stagedDiff(root: root)
+        guard !diff.isEmpty else { return }
+        do {
+            let message = try await CommitMessageGenerator.generate(diff: diff)
+            if !message.isEmpty {
+                commitMessage = message
+                lastError = nil
+            }
+        } catch {
+            lastError = "Couldn't draft a message: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Refresh

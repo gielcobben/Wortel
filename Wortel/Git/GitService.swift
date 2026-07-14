@@ -184,4 +184,13 @@ enum GitService {
     static func commit(root: String, message: String) async -> CommandResult {
         await run(["commit", "-m", message], in: root)
     }
+
+    /// The staged changes as a stat summary + patch, for feeding a model that
+    /// drafts a commit message. Empty when nothing is staged.
+    static func stagedDiff(root: String) async -> String {
+        let stat = await run(["diff", "--cached", "--stat"], in: root).stdout
+        let patch = await run(["diff", "--cached"], in: root).stdout
+        guard !patch.isEmpty else { return "" }
+        return "Files changed:\n\(stat)\nDiff:\n\(patch)"
+    }
 }

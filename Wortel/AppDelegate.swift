@@ -209,6 +209,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.selectPrevious()
     }
 
+    @objc func selectNextAttentionSession(_ sender: Any?) {
+        manager.selectNextAttention()
+    }
+
     @objc func selectSessionAtIndex(_ sender: Any?) {
         guard let item = sender as? NSMenuItem else { return }
         manager.select(index: item.tag)
@@ -235,6 +239,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(toggleSourceControl(_:)) {
             menuItem.title = gitPanel.isVisible ? "Hide Source Control" : "Show Source Control"
             return true
+        }
+        // Only offer "Next Waiting Session" when something is actually waiting.
+        if menuItem.action == #selector(selectNextAttentionSession(_:)) {
+            return manager?.hasAttention ?? false
         }
         return true
     }

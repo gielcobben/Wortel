@@ -252,6 +252,27 @@ final class SessionManager {
         selectedID = sessions[(i + 1) % sessions.count].id
     }
 
+    /// Whether any session is currently waiting on the user (drives menu
+    /// enablement for "Next Waiting Session").
+    var hasAttention: Bool {
+        sessions.contains { $0.attention != nil }
+    }
+
+    /// Jump to the next session (cyclically from the current selection) that's
+    /// waiting on the user — "take me to whatever needs me." No-op when nothing
+    /// is waiting. Selecting it clears its attention and flashes the ring.
+    func selectNextAttention() {
+        guard !sessions.isEmpty else { return }
+        let start = selectedIndex ?? -1
+        for offset in 1...sessions.count {
+            let candidate = sessions[(start + offset) % sessions.count]
+            if candidate.attention != nil {
+                selectedID = candidate.id
+                return
+            }
+        }
+    }
+
     func selectPrevious() {
         guard let i = selectedIndex, sessions.count > 1 else { return }
         selectedID = sessions[(i - 1 + sessions.count) % sessions.count].id

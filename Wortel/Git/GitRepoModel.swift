@@ -92,8 +92,11 @@ final class GitRepoModel {
         defer { isGeneratingMessage = false }
 
         guard let staged = await GitService.stagedDiff(root: root) else { return }
+        let recentSubjects = await GitService.recentCommitSubjects(root: root)
         do {
-            let message = try await CommitMessageGenerator.generate(stat: staged.stat, patch: staged.patch)
+            let message = try await CommitMessageGenerator.generate(
+                stat: staged.stat, patch: staged.patch,
+                branch: status.branch, recentSubjects: recentSubjects)
             if !message.isEmpty {
                 commitMessage = message
                 lastError = nil

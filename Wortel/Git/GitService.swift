@@ -79,6 +79,17 @@ enum GitService {
         return path.isEmpty ? nil : path
     }
 
+    /// Recent commit subject lines (newest first) — fed to the message drafter as
+    /// house-style examples so its output matches the repo's voice and any area
+    /// prefix convention. Empty on a repo with no commits yet.
+    static func recentCommitSubjects(root: String, limit: Int = 15) async -> [String] {
+        let result = await run(["log", "-n", "\(limit)", "--format=%s"], in: root)
+        guard result.ok else { return [] }
+        return result.stdout
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map(String.init)
+    }
+
     static func status(root: String) async -> GitStatus {
         let result = await run(
             ["status", "--porcelain=v2", "--branch", "--untracked-files=all"],

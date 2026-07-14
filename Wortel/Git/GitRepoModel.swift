@@ -33,8 +33,28 @@ final class GitRepoModel {
 
     var commitMessage = ""
 
+    /// FSEvents watcher on the work tree; keeps the changes list live when the
+    /// repo changes out of band (an external commit, an agent editing files).
+    @ObservationIgnored private var watcher: GitRepoWatcher?
+    @ObservationIgnored private var watchRefreshItem: DispatchWorkItem?
+
     init(root: String) {
         self.root = root
+        watcher = GitRepoWatcher(root: root) { [weak self] in
+            // Callback is on a background queue — hop to the main actor.
+            Task { @MainActor in self?.scheduleWatchRefresh() }
+        }
+    }
+
+    /// Debounce watch-driven refreshes: a burst of file writes (a build, an
+    /// agent) collapses to one status read shortly after it settles.
+    private func scheduleWatchRefresh() {
+        watchRefreshItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            Task { @MainActor in await self?.refresh() }
+        }
+        watchRefreshItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: item)
     }
 
     /// Repo folder name for the header.

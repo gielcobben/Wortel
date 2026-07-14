@@ -284,12 +284,21 @@ private struct AttentionDot: View {
             .frame(width: 7, height: 7)
             .opacity(pulses && animating ? 0.35 : 1)
             .scaleEffect(pulses && animating ? 1.18 : 1)
-            .onAppear {
-                guard pulses else { return }
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                    animating = true
-                }
+            // Start on appear *and* when the kind is upgraded in place (a steady
+            // "finished" dot becoming a pulsing "needs input" without ever
+            // leaving the tree), so the pulse never gets stuck off.
+            .onAppear { syncPulse() }
+            .onChange(of: pulses) { _, _ in syncPulse() }
+    }
+
+    private func syncPulse() {
+        if pulses {
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                animating = true
             }
+        } else {
+            withAnimation(.linear(duration: 0.15)) { animating = false }
+        }
     }
 }
 

@@ -39,7 +39,13 @@ private struct RepoView: View {
     /// "put keyboard focus in the changes list."
     let focusRequest: Int
     @FocusState private var listFocused: Bool
-    @FocusState private var messageFocused: Bool
+    /// Whether the native commit editor holds focus (drives its border). Driven
+    /// by CommitMessageEditor's focus callback, not @FocusState — the editor is
+    /// an NSTextView, outside SwiftUI's focus system.
+    @State private var messageFocused = false
+    /// Grow-to-fit height of the commit editor, and a tap-to-focus token.
+    @State private var messageHeight: CGFloat = 52
+    @State private var focusMessageRequest = 0
     @State private var lastHandledFocusRequest = 0
 
     var body: some View {
@@ -78,6 +84,11 @@ private struct RepoView: View {
 
     // MARK: Header
 
+    private var pushHelp: String {
+        let n = repo.status.ahead
+        return n > 0 ? "Push \(n) commit\(n == 1 ? "" : "s")" : "Push"
+    }
+
     private var header: some View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.branch")
@@ -98,6 +109,17 @@ private struct RepoView: View {
                     .font(.caption)
             }
             Spacer()
+            if repo.canPush {
+                Button {
+                    Task { await repo.push() }
+                } label: {
+                    Image(systemName: "arrow.up.circle")
+                        .opacity(repo.isPushing ? 0.3 : 1)
+                }
+                .buttonStyle(.borderless)
+                .help(pushHelp)
+                .disabled(repo.isPushing)
+            }
             Button {
                 Task { await repo.refresh() }
             } label: {
@@ -243,16 +265,22 @@ private struct RepoView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                     .lineLimit(3)
+                    .textSelection(.enabled)
             }
             // Message field with the commit action as a circular button tucked
             // into the bottom-trailing corner, like a chat composer's send. The
             // whole filled box focuses the field, not just the glyphs.
             HStack(alignment: .bottom, spacing: 6) {
-                TextField("Message (⌘⏎ to commit)", text: $repo.commitMessage, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .focused($messageFocused)
-                    .lineLimit(3...8)
-                    .frame(minHeight: 52, alignment: .topLeading)
+                CommitMessageEditor(
+                    text: $repo.commitMessage,
+                    height: $messageHeight,
+                    placeholder: "Message (⌘⏎ to commit)",
+                    minHeight: 52,
+                    maxHeight: 160,
+                    onFocusChange: { messageFocused = $0 },
+                    onCommit: { Task { await repo.commit() } },
+                    focusRequest: focusMessageRequest)
+                    .frame(height: messageHeight)
                 if repo.canGenerateMessage || repo.isGeneratingMessage {
                     generateButton
                 }
@@ -265,7 +293,7 @@ private struct RepoView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color(nsColor: .textBackgroundColor))
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .onTapGesture { messageFocused = true })
+                    .onTapGesture { focusMessageRequest += 1 })
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(messageFocused ? Color.accentColor.opacity(0.5) : Color(nsColor: .separatorColor)))

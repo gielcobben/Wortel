@@ -185,12 +185,22 @@ enum GitService {
         await run(["commit", "-m", message], in: root)
     }
 
-    /// The staged changes as a stat summary + patch, for feeding a model that
-    /// drafts a commit message. Empty when nothing is staged.
-    static func stagedDiff(root: String) async -> String {
+    /// Push the current branch. On a branch with no upstream yet, set one on
+    /// `origin` so the first push just works; otherwise a plain `push`.
+    static func push(root: String, setUpstream: Bool) async -> CommandResult {
+        var args = ["push"]
+        if setUpstream { args += ["--set-upstream", "origin", "HEAD"] }
+        return await run(args, in: root)
+    }
+
+    /// The staged changes as a stat summary + full patch, for feeding a model
+    /// that drafts a commit message. Returns the two parts separately so the
+    /// drafter can keep the (cheap, whole-picture) stat while budgeting the
+    /// patch per file. Nil when nothing is staged.
+    static func stagedDiff(root: String) async -> (stat: String, patch: String)? {
         let stat = await run(["diff", "--cached", "--stat"], in: root).stdout
         let patch = await run(["diff", "--cached"], in: root).stdout
-        guard !patch.isEmpty else { return "" }
-        return "Files changed:\n\(stat)\nDiff:\n\(patch)"
+        guard !patch.isEmpty else { return nil }
+        return (stat, patch)
     }
 }

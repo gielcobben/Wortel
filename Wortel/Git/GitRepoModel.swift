@@ -21,6 +21,7 @@ final class GitRepoModel {
     private(set) var status = GitStatus()
     private(set) var isRefreshing = false
     private(set) var isCommitting = false
+    private(set) var isPushing = false
     private(set) var isGeneratingMessage = false
     /// stderr from the last failed action (commit conflicts, hook rejects…).
     private(set) var lastError: String?
@@ -67,6 +68,13 @@ final class GitRepoModel {
             && !isCommitting
     }
 
+    /// Whether there's anything to push: commits ahead of the upstream, or a
+    /// branch with no upstream yet (a first push). Never in detached HEAD.
+    var canPush: Bool {
+        guard status.branch != nil, !isPushing else { return false }
+        return status.ahead > 0 || status.upstream == nil
+    }
+
     /// Whether the on-device commit-message drafter can run right now (model
     /// available and something staged to describe).
     var canGenerateMessage: Bool {
@@ -83,10 +91,9 @@ final class GitRepoModel {
         isGeneratingMessage = true
         defer { isGeneratingMessage = false }
 
-        let diff = await GitService.stagedDiff(root: root)
-        guard !diff.isEmpty else { return }
+        guard let staged = await GitService.stagedDiff(root: root) else { return }
         do {
-            let message = try await CommitMessageGenerator.generate(diff: diff)
+            let message = try await CommitMessageGenerator.generate(stat: staged.stat, patch: staged.patch)
             if !message.isEmpty {
                 commitMessage = message
                 lastError = nil
@@ -194,6 +201,23 @@ final class GitRepoModel {
 
         if result.ok {
             commitMessage = ""
+            lastError = nil
+        } else {
+            lastError = result.stderr.isEmpty ? result.stdout : result.stderr
+        }
+        await refresh()
+    }
+
+    // MARK: - Push
+
+    func push() async {
+        guard status.branch != nil, !isPushing else { return }
+
+        isPushing = true
+        let result = await GitService.push(root: root, setUpstream: status.upstream == nil)
+        isPushing = false
+
+        if result.ok {
             lastError = nil
         } else {
             lastError = result.stderr.isEmpty ? result.stdout : result.stderr

@@ -47,13 +47,17 @@ struct DiffView: NSViewRepresentable {
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
+        // Follow live width changes so the row tints keep filling the panel as
+        // it (or the window) is resized.
+        scroll.contentView.postsFrameChangedNotifications = true
+        context.coordinator.observeResize(of: scroll)
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let changed = context.coordinator.update(lines: lines)
         guard let table = scroll.documentView as? NSTableView else { return }
-        table.tableColumns.first?.width = context.coordinator.columnWidth
+        context.coordinator.applyColumnWidth()
         table.reloadData()
         if changed {
             // New file selected — jump back to the top.
@@ -75,6 +79,29 @@ struct DiffView: NSViewRepresentable {
         private var font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         private var charWidth: CGFloat = 7
         weak var table: NSTableView?
+        private weak var scroll: NSScrollView?
+
+        deinit { NotificationCenter.default.removeObserver(self) }
+
+        /// Watch the scroll view's clip view so the column can be re-widened to
+        /// fill the viewport whenever the panel resizes.
+        func observeResize(of scroll: NSScrollView) {
+            self.scroll = scroll
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(viewportResized),
+                name: NSView.frameDidChangeNotification, object: scroll.contentView)
+        }
+
+        @objc private func viewportResized() { applyColumnWidth() }
+
+        /// The single column spans at least the full viewport so each row's
+        /// background tint fills the panel edge-to-edge; when the content is
+        /// wider it stays content-width and the horizontal scroller appears.
+        func applyColumnWidth() {
+            guard let table else { return }
+            let viewport = scroll?.contentView.bounds.width ?? 0
+            table.tableColumns.first?.width = max(columnWidth, viewport)
+        }
 
         func configure(font: NSFont) {
             self.font = font

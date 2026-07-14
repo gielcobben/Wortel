@@ -9,3 +9,6 @@ build/
 # canonical store. releases/appcast.xml stays tracked as a record of the feed.
 releases/*.zip
 releases/*.delta
+
+# Claude Code transient worktrees
+.claude/worktrees/

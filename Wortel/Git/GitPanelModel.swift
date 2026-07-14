@@ -11,6 +11,10 @@ import Observation
 final class GitPanelModel {
     private(set) var isVisible = false
     private(set) var repo: GitRepoModel?
+    /// Bumped to ask the panel to move keyboard focus into the changes list.
+    /// The list view watches this and claims focus; a monotonic counter (rather
+    /// than a Bool) so repeated requests always register, even back-to-back.
+    private(set) var listFocusRequest = 0
     /// True once a cwd has been resolved and it turned out not to be a repo — so
     /// the panel can show "not a git repository" rather than a blank flash.
     private(set) var resolvedNonRepo = false
@@ -34,6 +38,15 @@ final class GitPanelModel {
         if isVisible {
             focus(cwd: currentCwd)
         }
+    }
+
+    /// Show the panel if needed and ask the changes list to take keyboard focus.
+    func requestListFocus() {
+        if !isVisible {
+            isVisible = true
+            focus(cwd: currentCwd)
+        }
+        listFocusRequest += 1
     }
 
     /// A command finished in the shown repo's session — the work tree may have

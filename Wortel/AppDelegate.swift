@@ -217,6 +217,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.toggle()
     }
 
+    @objc func focusSourceControlList(_ sender: Any?) {
+        gitPanel.requestListFocus()
+    }
+
     @objc func checkForUpdates(_ sender: Any?) {
         updater.checkForUpdates()
     }
@@ -226,6 +230,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(checkForUpdates(_:)) {
             return updater.canCheckForUpdates
+        }
+        if menuItem.action == #selector(toggleSourceControl(_:)) {
+            menuItem.title = gitPanel.isVisible ? "Hide Source Control" : "Show Source Control"
+            return true
         }
         return true
     }

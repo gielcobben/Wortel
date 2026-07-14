@@ -270,7 +270,7 @@ private struct DetailView: View {
                 .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
             if git.isVisible {
                 SourceControlPanel(panel: git)
-                    .frame(minWidth: 300, idealWidth: 360, maxWidth: 640, maxHeight: .infinity)
+                    .frame(minWidth: 320, idealWidth: 440, maxWidth: 680, maxHeight: .infinity)
             }
         }
         .navigationTitle(manager.selected?.name ?? "Wortel")

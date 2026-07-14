@@ -18,7 +18,7 @@ struct SourceControlPanel: View {
     var body: some View {
         Group {
             if let repo = panel.repo {
-                RepoView(repo: repo)
+                RepoView(repo: repo, focusRequest: panel.listFocusRequest)
             } else {
                 emptyState
             }
@@ -44,7 +44,12 @@ struct SourceControlPanel: View {
 
 private struct RepoView: View {
     @Bindable var repo: GitRepoModel
+    /// Monotonic focus-request token from GitPanelModel (⌘⌥L). A change means
+    /// "put keyboard focus in the changes list."
+    let focusRequest: Int
     @FocusState private var listFocused: Bool
+    @FocusState private var messageFocused: Bool
+    @State private var lastHandledFocusRequest = 0
     /// Measured intrinsic height of the changes list content, used to size the
     /// list to fit until it would exceed half the panel.
     @State private var listContentHeight: CGFloat = 0
@@ -68,13 +73,34 @@ private struct RepoView: View {
             Divider()
             commitBar
         }
+        // ⌘⌥L focus request. Handle it both when it changes (panel already open)
+        // and on appear (the request revealed a previously-hidden panel, so this
+        // view didn't exist when the token changed).
+        .onChange(of: focusRequest) { _, req in applyFocusRequest(req) }
+        .onAppear { applyFocusRequest(focusRequest) }
+    }
+
+    /// Move keyboard focus into the changes list for an unseen focus request.
+    private func applyFocusRequest(_ req: Int) {
+        guard req != lastHandledFocusRequest else { return }
+        lastHandledFocusRequest = req
+        // Give ↑/↓ a starting point if nothing is selected yet.
+        if repo.selectedChangeID == nil { repo.selectAdjacent(1) }
+        // Next runloop turn: the focusable list is reliably installed by then,
+        // even when this request is what just revealed the panel.
+        DispatchQueue.main.async { listFocused = true }
     }
 
     private func listHeight(available: CGFloat) -> CGFloat {
+        // Cap at half the area; scroll past that. Give the list a little more
+        // than exact fit-content (breathing room below the last row, and a
+        // comfortable floor so a single file isn't cramped) — all still clamped
+        // to the 50% cap.
         let cap = available * 0.5
         // Before the first measurement, fall back to the cap rather than
         // collapsing to zero.
-        return listContentHeight > 0 ? min(listContentHeight, cap) : cap
+        guard listContentHeight > 0 else { return cap }
+        return min(max(listContentHeight + 20, 96), cap)
     }
 
     // MARK: Header
@@ -253,31 +279,55 @@ private struct RepoView: View {
                     .foregroundStyle(.red)
                     .lineLimit(3)
             }
-            TextField("Message (⌘⏎ to commit)", text: $repo.commitMessage, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...4)
-                .padding(6)
-                .background(Color(nsColor: .textBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color(nsColor: .separatorColor)))
-            HStack {
-                Spacer()
-                Button {
-                    Task { await repo.commit() }
-                } label: {
-                    if repo.isCommitting {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text("Commit")
-                    }
-                }
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!repo.canCommit)
+            // Message field with the commit action as a circular button tucked
+            // into the bottom-trailing corner, like a chat composer's send. The
+            // whole filled box focuses the field, not just the glyphs.
+            HStack(alignment: .bottom, spacing: 6) {
+                TextField("Message (⌘⏎ to commit)", text: $repo.commitMessage, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .focused($messageFocused)
+                    .lineLimit(3...8)
+                    .frame(minHeight: 52, alignment: .topLeading)
+                commitButton
             }
+            .padding(8)
+            .background(
+                // Tap target sits behind the field/button, so clicking anywhere
+                // in the padding focuses the message without stealing their taps.
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .textBackgroundColor))
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .onTapGesture { messageFocused = true })
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(messageFocused ? Color.accentColor.opacity(0.5) : Color(nsColor: .separatorColor)))
         }
         .padding(12)
+    }
+
+    private var commitButton: some View {
+        Button {
+            Task { await repo.commit() }
+        } label: {
+            Group {
+                if repo.isCommitting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(repo.canCommit ? Color.white : Color.secondary)
+                }
+            }
+            .frame(width: 22, height: 22)
+            .background(
+                Circle().fill(repo.canCommit ? Color.accentColor : Color.gray.opacity(0.22)))
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.return, modifiers: .command)
+        .disabled(!repo.canCommit)
+        .help("Commit staged changes (⌘⏎)")
     }
 }
 

@@ -76,8 +76,16 @@ enum MainMenu {
         toggleSidebar.keyEquivalentModifierMask = [.command, .option]
         // ⌘⌥G, not ⌘G: ⌘⌥S is already Toggle Sidebar above, and ⌘G is free of a
         // wortel.conf keybind. Routes through the responder chain to AppDelegate.
+        // Title flips Show/Hide in AppDelegate.validateMenuItem based on panel
+        // visibility; the icon stays put.
         let sourceControl = viewMenu.addItem(withTitle: "Show Source Control", action: #selector(AppDelegate.toggleSourceControl(_:)), keyEquivalent: "g")
         sourceControl.keyEquivalentModifierMask = [.command, .option]
+        sourceControl.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)
+        // ⌘⌥L: reveal the panel (if hidden) and move focus into the changes list
+        // so ↑/↓ navigate files without reaching for the mouse.
+        let focusList = viewMenu.addItem(withTitle: "Focus Changes List", action: #selector(AppDelegate.focusSourceControlList(_:)), keyEquivalent: "l")
+        focusList.keyEquivalentModifierMask = [.command, .option]
+        focusList.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: nil)
 
         // Window menu
         let windowItem = NSMenuItem()

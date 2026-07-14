@@ -181,6 +181,7 @@ private struct SessionRow: View {
     @State private var draft = ""
     @State private var cancelling = false
     @FocusState private var fieldFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // The selected row sits on an always-accent pill, so its content is white.
     // Not while editing: the rename field sits on a normal background.
@@ -245,9 +246,11 @@ private struct SessionRow: View {
     @ViewBuilder
     private var activityIndicator: some View {
         if let kind = session.attention {
-            Circle()
-                .fill(onAccent ? Color.white : Self.attentionColor(kind))
-                .frame(width: 7, height: 7)
+            // Urgent states (waiting on you / failed) breathe to catch the eye
+            // in peripheral vision; a clean finish sits still.
+            AttentionDot(
+                color: onAccent ? .white : Self.attentionColor(kind),
+                pulses: kind.pulses && !reduceMotion)
         } else if session.isBusy {
             ProgressView()
                 .progressViewStyle(.circular)
@@ -267,6 +270,67 @@ private struct SessionRow: View {
     }
 }
 
+/// A 7pt status dot that optionally "breathes" (opacity + a touch of scale) to
+/// draw peripheral attention. The animation starts on appear and stops on its
+/// own when the dot leaves the tree (attention cleared).
+private struct AttentionDot: View {
+    let color: Color
+    let pulses: Bool
+    @State private var animating = false
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .opacity(pulses && animating ? 0.35 : 1)
+            .scaleEffect(pulses && animating ? 1.18 : 1)
+            .onAppear {
+                guard pulses else { return }
+                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                    animating = true
+                }
+            }
+    }
+}
+
+/// A brief coloured ring drawn over the terminal when you switch into a session
+/// that was waiting on you — a quick "this is the one" cue. Invisible at rest;
+/// each fresh `flash.id` fades a ring in fast and back out. Purely decorative,
+/// so it never intercepts clicks.
+private struct AttentionFlashOverlay: View {
+    let flash: AttentionFlash?
+    @State private var opacity: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(color, lineWidth: 2.5)
+            .padding(1.5)
+            .opacity(opacity)
+            .allowsHitTesting(false)
+            .onChange(of: flash?.id) { _, id in
+                guard id != nil else { return }
+                if reduceMotion {
+                    opacity = 0.85
+                    withAnimation(.easeIn(duration: 0.5).delay(0.4)) { opacity = 0 }
+                } else {
+                    opacity = 0
+                    withAnimation(.easeOut(duration: 0.12)) { opacity = 0.85 }
+                    withAnimation(.easeIn(duration: 0.7).delay(0.12)) { opacity = 0 }
+                }
+            }
+    }
+
+    private var color: Color {
+        switch flash?.kind {
+        case .needsInput: return .orange
+        case .failed: return .red
+        case .finished: return .blue
+        case nil: return .clear
+        }
+    }
+}
+
 /// The detail column: the terminal, with the source-control panel split in on
 /// the trailing edge when shown. Extracted from ContentView's body so each
 /// view stays small enough for the SwiftUI type-checker.
@@ -279,6 +343,7 @@ private struct DetailView: View {
         HSplitView {
             TerminalContainer(runtime: runtime, session: manager.selected)
                 .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                .overlay { AttentionFlashOverlay(flash: manager.attentionFlash) }
             if git.isVisible {
                 SourceControlPanel(panel: git)
                     .frame(minWidth: 320, idealWidth: 440, maxWidth: 680, maxHeight: .infinity)

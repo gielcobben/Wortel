@@ -35,6 +35,24 @@ enum AttentionKind {
         case .finished: return false
         }
     }
+
+    /// Whether the sidebar dot should breathe. Urgent states pull the eye; a
+    /// clean finish is calm and steady.
+    var pulses: Bool {
+        switch self {
+        case .needsInput, .failed: return true
+        case .finished: return false
+        }
+    }
+}
+
+/// A one-shot "you just switched into a session that was waiting on you" event.
+/// The detail view watches `id` to flash a brief orienting ring in `kind`'s
+/// colour, so the eye lands on why the session pinged. A fresh `id` each time
+/// re-triggers the animation even for the same kind.
+struct AttentionFlash: Identifiable {
+    let id = UUID()
+    let kind: AttentionKind
 }
 
 /// One sidebar entry = one shell = one ghostty surface.

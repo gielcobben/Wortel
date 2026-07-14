@@ -18,11 +18,21 @@ final class SessionManager {
     var selectedID: Session.ID? {
         didSet {
             guard selectedID != oldValue, let session = selected else { return }
+            // Switching into a waiting session: flash a ring in the detail view
+            // to orient the eye before the dot clears.
+            if let kind = session.attention {
+                attentionFlash = AttentionFlash(kind: kind)
+            }
             clearAttention(session)
             session.ensureSurfaceView(runtime: runtime)
             scheduleSave()
         }
     }
+
+    /// The most recent "switched into a waiting session" event; the detail view
+    /// flashes an orienting ring on each fresh value. Never cleared — at rest
+    /// the overlay is simply invisible.
+    private(set) var attentionFlash: AttentionFlash?
 
     /// The session whose name is being edited inline (nil = none). Observed by
     /// the sidebar so double-click, the context menu, and ⌘R all drive one path.

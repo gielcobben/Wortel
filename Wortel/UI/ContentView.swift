@@ -265,6 +265,7 @@ private struct SessionRow: View {
         switch kind {
         case .needsInput: return .orange
         case .failed: return .red
+        case .turnDone: return .mint
         case .finished: return .blue
         }
     }
@@ -334,6 +335,7 @@ private struct AttentionFlashOverlay: View {
         switch flash?.kind {
         case .needsInput: return .orange
         case .failed: return .red
+        case .turnDone: return .mint
         case .finished: return .blue
         case nil: return .clear
         }

@@ -375,7 +375,11 @@ final class SessionManager {
         let work = DispatchWorkItem { [weak self, weak session] in
             guard let self, let session else { return }
             self.quiesceTimers[id] = nil
-            self.raiseAttention(session, kind: .needsInput, title: session.name, body: "Ready for your input")
+            // The agent went quiet without an explicit prompt — inferred
+            // turn-end. If it *did* prompt (a notification / action-required
+            // title), that already raised a louder .needsInput which priority
+            // keeps from being downgraded here.
+            self.raiseAttention(session, kind: .turnDone, title: session.name, body: "Finished — your move")
         }
         quiesceTimers[id] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiesceSettleDelay, execute: work)
@@ -509,7 +513,9 @@ final class SessionManager {
                 guard let self, let session else { return }
                 // Program-authored "needs you" (OSC 9/777/99) — e.g. an agent CLI
                 // on a permission or idle prompt. The most reliable signal.
-                self.raiseAttention(session, kind: .needsInput,
+                // Text tells apart a blocking request from a "task done" ping.
+                let kind = AttentionKind.classify(notificationTitle: title, body: body)
+                self.raiseAttention(session, kind: kind,
                                     title: title.isEmpty ? session.name : title,
                                     body: body)
             }

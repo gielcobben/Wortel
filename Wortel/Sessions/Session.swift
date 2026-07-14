@@ -7,42 +7,66 @@ import Observation
 /// native notification makes a sound. Colours are mapped in the UI layer so the
 /// model stays AppKit-only.
 enum AttentionKind {
-    /// A program is blocked on the user: a permission / confirmation prompt, an
-    /// "action required" marker, a bell, a program-authored desktop
-    /// notification, or an agent that finished its turn and is now waiting. The
-    /// user is the bottleneck — the loudest state.
+    /// A program is *blocked on the user* — it made an explicit request: a
+    /// permission / confirmation prompt, an "action required" title marker, a
+    /// bell, or a program-authored desktop notification. Nothing proceeds until
+    /// you answer, so this is the loudest state.
     case needsInput
     /// A command exited non-zero while the session was unselected.
     case failed
-    /// A long-running command finished cleanly while the session was
-    /// unselected. Purely informational.
+    /// An agent finished its turn and went quiet, with no explicit request —
+    /// inferred from its own progress reporting stopping (which only long-lived
+    /// programs emit; plain commands clear via a command-finished mark instead).
+    /// It's your move, but nothing is blocked, so it arrives calmly and silent.
+    case turnDone
+    /// A plain long-running command finished cleanly while unselected. Purely
+    /// informational.
     case finished
 
-    /// Higher wins when two signals race (see `SessionManager.raiseAttention`).
+    /// Higher wins when two signals race (see `SessionManager.raiseAttention`),
+    /// so an explicit request can never be masked by an inferred turn-end.
     var priority: Int {
         switch self {
-        case .needsInput: return 3
-        case .failed: return 2
+        case .needsInput: return 4
+        case .failed: return 3
+        case .turnDone: return 2
         case .finished: return 1
         }
     }
 
-    /// Informational "it's done" arrives silently; a blocked prompt or an
-    /// outright failure is worth a sound.
+    /// A blocked prompt or an outright failure is worth a sound; an inferred
+    /// turn-end and an informational finish arrive silently.
     var playsSound: Bool {
         switch self {
         case .needsInput, .failed: return true
+        case .turnDone, .finished: return false
+        }
+    }
+
+    /// Whether the sidebar dot should breathe. Anything that wants your next
+    /// action pulls the eye; a plain clean finish is calm and steady.
+    var pulses: Bool {
+        switch self {
+        case .needsInput, .failed, .turnDone: return true
         case .finished: return false
         }
     }
 
-    /// Whether the sidebar dot should breathe. Urgent states pull the eye; a
-    /// clean finish is calm and steady.
-    var pulses: Bool {
-        switch self {
-        case .needsInput, .failed: return true
-        case .finished: return false
-        }
+    /// Classify a program-authored desktop notification (OSC 9 / 777 / 99). An
+    /// explicit notification usually means the program wants you *now*, so the
+    /// default is the blocking `.needsInput`; it's only softened to `.turnDone`
+    /// when the text clearly reads as a completion with nothing left to approve.
+    /// Keyword matching only has to break the tie for this one ambiguous source —
+    /// every other signal is classified by where it comes from.
+    static func classify(notificationTitle title: String, body: String) -> AttentionKind {
+        let text = (title + " " + body).lowercased()
+        let blocking = ["permission", "approve", "allow", "confirm", "authoriz",
+                        "waiting", "input", "action required", "review",
+                        "continue", "proceed", "respond", "y/n", "question"]
+        if blocking.contains(where: text.contains) { return .needsInput }
+        let completion = ["completed", "complete", "finished", "done", "success"]
+        if completion.contains(where: text.contains) { return .turnDone }
+        return .needsInput
     }
 }
 

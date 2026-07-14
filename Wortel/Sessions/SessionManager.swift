@@ -24,6 +24,10 @@ final class SessionManager {
                 attentionFlash = AttentionFlash(kind: kind)
             }
             clearAttention(session)
+            // Left the previous session before it could count as read; start the
+            // caught-up clock on the one you just landed on.
+            cancelCaughtUp(oldValue)
+            scheduleCaughtUp(session)
             session.ensureSurfaceView(runtime: runtime)
             scheduleSave()
         }
@@ -108,6 +112,13 @@ final class SessionManager {
     /// Sessions whose terminal title currently shows a "working" marker
     /// (see `titleChanged`).
     @ObservationIgnored private var titleShowsWorking: Set<Session.ID> = []
+    /// How long a session must stay actively-viewed before its "unread" mark
+    /// clears. Long enough that a quick click-through to triage doesn't count as
+    /// catching up, short enough that actually landing on it clears promptly.
+    private static let unreadDwellDelay: TimeInterval = 1.0
+    /// Pending "you've now caught up → drop the unread mark" work items, keyed
+    /// by session; cancelled the moment you navigate away.
+    @ObservationIgnored private var unreadDwellTimers: [Session.ID: DispatchWorkItem] = [:]
 
     var selected: Session? {
         sessions.first { $0.id == selectedID }
@@ -168,6 +179,7 @@ final class SessionManager {
         let hadAttention = session.needsAttention
         busyTimers.removeValue(forKey: session.id)?.cancel()
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
+        unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
         busyStartedAt.removeValue(forKey: session.id)
         lastBusyInterval.removeValue(forKey: session.id)
         titleShowsWorking.remove(session.id)
@@ -419,19 +431,52 @@ final class SessionManager {
         // text silently instead of spamming dings.
         let alert = current.map { kind.priority > $0.priority } ?? true
         session.attention = kind // observed → sidebar dot
+        // The quieter tier: mark it unread too, at the highest kind seen, so the
+        // trail survives past the loud dot until you've actually engaged.
+        if session.unread.map({ kind.priority > $0.priority }) ?? true {
+            session.unread = kind
+        }
         refreshDockBadge()
         onNeedsAttention?(session, kind, title, body, alert)
     }
 
+    /// Start the "caught up" clock for a session: if it stays actively-viewed
+    /// for the dwell window, drop its unread mark. A glance shorter than the
+    /// dwell (or navigating away) leaves the mark in place. Safe to call
+    /// repeatedly — it restarts the clock.
+    private func scheduleCaughtUp(_ session: Session) {
+        unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
+        guard session.unread != nil, isActivelyViewing(session) else { return }
+        let id = session.id
+        let work = DispatchWorkItem { [weak self, weak session] in
+            guard let self, let session else { return }
+            self.unreadDwellTimers[id] = nil
+            session.unread = nil // caught up → drop the hollow dot
+        }
+        unreadDwellTimers[id] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.unreadDwellDelay, execute: work)
+    }
+
+    /// You navigated away (or backgrounded) before the dwell elapsed — keep the
+    /// unread mark.
+    private func cancelCaughtUp(_ id: Session.ID?) {
+        guard let id else { return }
+        unreadDwellTimers.removeValue(forKey: id)?.cancel()
+    }
+
     /// Wortel became frontmost: the user is now looking at the selected
-    /// session, so clear its attention.
+    /// session, so clear its attention and start its caught-up clock.
     func appDidBecomeActive() {
         appIsActive = true
-        if let selected { clearAttention(selected) }
+        if let selected {
+            clearAttention(selected)
+            scheduleCaughtUp(selected)
+        }
     }
 
     func appDidResignActive() {
         appIsActive = false
+        cancelCaughtUp(selectedID)
     }
 
     /// The main window's on-screen visibility changed (occlusion state /
@@ -439,7 +484,12 @@ final class SessionManager {
     /// now see the selected session — clear its attention, same as activate.
     func windowVisibilityChanged(_ visible: Bool) {
         windowIsVisible = visible
-        if visible, appIsActive, let selected { clearAttention(selected) }
+        if visible, appIsActive, let selected {
+            clearAttention(selected)
+            scheduleCaughtUp(selected)
+        } else {
+            cancelCaughtUp(selectedID)
+        }
     }
 
     /// Dock badge = number of background sessions waiting on the user.

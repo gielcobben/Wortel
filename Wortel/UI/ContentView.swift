@@ -258,6 +258,13 @@ private struct SessionRow: View {
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
                 .tint(onAccent ? .white : .secondary)
+        } else if let kind = session.unread, !isSelected {
+            // Quiet "you haven't caught up here" trail: a hollow ring in the
+            // kind's colour, no pulse. Hidden on the selected row (you're on it,
+            // the dwell clock is running).
+            Circle()
+                .stroke(Self.attentionColor(kind).opacity(0.8), lineWidth: 1.5)
+                .frame(width: 7, height: 7)
         }
     }
 

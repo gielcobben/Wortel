@@ -95,11 +95,17 @@ final class Session: Identifiable {
     /// program). Kept for reference; not currently shown.
     var title: String
     var cwd: String?
-    /// A background session wants your eyes, and *why*: it's blocked on you,
-    /// something failed, or a long command finished while unselected. `nil` when
-    /// the session is caught up. Cleared when the session is selected. Drives
-    /// the sidebar attention dot (colour + pulse per kind).
+    /// A background session wants your eyes *now*, and *why*: it's blocked on
+    /// you, something failed, or a long command finished while unselected. `nil`
+    /// once you select it (you've seen the ping). Drives the loud sidebar dot
+    /// (colour + pulse per kind), the Dock badge, and the notification.
     var attention: AttentionKind?
+    /// The quieter second tier: this session had activity you haven't actually
+    /// *engaged* with yet. Set whenever attention is raised, but — unlike
+    /// `attention` — it survives a mere glance and only clears once you've
+    /// dwelled on the session. Drives a small hollow "unread" dot so a quick
+    /// click-through to triage doesn't lose track of what you skipped past.
+    var unread: AttentionKind?
     /// Convenience for the count-based Dock badge and close bookkeeping.
     var needsAttention: Bool { attention != nil }
     /// A foreground command is currently running in this session. Debounced by

@@ -15,8 +15,10 @@ struct SourceControlPanel: View {
                 emptyState
             }
         }
-        .frame(minWidth: 280)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
+        // No background on purpose. As an inspector split item the system supplies
+        // the material itself (Liquid Glass on macOS 26), and painting anything
+        // opaque here — a tinted fill, or an NSVisualEffectView — sits on top of
+        // that material and blocks it. Width now comes from .inspectorColumnWidth.
     }
 
     private var emptyState: some View {

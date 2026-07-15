@@ -44,6 +44,19 @@ final class GitPanelModel {
         }
     }
 
+    /// Writable mirror of `isVisible` for `.inspector(isPresented:)`. The system
+    /// dismisses the inspector on its own (its own chrome, window resize), so
+    /// visibility has to be settable and not just toggled — and every write still
+    /// goes through `setVisible` so persistence and repo focus stay in sync.
+    var isPresented: Bool {
+        get { isVisible }
+        set {
+            guard newValue != isVisible else { return }
+            setVisible(newValue)
+            if newValue { focus(cwd: currentCwd) }
+        }
+    }
+
     /// Show the panel if needed and ask the changes list to take keyboard focus.
     func requestListFocus() {
         if !isVisible {

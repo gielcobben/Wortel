@@ -10,6 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private(set) var runtime: GhosttyRuntime!
     private var manager: SessionManager!
     private var window: NSWindow!
+    /// The three-pane shell. Held so the toolbar's tracking separators can bind to
+    /// its split view, and so ⌘⌥S/⌘⌥G reach the right controller.
+    private var splitController: MainSplitViewController!
     /// Drives the trailing source-control panel (hidden by default).
     private let gitPanel = GitPanelModel()
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
@@ -43,8 +46,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Drop the hairline the system draws under the titlebar/toolbar so the
         // terminal and sidebar run edge-to-edge with no border bottom.
         window.titlebarSeparatorStyle = .none
-        window.contentViewController = NSHostingController(
-            rootView: ContentView(runtime: runtime, manager: manager, git: gitPanel))
+        // The unified style is what splits the titlebar into per-pane sections, so
+        // the title sits against the sidebar's trailing edge and toolbar items
+        // stop at the inspector's leading edge. Set here rather than via
+        // .windowToolbarStyle because that modifier is Scene-level and this app is
+        // an AppDelegate hosting SwiftUI, not an App struct — no Scene to hang it
+        // off. On macOS 26 the items pick up Liquid Glass automatically (it keys
+        // off the linked SDK, not the deployment target); on 14 they render as a
+        // conventional unified toolbar.
+        window.toolbarStyle = .unified
+        let split = MainSplitViewController(runtime: runtime, manager: manager, git: gitPanel)
+        self.splitController = split
+        window.contentViewController = split
+        installToolbar(on: window, splitView: split.splitView)
         window.setFrameAutosaveName("main")
         if window.frame.height < 320 {
             window.setContentSize(NSSize(width: 1100, height: 700))
@@ -97,6 +111,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        observeWindowTitle()
+    }
+
+    /// The toolbar is retained here because NSWindow doesn't own its delegate.
+    private var toolbarDelegate: MainToolbarDelegate?
+
+    private func installToolbar(on window: NSWindow, splitView: NSSplitView) {
+        let delegate = MainToolbarDelegate(splitView: splitView)
+        toolbarDelegate = delegate
+        let toolbar = NSToolbar(identifier: "wortel.main")
+        toolbar.delegate = delegate
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+    }
+
+    /// The window title used to come from SwiftUI's .navigationTitle, which only
+    /// exists inside a NavigationSplitView — gone with the AppKit shell, so drive
+    /// NSWindow's own title/subtitle instead. Unified toolbar style puts them in
+    /// the content section, i.e. starting at the sidebar's trailing edge.
+    /// @Observable tracking is one-shot, so the observer re-arms after each change.
+    private func observeWindowTitle() {
+        withObservationTracking {
+            _ = manager.selected?.name
+            _ = manager.selected?.abbreviatedPath
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.applyWindowTitle()
+                self.observeWindowTitle()
+            }
+        }
+        applyWindowTitle()
+    }
+
+    private func applyWindowTitle() {
+        window?.title = manager.selected?.name ?? "Wortel"
+        window?.subtitle = manager.selected?.abbreviatedPath ?? ""
     }
 
     // MARK: - Focus tracking (drives "actively viewing" → no attention shout)

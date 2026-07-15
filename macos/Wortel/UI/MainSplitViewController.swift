@@ -44,7 +44,11 @@ final class MainSplitViewController: NSSplitViewController {
 
         // Sidebar. `.sidebar` behavior supplies the material and full-height
         // layout (paired with the window's .fullSizeContentView).
+        // NSSplitView takes each pane's starting width from its view's frame, so
+        // the frame is the only place to state a default (the autosave below wins
+        // on every launch after the first drag).
         let sidebar = NSHostingController(rootView: SidebarPane(manager: manager))
+        sidebar.view.setFrameSize(NSSize(width: 220, height: sidebar.view.frame.height))
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 400
@@ -67,6 +71,7 @@ final class MainSplitViewController: NSSplitViewController {
         // collapseBehavior keeps the *window* still when the panel opens/closes,
         // resizing the terminal instead.
         let inspector = NSHostingController(rootView: SourceControlPanel(panel: git))
+        inspector.view.setFrameSize(NSSize(width: 420, height: inspector.view.frame.height))
         let item = NSSplitViewItem(inspectorWithViewController: inspector)
         item.minimumThickness = 260
         item.maximumThickness = 680
@@ -78,6 +83,10 @@ final class MainSplitViewController: NSSplitViewController {
         inspectorItem = item
 
         sidebarItem.holdingPriority = NSLayoutConstraint.Priority(260)
+
+        // Set last: NSSplitView restores saved divider positions the moment the
+        // name is assigned, so every item has to exist by then.
+        splitView.autosaveName = "main-split"
 
         observeGitVisibility()
     }

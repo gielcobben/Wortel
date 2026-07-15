@@ -397,7 +397,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
             // Header height includes the section's breathing room above the
             // title (content bottom-aligns, see SidebarHeaderContent).
-            item is FolderItem ? 32 : 44
+            item is FolderItem ? 32 : 30
         }
 
         /// Row views draw the selection pill (full row width, across the

@@ -166,7 +166,6 @@ struct SessionRow: View {
     // The selected row sits on an always-accent pill, so its content is white.
     // Not while editing: the rename field sits on a normal background.
     private var onAccent: Bool { isSelected && !isEditing }
-    private var subtleColor: Color { onAccent ? .white.opacity(0.85) : .secondary }
 
     var body: some View {
         // Content padded inside an inset accent pill (~6pt from the cell edges,
@@ -206,13 +205,6 @@ struct SessionRow: View {
                     // retyping the prefix is how you move between folders.
                     Text(session.leafName)
                         .foregroundStyle(onAccent ? .white : .primary)
-                }
-                if !session.abbreviatedPath.isEmpty {
-                    Text(session.abbreviatedPath)
-                        .font(.caption)
-                        .foregroundStyle(subtleColor)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                 }
             }
             Spacer(minLength: 4)

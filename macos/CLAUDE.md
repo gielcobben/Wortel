@@ -40,8 +40,22 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   accepts posts with no error, but nothing is ever displayed. `--notarize` adds
   hardened runtime + notarization + a `.dmg` for distributing to other Macs
   (needs a `notarytool` keychain profile — see the script footer).
-- There is no test target and no linter config; "verify" means building and
-  running the app.
+- There is no linter config. For the app itself, "verify" still means building
+  and running it — the UI has no test coverage.
+- The one test target is `WortelTests`, covering the git panel's logic:
+
+  ```sh
+  xcodebuild -project Wortel.xcodeproj -scheme WortelTests test
+  ```
+
+  It is **not** hosted by the app — hosting would launch libghostty, Metal and a
+  real shell to test pure functions. Instead `project.yml` compiles the
+  `Wortel/Git` sources it exercises straight into the bundle, so add a file there
+  and it needs listing in both targets. Most of these tests use **git itself as
+  the oracle**: they build a repo with `GitFixture` and compare against
+  `git log --topo-order` / `git log --graph`, because reproducing those cheaply
+  is the whole point of the code under test. See `WortelTests/GitFixture.swift`
+  on why its branches are long-lived — a tamer fixture passes against known bugs.
 - Performance checks live in `bench/`: `./bench/measure.sh` (cold-launch time +
   memory, Release only), `./bench/gen.sh` (throughput fixtures). Most latency /
   render checks are manual side-by-side vs Ghostty.app — see `bench/BENCHMARKS.md`.
@@ -110,6 +124,38 @@ session's `SurfaceView` in the hierarchy and switches via
 rebuild — so switching back is instant with no flash. `updateNSViewController`
 fires on any observable change, so `show()` early-returns when already showing
 the surface (otherwise it would steal focus from the rename field).
+
+**Git panel** (`Wortel/Git/`) — the trailing inspector: a Changes pane (status,
+diff, commit box) and a read-only History pane (commit list, graph gutter,
+diff), both driven by `GitRepoModel` off the `git` CLI (`GitService`). Its
+design is dominated by one rule: **cost must track the window on screen, not the
+size of the repo**, because the terminal beside it has to stay smooth on a
+monorepo. Four things follow from that, each of which looks like a pointless
+detour until you measure it on a large repo (numbers from a 200k–500k-commit
+synthetic; `WortelTests` pins all of them):
+
+- **`GitService.log` deliberately does not pass `--topo-order`.** Asking git for
+  an ordering where parents follow children makes it walk the entire repo before
+  printing a line — ~870ms vs ~20ms — and `--max-count` does not bound it. A
+  commit-graph file fixes that, but most repos don't have one. So we take git's
+  cheap default order and re-sort the window in `CommitOrder`, which reproduces
+  `--topo-order` exactly. Adding the flag back "for correctness" is the trap.
+- **`CommitGraph` retires lanes whose parents aren't loaded**, and folds lanes
+  waiting on the same commit (git's `|/`). Without the first, lane count grows
+  to the bottom of the list (26 lanes in a 1000-commit window); without the
+  second, twenty branches off one commit draw twenty columns where git draws
+  five.
+- **Paging freezes what's on screen.** `CommitOrder.topological(_:settled:)`
+  re-sorts only new commits; sorting the grown window wholesale is more faithful
+  to git but moves rows the reader is looking at.
+- **Parsing happens off the main actor, and diffs are capped** (`DiffParser`).
+  `GitRepoModel` is `@MainActor`, so parsing a regenerated lock file's 51MB
+  patch there froze the app — terminal included — for 1.2s.
+
+`refresh()` runs one `git status` at a time (it's a full worktree walk; the
+FSEvents watcher fires on every write, and bursts used to stack scans), and
+watches `# branch.oid` so a commit made **in the terminal** — the normal way —
+reloads History.
 
 **Menus** (`Wortel/MainMenu.swift`) — built programmatically and kept small
 because AppKit scans key equivalents on every keypress. The menu is

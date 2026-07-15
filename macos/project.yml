@@ -18,12 +18,15 @@ settings:
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: targeted
     MACOSX_DEPLOYMENT_TARGET: "14.0"
-    # Version is stamped by scripts/release.sh (it passes MARKETING_VERSION /
-    # CURRENT_PROJECT_VERSION), and the Info.plist keys below reference these so
-    # Sparkle's update comparison (which keys off CFBundleVersion) increments
-    # every release. Bump just these two — kept equal, like Wakker/Opslan.
-    MARKETING_VERSION: "0.3.0"
-    CURRENT_PROJECT_VERSION: "0.3.0"
+    # Dev-build placeholder only — do NOT bump this per release. Released
+    # versions are CalVer, derived by scripts/release.sh --publish and passed to
+    # xcodebuild, which overrides both keys; releases/BUILD is the canonical
+    # record of the last published one. Keeping a real-looking version here would
+    # be a second source of truth that can drift, and a stale one could stamp a
+    # build Sparkle ranks *below* what users already have — the update would then
+    # silently never appear. 0.0.0 only ever reaches local builds.
+    MARKETING_VERSION: "0.0.0"
+    CURRENT_PROJECT_VERSION: "0.0.0"
     # Debug builds sign ad-hoc (fast, no identity needed). Release signing is
     # done by scripts/release.sh (Developer ID + optional notarization) so that
     # dev builds stay frictionless. DEVELOPMENT_TEAM is set for completeness.
@@ -60,6 +63,11 @@ targets:
       - package: GhosttyKit
         product: GhosttyKit
       - package: Sparkle
+    settings:
+      base:
+        # Not needed by WortelTests (which compiles the git sources it exercises
+        # directly), but keeps a Debug build introspectable.
+        ENABLE_TESTABILITY: true
     info:
       path: Wortel/Info.plist
       properties:
@@ -76,3 +84,30 @@ targets:
         # EdDSA public key — private half lives in the login Keychain (shared
         # publisher key, same as Wakker/Opslan).
         SUPublicEDKey: +IarWSgiwu1pxk25kk/8Rcl9Mf/AXwH/Z2qFoOYXEGI=
+
+  # Unit tests for the git panel's logic. Run with:
+  #   xcodebuild -project Wortel.xcodeproj -scheme WortelTests test
+  #
+  # Deliberately *not* hosted by the Wortel app. A host would launch the whole
+  # terminal — libghostty, Metal, a real shell — to test pure functions and a
+  # few git CLI reads, which is slow and flaky for no gain. Instead the git
+  # sources under test are compiled straight into the bundle. The views aren't
+  # here: what's listed is the code with invariants worth pinning, and most of
+  # these tests check it against `git` itself as an oracle.
+  WortelTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: WortelTests
+      - path: Wortel/Git/GitModels.swift
+      - path: Wortel/Git/CommitOrder.swift
+      - path: Wortel/Git/CommitGraph.swift
+      - path: Wortel/Git/DiffParser.swift
+      - path: Wortel/Git/GitStatusParser.swift
+      - path: Wortel/Git/GitService.swift
+      - path: Wortel/Git/GitRepoModel.swift
+      - path: Wortel/Git/GitRepoWatcher.swift
+      - path: Wortel/Git/CommitMessageGenerator.swift
+    scheme:
+      testTargets:
+        - WortelTests

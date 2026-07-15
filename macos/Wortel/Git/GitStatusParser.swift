@@ -48,6 +48,9 @@ enum GitStatusParser {
         let fields = line.split(separator: " ").map(String.init)
         guard fields.count >= 2 else { return }
         switch fields[1] {
+        case "branch.oid":
+            // "# branch.oid <sha>" — or "(initial)" on a repo with no commits.
+            if fields.count >= 3, fields[2] != "(initial)" { status.head = fields[2] }
         case "branch.head":
             let name = fields.count >= 3 ? fields[2] : ""
             status.branch = (name == "(detached)" || name.isEmpty) ? nil : name

@@ -42,6 +42,10 @@ final class GitRepoModel {
     /// never on its own — the two are read together on every row.
     private(set) var graph = CommitGraph.empty
     private(set) var isLoadingHistory = false
+    /// More history exists behind what's loaded, so the list keeps paging as the
+    /// reader scrolls. False once a short page proves we've hit the root.
+    private(set) var canLoadMoreHistory = false
+    private(set) var isLoadingMoreHistory = false
     /// True once a log has been read and came back empty — lets the pane say "no
     /// commits yet" instead of flashing an empty list on a fresh repo.
     private(set) var loadedHistory = false
@@ -59,6 +63,20 @@ final class GitRepoModel {
     /// repo changes out of band (an external commit, an agent editing files).
     @ObservationIgnored private var watcher: GitRepoWatcher?
     @ObservationIgnored private var watchRefreshItem: DispatchWorkItem?
+    /// Coalescing state for `refresh()` — one `git status` at a time, with one
+    /// more queued at most. See the note there.
+    @ObservationIgnored private var refreshInFlight = false
+    @ObservationIgnored private var refreshQueued = false
+    /// How long the last status took, which is how long we wait before running
+    /// another on a repo big enough for that to matter.
+    @ObservationIgnored private var lastStatusDuration: TimeInterval = 0
+    /// HEAD as of the last status, to spot a commit made outside the panel.
+    @ObservationIgnored private var lastKnownHead: String?
+    /// How many `git status` scans have actually run. The whole point of the
+    /// coalescing in `refresh()` is that a burst of watch events collapses into
+    /// one scan, and that's invisible from the outside — this is what lets a test
+    /// hold the line. Not observed: it must never invalidate a view.
+    @ObservationIgnored private(set) var statusScans = 0
 
     init(root: String) {
         self.root = root
@@ -130,29 +148,83 @@ final class GitRepoModel {
 
     /// Re-read status, then keep the current selection's diff fresh (its content
     /// may have changed) or auto-select the first change.
+    ///
+    /// Only ever one `git status` at a time. It's a full walk of the work tree —
+    /// measured at ~0.4s on a 120k-file repo, and worse on a real monorepo — and
+    /// the watcher fires on every write, so a build or an agent editing files
+    /// would otherwise stack several full scans on top of each other. (Six
+    /// concurrent scans of that repo: 1.47s of wall time and six cores' worth of
+    /// work, for one answer.) A request arriving mid-scan just marks the result
+    /// stale, and we run exactly once more when the current one lands.
     func refresh() async {
-        isRefreshing = true
-        status = await GitService.status(root: root)
-        isRefreshing = false
-
-        if let id = selectedChangeID, let change = status.changes.first(where: { $0.id == id }) {
-            await loadDiff(for: change)
-        } else {
-            select(status.changes.first?.id)
+        if refreshInFlight {
+            refreshQueued = true
+            return
         }
+        refreshInFlight = true
+        defer { refreshInFlight = false }
+
+        repeat {
+            refreshQueued = false
+            let started = Date()
+            isRefreshing = true
+            status = await GitService.status(root: root)
+            isRefreshing = false
+            statusScans += 1
+            lastStatusDuration = Date().timeIntervalSince(started)
+
+            if let id = selectedChangeID, let change = status.changes.first(where: { $0.id == id }) {
+                await loadDiff(for: change)
+            } else {
+                select(status.changes.first?.id)
+            }
+
+            // HEAD moved — a commit, amend, checkout, rebase or reset, whether it
+            // happened in this panel or (far more likely) in the terminal next to
+            // it. Only worth reloading if History has already been read; otherwise
+            // it stays lazy until the pane is first shown. The SHA rides along on
+            // the status we just ran, so noticing costs no extra git call.
+            if let head = status.head, head != lastKnownHead {
+                let moved = lastKnownHead != nil
+                lastKnownHead = head
+                if moved, loadedHistory { await loadHistory() }
+            }
+
+            // Something changed while we were scanning. Wait out roughly the time
+            // the last scan took before going again, so a long build can't pin a
+            // core on back-to-back status walks — the terminal in the next pane is
+            // the thing that has to stay smooth. Cheap repos barely pause.
+            if refreshQueued, lastStatusDuration > 0.1 {
+                try? await Task.sleep(for: .seconds(min(lastStatusDuration, 2)))
+            }
+        } while refreshQueued
     }
 
     // MARK: - History
 
-    /// Read the log. Called when the History pane appears and after a commit, not
-    /// on every status refresh: the FSEvents watcher fires on any working-tree
-    /// write, and re-reading the whole log on each keystroke of a build would be
-    /// pure waste — history only moves when a commit does.
+    /// How many commits each page of the log adds. The pane shows ~10 rows, so
+    /// one page is already a deep first read; the point of paging is that cost
+    /// tracks the window rather than the repo, which is what lets a
+    /// million-commit history open as fast as a small one.
+    static let historyPageSize = 300
+
+    /// Read the first page of the log. Called when the History pane appears and
+    /// whenever HEAD moves, not on every status refresh: the FSEvents watcher
+    /// fires on any working-tree write, and re-reading the log on each keystroke
+    /// of a build would be pure waste — history only moves when HEAD does.
+    ///
+    /// Resets paging: a moved HEAD invalidates the `--skip` offsets that
+    /// `loadMoreHistory` counts on, so scrolled-in pages are dropped rather than
+    /// stitched onto a window that shifted underneath them.
     func loadHistory() async {
         guard !isLoadingHistory else { return }
         isLoadingHistory = true
-        commits = await GitService.log(root: root)
+        let page = await GitService.log(root: root, limit: Self.historyPageSize)
+        commits = CommitOrder.topological(page)
         graph = CommitGraph.build(commits)
+        // A full page means there's probably more behind it. A short one is the
+        // end of the history, and the pane stops asking.
+        canLoadMoreHistory = page.count == Self.historyPageSize
         loadedHistory = true
         isLoadingHistory = false
 
@@ -161,6 +233,39 @@ final class GitRepoModel {
         } else {
             await selectCommit(commits.first?.id)
         }
+    }
+
+    /// Append the next page as the reader nears the bottom of the list.
+    ///
+    /// The rows already on screen keep their exact order — see `CommitOrder`'s
+    /// `settled` — so scrolling never yanks the list out from under you. The
+    /// graph is rebuilt across everything loaded, which is cheap (single-digit
+    /// milliseconds even at several thousand commits) and necessary: lanes that
+    /// ran off the bottom edge as stubs become real lines once the commits they
+    /// were reaching for arrive.
+    func loadMoreHistory() async {
+        guard canLoadMoreHistory, !isLoadingHistory, !isLoadingMoreHistory else { return }
+        isLoadingMoreHistory = true
+        defer { isLoadingMoreHistory = false }
+
+        let settled = commits
+        // `--skip` indexes git's date order, and `settled` holds exactly the
+        // newest `count` by date — reordered for display, but the same set.
+        let page = await GitService.log(
+            root: root, limit: Self.historyPageSize, skip: settled.count)
+        guard !page.isEmpty else {
+            canLoadMoreHistory = false
+            return
+        }
+        // HEAD moving mid-scroll could re-deal the window; drop anything we've
+        // already got rather than showing it twice.
+        let known = Set(settled.map(\.sha))
+        let fresh = page.filter { !known.contains($0.sha) }
+        canLoadMoreHistory = page.count == Self.historyPageSize
+        guard !fresh.isEmpty else { return }
+
+        commits = CommitOrder.topological(settled + fresh, settled: settled.count)
+        graph = CommitGraph.build(commits)
     }
 
     /// Show a commit's patch. A commit is immutable once written, so its diff is
@@ -182,9 +287,13 @@ final class GitRepoModel {
         commitDiffToken += 1
         let token = commitDiffToken
         let raw = await GitService.commitDiff(root: root, sha: commit.sha)
+        // Off the main actor — see loadDiff. Holding ↓ through a log of big
+        // commits is exactly how you'd notice this.
+        let parsed = await Task.detached(priority: .userInitiated) {
+            DiffParser.parse(raw)
+        }.value
         // A faster click may have superseded this load — drop it if so.
         guard token == commitDiffToken else { return }
-        let parsed = DiffParser.parse(raw)
         commitDiffCache[commit.sha] = parsed
         commitDiff = parsed
     }
@@ -244,9 +353,14 @@ final class GitRepoModel {
             return
         }
         let text = await GitService.diff(root: root, change: change)
+        // Parse off the main actor: this model is @MainActor, so parsing here
+        // would block the terminal too, and a big patch is not a small job.
+        let parsed = await Task.detached(priority: .userInitiated) {
+            DiffParser.parse(text)
+        }.value
         guard selectedChangeID == change.id else { return }
         imageDiff = nil
-        diff = DiffParser.parse(text)
+        diff = parsed
     }
 
     // MARK: - Staging
@@ -305,12 +419,11 @@ final class GitRepoModel {
         if result.ok {
             commitMessage = ""
             lastError = nil
-            // The log just moved. Only reload if History has already been read —
-            // otherwise leave it to load lazily when the pane is first shown.
-            if loadedHistory {
-                selectedCommitID = nil
-                await loadHistory()
-            }
+            // The log just moved, but the refresh below notices that from HEAD
+            // like it would for a commit made in the terminal — no need to
+            // special-case our own. Just drop the selection, since the diff the
+            // user was looking at belongs to the old tip.
+            selectedCommitID = nil
         } else {
             lastError = result.stderr.isEmpty ? result.stdout : result.stderr
         }

@@ -8,6 +8,12 @@ import SwiftUI
 /// where the same repo is being worked on, and the terminal is right there for it.
 struct HistoryView: View {
     @Bindable var repo: GitRepoModel
+    /// Monotonic focus-request token from GitPanelModel (⌘⌥L). A change means
+    /// "put keyboard focus in this pane's list." Only one pane is mounted at a
+    /// time, so both panes can read the same token.
+    let focusRequest: Int
+    @FocusState private var listFocused: Bool
+    @State private var lastHandledFocusRequest = 0
 
     /// Height of the commit list; the diff takes the rest. Separate key from the
     /// Changes pane's split — the panes are read differently, so their splits
@@ -38,9 +44,34 @@ struct HistoryView: View {
             // so opening the panel on Changes costs nothing.
             if !repo.loadedHistory { await repo.loadHistory() }
         }
+        // ⌘⌥L focus request. Handled both on change (pane already open) and on
+        // appear (the request is what revealed the panel, or switched to this
+        // pane, so this view didn't exist when the token moved).
+        .onChange(of: focusRequest) { _, req in applyFocusRequest(req) }
+        .onAppear { applyFocusRequest(focusRequest) }
+    }
+
+    /// Move keyboard focus into the commit list for an unseen focus request.
+    private func applyFocusRequest(_ req: Int) {
+        guard req != lastHandledFocusRequest else { return }
+        lastHandledFocusRequest = req
+        // Give ↑/↓ a starting point if nothing is selected yet. The log may still
+        // be loading on a first open, in which case the list is empty and this
+        // no-ops — focus still lands, and the first ↑/↓ picks up the top commit.
+        if repo.selectedCommitID == nil { repo.selectAdjacentCommit(1) }
+        DispatchQueue.main.async { listFocused = true }
     }
 
     // MARK: Commit list
+
+    /// The row whose appearance pulls in the next page — a little short of the
+    /// end, so the next page is usually already there by the time you reach it.
+    private var loadMoreTriggerID: String? {
+        guard repo.canLoadMoreHistory else { return nil }
+        let lead = 20
+        let index = max(0, repo.commits.count - lead)
+        return repo.commits.indices.contains(index) ? repo.commits[index].id : nil
+    }
 
     private var commitList: some View {
         ScrollViewReader { proxy in
@@ -60,8 +91,27 @@ struct HistoryView: View {
                             lanes: repo.graph.width,
                             isSelected: repo.selectedCommitID == commit.id)
                             .contentShape(Rectangle())
-                            .onTapGesture { Task { await repo.selectCommit(commit.id) } }
+                            .onTapGesture {
+                                listFocused = true
+                                Task { await repo.selectCommit(commit.id) }
+                            }
                             .id(commit.id)
+                            // Page in more history a little before the reader
+                            // reaches the end. Compared against one precomputed
+                            // id rather than looking each row up — this fires on
+                            // every row that scrolls into view, and the list can
+                            // be thousands long.
+                            .onAppear {
+                                if commit.id == loadMoreTriggerID {
+                                    Task { await repo.loadMoreHistory() }
+                                }
+                            }
+                    }
+                    if repo.isLoadingMoreHistory {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
                     }
                 }
                 .padding(.vertical, 4)
@@ -71,6 +121,8 @@ struct HistoryView: View {
                 withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
             }
         }
+        // While focused, ↑/↓ walk the log and load each commit's diff.
+        .keyboardNavigableList(focused: $listFocused) { repo.selectAdjacentCommit($0) }
     }
 
     // MARK: Diff
@@ -83,7 +135,10 @@ struct HistoryView: View {
             } else if diff.lines.isEmpty {
                 centered("No textual changes")
             } else {
-                DiffView(lines: diff.lines, fontSize: 12)
+                VStack(spacing: 0) {
+                    DiffView(lines: diff.lines, fontSize: 12)
+                    if diff.truncated { TruncatedDiffNotice() }
+                }
             }
         } else if repo.selectedCommitID != nil {
             centered("Loading…")
@@ -97,6 +152,24 @@ struct HistoryView: View {
             .font(.callout)
             .foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Footer for a patch that was cut short. Says so explicitly — a diff that just
+/// stops looks identical to a file that ends, and the terminal is right there
+/// for the full patch.
+struct TruncatedDiffNotice: View {
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "scissors")
+            Text("Diff truncated — too large to display in full")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(.quaternary)
     }
 }
 
@@ -142,7 +215,7 @@ private struct CommitRow: View {
                 Text(commit.author)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(width: Self.authorWidth, alignment: .trailing)
+                    .frame(width: Self.authorWidth, alignment: .leading)
                 Text(commit.shortSHA)
                     .font(.system(size: 12, design: .monospaced))
                     .frame(width: Self.shaWidth, alignment: .trailing)
@@ -223,19 +296,28 @@ private struct CommitGraphGutter: View {
                     with: .color(color(edge.to)), lineWidth: Self.lineWidth)
             }
 
-            // Merges read as a ring, plain commits as a solid dot. Both edges stop
-            // at the centre, so the ring's middle stays clear.
+            // History that leaves the window: a stub that stops short of the row
+            // edge. The gap matters — a retired column can be reused by the very
+            // next row, and a full-height line would read as one continuous
+            // branch joining two unrelated commits.
+            if row.continuesBelow {
+                context.stroke(
+                    line(
+                        from: CGPoint(x: x(row.lane), y: middle),
+                        to: CGPoint(x: x(row.lane), y: middle + (size.height - middle) * 0.55)),
+                    with: .color(color(row.lane).opacity(0.5)), lineWidth: Self.lineWidth)
+            }
+
+            // Merges are the same solid dot, just larger — a ring reads as a
+            // different kind of thing entirely, when it's only a commit with two
+            // parents and the lanes converging on it already say so.
             let radius = isMerge ? Self.dotRadius + 1.5 : Self.dotRadius
             let centre = CGPoint(x: x(row.lane), y: middle)
             let dot = Path(
                 ellipseIn: CGRect(
                     x: centre.x - radius, y: centre.y - radius,
                     width: radius * 2, height: radius * 2))
-            if isMerge {
-                context.stroke(dot, with: .color(color(row.lane)), lineWidth: Self.lineWidth)
-            } else {
-                context.fill(dot, with: .color(color(row.lane)))
-            }
+            context.fill(dot, with: .color(color(row.lane)))
         }
     }
 

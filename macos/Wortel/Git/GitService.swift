@@ -97,14 +97,24 @@ enum GitService {
     /// newlines — and splitting on "\n" would silently shear such a commit into
     /// two bogus rows. Empty on a repo with no commits yet.
     ///
-    /// `--topo-order` rather than git's default date order: the graph gutter draws
-    /// lanes from the parent links, and date order lets a branch's commits
-    /// interleave with unrelated ones, which renders as lanes flapping sideways
-    /// for no reason a reader can see.
-    static func log(root: String, limit: Int = 300) async -> [GitCommit] {
+    /// Deliberately git's *default* order rather than `--topo-order`. The graph
+    /// does need every commit to precede its parents, but asking git for that
+    /// makes it walk the whole repo before emitting a single line — measured at
+    /// ~870ms on a 200k-commit history versus ~20ms for the default, and
+    /// `--max-count` does not bound it. `CommitOrder.topological` re-establishes
+    /// the ordering over just this window for free, so callers that draw the
+    /// graph must run the result through it.
+    /// `skip` pages further back for the History pane's infinite scroll. It
+    /// indexes into git's own default ordering, which is why the pane's window is
+    /// always "the newest N by date" even though we then re-sort it — the two
+    /// stay in step as long as HEAD hasn't moved, and a moved HEAD reloads from
+    /// scratch anyway.
+    static func log(root: String, limit: Int = 300, skip: Int = 0) async -> [GitCommit] {
         let format = "%H\u{1f}%an\u{1f}%at\u{1f}%P\u{1f}%s\u{1e}"
-        let result = await run(
-            ["log", "--max-count=\(limit)", "--topo-order", "--format=\(format)"], in: root)
+        var args = ["log", "--max-count=\(limit)"]
+        if skip > 0 { args.append("--skip=\(skip)") }
+        args.append("--format=\(format)")
+        let result = await run(args, in: root)
         guard result.ok else { return [] }
         return result.stdout.split(separator: "\u{1e}").compactMap { record in
             let fields = record

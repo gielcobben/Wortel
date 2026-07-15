@@ -87,9 +87,10 @@ enum MainMenu {
         let sourceControl = viewMenu.addItem(withTitle: "Show Source Control", action: #selector(AppDelegate.toggleSourceControl(_:)), keyEquivalent: "g")
         sourceControl.keyEquivalentModifierMask = [.command, .option]
         sourceControl.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)
-        // ⌘⌥L: reveal the panel (if hidden) and move focus into the changes list
-        // so ↑/↓ navigate files without reaching for the mouse.
-        let focusList = viewMenu.addItem(withTitle: "Focus Changes List", action: #selector(AppDelegate.focusSourceControlList(_:)), keyEquivalent: "l")
+        // ⌘⌥L: reveal the panel (if hidden) and move focus into whichever list is
+        // showing — files on Changes, commits on History — so ↑/↓ navigate it
+        // without reaching for the mouse.
+        let focusList = viewMenu.addItem(withTitle: "Focus List", action: #selector(AppDelegate.focusSourceControlList(_:)), keyEquivalent: "l")
         focusList.keyEquivalentModifierMask = [.command, .option]
         focusList.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: nil)
 

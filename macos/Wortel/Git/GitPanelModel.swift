@@ -30,9 +30,11 @@ final class GitPanelModel {
 
     private static let visibleKey = "git.panelVisible"
     private static let paneKey = "git.panelPane"
-    /// Bumped to ask the panel to move keyboard focus into the changes list.
-    /// The list view watches this and claims focus; a monotonic counter (rather
-    /// than a Bool) so repeated requests always register, even back-to-back.
+    /// Bumped to ask the panel to move keyboard focus into the list of whichever
+    /// pane is showing — Changes or History. Both read the same token because
+    /// only one pane is ever mounted. The list view watches this and claims
+    /// focus; a monotonic counter (rather than a Bool) so repeated requests
+    /// always register, even back-to-back.
     private(set) var listFocusRequest = 0
     /// True once a cwd has been resolved and it turned out not to be a repo — so
     /// the panel can show "not a git repository" rather than a blank flash.

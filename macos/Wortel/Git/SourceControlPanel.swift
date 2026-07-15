@@ -14,7 +14,7 @@ struct SourceControlPanel: View {
                 case .changes:
                     RepoView(repo: repo, focusRequest: panel.listFocusRequest)
                 case .history:
-                    HistoryView(repo: repo)
+                    HistoryView(repo: repo, focusRequest: panel.listFocusRequest)
                 }
             } else {
                 emptyState
@@ -195,18 +195,8 @@ private struct RepoView: View {
                 }
             }
         }
-        // Focus management: the list only claims the keyboard once you click a
-        // file (which sets listFocused), so the terminal keeps its arrow keys
-        // until then. While focused, ↑/↓ walk the changes and load each diff.
-        .focusable()
-        .focused($listFocused)
-        .focusEffectDisabled()
-        .onKeyPress(.upArrow) { repo.selectAdjacent(-1); return .handled }
-        .onKeyPress(.downArrow) { repo.selectAdjacent(1); return .handled }
-        .overlay(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .strokeBorder(listFocused ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 2))
-        .background(.clear)
+        // While focused, ↑/↓ walk the changes and load each diff.
+        .keyboardNavigableList(focused: $listFocused) { repo.selectAdjacent($0) }
     }
 
     @ViewBuilder
@@ -266,7 +256,10 @@ private struct RepoView: View {
             } else if diff.lines.isEmpty {
                 centered("No textual changes")
             } else {
-                DiffView(lines: diff.lines, fontSize: 12)
+                VStack(spacing: 0) {
+                    DiffView(lines: diff.lines, fontSize: 12)
+                    if diff.truncated { TruncatedDiffNotice() }
+                }
             }
         } else {
             centered("Select a file to view its diff")

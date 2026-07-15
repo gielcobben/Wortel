@@ -47,6 +47,10 @@ struct GitFileChange: Identifiable, Hashable {
 /// A snapshot of `git status`, plus branch/ahead-behind from the `--branch`
 /// header. Value type — the model swaps a whole new one in on each refresh.
 struct GitStatus: Equatable {
+    /// HEAD's commit SHA, from the `# branch.oid` header. Nil on a repo with no
+    /// commits. Free with every status, and how the History pane notices a
+    /// commit made in the terminal rather than through the panel.
+    var head: String?
     var branch: String?
     var upstream: String?
     var ahead: Int = 0
@@ -115,7 +119,7 @@ enum GitInspectorPane: String, CaseIterable, Identifiable {
 }
 
 /// How a diff line renders: drives its gutter numbers, sign, and tint.
-enum DiffLineKind {
+enum DiffLineKind: Sendable {
     case context
     case addition
     case deletion
@@ -124,7 +128,7 @@ enum DiffLineKind {
 
 /// One rendered line of a unified diff, prefix stripped. Line numbers are nil
 /// where they don't apply (additions have no old number, etc.).
-struct DiffLine: Identifiable {
+struct DiffLine: Identifiable, Sendable {
     let id: Int
     let kind: DiffLineKind
     let text: String
@@ -133,9 +137,13 @@ struct DiffLine: Identifiable {
 }
 
 /// Parsed diff for one file. `isBinary` short-circuits the line view.
-struct DiffResult {
+struct DiffResult: Sendable {
     var lines: [DiffLine]
     var isBinary: Bool
+    /// The patch was too big to show in full and was cut short — see
+    /// DiffParser's limits. The pane says so rather than implying the file
+    /// simply ends there.
+    var truncated: Bool = false
 
     var isEmpty: Bool { lines.isEmpty && !isBinary }
 }

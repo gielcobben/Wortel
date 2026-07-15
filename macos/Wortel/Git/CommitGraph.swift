@@ -34,6 +34,9 @@ struct CommitGraph {
         var outgoing: [Edge] = []
         /// Lanes passing this row untouched, drawn top edge to bottom edge.
         var passThrough: [Int] = []
+        /// This commit has parents, but none of them were loaded — its history
+        /// leaves the window here. Drawn as a short stub below the dot.
+        var continuesBelow: Bool = false
     }
 
     /// Keyed by SHA rather than parallel to the commit array: the view iterates
@@ -50,6 +53,16 @@ struct CommitGraph {
 
     static func build(_ commits: [GitCommit]) -> CommitGraph {
         var graph = CommitGraph()
+
+        // The window is finite, so some parents — below the limit, or on the far
+        // side of a shallow clone — will never show up. Knowing that up front is
+        // what keeps the gutter narrow: a lane waiting on a commit that isn't
+        // coming would otherwise stay open to the bottom of the list, and a busy
+        // repo merges long-lived branches often enough that those dead lanes
+        // accumulate into a wall. Measured on a 500k-commit repo with 25 branches
+        // in flight: 26 lanes at the bottom of a 1000-commit window, versus 4
+        // once they retire properly.
+        let loaded = Set(commits.map(\.sha))
 
         // Each slot is the SHA that lane is waiting for; nil is a free column
         // held open so lanes either side of it keep their horizontal position.
@@ -75,11 +88,29 @@ struct CommitGraph {
             lanes[lane] = nil
             row.passThrough = lanes.indices.filter { lanes[$0] != nil }
 
-            for (index, parent) in commit.parents.enumerated() {
-                if index == 0 {
-                    // First parent inherits the lane, keeping trunks straight.
-                    lanes[lane] = parent
-                    row.outgoing.append(Edge(from: lane, to: lane))
+            // Unloaded parents get no lane at all — that's what retires the
+            // column here instead of holding it to the bottom of the list.
+            var placedFirst = false
+            for parent in commit.parents where loaded.contains(parent) {
+                if !placedFirst {
+                    placedFirst = true
+                    // A lane to our left is already waiting for this very commit,
+                    // so our column is redundant — fold into it. This is git's
+                    // "|/", and it's what keeps a busy repo narrow: when twenty
+                    // branches fork from one commit, they converge as they reach
+                    // it rather than running twenty columns to the same place.
+                    // Only leftward, so a trunk never gets dragged sideways by a
+                    // branch that happens to share its parent; the two just both
+                    // wait, and meet at that commit's row.
+                    if let existing = lanes.firstIndex(where: { $0 == parent }),
+                        existing < lane {
+                        row.outgoing.append(Edge(from: lane, to: existing))
+                    } else {
+                        // Otherwise this parent inherits the lane, keeping trunks
+                        // straight.
+                        lanes[lane] = parent
+                        row.outgoing.append(Edge(from: lane, to: lane))
+                    }
                 } else if let existing = lanes.firstIndex(where: { $0 == parent }) {
                     row.outgoing.append(Edge(from: lane, to: existing))
                 } else {
@@ -88,6 +119,10 @@ struct CommitGraph {
                     row.outgoing.append(Edge(from: lane, to: target))
                 }
             }
+            // Nothing leaves the dot, yet the commit has parents: they're all
+            // outside the window. Say so, rather than ending the line as if this
+            // were a root commit.
+            row.continuesBelow = !commit.parents.isEmpty && row.outgoing.isEmpty
 
             // Keep the array from growing forever as branches retire, so a repo
             // with lots of short-lived branches doesn't drift ever wider.

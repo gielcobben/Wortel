@@ -4,14 +4,37 @@ import Foundation
 /// (`diff --git`, `index`, `---`, `+++`, mode/rename lines) is dropped; hunk
 /// headers are kept as their own kind and drive the running line counters.
 enum DiffParser {
+    /// Ceilings on what one file's patch may cost. A regenerated lock file or a
+    /// minified bundle produces a patch nobody reads by scrolling — the measured
+    /// case was a 400k-line `yarn.lock`, whose 51MB / 600k-line diff took 1.2s
+    /// just to parse. Past these limits the tail is dropped and the result marked
+    /// `truncated`; the byte cap is what matters, since splitting the full string
+    /// costs the same whether or not we keep the lines.
+    static let maxBytes = 2_000_000
+    static let maxLines = 20_000
+
     static func parse(_ raw: String) -> DiffResult {
         var lines: [DiffLine] = []
         var id = 0
         var oldNo = 0
         var newNo = 0
         var isBinary = false
+        var truncated = false
 
-        for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+        var text = raw
+        if text.utf8.count > maxBytes {
+            // Cut to the byte ceiling, then back up to the last newline so the
+            // final line is whole (and any half-eaten UTF-8 goes with it).
+            let cut = String(decoding: text.utf8.prefix(maxBytes), as: UTF8.self)
+            text = String(cut[..<(cut.lastIndex(of: "\n") ?? cut.endIndex)])
+            truncated = true
+        }
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if lines.count >= maxLines {
+                truncated = true
+                break
+            }
             if rawLine.hasPrefix("Binary files") || rawLine.hasPrefix("GIT binary patch") {
                 isBinary = true
                 continue
@@ -58,7 +81,7 @@ enum DiffParser {
         if let last = lines.last, last.kind == .context, last.text.isEmpty {
             lines.removeLast()
         }
-        return DiffResult(lines: lines, isBinary: isBinary)
+        return DiffResult(lines: lines, isBinary: isBinary, truncated: truncated)
     }
 
     private static func isHeaderLine(_ line: String) -> Bool {

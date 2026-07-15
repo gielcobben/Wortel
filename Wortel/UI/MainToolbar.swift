@@ -19,14 +19,28 @@ extension NSToolbarItem.Identifier {
     static let trackingSidebar = NSToolbarItem.Identifier("wortel.tracking.sidebar")
     static let trackingInspector = NSToolbarItem.Identifier("wortel.tracking.inspector")
     static let toggleGitPanel = NSToolbarItem.Identifier("wortel.toggleGitPanel")
+    static let gitPane = NSToolbarItem.Identifier("wortel.gitPane")
 }
 
 @MainActor
 final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
     private weak var splitView: NSSplitView?
+    private let git: GitPanelModel
+    /// Held so the control can be re-synced if the pane changes from elsewhere.
+    private weak var paneControl: NSSegmentedControl?
 
-    init(splitView: NSSplitView) {
+    init(splitView: NSSplitView, git: GitPanelModel) {
         self.splitView = splitView
+        self.git = git
+    }
+
+    @objc private func paneChanged(_ sender: NSSegmentedControl) {
+        let panes = GitInspectorPane.allCases
+        guard panes.indices.contains(sender.selectedSegment) else { return }
+        git.pane = panes[sender.selectedSegment]
+        // Picking a pane means you want to see it — reveal a collapsed panel
+        // rather than silently switching a tab that isn't on screen.
+        if !git.isVisible { git.isPresented = true }
     }
 
     /// The flexible spaces do the aligning, and each one only stretches within its
@@ -47,6 +61,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
             .flexibleSpace,
             .trackingInspector,
             .flexibleSpace,
+            .gitPane,
             .toggleGitPanel,
         ]
     }
@@ -72,6 +87,26 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
         case .trackingInspector:
             return NSTrackingSeparatorToolbarItem(
                 identifier: itemIdentifier, splitView: splitView, dividerIndex: 1)
+        case .gitPane:
+            // A plain NSSegmentedControl rather than an NSToolbarItemGroup: the
+            // group's selection is index-based and would need mirroring back onto
+            // the enum anyway, and on macOS 26 AppKit already gives segmented
+            // controls their own glass capsule (separate from the adjacent button)
+            // based on the control's type. Nothing here has to ask for that.
+            let segmented = NSSegmentedControl(
+                labels: GitInspectorPane.allCases.map(\.title),
+                trackingMode: .selectOne,
+                target: self,
+                action: #selector(paneChanged(_:)))
+            segmented.segmentStyle = .automatic
+            segmented.selectedSegment =
+                GitInspectorPane.allCases.firstIndex(of: git.pane) ?? 0
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.view = segmented
+            item.label = "Pane"
+            item.toolTip = "Changes or History"
+            paneControl = segmented
+            return item
         case .toggleGitPanel:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.label = "Source Control"

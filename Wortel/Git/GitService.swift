@@ -90,6 +90,42 @@ enum GitService {
             .map(String.init)
     }
 
+    /// Commit history for the History pane, newest first.
+    ///
+    /// Fields are separated by US (0x1f) and records by RS (0x1e) rather than by
+    /// spaces/newlines, because a commit subject can contain anything — including
+    /// newlines — and splitting on "\n" would silently shear such a commit into
+    /// two bogus rows. Empty on a repo with no commits yet.
+    static func log(root: String, limit: Int = 300) async -> [GitCommit] {
+        let format = "%H\u{1f}%an\u{1f}%at\u{1f}%s\u{1e}"
+        let result = await run(["log", "--max-count=\(limit)", "--format=\(format)"], in: root)
+        guard result.ok else { return [] }
+        return result.stdout.split(separator: "\u{1e}").compactMap { record in
+            let fields = record
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: "\u{1f}")
+            guard fields.count == 4, !fields[0].isEmpty,
+                  let epoch = TimeInterval(fields[2]) else { return nil }
+            return GitCommit(
+                sha: fields[0],
+                author: fields[1],
+                date: Date(timeIntervalSince1970: epoch),
+                subject: fields[3])
+        }
+    }
+
+    /// The patch a single commit introduced, ready for DiffParser.
+    ///
+    /// `--format=` empties the commit header so only the patch reaches the parser.
+    /// `-m --first-parent` makes merge commits produce a diff at all (git shows
+    /// nothing for a merge by default) — against their first parent, which is the
+    /// diff a reader actually means when they click a merge.
+    static func commitDiff(root: String, sha: String) async -> String {
+        let result = await run(
+            ["show", "--format=", "--patch", "-m", "--first-parent", sha], in: root)
+        return result.ok ? result.stdout : ""
+    }
+
     static func status(root: String) async -> GitStatus {
         let result = await run(
             ["status", "--porcelain=v2", "--branch", "--untracked-files=all"],

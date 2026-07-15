@@ -14,7 +14,22 @@ final class GitPanelModel {
     private(set) var isVisible = UserDefaults.standard.bool(forKey: GitPanelModel.visibleKey)
     private(set) var repo: GitRepoModel?
 
+    /// Which pane the panel shows. Persisted app-wide alongside `isVisible`, so
+    /// the panel reopens on the tab you left it on. Driven by the toolbar's
+    /// segmented control.
+    var pane: GitInspectorPane = GitPanelModel.storedPane {
+        didSet {
+            guard pane != oldValue else { return }
+            UserDefaults.standard.set(pane.rawValue, forKey: Self.paneKey)
+        }
+    }
+
+    private static var storedPane: GitInspectorPane {
+        UserDefaults.standard.string(forKey: paneKey).flatMap(GitInspectorPane.init(rawValue:)) ?? .changes
+    }
+
     private static let visibleKey = "git.panelVisible"
+    private static let paneKey = "git.panelPane"
     /// Bumped to ask the panel to move keyboard focus into the changes list.
     /// The list view watches this and claims focus; a monotonic counter (rather
     /// than a Bool) so repeated requests always register, even back-to-back.

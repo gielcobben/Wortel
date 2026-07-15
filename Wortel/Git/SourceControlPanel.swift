@@ -10,7 +10,12 @@ struct SourceControlPanel: View {
     var body: some View {
         Group {
             if let repo = panel.repo {
-                RepoView(repo: repo, focusRequest: panel.listFocusRequest)
+                switch panel.pane {
+                case .changes:
+                    RepoView(repo: repo, focusRequest: panel.listFocusRequest)
+                case .history:
+                    HistoryView(repo: repo)
+                }
             } else {
                 emptyState
             }

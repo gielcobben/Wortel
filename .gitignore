@@ -7,10 +7,15 @@ build/
 
 # Sparkle release archives — large binaries; R2 (wortel-updates) is the
 # canonical store. releases/appcast.xml stays tracked as a record of the feed.
-releases/*.zip
-releases/*.delta
+macos/releases/*.zip
+macos/releases/*.delta
 # generate_appcast retires archives past --maximum-versions into here.
-releases/old_updates/
+macos/releases/old_updates/
+
+# Web app (web/) — Node + Astro + Cloudflare build output
+node_modules/
+web/dist/
+web/.astro/
 
 # Claude Code transient worktrees
 .claude/worktrees/

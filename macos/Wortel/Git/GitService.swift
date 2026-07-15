@@ -96,21 +96,28 @@ enum GitService {
     /// spaces/newlines, because a commit subject can contain anything — including
     /// newlines — and splitting on "\n" would silently shear such a commit into
     /// two bogus rows. Empty on a repo with no commits yet.
+    ///
+    /// `--topo-order` rather than git's default date order: the graph gutter draws
+    /// lanes from the parent links, and date order lets a branch's commits
+    /// interleave with unrelated ones, which renders as lanes flapping sideways
+    /// for no reason a reader can see.
     static func log(root: String, limit: Int = 300) async -> [GitCommit] {
-        let format = "%H\u{1f}%an\u{1f}%at\u{1f}%s\u{1e}"
-        let result = await run(["log", "--max-count=\(limit)", "--format=\(format)"], in: root)
+        let format = "%H\u{1f}%an\u{1f}%at\u{1f}%P\u{1f}%s\u{1e}"
+        let result = await run(
+            ["log", "--max-count=\(limit)", "--topo-order", "--format=\(format)"], in: root)
         guard result.ok else { return [] }
         return result.stdout.split(separator: "\u{1e}").compactMap { record in
             let fields = record
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: "\u{1f}")
-            guard fields.count == 4, !fields[0].isEmpty,
+            guard fields.count == 5, !fields[0].isEmpty,
                   let epoch = TimeInterval(fields[2]) else { return nil }
             return GitCommit(
                 sha: fields[0],
                 author: fields[1],
                 date: Date(timeIntervalSince1970: epoch),
-                subject: fields[3])
+                subject: fields[4],
+                parents: fields[3].split(separator: " ").map(String.init))
         }
     }
 

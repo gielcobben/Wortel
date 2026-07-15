@@ -1,0 +1,16 @@
+{
+  // Cloudflare Worker that serves the static Astro build at wortel.sh.
+  // Assets-only Worker (no `main`): Cloudflare serves ./dist directly.
+  // Deploy with `npm run deploy` (astro build && wrangler deploy).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wortel-web",
+  "compatibility_date": "2026-07-15",
+  "assets": {
+    "directory": "./dist"
+  },
+  // Route the apex + www at wortel.sh. Requires the wortel.sh zone on this
+  // Cloudflare account; adjust/remove if you deploy to a *.workers.dev URL first.
+  "routes": [
+    { "pattern": "wortel.sh", "custom_domain": true }
+  ]
+}

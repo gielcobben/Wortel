@@ -38,6 +38,9 @@ final class GitRepoModel {
     // MARK: - History
 
     private(set) var commits: [GitCommit] = []
+    /// Lane layout for the commit list's graph gutter. Rebuilt with `commits`,
+    /// never on its own — the two are read together on every row.
+    private(set) var graph = CommitGraph.empty
     private(set) var isLoadingHistory = false
     /// True once a log has been read and came back empty — lets the pane say "no
     /// commits yet" instead of flashing an empty list on a fresh repo.
@@ -149,6 +152,7 @@ final class GitRepoModel {
         guard !isLoadingHistory else { return }
         isLoadingHistory = true
         commits = await GitService.log(root: root)
+        graph = CommitGraph.build(commits)
         loadedHistory = true
         isLoadingHistory = false
 

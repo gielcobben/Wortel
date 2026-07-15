@@ -1,0 +1,92 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+// The Sparkle feed lives at updates.wortel.sh; the newest signed zip is always
+// mirrored to Wortel-latest.zip, so a single stable download URL works forever.
+const DOWNLOAD = 'https://updates.wortel.sh/Wortel-latest.zip';
+
+const features = [
+  {
+    k: 'ghostty-class',
+    title: 'Real terminal engine',
+    body: 'Embeds Ghostty’s VT parser, Metal renderer, and per-surface IO threads. Raw throughput, render, and latency are Ghostty-class by construction.',
+  },
+  {
+    k: 'instant',
+    title: 'Instant everything',
+    body: 'Only the selected session spawns before the first frame; the rest warm in the background. Cold launch is lean, session switch is a single frame — no flash, no rebuild.',
+  },
+  {
+    k: 'zero-config',
+    title: 'Zero config',
+    body: 'One window, a sidebar of named sessions, and that’s it. No tabs, no splits, no settings to tune. It just opens and it’s fast.',
+  },
+];
+---
+
+<Layout>
+  <div class="wrap">
+    <nav>
+      <div class="brand"><span class="dot">🥕</span> wortel<span class="dot">.sh</span></div>
+      <div class="links">
+        <a href="#features">features</a>
+        <a href="https://github.com/gielcobben/wortel">github</a>
+        <a href={DOWNLOAD}>download</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <p class="eyebrow">// native macOS terminal · built on libghostty</p>
+      <h1>The terminal that gets <span class="g">out of the way.</span></h1>
+      <p class="lede">
+        Wortel is a minimal, performance-first macOS terminal. Ghostty’s real
+        engine underneath, a featherweight app shell on top. Fast to launch,
+        instant to switch.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href={DOWNLOAD}>Download for macOS</a>
+        <a class="btn ghost" href="https://github.com/gielcobben/wortel">View source</a>
+      </div>
+      <p class="subnote">Apple Silicon · macOS 14+ · signed &amp; notarized · auto-updates</p>
+
+      <div class="term">
+        <div class="bar">
+          <i class="r"></i><i class="y"></i><i class="g"></i>
+          <span>wortel — ~/dev</span>
+        </div>
+        <div class="body">
+          <div class="side">
+            <div class="s active"><span class="pip"></span> api</div>
+            <div class="s busy"><span class="pip"></span> build</div>
+            <div class="s"><span class="pip"></span> logs</div>
+            <div class="s"><span class="pip"></span> notes</div>
+          </div>
+          <div class="main">
+            <div><span class="p">~/dev/api ❯</span> <span class="c">wortel --version</span></div>
+            <div class="o">wortel 2026.29.5 · ghostty-engine</div>
+            <div><span class="p">~/dev/api ❯</span> <span class="c">time zsh -lic exit</span></div>
+            <div class="o">0.02s — instant session switch</div>
+            <div><span class="p">~/dev/api ❯</span> <span class="cursor"></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      {features.map((f) => (
+        <div class="card">
+          <div class="k">// {f.k}</div>
+          <h3>{f.title}</h3>
+          <p>{f.body}</p>
+        </div>
+      ))}
+    </section>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <span>🥕 wortel — indistinguishable from Ghostty.app, faster to launch.</span>
+      <span><a href="https://github.com/gielcobben/wortel">github</a> · © 2026</span>
+    </div>
+  </footer>
+</Layout>

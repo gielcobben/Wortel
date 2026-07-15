@@ -67,9 +67,13 @@ struct GitCommit: Identifiable, Hashable {
     let author: String
     let date: Date
     let subject: String
+    /// Parent SHAs, first-parent first. Empty for a root commit; two or more for
+    /// a merge. Drives CommitGraph's lane layout.
+    let parents: [String]
 
     var id: String { sha }
     var shortSHA: String { String(sha.prefix(7)) }
+    var isMerge: Bool { parents.count > 1 }
 
     /// Relative age for the row's trailing label ("2h", "3d"). Deliberately terse:
     /// the row is narrow and the exact timestamp is rarely what you're scanning for.

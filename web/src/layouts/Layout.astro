@@ -1,0 +1,31 @@
+---
+import '../styles/global.css';
+interface Props {
+  title?: string;
+  description?: string;
+}
+const {
+  title = 'Wortel — a faster native macOS terminal',
+  description = 'Wortel is a minimal, performance-first macOS terminal built on Ghostty’s real engine. Instant launch, instant session switch.',
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://wortel.sh" />
+    <meta name="theme-color" content="#0e0f0d" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

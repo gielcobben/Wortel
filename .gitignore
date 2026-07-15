@@ -9,6 +9,8 @@ build/
 # canonical store. releases/appcast.xml stays tracked as a record of the feed.
 releases/*.zip
 releases/*.delta
+# generate_appcast retires archives past --maximum-versions into here.
+releases/old_updates/
 
 # Claude Code transient worktrees
 .claude/worktrees/

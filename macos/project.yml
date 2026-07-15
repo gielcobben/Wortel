@@ -115,6 +115,10 @@ targets:
       # DTO with a hand-written decoder whose defaults are the app's file-format
       # migrations, and it drags in nothing (Foundation only).
       - path: Wortel/Sessions/SessionStore.swift
+      # Same again: the Folder/Leaf name split is the whole of sidebar grouping,
+      # and it's plain string handling (Foundation only) that `Session` — which
+      # does drag in AppKit — only delegates to.
+      - path: Wortel/Sessions/SessionName.swift
     scheme:
       testTargets:
         - WortelTests

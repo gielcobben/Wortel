@@ -96,6 +96,12 @@ final class Session: Identifiable {
     /// ones leave this false and stay eligible for (re)naming as work shifts.
     /// Persisted. See SessionNameGenerator.
     var nameIsUserSet: Bool = false
+    /// Whether the source-control panel is open while this session is selected.
+    /// Per-session, and persisted: whether the panel earns its width depends on
+    /// what the session is for — a manager in your home directory never needs
+    /// it, the one in a repo always does. New sessions start hidden. Read and
+    /// written by GitPanelModel, which mirrors it onto the inspector.
+    var gitPanelVisible: Bool = false
     /// Full title reported by the shell (user@host:cwd, or the running
     /// program). Kept for reference; not currently shown.
     var title: String
@@ -140,22 +146,13 @@ final class Session: Identifiable {
     }
 
     /// Sidebar grouping derived from the name: "giel/hello" lives in folder
-    /// "giel" and displays as "hello". Split on the *last* slash so a name is
-    /// always one folder + one leaf ("a/b/c" -> folder "a/b", leaf "c"); nil
-    /// folder means a top-level session. Renaming is the only way to move a
-    /// session between folders — the grouping is purely a view of the name.
-    var folderPath: String? {
-        guard let slash = name.range(of: "/", options: .backwards) else { return nil }
-        let prefix = name[..<slash.lowerBound].trimmingCharacters(in: .whitespaces)
-        return prefix.isEmpty ? nil : prefix
-    }
+    /// "giel" and displays as "hello". nil folder means a top-level session.
+    /// Renaming is the only way to move a session between folders — the grouping
+    /// is purely a view of the name. See `SessionName` for the split itself.
+    var folderPath: String? { SessionName.folder(of: name) }
 
     /// The name with any folder prefix stripped — what the sidebar row shows.
-    var leafName: String {
-        guard let slash = name.range(of: "/", options: .backwards) else { return name }
-        let leaf = name[slash.upperBound...].trimmingCharacters(in: .whitespaces)
-        return leaf.isEmpty ? name : leaf
-    }
+    var leafName: String { SessionName.leaf(of: name) }
 
     /// Short, Finder-like label: the working directory's last path component
     /// (~ for home). Falls back to the shell title.

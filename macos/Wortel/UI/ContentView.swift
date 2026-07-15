@@ -197,12 +197,14 @@ struct SessionRow: View {
                             cancelling = false
                             draft = session.name
                             fieldFocused = true
+                            await selectLeafName()
                         }
                 } else {
                     // The folder prefix lives in the section header, so the row
                     // shows just the leaf ("giel/hello" -> "hello"). The rename
                     // field (draft = session.name) still edits the full name, so
-                    // retyping the prefix is how you move between folders.
+                    // retyping the prefix is how you move between folders — but
+                    // it opens with only the leaf selected (`selectLeafName`).
                     Text(session.leafName)
                         .foregroundStyle(onAccent ? .white : .primary)
                 }
@@ -211,6 +213,39 @@ struct SessionRow: View {
             activityIndicator
         }
         .padding(.vertical, 6)
+    }
+
+    /// Narrow the rename selection to the leaf, so "Wakker/Worker" opens with
+    /// only "Worker" selected.
+    ///
+    /// Making a text field first responder programmatically has AppKit's field
+    /// editor select the whole string, and the draft is the *full* name — so on
+    /// a foldered session the first keystroke took the prefix with it and the
+    /// session silently jumped to the top level. The prefix stays visible and
+    /// editable: retyping it is still how you move between folders.
+    ///
+    /// SwiftUI's TextField exposes no selection API, hence going through the
+    /// field editor. Focus lands on it a runloop turn or two after
+    /// `fieldFocused = true`, so poll for it rather than guessing a delay, and
+    /// match on the string to be sure it's *this* row's editor and not some
+    /// other field that happens to hold focus — and that SwiftUI has pushed the
+    /// draft into it, since selecting before that would be overwritten.
+    ///
+    /// Failing to find it just leaves the whole name selected, i.e. the old
+    /// behaviour, which is why this gives up quietly rather than retrying hard.
+    @MainActor
+    private func selectLeafName() async {
+        let name = session.name
+        guard let leaf = SessionName.leafRange(of: name) else { return }
+
+        for _ in 0..<10 {
+            if let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
+               editor.string == name {
+                editor.selectedRange = leaf
+                return
+            }
+            if (try? await Task.sleep(for: .milliseconds(16))) == nil { return }
+        }
     }
 
     /// Trailing status glyph. Attention (blocked on you / failed / long command
@@ -331,8 +366,9 @@ private struct AttentionFlashOverlay: View {
 /// rather than a child of this view, and the window owns the title and toolbar —
 /// so neither .navigationTitle nor .toolbar belongs here any more. Pane width is
 /// the split item's business too (see MainSplitViewController), not a .frame.
-/// The git model is still here only to keep the repo pointed at the selected
-/// session's cwd, which is naturally expressed as a SwiftUI onChange.
+/// The git model is still here only to keep the panel pointed at the selected
+/// session — its visibility and its repo both follow from that — which is
+/// naturally expressed as a SwiftUI onChange.
 struct DetailPane: View {
     let runtime: GhosttyRuntime
     @Bindable var manager: SessionManager
@@ -343,13 +379,13 @@ struct DetailPane: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay { AttentionFlashOverlay(flash: manager.attentionFlash) }
             .onAppear {
-                git.focus(cwd: manager.selected?.cwd)
+                git.focus(session: manager.selected)
             }
             .onChange(of: manager.selectedID) { _, _ in
-                git.focus(cwd: manager.selected?.cwd)
+                git.focus(session: manager.selected)
             }
-            .onChange(of: manager.selected?.cwd) { _, cwd in
-                git.focus(cwd: cwd)
+            .onChange(of: manager.selected?.cwd) { _, _ in
+                git.focus(session: manager.selected)
             }
     }
 }

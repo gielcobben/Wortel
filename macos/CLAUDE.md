@@ -51,18 +51,23 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
 
   It is **not** hosted by the app — hosting would launch libghostty, Metal and a
   real shell to test pure functions. Instead `project.yml` lists the individual
-  sources it exercises (`Wortel/Git/*`, plus `SessionStore.swift`) and compiles
-  them straight into the bundle, so adding a file needs it listed in both
-  targets. The bar for a source being here is that it's testable *without* the
-  app shell — which is also a reason to keep migration decisions out of types
-  that would drag AppKit in. Most of these tests use **git itself as the
-  oracle**: they build a repo with `GitFixture` and compare against
+  sources it exercises (`Wortel/Git/*`, plus `SessionStore.swift` and
+  `SessionName.swift`) and compiles them straight into the bundle, so adding a
+  file needs it listed in both targets. The bar for a source being here is that
+  it's testable *without* the app shell — which is also a reason to keep
+  migration decisions out of types that would drag AppKit in, and why the
+  Folder/Leaf name split lives in `SessionName` rather than on `Session`.
+  Most of these tests use **git itself as the oracle**: they build a repo with
+  `GitFixture` and compare against
   `git log --topo-order` / `git log --graph`, because reproducing those cheaply
   is the whole point of the code under test. See `WortelTests/GitFixture.swift`
   on why its branches are long-lived — a tamer fixture passes against known bugs.
   `PersistedSessionTests` pins the other testable-in-isolation thing: the
   decoder's `decodeIfPresent` defaults, which *are* the sessions.json migrations
   and otherwise only ever run on the one launch that reads an old file.
+  `SessionNameTests` pins the Folder/Leaf split for the same reason — a session's
+  folder is just the part of its name before the last slash, so a wrong split
+  doesn't throw, it silently moves the session.
 - Performance checks live in `bench/`: `./bench/measure.sh` (cold-launch time +
   memory, Release only), `./bench/gen.sh` (throughput fixtures). Most latency /
   render checks are manual side-by-side vs Ghostty.app — see `bench/BENCHMARKS.md`.

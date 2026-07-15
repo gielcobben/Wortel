@@ -97,6 +97,9 @@ targets:
   WortelTests:
     type: bundle.unit-test
     platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
     sources:
       - path: WortelTests
       - path: Wortel/Git/GitModels.swift

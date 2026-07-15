@@ -6,11 +6,14 @@ struct PersistedSession: Codable {
     let title: String
     let cwd: String?
     let selected: Bool
+    /// Whether the user explicitly named this session; auto-naming skips these.
+    let nameIsUserSet: Bool
 
-    // Tolerate older files without a `name` field.
-    enum CodingKeys: String, CodingKey { case id, name, title, cwd, selected }
-    init(id: UUID, name: String, title: String, cwd: String?, selected: Bool) {
-        self.id = id; self.name = name; self.title = title; self.cwd = cwd; self.selected = selected
+    // Tolerate older files without a `name` / `nameIsUserSet` field.
+    enum CodingKeys: String, CodingKey { case id, name, title, cwd, selected, nameIsUserSet }
+    init(id: UUID, name: String, title: String, cwd: String?, selected: Bool, nameIsUserSet: Bool) {
+        self.id = id; self.name = name; self.title = title; self.cwd = cwd
+        self.selected = selected; self.nameIsUserSet = nameIsUserSet
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -19,6 +22,9 @@ struct PersistedSession: Codable {
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Session"
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
         selected = try c.decodeIfPresent(Bool.self, forKey: .selected) ?? false
+        // Older sessions (named before auto-naming existed) are treated as
+        // user-set, so the feature never surprises anyone by relabelling them.
+        nameIsUserSet = try c.decodeIfPresent(Bool.self, forKey: .nameIsUserSet) ?? true
     }
 }
 

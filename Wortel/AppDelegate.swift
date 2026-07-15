@@ -195,6 +195,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.newSession()
     }
 
+    @objc func newSection(_ sender: Any?) {
+        if let name = promptFolderName(title: "New Section", confirm: "Create") {
+            manager.addFolder(named: name)
+        }
+    }
+
     @objc func closeSession(_ sender: Any?) {
         manager.requestCloseSelected()
     }

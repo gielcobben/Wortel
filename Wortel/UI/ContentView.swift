@@ -1,4 +1,23 @@
+import AppKit
 import SwiftUI
+
+/// Native single-field prompt for a folder name. Synchronous (an NSAlert modal)
+/// — fine for a quick one-field ask, and simpler than threading sheet state
+/// through the sidebar. Returns nil on Cancel or an empty entry.
+@MainActor
+func promptFolderName(title: String, confirm: String, initial: String = "") -> String? {
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.addButton(withTitle: confirm)
+    alert.addButton(withTitle: "Cancel")
+    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+    field.stringValue = initial
+    field.placeholderString = "Folder name"
+    alert.accessoryView = field
+    alert.window.initialFirstResponder = field
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    return field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+}
 
 /// The window shell, mirroring Opslan: a NavigationSplitView with the session
 /// list in the sidebar and the terminal in the detail. `.navigationTitle` /
@@ -12,166 +31,136 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            // Native list: List(selection:) gives click-select, keyboard nav,
-            // drag-reorder (.onMove), a11y, and the system owns all row spacing.
-            // The one override: the native highlight greys out when the sidebar
-            // isn't the focused column (the terminal always is). We don't want
-            // that here — the selection marks "the session you're viewing," not
-            // "where the keyboard is" — so SidebarSelectionStyler turns the
-            // system highlight off and we draw an always-accent pill behind the
-            // row instead. Spacing stays fully native.
-            List(selection: $manager.selectedID) {
-                ForEach(manager.sessions) { session in
-                    SessionRow(
-                        session: session,
-                        isSelected: manager.selectedID == session.id,
-                        isEditing: manager.editingID == session.id,
-                        commit: { newName in
-                            manager.rename(session, to: newName)
-                            manager.editingID = nil
-                        },
-                        cancel: { manager.editingID = nil })
-                    .listRowBackground(selectionPill(for: session))
-                    // NB: no SwiftUI double-tap gesture here. A `.onTapGesture(
-                    // count: 2)` on the row makes SwiftUI hold every single click
-                    // for the double-click interval before letting List's native
-                    // selection through, so clicking sessions feels laggy.
-                    // Double-click-to-rename is wired natively on the backing
-                    // NSTableView instead (SidebarSelectionStyler), which leaves
-                    // single-click selection fully native and instant.
-                    .contextMenu {
-                        Button("Rename") { manager.editingID = session.id }
-                        Button("Close Session") { manager.requestClose(session) }
+            // The session list is a native NSOutlineView (SidebarOutlineView),
+            // not a SwiftUI List: two-level drag & drop with real insertion
+            // indicators — sessions between rows / into folders, folders between
+            // sections — is exactly NSOutlineView's home turf and beyond what
+            // List exposes. Row *content* stays SwiftUI (SessionRow hosted per
+            // row), so the pill, attention dots, and inline rename are unchanged.
+            SidebarOutlineView(
+                manager: manager,
+                snapshot: manager.sidebarGroups.map {
+                    SidebarSnapshotGroup(folder: $0.folder, sessionIDs: $0.sessions.map(\.id))
+                })
+                .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 320)
+                .safeAreaInset(edge: .bottom) {
+                    HStack {
+                        Menu {
+                            Button("New Session") { manager.newSession() }
+                            Button("New Folder…") {
+                                if let name = promptFolderName(title: "New Folder", confirm: "Create") {
+                                    manager.addFolder(named: name)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "plus")
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("New Session or Folder")
+                        Spacer()
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
                 }
-                .onMove { manager.move(fromOffsets: $0, toOffset: $1) }
-            }
-            .background(SidebarSelectionStyler(onRowDoubleClick: { row in
-                guard row >= 0, row < manager.sessions.count else { return }
-                let session = manager.sessions[row]
-                manager.selectedID = session.id
-                manager.editingID = session.id
-            }))
-            .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 320)
-            .safeAreaInset(edge: .bottom) {
-                HStack {
-                    Button {
-                        manager.newSession()
-                    } label: {
-                        Image(systemName: "plus")
-                            .frame(width: 24, height: 24)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .help("New Session (⌘N)")
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-            }
         } detail: {
             DetailView(runtime: runtime, manager: manager, git: git)
         }
     }
-
-    /// Always-accent selection fill, matched to the native selection pill:
-    /// inset 10pt from the row edges (the native highlight is turned off by
-    /// SidebarSelectionStyler). Suppressed while renaming so the inline edit
-    /// field sits on a normal background.
-    @ViewBuilder
-    private func selectionPill(for session: Session) -> some View {
-        if manager.selectedID == session.id, manager.editingID != session.id {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.accentColor)
-                .padding(.horizontal, 10)
-        } else {
-            Color.clear
-        }
-    }
 }
 
-/// Reaches into the NSTableView backing the sidebar List to do two things
-/// SwiftUI can't express cleanly:
-///
-///  1. Turn off the AppKit selection highlight, so our always-accent pill is the
-///     only selection visual (the native highlight greys out when the sidebar
-///     isn't the focused column — but the terminal always is).
-///  2. Wire double-click-to-rename on the table's native `doubleAction`, rather
-///     than a SwiftUI `.onTapGesture(count: 2)` on each row. The gesture form
-///     forces every single click to wait out the double-click interval before
-///     List's native selection registers, which makes switching sessions by
-///     click feel laggy; the native doubleAction leaves single-click selection
-///     untouched and instant.
-///
-/// List keeps native click-select, keyboard nav, drag-reorder, and a11y. If
-/// SwiftUI's view tree ever changes shape this finds nothing and both effects
-/// simply no-op — no crash.
-private struct SidebarSelectionStyler: NSViewRepresentable {
-    /// Called with the clicked row index on a native double-click.
-    let onRowDoubleClick: (Int) -> Void
+/// One outline row's SwiftUI content: the session row on its always-accent
+/// selection pill, plus the row context menu. Reads the manager's observable
+/// state directly, so selection, rename, and attention changes update live
+/// inside the hosted view — no outline reload involved.
+struct SidebarRowContent: View {
+    let manager: SessionManager
+    let session: Session
 
-    func makeCoordinator() -> Coordinator { Coordinator(onRowDoubleClick: onRowDoubleClick) }
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        context.coordinator.apply(from: view)
-        return view
+    var body: some View {
+        SessionRow(
+            session: session,
+            isSelected: manager.selectedID == session.id,
+            isEditing: manager.editingID == session.id,
+            commit: { newName in
+                manager.rename(session, to: newName)
+                manager.editingID = nil
+            },
+            cancel: { manager.editingID = nil })
+            // The selection pill is drawn by the row view (SidebarPillRowView),
+            // full row width — this content just sits on top of it.
+            .padding(.leading, 12)
+            .padding(.trailing, 8)
+            // Fill the row height and center vertically — otherwise the short
+            // name+path content sits at the top of the (taller) row, leaving
+            // dead space below each session that reads as loose spacing.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .contextMenu {
+                Button("Rename") { manager.editingID = session.id }
+                moveToMenu
+                Divider()
+                Button("Close Session") { manager.requestClose(session) }
+            }
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.onRowDoubleClick = onRowDoubleClick
-        context.coordinator.apply(from: nsView) // re-apply; SwiftUI can reset it
-    }
-
-    @MainActor
-    final class Coordinator: NSObject {
-        var onRowDoubleClick: (Int) -> Void
-
-        init(onRowDoubleClick: @escaping (Int) -> Void) {
-            self.onRowDoubleClick = onRowDoubleClick
-        }
-
-        func apply(from view: NSView) {
-            DispatchQueue.main.async { [weak self, weak view] in
-                guard let self, let root = view?.window?.contentView else { return }
-                for table in root.tableViews() {
-                    // The git diff view is also an NSTableView living in this
-                    // same window — never treat it as the session list.
-                    if table.identifier == DiffView.tableIdentifier { continue }
-                    if table.selectionHighlightStyle != .none {
-                        table.selectionHighlightStyle = .none
+    /// "Move To" submenu: top level plus every other folder — the no-drag way
+    /// to refile.
+    @ViewBuilder
+    private var moveToMenu: some View {
+        let destinations = manager.folderNames.filter { $0 != session.folderPath }
+        if session.folderPath != nil || !destinations.isEmpty {
+            Menu("Move To") {
+                if session.folderPath != nil {
+                    Button("Top Level") {
+                        manager.moveSession(id: session.id, toFolder: nil, at: .max)
                     }
-                    // (Re-)assert our double-click handler; SwiftUI may reset it.
-                    if table.target !== self || table.doubleAction != #selector(self.handleDoubleClick(_:)) {
-                        table.target = self
-                        table.doubleAction = #selector(self.handleDoubleClick(_:))
+                }
+                ForEach(destinations, id: \.self) { folder in
+                    Button(folder) {
+                        manager.moveSession(id: session.id, toFolder: folder, at: .max)
                     }
                 }
             }
         }
-
-        @objc private func handleDoubleClick(_ sender: NSTableView) {
-            let row = sender.clickedRow
-            guard row >= 0 else { return }
-            onRowDoubleClick(row)
-        }
     }
 }
 
-private extension NSView {
-    /// Every NSTableView (incl. NSOutlineView) in this view's subtree.
-    func tableViews() -> [NSTableView] {
-        var found: [NSTableView] = []
-        for sub in subviews {
-            if let table = sub as? NSTableView { found.append(table) }
-            found.append(contentsOf: sub.tableViews())
-        }
-        return found
+/// A folder header row's SwiftUI content: the section title styled like a
+/// native sidebar header, plus the folder context menu. Expansion, the
+/// disclosure chevron, click-to-toggle, and all drag & drop live in the
+/// NSOutlineView layer (SidebarOutlineView) — this is presentation only.
+struct SidebarHeaderContent: View {
+    let manager: SessionManager
+    let folder: String
+
+    var body: some View {
+        Text(folder)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.leading, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .contextMenu {
+                Button("New Session in “\(folder)”") { manager.newSession(inFolder: folder) }
+                Button("Rename Folder…") {
+                    if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
+                        manager.renameFolder(folder, to: name)
+                    }
+                }
+                Divider()
+                // Non-destructive: the sessions drop to the top level, they're
+                // not closed.
+                Button("Delete Folder") { manager.deleteFolder(folder) }
+            }
     }
 }
 
 /// One sidebar row: session name with the path below it.
-private struct SessionRow: View {
+struct SessionRow: View {
     let session: Session
     let isSelected: Bool
     let isEditing: Bool
@@ -220,7 +209,11 @@ private struct SessionRow: View {
                             fieldFocused = true
                         }
                 } else {
-                    Text(session.name)
+                    // The folder prefix lives in the section header, so the row
+                    // shows just the leaf ("giel/hello" -> "hello"). The rename
+                    // field (draft = session.name) still edits the full name, so
+                    // retyping the prefix is how you move between folders.
+                    Text(session.leafName)
                         .foregroundStyle(onAccent ? .white : .primary)
                 }
                 if !session.abbreviatedPath.isEmpty {
@@ -359,18 +352,40 @@ private struct DetailView: View {
     @Bindable var manager: SessionManager
     @Bindable var git: GitPanelModel
 
+    /// Persisted panel width, shared across all sessions. Replaces HSplitView's
+    /// divider (which SwiftUI never exposes) so the width survives hide/show and
+    /// relaunch. See DragDivider.
+    @AppStorage("git.panelWidth") private var panelWidthStore: Double = 440
+    private static let widthRange: ClosedRange<CGFloat> = 320...680
+
+    private var panelWidth: Binding<CGFloat> {
+        Binding(
+            get: { min(max(CGFloat(panelWidthStore), Self.widthRange.lowerBound), Self.widthRange.upperBound) },
+            set: { panelWidthStore = Double($0) }
+        )
+    }
+
+    @ViewBuilder private var gitPanel: some View {
+        DragDivider(axis: .horizontal, length: panelWidth, range: Self.widthRange, invert: true)
+        SourceControlPanel(panel: git)
+            .frame(width: panelWidth.wrappedValue)
+            .frame(maxHeight: .infinity)
+    }
+
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             TerminalContainer(runtime: runtime, session: manager.selected)
                 .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
                 .overlay { AttentionFlashOverlay(flash: manager.attentionFlash) }
             if git.isVisible {
-                SourceControlPanel(panel: git)
-                    .frame(minWidth: 320, idealWidth: 440, maxWidth: 680, maxHeight: .infinity)
+                gitPanel
             }
         }
         .navigationTitle(manager.selected?.name ?? "Wortel")
         .navigationSubtitle(manager.selected?.abbreviatedPath ?? "")
+        .onAppear {
+            git.focus(cwd: manager.selected?.cwd)
+        }
         .onChange(of: manager.selectedID) { _, _ in
             git.focus(cwd: manager.selected?.cwd)
         }

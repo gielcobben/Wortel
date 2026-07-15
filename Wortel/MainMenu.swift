@@ -45,6 +45,8 @@ enum MainMenu {
         let sessionMenu = NSMenu(title: "Session")
         sessionItem.submenu = sessionMenu
         sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "n")
+        let newSection = sessionMenu.addItem(withTitle: "New Section", action: #selector(AppDelegate.newSection(_:)), keyEquivalent: "n")
+        newSection.keyEquivalentModifierMask = [.command, .shift]
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
         sessionMenu.addItem(withTitle: "Close Session", action: #selector(AppDelegate.closeSession(_:)), keyEquivalent: "w")
         sessionMenu.addItem(.separator())

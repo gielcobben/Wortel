@@ -91,6 +91,11 @@ final class Session: Identifiable {
     /// User-facing name shown as the sidebar row's primary line and the
     /// window title. Defaults to "Session N"; renamable later.
     var name: String
+    /// The user explicitly named this session (an inline rename), so auto-naming
+    /// must never overwrite it. Default "Session N" names and auto-generated
+    /// ones leave this false and stay eligible for (re)naming as work shifts.
+    /// Persisted. See SessionNameGenerator.
+    var nameIsUserSet: Bool = false
     /// Full title reported by the shell (user@host:cwd, or the running
     /// program). Kept for reference; not currently shown.
     var title: String
@@ -134,6 +139,24 @@ final class Session: Identifiable {
         self.cwd = cwd
     }
 
+    /// Sidebar grouping derived from the name: "giel/hello" lives in folder
+    /// "giel" and displays as "hello". Split on the *last* slash so a name is
+    /// always one folder + one leaf ("a/b/c" -> folder "a/b", leaf "c"); nil
+    /// folder means a top-level session. Renaming is the only way to move a
+    /// session between folders — the grouping is purely a view of the name.
+    var folderPath: String? {
+        guard let slash = name.range(of: "/", options: .backwards) else { return nil }
+        let prefix = name[..<slash.lowerBound].trimmingCharacters(in: .whitespaces)
+        return prefix.isEmpty ? nil : prefix
+    }
+
+    /// The name with any folder prefix stripped — what the sidebar row shows.
+    var leafName: String {
+        guard let slash = name.range(of: "/", options: .backwards) else { return name }
+        let leaf = name[slash.upperBound...].trimmingCharacters(in: .whitespaces)
+        return leaf.isEmpty ? name : leaf
+    }
+
     /// Short, Finder-like label: the working directory's last path component
     /// (~ for home). Falls back to the shell title.
     var displayName: String {
@@ -174,4 +197,14 @@ final class Session: Identifiable {
         surfaceView?.removeFromSuperview()
         surfaceView = nil
     }
+}
+
+/// A sidebar group: the sessions sharing one folder prefix (or the top-level
+/// group when `folder` is nil). Derived on the fly from session names by
+/// `SessionManager.sidebarGroups` — nothing here is persisted.
+struct SidebarGroup: Identifiable {
+    let folder: String?
+    let sessions: [Session]
+    /// Stable across renders; "" is safe because a real folder is never empty.
+    var id: String { folder ?? "" }
 }

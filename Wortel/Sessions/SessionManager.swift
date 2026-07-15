@@ -120,12 +120,220 @@ final class SessionManager {
     /// by session; cancelled the moment you navigate away.
     @ObservationIgnored private var unreadDwellTimers: [Session.ID: DispatchWorkItem] = [:]
 
+    /// Auto-naming throttle: don't re-summarise a session more often than this.
+    /// Naming happens on turn/command end, which is already sparse; this just
+    /// stops a burst of quick turns from relabelling on every one.
+    private static let autoNameMinInterval: TimeInterval = 45
+    /// The distilled-screen text must have at least this many characters — below
+    /// it there's too little on screen to name from.
+    private static let autoNameMinChars = 80
+    /// When each session was last auto-named (throttle clock).
+    @ObservationIgnored private var autoNamedAt: [Session.ID: Date] = [:]
+    /// Hash of the distilled screen text each session was last named from, so an
+    /// unchanged screen doesn't spend a model call to produce the same name.
+    @ObservationIgnored private var autoNameSignature: [Session.ID: Int] = [:]
+    /// Sessions with an auto-name request in flight — one at a time each.
+    @ObservationIgnored private var autoNaming: Set<Session.ID> = []
+
     var selected: Session? {
         sessions.first { $0.id == selectedID }
     }
 
+    /// Names of folders the user has collapsed in the sidebar. Persisted to
+    /// UserDefaults (view state, not session data), keyed by folder name.
+    private(set) var collapsedFolders: Set<String> = [] {
+        didSet {
+            UserDefaults.standard.set(Array(collapsedFolders), forKey: Self.collapsedFoldersKey)
+        }
+    }
+    @ObservationIgnored private static let collapsedFoldersKey = "WortelCollapsedFolders"
+
+    /// Folders the user created explicitly (the "+ → New Folder" menu). Unlike
+    /// folders that emerge from a "giel/…" name, these persist as sections even
+    /// when empty, so you can make a folder first and drag sessions in after —
+    /// Apple Mail style. Ordered; persisted to UserDefaults.
+    private(set) var declaredFolders: [String] = [] {
+        didSet { UserDefaults.standard.set(declaredFolders, forKey: Self.declaredFoldersKey) }
+    }
+    @ObservationIgnored private static let declaredFoldersKey = "WortelDeclaredFolders"
+
+    /// The user's chosen order of the sidebar's folder sections. Source of truth
+    /// for section ordering (drag a header to rearrange). Kept in sync with the
+    /// folders that actually exist by `syncFolderOrder`; persisted to
+    /// UserDefaults. Empty on first run — sections then fall back to
+    /// first-appearance order, and this is populated from that.
+    private(set) var folderOrder: [String] = [] {
+        didSet { UserDefaults.standard.set(folderOrder, forKey: Self.folderOrderKey) }
+    }
+    @ObservationIgnored private static let folderOrderKey = "WortelFolderOrder"
+
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
+        collapsedFolders = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedFoldersKey) ?? [])
+        declaredFolders = UserDefaults.standard.stringArray(forKey: Self.declaredFoldersKey) ?? []
+        folderOrder = UserDefaults.standard.stringArray(forKey: Self.folderOrderKey) ?? []
+    }
+
+    // MARK: - Sidebar folders (derived from session names)
+
+    /// The sidebar's rows, grouped into folders. A `nil` folder is the top-level
+    /// (headerless) group, always pinned to the root. Folder sections follow the
+    /// user's `folderOrder`; any folder not yet tracked there falls back to
+    /// first-appearance (populated) / declaration (empty) order so nothing is
+    /// ever dropped. Sessions keep their array order within a group. Purely a
+    /// view of `sessions` + folder state — nothing here is stored.
+    var sidebarGroups: [SidebarGroup] {
+        var byKey: [String: [Session]] = [:]
+        for session in sessions {
+            byKey[session.folderPath ?? "", default: []].append(session)
+        }
+
+        var groups: [SidebarGroup] = []
+        if let top = byKey[""], !top.isEmpty {
+            groups.append(SidebarGroup(folder: nil, sessions: top))
+        }
+        var emitted = Set<String>()
+        func emit(_ folder: String) {
+            guard !emitted.contains(folder),
+                  byKey[folder] != nil || declaredFolders.contains(folder) else { return }
+            emitted.insert(folder)
+            groups.append(SidebarGroup(folder: folder, sessions: byKey[folder] ?? []))
+        }
+        for folder in folderOrder { emit(folder) }
+        for session in sessions { if let f = session.folderPath { emit(f) } }
+        for folder in declaredFolders { emit(folder) }
+        return groups
+    }
+
+    func isFolderCollapsed(_ folder: String) -> Bool { collapsedFolders.contains(folder) }
+
+    func setFolder(_ folder: String, collapsed: Bool) {
+        if collapsed { collapsedFolders.insert(folder) } else { collapsedFolders.remove(folder) }
+    }
+
+    /// Every folder shown in the sidebar (populated or empty) in render order.
+    /// Drives the "Move To" menu and name-collision checks.
+    var folderNames: [String] { sidebarGroups.compactMap(\.folder) }
+
+    /// Create a new, empty folder (the "+ → New Folder" menu). Name is made
+    /// unique; the folder is left expanded and its name returned.
+    @discardableResult
+    func addFolder(named requested: String? = nil) -> String {
+        let base = requested?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmpty ?? "New Folder"
+        let existing = Set(folderNames)
+        var name = base, n = 1
+        while existing.contains(name) { n += 1; name = "\(base) \(n)" }
+        declaredFolders.append(name)
+        collapsedFolders.remove(name)
+        syncFolderOrder() // give the new folder a tracked, persisted position
+        return name
+    }
+
+    /// Rename a folder: re-prefix every member session and carry the declared /
+    /// collapsed entries over to the new name.
+    func renameFolder(_ folder: String, to newName: String) {
+        guard let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
+              trimmed != folder else { return }
+        for session in sessions where session.folderPath == folder {
+            session.name = "\(trimmed)/\(session.leafName)"
+        }
+        if let i = declaredFolders.firstIndex(of: folder) {
+            if declaredFolders.contains(trimmed) { declaredFolders.remove(at: i) }
+            else { declaredFolders[i] = trimmed }
+        }
+        if collapsedFolders.remove(folder) != nil { collapsedFolders.insert(trimmed) }
+        // Rename in place so the folder keeps its position instead of jumping to
+        // the end when syncFolderOrder drops the old name and appends the new.
+        if let i = folderOrder.firstIndex(of: folder) { folderOrder[i] = trimmed }
+        normalizeOrder()
+        scheduleSave()
+    }
+
+    /// Delete a folder: its sessions drop to the top level (nothing is closed),
+    /// and the section disappears.
+    func deleteFolder(_ folder: String) {
+        for session in sessions where session.folderPath == folder {
+            session.name = session.leafName
+        }
+        declaredFolders.removeAll { $0 == folder }
+        collapsedFolders.remove(folder)
+        normalizeOrder()
+        scheduleSave()
+    }
+
+    /// Move a session into `folder` (nil = top level) at `position` within that
+    /// group (clamped; pass .max to append). Serves both drag-and-drop and the
+    /// "Move To" menu. Crossing folders re-prefixes the name — the name *is*
+    /// the folder membership.
+    func moveSession(id: Session.ID, toFolder folder: String?, at position: Int) {
+        guard let fromIdx = sessions.firstIndex(where: { $0.id == id }) else { return }
+        let session = sessions[fromIdx]
+        var target = position
+        if session.folderPath == folder {
+            // Drop indices are as rendered mid-drag, i.e. they still count the
+            // row's own old position — compensate after it's removed.
+            let group = sessions.filter { $0.folderPath == folder }
+            if let current = group.firstIndex(where: { $0.id == id }), current < target {
+                target -= 1
+            }
+        } else {
+            session.name = folder.map { "\($0)/\(session.leafName)" } ?? session.leafName
+        }
+        sessions.remove(at: fromIdx)
+        let members = sessions.indices.filter { sessions[$0].folderPath == folder }
+        let clamped = max(0, min(target, members.count))
+        let flatIdx = clamped < members.count
+            ? members[clamped]
+            : (members.last.map { $0 + 1 } ?? sessions.count)
+        sessions.insert(session, at: flatIdx)
+        normalizeOrder()
+        // Show the result of the drop, even into a collapsed folder.
+        if let folder { collapsedFolders.remove(folder) }
+        scheduleSave()
+    }
+
+    /// Re-flatten `sessions` to match the rendered order (groups contiguous, in
+    /// the folder order). Keeps flat-index consumers — the Session menu, ⌘-number
+    /// select — agreeing with what the sidebar shows.
+    private func normalizeOrder() {
+        syncFolderOrder()
+        sessions = sidebarGroups.flatMap(\.sessions)
+    }
+
+    /// Reconcile `folderOrder` with the folders that actually exist: drop any
+    /// that vanished, append newly-appeared ones (by first appearance), and
+    /// dedupe — preserving the user's arrangement for everything already tracked.
+    private func syncFolderOrder() {
+        var present: [String] = []
+        var seen = Set<String>()
+        for session in sessions {
+            if let f = session.folderPath, seen.insert(f).inserted { present.append(f) }
+        }
+        for f in declaredFolders where seen.insert(f).inserted { present.append(f) }
+
+        var order: [String] = []
+        var added = Set<String>()
+        for f in folderOrder where seen.contains(f) && added.insert(f).inserted { order.append(f) }
+        for f in present where added.insert(f).inserted { order.append(f) }
+        if order != folderOrder { folderOrder = order }
+    }
+
+    /// Reorder folder sections: move `folder` to `index` among the folder
+    /// sections (an insertion index as rendered pre-move, the NSOutlineView
+    /// drop convention — it may count the folder's own current position).
+    func moveFolder(_ folder: String, toFolderIndex index: Int) {
+        syncFolderOrder()
+        guard let from = folderOrder.firstIndex(of: folder) else { return }
+        var target = index
+        if from < target { target -= 1 } // the drop index counted its old slot
+        var order = folderOrder
+        order.remove(at: from)
+        order.insert(folder, at: max(0, min(target, order.count)))
+        guard order != folderOrder else { return }
+        folderOrder = order
+        normalizeOrder()
+        scheduleSave()
     }
 
     // MARK: - Restore
@@ -143,9 +351,11 @@ final class SessionManager {
         let resume = AgentResumeStore.consumeSnapshot()
         for entry in persisted {
             let session = Session(id: entry.id, name: entry.name, title: entry.title, cwd: entry.cwd)
+            session.nameIsUserSet = entry.nameIsUserSet
             session.pendingResumeInput = resume[entry.id]
             appendRestored(session)
         }
+        syncFolderOrder() // seed/prune the persisted folder order for the restored set
         selectedID = (persisted.first(where: \.selected) ?? persisted[0]).id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.warmRemainingSurfaces()
@@ -157,20 +367,27 @@ final class SessionManager {
     /// Create a session and select it; new sessions inherit the current
     /// working directory.
     @discardableResult
-    func newSession(cwd: String? = nil) -> Session {
+    func newSession(cwd: String? = nil, inFolder folder: String? = nil) -> Session {
         sessionCounter += 1
-        let session = Session(name: "Session \(sessionCounter)", cwd: cwd ?? selected?.cwd)
+        let leaf = "Session \(sessionCounter)"
+        // New sessions land next to what you're looking at: the explicit folder
+        // (header context menu) or the selected session's folder, else top level.
+        let dir = folder ?? selected?.folderPath
+        let session = Session(name: dir.map { "\($0)/\(leaf)" } ?? leaf, cwd: cwd ?? selected?.cwd)
         session.title = Self.defaultTitle(forCwd: session.cwd)
         wire(session)
         sessions.append(session)
+        normalizeOrder() // slot the append into its folder's contiguous block
+        if let dir { collapsedFolders.remove(dir) } // never select into a hidden row
         selectedID = session.id
         scheduleSave()
         return session
     }
 
     private func appendRestored(_ session: Session) {
-        // Keep the default-name counter ahead of any restored "Session N".
-        if let n = Self.sessionNumber(from: session.name) {
+        // Keep the default-name counter ahead of any restored "Session N"
+        // (parse the leaf: the folder prefix isn't part of the number).
+        if let n = Self.sessionNumber(from: session.leafName) {
             sessionCounter = max(sessionCounter, n)
         }
         wire(session)
@@ -187,11 +404,22 @@ final class SessionManager {
         busyStartedAt.removeValue(forKey: session.id)
         lastBusyInterval.removeValue(forKey: session.id)
         titleShowsWorking.remove(session.id)
+        autoNamedAt.removeValue(forKey: session.id)
+        autoNameSignature.removeValue(forKey: session.id)
+        autoNaming.remove(session.id)
         // The killed shell never reaches its prompt to clear its own agent
         // marker; drop it so a closed session isn't resumed on next launch.
         AgentResumeStore.remove(sessionID: session.id)
+        let folder = session.folderPath
         session.close()
         sessions.remove(at: index)
+        // Closing the last session in a folder removes that section — including
+        // explicitly-created ("New Folder") ones, which otherwise linger empty.
+        if let folder, !sessions.contains(where: { $0.folderPath == folder }) {
+            declaredFolders.removeAll { $0 == folder }
+            folderOrder.removeAll { $0 == folder }
+            collapsedFolders.remove(folder)
+        }
         if hadAttention { refreshDockBadge() }
         // Retract any notification still sitting in Notification Center for a
         // session that no longer exists.
@@ -240,19 +468,20 @@ final class SessionManager {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != session.name else { return }
         session.name = trimmed
+        // An explicit rename is the user's word — auto-naming must never touch
+        // this session again.
+        session.nameIsUserSet = true
+        // A rename can re-folder the session ("hello" -> "giel/hello"): keep the
+        // flat order matching the render order, and make sure the row it moved
+        // to is actually visible.
+        normalizeOrder()
+        if let folder = session.folderPath { collapsedFolders.remove(folder) }
         scheduleSave()
     }
 
     /// Begin inline-renaming the selected session (⌘R / menu).
     func beginRenameSelected() {
         editingID = selectedID
-    }
-
-    /// Drag-to-reorder from the sidebar. Selection (by id) and live surfaces
-    /// are unaffected — only the array order changes.
-    func move(fromOffsets: IndexSet, toOffset: Int) {
-        sessions.move(fromOffsets: fromOffsets, toOffset: toOffset)
-        scheduleSave()
     }
 
     func select(index: Int) {
@@ -399,6 +628,9 @@ final class SessionManager {
             // title), that already raised a louder .needsInput which priority
             // keeps from being downgraded here.
             self.raiseAttention(session, kind: .turnDone, title: session.name, body: "Finished — your move")
+            // A finished turn is the best moment to (re)name the session from
+            // what's now on screen — even when it's the one you're watching.
+            self.considerAutoName(session)
         }
         quiesceTimers[id] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiesceSettleDelay, execute: work)
@@ -505,12 +737,61 @@ final class SessionManager {
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
     }
 
+    // MARK: - Auto-naming
+
+    /// Something substantial just finished in `session` (an agent turn ended, or
+    /// a long command exited) — a good moment to (re)summarise its terminal into
+    /// a sidebar name. Heavily gated so it stays cheap and never surprises:
+    /// on-device model must be available, the name must not be user-set, and the
+    /// throttle / "screen unchanged" / "too little on screen" checks must pass.
+    /// The model call runs off the hot path and applies its result on the main
+    /// actor; a no-op everywhere Apple Intelligence is unavailable.
+    private func considerAutoName(_ session: Session) {
+        guard #available(macOS 26.0, *), SessionNameGenerator.isAvailable else { return }
+        guard !session.nameIsUserSet, !autoNaming.contains(session.id) else { return }
+        if let last = autoNamedAt[session.id],
+           Date().timeIntervalSince(last) < Self.autoNameMinInterval { return }
+        guard let raw = session.surfaceView?.readScreenText() else { return }
+        let distilled = SessionNameGenerator.distill(raw)
+        guard distilled.count >= Self.autoNameMinChars else { return }
+        let signature = distilled.hashValue
+        guard autoNameSignature[session.id] != signature else { return }
+
+        autoNaming.insert(session.id)
+        let id = session.id
+        let cwd = session.cwd
+        let current = session.leafName
+        // SessionManager is @MainActor, so this Task is main-actor-isolated; the
+        // model does its heavy work off-main internally and resumes us here.
+        Task { [weak self, weak session] in
+            let name = try? await SessionNameGenerator.generate(
+                screenText: distilled, cwd: cwd, currentName: current)
+            guard let self, let session else { return }
+            self.autoNaming.remove(id)
+            self.autoNamedAt[id] = Date()
+            self.autoNameSignature[id] = signature
+            guard self.sessions.contains(where: { $0.id == id }),
+                  !session.nameIsUserSet, // may have been renamed while we waited
+                  let name, !name.isEmpty, name != session.leafName else { return }
+            self.applyAutoName(session, to: name)
+        }
+    }
+
+    /// Set a session's auto-generated name, preserving any folder prefix (the
+    /// name *is* the folder membership, so only the leaf changes). Does not set
+    /// `nameIsUserSet` — an auto-name stays eligible for later refinement.
+    private func applyAutoName(_ session: Session, to leaf: String) {
+        session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
+        normalizeOrder()
+        scheduleSave()
+    }
+
     // MARK: - Persistence
 
     private func persistedSessions() -> [PersistedSession] {
         sessions.map {
             PersistedSession(id: $0.id, name: $0.name, title: $0.title, cwd: $0.cwd,
-                             selected: $0.id == selectedID)
+                             selected: $0.id == selectedID, nameIsUserSet: $0.nameIsUserSet)
         }
     }
 
@@ -564,6 +845,9 @@ final class SessionManager {
                 // your eyes — and a non-zero exit is worth flagging red, not
                 // just "done". Exit code -1 means the shell didn't report one.
                 guard durationNs >= Self.attentionAfterNs else { return }
+                // Long enough to be worth a fresh name too (agents go through
+                // the quiesce path above; this covers plain long commands).
+                self.considerAutoName(session)
                 if exitCode > 0 {
                     self.raiseAttention(session, kind: .failed, title: session.name,
                                         body: "Command failed (exit \(exitCode))")
@@ -600,4 +884,9 @@ final class SessionManager {
         guard name.hasPrefix(prefix) else { return nil }
         return Int(name.dropFirst(prefix.count))
     }
+}
+
+/// Trimmed-string convenience used by the folder create/rename helpers.
+extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }

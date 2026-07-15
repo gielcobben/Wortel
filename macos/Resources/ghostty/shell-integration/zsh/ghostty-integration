@@ -348,7 +348,20 @@ _ghostty_deferred_init() {
 
     # Enable reporting current working dir to terminal. Ghostty supports
     # the kitty-shell-cwd format.
-    _ghostty_report_pwd() { builtin print -nu $_ghostty_fd '\e]7;kitty-shell-cwd://'"$HOST""$PWD"'\a'; }
+    # Wortel: "localhost", not "$HOST". libghostty accepts an OSC 7 only when
+    # its host is "localhost" or an exact gethostname() match — anything else,
+    # including a missing host, is treated as a remote path and dropped ("OSC 7
+    # uri must contain a hostname" / "OSC 7 host () must be local"). $HOST
+    # breaks that two ways:
+    # it's just a parameter, so an environment that clears it (shadowenv does)
+    # emits a hostless URI; and it's captured at shell start, so it goes stale
+    # the moment macOS renames the machine mid-session — routine on a network
+    # where mDNS hands you the "-2" suffix after a name collision. The shell
+    # this script runs in is always local, so localhost is true by construction
+    # and immune to both. A remote shell over ssh reports its own hostname and
+    # is still correctly rejected: that integration is the remote host's copy,
+    # not this one.
+    _ghostty_report_pwd() { builtin print -nu $_ghostty_fd '\e]7;kitty-shell-cwd://localhost'"$PWD"'\a'; }
     chpwd_functions=(${chpwd_functions[@]} "_ghostty_report_pwd")
     # An executed program could change cwd and report the changed cwd, so also report cwd at each new prompt
     # as in this case chpwd_functions is insufficient. chpwd_functions is still needed for things like: cd x && something

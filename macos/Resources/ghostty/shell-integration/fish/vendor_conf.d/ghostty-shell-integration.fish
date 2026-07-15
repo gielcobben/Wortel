@@ -307,7 +307,11 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
         if status --is-command-substitution || set -q INSIDE_EMACS
             return
         end
-        printf \e\]7\;file://%s%s\a $hostname (string escape --style=url $PWD)
+        # Wortel: "localhost", not $hostname — see the zsh integration's
+        # _ghostty_report_pwd. Same exposure: a cleared $hostname emits a
+        # hostless URI that libghostty drops, and a captured one goes stale
+        # when the machine is renamed mid-session.
+        printf \e\]7\;file://localhost%s\a (string escape --style=url $PWD)
     end
 
     # Enable fish to handle reflow because Ghostty clears the prompt on resize.

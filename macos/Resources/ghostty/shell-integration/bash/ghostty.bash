@@ -241,7 +241,11 @@ function __ghostty_precmd() {
   # command like cd /test && cat. PS0 is evaluated before cd is run.
   if [[ "$_ghostty_last_reported_cwd" != "$PWD" ]]; then
     _ghostty_last_reported_cwd="$PWD"
-    builtin printf "\e]7;kitty-shell-cwd://%s%s\a" "$HOSTNAME" "$PWD"
+    # Wortel: "localhost", not "$HOSTNAME" — see the zsh integration's
+    # _ghostty_report_pwd for why. Same exposure: an unset $HOSTNAME emits a
+    # hostless URI that libghostty drops, and a captured one goes stale when
+    # the machine is renamed mid-session.
+    builtin printf "\e]7;kitty-shell-cwd://localhost%s\a" "$PWD"
   fi
 
   _ghostty_executing=0

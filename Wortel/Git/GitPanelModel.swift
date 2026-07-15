@@ -9,8 +9,12 @@ import Observation
 @Observable
 @MainActor
 final class GitPanelModel {
-    private(set) var isVisible = false
+    /// Persisted across relaunches (app-wide, not per-session) so the panel
+    /// reopens where you left it. Written through `setVisible`.
+    private(set) var isVisible = UserDefaults.standard.bool(forKey: GitPanelModel.visibleKey)
     private(set) var repo: GitRepoModel?
+
+    private static let visibleKey = "git.panelVisible"
     /// Bumped to ask the panel to move keyboard focus into the changes list.
     /// The list view watches this and claims focus; a monotonic counter (rather
     /// than a Bool) so repeated requests always register, even back-to-back.
@@ -34,7 +38,7 @@ final class GitPanelModel {
     }
 
     func toggle() {
-        isVisible.toggle()
+        setVisible(!isVisible)
         if isVisible {
             focus(cwd: currentCwd)
         }
@@ -43,10 +47,15 @@ final class GitPanelModel {
     /// Show the panel if needed and ask the changes list to take keyboard focus.
     func requestListFocus() {
         if !isVisible {
-            isVisible = true
+            setVisible(true)
             focus(cwd: currentCwd)
         }
         listFocusRequest += 1
+    }
+
+    private func setVisible(_ visible: Bool) {
+        isVisible = visible
+        UserDefaults.standard.set(visible, forKey: Self.visibleKey)
     }
 
     /// A command finished in the shown repo's session — the work tree may have

@@ -49,18 +49,33 @@ private struct RepoView: View {
     @State private var focusMessageRequest = 0
     @State private var lastHandledFocusRequest = 0
 
+    /// Persisted height of the changes list; the diff fills the rest. Replaces
+    /// VSplitView (whose divider position SwiftUI never exposes) so the split
+    /// survives hide/show and relaunch. Clamped against the live container
+    /// height so the diff keeps a usable minimum. See DragDivider.
+    @AppStorage("git.listHeight") private var listHeightStore: Double = 200
+    private static let listMin: CGFloat = 80
+    private static let diffMin: CGFloat = 120
+
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            // Native, draggable split between the files list and the diff — the
-            // system owns the divider and its sizing. Defaults to a compact file
-            // list so the diff gets most of the room; drag to taste.
-            VSplitView {
-                changesList
-                    .frame(minHeight: 80, idealHeight: 200, maxHeight: .infinity)
-                diffPane
-                    .frame(minHeight: 120, maxHeight: .infinity)
+            // Draggable split between the files list and the diff. The list gets
+            // an explicit, persisted height; the diff takes whatever's left.
+            GeometryReader { geo in
+                let maxList = max(Self.listMin, geo.size.height - Self.diffMin)
+                let listHeight = Binding(
+                    get: { min(max(CGFloat(listHeightStore), Self.listMin), maxList) },
+                    set: { listHeightStore = Double($0) }
+                )
+                VStack(spacing: 0) {
+                    changesList
+                        .frame(height: listHeight.wrappedValue)
+                    DragDivider(axis: .vertical, length: listHeight, range: Self.listMin...maxList)
+                    diffPane
+                        .frame(maxHeight: .infinity)
+                }
             }
             Divider()
             commitBar

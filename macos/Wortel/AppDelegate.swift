@@ -13,7 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// The three-pane shell. Held so the toolbar's tracking separators can bind to
     /// its split view, and so ⌘⌥S/⌘⌥G reach the right controller.
     private var splitController: MainSplitViewController!
-    /// Drives the trailing source-control panel (hidden by default).
+    /// Drives the trailing source-control panel. Whether it's up follows the
+    /// selected session (see GitPanelModel); new sessions start hidden.
     private let gitPanel = GitPanelModel()
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
     /// background update checks start at launch; the "Check for Updates…" menu
@@ -104,10 +105,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         center.delegate = self
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
+        // Panel visibility is session state, so a toggle has to reach
+        // sessions.json.
+        gitPanel.onVisibilityChanged = { [weak manager] in manager?.sessionStateChanged() }
+
         manager.restore()
-        // Seed the panel with the selected session's cwd so the first toggle
+        // Point the panel at the restored selection: it's what raises the panel
+        // if that session had it up, and it seeds the cwd so the first toggle
         // resolves the right repo (no git work runs while it's hidden).
-        gitPanel.focus(cwd: manager.selected?.cwd)
+        gitPanel.focus(session: manager.selected)
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

@@ -42,20 +42,27 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   (needs a `notarytool` keychain profile — see the script footer).
 - There is no linter config. For the app itself, "verify" still means building
   and running it — the UI has no test coverage.
-- The one test target is `WortelTests`, covering the git panel's logic:
+- The one test target is `WortelTests`, covering the git panel's logic and the
+  persisted-session format:
 
   ```sh
   xcodebuild -project Wortel.xcodeproj -scheme WortelTests test
   ```
 
   It is **not** hosted by the app — hosting would launch libghostty, Metal and a
-  real shell to test pure functions. Instead `project.yml` compiles the
-  `Wortel/Git` sources it exercises straight into the bundle, so add a file there
-  and it needs listing in both targets. Most of these tests use **git itself as
-  the oracle**: they build a repo with `GitFixture` and compare against
+  real shell to test pure functions. Instead `project.yml` lists the individual
+  sources it exercises (`Wortel/Git/*`, plus `SessionStore.swift`) and compiles
+  them straight into the bundle, so adding a file needs it listed in both
+  targets. The bar for a source being here is that it's testable *without* the
+  app shell — which is also a reason to keep migration decisions out of types
+  that would drag AppKit in. Most of these tests use **git itself as the
+  oracle**: they build a repo with `GitFixture` and compare against
   `git log --topo-order` / `git log --graph`, because reproducing those cheaply
   is the whole point of the code under test. See `WortelTests/GitFixture.swift`
   on why its branches are long-lived — a tamer fixture passes against known bugs.
+  `PersistedSessionTests` pins the other testable-in-isolation thing: the
+  decoder's `decodeIfPresent` defaults, which *are* the sessions.json migrations
+  and otherwise only ever run on the one launch that reads an old file.
 - Performance checks live in `bench/`: `./bench/measure.sh` (cold-launch time +
   memory, Release only), `./bench/gen.sh` (throughput fixtures). Most latency /
   render checks are manual side-by-side vs Ghostty.app — see `bench/BENCHMARKS.md`.
@@ -109,10 +116,10 @@ launch stays lean. `wire()` connects each surface's callbacks (title/pwd/bell/
 close) back to session state.
 
 **`SessionStore`** (`Wortel/Sessions/SessionStore.swift`) — debounced JSON
-persistence of the session list (order, names, cwds, selection) to
-`~/Library/Application Support/Wortel/sessions.json`. This is *app state*, not
-user config — Wortel stays zero-config. Decoder tolerates older files missing
-fields. `saveNow` runs synchronously on termination.
+persistence of the session list (order, names, cwds, selection, git-panel
+visibility) to `~/Library/Application Support/Wortel/sessions.json`. This is
+*app state*, not user config — Wortel stays zero-config. Decoder tolerates older
+files missing fields. `saveNow` runs synchronously on termination.
 
 **UI shell** (`Wortel/UI/`) — `ContentView` is a SwiftUI `NavigationSplitView`
 (sidebar list + terminal detail) hosted inside an AppKit window
@@ -156,6 +163,18 @@ synthetic; `WortelTests` pins all of them):
 FSEvents watcher fires on every write, and bursts used to stack scans), and
 watches `# branch.oid` so a commit made **in the terminal** — the normal way —
 reloads History.
+
+Whether the panel is up is **per session**, not app-wide: it's a property of what
+the session is for — a manager sitting in `~` never wants it, the one in a repo
+always does. So `GitPanelModel` holds no visibility state of its own. `isVisible`
+mirrors the focused `Session.gitPanelVisible`, re-read on every `focus(session:)`
+and written back through `setVisible` (the one funnel, so a divider-drag
+dismissal is recorded like a ⌘⌥G); `SessionStore` persists it. Two consequences:
+a session switch that changes visibility **snaps** the inspector rather than
+animating it (`animatesVisibilityChange`) — animating would reflow the terminal
+on every frame of a switch that's meant to be instant — and the *pane*
+(Changes/History) deliberately stays app-wide in `UserDefaults`, being a reading
+preference rather than a fact about a session.
 
 **Menus** (`Wortel/MainMenu.swift`) — built programmatically and kept small
 because AppKit scans key equivalents on every keypress. The menu is

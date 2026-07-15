@@ -107,10 +107,18 @@ final class MainSplitViewController: NSSplitViewController {
         }
     }
 
+    /// Animate only when the *user* asked for the change. When it's a session
+    /// switch driving it (visibility is per-session), snap: switching sessions is
+    /// supposed to be instant, and an animated collapse would reflow the terminal
+    /// on every frame of it.
     private func applyGitVisibility() {
         guard let inspectorItem, inspectorItem.isCollapsed == git.isVisible else { return }
         syncingInspector = true
-        inspectorItem.animator().isCollapsed = !git.isVisible
+        if git.animatesVisibilityChange {
+            inspectorItem.animator().isCollapsed = !git.isVisible
+        } else {
+            inspectorItem.isCollapsed = !git.isVisible
+        }
         syncingInspector = false
     }
 

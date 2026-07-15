@@ -1,0 +1,94 @@
+import XCTest
+
+/// `PersistedSession` has a hand-written decoder whose `decodeIfPresent`
+/// defaults *are* the app's file-format migrations: every one of them is the
+/// answer to "what did a file written by an older Wortel mean by leaving this
+/// out?". They're only ever exercised on the one launch that reads an old file,
+/// which is precisely why they're worth pinning here rather than finding out in
+/// the field.
+///
+/// Fixed JSON rather than a live store: the shapes below are what older builds
+/// actually wrote.
+final class PersistedSessionTests: XCTestCase {
+    private func decode(_ json: String) throws -> PersistedSession {
+        try JSONDecoder().decode(PersistedSession.self, from: Data(json.utf8))
+    }
+
+    private func decodeList(_ json: String) throws -> [PersistedSession] {
+        try JSONDecoder().decode([PersistedSession].self, from: Data(json.utf8))
+    }
+
+    // MARK: - Git panel visibility
+
+    /// The one that matters. `false` (you hid the panel on this session) and
+    /// absent (the file predates per-session visibility) are both falsy and are
+    /// *not* the same thing: only absent may inherit the old app-wide flag. Fold
+    /// them together and every session you'd deliberately hidden reopens on the
+    /// first launch after the update — for anyone whose old flag was on, which
+    /// is the only case where the fallback does anything at all.
+    func testHiddenPanelIsDistinguishableFromUnrecorded() throws {
+        let hidden = try decode(#"{"id":"\#(UUID())","gitPanelVisible":false}"#)
+        XCTAssertEqual(hidden.gitPanelVisible, false, "an explicit false is a decision, not a gap")
+
+        let unrecorded = try decode(#"{"id":"\#(UUID())"}"#)
+        XCTAssertNil(unrecorded.gitPanelVisible, "an older file said nothing about the panel")
+    }
+
+    func testShownPanelDecodes() throws {
+        let shown = try decode(#"{"id":"\#(UUID())","gitPanelVisible":true}"#)
+        XCTAssertEqual(shown.gitPanelVisible, true)
+    }
+
+    /// Visibility has to survive a save/load cycle in both directions — a `false`
+    /// that failed to encode would come back as "unrecorded" and re-inherit the
+    /// legacy default, which is the same bug as above by a different route.
+    func testVisibilityRoundTrips() throws {
+        for visible in [true, false] {
+            let original = PersistedSession(
+                id: UUID(), name: "Wakker/Manager", title: "shell", cwd: "/tmp",
+                selected: true, nameIsUserSet: true, gitPanelVisible: visible)
+            let data = try JSONEncoder().encode([original])
+            let decoded = try JSONDecoder().decode([PersistedSession].self, from: data)
+            XCTAssertEqual(decoded.first?.gitPanelVisible, visible)
+        }
+    }
+
+    // MARK: - Older files
+
+    /// A real pre-per-session file: every session decodes, and says nothing about
+    /// the panel, so `SessionManager.restore` gives them all the legacy app-wide
+    /// flag. The rest of the fields must survive that read untouched.
+    func testPreVisibilityFileDecodes() throws {
+        let sessions = try decodeList("""
+        [{"id":"\(UUID())","name":"Wakker/Manager","title":"shell",
+          "cwd":"/Users/giel/Developer/wakker","selected":true,"nameIsUserSet":true},
+         {"id":"\(UUID())","name":"Wakker/Worker","title":"shell",
+          "cwd":"/Users/giel/Developer/wortel","selected":false,"nameIsUserSet":true}]
+        """)
+        XCTAssertEqual(sessions.count, 2)
+        XCTAssertTrue(sessions.allSatisfy { $0.gitPanelVisible == nil })
+        XCTAssertEqual(sessions.first?.name, "Wakker/Manager")
+        XCTAssertEqual(sessions.first?.selected, true)
+    }
+
+    /// The pre-existing defaults, pinned alongside the new one because they're
+    /// the same kind of claim about the same file. A session named before
+    /// auto-naming existed counts as user-set so auto-naming never relabels work
+    /// the user named by hand.
+    func testDefaultsForAMinimalRecord() throws {
+        let id = UUID()
+        let session = try decode(#"{"id":"\#(id)"}"#)
+        XCTAssertEqual(session.id, id)
+        XCTAssertEqual(session.title, "shell")
+        XCTAssertEqual(session.name, "Session")
+        XCTAssertNil(session.cwd)
+        XCTAssertFalse(session.selected)
+        XCTAssertTrue(session.nameIsUserSet, "pre-auto-naming sessions are treated as user-named")
+    }
+
+    /// `id` is the one field with no sensible default — a record without it is
+    /// unreadable, and `load()` drops the whole file rather than inventing one.
+    func testMissingIDFails() {
+        XCTAssertThrowsError(try decode(#"{"name":"Session 1"}"#))
+    }
+}

@@ -111,6 +111,10 @@ targets:
       - path: Wortel/Git/GitRepoModel.swift
       - path: Wortel/Git/GitRepoWatcher.swift
       - path: Wortel/Git/CommitMessageGenerator.swift
+      # Not a git source, but the same rule applies: PersistedSession is a pure
+      # DTO with a hand-written decoder whose defaults are the app's file-format
+      # migrations, and it drags in nothing (Foundation only).
+      - path: Wortel/Sessions/SessionStore.swift
     scheme:
       testTargets:
         - WortelTests

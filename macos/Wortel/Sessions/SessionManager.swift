@@ -352,6 +352,9 @@ final class SessionManager {
         for entry in persisted {
             let session = Session(id: entry.id, name: entry.name, title: entry.title, cwd: entry.cwd)
             session.nameIsUserSet = entry.nameIsUserSet
+            // nil means the file predates per-session visibility — inherit the
+            // old app-wide flag just this once.
+            session.gitPanelVisible = entry.gitPanelVisible ?? SessionStore.legacyGitPanelVisible
             session.pendingResumeInput = resume[entry.id]
             appendRestored(session)
         }
@@ -791,12 +794,19 @@ final class SessionManager {
     private func persistedSessions() -> [PersistedSession] {
         sessions.map {
             PersistedSession(id: $0.id, name: $0.name, title: $0.title, cwd: $0.cwd,
-                             selected: $0.id == selectedID, nameIsUserSet: $0.nameIsUserSet)
+                             selected: $0.id == selectedID, nameIsUserSet: $0.nameIsUserSet,
+                             gitPanelVisible: $0.gitPanelVisible)
         }
     }
 
     private func scheduleSave() {
         store.scheduleSave { [weak self] in self?.persistedSessions() ?? [] }
+    }
+
+    /// GitPanelModel flipped a session's `gitPanelVisible`. It owns that bit (it
+    /// holds the session), but persistence is ours — wired up in AppDelegate.
+    func sessionStateChanged() {
+        scheduleSave()
     }
 
     func saveNow() {

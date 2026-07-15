@@ -60,6 +60,56 @@ struct GitStatus: Equatable {
     var isClean: Bool { changes.isEmpty }
 }
 
+/// One commit in the History pane. Parsed from `git log`'s machine format, not
+/// its human output — see GitService.log.
+struct GitCommit: Identifiable, Hashable {
+    let sha: String
+    let author: String
+    let date: Date
+    let subject: String
+
+    var id: String { sha }
+    var shortSHA: String { String(sha.prefix(7)) }
+
+    /// Relative age for the row's trailing label ("2h", "3d"). Deliberately terse:
+    /// the row is narrow and the exact timestamp is rarely what you're scanning for.
+    func age(now: Date = Date()) -> String {
+        let seconds = max(0, now.timeIntervalSince(date))
+        switch seconds {
+        case ..<60: return "now"
+        case ..<3_600: return "\(Int(seconds / 60))m"
+        case ..<86_400: return "\(Int(seconds / 3_600))h"
+        case ..<604_800: return "\(Int(seconds / 86_400))d"
+        case ..<2_629_800: return "\(Int(seconds / 604_800))w"
+        case ..<31_557_600: return "\(Int(seconds / 2_629_800))mo"
+        default: return "\(Int(seconds / 31_557_600))y"
+        }
+    }
+}
+
+/// Which pane the source-control inspector shows. Persisted app-wide by
+/// GitPanelModel, and driven by the toolbar's segmented control.
+enum GitInspectorPane: String, CaseIterable, Identifiable {
+    case changes
+    case history
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .changes: return "Changes"
+        case .history: return "History"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .changes: return "doc.on.doc"
+        case .history: return "clock"
+        }
+    }
+}
+
 /// How a diff line renders: drives its gutter numbers, sign, and tint.
 enum DiffLineKind {
     case context

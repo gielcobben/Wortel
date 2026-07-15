@@ -19,56 +19,47 @@ func promptFolderName(title: String, confirm: String, initial: String = "") -> S
     return field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
 }
 
-/// The window shell, mirroring Opslan: a NavigationSplitView with the session
-/// list in the sidebar and the terminal in the detail. `.navigationTitle` /
-/// `.navigationSubtitle` put the session name + path in the content area next
-/// to the sidebar, and the sidebar gets the system's native floating panel —
-/// all for free, the way SwiftUI intends.
-struct ContentView: View {
-    let runtime: GhosttyRuntime
+/// The sidebar pane's content, hosted by MainSplitViewController's `.sidebar`
+/// split item. Draws no background of its own: the split item behavior supplies
+/// the system material, and painting over it would block the glass.
+struct SidebarPane: View {
     @Bindable var manager: SessionManager
-    @Bindable var git: GitPanelModel
 
     var body: some View {
-        NavigationSplitView {
-            // The session list is a native NSOutlineView (SidebarOutlineView),
-            // not a SwiftUI List: two-level drag & drop with real insertion
-            // indicators — sessions between rows / into folders, folders between
-            // sections — is exactly NSOutlineView's home turf and beyond what
-            // List exposes. Row *content* stays SwiftUI (SessionRow hosted per
-            // row), so the pill, attention dots, and inline rename are unchanged.
-            SidebarOutlineView(
-                manager: manager,
-                snapshot: manager.sidebarGroups.map {
-                    SidebarSnapshotGroup(folder: $0.folder, sessionIDs: $0.sessions.map(\.id))
-                })
-                .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 320)
-                .safeAreaInset(edge: .bottom) {
-                    HStack {
-                        Menu {
-                            Button("New Session") { manager.newSession() }
-                            Button("New Folder…") {
-                                if let name = promptFolderName(title: "New Folder", confirm: "Create") {
-                                    manager.addFolder(named: name)
-                                }
+        // The session list is a native NSOutlineView (SidebarOutlineView), not a
+        // SwiftUI List: two-level drag & drop with real insertion indicators —
+        // sessions between rows / into folders, folders between sections — is
+        // exactly NSOutlineView's home turf and beyond what List exposes. Row
+        // *content* stays SwiftUI (SessionRow hosted per row), so the pill,
+        // attention dots, and inline rename are unchanged.
+        SidebarOutlineView(
+            manager: manager,
+            snapshot: manager.sidebarGroups.map {
+                SidebarSnapshotGroup(folder: $0.folder, sessionIDs: $0.sessions.map(\.id))
+            })
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Menu {
+                        Button("New Session") { manager.newSession() }
+                        Button("New Folder…") {
+                            if let name = promptFolderName(title: "New Folder", confirm: "Create") {
+                                manager.addFolder(named: name)
                             }
-                        } label: {
-                            Image(systemName: "plus")
-                                .frame(width: 24, height: 24)
-                                .contentShape(Rectangle())
                         }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                        .help("New Session or Folder")
-                        Spacer()
+                    } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("New Session or Folder")
+                    Spacer()
                 }
-        } detail: {
-            DetailView(runtime: runtime, manager: manager, git: git)
-        }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            }
     }
 }
 
@@ -175,7 +166,6 @@ struct SessionRow: View {
     // The selected row sits on an always-accent pill, so its content is white.
     // Not while editing: the rename field sits on a normal background.
     private var onAccent: Bool { isSelected && !isEditing }
-    private var subtleColor: Color { onAccent ? .white.opacity(0.85) : .secondary }
 
     var body: some View {
         // Content padded inside an inset accent pill (~6pt from the cell edges,
@@ -215,13 +205,6 @@ struct SessionRow: View {
                     // retyping the prefix is how you move between folders.
                     Text(session.leafName)
                         .foregroundStyle(onAccent ? .white : .primary)
-                }
-                if !session.abbreviatedPath.isEmpty {
-                    Text(session.abbreviatedPath)
-                        .font(.caption)
-                        .foregroundStyle(subtleColor)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                 }
             }
             Spacer(minLength: 4)
@@ -344,64 +327,30 @@ private struct AttentionFlashOverlay: View {
     }
 }
 
-/// The detail column: the terminal, with the source-control panel split in on
-/// the trailing edge when shown. Extracted from ContentView's body so each
-/// view stays small enough for the SwiftUI type-checker.
-private struct DetailView: View {
+/// The middle pane: just the terminal. The git panel is a sibling split item now
+/// rather than a child of this view, and the window owns the title and toolbar —
+/// so neither .navigationTitle nor .toolbar belongs here any more. Pane width is
+/// the split item's business too (see MainSplitViewController), not a .frame.
+/// The git model is still here only to keep the repo pointed at the selected
+/// session's cwd, which is naturally expressed as a SwiftUI onChange.
+struct DetailPane: View {
     let runtime: GhosttyRuntime
     @Bindable var manager: SessionManager
     @Bindable var git: GitPanelModel
 
-    /// Persisted panel width, shared across all sessions. Replaces HSplitView's
-    /// divider (which SwiftUI never exposes) so the width survives hide/show and
-    /// relaunch. See DragDivider.
-    @AppStorage("git.panelWidth") private var panelWidthStore: Double = 440
-    private static let widthRange: ClosedRange<CGFloat> = 320...680
-
-    private var panelWidth: Binding<CGFloat> {
-        Binding(
-            get: { min(max(CGFloat(panelWidthStore), Self.widthRange.lowerBound), Self.widthRange.upperBound) },
-            set: { panelWidthStore = Double($0) }
-        )
-    }
-
-    @ViewBuilder private var gitPanel: some View {
-        DragDivider(axis: .horizontal, length: panelWidth, range: Self.widthRange, invert: true)
-        SourceControlPanel(panel: git)
-            .frame(width: panelWidth.wrappedValue)
-            .frame(maxHeight: .infinity)
-    }
-
     var body: some View {
-        HStack(spacing: 0) {
-            TerminalContainer(runtime: runtime, session: manager.selected)
-                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
-                .overlay { AttentionFlashOverlay(flash: manager.attentionFlash) }
-            if git.isVisible {
-                gitPanel
+        TerminalContainer(runtime: runtime, session: manager.selected)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay { AttentionFlashOverlay(flash: manager.attentionFlash) }
+            .onAppear {
+                git.focus(cwd: manager.selected?.cwd)
             }
-        }
-        .navigationTitle(manager.selected?.name ?? "Wortel")
-        .navigationSubtitle(manager.selected?.abbreviatedPath ?? "")
-        .onAppear {
-            git.focus(cwd: manager.selected?.cwd)
-        }
-        .onChange(of: manager.selectedID) { _, _ in
-            git.focus(cwd: manager.selected?.cwd)
-        }
-        .onChange(of: manager.selected?.cwd) { _, cwd in
-            git.focus(cwd: cwd)
-        }
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    git.toggle()
-                } label: {
-                    Image(systemName: "sidebar.right")
-                }
-                .help("Source Control (⌘⌥G)")
+            .onChange(of: manager.selectedID) { _, _ in
+                git.focus(cwd: manager.selected?.cwd)
             }
-        }
+            .onChange(of: manager.selected?.cwd) { _, cwd in
+                git.focus(cwd: cwd)
+            }
     }
 }
 

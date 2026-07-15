@@ -50,10 +50,20 @@ enum MainMenu {
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
         sessionMenu.addItem(withTitle: "Close Session", action: #selector(AppDelegate.closeSession(_:)), keyEquivalent: "w")
         sessionMenu.addItem(.separator())
-        let next = sessionMenu.addItem(withTitle: "Next Session", action: #selector(AppDelegate.selectNextSession(_:)), keyEquivalent: "}")
-        next.keyEquivalentModifierMask = [.command]
-        let prev = sessionMenu.addItem(withTitle: "Previous Session", action: #selector(AppDelegate.selectPreviousSession(_:)), keyEquivalent: "{")
-        prev.keyEquivalentModifierMask = [.command]
+        // ⌘⌥↑/↓ walk the sidebar. Arrows rather than ⌘{/⌘}: the binding should
+        // read as "move in the list", and ⌘⌥ keeps it in the same family as
+        // ⌘⌥] below. Free of a wortel.conf keybind — that file binds alt+arrow
+        // (word motion) and cmd+arrow (line motion), never both together.
+        let prev = sessionMenu.addItem(
+            withTitle: "Previous Session",
+            action: #selector(AppDelegate.selectPreviousSession(_:)),
+            keyEquivalent: String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!))
+        prev.keyEquivalentModifierMask = [.command, .option]
+        let next = sessionMenu.addItem(
+            withTitle: "Next Session",
+            action: #selector(AppDelegate.selectNextSession(_:)),
+            keyEquivalent: String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!))
+        next.keyEquivalentModifierMask = [.command, .option]
         // Jump straight to whatever is waiting on you, wherever it sits in the
         // list. Disabled (via AppDelegate.validateMenuItem) when nothing waits.
         let nextAlert = sessionMenu.addItem(withTitle: "Next Waiting Session", action: #selector(AppDelegate.selectNextAttentionSession(_:)), keyEquivalent: "]")

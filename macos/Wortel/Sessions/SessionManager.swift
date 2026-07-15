@@ -498,10 +498,8 @@ final class SessionManager {
         selectedID = id
     }
 
-    func selectNext() {
-        guard let i = selectedIndex, sessions.count > 1 else { return }
-        selectedID = sessions[(i + 1) % sessions.count].id
-    }
+    /// Move the selection one row down the sidebar (⌘⌥↓), wrapping at the end.
+    func selectNext() { selectStepping(by: 1) }
 
     /// Whether any session is currently waiting on the user (drives menu
     /// enablement for "Next Waiting Session").
@@ -524,9 +522,34 @@ final class SessionManager {
         }
     }
 
-    func selectPrevious() {
+    /// Move the selection one row up the sidebar (⌘⌥↑), wrapping at the start.
+    func selectPrevious() { selectStepping(by: -1) }
+
+    /// Walk `sessions` from the selection in `step` direction, cyclically, and
+    /// select the first row that's actually on screen.
+    ///
+    /// Sessions inside a collapsed folder are skipped rather than expanded into.
+    /// The other selection paths (drop, rename, ⌘-number) un-collapse instead —
+    /// they name a specific session, so they owe you it wherever it's buried.
+    /// This one only means "one row over", and expanding a folder in passing
+    /// would rearrange the sidebar as a side effect of moving through it.
+    private func selectStepping(by step: Int) {
         guard let i = selectedIndex, sessions.count > 1 else { return }
-        selectedID = sessions[(i - 1 + sessions.count) % sessions.count].id
+        let n = sessions.count
+        for offset in 1..<n {
+            let candidate = sessions[((i + step * offset) % n + n) % n]
+            if isVisibleInSidebar(candidate) {
+                selectedID = candidate.id
+                return
+            }
+        }
+    }
+
+    /// Whether a session has a row in the sidebar right now — i.e. it isn't
+    /// tucked inside a collapsed folder.
+    private func isVisibleInSidebar(_ session: Session) -> Bool {
+        guard let folder = session.folderPath else { return true }
+        return !isFolderCollapsed(folder)
     }
 
     private var selectedIndex: Int? {

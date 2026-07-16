@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The trailing source-control panel: branch header, the staged/unstaged
+/// The trailing source-control panel: the staged/unstaged
 /// changes list, the diff of the selected file, and a commit box. Bound to
 /// `GitPanelModel`, which points it at the selected session's repo.
 struct SourceControlPanel: View {
@@ -66,8 +66,11 @@ private struct RepoView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
+            // No header, deliberately — see HistoryView. The list has to be the
+            // pane's first view for it to run up under the titlebar and pick up
+            // the system's blur; the branch chip moved to the toolbar (see
+            // MainToolbar) to give it that back.
+            //
             // Draggable split between the files list and the diff. The list gets
             // an explicit, persisted height; the diff takes whatever's left.
             GeometryReader { geo in
@@ -103,44 +106,6 @@ private struct RepoView: View {
         // Next runloop turn: the focusable list is reliably installed by then,
         // even when this request is what just revealed the panel.
         DispatchQueue.main.async { listFocused = true }
-    }
-
-    // MARK: Header
-
-    private var pushHelp: String {
-        let n = repo.status.ahead
-        return n > 0 ? "Push \(n) commit\(n == 1 ? "" : "s")" : "Push"
-    }
-
-    private var header: some View {
-        HStack(spacing: 6) {
-            // Was a plain label of the same facts; now the shared chip, so the
-            // branch reads and behaves identically whichever pane you're on.
-            BranchSwitcher(repo: repo)
-            Spacer()
-            if repo.canPush {
-                Button {
-                    Task { await repo.push() }
-                } label: {
-                    Image(systemName: "arrow.up.circle")
-                        .opacity(repo.isPushing ? 0.3 : 1)
-                }
-                .buttonStyle(.borderless)
-                .help(pushHelp)
-                .disabled(repo.isPushing)
-            }
-            Button {
-                Task { await repo.refresh() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .opacity(repo.isRefreshing ? 0.3 : 1)
-            }
-            .buttonStyle(.borderless)
-            .help("Refresh")
-            .disabled(repo.isRefreshing)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     // MARK: Changes list
@@ -243,7 +208,7 @@ private struct RepoView: View {
                 centered("No textual changes")
             } else {
                 VStack(spacing: 0) {
-                    DiffView(lines: diff.lines, fontSize: 12)
+                    DiffView(lines: diff.lines, highlights: diff.highlights, fontSize: 12)
                     if diff.truncated { TruncatedDiffNotice() }
                 }
             }
@@ -367,19 +332,25 @@ private struct ChangeRow: View {
     @State private var hovering = false
     @State private var confirmingDiscard = false
 
+    /// Selected rows are drawn on the accent, so everything on them has to come
+    /// off it — same rule as the History pane's rows.
+    private var onAccent: Bool { isSelected }
+
     var body: some View {
         HStack(spacing: 8) {
             Text(String(change.statusCode))
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(statusColor)
+                .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(statusColor))
                 .frame(width: 12)
             Text(change.fileName)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             if !change.directory.isEmpty {
                 Text(change.directory)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(
+                        onAccent ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary))
                     .lineLimit(1)
                     .truncationMode(.head)
             }
@@ -387,14 +358,26 @@ private struct ChangeRow: View {
             if hovering {
                 Button(action: action) {
                     Image(systemName: actionIcon)
+                        .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 }
                 .buttonStyle(.borderless)
             }
         }
-        .padding(.horizontal, 12)
+        // Inner padding is the pill's; the outer keeps it off the pane's edges.
+        // The two together preserve where the text sat before.
+        .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .contentShape(Rectangle())
-        .background(isSelected ? Color.accentColor.opacity(0.18) : .clear)
+        .background {
+            // A solid accent pill, matching History. The faint tint this replaces
+            // read as a hover state rather than a selection, and running it edge
+            // to edge made it a band across the pane instead of a row.
+            if isSelected {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.accentColor)
+            }
+        }
+        .padding(.horizontal, 4)
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }
         // Native right-click: an AppKit overlay that selects the row (so the
@@ -501,61 +484,8 @@ private struct ChangeRow: View {
     }
 }
 
-// MARK: - Native right-click
-
-/// A transparent AppKit overlay that owns the row's right-click: it selects the
-/// row and pops a freshly-built menu. It's invisible to every other event —
-/// `hitTest` only claims right-mouse events, so SwiftUI keeps left-clicks and
-/// hover. This avoids SwiftUI's `.contextMenu`, whose content is rebuilt on
-/// every render (making it impossible to select a row without thrashing).
-private struct RightClickCatcher: NSViewRepresentable {
-    let onRightClick: () -> Void
-    let makeMenu: () -> NSMenu
-
-    func makeNSView(context: Context) -> CatcherView {
-        let view = CatcherView()
-        view.onRightClick = onRightClick
-        view.makeMenu = makeMenu
-        return view
-    }
-
-    func updateNSView(_ view: CatcherView, context: Context) {
-        view.onRightClick = onRightClick
-        view.makeMenu = makeMenu
-    }
-
-    final class CatcherView: NSView {
-        var onRightClick: () -> Void = {}
-        var makeMenu: () -> NSMenu = { NSMenu() }
-
-        override func rightMouseDown(with event: NSEvent) {
-            onRightClick()
-            NSMenu.popUpContextMenu(makeMenu(), with: event, for: self)
-        }
-
-        // Participate only in right-clicks; let clicks and hover fall through to
-        // the SwiftUI content beneath.
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            NSApp.currentEvent?.type == .rightMouseDown ? self : nil
-        }
-    }
-}
-
-/// An `NSMenuItem` that runs a closure when chosen, so the menu can be built
-/// inline without a separate target/selector object.
-private final class ClosureMenuItem: NSMenuItem {
-    private let handler: () -> Void
-
-    init(title: String, handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(fire), keyEquivalent: "")
-        target = self
-    }
-
-    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    @objc private func fire() { handler() }
-}
+// `RightClickCatcher` (the native right-click overlay) and `ClosureMenuItem`
+// live in UI/RightClickCatcher.swift — shared with the sidebar rows.
 
 // MARK: - Image diff
 

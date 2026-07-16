@@ -24,7 +24,12 @@ struct HistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            // No header, deliberately. `commitList` being the pane's first view is
+            // what lets the log run up under the titlebar and pick up the system's
+            // blur; a strip of chrome here would sit under the toolbar opaquely
+            // and there'd be nothing scrolling beneath it to blur. The branch chip
+            // and this pane's actions live in the toolbar instead — see
+            // GitToolbarControls.
             GeometryReader { geo in
                 let maxList = max(Self.listMin, geo.size.height - Self.diffMin)
                 let listHeight = Binding(
@@ -61,31 +66,6 @@ struct HistoryView: View {
         // no-ops — focus still lands, and the first ↑/↓ picks up the top commit.
         if repo.selectedCommitID == nil { repo.selectAdjacentCommit(1) }
         DispatchQueue.main.async { listFocused = true }
-    }
-
-    // MARK: Header
-
-    /// Which branch you're on, and the way back to it.
-    ///
-    /// The Changes pane has had this since the panel shipped; History — the pane
-    /// that's actually *about* branches — never showed it, because it reads
-    /// `repo.commits` and never touched `repo.status`. Same chip, so switching
-    /// panes doesn't move it.
-    private var header: some View {
-        HStack(spacing: 6) {
-            BranchSwitcher(repo: repo)
-            Spacer()
-            Button {
-                Task { await repo.jumpToHead() }
-            } label: {
-                Image(systemName: "scope")
-            }
-            .buttonStyle(.borderless)
-            .help("Jump to the commit you're on")
-            .disabled(repo.status.head == nil)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     // MARK: Commit list
@@ -141,6 +121,10 @@ struct HistoryView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                // Keeps the graph off the pane's leading edge and the pill off
+                // its trailing one — the log is dense enough that running it into
+                // the walls makes it feel wedged in.
+                .padding(.horizontal, 6)
             }
             .onChange(of: repo.selectedCommitID) { _, id in
                 guard let id else { return }
@@ -162,7 +146,7 @@ struct HistoryView: View {
                 centered("No textual changes")
             } else {
                 VStack(spacing: 0) {
-                    DiffView(lines: diff.lines, fontSize: 12)
+                    DiffView(lines: diff.lines, highlights: diff.highlights, fontSize: 12)
                     if diff.truncated { TruncatedDiffNotice() }
                 }
             }

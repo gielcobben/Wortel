@@ -19,6 +19,36 @@ final class CommitGraphTests: XCTestCase {
         return (ordered, CommitGraph.build(ordered))
     }
 
+    /// A branch sitting directly above the commit it forked from keeps its column
+    /// for that one row, so its line lands on that commit's dot.
+    ///
+    /// Folding it early (git's "|/") would be free of width here — there are no
+    /// rows in between to be wide in — and would cost the line its ending: it
+    /// would merge into the trunk at the row's edge and arrive in the trunk's
+    /// colour, so the branch appears to stop in mid-air a half row short of the
+    /// commit it forked from.
+    func testBranchAboveItsForkPointLandsOnTheDot() async {
+        repo = GitFixture.newRepo("fold-adjacent")
+        GitFixture.commit("base", in: repo)
+        GitFixture.sh("git checkout -q -b side", in: repo)
+        GitFixture.commit("side work", in: repo)
+        GitFixture.sh("git checkout -q main && git merge -q --no-ff side -m merged", in: repo)
+
+        let (commits, g) = await graph()
+        // Newest first: merged, side work, base — so "side work" sits directly
+        // above the fork point it shares with the merge's first parent.
+        XCTAssertEqual(commits.map(\.subject), ["merged", "side work", "base"])
+
+        let side = g.row(for: commits[1].sha)!
+        let base = g.row(for: commits[2].sha)!
+        XCTAssertEqual(
+            side.outgoing, [CommitGraph.Edge(from: side.lane, to: side.lane)],
+            "the branch continues straight down its own column past its tip")
+        XCTAssertTrue(
+            base.incoming.contains(CommitGraph.Edge(from: side.lane, to: base.lane)),
+            "and converges on the fork point's dot, like every other line there")
+    }
+
     func testWidthMatchesGitOnBranchyHistory() async {
         repo = GitFixture.newRepo("width")
         GitFixture.importHistory(trunk: 400, concurrent: 5, lifetime: 80, in: repo)

@@ -131,6 +131,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         toolbar.delegate = delegate
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
+        // The delegate inserts and removes the branch item as the panel opens and
+        // closes, so it needs the toolbar it's the delegate of.
+        delegate.toolbar = toolbar
         window.toolbar = toolbar
     }
 

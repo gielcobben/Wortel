@@ -1,63 +1,14 @@
 import SwiftUI
 
-/// The branch chip both panes wear in their header: which branch you're on, how
-/// far it's drifted from its upstream, and — on click — the switcher.
+/// The branch switcher's popover: a filter over the local and remote branches,
+/// with a refused checkout's reason surfaced beneath.
 ///
-/// A popover rather than a `Menu`, for one reason: `Menu` gives no hook for
-/// "the user opened it", and the branch list is deliberately lazy (a monorepo
-/// carries thousands of remote refs that nothing on screen needs until asked).
-/// A popover's content has a real lifecycle, so `.task` is exactly "on open".
-/// It also leaves somewhere to put a refused checkout's reason, which a menu
-/// has no room for.
-struct BranchSwitcher: View {
-    @Bindable var repo: GitRepoModel
-    @State private var showing = false
-
-    var body: some View {
-        Button {
-            // Load *before* presenting, not from the popover's own `.task`. An
-            // NSPopover takes its size from the content it's given at
-            // presentation: opened while the list is still empty, it sizes itself
-            // to the spinner and keeps that height when the branches land. The
-            // read is a `for-each-ref` — fast enough that the click still feels
-            // immediate, and the popover arrives at its real height first time.
-            Task {
-                await repo.loadBranches()
-                showing = true
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.triangle.branch")
-                    .foregroundStyle(.secondary)
-                Text(repo.status.branch ?? "detached")
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                if repo.status.ahead > 0 {
-                    Label("\(repo.status.ahead)", systemImage: "arrow.up")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-                if repo.status.behind > 0 {
-                    Label("\(repo.status.behind)", systemImage: "arrow.down")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Switch branch")
-        .popover(isPresented: $showing, arrowEdge: .bottom) {
-            BranchList(repo: repo, dismiss: { showing = false })
-        }
-    }
-}
-
-/// The switcher's contents: local branches, then remote ones.
-private struct BranchList: View {
+/// The chip that opens it is a real `NSButton` in the toolbar (see MainToolbar),
+/// not a SwiftUI control — a hosted SwiftUI button only takes clicks on its
+/// content, leaving the glass capsule's rim dead, whereas an NSButton *is* the
+/// capsule and is clickable across its whole surface. So only the list lives
+/// here in SwiftUI; the button and the popover presentation are AppKit's.
+struct BranchList: View {
     @Bindable var repo: GitRepoModel
     let dismiss: () -> Void
     @State private var filter = ""

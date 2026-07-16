@@ -89,33 +89,49 @@ struct SidebarRowContent: View {
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .contextMenu {
-                Button("Rename") { manager.editingID = session.id }
-                moveToMenu
-                Divider()
-                Button("Close Session") { manager.requestClose(session) }
-            }
+            // Native right-click, popped instantly on rightMouseDown, and it
+            // selects the row on the way so the terminal follows. SwiftUI's
+            // `.contextMenu` presents on a press-hold and rebuilds its content
+            // on every render — the same lag the git panel abandoned it over.
+            .overlay(RightClickCatcher(onRightClick: rightClickSelect, makeMenu: makeContextMenu))
+    }
+
+    /// Select the row when it's right-clicked, so the detail pane follows it —
+    /// matching a left-click.
+    private func rightClickSelect() {
+        if manager.selectedID != session.id { manager.selectedID = session.id }
+    }
+
+    /// Build the native right-click menu, freshly each time it opens.
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(ClosureMenuItem(title: "Rename") { manager.editingID = session.id })
+        if let moveTo = moveToMenuItem() { menu.addItem(moveTo) }
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(title: "Close Session") { manager.requestClose(session) })
+        return menu
     }
 
     /// "Move To" submenu: top level plus every other folder — the no-drag way
-    /// to refile.
-    @ViewBuilder
-    private var moveToMenu: some View {
+    /// to refile. Nil when there's nowhere to move to.
+    private func moveToMenuItem() -> NSMenuItem? {
         let destinations = manager.folderNames.filter { $0 != session.folderPath }
-        if session.folderPath != nil || !destinations.isEmpty {
-            Menu("Move To") {
-                if session.folderPath != nil {
-                    Button("Top Level") {
-                        manager.moveSession(id: session.id, toFolder: nil, at: .max)
-                    }
-                }
-                ForEach(destinations, id: \.self) { folder in
-                    Button(folder) {
-                        manager.moveSession(id: session.id, toFolder: folder, at: .max)
-                    }
-                }
-            }
+        guard session.folderPath != nil || !destinations.isEmpty else { return nil }
+
+        let submenu = NSMenu()
+        if session.folderPath != nil {
+            submenu.addItem(ClosureMenuItem(title: "Top Level") {
+                manager.moveSession(id: session.id, toFolder: nil, at: .max)
+            })
         }
+        for folder in destinations {
+            submenu.addItem(ClosureMenuItem(title: folder) {
+                manager.moveSession(id: session.id, toFolder: folder, at: .max)
+            })
+        }
+        let item = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
     }
 }
 
@@ -135,18 +151,26 @@ struct SidebarHeaderContent: View {
             .padding(.leading, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .contextMenu {
-                Button("New Session in “\(folder)”") { manager.newSession(inFolder: folder) }
-                Button("Rename Folder…") {
-                    if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
-                        manager.renameFolder(folder, to: name)
-                    }
-                }
-                Divider()
-                // Non-destructive: the sessions drop to the top level, they're
-                // not closed.
-                Button("Delete Folder") { manager.deleteFolder(folder) }
+            // Native right-click, instant on rightMouseDown — same reasoning as
+            // the session rows above.
+            .overlay(RightClickCatcher(onRightClick: {}, makeMenu: makeContextMenu))
+    }
+
+    /// Build the native right-click menu, freshly each time it opens.
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(ClosureMenuItem(title: "New Session in “\(folder)”") {
+            manager.newSession(inFolder: folder)
+        })
+        menu.addItem(ClosureMenuItem(title: "Rename Folder…") {
+            if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
+                manager.renameFolder(folder, to: name)
             }
+        })
+        menu.addItem(.separator())
+        // Non-destructive: the sessions drop to the top level, they're not closed.
+        menu.addItem(ClosureMenuItem(title: "Delete Folder") { manager.deleteFolder(folder) })
+        return menu
     }
 }
 

@@ -8,6 +8,9 @@ import SwiftUI
 /// "drop to AppKit where SwiftUI would choke" move the rest of the shell makes.
 struct DiffView: NSViewRepresentable {
     let lines: [DiffLine]
+    /// Syntax-highlight spans by `DiffLine.id`, filled in asynchronously (see
+    /// `DiffResult.highlights`). Empty renders as plain monospaced text.
+    var highlights: [Int: [HighlightSpan]] = [:]
     let fontSize: CGFloat
 
     /// Marks this table so the sidebar's SidebarSelectionStyler (which walks the
@@ -55,7 +58,7 @@ struct DiffView: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        let changed = context.coordinator.update(lines: lines)
+        let changed = context.coordinator.update(lines: lines, highlights: highlights)
         guard let table = scroll.documentView as? NSTableView else { return }
         context.coordinator.applyColumnWidth()
         table.reloadData()
@@ -73,6 +76,8 @@ struct DiffView: NSViewRepresentable {
         private static let cellID = NSUserInterfaceItemIdentifier("diffCell")
 
         private(set) var lines: [DiffLine] = []
+        private var highlights: [Int: [HighlightSpan]] = [:]
+        private let theme = DiffSyntaxTheme()
         private(set) var rowHeight: CGFloat = 16
         private(set) var columnWidth: CGFloat = 400
         private var gutterWidth: CGFloat = 60
@@ -109,11 +114,15 @@ struct DiffView: NSViewRepresentable {
             rowHeight = ceil(font.ascender - font.descender + font.leading) + 3
         }
 
-        /// Returns true when the line set actually changed (new file shown).
-        func update(lines: [DiffLine]) -> Bool {
+        /// Returns true when the line set actually changed (new file shown) —
+        /// which is what triggers a scroll back to the top. Highlights arriving a
+        /// beat later for the *same* lines is not a change, so the reader's scroll
+        /// position is left alone while the colour pops in.
+        func update(lines: [DiffLine], highlights: [Int: [HighlightSpan]]) -> Bool {
             let changed = lines.count != self.lines.count
                 || zip(lines, self.lines).contains { $0.id != $1.id || $0.text != $1.text }
             self.lines = lines
+            self.highlights = highlights
             recomputeGeometry()
             return changed
         }
@@ -141,7 +150,8 @@ struct DiffView: NSViewRepresentable {
             cell.font = font
             cell.charWidth = charWidth
             cell.gutterWidth = gutterWidth
-            cell.line = lines[row]
+            cell.theme = theme
+            cell.configure(line: lines[row], spans: highlights[lines[row].id] ?? [])
             return cell
         }
     }
@@ -153,10 +163,17 @@ struct DiffView: NSViewRepresentable {
 final class DiffLineCellView: NSView {
     static let tabWidth = 4
 
-    var line: DiffLine? { didSet { needsDisplay = true } }
-    var font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    private(set) var line: DiffLine?
+    private var spans: [HighlightSpan] = []
+    var theme = DiffSyntaxTheme()
+    var font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular) { didSet { rebuild() } }
     var charWidth: CGFloat = 7
     var gutterWidth: CGFloat = 60
+
+    /// The code column — sign + syntax-coloured text, tabs expanded — built once
+    /// per (line, spans) and redrawn from cache on every scroll/resize. Dynamic
+    /// theme colours re-resolve for light/dark automatically at draw time.
+    private var codeString: NSAttributedString?
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
@@ -168,6 +185,39 @@ final class DiffLineCellView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { true }
+
+    func configure(line: DiffLine, spans: [HighlightSpan]) {
+        self.line = line
+        self.spans = spans
+        rebuild()
+        needsDisplay = true
+    }
+
+    /// Build the code column: text in the line's base colour, each highlight span
+    /// recoloured, THEN tabs expanded and the +/-/space sign prepended — in that
+    /// order, so span ranges (computed over the raw line text) stay valid while
+    /// the later edits shift positions with their attribute runs intact.
+    private func rebuild() {
+        guard let line else { codeString = nil; return }
+        let base = textColor(for: line.kind)
+        let s = NSMutableAttributedString(
+            string: line.text, attributes: [.font: font, .foregroundColor: base])
+        if line.kind != .hunkHeader {
+            let length = s.length
+            for span in spans where NSMaxRange(span.range) <= length {
+                s.addAttribute(.foregroundColor, value: theme.color(for: span.token), range: span.range)
+            }
+        }
+        s.mutableString.replaceOccurrences(
+            of: "\t", with: String(repeating: " ", count: Self.tabWidth),
+            options: [], range: NSRange(location: 0, length: s.length))
+        let signText = sign(for: line.kind)
+        if !signText.isEmpty {
+            s.insert(NSAttributedString(
+                string: signText, attributes: [.font: font, .foregroundColor: base]), at: 0)
+        }
+        codeString = s
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let line else { return }
@@ -187,23 +237,14 @@ final class DiffLineCellView: NSView {
                              attrs: numberAttrs, rightEdge: numColumn * 2 - 2)
         }
 
-        let codeAttrs: [NSAttributedString.Key: Any] = [
-            .font: font, .foregroundColor: textColor(for: line.kind),
-        ]
-        let display = expandTabs(sign(for: line.kind) + line.text)
         let x = line.kind == .hunkHeader ? 8 : gutterWidth + 6
-        (display as NSString).draw(at: CGPoint(x: x, y: 1), withAttributes: codeAttrs)
+        codeString?.draw(at: CGPoint(x: x, y: 1))
     }
 
     private func drawRightAligned(_ string: String, attrs: [NSAttributedString.Key: Any], rightEdge: CGFloat) {
         guard !string.isEmpty else { return }
         let width = (string as NSString).size(withAttributes: attrs).width
         (string as NSString).draw(at: CGPoint(x: rightEdge - width, y: 1), withAttributes: attrs)
-    }
-
-    private func expandTabs(_ s: String) -> String {
-        guard s.contains("\t") else { return s }
-        return s.replacingOccurrences(of: "\t", with: String(repeating: " ", count: Self.tabWidth))
     }
 
     private func sign(for kind: DiffLineKind) -> String {
@@ -229,5 +270,50 @@ final class DiffLineCellView: NSView {
         case .hunkHeader: return .secondaryLabelColor
         default: return .labelColor
         }
+    }
+}
+
+/// The GitHub syntax palette (Primer "default" light + dark), so the diff reads
+/// like a GitHub code view. Each colour is appearance-aware — the exact GitHub
+/// light hex in light mode, the dark hex in dark mode — resolved per draw.
+/// Plain identifiers and punctuation stay at the default text colour, as GitHub
+/// leaves them.
+struct DiffSyntaxTheme {
+    func color(for token: HighlightToken) -> NSColor {
+        switch token {
+        case .keyword, .operator, .label:  return Self.red      // keywords, operators
+        case .function, .constructor:      return Self.purple   // function / method names
+        case .type, .module:               return Self.orange   // types, namespaces
+        case .string, .escape:             return Self.blueLt   // string literals
+        case .comment:                     return Self.gray
+        case .number, .constant,
+             .property, .attribute:        return Self.blue     // constants, numbers, json/css keys, attrs
+        case .tag:                         return Self.green     // html/xml tags
+        case .variable, .punctuation:      return .labelColor    // GitHub leaves these as plain text
+        }
+    }
+
+    // GitHub Primer default: light hex / dark hex.
+    private static let red    = dynamic(light: 0xCF222E, dark: 0xFF7B72)
+    private static let purple = dynamic(light: 0x8250DF, dark: 0xD2A8FF)
+    private static let orange = dynamic(light: 0x953800, dark: 0xFFA657)
+    private static let blue   = dynamic(light: 0x0550AE, dark: 0x79C0FF)
+    private static let blueLt = dynamic(light: 0x0A3069, dark: 0xA5D6FF)
+    private static let green  = dynamic(light: 0x116329, dark: 0x7EE787)
+    private static let gray   = dynamic(light: 0x6E7781, dark: 0x8B949E)
+
+    /// An NSColor that resolves to the `light` hex in light appearance and the
+    /// `dark` hex in dark appearance, evaluated per draw.
+    private static func dynamic(light: Int, dark: Int) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return rgb(isDark ? dark : light)
+        }
+    }
+
+    private static func rgb(_ hex: Int) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
     }
 }

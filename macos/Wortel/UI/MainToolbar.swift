@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import SwiftUI
 
 /// The window toolbar.
 ///
@@ -19,16 +20,32 @@ import Observation
 extension NSToolbarItem.Identifier {
     static let trackingSidebar = NSToolbarItem.Identifier("wortel.tracking.sidebar")
     static let trackingInspector = NSToolbarItem.Identifier("wortel.tracking.inspector")
+    /// The branch chip. Only present while the panel is open on a repo — see
+    /// `syncToolbar`, which inserts and removes it. It's a real NSButton so the
+    /// whole capsule is clickable; its actions live in the popover it opens.
+    static let gitControls = NSToolbarItem.Identifier("wortel.gitControls")
     static let gitPane = NSToolbarItem.Identifier("wortel.gitPane")
 }
 
 @MainActor
-final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
+final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate {
     private weak var splitView: NSSplitView?
     private let git: GitPanelModel
     /// Held so the control can be re-synced when the panel is opened, closed, or
     /// switched from anywhere else — ⌘⌥G, ⌘⌥L, a divider drag, a session switch.
     private weak var paneControl: NSSegmentedControl?
+    /// The window's toolbar, so the branch item can be inserted and removed as
+    /// the panel opens and closes. Set by AppDelegate right after it builds it.
+    weak var toolbar: NSToolbar?
+    /// The branch button, held so its title tracks the branch and ahead/behind.
+    private weak var branchButton: NSButton?
+    /// Widens the button past its content so the bezel centres it with a little
+    /// air on each side — the native way to add horizontal padding, instead of
+    /// padding the title string with spaces. Its constant follows the title.
+    private weak var branchWidthConstraint: NSLayoutConstraint?
+    /// The open branch popover, kept only so a second click while it's up doesn't
+    /// stack a second one.
+    private var branchPopover: NSPopover?
 
     init(splitView: NSSplitView, git: GitPanelModel) {
         self.splitView = splitView
@@ -64,16 +81,135 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
                 git.isPresented = true
             }
         }
-        syncPaneControl()
+        syncToolbar()
     }
 
     /// A pane reads as selected only while its panel is actually up — with the
     /// panel closed, `git.pane` is just what will come back next time, not
     /// something on screen.
-    private func syncPaneControl() {
-        guard let paneControl else { return }
-        for (index, pane) in GitInspectorPane.allCases.enumerated() {
-            paneControl.setSelected(git.isVisible && pane == git.pane, forSegment: index)
+    private func syncToolbar() {
+        if let paneControl {
+            for (index, pane) in GitInspectorPane.allCases.enumerated() {
+                paneControl.setSelected(git.isVisible && pane == git.pane, forSegment: index)
+            }
+        }
+        syncBranchItem()
+        updateBranchButton()
+    }
+
+    /// The branch button's title: a leading branch glyph and the branch name. The
+    /// trailing chevron is the button's own image; the edge padding is the bezel's
+    /// — nothing here fakes spacing. Ahead/behind aren't shown; they're in the
+    /// panel already (the header, the blue dots), and the chip is for identity and
+    /// the switcher, not status.
+    private func updateBranchButton() {
+        guard let button = branchButton, let repo = git.repo else { return }
+        button.attributedTitle = Self.branchTitle(repo.status.branch ?? "detached")
+        button.toolTip = "Switch branch"
+        // Widen past the fitted size so the bezel centres the content with a
+        // little air on each side. Deactivate the width first so `fittingSize`
+        // reports the content width, not the last padded one.
+        branchWidthConstraint?.isActive = false
+        branchWidthConstraint?.constant = button.fittingSize.width + 28
+        branchWidthConstraint?.isActive = true
+    }
+
+    /// The trailing chevron, padded on its leading edge with transparent space so
+    /// there's room between it and the branch name. NSButton has no image-to-title
+    /// spacing knob, so the gap lives in the image rather than in a title space.
+    private static func chevronImage() -> NSImage? {
+        guard let base = NSImage(
+            systemSymbolName: "chevron.up.chevron.down", accessibilityDescription: nil)?
+            .withSymbolConfiguration(
+                .init(pointSize: 8, weight: .medium)
+                    .applying(.init(hierarchicalColor: .secondaryLabelColor)))
+        else { return nil }
+        base.isTemplate = false
+
+        let gap: CGFloat = 5
+        let padded = NSImage(size: NSSize(width: base.size.width + gap, height: base.size.height))
+        padded.lockFocus()
+        base.draw(in: NSRect(x: gap, y: 0, width: base.size.width, height: base.size.height))
+        padded.unlockFocus()
+        padded.isTemplate = false
+        return padded
+    }
+
+    private static func branchTitle(_ branch: String) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+        let result = NSMutableAttributedString()
+
+        // An inline symbol aligns its *bottom* to the text baseline, which leaves
+        // it sitting low against the letters. Centre it instead: put the image's
+        // vertical midpoint on the font's cap-height midpoint. A single space
+        // sets it off the name — inter-element spacing, not edge padding.
+        if let image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
+            .withSymbolConfiguration(
+                .init(pointSize: 12, weight: .regular)
+                    .applying(.init(hierarchicalColor: .secondaryLabelColor))) {
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            attachment.bounds = CGRect(
+                x: 0, y: (font.capHeight - image.size.height) / 2,
+                width: image.size.width, height: image.size.height)
+            result.append(NSAttributedString(attachment: attachment))
+            result.append(NSAttributedString(string: " "))
+        }
+        result.append(NSAttributedString(string: branch, attributes: [
+            .font: font,
+            .foregroundColor: NSColor.labelColor,
+        ]))
+        return result
+    }
+
+    /// Open the branch switcher below the button. The branch list is loaded
+    /// *before* the popover shows — an NSPopover sizes to the content it's handed
+    /// at presentation, so opening on an empty list would size it to the spinner
+    /// and keep that height once the branches arrive. The read is a
+    /// `for-each-ref`, fast enough that the click still feels immediate.
+    @objc private func openBranchSwitcher(_ sender: NSButton) {
+        guard branchPopover == nil, let repo = git.repo else { return }
+        Task {
+            await repo.loadBranches()
+            let popover = NSPopover()
+            popover.behavior = .transient
+            let list = BranchList(repo: repo, dismiss: { [weak self] in
+                self?.branchPopover?.performClose(nil)
+            })
+            let host = NSHostingController(rootView: list)
+            host.sizingOptions = [.preferredContentSize]
+            popover.contentViewController = host
+            popover.delegate = self
+            branchPopover = popover
+            popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        }
+    }
+
+    /// Drop the held reference once it closes, so the next click opens a fresh one.
+    nonisolated func popoverDidClose(_ notification: Notification) {
+        Task { @MainActor in branchPopover = nil }
+    }
+
+    /// Whether there's a branch worth showing: the panel is open, and it's
+    /// pointed at something that is actually a repo.
+    private var showsBranchItem: Bool { git.isVisible && git.repo != nil }
+
+    /// Insert or remove the branch item so it exists only when the panel does.
+    /// Removed rather than disabled: the user's read is right — a control for a
+    /// collapsed panel has no business in the toolbar, and a greyed one still
+    /// claims the panel's controls are app-wide. The pane buttons stay (they're
+    /// what *opens* the panel); only the branch, which acts on open content, comes
+    /// and goes. NSToolbar animates the insert/remove, so it reads as native.
+    private func syncBranchItem() {
+        guard let toolbar else { return }
+        let present = toolbar.items.firstIndex { $0.itemIdentifier == .gitControls }
+        if showsBranchItem, present == nil {
+            // Just before the pane buttons, which are the item it sits left of.
+            if let paneIndex = toolbar.items.firstIndex(where: { $0.itemIdentifier == .gitPane }) {
+                toolbar.insertItem(withItemIdentifier: .gitControls, at: paneIndex)
+            }
+        } else if !showsBranchItem, let present {
+            toolbar.removeItem(at: present)
         }
     }
 
@@ -83,10 +219,20 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
         withObservationTracking {
             _ = git.isVisible
             _ = git.pane
+            // `repo` resolves a beat after the panel opens (a cwd has to be walked
+            // to a work-tree root), so the branch item's presence tracks it too —
+            // otherwise opening on a repo would leave the item out until the next
+            // unrelated change.
+            _ = git.repo
+            // The branch name, so the button's title follows a checkout made in
+            // the terminal.
+            if let repo = git.repo {
+                _ = repo.status.branch
+            }
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.syncPaneControl()
+                self.syncToolbar()
                 self.observePanel()
             }
         }
@@ -102,6 +248,10 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
     /// `.toggleSidebar` is a system item — AppKit builds it and routes its action
     /// to NSSplitViewController, which implements `toggleSidebar(_:)` natively, so
     /// it needs no case in `itemForItemIdentifier` and stays in sync with ⌘⌥S.
+    ///
+    /// `.gitControls` is left out here and inserted by `syncBranchItem` only while
+    /// the panel is open; the allowed set below still lists it, which is what lets
+    /// it be inserted at all.
     private var identifiers: [NSToolbarItem.Identifier] {
         [
             .flexibleSpace,
@@ -115,11 +265,21 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        identifiers
+        var ids = identifiers
+        // Present at launch if the restored session already has the panel open on
+        // a repo, so it isn't missing until the first change wakes the observer.
+        if showsBranchItem, let paneIndex = ids.firstIndex(of: .gitPane) {
+            ids.insert(.gitControls, at: paneIndex)
+        }
+        return ids
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        identifiers
+        var ids = identifiers
+        if let paneIndex = ids.firstIndex(of: .gitPane) {
+            ids.insert(.gitControls, at: paneIndex)
+        }
+        return ids
     }
 
     func toolbar(
@@ -135,6 +295,30 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
         case .trackingInspector:
             return NSTrackingSeparatorToolbarItem(
                 identifier: itemIdentifier, splitView: splitView, dividerIndex: 1)
+        case .gitControls:
+            // A real NSButton, not a hosted SwiftUI one: the whole capsule takes
+            // clicks, where a hosting view leaves the glass rim around it dead.
+            // The trailing chevron is the button's own image — so AppKit aligns
+            // and spaces it like a stepper's, and the edge padding is the bezel's,
+            // not faked with spaces. Only the leading branch glyph rides in the
+            // title, since a button has one image slot and the chevron claims it.
+            let button = NSButton(title: "", target: self, action: #selector(openBranchSwitcher))
+            button.bezelStyle = .toolbar
+            button.image = Self.chevronImage()
+            button.imagePosition = .imageTrailing
+            branchButton = button
+            // A width constraint the title updater keeps a little wider than the
+            // content, so the extra room is the bezel's own centring rather than
+            // spaces baked into the title.
+            let width = button.widthAnchor.constraint(equalToConstant: 0)
+            width.isActive = true
+            branchWidthConstraint = width
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.view = button
+            item.label = "Branch"
+            item.visibilityPriority = .low
+            updateBranchButton()
+            return item
         case .gitPane:
             // A plain NSSegmentedControl rather than an NSToolbarItemGroup: the
             // group's selection is index-based and would need mirroring back onto
@@ -170,7 +354,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
             item.view = segmented
             item.label = "Source Control"
             paneControl = segmented
-            syncPaneControl()
+            syncToolbar()
             return item
         default:
             return nil

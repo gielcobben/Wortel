@@ -20,6 +20,11 @@ enum DiffParser {
         var newNo = 0
         var isBinary = false
         var truncated = false
+        // The file the following hunks belong to. Updated at each file header so
+        // a multi-file commit diff tags every line with its own path. `+++ b/…`
+        // is authoritative for the post-image; `diff --git` seeds it (and covers
+        // the deletion case, where `+++` is /dev/null).
+        var currentPath: String? = nil
 
         var text = raw
         if text.utf8.count > maxBytes {
@@ -39,6 +44,19 @@ enum DiffParser {
                 isBinary = true
                 continue
             }
+            // File boundaries: keep the path (for syntax highlighting) but not
+            // the header rows themselves. `diff --git` seeds the path — its
+            // b-side is the resulting path for modify/add/delete/rename, so it
+            // also covers deletions where `+++` is /dev/null. `+++ b/…` then
+            // refines it to the authoritative post-image path.
+            if rawLine.hasPrefix("diff --git") {
+                currentPath = gitHeaderBPath(rawLine) ?? currentPath
+                continue
+            }
+            if rawLine.hasPrefix("+++ ") {
+                if let p = fileMarkerPath(rawLine) { currentPath = p }
+                continue
+            }
             // File-level headers carry no content worth showing in the pane.
             if isHeaderLine(rawLine) { continue }
 
@@ -48,7 +66,8 @@ enum DiffParser {
                     newNo = n
                 }
                 id += 1
-                lines.append(DiffLine(id: id, kind: .hunkHeader, text: rawLine, oldLine: nil, newLine: nil))
+                lines.append(DiffLine(id: id, kind: .hunkHeader, text: rawLine,
+                                      oldLine: nil, newLine: nil, path: currentPath))
                 continue
             }
 
@@ -74,7 +93,8 @@ enum DiffParser {
                 body = rawLine.isEmpty ? "" : String(rawLine.dropFirst())
             }
             id += 1
-            lines.append(DiffLine(id: id, kind: kind, text: body, oldLine: old, newLine: new))
+            lines.append(DiffLine(id: id, kind: kind, text: body,
+                                  oldLine: old, newLine: new, path: currentPath))
         }
 
         // A single trailing empty context line is the split's tail, not content.
@@ -100,6 +120,27 @@ enum DiffParser {
             || line.hasPrefix("copy from")
             || line.hasPrefix("copy to")
             || line.hasPrefix("\\ No newline")
+    }
+
+    /// `diff --git a/<x> b/<y>` → `<y>`, the post-image path. Best-effort: takes
+    /// the text after the last " b/" so an unquoted path with no spaces (the
+    /// overwhelming common case) is exact; `+++ b/…` refines it for anything the
+    /// pane actually shows content for, so this only needs to carry deletions.
+    private static func gitHeaderBPath(_ line: String) -> String? {
+        guard let r = line.range(of: " b/", options: .backwards) else { return nil }
+        let path = String(line[r.upperBound...])
+        return path.isEmpty ? nil : path
+    }
+
+    /// `+++ b/<path>` (or `--- a/<path>`) → `<path>`, dropping the a//b/ prefix.
+    /// Returns nil for `/dev/null` (a create's old side / a delete's new side).
+    private static func fileMarkerPath(_ line: String) -> String? {
+        // Drop the "+++ " / "--- " marker, and any trailing "\t<timestamp>".
+        var rest = Substring(line.dropFirst(4))
+        if let tab = rest.firstIndex(of: "\t") { rest = rest[..<tab] }
+        if rest == "/dev/null" { return nil }
+        if rest.hasPrefix("a/") || rest.hasPrefix("b/") { rest = rest.dropFirst(2) }
+        return rest.isEmpty ? nil : String(rest)
     }
 
     /// "@@ -a,b +c,d @@ ctx" → (a, c). Counts default to the token's number.

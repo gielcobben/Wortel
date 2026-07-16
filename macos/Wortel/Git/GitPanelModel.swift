@@ -162,7 +162,7 @@ final class GitPanelModel {
             resolvedNonRepo = false
             await existing.refresh()
         } else {
-            let model = GitRepoModel(root: root)
+            let model = GitRepoModel(root: root, highlighter: DiffHighlighter.shared)
             cache[root] = model
             repo = model
             resolvedNonRepo = false

@@ -75,7 +75,7 @@ struct CommitGraph {
             return lanes.count - 1
         }
 
-        for commit in commits {
+        for (index, commit) in commits.enumerated() {
             // Every lane waiting on this commit converges here. More than one
             // means the commit has several children in view — each is an edge in.
             let claiming = lanes.indices.filter { lanes[$0] == commit.sha }
@@ -103,8 +103,19 @@ struct CommitGraph {
                     // Only leftward, so a trunk never gets dragged sideways by a
                     // branch that happens to share its parent; the two just both
                     // wait, and meet at that commit's row.
+                    //
+                    // Unless that commit is the very next row, in which case the
+                    // fold buys nothing — there are no rows in between for the
+                    // column to be wide *in* — and it costs the line its ending:
+                    // folded, it merges into the trunk at the row's edge and
+                    // arrives as the trunk's colour, so the branch appears to stop
+                    // in mid-air a half row above the commit it forked from. Held
+                    // one more row, it lands on that commit's dot like every other
+                    // line that converges there.
+                    let parentIsNextRow =
+                        index + 1 < commits.count && commits[index + 1].sha == parent
                     if let existing = lanes.firstIndex(where: { $0 == parent }),
-                        existing < lane {
+                        existing < lane, !parentIsNextRow {
                         row.outgoing.append(Edge(from: lane, to: existing))
                     } else {
                         // Otherwise this parent inherits the lane, keeping trunks

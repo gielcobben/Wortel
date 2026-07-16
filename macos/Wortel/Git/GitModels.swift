@@ -227,6 +227,12 @@ struct DiffLine: Identifiable, Sendable {
     let text: String
     let oldLine: Int?
     let newLine: Int?
+    /// The file this line belongs to (post-image path, e.g. `web/src/app.ts`),
+    /// carried so syntax highlighting can pick a grammar. A commit diff in the
+    /// History pane concatenates many files into one result, so this varies
+    /// down the list; nil when the header carried no usable path. Every line of
+    /// one file shares the same String instance — cheap to carry per line.
+    let path: String?
 }
 
 /// Parsed diff for one file. `isBinary` short-circuits the line view.
@@ -237,6 +243,11 @@ struct DiffResult: Sendable {
     /// DiffParser's limits. The pane says so rather than implying the file
     /// simply ends there.
     var truncated: Bool = false
+    /// Syntax-highlight spans keyed by `DiffLine.id`, filled in asynchronously
+    /// by `DiffHighlighter` after the diff is first shown (so the diff — and the
+    /// terminal beside it — never wait on tree-sitter). Empty until then, and
+    /// for lines in unsupported languages; the cell falls back to plain text.
+    var highlights: [Int: [HighlightSpan]] = [:]
 
     var isEmpty: Bool { lines.isEmpty && !isBinary }
 }

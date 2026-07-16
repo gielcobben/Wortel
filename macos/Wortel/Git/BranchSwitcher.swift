@@ -15,7 +15,16 @@ struct BranchSwitcher: View {
 
     var body: some View {
         Button {
-            showing = true
+            // Load *before* presenting, not from the popover's own `.task`. An
+            // NSPopover takes its size from the content it's given at
+            // presentation: opened while the list is still empty, it sizes itself
+            // to the spinner and keeps that height when the branches land. The
+            // read is a `for-each-ref` — fast enough that the click still feels
+            // immediate, and the popover arrives at its real height first time.
+            Task {
+                await repo.loadBranches()
+                showing = true
+            }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.triangle.branch")
@@ -106,7 +115,6 @@ private struct BranchList: View {
             }
         }
         .frame(width: 280)
-        .task { await repo.loadBranches() }
     }
 
     @ViewBuilder

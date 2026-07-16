@@ -43,8 +43,9 @@ struct CommitGraph {
     /// commits, and an index-parallel array would silently mis-draw if the two
     /// ever fell out of step.
     private(set) var rows: [String: Row] = [:]
-    /// Widest column reached by any row, so every row's gutter is the same width
-    /// and the subject text lines up.
+    /// Widest column reached by any row. Rows size their own gutters (see
+    /// `Row.columnCount`); this is the window-wide figure the tests pin against
+    /// `git log --graph`'s own width.
     private(set) var width: Int = 0
 
     static let empty = CommitGraph()
@@ -136,8 +137,12 @@ struct CommitGraph {
     }
 }
 
-private extension CommitGraph.Row {
+extension CommitGraph.Row {
     /// Columns this row actually occupies — the width its gutter needs.
+    ///
+    /// Read by the row itself, not just by `build`: each row's gutter is sized to
+    /// this rather than to the window's widest, so a subject indents to the graph
+    /// beside it and one busy merge doesn't push every line in the pane right.
     var columnCount: Int {
         var maximum = lane
         for edge in incoming { maximum = max(maximum, edge.from) }

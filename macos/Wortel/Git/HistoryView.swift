@@ -114,7 +114,6 @@ struct HistoryView: View {
                         CommitRow(
                             commit: commit,
                             row: repo.graph.row(for: commit.sha),
-                            lanes: repo.graph.width,
                             isSelected: repo.selectedCommitID == commit.id,
                             isUnpushed: repo.unpushed.contains(commit.sha))
                             .contentShape(Rectangle())
@@ -214,10 +213,13 @@ struct TruncatedDiffNotice: View {
 private struct CommitRow: View {
     let commit: GitCommit
     let row: CommitGraph.Row?
-    let lanes: Int
     let isSelected: Bool
-    /// Not yet on the remote — draws the leading dot.
+    /// Not yet on the remote — draws the dot after the gutter.
     let isUnpushed: Bool
+
+    /// This row's own gutter width. A row with no graph slice still reserves one
+    /// column, so a log with no merges doesn't sit flush against the edge.
+    private var rowColumns: Int { row?.columnCount ?? 1 }
 
     /// Uniform, unlike the intrinsic height this row used to take. Each row draws
     /// its own slice of the graph against its own height, so rows of differing
@@ -227,35 +229,81 @@ private struct CommitRow: View {
     private static let authorWidth: CGFloat = 64
     private static let shaWidth: CGFloat = 52
     private static let ageWidth: CGFloat = 26
-    /// The dot's own column, ahead of the gutter. Fixed and always present, so
-    /// the graph starts at the same x on every row whether or not it's dotted.
-    private static let dotWidth: CGFloat = 10
+    /// Gap on each side of the unpushed dot — after the graph, and before the
+    /// content. The row's content is deliberately *not* aligned across rows: a
+    /// dotted row is indented by the dot it carries.
+    private static let dotGap: CGFloat = 4
+    /// The pill's inner padding, and so the distance from the dot to the text.
+    /// Tight: the graph, the dot and the subject are one line of information read
+    /// left to right, and gaps between them read as separation they don't have.
+    private static let contentPad: CGFloat = 5
+    /// Fixed rather than `Color.accentColor`: "not pushed" is not a selection or
+    /// an action, and under a non-blue system accent the accent would also be
+    /// what paints the selection pill this dot sits beside.
+    private static let unpushedBlue = Color(red: 0.24, green: 0.51, blue: 0.96)
 
     private var onAccent: Bool { isSelected }
     private var subtleColor: Color { onAccent ? .white.opacity(0.85) : .secondary }
 
+    /// Chips take the colour of the lane their commit sits on, which is what ties
+    /// `toolbar-pane-buttons` to the line it's the tip of. Lanes are columns
+    /// rather than identities, so this is only stable within a render — but the
+    /// chip and its dot are drawn from the same lane in that render, which is the
+    /// whole claim being made.
+    private var laneTint: Color {
+        CommitGraphGutter.laneColor(row?.lane ?? 0)
+    }
+
+    /// Fork bolds the part before the first colon — the "Toolbar:" or "Sidebar:"
+    /// scope — which is what makes a log skimmable by area at a glance. Only a
+    /// short prefix qualifies: a subject that merely contains a colon halfway
+    /// through a sentence isn't scoped, and bolding half a line reads as noise.
+    private var subject: some View {
+        let text: Text
+        if let colon = commit.subject.firstIndex(of: ":"),
+           commit.subject.distance(from: commit.subject.startIndex, to: colon) <= 24 {
+            let scope = String(commit.subject[..<colon])
+            let rest = String(commit.subject[colon...])
+            text = Text(scope).fontWeight(.semibold) + Text(rest)
+        } else {
+            text = Text(commit.subject)
+        }
+        return text
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+    }
+
     var body: some View {
         HStack(spacing: 0) {
-            // Outside the selection pill and outside the graph Canvas, both
-            // deliberately: on the pill it would be blue-on-blue, and inside the
-            // gutter it would read as a lane node — which is a different claim
-            // entirely (that's topology; this is sync state).
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 5, height: 5)
-                .opacity(isUnpushed ? 1 : 0)
-                .frame(width: Self.dotWidth, height: Self.height)
-                .help("Not pushed yet")
-            CommitGraphGutter(row: row, lanes: lanes, isMerge: commit.isMerge)
-                .frame(width: CommitGraphGutter.width(forLanes: lanes), height: Self.height)
+            // Sized to *this* row's columns, not the window's widest. Everything
+            // after it — dot, chips, subject — therefore indents to the graph
+            // beside it, so a single merge somewhere in the window no longer
+            // indents every subject in the pane past it.
+            CommitGraphGutter(row: row, lanes: rowColumns, isMerge: commit.isMerge)
+                .frame(width: CommitGraphGutter.width(forLanes: rowColumns), height: Self.height)
+            // Always: separates the graph from the row's content.
+            Spacer().frame(width: Self.dotGap)
+            // The dot's column collapses when there's no dot, rather than sitting
+            // empty — so an undotted row's text starts exactly where a dotted
+            // row's dot does, and only rows that need the space take it. Fork
+            // does the same, and it's why its pushed commits sit left.
+            if isUnpushed {
+                Circle()
+                    .fill(Self.unpushedBlue)
+                    // The same size as a lane node, taken from the gutter rather
+                    // than restated: the two sit side by side on every row, and a
+                    // dot a pixel off its neighbour reads as a mistake.
+                    .frame(width: CommitGraphGutter.nodeDiameter,
+                           height: CommitGraphGutter.nodeDiameter)
+                    .help("Not pushed yet")
+                Spacer().frame(width: Self.dotGap)
+            }
             HStack(spacing: 6) {
                 ForEach(commit.refs, id: \.self) { ref in
-                    RefChip(ref: ref, onAccent: onAccent)
+                    RefChip(ref: ref, tint: laneTint, onAccent: onAccent)
                 }
-                Text(commit.subject)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                subject
                 Spacer(minLength: 4)
                 Text(commit.author)
                     .lineLimit(1)
@@ -269,7 +317,7 @@ private struct CommitRow: View {
             }
             .font(.callout)
             .foregroundStyle(subtleColor)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Self.contentPad)
             .frame(height: Self.height)
             .background {
                 if isSelected {
@@ -291,40 +339,64 @@ private struct CommitRow: View {
 /// differ only by a prefix you stop reading after the tenth row).
 private struct RefChip: View {
     let ref: GitRef
+    /// The colour of the lane this ref's commit sits on, so a branch's chip and
+    /// its line are the same colour. Tags opt out — a tag isn't a line.
+    let tint: Color
     /// Sitting on the selection pill, where the accent has taken the background.
     let onAccent: Bool
 
-    private var tint: Color {
+    /// A tag names a point, not a branch, so it doesn't borrow a lane's colour —
+    /// it would claim to be the tip of a line it has nothing to do with.
+    private var color: Color { ref.kind == .tag ? .orange : tint }
+
+    /// Remotes get a mark rather than relying on the "origin/" prefix, which is
+    /// the first thing you stop reading. Deliberately generic: which host it is
+    /// (GitHub, in Fork's case) isn't something a ref name can answer.
+    private var icon: String? {
         switch ref.kind {
-        case .localBranch, .detachedHead: return .accentColor
-        case .remoteBranch: return .purple
-        case .tag: return .orange
+        case .remoteBranch: return "cloud"
+        case .tag: return "tag"
+        case .localBranch, .detachedHead: return ref.isHead ? "checkmark" : nil
         }
     }
 
+    /// The checked-out branch is filled and white rather than merely outlined:
+    /// on a row with three chips, weight alone doesn't say which one you're on.
+    private var foreground: Color {
+        if onAccent { return .white }
+        return ref.isHead ? .white : color
+    }
+
     var body: some View {
-        Text(ref.name)
-            .font(.system(size: 10, weight: ref.isHead ? .bold : .medium))
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(tint))
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
-            .background {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(onAccent ? Color.white.opacity(0.25) : tint.opacity(0.15))
+        HStack(spacing: 3) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 8, weight: .bold))
             }
-            .overlay {
-                // The branch you're on gets an outline as well as bold: on a busy
-                // row the weight alone is easy to miss.
-                if ref.isHead {
-                    RoundedRectangle(cornerRadius: 3)
-                        .strokeBorder(
-                            onAccent ? Color.white.opacity(0.5) : tint.opacity(0.5),
-                            lineWidth: 1)
-                }
-            }
-            .layoutPriority(1)
+            Text(ref.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .font(.system(size: 10, weight: ref.isHead ? .bold : .medium))
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1.5)
+        .background {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(fill)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(onAccent ? Color.white.opacity(0.6) : color, lineWidth: 1)
+        }
+        .layoutPriority(1)
+    }
+
+    /// Dark inside the border, as Fork has it — the chip reads as an outline with
+    /// a name in it, so a row of them doesn't fight the subject beside them.
+    private var fill: Color {
+        if onAccent { return .white.opacity(0.2) }
+        return ref.isHead ? color.opacity(0.55) : color.opacity(0.12)
     }
 }
 
@@ -341,15 +413,29 @@ private struct CommitGraphGutter: View {
 
     /// Distance between lane centres.
     private static let laneSpacing: CGFloat = 12
-    private static let inset: CGFloat = 5
+    /// Leading pad before the first lane's centre. It shifts the whole gutter,
+    /// and with it everything the row draws after — the graph's trailing gap is
+    /// half a lane's spacing, not this.
+    private static let inset: CGFloat = 3
     private static let lineWidth: CGFloat = 1.5
     private static let dotRadius: CGFloat = 2.5
+    /// How tightly a line turns when it changes column. Fork's lines are
+    /// orthogonal with a rounded corner rather than a curve spread across the
+    /// row: the line reads as "this column, then that one", and a branch running
+    /// down five rows draws one straight line instead of five shallow diagonals.
+    private static let cornerRadius: CGFloat = 5
+
+    /// Diameter of a lane node, so things drawn outside the Canvas — the unpushed
+    /// dot — can be the same size as the dots in the graph beside them.
+    static var nodeDiameter: CGFloat { dotRadius * 2 }
     /// Lanes past this fold onto the last column. Repos do exceed it, but a
     /// gutter wide enough to show them would crowd out the subject line, which is
     /// what the pane is actually for.
     private static let maxLanes = 6
 
-    /// Same for every row so the subjects line up into a column.
+    /// Width for a given number of columns. Called per row with that row's own
+    /// count, so subjects indent to the graph beside them and rag down the pane
+    /// rather than all clearing the window's widest merge.
     static func width(forLanes lanes: Int) -> CGFloat {
         CGFloat(min(max(lanes, 1), maxLanes)) * laneSpacing + inset
     }
@@ -361,6 +447,14 @@ private struct CommitGraphGutter: View {
         .orange, .blue, .purple, .green, .pink, .teal,
     ]
 
+    /// The colour of a lane, for anything outside the Canvas that needs to agree
+    /// with it — the ref chips, which take the colour of the lane they sit on.
+    /// Same folding as `color(_:)` so a chip past `maxLanes` matches the column
+    /// its dot actually got folded into.
+    static func laneColor(_ lane: Int) -> Color {
+        palette[min(lane, maxLanes - 1) % palette.count]
+    }
+
     var body: some View {
         Canvas { context, size in
             guard let row else { return }
@@ -371,20 +465,44 @@ private struct CommitGraphGutter: View {
                     line(from: CGPoint(x: x(lane), y: 0), to: CGPoint(x: x(lane), y: size.height)),
                     with: .color(color(lane)), lineWidth: Self.lineWidth)
             }
-            // Coloured by the far end in both cases — the lane the line travels
-            // in, not the commit it meets — so a branch keeps one colour along
-            // its whole length and its merge curve matches it.
+            // Every line is coloured by the lane it *travels* in rather than by
+            // the commit at its end, so a branch keeps one colour down its whole
+            // length: `from` for a line arriving or folding away, `to` for one
+            // branching out into a fresh column.
+            //
+            // Where a line turns is what shapes the graph. A line arriving turns
+            // at the dot it lands on; a line branching out turns at the dot it
+            // leaves. Everything else is vertical, so a branch spanning ten rows
+            // draws one straight line and not ten shallow diagonals.
             for edge in row.incoming {
                 context.stroke(
-                    line(from: CGPoint(x: x(edge.from), y: 0), to: CGPoint(x: x(edge.to), y: middle)),
+                    verticalThenAcross(
+                        column: x(edge.from), fromY: 0,
+                        to: CGPoint(x: x(edge.to), y: middle)),
                     with: .color(color(edge.from)), lineWidth: Self.lineWidth)
             }
             for edge in row.outgoing {
-                context.stroke(
-                    line(
-                        from: CGPoint(x: x(edge.from), y: middle),
-                        to: CGPoint(x: x(edge.to), y: size.height)),
-                    with: .color(color(edge.to)), lineWidth: Self.lineWidth)
+                if edge.to > edge.from {
+                    // Branching out to a new column: turn at the dot, so the line
+                    // leaves the commit that spawned it and is vertical for the
+                    // rest of the row.
+                    context.stroke(
+                        acrossThenVertical(
+                            from: CGPoint(x: x(edge.from), y: middle),
+                            column: x(edge.to), toY: size.height),
+                        with: .color(color(edge.to)), lineWidth: Self.lineWidth)
+                } else {
+                    // Folding back into a column to our left (git's "|/"). Turn as
+                    // late as possible instead of at the dot: the branch stays in
+                    // its own column past its own tip, which is what makes it read
+                    // as one line running down to the commit it forked from rather
+                    // than as a rung between two rows.
+                    context.stroke(
+                        verticalThenAcross(
+                            column: x(edge.from), fromY: middle,
+                            to: CGPoint(x: x(edge.to), y: size.height)),
+                        with: .color(color(edge.from)), lineWidth: Self.lineWidth)
+                }
             }
 
             // History that leaves the window: a stub that stops short of the row
@@ -420,21 +538,56 @@ private struct CommitGraphGutter: View {
         Self.palette[min(lane, Self.maxLanes - 1) % Self.palette.count]
     }
 
-    /// Straight within a lane; an S-curve when the line changes column, bending
-    /// across the middle of its span so it leaves and arrives vertically and
-    /// meets the next row's segment without a kink.
+    /// A plain segment, for lines that don't change column.
     private func line(from start: CGPoint, to end: CGPoint) -> Path {
         var path = Path()
         path.move(to: start)
-        if start.x == end.x {
-            path.addLine(to: end)
-        } else {
-            let midY = (start.y + end.y) / 2
-            path.addCurve(
-                to: end,
-                control1: CGPoint(x: start.x, y: midY),
-                control2: CGPoint(x: end.x, y: midY))
-        }
+        path.addLine(to: end)
         return path
+    }
+
+    /// Down `column` from `fromY`, then a rounded corner into `end` — how a line
+    /// arrives at a dot from a different column.
+    private func verticalThenAcross(column: CGFloat, fromY: CGFloat, to end: CGPoint) -> Path {
+        var path = Path()
+        let start = CGPoint(x: column, y: fromY)
+        path.move(to: start)
+        guard column != end.x else {
+            path.addLine(to: end)
+            return path
+        }
+        // The corner sits at (column, end.y): the line comes down to the dot's
+        // height and turns there.
+        path.addArc(
+            tangent1End: CGPoint(x: column, y: end.y),
+            tangent2End: end,
+            radius: radius(dx: end.x - column, dy: end.y - fromY))
+        path.addLine(to: end)
+        return path
+    }
+
+    /// Out of a dot, then a rounded corner into `column` and down to `toY` — how a
+    /// line leaves a dot for a different column.
+    private func acrossThenVertical(from start: CGPoint, column: CGFloat, toY: CGFloat) -> Path {
+        var path = Path()
+        path.move(to: start)
+        let end = CGPoint(x: column, y: toY)
+        guard column != start.x else {
+            path.addLine(to: end)
+            return path
+        }
+        path.addArc(
+            tangent1End: CGPoint(x: column, y: start.y),
+            tangent2End: end,
+            radius: radius(dx: column - start.x, dy: toY - start.y))
+        path.addLine(to: end)
+        return path
+    }
+
+    /// Never round more than the space there is: half a lane's width, or half the
+    /// run's height. A corner bigger than its own legs draws an arc that overshoots
+    /// the point it's supposed to turn at.
+    private func radius(dx: CGFloat, dy: CGFloat) -> CGFloat {
+        min(Self.cornerRadius, abs(dx) / 2, abs(dy) / 2)
     }
 }

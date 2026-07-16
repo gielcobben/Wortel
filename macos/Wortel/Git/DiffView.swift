@@ -18,6 +18,15 @@ struct DiffView: NSViewRepresentable {
     /// diff table's double-click to session-rename and disable its styling.
     static let tableIdentifier = NSUserInterfaceItemIdentifier("WortelDiffTable")
 
+    /// The height of one diff row for a given font size — the same formula the
+    /// Coordinator uses in `configure`. Lets the History accordion give each
+    /// inline diff a frame sized to its content, so small files fit exactly (no
+    /// scroller of their own) and only a huge file keeps a bounded one.
+    static func rowHeight(forFontSize size: CGFloat) -> CGFloat {
+        let font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        return ceil(font.ascender - font.descender + font.leading) + 3
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -35,6 +44,10 @@ struct DiffView: NSViewRepresentable {
         table.rowHeight = context.coordinator.rowHeight
         table.intercellSpacing = .zero
         table.allowsColumnResizing = false
+        // `.plain`, not the default `.automatic`: inside an inspector the
+        // automatic style adds leading/trailing cell insets, which left the row
+        // tints floating off the pane's edges. Plain runs them wall to wall.
+        table.style = .plain
 
         let column = NSTableColumn(identifier: Coordinator.columnID)
         column.resizingMask = []
@@ -50,6 +63,11 @@ struct DiffView: NSViewRepresentable {
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
+        // No system-added insets: the pane runs the diff under the titlebar and
+        // as an inspector item, either of which would otherwise push a top/side
+        // margin in. The diff supplies its own gutter, so it wants none here.
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsetsZero
         // Follow live width changes so the row tints keep filling the panel as
         // it (or the window) is resized.
         scroll.contentView.postsFrameChangedNotifications = true

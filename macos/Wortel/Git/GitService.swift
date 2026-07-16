@@ -249,6 +249,76 @@ enum GitService {
         return result.ok ? result.stdout : ""
     }
 
+    /// The files a commit touched, with per-file add/delete counts — the History
+    /// pane's changed-files accordion.
+    ///
+    /// Two `git show` runs rather than one: git prints only a *single* diff
+    /// format even when several are asked for (`--name-status` wins over
+    /// `--numstat`, verified), so the status letters and the line counts have to
+    /// be fetched separately. Both enumerate the same files in the same order, so
+    /// they're zipped by index — which also sidesteps reconciling numstat's
+    /// `{old => new}` rename spelling against name-status's split old/new paths.
+    /// `-m --first-parent` mirrors `commitDiff`: a merge is summarised against its
+    /// first parent, the change a reader means when they click it. The two runs
+    /// are launched concurrently since neither depends on the other.
+    static func commitFiles(root: String, sha: String) async -> [CommitFileChange] {
+        // `-M` (find-renames) is explicit rather than relying on the user's
+        // `diff.renames` config, so a rename always reads as one R row with the
+        // old path remembered — the same in both runs, so they stay index-aligned.
+        async let statusRun = run(
+            ["show", "--format=", "-m", "--first-parent", "-M", "--name-status", sha], in: root)
+        async let numstatRun = run(
+            ["show", "--format=", "-m", "--first-parent", "-M", "--numstat", sha], in: root)
+        let status = await statusRun
+        let numstat = await numstatRun
+        guard status.ok else { return [] }
+
+        // Each numstat line: "<adds>\t<dels>\t<path>", counts "-" (→ -1) for a
+        // binary file. The path field is left whole (unused; the counts pair is
+        // what's zipped in).
+        let counts: [(add: Int, del: Int)] = numstat.stdout
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { line in
+                let f = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+                let add = f.count > 0 ? (Int(f[0]) ?? -1) : 0
+                let del = f.count > 1 ? (Int(f[1]) ?? -1) : 0
+                return (add, del)
+            }
+
+        return status.stdout
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .enumerated()
+            .compactMap { index, line in
+                let fields = line.split(separator: "\t").map(String.init)
+                guard let code = fields.first?.first else { return nil }
+                // Rename/copy carry a similarity score (R064) and two paths; every
+                // other status is one letter and one path.
+                let isMove = code == "R" || code == "C"
+                let original = isMove && fields.count >= 3 ? fields[1] : nil
+                let path = isMove
+                    ? (fields.count >= 3 ? fields[2] : fields.last ?? "")
+                    : (fields.count >= 2 ? fields[1] : "")
+                guard !path.isEmpty else { return nil }
+                let (add, del) = index < counts.count ? counts[index] : (0, 0)
+                return CommitFileChange(
+                    path: path, originalPath: original, statusCode: code,
+                    additions: add, deletions: del)
+            }
+    }
+
+    /// The patch for a single file within a commit, ready for DiffParser — loaded
+    /// lazily as the History accordion expands a row. Both the new and (for a
+    /// rename) the old path are passed as pathspecs so a rename's diff resolves.
+    /// Same `-m --first-parent` merge handling as `commitDiff`.
+    static func commitFileDiff(
+        root: String, sha: String, path: String, originalPath: String?
+    ) async -> String {
+        var args = ["show", "--format=", "-m", "--first-parent", "-M", sha, "--", path]
+        if let originalPath { args.append(originalPath) }
+        let result = await run(args, in: root)
+        return result.ok ? result.stdout : ""
+    }
+
     static func status(root: String) async -> GitStatus {
         let result = await run(
             ["status", "--porcelain=v2", "--branch", "--untracked-files=all"],

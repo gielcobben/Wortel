@@ -162,7 +162,7 @@ final class GitRepoModelTests: XCTestCase {
         XCTAssertEqual(Set(model.commits.map(\.sha)).count, model.commits.count)
     }
 
-    func testSelectingACommitLoadsItsDiff() async {
+    func testSelectingACommitLoadsItsFilesAndDiff() async {
         repo = GitFixture.newRepo("commitdiff")
         GitFixture.sh("echo a > f.txt && git add f.txt && git commit -q -m 'add f'", in: repo)
         GitFixture.sh("echo b >> f.txt && git commit -q -am 'append to f'", in: repo)
@@ -172,8 +172,40 @@ final class GitRepoModelTests: XCTestCase {
         await model.selectCommit(model.commits[0].id)
 
         XCTAssertEqual(model.selectedCommitID, model.commits[0].sha)
-        XCTAssertNotNil(model.commitDiff)
-        XCTAssertTrue(model.commitDiff?.lines.contains { $0.text.contains("b") } ?? false)
+        // The commit touched exactly one file, so it lists f.txt as modified…
+        XCTAssertEqual(model.commitFiles.map(\.path), ["f.txt"])
+        XCTAssertEqual(model.commitFiles.first?.statusCode, "M")
+        XCTAssertEqual(model.commitFiles.first?.additions, 1)
+        XCTAssertEqual(model.commitFiles.first?.deletions, 0)
+        // …and a single-file commit auto-expands, so its diff is already loaded.
+        XCTAssertTrue(model.expandedCommitFiles.contains("f.txt"))
+        let diff = model.commitFileDiffs["f.txt"]
+        XCTAssertNotNil(diff)
+        XCTAssertTrue(diff?.lines.contains { $0.text.contains("b") } ?? false)
+    }
+
+    /// Collapsing a file drops its diff from view but the SHA+path cache keeps it,
+    /// so re-expanding never re-reads git — and a multi-file commit does not
+    /// auto-expand.
+    func testTogglingCommitFiles() async {
+        repo = GitFixture.newRepo("toggle")
+        GitFixture.sh("echo a > a.txt && echo b > b.txt && git add . "
+                      + "&& git commit -q -m 'two files'", in: repo)
+
+        let model = GitRepoModel(root: repo.path)
+        await model.loadHistory()
+        await model.selectCommit(model.commits[0].id)
+
+        XCTAssertEqual(Set(model.commitFiles.map(\.path)), ["a.txt", "b.txt"])
+        XCTAssertTrue(model.expandedCommitFiles.isEmpty, "a multi-file commit opens collapsed")
+
+        let a = model.commitFiles.first { $0.path == "a.txt" }!
+        await model.toggleCommitFile(a)
+        XCTAssertTrue(model.expandedCommitFiles.contains("a.txt"))
+        XCTAssertNotNil(model.commitFileDiffs["a.txt"])
+
+        await model.toggleCommitFile(a)
+        XCTAssertFalse(model.expandedCommitFiles.contains("a.txt"))
     }
 
     /// ↑/↓ walk the log and stop at the ends rather than running off.

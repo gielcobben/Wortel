@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The History pane: the commit log over the selected commit's diff, split by the
@@ -135,25 +136,18 @@ struct HistoryView: View {
         .keyboardNavigableList(focused: $listFocused) { repo.selectAdjacentCommit($0) }
     }
 
-    // MARK: Diff
+    // MARK: Files
 
     @ViewBuilder
     private var diffPane: some View {
-        if let diff = repo.commitDiff {
-            if diff.isBinary {
-                centered("Binary changes")
-            } else if diff.lines.isEmpty {
-                centered("No textual changes")
-            } else {
-                VStack(spacing: 0) {
-                    DiffView(lines: diff.lines, highlights: diff.highlights, fontSize: 12)
-                    if diff.truncated { TruncatedDiffNotice() }
-                }
-            }
-        } else if repo.selectedCommitID != nil {
+        if repo.selectedCommitID == nil {
+            centered("Select a commit to view its changes")
+        } else if repo.isLoadingCommitFiles {
             centered("Loading…")
+        } else if repo.commitFiles.isEmpty {
+            centered("No file changes")
         } else {
-            centered("Select a commit to view its diff")
+            CommitFilesList(repo: repo)
         }
     }
 
@@ -180,6 +174,235 @@ struct TruncatedDiffNotice: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(.quaternary)
+    }
+}
+
+// MARK: - Commit files accordion
+
+/// The selected commit's changed files, GitHub-style: a summary header then one
+/// collapsible row per file whose disclosure reveals that file's diff inline.
+/// Replaces the old single concatenated commit patch — each file's diff loads
+/// lazily on expand (see GitRepoModel.toggleCommitFile), so a big commit opens
+/// on a numstat rather than parsing every patch up front.
+private struct CommitFilesList: View {
+    @Bindable var repo: GitRepoModel
+
+    /// Whole-commit totals for the header. Binary rows (count -1) don't add in.
+    private var additions: Int { repo.commitFiles.reduce(0) { $0 + max(0, $1.additions) } }
+    private var deletions: Int { repo.commitFiles.reduce(0) { $0 + max(0, $1.deletions) } }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                header
+                Divider()
+                ForEach(repo.commitFiles) { file in
+                    CommitFileRow(
+                        file: file,
+                        repo: repo,
+                        isExpanded: repo.expandedCommitFiles.contains(file.path))
+                    if repo.expandedCommitFiles.contains(file.path) {
+                        expandedDiff(for: file)
+                    }
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task {
+                    if repo.allCommitFilesExpanded { repo.collapseAllCommitFiles() }
+                    else { await repo.expandAllCommitFiles() }
+                }
+            } label: {
+                Text(repo.allCommitFilesExpanded ? "Collapse All" : "Expand All")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            Spacer(minLength: 4)
+            Text("\(repo.commitFiles.count) \(repo.commitFiles.count == 1 ? "file" : "files")")
+                .foregroundStyle(.secondary)
+            if additions > 0 { Text("+\(additions)").foregroundStyle(.green) }
+            if deletions > 0 { Text("−\(deletions)").foregroundStyle(.red) }
+        }
+        .font(.caption)
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private func expandedDiff(for file: CommitFileChange) -> some View {
+        if file.isBinary {
+            fileNotice("Binary file not shown")
+        } else if let diff = repo.commitFileDiffs[file.path] {
+            if diff.lines.isEmpty {
+                fileNotice("No textual changes")
+            } else {
+                VStack(spacing: 0) {
+                    DiffView(lines: diff.lines, highlights: diff.highlights, fontSize: 12)
+                        .frame(height: diffHeight(diff.lines.count))
+                    if diff.truncated { TruncatedDiffNotice() }
+                }
+            }
+        } else {
+            fileNotice("Loading…")
+        }
+    }
+
+    /// The inline diff's height: its own content height, capped so one enormous
+    /// file keeps a bounded scroller of its own instead of pushing the rest of
+    /// the list far off the bottom. A file that fits under the cap shows every
+    /// line with no scroller — the outer ScrollView moves between files.
+    private func diffHeight(_ lineCount: Int) -> CGFloat {
+        let content = CGFloat(lineCount) * DiffView.rowHeight(forFontSize: 12) + 4
+        return min(content, 420)
+    }
+
+    private func fileNotice(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+    }
+}
+
+/// One file in the accordion: a disclosure chevron, the status badge, the name
+/// with its dimmed directory, and the file's +/− counts. A click toggles the
+/// diff; a right-click opens the same Open / Show in Finder / Copy Path menu the
+/// Changes pane's rows carry (see SourceControlPanel's ChangeRow).
+private struct CommitFileRow: View {
+    let file: CommitFileChange
+    let repo: GitRepoModel
+    let isExpanded: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .frame(width: 10)
+            Text(String(file.statusCode))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(statusColor)
+                .frame(width: 12)
+            Text(file.fileName)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if !file.directory.isEmpty {
+                Text(file.directory)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+            Spacer(minLength: 4)
+            counts
+        }
+        .font(.callout)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { Task { await repo.toggleCommitFile(file) } }
+        // Right-click only — the catcher claims nothing else, so the tap above
+        // still toggles. No selection side effect: unlike the changes list, a
+        // file row here has no "selected" state to move.
+        .overlay(RightClickCatcher(onRightClick: {}, makeMenu: makeContextMenu))
+    }
+
+    @ViewBuilder
+    private var counts: some View {
+        if file.isBinary {
+            Text("bin").font(.caption2).foregroundStyle(.tertiary)
+        } else {
+            HStack(spacing: 5) {
+                if file.additions > 0 {
+                    Text("+\(file.additions)").foregroundStyle(.green)
+                }
+                if file.deletions > 0 {
+                    Text("−\(file.deletions)").foregroundStyle(.red)
+                }
+            }
+            .font(.caption.monospacedDigit())
+        }
+    }
+
+    private var statusColor: Color {
+        switch file.statusCode {
+        case "M", "T": return .orange
+        case "A": return .green
+        case "D": return .red
+        case "R", "C": return .blue
+        default: return .secondary
+        }
+    }
+
+    // MARK: Context menu
+
+    private var fileURL: URL { repo.absoluteURL(forPath: file.path) }
+
+    /// Whether the file is present on disk now. A historical commit may reference
+    /// a path that was later deleted or renamed away, so Open/Reveal are gated.
+    private var fileExists: Bool {
+        FileManager.default.fileExists(atPath: fileURL.path)
+    }
+
+    private var openerApps: [URL] {
+        fileExists ? NSWorkspace.shared.urlsForApplications(toOpen: fileURL) : []
+    }
+
+    /// Build the native right-click menu, freshly each time it opens — the same
+    /// Open / Open With / Show in Finder / Copy Path set the Changes rows use,
+    /// minus the working-tree actions (stage/discard/ignore) that a committed
+    /// file can't take.
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let open = ClosureMenuItem(title: "Open") { NSWorkspace.shared.open(fileURL) }
+        open.isEnabled = fileExists
+        menu.addItem(open)
+
+        let apps = openerApps
+        let openWith = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
+        openWith.isEnabled = !apps.isEmpty
+        if !apps.isEmpty {
+            let submenu = NSMenu()
+            for app in apps {
+                let icon = NSWorkspace.shared.icon(forFile: app.path)
+                icon.size = NSSize(width: 16, height: 16)
+                let item = ClosureMenuItem(title: FileManager.default.displayName(atPath: app.path)) {
+                    NSWorkspace.shared.open(
+                        [fileURL], withApplicationAt: app,
+                        configuration: NSWorkspace.OpenConfiguration())
+                }
+                item.image = icon
+                submenu.addItem(item)
+            }
+            openWith.submenu = submenu
+        }
+        menu.addItem(openWith)
+
+        let reveal = ClosureMenuItem(title: "Show in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+        }
+        reveal.isEnabled = fileExists
+        menu.addItem(reveal)
+
+        menu.addItem(.separator())
+
+        menu.addItem(ClosureMenuItem(title: "Copy Path") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(fileURL.path, forType: .string)
+        })
+
+        return menu
     }
 }
 

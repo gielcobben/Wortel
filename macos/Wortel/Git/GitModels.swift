@@ -188,6 +188,30 @@ struct GitCommit: Identifiable, Hashable {
     }
 }
 
+/// One file changed by a single commit — a row in the History pane's per-commit
+/// accordion. Unlike `GitFileChange` (a working-tree row, staged or unstaged)
+/// this is a point-in-time record: a status letter plus the additions and
+/// deletions the commit made to that one file. A binary file reports no counts
+/// (both come back as -1, git's "-").
+struct CommitFileChange: Identifiable, Hashable {
+    /// Repo-relative path (the new path for a rename/copy).
+    let path: String
+    /// Repo-relative old path for a rename/copy, else nil — carried so the
+    /// per-file diff can be fetched with both pathspecs (a rename resolves under
+    /// neither name alone).
+    let originalPath: String?
+    /// Single-letter status shown in the badge: M/A/D/R/C/T.
+    let statusCode: Character
+    /// Lines added / removed. Both -1 for a binary file, which has no line count.
+    let additions: Int
+    let deletions: Int
+
+    var id: String { path }
+    var isBinary: Bool { additions < 0 || deletions < 0 }
+    var fileName: String { (path as NSString).lastPathComponent }
+    var directory: String { (path as NSString).deletingLastPathComponent }
+}
+
 /// Which pane the source-control inspector shows. Persisted app-wide by
 /// GitPanelModel, and driven by the toolbar's segmented control.
 enum GitInspectorPane: String, CaseIterable, Identifiable {

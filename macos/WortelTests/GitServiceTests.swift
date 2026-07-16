@@ -128,4 +128,38 @@ final class GitServiceTests: XCTestCase {
         XCTAssertFalse(patch.isEmpty, "git shows nothing for a merge by default; we pass -m")
         XCTAssertTrue(patch.contains("s.txt"))
     }
+
+    /// The History accordion's file list zips numstat (counts) against
+    /// name-status (status + paths) by index — the fiddly part is a rename, whose
+    /// two commands spell the path differently. This pins that they still line up.
+    func testCommitFilesReportsStatusCountsAndRenames() async {
+        repo = GitFixture.newRepo("commitfiles")
+        // move.txt is several lines so a one-line append keeps it well above the
+        // rename-similarity threshold — the rename is unambiguous.
+        GitFixture.sh("printf 'a\\nb\\nc\\n' > keep.txt "
+                      + "&& printf 'l1\\nl2\\nl3\\nl4\\nl5\\n' > move.txt "
+                      + "&& git add . && git commit -q -m base", in: repo)
+        // One modified file, one added file, and a rename with a small edit.
+        GitFixture.sh("printf 'a\\nB\\nc\\nd\\n' > keep.txt", in: repo)
+        GitFixture.sh("echo fresh > added.txt && git add added.txt", in: repo)
+        GitFixture.sh("git mv move.txt moved.txt && echo l6 >> moved.txt", in: repo)
+        GitFixture.sh("git add -A && git commit -q -m 'edit, add, rename'", in: repo)
+
+        let head = GitFixture.sh("git rev-parse HEAD", in: repo)
+        let files = await GitService.commitFiles(root: repo.path, sha: head)
+        let byPath = Dictionary(uniqueKeysWithValues: files.map { ($0.path, $0) })
+
+        XCTAssertEqual(byPath["keep.txt"]?.statusCode, "M")
+        XCTAssertEqual(byPath["keep.txt"]?.additions, 2)   // "B" and "d"
+        XCTAssertEqual(byPath["keep.txt"]?.deletions, 1)   // "b"
+
+        XCTAssertEqual(byPath["added.txt"]?.statusCode, "A")
+        XCTAssertEqual(byPath["added.txt"]?.deletions, 0)
+
+        // The rename keeps the new path and remembers the old one for the diff.
+        let moved = byPath["moved.txt"]
+        XCTAssertEqual(moved?.statusCode, "R")
+        XCTAssertEqual(moved?.originalPath, "move.txt")
+        XCTAssertEqual(moved?.additions, 1, "the '+more' line, counted against the right file")
+    }
 }

@@ -54,14 +54,21 @@ final class GitRepoModel {
     /// every row asks; recomputed only when the answer can have changed (HEAD
     /// moved, or the ahead/upstream pair shifted under a push or fetch).
     private(set) var unpushed: Set<String> = []
-    /// Diff of the selected commit. Separate from `diff` so switching panes back
-    /// and forth doesn't make each pane reload the other's work.
-    private(set) var commitDiff: DiffResult?
-    /// Cache keyed by SHA: a commit's patch is immutable, so it never needs
-    /// re-reading once seen.
-    @ObservationIgnored private var commitDiffCache: [String: DiffResult] = [:]
-    /// Guards against an out-of-order diff load landing on a newer selection.
-    @ObservationIgnored private var commitDiffToken = 0
+    /// The selected commit's changed files — the History pane's accordion. Empty
+    /// while `isLoadingCommitFiles`, and for a merge whose first parent it matches.
+    private(set) var commitFiles: [CommitFileChange] = []
+    private(set) var isLoadingCommitFiles = false
+    /// Paths (within the selected commit) whose diff is expanded open.
+    private(set) var expandedCommitFiles: Set<String> = []
+    /// Parsed diff per expanded file, keyed by path within the selected commit.
+    /// Reset whenever the selection changes; the SHA-keyed caches below outlive it.
+    private(set) var commitFileDiffs: [String: DiffResult] = [:]
+    /// File lists by SHA, and file diffs by SHA+path — both immutable once a
+    /// commit is written, so a revisit or a re-expand never re-reads git.
+    @ObservationIgnored private var commitFilesCache: [String: [CommitFileChange]] = [:]
+    @ObservationIgnored private var commitFileDiffCache: [String: DiffResult] = [:]
+    /// Guards an out-of-order file-list load from landing on a newer selection.
+    @ObservationIgnored private var commitFilesToken = 0
 
     // MARK: - Branches
 
@@ -369,44 +376,109 @@ final class GitRepoModel {
         graph = CommitGraph.build(commits)
     }
 
-    /// Show a commit's patch. A commit is immutable once written, so its diff is
-    /// cached by SHA and never re-read.
+    /// Reveal a commit's changed files. Loads only the file list (a cheap numstat
+    /// + name-status), not every file's patch — the accordion pulls each file's
+    /// diff lazily on expand, so opening a 60-file commit costs one summary rather
+    /// than 60 patches. The list is immutable once written and cached by SHA.
     func selectCommit(_ id: String?) async {
         selectedCommitID = id
+        // The previous commit's expansions and diffs never belong to a new one.
+        expandedCommitFiles = []
+        commitFileDiffs = [:]
         guard let id, let commit = commits.first(where: { $0.id == id }) else {
-            commitDiff = nil
+            commitFiles = []
+            isLoadingCommitFiles = false
             return
         }
-        if let cached = commitDiffCache[commit.sha] {
-            commitDiff = cached
+        if let cached = commitFilesCache[commit.sha] {
+            commitFiles = cached
+            isLoadingCommitFiles = false
+        } else {
+            // Clear first so the accordion doesn't show the previous commit's
+            // files under the new commit while this loads.
+            commitFiles = []
+            isLoadingCommitFiles = true
+            commitFilesToken += 1
+            let token = commitFilesToken
+            let files = await GitService.commitFiles(root: root, sha: commit.sha)
+            // A faster ↓ may have superseded this load — drop it if so.
+            guard token == commitFilesToken else { return }
+            commitFilesCache[commit.sha] = files
+            commitFiles = files
+            isLoadingCommitFiles = false
+        }
+
+        // A commit that touched exactly one file: open it straight away, so the
+        // diff is there without a click — what the old whole-commit view gave.
+        if commitFiles.count == 1 { await toggleCommitFile(commitFiles[0]) }
+    }
+
+    /// True when every file in the current commit is expanded — drives the
+    /// header's Expand All / Collapse All toggle.
+    var allCommitFilesExpanded: Bool {
+        !commitFiles.isEmpty && expandedCommitFiles.count == commitFiles.count
+    }
+
+    /// Expand or collapse one file in the accordion. Expanding loads its diff
+    /// once (then it's cached by SHA+path forever).
+    func toggleCommitFile(_ file: CommitFileChange) async {
+        if expandedCommitFiles.contains(file.path) {
+            expandedCommitFiles.remove(file.path)
+            return
+        }
+        expandedCommitFiles.insert(file.path)
+        await loadCommitFileDiff(file)
+    }
+
+    /// Open every file (the header's Expand All). Text files load their diffs;
+    /// binary ones just mark expanded and show a note. Loads run in turn, so a
+    /// big commit paints top-down rather than stalling on one huge file.
+    func expandAllCommitFiles() async {
+        for file in commitFiles where !expandedCommitFiles.contains(file.path) {
+            expandedCommitFiles.insert(file.path)
+            await loadCommitFileDiff(file)
+        }
+    }
+
+    func collapseAllCommitFiles() {
+        expandedCommitFiles = []
+    }
+
+    /// Fetch, parse and (later) highlight one file's diff within the selected
+    /// commit. Binary files carry no patch worth parsing and are skipped — the
+    /// view shows a note from `CommitFileChange.isBinary`.
+    private func loadCommitFileDiff(_ file: CommitFileChange) async {
+        guard let sha = selectedCommitID, !file.isBinary else { return }
+        guard commitFileDiffs[file.path] == nil else { return }
+
+        let cacheKey = sha + "\u{1f}" + file.path
+        if let cached = commitFileDiffCache[cacheKey] {
+            commitFileDiffs[file.path] = cached
             return
         }
 
-        // Clear first so the pane doesn't show the previous commit's diff under
-        // the new commit's header while this loads.
-        commitDiff = nil
-        commitDiffToken += 1
-        let token = commitDiffToken
-        let raw = await GitService.commitDiff(root: root, sha: commit.sha)
-        // Off the main actor — see loadDiff. Holding ↓ through a log of big
-        // commits is exactly how you'd notice this.
+        let raw = await GitService.commitFileDiff(
+            root: root, sha: sha, path: file.path, originalPath: file.originalPath)
+        // Off the main actor — see loadDiff; this model is @MainActor and a big
+        // patch is not a small job.
         let parsed = await Task.detached(priority: .userInitiated) {
             DiffParser.parse(raw)
         }.value
-        // A faster click may have superseded this load — drop it if so.
-        guard token == commitDiffToken else { return }
-        commitDiffCache[commit.sha] = parsed
-        commitDiff = parsed
+        // Dropped if the selection moved or the row was collapsed while loading.
+        guard selectedCommitID == sha, expandedCommitFiles.contains(file.path) else { return }
+        commitFileDiffCache[cacheKey] = parsed
+        commitFileDiffs[file.path] = parsed
 
-        // Colour it once the plain diff is up, and cache the highlighted result
-        // so a revisit is instant and never re-parses. See DiffResult.highlights.
+        // Colour it a beat later so the diff (and the terminal beside it) never
+        // waits on tree-sitter; cache the highlighted result so a re-expand is
+        // instant. See DiffResult.highlights.
         guard let highlighter else { return }
         let spans = await highlighter.highlight(parsed.lines)
-        guard token == commitDiffToken else { return }
+        guard selectedCommitID == sha, expandedCommitFiles.contains(file.path) else { return }
         var highlighted = parsed
         highlighted.highlights = spans
-        commitDiffCache[commit.sha] = highlighted
-        commitDiff = highlighted
+        commitFileDiffCache[cacheKey] = highlighted
+        commitFileDiffs[file.path] = highlighted
     }
 
     /// ↑/↓ through the history list, mirroring selectAdjacent for changes.
@@ -522,7 +594,14 @@ final class GitRepoModel {
 
     /// Absolute filesystem path for a change, for Finder/open/copy actions.
     func absoluteURL(for change: GitFileChange) -> URL {
-        URL(fileURLWithPath: root).appendingPathComponent(change.path)
+        absoluteURL(forPath: change.path)
+    }
+
+    /// Absolute filesystem path for a repo-relative path — the History
+    /// accordion's file rows open the current on-disk file this way (which may,
+    /// for an old commit, differ from or predate what it committed).
+    func absoluteURL(forPath path: String) -> URL {
+        URL(fileURLWithPath: root).appendingPathComponent(path)
     }
 
     // MARK: - Commit

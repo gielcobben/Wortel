@@ -198,7 +198,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Foreground delivery: still show the banner (the user is in another
     /// session, or away from the keyboard) — we only get here when the session
     /// isn't the actively-viewed one.
-    func userNotificationCenter(
+    // UNUserNotificationCenterDelegate requirements are nonisolated; marking the
+    // implementations `nonisolated` keeps this @MainActor class's conformance from
+    // crossing actor boundaries (a Swift 6 data-race error). Both callbacks are
+    // delivered on the main thread, so the one that touches main-actor state hops
+    // in synchronously via assumeIsolated.
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
@@ -207,16 +212,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Tapping the notification jumps to that session and brings Wortel front.
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if let idString = response.notification.request.content.userInfo[Self.sessionKey] as? String,
-           let id = UUID(uuidString: idString) {
-            manager?.select(id: id)
-            NSApp.activate(ignoringOtherApps: true)
-            window?.makeKeyAndOrderFront(nil)
+        MainActor.assumeIsolated {
+            if let idString = response.notification.request.content.userInfo[Self.sessionKey] as? String,
+               let id = UUID(uuidString: idString) {
+                manager?.select(id: id)
+                NSApp.activate(ignoringOtherApps: true)
+                window?.makeKeyAndOrderFront(nil)
+            }
         }
         completionHandler()
     }

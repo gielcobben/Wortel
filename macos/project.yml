@@ -123,7 +123,12 @@ targets:
       - Wortel
       # Vendored external scanners for a few grammars whose SPM package drops
       # them under Xcode. Compiled into the app; see Grammars/README.md.
+      # These are verbatim upstream copies (kept byte-for-byte matched to each
+      # grammar's pinned version), so we don't edit them to silence upstream's
+      # warnings — missing prototypes, size_t→uint32_t narrowing. `-w` mutes
+      # them for these files only; our own code keeps full warnings.
       - path: Grammars/scanners
+        compilerFlags: -w
       # Folder references: land in Contents/Resources/{terminfo,ghostty}.
       # The Zig core finds them via the terminfo/78/xterm-ghostty sentinel
       # (src/os/resourcesdir.zig) -> themes + shell-integration + TERMINFO.

@@ -102,8 +102,15 @@ final class GitRepoModel {
     /// hold the line. Not observed: it must never invalidate a view.
     @ObservationIgnored private(set) var statusScans = 0
 
-    init(root: String) {
+    /// Syntax-highlights diffs off the main actor. Injected (rather than a hard
+    /// reference to `DiffHighlighter`) so the unit tests — which compile this
+    /// model — don't link the tree-sitter grammars; they pass nil and see plain
+    /// diffs. The app passes `DiffHighlighter.shared`.
+    private let highlighter: (any DiffHighlighting)?
+
+    init(root: String, highlighter: (any DiffHighlighting)? = nil) {
         self.root = root
+        self.highlighter = highlighter
         watcher = GitRepoWatcher(root: root) { [weak self] in
             // Callback is on a background queue — hop to the main actor.
             Task { @MainActor in self?.scheduleWatchRefresh() }
@@ -390,6 +397,16 @@ final class GitRepoModel {
         guard token == commitDiffToken else { return }
         commitDiffCache[commit.sha] = parsed
         commitDiff = parsed
+
+        // Colour it once the plain diff is up, and cache the highlighted result
+        // so a revisit is instant and never re-parses. See DiffResult.highlights.
+        guard let highlighter else { return }
+        let spans = await highlighter.highlight(parsed.lines)
+        guard token == commitDiffToken else { return }
+        var highlighted = parsed
+        highlighted.highlights = spans
+        commitDiffCache[commit.sha] = highlighted
+        commitDiff = highlighted
     }
 
     /// ↑/↓ through the history list, mirroring selectAdjacent for changes.
@@ -455,6 +472,14 @@ final class GitRepoModel {
         guard selectedChangeID == change.id else { return }
         imageDiff = nil
         diff = parsed
+
+        // Colour it a beat later so the diff (and the terminal beside it) never
+        // waits on tree-sitter. Spans are keyed by DiffLine.id, so a superseding
+        // selection just makes them not apply — guard covers the common case.
+        guard let highlighter else { return }
+        let spans = await highlighter.highlight(parsed.lines)
+        guard selectedChangeID == change.id else { return }
+        diff?.highlights = spans
     }
 
     // MARK: - Staging

@@ -55,6 +55,57 @@ final class DiffParserTests: XCTestCase {
         XCTAssertEqual(result.lines[1].text, "only real line")
     }
 
+    func testTagsLinesWithTheirFilePath() {
+        let patch = """
+        diff --git a/web/src/app.ts b/web/src/app.ts
+        index 1234567..89abcde 100644
+        --- a/web/src/app.ts
+        +++ b/web/src/app.ts
+        @@ -1,2 +1,2 @@
+         const x = 1
+        +const y = 2
+        """
+        let result = DiffParser.parse(patch)
+        // Hunk header and every content line carry the post-image path.
+        XCTAssertEqual(result.lines.map(\.path), Array(repeating: "web/src/app.ts", count: result.lines.count))
+    }
+
+    func testMultiFileCommitDiffTagsEachFile() {
+        // A whole-commit diff (History pane) concatenates files; the path must
+        // switch at each file boundary so highlighting can pick a grammar.
+        let patch = """
+        diff --git a/a.swift b/a.swift
+        --- a/a.swift
+        +++ b/a.swift
+        @@ -1 +1 @@
+        +let a = 1
+        diff --git a/b/style.css b/b/style.css
+        --- a/b/style.css
+        +++ b/b/style.css
+        @@ -1 +1 @@
+        +.x { color: red }
+        """
+        let result = DiffParser.parse(patch)
+        let swift = result.lines.filter { $0.text.contains("let a") }
+        let css = result.lines.filter { $0.text.contains("color: red") }
+        XCTAssertEqual(swift.first?.path, "a.swift")
+        XCTAssertEqual(css.first?.path, "b/style.css")
+    }
+
+    func testDeletionTakesPathFromGitHeader() {
+        // The new-side marker is /dev/null, so the path comes from `diff --git`.
+        let patch = """
+        diff --git a/gone.py b/gone.py
+        deleted file mode 100644
+        --- a/gone.py
+        +++ /dev/null
+        @@ -1 +0,0 @@
+        -x = 1
+        """
+        let result = DiffParser.parse(patch)
+        XCTAssertEqual(result.lines.last?.path, "gone.py")
+    }
+
     func testBinaryPatch() {
         let result = DiffParser.parse("""
         diff --git a/img.png b/img.png

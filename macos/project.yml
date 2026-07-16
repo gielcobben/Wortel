@@ -12,6 +12,79 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.9.0"
+  # tree-sitter — diff syntax highlighting. SwiftTreeSitter is declared
+  # explicitly at the top level so every grammar package resolves against this
+  # one copy (grammars pin it under two different URLs — ChimeHQ/SwiftTreeSitter
+  # vs tree-sitter/swift-tree-sitter — and without a shared root dep SPM sees two
+  # packages both vending a "SwiftTreeSitter" product and refuses to resolve).
+  SwiftTreeSitter:
+    url: https://github.com/tree-sitter/swift-tree-sitter
+    from: "0.10.0"
+  # One grammar per language. Each ships bindings/swift (a `tree_sitter_<lang>()`
+  # module) plus a bundled queries/highlights.scm that LanguageConfiguration
+  # loads. Adding a language is a package here + a row in TreeSitterLanguage.
+  TreeSitterSwift:
+    # Not the core org: the parser is generated from JS, and only this branch
+    # commits the generated parser.c so SPM can build it.
+    url: https://github.com/alex-pinkus/tree-sitter-swift
+    branch: with-generated-files
+  TreeSitterTypeScript:
+    # One package, two products: TreeSitterTypeScript + TreeSitterTSX.
+    url: https://github.com/tree-sitter/tree-sitter-typescript
+    from: "0.23.0"
+  # css / javascript / python guard scanner.c behind a working-directory-relative
+  # fileExists() that fails under Xcode, so their external scanner never compiles.
+  # We vendor those scanners under Grammars/ instead — and exact-pin the versions
+  # so the vendored scanner can't drift from SPM's parser.c. See Grammars/README.
+  TreeSitterJavaScript:
+    url: https://github.com/tree-sitter/tree-sitter-javascript
+    exactVersion: 0.25.0
+  TreeSitterJSON:
+    url: https://github.com/tree-sitter/tree-sitter-json
+    from: "0.24.0"
+  TreeSitterCSS:
+    url: https://github.com/tree-sitter/tree-sitter-css
+    exactVersion: 0.25.0
+  TreeSitterPython:
+    url: https://github.com/tree-sitter/tree-sitter-python
+    exactVersion: 0.25.0
+  TreeSitterBash:
+    url: https://github.com/tree-sitter/tree-sitter-bash
+    from: "0.25.0"
+  TreeSitterHTML:
+    url: https://github.com/tree-sitter/tree-sitter-html
+    from: "0.23.0"
+  TreeSitterYAML:
+    # Scanner vendored too (same fileExists bug) — its scanner #includes
+    # schema.core.c, which we keep on the header search path. Exact-pin so the
+    # vendored scanner/schema stay matched to SPM's parser.c.
+    url: https://github.com/tree-sitter-grammars/tree-sitter-yaml
+    exactVersion: 0.7.2
+  TreeSitterZig:
+    # No version tags upstream — track the branch that ships Swift bindings.
+    url: https://github.com/maxxnino/tree-sitter-zig
+    branch: main
+  TreeSitterGo:
+    url: https://github.com/tree-sitter/tree-sitter-go
+    from: "0.25.0"
+  TreeSitterRust:
+    url: https://github.com/tree-sitter/tree-sitter-rust
+    from: "0.24.0"
+  TreeSitterC:
+    url: https://github.com/tree-sitter/tree-sitter-c
+    from: "0.24.0"
+  TreeSitterCPP:
+    url: https://github.com/tree-sitter/tree-sitter-cpp
+    from: "0.23.0"
+  TreeSitterRuby:
+    url: https://github.com/tree-sitter/tree-sitter-ruby
+    from: "0.23.0"
+  TreeSitterJava:
+    url: https://github.com/tree-sitter/tree-sitter-java
+    from: "0.23.0"
+  TreeSitterTOML:
+    url: https://github.com/tree-sitter-grammars/tree-sitter-toml
+    from: "0.7.0"
 
 settings:
   base:
@@ -48,6 +121,9 @@ targets:
     platform: macOS
     sources:
       - Wortel
+      # Vendored external scanners for a few grammars whose SPM package drops
+      # them under Xcode. Compiled into the app; see Grammars/README.md.
+      - path: Grammars/scanners
       # Folder references: land in Contents/Resources/{terminfo,ghostty}.
       # The Zig core finds them via the terminfo/78/xterm-ghostty sentinel
       # (src/os/resourcesdir.zig) -> themes + shell-integration + TERMINFO.
@@ -63,11 +139,51 @@ targets:
       - package: GhosttyKit
         product: GhosttyKit
       - package: Sparkle
+      - package: SwiftTreeSitter
+        product: SwiftTreeSitter
+      - package: TreeSitterSwift
+        product: TreeSitterSwift
+      # One product bundling both the TreeSitterTypeScript and TreeSitterTSX
+      # modules — both become importable from this single dependency.
+      - package: TreeSitterTypeScript
+        product: TreeSitterTypeScript
+      - package: TreeSitterJavaScript
+        product: TreeSitterJavaScript
+      - package: TreeSitterJSON
+        product: TreeSitterJSON
+      - package: TreeSitterCSS
+        product: TreeSitterCSS
+      - package: TreeSitterPython
+        product: TreeSitterPython
+      - package: TreeSitterBash
+        product: TreeSitterBash
+      - package: TreeSitterHTML
+        product: TreeSitterHTML
+      - package: TreeSitterYAML
+        product: TreeSitterYAML
+      - package: TreeSitterZig
+        product: TreeSitterZig
+      - package: TreeSitterGo
+        product: TreeSitterGo
+      - package: TreeSitterRust
+        product: TreeSitterRust
+      - package: TreeSitterC
+        product: TreeSitterC
+      - package: TreeSitterCPP
+        product: TreeSitterCPP
+      - package: TreeSitterRuby
+        product: TreeSitterRuby
+      - package: TreeSitterJava
+        product: TreeSitterJava
+      - package: TreeSitterTOML
+        product: TreeSitterTOML
     settings:
       base:
         # Not needed by WortelTests (which compiles the git sources it exercises
         # directly), but keeps a Debug build introspectable.
         ENABLE_TESTABILITY: true
+        # Lets the vendored scanner .c files resolve #include "tree_sitter/...".
+        HEADER_SEARCH_PATHS: $(SRCROOT)/Grammars/include
     info:
       path: Wortel/Info.plist
       properties:
@@ -106,6 +222,10 @@ targets:
       - path: Wortel/Git/CommitOrder.swift
       - path: Wortel/Git/CommitGraph.swift
       - path: Wortel/Git/DiffParser.swift
+      # The tree-sitter-free half of highlighting (token model, hunk
+      # reconstruction, capture→line mapping). DiffHighlighter itself isn't
+      # here — it pulls in ~20 C grammars the unit tests have no need for.
+      - path: Wortel/Git/DiffSyntax.swift
       - path: Wortel/Git/GitStatusParser.swift
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/GitRepoModel.swift

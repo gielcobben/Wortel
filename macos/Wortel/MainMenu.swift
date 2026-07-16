@@ -3,6 +3,20 @@ import AppKit
 /// Programmatic main menu. Kept deliberately small: AppKit scans key
 /// equivalents on every keypress, so every item here is on the hot path.
 enum MainMenu {
+    /// The "Select All" item, retained so a session rename can flip its shortcut
+    /// between ⌘⇧A (terminal: whole scrollback) and ⌘A (native select-all in the
+    /// rename field). See `setTextEditing(_:)`.
+    private static weak var selectAllItem: NSMenuItem?
+
+    /// While a text field (a session rename) holds focus, bind "Select All" to
+    /// ⌘A so it behaves like every other macOS text field; otherwise keep it on
+    /// ⌘⇧A, leaving plain ⌘A free for the `wortel.conf` clear-line keybind. Only
+    /// the modifier mask moves — the item and its `selectAll:` action are
+    /// unchanged, so with the terminal focused it still selects the buffer.
+    static func setTextEditing(_ active: Bool) {
+        selectAllItem?.keyEquivalentModifierMask = active ? [.command] : [.command, .shift]
+    }
+
     static func build() -> NSMenu {
         let main = NSMenu()
 
@@ -29,15 +43,29 @@ enum MainMenu {
         main.addItem(editItem)
         let editMenu = NSMenu(title: "Edit")
         editItem.submenu = editMenu
+        // Undo/Redo/Cut carry the standard first-responder selectors, so they
+        // reach the field editor of whatever text field is being edited (e.g. a
+        // session rename) and feel native there. SurfaceView implements none of
+        // them, so with the terminal focused the items are disabled and the
+        // keypress falls through — ⌘Z reaches ghostty's cmd+z keybind (undo the
+        // input line), ⌘X and ⌘⇧Z are simply no-ops.
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         editMenu.addItem(withTitle: "Copy", action: #selector(SurfaceView.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(SurfaceView.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(.separator())
         // Cmd+Shift+A, not Cmd+A: Cmd+A is a keybind in wortel.conf that clears
         // the input line (a terminal can't select just the typed command). The
         // menu is authoritative for key equivalents, so freeing Cmd+A here is
-        // what lets that keybind reach the surface.
+        // what lets that keybind reach the surface. While a session is being
+        // renamed, `setTextEditing(_:)` flips this to ⌘A so select-all works in
+        // the field, then flips it back.
         let selectAll = editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
         selectAll.keyEquivalentModifierMask = [.command, .shift]
+        selectAllItem = selectAll
 
         // Session menu — the heart of the app, all keyboard-driven.
         let sessionItem = NSMenuItem()

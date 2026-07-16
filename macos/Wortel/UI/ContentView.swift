@@ -214,6 +214,9 @@ struct SessionRow: View {
                             fieldFocused = false
                         }
                         .onChange(of: fieldFocused) { _, focused in
+                            // While the field holds focus, ⌘A means select-all
+                            // here (not the terminal's clear-line keybind).
+                            MainMenu.setTextEditing(focused)
                             guard !focused else { return }
                             if cancelling { cancel() } else { commit(draft) }
                         }
@@ -223,6 +226,9 @@ struct SessionRow: View {
                             fieldFocused = true
                             await selectLeafName()
                         }
+                        // Backstop: if the field is torn out of the tree before
+                        // focus resigns, still restore ⌘A to the terminal.
+                        .onDisappear { MainMenu.setTextEditing(false) }
                 } else {
                     // The folder prefix lives in the section header, so the row
                     // shows just the leaf ("giel/hello" -> "hello"). The rename

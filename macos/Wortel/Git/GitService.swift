@@ -265,10 +265,15 @@ enum GitService {
         // `-M` (find-renames) is explicit rather than relying on the user's
         // `diff.renames` config, so a rename always reads as one R row with the
         // old path remembered — the same in both runs, so they stay index-aligned.
+        // `core.quotePath=false` stops git C-quoting non-ASCII paths (its default
+        // wraps `café.txt` as `"caf\303\251.txt"`), which would otherwise become
+        // the row's path and make every downstream `git show -- <path>` miss.
         async let statusRun = run(
-            ["show", "--format=", "-m", "--first-parent", "-M", "--name-status", sha], in: root)
+            ["-c", "core.quotePath=false", "show", "--format=", "-m", "--first-parent",
+             "-M", "--name-status", sha], in: root)
         async let numstatRun = run(
-            ["show", "--format=", "-m", "--first-parent", "-M", "--numstat", sha], in: root)
+            ["-c", "core.quotePath=false", "show", "--format=", "-m", "--first-parent",
+             "-M", "--numstat", sha], in: root)
         let status = await statusRun
         let numstat = await numstatRun
         guard status.ok else { return [] }
@@ -313,7 +318,8 @@ enum GitService {
     static func commitFileDiff(
         root: String, sha: String, path: String, originalPath: String?
     ) async -> String {
-        var args = ["show", "--format=", "-m", "--first-parent", "-M", sha, "--", path]
+        var args = ["-c", "core.quotePath=false", "show", "--format=", "-m",
+                    "--first-parent", "-M", sha, "--", path]
         if let originalPath { args.append(originalPath) }
         let result = await run(args, in: root)
         return result.ok ? result.stdout : ""

@@ -186,4 +186,20 @@ final class GitServiceTests: XCTestCase {
         XCTAssertNil(sides.old, "an added image has no first-parent blob")
         XCTAssertEqual(sides.new.map { String(decoding: $0, as: UTF8.self) }, "v1")
     }
+
+    /// A non-ASCII filename must come back as its real name (not git's default
+    /// `"caf\303\251.txt"` C-quoting) so the row's diff/open/reveal all resolve.
+    func testCommitFilesHandlesNonASCIIPaths() async {
+        repo = GitFixture.newRepo("unicode")
+        GitFixture.sh("printf 'hi\\n' > 'café.txt' && git add . && git commit -q -m 'add café'", in: repo)
+        GitFixture.sh("printf 'hi\\nthere\\n' > 'café.txt' && git commit -q -am 'edit café'", in: repo)
+
+        let head = GitFixture.sh("git rev-parse HEAD", in: repo)
+        let files = await GitService.commitFiles(root: repo.path, sha: head)
+        XCTAssertEqual(files.map(\.path), ["café.txt"], "the path is unquoted, its real name")
+
+        let diff = await GitService.commitFileDiff(
+            root: repo.path, sha: head, path: "café.txt", originalPath: nil)
+        XCTAssertTrue(diff.contains("+there"), "the diff resolves under the real name")
+    }
 }

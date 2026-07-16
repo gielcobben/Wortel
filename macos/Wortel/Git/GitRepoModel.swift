@@ -395,6 +395,12 @@ final class GitRepoModel {
             isLoadingCommitFiles = false
             return
         }
+        // Bump the load token for EVERY selection — cached or not — so a slow
+        // uncached load still in flight can't land and overwrite a newer
+        // selection made in the meantime (fast ↑/↓ across cached and uncached
+        // commits). The cached branch not bumping it was the hole.
+        commitFilesToken += 1
+        let token = commitFilesToken
         if let cached = commitFilesCache[commit.sha] {
             commitFiles = cached
             isLoadingCommitFiles = false
@@ -403,8 +409,12 @@ final class GitRepoModel {
             // files under the new commit while this loads.
             commitFiles = []
             isLoadingCommitFiles = true
-            commitFilesToken += 1
-            let token = commitFilesToken
+            // Coalesce fast ↑/↓ scrubbing: settle briefly and bail if the
+            // selection already moved on, so holding the arrow keys doesn't spawn
+            // a `git show` per row next to the terminal. Only the commit you land
+            // on (held past this beat) actually loads. Cached commits skip this.
+            try? await Task.sleep(for: .milliseconds(60))
+            guard token == commitFilesToken else { return }
             let files = await GitService.commitFiles(root: root, sha: commit.sha)
             // A faster ↓ may have superseded this load — drop it if so.
             guard token == commitFilesToken else { return }
@@ -439,7 +449,13 @@ final class GitRepoModel {
     /// binary ones just mark expanded and show a note. Loads run in turn, so a
     /// big commit paints top-down rather than stalling on one huge file.
     func expandAllCommitFiles() async {
-        for file in commitFiles where !expandedCommitFiles.contains(file.path) {
+        let sha = selectedCommitID
+        for file in commitFiles {
+            // Stop if the selection moved out from under the loop — otherwise it
+            // would stamp this commit's paths into a different commit's expansion
+            // set and load the wrong diffs.
+            guard selectedCommitID == sha else { return }
+            if expandedCommitFiles.contains(file.path) { continue }
             expandedCommitFiles.insert(file.path)
             await loadCommitFileDiff(file)
         }

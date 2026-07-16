@@ -76,11 +76,17 @@ struct DiffView: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        let changed = context.coordinator.update(lines: lines, highlights: highlights)
+        let result = context.coordinator.update(lines: lines, highlights: highlights)
         guard let table = scroll.documentView as? NSTableView else { return }
+        // Always re-fit the column to the viewport (the panel may have resized).
         context.coordinator.applyColumnWidth()
+        // But only reload rows when this table's own data changed. In the History
+        // accordion, any file's diff loading re-renders every mounted DiffView;
+        // without this guard each full-height table (every row realized) would
+        // reloadData on every sibling's load — O(files²) on Expand All.
+        guard result.reload else { return }
         table.reloadData()
-        if changed {
+        if result.scrollToTop {
             // New file selected — jump back to the top.
             table.scroll(.zero)
             scroll.contentView.scroll(to: .zero)
@@ -132,17 +138,22 @@ struct DiffView: NSViewRepresentable {
             rowHeight = ceil(font.ascender - font.descender + font.leading) + 3
         }
 
-        /// Returns true when the line set actually changed (new file shown) —
-        /// which is what triggers a scroll back to the top. Highlights arriving a
-        /// beat later for the *same* lines is not a change, so the reader's scroll
-        /// position is left alone while the colour pops in.
-        func update(lines: [DiffLine], highlights: [Int: [HighlightSpan]]) -> Bool {
-            let changed = lines.count != self.lines.count
+        /// Reports whether the table needs a reload, and whether it should scroll
+        /// back to the top. A changed line set (a new file) means both. Highlights
+        /// arriving a beat later for the *same* lines means reload only — recolour
+        /// in place, leaving the reader's scroll alone. Nothing changed means
+        /// neither, so a re-render caused by a *sibling* file loading doesn't
+        /// reload this (full-height, fully-realized) table.
+        func update(
+            lines: [DiffLine], highlights: [Int: [HighlightSpan]]
+        ) -> (reload: Bool, scrollToTop: Bool) {
+            let linesChanged = lines.count != self.lines.count
                 || zip(lines, self.lines).contains { $0.id != $1.id || $0.text != $1.text }
+            let highlightsChanged = highlights.count != self.highlights.count
             self.lines = lines
             self.highlights = highlights
             recomputeGeometry()
-            return changed
+            return (linesChanged || highlightsChanged, linesChanged)
         }
 
         private func recomputeGeometry() {

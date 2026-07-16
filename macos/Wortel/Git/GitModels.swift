@@ -1,5 +1,16 @@
 import Foundation
 
+/// Raster image extensions rendered visually instead of as a binary/patch diff —
+/// shared by the working-tree changes list and the History pane's per-commit
+/// files. (SVG is text — it flows through the normal diff — so it's excluded.)
+private let imageFileExtensions: Set<String> = [
+    "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "heic", "heif", "webp", "ico",
+]
+
+private func isImageFilePath(_ path: String) -> Bool {
+    imageFileExtensions.contains((path as NSString).pathExtension.lowercased())
+}
+
 /// One entry in the source-control changes list. A file can appear twice — once
 /// staged (differs between HEAD and the index) and once unstaged (differs
 /// between the index and the working tree) — so identity folds in `staged`.
@@ -29,16 +40,7 @@ struct GitFileChange: Identifiable, Hashable {
         return dir
     }
 
-    /// Raster image extensions we render visually instead of as a binary diff.
-    /// (SVG is text — it flows through the normal diff — and is intentionally
-    /// excluded.)
-    private static let imageExtensions: Set<String> = [
-        "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "heic", "heif", "webp", "ico",
-    ]
-
-    var isImage: Bool {
-        Self.imageExtensions.contains((path as NSString).pathExtension.lowercased())
-    }
+    var isImage: Bool { isImageFilePath(path) }
 
     /// True when this row represents a removal (worktree or index).
     var isDeletion: Bool { statusCode == "D" }
@@ -208,6 +210,8 @@ struct CommitFileChange: Identifiable, Hashable {
 
     var id: String { path }
     var isBinary: Bool { additions < 0 || deletions < 0 }
+    /// A raster image — expanding it shows the picture(s), not "binary not shown".
+    var isImage: Bool { isImageFilePath(path) }
     var fileName: String { (path as NSString).lastPathComponent }
     var directory: String { (path as NSString).deletingLastPathComponent }
 }

@@ -63,10 +63,14 @@ final class GitRepoModel {
     /// Parsed diff per expanded file, keyed by path within the selected commit.
     /// Reset whenever the selection changes; the SHA-keyed caches below outlive it.
     private(set) var commitFileDiffs: [String: DiffResult] = [:]
-    /// File lists by SHA, and file diffs by SHA+path — both immutable once a
+    /// Decoded before/after images per expanded image file, keyed the same way —
+    /// an image expands to the picture(s), not a text patch.
+    private(set) var commitFileImages: [String: ImageDiff] = [:]
+    /// File lists by SHA, and file diffs/images by SHA+path — all immutable once a
     /// commit is written, so a revisit or a re-expand never re-reads git.
     @ObservationIgnored private var commitFilesCache: [String: [CommitFileChange]] = [:]
     @ObservationIgnored private var commitFileDiffCache: [String: DiffResult] = [:]
+    @ObservationIgnored private var commitFileImageCache: [String: ImageDiff] = [:]
     /// Guards an out-of-order file-list load from landing on a newer selection.
     @ObservationIgnored private var commitFilesToken = 0
 
@@ -385,6 +389,7 @@ final class GitRepoModel {
         // The previous commit's expansions and diffs never belong to a new one.
         expandedCommitFiles = []
         commitFileDiffs = [:]
+        commitFileImages = [:]
         guard let id, let commit = commits.first(where: { $0.id == id }) else {
             commitFiles = []
             isLoadingCommitFiles = false
@@ -448,7 +453,28 @@ final class GitRepoModel {
     /// commit. Binary files carry no patch worth parsing and are skipped — the
     /// view shows a note from `CommitFileChange.isBinary`.
     private func loadCommitFileDiff(_ file: CommitFileChange) async {
-        guard let sha = selectedCommitID, !file.isBinary else { return }
+        guard let sha = selectedCommitID else { return }
+
+        // An image expands to the picture(s), not a patch — fetch its blobs at the
+        // commit and its first parent and decode, mirroring the Changes pane.
+        if file.isImage {
+            guard commitFileImages[file.path] == nil else { return }
+            let cacheKey = sha + "\u{1f}" + file.path
+            if let cached = commitFileImageCache[cacheKey] {
+                commitFileImages[file.path] = cached
+                return
+            }
+            let (old, new) = await GitService.commitImageData(root: root, sha: sha, file: file)
+            guard selectedCommitID == sha, expandedCommitFiles.contains(file.path) else { return }
+            let images = ImageDiff(
+                old: old.flatMap(NSImage.init(data:)), new: new.flatMap(NSImage.init(data:)))
+            commitFileImageCache[cacheKey] = images
+            commitFileImages[file.path] = images
+            return
+        }
+
+        // A non-image binary has no patch worth parsing — the view shows a note.
+        guard !file.isBinary else { return }
         guard commitFileDiffs[file.path] == nil else { return }
 
         let cacheKey = sha + "\u{1f}" + file.path

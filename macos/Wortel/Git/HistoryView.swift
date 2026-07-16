@@ -192,19 +192,34 @@ private struct CommitFilesList: View {
     private var deletions: Int { repo.commitFiles.reduce(0) { $0 + max(0, $1.deletions) } }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                header
-                Divider()
-                ForEach(repo.commitFiles) { file in
-                    CommitFileRow(
-                        file: file,
-                        repo: repo,
-                        isExpanded: repo.expandedCommitFiles.contains(file.path))
-                    if repo.expandedCommitFiles.contains(file.path) {
-                        expandedDiff(for: file)
+        VStack(spacing: 0) {
+            // The summary banner is fixed above the scroll — always visible.
+            header
+                .background(.bar)
+            Divider()
+            ScrollView {
+                // Each file is a section whose header (the file row) pins to the
+                // top while its diff scrolls, so the banner and the current file's
+                // row are both sticky. Pinned rows carry a material background or
+                // the diff's tinted lines would show through them.
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    ForEach(repo.commitFiles) { file in
+                        Section {
+                            if repo.expandedCommitFiles.contains(file.path) {
+                                expandedDiff(for: file)
+                                Divider()
+                            }
+                        } header: {
+                            VStack(spacing: 0) {
+                                CommitFileRow(
+                                    file: file,
+                                    repo: repo,
+                                    isExpanded: repo.expandedCommitFiles.contains(file.path))
+                                Divider()
+                            }
+                            .background(.bar)
+                        }
                     }
-                    Divider()
                 }
             }
         }
@@ -236,16 +251,29 @@ private struct CommitFilesList: View {
 
     @ViewBuilder
     private func expandedDiff(for file: CommitFileChange) -> some View {
-        if file.isBinary {
+        if file.isImage {
+            if let images = repo.commitFileImages[file.path] {
+                CommitImageDiffView(imageDiff: images)
+            } else {
+                fileNotice("Loading…")
+            }
+        } else if file.isBinary {
             fileNotice("Binary file not shown")
         } else if let diff = repo.commitFileDiffs[file.path] {
             if diff.lines.isEmpty {
                 fileNotice("No textual changes")
             } else {
+                // Show every line at full height — no inner scroller — so the
+                // accordion's ScrollView is the one and only scroll. A very large
+                // file is cut off inline (the whole table would realize all its
+                // rows at once) and the notice says so; the terminal has the rest.
+                let shown = min(diff.lines.count, Self.maxInlineDiffLines)
                 VStack(spacing: 0) {
-                    DiffView(lines: diff.lines, highlights: diff.highlights, fontSize: 12)
-                        .frame(height: diffHeight(diff.lines.count))
-                    if diff.truncated { TruncatedDiffNotice() }
+                    DiffView(
+                        lines: Array(diff.lines.prefix(shown)),
+                        highlights: diff.highlights, fontSize: 12)
+                        .frame(height: diffHeight(shown))
+                    if diff.truncated || shown < diff.lines.count { TruncatedDiffNotice() }
                 }
             }
         } else {
@@ -253,13 +281,16 @@ private struct CommitFilesList: View {
         }
     }
 
-    /// The inline diff's height: its own content height, capped so one enormous
-    /// file keeps a bounded scroller of its own instead of pushing the rest of
-    /// the list far off the bottom. A file that fits under the cap shows every
-    /// line with no scroller — the outer ScrollView moves between files.
+    /// Beyond this the inline diff is cut off — a static, full-height table
+    /// realizes every row it holds (nothing scrolls it to recycle them), so an
+    /// enormous patch would otherwise build tens of thousands of cells on expand.
+    private static let maxInlineDiffLines = 2000
+
+    /// The inline diff's full content height (plus a hair, so rounding never
+    /// leaves the inner table a sliver to scroll and steal the wheel). The
+    /// accordion's own ScrollView does all the scrolling.
     private func diffHeight(_ lineCount: Int) -> CGFloat {
-        let content = CGFloat(lineCount) * DiffView.rowHeight(forFontSize: 12) + 4
-        return min(content, 420)
+        CGFloat(lineCount) * DiffView.rowHeight(forFontSize: 12) + 4
     }
 
     private func fileNotice(_ text: String) -> some View {
@@ -403,6 +434,67 @@ private struct CommitFileRow: View {
         })
 
         return menu
+    }
+}
+
+/// Inline before/after (or added/deleted) image preview for an expanded image
+/// row — the History counterpart to the Changes pane's ImageDiffView, but with
+/// no ScrollView of its own so it flows in the accordion's scroll. Sides stack
+/// (each gets the narrow pane's full width), and a side is omitted when it
+/// doesn't exist (a freshly added or deleted image).
+private struct CommitImageDiffView: View {
+    let imageDiff: ImageDiff
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if imageDiff.old == nil && imageDiff.new == nil {
+                Text("Image unavailable")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            if let old = imageDiff.old {
+                column(label: imageDiff.new == nil ? "Deleted" : "Before", image: old)
+            }
+            if let new = imageDiff.new {
+                column(label: imageDiff.old == nil ? "Added" : "After", image: new)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+    }
+
+    /// Cap on displayed height; width is further bounded by the pane. An image is
+    /// never drawn larger than these or its own pixels — a 54×54 icon shows at
+    /// 54×54, not blown up to fill the pane.
+    private static let maxImageHeight: CGFloat = 320
+
+    private func column(label: String, image: NSImage) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                // Bounded by the image's own size (so it never upscales), the cap,
+                // and — because the outer frame only ever offers the pane's width —
+                // the pane. `.padding` wraps the image, then the full-width frame
+                // centers that padded image inside the backing box.
+                .frame(
+                    maxWidth: image.size.width,
+                    maxHeight: min(image.size.height, Self.maxImageHeight))
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color(nsColor: .separatorColor)))
+            Text("\(Int(image.size.width)) × \(Int(image.size.height))")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
     }
 }
 

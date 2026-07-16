@@ -319,6 +319,24 @@ enum GitService {
         return result.ok ? result.stdout : ""
     }
 
+    /// The image bytes on each side of a change *within a commit*, for the
+    /// History accordion — the counterpart to `imageData` (which reads the working
+    /// tree). New side is the blob at the commit, old side the blob at its first
+    /// parent (`<sha>^`, which for a merge is the first parent — matching the
+    /// `-m --first-parent` diff). A side that didn't exist (an add's old, a
+    /// delete's new, or a root commit's parent) resolves to an empty blob → nil.
+    /// The old side reads the pre-rename path when there is one.
+    static func commitImageData(
+        root: String, sha: String, file: CommitFileChange
+    ) async -> (old: Data?, new: Data?) {
+        let oldPath = file.originalPath ?? file.path
+        async let oldRun = runData(["show", "\(sha)^:\(oldPath)"], in: root)
+        async let newRun = runData(["show", "\(sha):\(file.path)"], in: root)
+        let old = await oldRun
+        let new = await newRun
+        return (old.isEmpty ? nil : old, new.isEmpty ? nil : new)
+    }
+
     static func status(root: String) async -> GitStatus {
         let result = await run(
             ["status", "--porcelain=v2", "--branch", "--untracked-files=all"],

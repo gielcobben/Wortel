@@ -162,4 +162,28 @@ final class GitServiceTests: XCTestCase {
         XCTAssertEqual(moved?.originalPath, "move.txt")
         XCTAssertEqual(moved?.additions, 1, "the '+more' line, counted against the right file")
     }
+
+    /// The History accordion renders an image row from the blob at the commit and
+    /// the blob at its first parent; an added image has no parent side. (Content
+    /// is plain bytes here — the service just returns them; decoding is the
+    /// model's job.)
+    func testCommitImageDataReadsBothSides() async {
+        repo = GitFixture.newRepo("commitimg")
+        GitFixture.sh("printf 'v1' > logo.png && git add logo.png && git commit -q -m 'add image'", in: repo)
+        GitFixture.sh("printf 'v2-longer' > logo.png && git commit -q -am 'change image'", in: repo)
+
+        let head = GitFixture.sh("git rev-parse HEAD", in: repo)
+        let changed = (await GitService.commitFiles(root: repo.path, sha: head)).first { $0.path == "logo.png" }!
+        XCTAssertTrue(changed.isImage)
+        let (old, new) = await GitService.commitImageData(root: repo.path, sha: head, file: changed)
+        XCTAssertEqual(old.map { String(decoding: $0, as: UTF8.self) }, "v1")
+        XCTAssertEqual(new.map { String(decoding: $0, as: UTF8.self) }, "v2-longer")
+
+        // A newly added image (the first commit) has no parent blob to show.
+        let firstSHA = (await GitService.log(root: repo.path)).last!.sha
+        let added = (await GitService.commitFiles(root: repo.path, sha: firstSHA)).first!
+        let sides = await GitService.commitImageData(root: repo.path, sha: firstSHA, file: added)
+        XCTAssertNil(sides.old, "an added image has no first-parent blob")
+        XCTAssertEqual(sides.new.map { String(decoding: $0, as: UTF8.self) }, "v1")
+    }
 }

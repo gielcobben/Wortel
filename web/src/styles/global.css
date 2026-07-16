@@ -2,10 +2,11 @@
   /* dark theme (default) */
   --bg: #1c1d27;
   --bg-0: rgba(28, 29, 39, 0); /* transparent form of --bg, for gradient stops */
-  --grid: rgba(255, 255, 255, 0.1);
+  --grid: rgba(255, 255, 255, 0.045);
   --text: #ffffff;
-  --text-70: rgba(255, 255, 255, 0.7);
-  --text-50: rgba(255, 255, 255, 0.5);
+  --text-70: rgba(255, 255, 255, 0.66);
+  --text-50: rgba(255, 255, 255, 0.44);
+  --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
   --hand: "Handlee", "Comic Sans MS", cursive;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;
@@ -14,12 +15,12 @@
 /* light theme — follows the OS appearance */
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #eceef3;
-    --bg-0: rgba(236, 238, 243, 0);
-    --grid: rgba(20, 22, 34, 0.08);
-    --text: #1c1d27;
-    --text-70: rgba(28, 29, 39, 0.72);
-    --text-50: rgba(28, 29, 39, 0.5);
+    --bg: #ffffff;
+    --bg-0: rgba(255, 255, 255, 0);
+    --grid: rgba(20, 22, 34, 0.05);
+    --text: #16171b;
+    --text-70: rgba(22, 23, 27, 0.62);
+    --text-50: rgba(22, 23, 27, 0.42);
   }
 }
 
@@ -31,6 +32,15 @@
   src: url("/fonts/handlee.woff2") format("woff2");
 }
 
+/* Geist Pixel (Vercel, OFL) — bitmap display face, Square variant */
+@font-face {
+  font-family: "Geist Pixel";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/geist-pixel-square.woff2") format("woff2");
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { scroll-behavior: smooth; }
@@ -38,8 +48,10 @@ html { scroll-behavior: smooth; }
 body {
   background-color: var(--bg);
   color: var(--text);
-  font-family: var(--round);
-  line-height: 1.4;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
   height: 100vh;
   overflow: hidden;
@@ -61,94 +73,97 @@ body::before {
   pointer-events: none;
 }
 
-/* vertical wash of the base colour (Figma's paint0_linear): solid behind the
-   hero copy at the top, fading to reveal the grid behind the app below */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(180deg,
-    var(--bg) 0%, var(--bg) 2%, var(--bg-0) 47%);
-  pointer-events: none;
-}
-
 a { color: inherit; text-decoration: none; }
 
 .page {
   height: 100vh;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---- left column: intro pinned top, features pinned bottom ---- */
+.left {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 384px;
+  padding: 52px 24px 48px 56px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  justify-content: space-between;
 }
 
-/* ---- intro ---- */
-.intro {
-  width: 100%;
-  max-width: 780px;
-  padding: clamp(80px, 15vh, 160px) 24px 0;
-  text-align: left;
-}
-
-.lede {
-  font-size: clamp(22px, 3vw, 30px);
+.mark {
+  font-weight: 500;
+  font-size: 15px;
   line-height: 1.4;
+  color: var(--text);
+}
+.tagline { font-size: 15px; color: var(--text-50); }
+.desc {
+  margin-top: 22px;
+  max-width: 300px;
   color: var(--text-70);
-  text-wrap: balance;
+  text-wrap: pretty;
 }
-.lede b { font-weight: 600; color: var(--text); }
-
-/* ---- screenshot stage + annotations ---- */
-.stage {
-  position: relative;
-  width: 100%;
-  max-width: 1440px;
-  margin-top: clamp(120px, 28vh, 280px);
-  padding: 0 24px;
+.links { margin-top: 18px; display: flex; gap: 18px; }
+.links a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--text-50);
+  transition: text-decoration-color 0.15s ease;
 }
+.links a:hover { text-decoration-color: var(--text); }
 
-/* the screenshot scales to 100% width and bleeds off the bottom of the
-   viewport (body overflow is clipped, so there is no scroll). The PNG already
-   carries its own rounded corners + drop shadow inside transparent margins, so
-   no CSS border-radius/box-shadow here — that would double up and misalign. */
-.stage picture { display: block; }
-/* max-width = naturalWidth / 2 (2784 / 2 = 1392) so on a 2× Retina display the
-   image maps 1:1 to device pixels — no resampling, pixel-perfect crisp. */
-.shot {
-  display: block;
-  width: 100%;
-  max-width: 1392px;
-  height: auto;
-  margin: 0 auto;
-}
-
-.note {
-  position: absolute;
-  font-family: var(--hand);
-  font-size: 16.8px;
+.features .head { color: var(--text-50); margin-bottom: 14px; }
+.features dl { display: flex; flex-direction: column; gap: 7px; }
+.features dl > div {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 12px;
   line-height: 1.4;
-  color: var(--text-50);
-  pointer-events: none;
-  text-wrap: balance;
 }
-/* exact arrow vectors exported from Figma (Vector 65/68/69/70) */
-.note .arrow { position: absolute; overflow: visible; opacity: 0.6; }
-.note .arrow path { fill: var(--text); }
+.features dt { color: var(--text); }
+.features dd { color: var(--text-70); }
 
-/* four callouts — each arrow points at the pane it describes but stops in the
-   gap ABOVE the window (the shot's opaque top edge is at ~36px below .stage top;
-   every arrow tip lands a little above that, never on the screenshot):
-   n1 → sessions sidebar, n2 → terminal, n3 → changes list, n4 → diff/history */
-.note.n1 { left: 0; top: -50px; width: 205px; }
-.note.n1 .arrow { left: 26px; top: 52px; }
-.note.n2 { left: 35%; top: -53px; width: 215px; }
-.note.n2 .arrow { left: 96px; top: 52px; }
-.note.n3 { left: 63.5%; top: -68px; width: 205px; }
-.note.n3 .arrow { left: 76px; top: 52px; }
-.note.n4 { left: 80%; top: -59px; width: 205px; }
-.note.n4 .arrow { left: -46px; top: 52px; }
+/* ---- app screenshot: fills the viewport to the right of the text column and
+   bleeds off the right + bottom edges (page overflow clips it) ---- */
+.stage {
+  position: absolute;
+  inset: 56px 0 0 368px; /* top right bottom left */
+  overflow: hidden;
+}
+.stage picture { display: block; height: 100%; }
+.shot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% + 280px);
+  height: auto;
+  max-width: none;
+}
 
-@media (max-width: 1080px) {
-  .note { display: none; }
-  .stage { margin-top: clamp(40px, 8vh, 72px); }
+/* stack on narrow screens */
+@media (max-width: 900px) {
+  body { height: auto; overflow: visible; }
+  .page { height: auto; overflow: visible; }
+  .left {
+    position: static;
+    width: 100%;
+    padding: 40px 24px 24px;
+  }
+  .intro { margin-bottom: 36px; }
+  .features { order: 3; margin-top: 36px; }
+  .stage {
+    position: static;
+    inset: auto;
+    overflow: hidden;
+    margin: 8px 0 0;
+    padding-left: 24px;
+  }
+  .stage picture { height: auto; }
+  .shot { position: static; width: 100%; }
 }

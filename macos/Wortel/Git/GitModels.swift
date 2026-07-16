@@ -64,6 +64,94 @@ struct GitStatus: Equatable {
     var isClean: Bool { changes.isEmpty }
 }
 
+/// A ref pointing at a commit, shown as a chip on its History row.
+///
+/// Parsed from `git log --decorate=full`'s `%D`, which is why every case here
+/// keys off a full `refs/…` prefix rather than the short name. Short names are
+/// ambiguous in exactly the case that matters: `origin/main` is a remote branch
+/// but `feature/login` is a local one, and nothing in the string says which.
+/// `--decorate=full` spends nothing to answer it — `refs/remotes/origin/main` vs
+/// `refs/heads/feature/login`.
+struct GitRef: Hashable {
+    enum Kind: Hashable {
+        case localBranch
+        case remoteBranch
+        case tag
+        /// A detached HEAD pointing straight at this commit.
+        case detachedHead
+    }
+
+    /// Display name, prefix stripped: "main", "origin/main", "v1.2".
+    let name: String
+    let kind: Kind
+    /// True when HEAD resolves here — the `HEAD -> main` form, or a bare `HEAD`.
+    /// Drives the chip that says "you are here".
+    let isHead: Bool
+
+    /// Parse one `%D` decoration list. Tokens are comma-separated, and the one
+    /// HEAD points at arrives as "HEAD -> refs/heads/main".
+    ///
+    /// `refs/remotes/*/HEAD` is dropped: it's a symref to the remote's default
+    /// branch, so it rides along on every `origin/main` and reads as a duplicate
+    /// chip that means nothing to a person.
+    static func parse(decoration: String) -> [GitRef] {
+        decoration
+            .split(separator: ",")
+            .compactMap { token in
+                var text = token.trimmingCharacters(in: .whitespaces)
+                guard !text.isEmpty else { return nil }
+
+                var isHead = false
+                if let arrow = text.range(of: "->") {
+                    // "HEAD -> refs/heads/main"
+                    isHead = text[..<arrow.lowerBound].trimmingCharacters(in: .whitespaces) == "HEAD"
+                    text = String(text[arrow.upperBound...]).trimmingCharacters(in: .whitespaces)
+                } else if text == "HEAD" {
+                    return GitRef(name: "HEAD", kind: .detachedHead, isHead: true)
+                }
+
+                // A tag keeps its "tag: " marker even under --decorate=full, so
+                // it arrives as "tag: refs/tags/v1.0" — the marker comes off
+                // before the prefix underneath it can match.
+                if let tag = text.stripping("tag: ") {
+                    let name = tag.stripping("refs/tags/") ?? tag
+                    return GitRef(name: name, kind: .tag, isHead: isHead)
+                }
+                if let name = text.stripping("refs/heads/") {
+                    return GitRef(name: name, kind: .localBranch, isHead: isHead)
+                }
+                if let name = text.stripping("refs/remotes/") {
+                    guard !name.hasSuffix("/HEAD") else { return nil }
+                    return GitRef(name: name, kind: .remoteBranch, isHead: isHead)
+                }
+                return nil
+            }
+    }
+}
+
+/// A branch the switcher can check out. Local and remote branches are the same
+/// shape; `isRemote` decides whether checking it out creates a tracking branch.
+struct GitBranch: Identifiable, Hashable {
+    /// Short name: "main", "origin/main".
+    let name: String
+    let isRemote: Bool
+    /// The commit it points at, so the switcher can reveal it in the log.
+    let sha: String
+    /// Its upstream's short name, if it tracks one. Local branches only.
+    let upstream: String?
+    /// True for the checked-out branch.
+    let isCurrent: Bool
+
+    var id: String { (isRemote ? "r:" : "l:") + name }
+}
+
+private extension String {
+    /// The remainder after `prefix`, or nil when it doesn't match.
+    func stripping(_ prefix: String) -> String? {
+        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : nil
+    }
+}
+
 /// One commit in the History pane. Parsed from `git log`'s machine format, not
 /// its human output — see GitService.log.
 struct GitCommit: Identifiable, Hashable {
@@ -74,10 +162,15 @@ struct GitCommit: Identifiable, Hashable {
     /// Parent SHAs, first-parent first. Empty for a root commit; two or more for
     /// a merge. Drives CommitGraph's lane layout.
     let parents: [String]
+    /// Branches and tags pointing here, for the row's chips. Empty for the vast
+    /// majority of commits.
+    let refs: [GitRef]
 
     var id: String { sha }
     var shortSHA: String { String(sha.prefix(7)) }
     var isMerge: Bool { parents.count > 1 }
+    /// True when HEAD is at this commit — the row "Jump to HEAD" reveals.
+    var isHead: Bool { refs.contains(where: \.isHead) }
 
     /// Relative age for the row's trailing label ("2h", "3d"). Deliberately terse:
     /// the row is narrow and the exact timestamp is rarely what you're scanning for.

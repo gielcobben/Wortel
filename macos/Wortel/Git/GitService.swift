@@ -109,9 +109,14 @@ enum GitService {
     /// always "the newest N by date" even though we then re-sort it — the two
     /// stay in step as long as HEAD hasn't moved, and a moved HEAD reloads from
     /// scratch anyway.
+    /// `%D` rides along for the row chips. It costs nothing extra to ask for —
+    /// git already has the decoration loaded — and `--decorate=full` is what makes
+    /// it parseable (see GitRef.parse). The subject stays last: it's the only
+    /// field that can itself contain the US separator's neighbours, so keeping it
+    /// at the end means a weird subject can't shift the fields after it.
     static func log(root: String, limit: Int = 300, skip: Int = 0) async -> [GitCommit] {
-        let format = "%H\u{1f}%an\u{1f}%at\u{1f}%P\u{1f}%s\u{1e}"
-        var args = ["log", "--max-count=\(limit)"]
+        let format = "%H\u{1f}%an\u{1f}%at\u{1f}%P\u{1f}%D\u{1f}%s\u{1e}"
+        var args = ["log", "--max-count=\(limit)", "--decorate=full"]
         if skip > 0 { args.append("--skip=\(skip)") }
         args.append("--format=\(format)")
         let result = await run(args, in: root)
@@ -120,15 +125,116 @@ enum GitService {
             let fields = record
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: "\u{1f}")
-            guard fields.count == 5, !fields[0].isEmpty,
+            guard fields.count == 6, !fields[0].isEmpty,
                   let epoch = TimeInterval(fields[2]) else { return nil }
             return GitCommit(
                 sha: fields[0],
                 author: fields[1],
                 date: Date(timeIntervalSince1970: epoch),
-                subject: fields[4],
-                parents: fields[3].split(separator: " ").map(String.init))
+                subject: fields[5],
+                parents: fields[3].split(separator: " ").map(String.init),
+                refs: GitRef.parse(decoration: fields[4]))
         }
+    }
+
+    /// The commits that exist here but not on the remote — the History pane's blue
+    /// dots.
+    ///
+    /// Two ranges, because the panel has to agree with itself: the header reports
+    /// ahead/behind against the *upstream*, so when there is one, the dots have to
+    /// be that same set or the header says "↑4" beside five dots. Without an
+    /// upstream there's nothing to be ahead *of*, and the useful question becomes
+    /// "what have I not pushed anywhere" — `--not --remotes`, which is also what
+    /// makes a fresh branch's commits dot correctly before its first push.
+    ///
+    /// `hasRemotes` is the guard that keeps a purely local repo from dotting every
+    /// commit it has: with no remotes, `--not --remotes` excludes nothing and
+    /// "unpushed" isn't a thing the repo can mean yet.
+    ///
+    /// Cost tracks the ahead count, not the repo: both ranges stop at the merge
+    /// base, and `--max-count` bounds the pathological case (a long-lived branch,
+    /// or a first push of a big import) rather than letting it walk to the root.
+    static func unpushedSHAs(
+        root: String, upstream: String?, hasRemotes: Bool, limit: Int = 500
+    ) async -> Set<String> {
+        guard hasRemotes else { return [] }
+        var args = ["rev-list", "--max-count=\(limit)"]
+        if let upstream {
+            args.append("\(upstream)..HEAD")
+        } else {
+            args += ["HEAD", "--not", "--remotes"]
+        }
+        let result = await run(args, in: root)
+        guard result.ok else { return [] }
+        return Set(result.stdout.split(separator: "\n").map(String.init))
+    }
+
+    /// Local and remote branches for the switcher, newest commit first.
+    ///
+    /// `for-each-ref` reads refs, so this costs ref count rather than repo size —
+    /// but it's still loaded lazily (only when the menu opens) rather than folded
+    /// into `refresh`, because a monorepo can carry thousands of remote refs and
+    /// nothing on screen needs them until you ask.
+    static func branches(root: String) async -> [GitBranch] {
+        let format = "%(refname)\u{1f}%(objectname)\u{1f}%(upstream:short)\u{1f}%(HEAD)"
+        let result = await run(
+            ["for-each-ref", "--sort=-committerdate", "--format=\(format)",
+             "refs/heads", "refs/remotes"],
+            in: root)
+        guard result.ok else { return [] }
+        return result.stdout.split(separator: "\n").compactMap { line in
+            let fields = line.components(separatedBy: "\u{1f}")
+            guard fields.count == 4 else { return nil }
+            let refname = fields[0]
+            let upstream = fields[2].isEmpty ? nil : fields[2]
+            let isCurrent = fields[3] == "*"
+            if refname.hasPrefix("refs/heads/") {
+                return GitBranch(
+                    name: String(refname.dropFirst("refs/heads/".count)),
+                    isRemote: false, sha: fields[1], upstream: upstream, isCurrent: isCurrent)
+            }
+            if refname.hasPrefix("refs/remotes/") {
+                let name = String(refname.dropFirst("refs/remotes/".count))
+                // origin/HEAD is a symref to the remote's default branch — it
+                // would list a duplicate of origin/main that checks out the same
+                // thing. See GitRef.parse, which drops it for the same reason.
+                guard !name.hasSuffix("/HEAD") else { return nil }
+                return GitBranch(
+                    name: name, isRemote: true, sha: fields[1], upstream: nil, isCurrent: false)
+            }
+            return nil
+        }
+    }
+
+    /// Whether the repo has any remote configured — decides whether "unpushed"
+    /// means anything (see unpushedSHAs).
+    static func hasRemotes(root: String) async -> Bool {
+        let result = await run(["remote"], in: root)
+        return result.ok && !result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Check out a branch. For a remote one, git's own DWIM creates the local
+    /// tracking branch — `git checkout origin/main` would detach HEAD, so the
+    /// short name is passed instead and git resolves it.
+    ///
+    /// Returns git's stderr on failure so the caller can show it verbatim. The
+    /// common failure is the useful one: git refuses to check out over changes it
+    /// would have to discard, and says which files. That refusal is the safety
+    /// here — this never passes `--force`, so an uncommitted worktree cannot be
+    /// destroyed by a click in the switcher.
+    static func checkout(root: String, branch: GitBranch) async -> String? {
+        let name = branch.isRemote ? Self.localName(forRemote: branch.name) : branch.name
+        let result = await run(["checkout", name], in: root)
+        guard !result.ok else { return nil }
+        let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? "Could not switch to \(name)." : message
+    }
+
+    /// "origin/feature/x" → "feature/x". Only the remote name comes off — the
+    /// rest is the branch, slashes and all.
+    static func localName(forRemote name: String) -> String {
+        guard let slash = name.firstIndex(of: "/") else { return name }
+        return String(name[name.index(after: slash)...])
     }
 
     /// The patch a single commit introduced, ready for DiffParser.

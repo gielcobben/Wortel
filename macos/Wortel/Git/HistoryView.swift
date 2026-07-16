@@ -24,6 +24,7 @@ struct HistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            header
             GeometryReader { geo in
                 let maxList = max(Self.listMin, geo.size.height - Self.diffMin)
                 let listHeight = Binding(
@@ -62,6 +63,31 @@ struct HistoryView: View {
         DispatchQueue.main.async { listFocused = true }
     }
 
+    // MARK: Header
+
+    /// Which branch you're on, and the way back to it.
+    ///
+    /// The Changes pane has had this since the panel shipped; History — the pane
+    /// that's actually *about* branches — never showed it, because it reads
+    /// `repo.commits` and never touched `repo.status`. Same chip, so switching
+    /// panes doesn't move it.
+    private var header: some View {
+        HStack(spacing: 6) {
+            BranchSwitcher(repo: repo)
+            Spacer()
+            Button {
+                Task { await repo.jumpToHead() }
+            } label: {
+                Image(systemName: "scope")
+            }
+            .buttonStyle(.borderless)
+            .help("Jump to the commit you're on")
+            .disabled(repo.status.head == nil)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
     // MARK: Commit list
 
     /// The row whose appearance pulls in the next page — a little short of the
@@ -89,7 +115,8 @@ struct HistoryView: View {
                             commit: commit,
                             row: repo.graph.row(for: commit.sha),
                             lanes: repo.graph.width,
-                            isSelected: repo.selectedCommitID == commit.id)
+                            isSelected: repo.selectedCommitID == commit.id,
+                            isUnpushed: repo.unpushed.contains(commit.sha))
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 listFocused = true
@@ -189,6 +216,8 @@ private struct CommitRow: View {
     let row: CommitGraph.Row?
     let lanes: Int
     let isSelected: Bool
+    /// Not yet on the remote — draws the leading dot.
+    let isUnpushed: Bool
 
     /// Uniform, unlike the intrinsic height this row used to take. Each row draws
     /// its own slice of the graph against its own height, so rows of differing
@@ -198,15 +227,31 @@ private struct CommitRow: View {
     private static let authorWidth: CGFloat = 64
     private static let shaWidth: CGFloat = 52
     private static let ageWidth: CGFloat = 26
+    /// The dot's own column, ahead of the gutter. Fixed and always present, so
+    /// the graph starts at the same x on every row whether or not it's dotted.
+    private static let dotWidth: CGFloat = 10
 
     private var onAccent: Bool { isSelected }
     private var subtleColor: Color { onAccent ? .white.opacity(0.85) : .secondary }
 
     var body: some View {
         HStack(spacing: 0) {
+            // Outside the selection pill and outside the graph Canvas, both
+            // deliberately: on the pill it would be blue-on-blue, and inside the
+            // gutter it would read as a lane node — which is a different claim
+            // entirely (that's topology; this is sync state).
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 5, height: 5)
+                .opacity(isUnpushed ? 1 : 0)
+                .frame(width: Self.dotWidth, height: Self.height)
+                .help("Not pushed yet")
             CommitGraphGutter(row: row, lanes: lanes, isMerge: commit.isMerge)
                 .frame(width: CommitGraphGutter.width(forLanes: lanes), height: Self.height)
             HStack(spacing: 6) {
+                ForEach(commit.refs, id: \.self) { ref in
+                    RefChip(ref: ref, onAccent: onAccent)
+                }
                 Text(commit.subject)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -234,6 +279,52 @@ private struct CommitRow: View {
             }
             .padding(.trailing, 4)
         }
+    }
+}
+
+/// A branch or tag name sitting on the commit it points at.
+///
+/// This is what makes a HEAD-only log legible as *branches*: the list walks one
+/// ancestry, so without chips there's nothing to say where `main` or
+/// `origin/main` have got to relative to where you are. Colour carries the kind
+/// — local, remote, tag — since the name alone can't (`main` and `origin/main`
+/// differ only by a prefix you stop reading after the tenth row).
+private struct RefChip: View {
+    let ref: GitRef
+    /// Sitting on the selection pill, where the accent has taken the background.
+    let onAccent: Bool
+
+    private var tint: Color {
+        switch ref.kind {
+        case .localBranch, .detachedHead: return .accentColor
+        case .remoteBranch: return .purple
+        case .tag: return .orange
+        }
+    }
+
+    var body: some View {
+        Text(ref.name)
+            .font(.system(size: 10, weight: ref.isHead ? .bold : .medium))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(tint))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(onAccent ? Color.white.opacity(0.25) : tint.opacity(0.15))
+            }
+            .overlay {
+                // The branch you're on gets an outline as well as bold: on a busy
+                // row the weight alone is easy to miss.
+                if ref.isHead {
+                    RoundedRectangle(cornerRadius: 3)
+                        .strokeBorder(
+                            onAccent ? Color.white.opacity(0.5) : tint.opacity(0.5),
+                            lineWidth: 1)
+                }
+            }
+            .layoutPriority(1)
     }
 }
 

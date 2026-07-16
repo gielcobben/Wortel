@@ -114,23 +114,9 @@ private struct RepoView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "arrow.triangle.branch")
-                .foregroundStyle(.secondary)
-            Text(repo.status.branch ?? "detached")
-                .fontWeight(.medium)
-                .lineLimit(1)
-            if repo.status.ahead > 0 {
-                Label("\(repo.status.ahead)", systemImage: "arrow.up")
-                    .labelStyle(.titleAndIcon)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-            if repo.status.behind > 0 {
-                Label("\(repo.status.behind)", systemImage: "arrow.down")
-                    .labelStyle(.titleAndIcon)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
+            // Was a plain label of the same facts; now the shared chip, so the
+            // branch reads and behaves identically whichever pane you're on.
+            BranchSwitcher(repo: repo)
             Spacer()
             if repo.canPush {
                 Button {

@@ -50,6 +50,10 @@ final class GitRepoModel {
     /// commits yet" instead of flashing an empty list on a fresh repo.
     private(set) var loadedHistory = false
     private(set) var selectedCommitID: String?
+    /// SHAs not yet on the remote — the History pane's blue dots. A set, because
+    /// every row asks; recomputed only when the answer can have changed (HEAD
+    /// moved, or the ahead/upstream pair shifted under a push or fetch).
+    private(set) var unpushed: Set<String> = []
     /// Diff of the selected commit. Separate from `diff` so switching panes back
     /// and forth doesn't make each pane reload the other's work.
     private(set) var commitDiff: DiffResult?
@@ -58,6 +62,26 @@ final class GitRepoModel {
     @ObservationIgnored private var commitDiffCache: [String: DiffResult] = [:]
     /// Guards against an out-of-order diff load landing on a newer selection.
     @ObservationIgnored private var commitDiffToken = 0
+
+    // MARK: - Branches
+
+    /// Local + remote branches for the switcher. Loaded lazily when the menu
+    /// opens rather than on every refresh: a monorepo can carry thousands of
+    /// remote refs, and nothing on screen needs them until you ask.
+    private(set) var branches: [GitBranch] = []
+    private(set) var isLoadingBranches = false
+    /// Set when a checkout is refused — almost always git protecting local
+    /// changes it would have to discard. Shown verbatim; cleared on the next try.
+    private(set) var checkoutError: String?
+    private(set) var isCheckingOut = false
+
+    /// Whether the repo has any remote at all. Decides whether "unpushed" means
+    /// anything; cached because remotes essentially never change during a session
+    /// and every unpushed recompute would otherwise pay for `git remote`.
+    @ObservationIgnored private var hasRemotes: Bool?
+    /// The (upstream, ahead) pair `unpushed` was computed for, so a status that
+    /// didn't move either doesn't re-run rev-list. Nil until first computed.
+    @ObservationIgnored private var unpushedKey: String?
 
     /// FSEvents watcher on the work tree; keeps the changes list live when the
     /// repo changes out of band (an external commit, an agent editing files).
@@ -190,6 +214,12 @@ final class GitRepoModel {
                 if moved, loadedHistory { await loadHistory() }
             }
 
+            // A push or a fetch moves the ahead count without moving HEAD, and the
+            // dots have to follow or they'd contradict the header sitting right
+            // above them. Keyed so an ordinary status — the common case, several a
+            // second under a build — doesn't re-run rev-list to learn nothing.
+            if loadedHistory { await refreshUnpushed() }
+
             // Something changed while we were scanning. Wait out roughly the time
             // the last scan took before going again, so a long build can't pin a
             // core on back-to-back status walks — the terminal in the next pane is
@@ -228,12 +258,76 @@ final class GitRepoModel {
         loadedHistory = true
         isLoadingHistory = false
 
+        // The pane loads lazily, so the refresh that ran before it was ever shown
+        // skipped this (it only recomputes once history is loaded). Without it a
+        // first open would draw the log with no dots until something else moved.
+        await refreshUnpushed()
+
         if let id = selectedCommitID, commits.contains(where: { $0.id == id }) {
             // Keep the selection across a reload (e.g. a new commit landed).
         } else {
             await selectCommit(commits.first?.id)
         }
     }
+
+    /// Recompute the blue dots, but only when the answer can have moved.
+    ///
+    /// The key is the (upstream, ahead) pair the last set was computed for — the
+    /// two things that define the range. `refresh()` calls this on every status,
+    /// which is several a second while a build writes files, so without the key
+    /// this would be a `rev-list` per file write for an answer that changes maybe
+    /// once a day.
+    private func refreshUnpushed() async {
+        let key = "\(status.upstream ?? "-")|\(status.ahead)|\(status.head ?? "-")"
+        guard key != unpushedKey else { return }
+
+        if hasRemotes == nil { hasRemotes = await GitService.hasRemotes(root: root) }
+        unpushed = await GitService.unpushedSHAs(
+            root: root, upstream: status.upstream, hasRemotes: hasRemotes ?? false)
+        unpushedKey = key
+    }
+
+    /// Select HEAD's commit, which reveals it — the list scrolls to whatever is
+    /// selected. HEAD is always in the first page (the log walks *from* it), so
+    /// this never has to page hunting for a row.
+    func jumpToHead() async {
+        guard let head = status.head else { return }
+        guard commits.contains(where: { $0.sha == head }) else {
+            // Only reachable if the log hasn't been read yet, or HEAD moved and
+            // the reload hasn't landed. Reading it puts HEAD back at the top.
+            await loadHistory()
+            if commits.contains(where: { $0.sha == head }) { await selectCommit(head) }
+            return
+        }
+        await selectCommit(head)
+    }
+
+    /// Read the branch list for the switcher. Called when the menu opens, so it's
+    /// always fresh without any of it being paid for on the refresh path.
+    func loadBranches() async {
+        guard !isLoadingBranches else { return }
+        isLoadingBranches = true
+        branches = await GitService.branches(root: root)
+        isLoadingBranches = false
+    }
+
+    /// Switch branches. Never forced: git refuses rather than discarding local
+    /// changes, and that refusal is surfaced verbatim instead of being worked
+    /// around — the terminal is right there for anyone who means it.
+    ///
+    /// No explicit reload afterwards: checkout moves HEAD, the watcher fires, and
+    /// `refresh()` notices the new `branch.oid` and reloads history — the same
+    /// path a checkout typed in the terminal takes, so there's only one.
+    func checkout(_ branch: GitBranch) async {
+        guard !isCheckingOut, !branch.isCurrent else { return }
+        isCheckingOut = true
+        checkoutError = nil
+        checkoutError = await GitService.checkout(root: root, branch: branch)
+        isCheckingOut = false
+        await refresh()
+    }
+
+    func dismissCheckoutError() { checkoutError = nil }
 
     /// Append the next page as the reader nears the bottom of the list.
     ///

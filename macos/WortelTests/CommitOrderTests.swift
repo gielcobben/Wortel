@@ -175,8 +175,11 @@ final class CommitOrderTests: XCTestCase {
         XCTAssertEqual(CommitOrder.topological(commits).count, 2)
     }
 
+    /// Refs are irrelevant here — ordering is pure topology — but they're not
+    /// defaulted on the model, so that the log parser can never quietly stop
+    /// populating them.
     private func commit(_ sha: String, parents: [String]) -> GitCommit {
         GitCommit(sha: sha, author: "t", date: Date(timeIntervalSince1970: 0),
-                  subject: sha, parents: parents)
+                  subject: sha, parents: parents, refs: [])
     }
 }

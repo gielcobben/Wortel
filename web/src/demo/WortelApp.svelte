@@ -142,8 +142,9 @@
     </div>
 
     <div class="inspector">
-      <div class="git-grip" onpointerdown={gripDown} role="separator"
-        aria-label="Resize inspector" aria-orientation="vertical" tabindex="-1"></div>
+      <!-- a mouse-only drag handle in a decorative demo, not a real ARIA widget:
+           role="separator" would demand aria-valuenow we'd only be faking -->
+      <div class="git-grip" onpointerdown={gripDown} aria-hidden="true"></div>
       <GitPanel tab={gitTab} />
     </div>
   </div>

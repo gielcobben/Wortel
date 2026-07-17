@@ -32,7 +32,10 @@
     --grid: rgba(20, 22, 34, 0.05);
     --text: #16171b;
     --text-70: rgba(22, 23, 27, 0.62);
-    --text-50: rgba(22, 23, 27, 0.42);
+    /* 0.6, not 0.42: on white the lighter gray only reached 2.68:1, and the
+       tagline + "Features" label are real copy that must clear AA (4.5:1). At 0.6
+       it's 4.68:1 and still clearly muted. Dark mode's --text-50 already passes. */
+    --text-50: rgba(22, 23, 27, 0.6);
     --accent: #0070f5;
   }
 }

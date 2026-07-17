@@ -65,26 +65,100 @@ const features = [
     // computed value never changes, only the used/pixel value does at layout time,
     // and transitions only fire on computed-value changes.)
     const CELL = 36;
+    const TITLEBAR = 51;              // the app's chrome strip — its drag handle
+    const MAX_W = 1266, MAX_H = 797;  // the real window size the demo replicates;
+                                      // past it we'd only be drawing empty terminal
+
     const stage = document.querySelector('.stage');
     const frame = document.querySelector('.app-frame');
+    const narrow = window.matchMedia('(max-width: 900px)');
 
-    function snap() {
+    let slack = { x: 0, y: 0 };  // exact px the window may travel — the drag's bounds
+    let range = { x: 0, y: 0 };  // the same, floored to whole cells — where it rests
+    let pos = { x: 0, y: 0 };    // where it is, relative to its (432,36) anchor
+    let settleTimer;
+
+    const clamp = (v, max) => Math.min(Math.max(0, v), max);
+    // max is always a multiple of CELL, so a rested window sits on a grid
+    // intersection exactly like its anchor does.
+    const toCell = (v, max) => clamp(Math.round(v / CELL) * CELL, max);
+
+    const apply = () => {
+      frame.style.transform = pos.x || pos.y ? `translate(${pos.x}px, ${pos.y}px)` : '';
+    };
+
+    // While dragging: follow the pointer to the exact pixel, no snapping.
+    function drag(x, y) {
+      pos = { x: clamp(x, slack.x), y: clamp(y, slack.y) };
+      apply();
+    }
+
+    // On release: ease the last few px onto the nearest intersection. A timer
+    // rather than transitionend, which never fires when the window is already
+    // parked on the grid and the transform doesn't change.
+    function rest(animate) {
+      pos = { x: toCell(pos.x, range.x), y: toCell(pos.y, range.y) };
+      frame.classList.toggle('settling', !!animate);
+      apply();
+      clearTimeout(settleTimer);
+      if (animate) settleTimer = setTimeout(() => frame.classList.remove('settling'), 220);
+    }
+
+    function layout() {
       // Below the stacking breakpoint the desktop grid math doesn't apply — hand
       // sizing back to the stylesheet.
-      if (window.matchMedia('(max-width: 900px)').matches) {
-        frame.style.width = '';
-        frame.style.height = '';
+      if (narrow.matches) {
+        frame.style.width = frame.style.height = frame.style.transform = '';
+        slack = { x: 0, y: 0 };
+        range = { x: 0, y: 0 };
         return;
       }
       const cs = getComputedStyle(stage);
       const availW = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       const availH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-      frame.style.width = Math.max(CELL, Math.floor(availW / CELL) * CELL) + 'px';
-      frame.style.height = Math.max(CELL, Math.floor(availH / CELL) * CELL) + 'px';
+      // cap at the reference window first, then snap down to whole cells
+      const w = Math.max(CELL, Math.floor(Math.min(availW, MAX_W) / CELL) * CELL);
+      const h = Math.max(CELL, Math.floor(Math.min(availH, MAX_H) / CELL) * CELL);
+      frame.style.width = w + 'px';
+      frame.style.height = h + 'px';
+      // whatever slack the cap leaves behind is the room the window drags through
+      slack = { x: Math.max(0, availW - w), y: Math.max(0, availH - h) };
+      range = {
+        x: Math.floor(slack.x / CELL) * CELL,
+        y: Math.floor(slack.y / CELL) * CELL,
+      };
+      rest(false);  // the slack may have shrunk out from under it — re-clamp, no anim
     }
 
+    frame.addEventListener('pointerdown', (e) => {
+      if (!range.x && !range.y) return;                  // nowhere to go
+      // >= so the row at y=51 belongs to .git-grip's resize, not to the drag
+      if (e.clientY - frame.getBoundingClientRect().top >= TITLEBAR) return;
+      if (e.target.closest('button, a, input, [role="separator"]')) return;
+
+      // a drag interrupting a settle must be instant again from the first frame
+      clearTimeout(settleTimer);
+      frame.classList.remove('settling');
+
+      const grab = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+      const onMove = (ev) => drag(ev.clientX - grab.x, ev.clientY - grab.y);
+      const stop = () => {
+        rest(true);
+        document.body.classList.remove('dragging-app');
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', stop);
+        window.removeEventListener('pointercancel', stop);
+      };
+      document.body.classList.add('dragging-app');
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', stop);
+      window.addEventListener('pointercancel', stop);
+      e.preventDefault();  // no text selection while dragging
+    });
+
     // Observe the stage rather than window so we react to its actual box changing.
-    new ResizeObserver(snap).observe(stage);
-    snap();
+    new ResizeObserver(layout).observe(stage);
+    narrow.addEventListener('change', layout);
+    layout();
   </script>
 </Layout>

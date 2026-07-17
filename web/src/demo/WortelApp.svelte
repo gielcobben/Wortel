@@ -153,8 +153,8 @@
   /* self-contained box model — don't depend on the page's reset */
   .wortel-app, .wortel-app :global(*) { box-sizing: border-box; }
 
-  /* fluid: the embedding wrapper decides the size (compare pins 1266×797;
-     /demo tracks the viewport like a native window) */
+  /* fluid: the embedding wrapper decides the size — index.astro snaps it to the
+     36px grid and caps it at the 1266×797 reference window */
   .wortel-app {
     position: relative;
     width: 100%;

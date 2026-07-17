@@ -75,6 +75,9 @@ body::before {
 
 a { color: inherit; text-decoration: none; }
 
+/* dragging the app window by its titlebar (see index.astro) */
+body.dragging-app, body.dragging-app * { cursor: grabbing !important; user-select: none; }
+
 .page {
   height: 100vh;
   position: relative;
@@ -159,8 +162,14 @@ a { color: inherit; text-decoration: none; }
   height: round(down, 100%, 36px);
   /* The snap is discrete (36px steps), which reads as a hard jump while resizing.
      Ease each step so the app settles onto the grid instead of teleporting. */
-  transition: width 0.2s ease, height 0.2s ease;
+  transition: width 0.2s ease, height 0.2s ease, transform var(--settle, 0s);
 }
+/* A drag must track the pointer exactly, so transform is untransitioned by
+   default (--settle falls back to 0s). index.astro adds .settling on release,
+   which eases the window the last few px onto the nearest intersection. Routing
+   it through a custom property — rather than a second transition declaration —
+   keeps the reduced-motion rule below able to switch the whole thing off. */
+.app-frame.settling { --settle: 0.18s cubic-bezier(0.3, 0.9, 0.3, 1); }
 @media (prefers-reduced-motion: reduce) {
   .app-frame { transition: none; }
 }

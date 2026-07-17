@@ -68,8 +68,8 @@ body::before {
   background-image:
     linear-gradient(var(--grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 45px 45px;
-  background-position: center top;
+  background-size: 36px 36px;
+  background-position: left top; /* left-anchored so grid lines are deterministic and content can snap to them */
   pointer-events: none;
 }
 
@@ -88,8 +88,8 @@ a { color: inherit; text-decoration: none; }
   left: 0;
   top: 0;
   bottom: 0;
-  width: 384px;
-  padding: 52px 24px 48px 56px;
+  width: 396px; /* 11 grid cells — puts the text/app divider on the x=396 line */
+  padding: 36px 36px 36px 36px; /* content top-left snaps to the (36,36) grid intersection */
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -108,15 +108,23 @@ a { color: inherit; text-decoration: none; }
   color: var(--text-70);
   text-wrap: pretty;
 }
-.links { margin-top: 18px; display: flex; gap: 18px; }
-.links a {
-  color: var(--text);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  text-decoration-color: var(--text-50);
-  transition: text-decoration-color 0.15s ease;
+.links { margin-top: 38px; display: flex; gap: 12px; } /* snaps the button's top edge to the y=252 line */
+.links .download {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px; /* exactly one grid cell */
+  padding: 0 18px;
+  border-radius: 10px;
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 500;
+  line-height: 1;
+  transition: transform 0.12s ease, opacity 0.15s ease;
 }
-.links a:hover { text-decoration-color: var(--text); }
+.links .download svg { flex: none; }
+.links .download:hover { opacity: 0.88; }
+.links .download:active { transform: translateY(1px); }
 
 .features .head { color: var(--text-50); margin-bottom: 14px; }
 .features dl { display: flex; flex-direction: column; gap: 7px; }
@@ -129,41 +137,58 @@ a { color: inherit; text-decoration: none; }
 .features dt { color: var(--text); }
 .features dd { color: var(--text-70); }
 
-/* ---- app screenshot: fills the viewport to the right of the text column and
-   bleeds off the right + bottom edges (page overflow clips it) ---- */
+/* ---- app: NEVER scaled — always native 1:1. It fills the space beside the
+   text column and stays usable by responding (panes reflow, sidebar auto-
+   hides). When the space is narrower than the app's minimum, the app simply
+   bleeds off the right edge (clipped) rather than shrinking. ---- */
 .stage {
   position: absolute;
-  inset: 56px 0 0 368px; /* top right bottom left */
+  inset: 0 0 0 396px; /* left edge on the x=396 grid line, flush with the text column */
+  padding: 36px; /* app window's top-left corner lands on the (432,36) grid intersection */
   overflow: hidden;
 }
-.stage picture { display: block; height: 100%; }
-.shot {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: calc(100% + 280px);
-  height: auto;
-  max-width: none;
+.app-frame {
+  /* Snap the app box down to whole grid cells. Its top-left already sits on the
+     (432,36) intersection, so rounding width/height to 36px multiples lands the
+     right and bottom edges on grid lines too — at any viewport size. */
+  width: round(down, 100%, 36px);
+  height: round(down, 100%, 36px);
+  /* The snap is discrete (36px steps), which reads as a hard jump while resizing.
+     Ease each step so the app settles onto the grid instead of teleporting. */
+  transition: width 0.2s ease, height 0.2s ease;
 }
+@media (prefers-reduced-motion: reduce) {
+  .app-frame { transition: none; }
+}
+.app-frame > :global(.wortel-app) { width: 100%; height: 100%; }
 
 /* stack on narrow screens */
 @media (max-width: 900px) {
-  body { height: auto; overflow: visible; }
-  .page { height: auto; overflow: visible; }
+  /* overflow-x: clip kills the horizontal scroll from the app bleeding off the
+     right, WITHOUT clipping vertically (so the app's drop-shadow isn't sliced)
+     and without creating a scroll container the way overflow:hidden would. */
+  body { height: auto; overflow: visible; overflow-x: clip; }
+  .page { height: auto; overflow: visible; overflow-x: clip; }
   .left {
     position: static;
     width: 100%;
-    padding: 40px 24px 24px;
+    padding: 36px 36px 24px; /* left edge on the x=36 grid line, matching the app */
   }
   .intro { margin-bottom: 36px; }
   .features { order: 3; margin-top: 36px; }
   .stage {
     position: static;
     inset: auto;
-    overflow: hidden;
-    margin: 8px 0 0;
-    padding-left: 24px;
+    display: block;
+    overflow: visible;        /* let the app's drop-shadow show; the page clips the right-side bleed */
+    margin: 8px 0 72px;       /* room below the app for its drop-shadow (~90px) + breathing space */
+    padding: 0 0 0 36px;      /* app's left edge on the x=36 grid line */
+    height: 60vh;
+    min-height: 420px;
   }
-  .stage picture { height: auto; }
-  .shot { position: static; width: 100%; }
+  /* Horizontal snap only: the app's left edge sits on x=36 and its width rounds to
+     whole cells so the right edge lands on a line too (when it isn't clipped by a
+     narrow screen). Height stays fluid — the grid is viewport-fixed while the page
+     scrolls, so there's no stable vertical line to snap to. */
+  .app-frame { width: round(down, 100%, 36px); height: 100%; }
 }

@@ -15,7 +15,7 @@ macos/releases/old_updates/
 # Web app (web/) — Node + Astro + Cloudflare build output
 node_modules/
 web/dist/
-web/.astro/
+.astro/
 
 # Claude Code transient worktrees
 .claude/worktrees/

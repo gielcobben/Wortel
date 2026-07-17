@@ -1,10 +1,10 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import WortelApp from '../demo/WortelApp.svelte';
 
 // The Sparkle feed lives at updates.wortel.sh; the newest signed zip is always
 // mirrored to Wortel-latest.zip, so a single stable download URL works forever.
 const DOWNLOAD = 'https://updates.wortel.sh/Wortel-latest.zip';
-const GITHUB = 'https://github.com/gielcobben/wortel';
 
 const features = [
   ['Sessions', 'Named, not numbered'],
@@ -27,8 +27,14 @@ const features = [
           babysit. It’s finished the moment you open it.
         </p>
         <p class="links">
-          <a href={DOWNLOAD}>Download ↗</a>
-          <a href={GITHUB}>GitHub ↗</a>
+          <a class="download" href={DOWNLOAD}>
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+              <path d="M8 1v8.5M8 9.5 4.75 6.25M8 9.5l3.25-3.25M2.5 12.5h11"
+                fill="none" stroke="currentColor" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Download for macOS
+          </a>
         </p>
       </div>
 
@@ -46,11 +52,39 @@ const features = [
     </div>
 
     <div class="stage">
-      <picture>
-        <source srcset="/app-shot-dark.png" media="(prefers-color-scheme: dark)" width="2784" height="1824" />
-        <img class="shot" src="/app-shot-light.png" width="2784" height="1824"
-          alt="Wortel showing a sidebar of named sessions alongside a live git diff and history pane." />
-      </picture>
+      <div class="app-frame">
+        <WortelApp client:load sidebar={true} initialTab="history" />
+      </div>
     </div>
   </div>
+
+  <script>
+    // Snap the app box to whole 36px grid cells — but as explicit pixel values so
+    // the CSS width/height transition has two real lengths to ease between. (A
+    // pure-CSS `round(down, 100%, 36px)` snaps correctly but can't animate: its
+    // computed value never changes, only the used/pixel value does at layout time,
+    // and transitions only fire on computed-value changes.)
+    const CELL = 36;
+    const stage = document.querySelector('.stage');
+    const frame = document.querySelector('.app-frame');
+
+    function snap() {
+      // Below the stacking breakpoint the desktop grid math doesn't apply — hand
+      // sizing back to the stylesheet.
+      if (window.matchMedia('(max-width: 900px)').matches) {
+        frame.style.width = '';
+        frame.style.height = '';
+        return;
+      }
+      const cs = getComputedStyle(stage);
+      const availW = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const availH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      frame.style.width = Math.max(CELL, Math.floor(availW / CELL) * CELL) + 'px';
+      frame.style.height = Math.max(CELL, Math.floor(availH / CELL) * CELL) + 'px';
+    }
+
+    // Observe the stage rather than window so we react to its actual box changing.
+    new ResizeObserver(snap).observe(stage);
+    snap();
+  </script>
 </Layout>

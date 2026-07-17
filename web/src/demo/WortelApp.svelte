@@ -255,12 +255,14 @@
     z-index: 5;
   }
   .chip {
-    height: 35px;
+    height: 36px;
     display: flex; align-items: center; gap: 5px;
     padding: 0 10px;
-    border-radius: 17.5px;
+    border-radius: 18px;
     background: var(--w-pill-fill);
-    border: 1px solid var(--w-pill-border);
+    -webkit-backdrop-filter: var(--w-pill-blur);
+    backdrop-filter: var(--w-pill-blur);
+    border: 0;
     box-shadow: var(--w-pill-shadow);
     color: var(--w-chrome-text);
     font-family: var(--w-sans);
@@ -273,24 +275,34 @@
   /* crisp Lucide rendering: block display kills baseline offsets */
   .wortel-app :global(svg.lucide) { display: block; }
   .btns {
-    height: 35px;
+    /* 2px pad + 32px circle + 2px pad — no rim, so the height is exactly 36 and
+       the 16px inner radius matches the circles' own. */
+    height: 36px;
     display: flex; align-items: center; gap: 1px;
-    padding: 0 1.5px;
-    border-radius: 17.5px;
+    padding: 2px;
+    border-radius: 18px;
     background: var(--w-pill-fill);
-    border: 1px solid var(--w-pill-border);
+    -webkit-backdrop-filter: var(--w-pill-blur);
+    backdrop-filter: var(--w-pill-blur);
+    border: 0;
     box-shadow: var(--w-pill-shadow);
   }
   .cbtn {
-    width: 27px; height: 27px;
+    width: 32px; height: 32px;
     border-radius: 50%;
     border: 0; background: transparent;
     color: var(--w-chrome-text);
     display: grid; place-items: center;
     cursor: pointer;
-    --w-btn-fill: var(--w-pill-fill); /* what sits behind the doc icon */
+    --w-btn-fill: var(--w-pill-solid); /* what sits behind the doc icon — must be
+                                          opaque, or the back page shows through */
   }
-  .cbtn:hover { background: color-mix(in srgb, var(--w-chrome-text) 8%, transparent); }
+  /* the doc icon's front page has to track the hover wash, or it stays a bright
+     patch against the darkened circle instead of occluding invisibly */
+  .cbtn:hover {
+    background: color-mix(in srgb, var(--w-chrome-text) 8%, transparent);
+    --w-btn-fill: color-mix(in srgb, var(--w-chrome-text) 8%, var(--w-pill-solid));
+  }
   .cbtn.on { background: var(--w-btn-active); --w-btn-fill: var(--w-btn-active); }
 
   /* terminal pads-left when the sidebar is open (its divider never moves) */

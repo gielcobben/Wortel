@@ -145,7 +145,11 @@ a { color: inherit; text-decoration: none; }
   position: absolute;
   inset: 0 0 0 396px; /* left edge on the x=396 grid line, flush with the text column */
   padding: 36px; /* app window's top-left corner lands on the (432,36) grid intersection */
-  overflow: hidden;
+  /* The stage's right/top/bottom edges sit on the viewport edges, where the page's
+     own overflow:hidden already clips the app's right-side bleed. Only the LEFT
+     edge (on the x=396 divider) would cut into the window's drop-shadow — so keep
+     overflow visible and let that shadow fade out over the text-column gutter. */
+  overflow: visible;
 }
 .app-frame {
   /* Snap the app box down to whole grid cells. Its top-left already sits on the

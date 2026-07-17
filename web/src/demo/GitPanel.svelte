@@ -191,7 +191,7 @@
   .letter.m { color: var(--w-status-m); }
   .letter.a, .letter.q { color: var(--w-status-a); }
   .letter.d { color: var(--w-status-d); }
-  .name { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .name { font-size: 13px; font-weight: 500; white-space: nowrap; }
   .path { font-size: 11px; color: var(--w-chrome-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ca { color: var(--w-count-add); font-weight: 600; }
   .cd { color: var(--w-count-del); font-weight: 600; }

@@ -58,7 +58,10 @@ const features = [
     </div>
   </div>
 
-  <script>
+  <!-- is:inline so it runs synchronously before first paint: it sets the window's
+       centered position, and a deferred script would let the app paint top-left
+       first and then visibly jump to centre on load. -->
+  <script is:inline>
     // Snap the app box to whole 36px grid cells — but as explicit pixel values so
     // the CSS width/height transition has two real lengths to ease between. (A
     // pure-CSS `round(down, 100%, 36px)` snaps correctly but can't animate: its
@@ -81,6 +84,8 @@ const features = [
     let slack = { x: 0, y: 0 };  // exact px the window may travel — the drag's bounds
     let range = { x: 0, y: 0 };  // the same, floored to whole cells — where it rests
     let pos = { x: 0, y: 0 };    // where it is, relative to its (432,36) anchor
+    let dragged = false;         // until the user drags, the window stays centered
+                                 // in the slack; after, it stays where they left it
     let settleTimer;
 
     const clamp = (v, max) => Math.min(Math.max(0, v), max);
@@ -132,7 +137,11 @@ const features = [
         x: Math.floor(slack.x / CELL) * CELL,
         y: Math.floor(slack.y / CELL) * CELL,
       };
-      rest(false);  // the slack may have shrunk out from under it — re-clamp, no anim
+      // Until the first drag, sit centered in the slack (rest() then snaps that to
+      // the nearest cell). Afterwards honour where the user left it — rest() just
+      // re-clamps in case the slack shrank out from under it.
+      if (!dragged) pos = { x: slack.x / 2, y: slack.y / 2 };
+      rest(false);
     }
 
     frame.addEventListener('pointerdown', (e) => {
@@ -146,7 +155,9 @@ const features = [
       frame.classList.remove('settling');
 
       const grab = { x: e.clientX - pos.x, y: e.clientY - pos.y };
-      const onMove = (ev) => drag(ev.clientX - grab.x, ev.clientY - grab.y);
+      // flip on the first actual move, not on click — a click that doesn't move
+      // shouldn't pin the window and disable auto-centering
+      const onMove = (ev) => { dragged = true; drag(ev.clientX - grab.x, ev.clientY - grab.y); };
       const stop = () => {
         rest(true);
         document.body.classList.remove('dragging-app');

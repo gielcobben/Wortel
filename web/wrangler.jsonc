@@ -4,6 +4,8 @@
   // Deploy with `npm run deploy` (astro build && wrangler deploy).
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wortel-web",
+  // Cobben account — the one that holds the wortel.sh zone.
+  "account_id": "c91d5fdf38b8d28d8220c2a7d5b5610f",
   "compatibility_date": "2026-07-15",
   "assets": {
     "directory": "./dist"

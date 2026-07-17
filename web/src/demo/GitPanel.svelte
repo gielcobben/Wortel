@@ -187,7 +187,7 @@
   }
 
   /* shared bits */
-  .letter { font-family: var(--w-mono); font-size: 11.8px; font-weight: 700; width: 13px; flex-shrink: 0; }
+  .letter { font-family: var(--w-mono); font-size: 12px; font-weight: 700; width: 13px; flex-shrink: 0; }
   .letter.m { color: var(--w-status-m); }
   .letter.a, .letter.q { color: var(--w-status-a); }
   .letter.d { color: var(--w-status-d); }

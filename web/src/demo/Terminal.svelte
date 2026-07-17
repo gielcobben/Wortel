@@ -86,7 +86,7 @@
   .row.active .t { color: var(--w-term-active); }
   /* line breaks are hard-coded from the reference — never re-wrap */
   .t { white-space: pre; overflow: hidden; min-width: 0; }
-  .t.ind { padding-left: 19.92px; } /* 2 cells */
+  .t.ind { padding-left: calc(2 * var(--w-term-cell)); }
 
   b { font-weight: 700; }
   i { font-style: italic; }

@@ -111,12 +111,18 @@
   --w-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     Helvetica, Arial, sans-serif;
   --w-mono: ui-monospace, "SF Mono", "Menlo", monospace;
-  /* terminal cell: 9.96px advance × 19px line (measured 77-char row = 767px);
-     rendered font advance = 0.6182em → 9.96/0.6182 */
-  --w-term-size: 16.11px;
+  /* The CELL is the measurement; the font size is solved from it, never typed as
+     a literal. Both faces render at a 0.6182em advance, so size = cell / 0.6182.
+     Round a size to a whole px and the advance drifts — at 16px the terminal's
+     77-char row comes out 762px instead of the measured 767px. */
+  --w-mono-advance: 0.6182;
+  /* terminal cell: 9.96px advance × 19px line (measured 77-char row = 767px) */
+  --w-term-cell: 9.96px;
+  --w-term-size: calc(var(--w-term-cell) / var(--w-mono-advance));
   --w-term-line: 19px;
   /* diff cell: 7.3px advance × 18px line (measured "// @ts-check" = 87px) */
-  --w-diff-size: 11.81px;
+  --w-diff-cell: 7.3px;
+  --w-diff-size: calc(var(--w-diff-cell) / var(--w-mono-advance));
   --w-diff-line: 18px;
 }
 

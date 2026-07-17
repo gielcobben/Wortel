@@ -173,6 +173,12 @@
     -webkit-font-smoothing: antialiased;
     font-family: var(--w-sans);
     text-align: left;
+    /* A replica, not a document: every label here is chrome, so none of it is
+       selectable — native sidebars and titlebars aren't either, and dragging the
+       window would otherwise leave a trail of highlighted text. The page's own
+       copy, outside this box, stays selectable. */
+    -webkit-user-select: none;  /* Safari < 17 */
+    user-select: none;
   }
 
   /* width tiers, decided purely in CSS and read by JS off this probe.

@@ -65,9 +65,14 @@ const features = [
     // computed value never changes, only the used/pixel value does at layout time,
     // and transitions only fire on computed-value changes.)
     const CELL = 36;
-    const TITLEBAR = 51;              // the app's chrome strip — its drag handle
-    const MAX_W = 1266, MAX_H = 797;  // the real window size the demo replicates;
-                                      // past it we'd only be drawing empty terminal
+    const TITLEBAR = 51;  // the app's chrome strip — its drag handle
+    // The cap is defined once, in global.css, and read back here — the stylesheet
+    // needs it to paint the right size immediately, and this script needs it to
+    // work out the leftover slack. Two copies would drift and reintroduce the
+    // resize-on-load.
+    const rootStyle = getComputedStyle(document.documentElement);
+    const MAX_W = parseFloat(rootStyle.getPropertyValue('--app-max-w'));
+    const MAX_H = parseFloat(rootStyle.getPropertyValue('--app-max-h'));
 
     const stage = document.querySelector('.stage');
     const frame = document.querySelector('.app-frame');

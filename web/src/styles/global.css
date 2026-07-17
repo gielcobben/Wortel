@@ -6,10 +6,22 @@
   --text: #ffffff;
   --text-70: rgba(255, 255, 255, 0.66);
   --text-50: rgba(255, 255, 255, 0.44);
+  /* Mirrors the app's --w-accent (demo/tokens.css), which is scoped to
+     .wortel-app and so can't be read from out here — selecting the page's copy
+     lands on the same blue as a selected row inside the app. */
+  --accent: #007aff;
+  --accent-text: #ffffff;
   --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
   --hand: "Handlee", "Comic Sans MS", cursive;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;
+
+  /* The real window size the demo replicates. index.astro reads these back
+     rather than repeating them, so the cap has exactly one definition — if the
+     two ever disagreed, the app would visibly resize on load as the script
+     corrected the stylesheet's first paint. */
+  --app-max-w: 1266px;
+  --app-max-h: 797px;
 }
 
 /* light theme — follows the OS appearance */
@@ -21,6 +33,7 @@
     --text: #16171b;
     --text-70: rgba(22, 23, 27, 0.62);
     --text-50: rgba(22, 23, 27, 0.42);
+    --accent: #0070f5;
   }
 }
 
@@ -75,8 +88,21 @@ body::before {
 
 a { color: inherit; text-decoration: none; }
 
-/* dragging the app window by its titlebar (see index.astro) */
-body.dragging-app, body.dragging-app * { cursor: grabbing !important; user-select: none; }
+/* The app replica is user-select:none, so this only ever paints the page's own
+   copy — which is the point: the site selects in the same blue the app does. */
+::selection {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* Dragging the app window by its titlebar (see index.astro). The app itself is
+   never selectable; this also holds off the page's own copy, which the pointer
+   can cross while the window is being dragged. */
+body.dragging-app, body.dragging-app * {
+  cursor: grabbing !important;
+  -webkit-user-select: none;  /* Safari < 17 */
+  user-select: none;
+}
 
 .page {
   height: 100vh;
@@ -157,9 +183,12 @@ body.dragging-app, body.dragging-app * { cursor: grabbing !important; user-selec
 .app-frame {
   /* Snap the app box down to whole grid cells. Its top-left already sits on the
      (432,36) intersection, so rounding width/height to 36px multiples lands the
-     right and bottom edges on grid lines too — at any viewport size. */
-  width: round(down, 100%, 36px);
-  height: round(down, 100%, 36px);
+     right and bottom edges on grid lines too — at any viewport size.
+     The min() caps this first paint at the reference window, matching what the
+     script computes: without it the app would paint full-width and then animate
+     down to the cap on every load. */
+  width: round(down, min(100%, var(--app-max-w)), 36px);
+  height: round(down, min(100%, var(--app-max-h)), 36px);
   /* The snap is discrete (36px steps), which reads as a hard jump while resizing.
      Ease each step so the app settles onto the grid instead of teleporting. */
   transition: width 0.2s ease, height 0.2s ease, transform var(--settle, 0s);

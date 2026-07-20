@@ -21,9 +21,14 @@ extension NSToolbarItem.Identifier {
     static let trackingSidebar = NSToolbarItem.Identifier("wortel.tracking.sidebar")
     static let trackingInspector = NSToolbarItem.Identifier("wortel.tracking.inspector")
     /// The branch chip. Only present while the panel is open on a repo — see
-    /// `syncToolbar`, which inserts and removes it. It's a real NSButton so the
+    /// `syncRepoItems`, which inserts and removes it. It's a real NSButton so the
     /// whole capsule is clickable; its actions live in the popover it opens.
     static let gitControls = NSToolbarItem.Identifier("wortel.gitControls")
+    /// The repo-actions "···" button — fetch, push, and room for more. A narrow
+    /// icon button rather than a row of controls precisely so it can't overflow
+    /// into the toolbar's `»` menu the way a wider cluster did in the panel's
+    /// cramped strip. Present alongside the branch chip.
+    static let gitMenu = NSToolbarItem.Identifier("wortel.gitMenu")
     static let gitPane = NSToolbarItem.Identifier("wortel.gitPane")
 }
 
@@ -93,8 +98,45 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
                 paneControl.setSelected(git.isVisible && pane == git.pane, forSegment: index)
             }
         }
-        syncBranchItem()
+        syncRepoItems()
         updateBranchButton()
+    }
+
+    /// Pop the repo-actions menu — fetch, push — below the "···" button. Built
+    /// fresh on each click so it reads live state (an in-flight op, whether
+    /// there's a remote, the ahead count) without any observation wiring; a
+    /// disabled item just can't be chosen. `autoenablesItems = false` so our
+    /// explicit `isEnabled` wins over AppKit's target/action validation.
+    @objc private func openGitMenu(_ sender: NSButton) {
+        guard let repo = git.repo else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let busy = repo.isFetching || repo.isPushing
+
+        let fetch = ClosureMenuItem(title: repo.isFetching ? "Fetching…" : "Fetch") {
+            Task { await repo.fetch() }
+        }
+        fetch.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
+        fetch.isEnabled = !busy && repo.canFetch
+        menu.addItem(fetch)
+
+        // Name what push will actually do: publish a fresh branch, or push a known
+        // number of commits.
+        let pushTitle: String
+        if repo.isPushing {
+            pushTitle = "Pushing…"
+        } else if repo.status.upstream == nil {
+            pushTitle = "Publish Branch"
+        } else {
+            let ahead = repo.status.ahead
+            pushTitle = ahead > 0 ? "Push \(ahead) Commit\(ahead == 1 ? "" : "s")" : "Push"
+        }
+        let push = ClosureMenuItem(title: pushTitle) { Task { await repo.push() } }
+        push.image = NSImage(systemSymbolName: "arrow.up", accessibilityDescription: nil)
+        push.isEnabled = !busy && repo.canPush
+        menu.addItem(push)
+
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 
     /// The branch button's title: a leading branch glyph and the branch name. The
@@ -194,22 +236,32 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// pointed at something that is actually a repo.
     private var showsBranchItem: Bool { git.isVisible && git.repo != nil }
 
-    /// Insert or remove the branch item so it exists only when the panel does.
-    /// Removed rather than disabled: the user's read is right — a control for a
-    /// collapsed panel has no business in the toolbar, and a greyed one still
-    /// claims the panel's controls are app-wide. The pane buttons stay (they're
-    /// what *opens* the panel); only the branch, which acts on open content, comes
-    /// and goes. NSToolbar animates the insert/remove, so it reads as native.
-    private func syncBranchItem() {
+    /// Insert or remove the repo-scoped items — the branch chip and the "···"
+    /// actions button — so they exist only when the panel does. Removed rather
+    /// than disabled: the user's read is right — a control for a collapsed panel
+    /// has no business in the toolbar, and a greyed one still claims the panel's
+    /// controls are app-wide. The pane buttons stay (they're what *opens* the
+    /// panel); only these two, which act on open content, come and go. NSToolbar
+    /// animates the insert/remove, so it reads as native.
+    ///
+    /// Each is inserted just before `.gitPane`, branch first then "···", so the
+    /// order lands `[branch] [···] [pane]` — recomputing the pane index per insert
+    /// keeps that true whichever was already there.
+    private func syncRepoItems() {
         guard let toolbar else { return }
-        let present = toolbar.items.firstIndex { $0.itemIdentifier == .gitControls }
-        if showsBranchItem, present == nil {
-            // Just before the pane buttons, which are the item it sits left of.
-            if let paneIndex = toolbar.items.firstIndex(where: { $0.itemIdentifier == .gitPane }) {
-                toolbar.insertItem(withItemIdentifier: .gitControls, at: paneIndex)
+        if showsBranchItem {
+            for id in [NSToolbarItem.Identifier.gitControls, .gitMenu]
+            where !toolbar.items.contains(where: { $0.itemIdentifier == id }) {
+                if let paneIndex = toolbar.items.firstIndex(where: { $0.itemIdentifier == .gitPane }) {
+                    toolbar.insertItem(withItemIdentifier: id, at: paneIndex)
+                }
             }
-        } else if !showsBranchItem, let present {
-            toolbar.removeItem(at: present)
+        } else {
+            for id in [NSToolbarItem.Identifier.gitControls, .gitMenu] {
+                if let index = toolbar.items.firstIndex(where: { $0.itemIdentifier == id }) {
+                    toolbar.removeItem(at: index)
+                }
+            }
         }
     }
 
@@ -249,9 +301,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// to NSSplitViewController, which implements `toggleSidebar(_:)` natively, so
     /// it needs no case in `itemForItemIdentifier` and stays in sync with ⌘⌥S.
     ///
-    /// `.gitControls` is left out here and inserted by `syncBranchItem` only while
-    /// the panel is open; the allowed set below still lists it, which is what lets
-    /// it be inserted at all.
+    /// `.gitControls` and `.gitMenu` are left out here and inserted by
+    /// `syncRepoItems` only while the panel is open; the allowed set below still
+    /// lists them, which is what lets them be inserted at all.
     private var identifiers: [NSToolbarItem.Identifier] {
         [
             .flexibleSpace,
@@ -269,7 +321,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         // Present at launch if the restored session already has the panel open on
         // a repo, so it isn't missing until the first change wakes the observer.
         if showsBranchItem, let paneIndex = ids.firstIndex(of: .gitPane) {
-            ids.insert(.gitControls, at: paneIndex)
+            ids.insert(contentsOf: [.gitControls, .gitMenu], at: paneIndex)
         }
         return ids
     }
@@ -277,7 +329,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         var ids = identifiers
         if let paneIndex = ids.firstIndex(of: .gitPane) {
-            ids.insert(.gitControls, at: paneIndex)
+            ids.insert(contentsOf: [.gitControls, .gitMenu], at: paneIndex)
         }
         return ids
     }
@@ -318,6 +370,21 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             item.label = "Branch"
             item.visibilityPriority = .low
             updateBranchButton()
+            return item
+        case .gitMenu:
+            // The repo-actions "···" button. A plain NSButton whose click pops an
+            // NSMenu (built in `openGitMenu`), not an NSPopUpButton: a pop-up would
+            // draw its own disclosure arrow next to the ellipsis and reserve menu
+            // space we don't want. One narrow icon so it can't overflow the strip.
+            let button = NSButton(title: "", target: self, action: #selector(openGitMenu))
+            button.bezelStyle = .toolbar
+            button.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Repository actions")
+            button.imagePosition = .imageOnly
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.view = button
+            item.label = "Actions"
+            item.toolTip = "Fetch, push, and more"
+            item.visibilityPriority = .low
             return item
         case .gitPane:
             // A plain NSSegmentedControl rather than an NSToolbarItemGroup: the

@@ -22,6 +22,7 @@ final class GitRepoModel {
     private(set) var isRefreshing = false
     private(set) var isCommitting = false
     private(set) var isPushing = false
+    private(set) var isFetching = false
     private(set) var isGeneratingMessage = false
     /// stderr from the last failed action (commit conflicts, hook rejects…).
     private(set) var lastError: String?
@@ -87,9 +88,11 @@ final class GitRepoModel {
     private(set) var isCheckingOut = false
 
     /// Whether the repo has any remote at all. Decides whether "unpushed" means
-    /// anything; cached because remotes essentially never change during a session
-    /// and every unpushed recompute would otherwise pay for `git remote`.
-    @ObservationIgnored private var hasRemotes: Bool?
+    /// anything and whether the toolbar's fetch/push controls do anything;
+    /// resolved once (remotes essentially never change during a session) so the
+    /// per-write status storm never pays for `git remote`. Observed — not
+    /// `@ObservationIgnored` — so the sync controls light up when it lands.
+    private(set) var hasRemotes: Bool?
     /// The (upstream, ahead) pair `unpushed` was computed for, so a status that
     /// didn't move either doesn't re-run rev-list. Nil until first computed.
     @ObservationIgnored private var unpushedKey: String?
@@ -149,11 +152,17 @@ final class GitRepoModel {
     }
 
     /// Whether there's anything to push: commits ahead of the upstream, or a
-    /// branch with no upstream yet (a first push). Never in detached HEAD.
+    /// branch with no upstream yet (a first push). Never in detached HEAD, and
+    /// never without a remote to push to.
     var canPush: Bool {
-        guard status.branch != nil, !isPushing else { return false }
+        guard hasRemotes == true, status.branch != nil, !isPushing else { return false }
         return status.ahead > 0 || status.upstream == nil
     }
+
+    /// Whether a fetch would do anything: there's a remote to fetch from. Unlike
+    /// push it doesn't wait on being ahead/behind — you fetch precisely to learn
+    /// whether you've fallen behind.
+    var canFetch: Bool { hasRemotes == true && !isFetching }
 
     /// Whether the on-device commit-message drafter can run right now (model
     /// available and something staged to describe).
@@ -213,6 +222,13 @@ final class GitRepoModel {
             status = await GitService.status(root: root)
             isRefreshing = false
             statusScans += 1
+
+            // Resolve once whether there's a remote at all. The Changes pane can
+            // be open long before History (which is what otherwise triggers this
+            // via refreshUnpushed), and the toolbar's fetch/push controls need the
+            // answer to enable themselves. Cached, so the status storm during a
+            // build never re-runs `git remote`.
+            if hasRemotes == nil { hasRemotes = await GitService.hasRemotes(root: root) }
             lastStatusDuration = Date().timeIntervalSince(started)
 
             if let id = selectedChangeID, let change = status.changes.first(where: { $0.id == id }) {
@@ -670,7 +686,24 @@ final class GitRepoModel {
         await refresh()
     }
 
-    // MARK: - Push
+    // MARK: - Fetch / Push
+
+    func fetch() async {
+        guard hasRemotes == true, !isFetching else { return }
+
+        isFetching = true
+        let result = await GitService.fetch(root: root)
+        isFetching = false
+
+        if result.ok {
+            lastError = nil
+        } else {
+            lastError = result.stderr.isEmpty ? result.stdout : result.stderr
+        }
+        // Pick up the new behind count and any refs the fetch moved; refresh's
+        // keyed recompute redraws the blue dots only if the range actually moved.
+        await refresh()
+    }
 
     func push() async {
         guard status.branch != nil, !isPushing else { return }

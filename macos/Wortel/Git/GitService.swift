@@ -483,6 +483,14 @@ enum GitService {
         }
     }
 
+    /// Fetch from the remote, pruning refs deleted upstream so a branch removed
+    /// on the server stops lingering in the switcher. Updates the remote-tracking
+    /// refs that ahead/behind and the blue dots are measured against, without
+    /// touching the work tree — fetch never merges.
+    static func fetch(root: String) async -> CommandResult {
+        await run(["fetch", "--prune"], in: root)
+    }
+
     /// Push the current branch. On a branch with no upstream yet, set one on
     /// `origin` so the first push just works; otherwise a plain `push`.
     static func push(root: String, setUpstream: Bool) async -> CommandResult {

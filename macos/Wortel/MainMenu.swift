@@ -73,6 +73,14 @@ enum MainMenu {
         let sessionMenu = NSMenu(title: "Session")
         sessionItem.submenu = sessionMenu
         sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "n")
+        // ⌘T is every terminal's "new tab". Wortel has no tabs — a session is
+        // the thing that shortcut reaches for — so it's an alias of ⌘N above
+        // rather than a second visible row in a menu kept deliberately small.
+        // Hidden items are skipped by the key-equivalent scan unless they opt in
+        // via `allowsKeyEquivalentWhenHidden`. Free of a wortel.conf keybind.
+        let newSessionTab = sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "t")
+        newSessionTab.isHidden = true
+        newSessionTab.allowsKeyEquivalentWhenHidden = true
         let newSection = sessionMenu.addItem(withTitle: "New Section", action: #selector(AppDelegate.newSection(_:)), keyEquivalent: "n")
         newSection.keyEquivalentModifierMask = [.command, .shift]
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")

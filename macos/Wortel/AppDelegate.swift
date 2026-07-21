@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Drives the trailing source-control panel. Whether it's up follows the
     /// selected session (see GitPanelModel); new sessions start hidden.
     private let gitPanel = GitPanelModel()
+    /// Drives the Markdown preview that shares the trailing column — opened by
+    /// clicking a `.md` path in the terminal.
+    private let markdownPreview = MarkdownPreviewModel()
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
     /// background update checks start at launch; the "Check for Updates…" menu
     /// item drives manual checks through it.
@@ -56,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // off the linked SDK, not the deployment target); on 14 they render as a
         // conventional unified toolbar.
         window.toolbarStyle = .unified
-        let split = MainSplitViewController(runtime: runtime, manager: manager, git: gitPanel)
+        let split = MainSplitViewController(runtime: runtime, manager: manager, git: gitPanel, markdown: markdownPreview)
         self.splitController = split
         window.contentViewController = split
         installToolbar(on: window, splitView: split.splitView)
@@ -79,6 +82,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.onCommandFinished = { [weak self] session in
             guard let self, session.id == self.manager.selectedID else { return }
             self.gitPanel.refreshCurrent()
+        }
+        // A markdown path was clicked in the terminal → open it in the trailing
+        // preview (which shares the column with the git panel).
+        manager.onOpenMarkdown = { [weak self] url in
+            self?.markdownPreview.open(url)
         }
         manager.onAttentionCleared = { session in
             // The user answered (or the session closed) — pull the banner out
@@ -119,13 +127,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.activate(ignoringOtherApps: true)
 
         observeWindowTitle()
+        observePreviewSession()
     }
 
     /// The toolbar is retained here because NSWindow doesn't own its delegate.
     private var toolbarDelegate: MainToolbarDelegate?
 
     private func installToolbar(on window: NSWindow, splitView: NSSplitView) {
-        let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel)
+        let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel, markdown: markdownPreview)
         toolbarDelegate = delegate
         let toolbar = NSToolbar(identifier: "wortel.main")
         toolbar.delegate = delegate
@@ -159,6 +168,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func applyWindowTitle() {
         window?.title = manager.selected?.name ?? "Wortel"
         window?.subtitle = manager.selected?.abbreviatedPath ?? ""
+    }
+
+    /// The markdown preview is app-wide and shares the per-session inspector
+    /// column, so it must not outlive the session it was opened from — close it
+    /// whenever the selection changes, or it would cover the newly-selected
+    /// session's git panel with an unrelated file. @Observable tracking is
+    /// one-shot, so the observer re-arms after each change.
+    private func observePreviewSession() {
+        withObservationTracking {
+            _ = manager.selectedID
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.markdownPreview.close()
+                self.observePreviewSession()
+            }
+        }
     }
 
     // MARK: - Focus tracking (drives "actively viewing" → no attention shout)

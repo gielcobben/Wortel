@@ -36,6 +36,7 @@ extension NSToolbarItem.Identifier {
 final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate {
     private weak var splitView: NSSplitView?
     private let git: GitPanelModel
+    private let markdown: MarkdownPreviewModel
     /// Held so the control can be re-synced when the panel is opened, closed, or
     /// switched from anywhere else — ⌘⌥G, ⌘⌥L, a divider drag, a session switch.
     private weak var paneControl: NSSegmentedControl?
@@ -52,9 +53,10 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// stack a second one.
     private var branchPopover: NSPopover?
 
-    init(splitView: NSSplitView, git: GitPanelModel) {
+    init(splitView: NSSplitView, git: GitPanelModel, markdown: MarkdownPreviewModel) {
         self.splitView = splitView
         self.git = git
+        self.markdown = markdown
         super.init()
         observePanel()
     }
@@ -73,6 +75,16 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     @objc private func paneChanged(_ sender: NSSegmentedControl) {
         let panes = GitInspectorPane.allCases
         let clicked = sender.selectedSegment
+        // While the markdown preview owns the column, a pane click means "give me
+        // that git pane back" — close the preview and show the pane, never toggle
+        // the column shut.
+        if markdown.isOpen {
+            markdown.close()
+            if panes.indices.contains(clicked) { git.pane = panes[clicked] }
+            git.isPresented = true
+            syncToolbar()
+            return
+        }
         // `.selectAny` reports -1 when the click *deselected* a segment, which can
         // only be the pane already on screen. Guarding on the index too keeps the
         // close working if AppKit reports the clicked index instead.
@@ -95,7 +107,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private func syncToolbar() {
         if let paneControl {
             for (index, pane) in GitInspectorPane.allCases.enumerated() {
-                paneControl.setSelected(git.isVisible && pane == git.pane, forSegment: index)
+                // A pane reads selected only when its git pane is actually on
+                // screen — not while the markdown preview has taken the column.
+                paneControl.setSelected(git.isVisible && !markdown.isOpen && pane == git.pane, forSegment: index)
             }
         }
         syncRepoItems()
@@ -232,9 +246,10 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         Task { @MainActor in branchPopover = nil }
     }
 
-    /// Whether there's a branch worth showing: the panel is open, and it's
-    /// pointed at something that is actually a repo.
-    private var showsBranchItem: Bool { git.isVisible && git.repo != nil }
+    /// Whether there's a branch worth showing: the panel is open, pointed at an
+    /// actual repo, and not currently displaced by the markdown preview (whose
+    /// content the branch/actions/pane controls don't apply to).
+    private var showsBranchItem: Bool { git.isVisible && git.repo != nil && !markdown.isOpen }
 
     /// Insert or remove the repo-scoped items — the branch chip and the "···"
     /// actions button — so they exist only when the panel does. Removed rather
@@ -244,13 +259,13 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// panel); only these two, which act on open content, come and go. NSToolbar
     /// animates the insert/remove, so it reads as native.
     ///
-    /// Each is inserted just before `.gitPane`, branch first then "···", so the
-    /// order lands `[branch] [···] [pane]` — recomputing the pane index per insert
+    /// Each is inserted just before `.gitPane`, "···" first then branch, so the
+    /// order lands `[···] [branch] [pane]` — recomputing the pane index per insert
     /// keeps that true whichever was already there.
     private func syncRepoItems() {
         guard let toolbar else { return }
         if showsBranchItem {
-            for id in [NSToolbarItem.Identifier.gitControls, .gitMenu]
+            for id in [NSToolbarItem.Identifier.gitMenu, .gitControls]
             where !toolbar.items.contains(where: { $0.itemIdentifier == id }) {
                 if let paneIndex = toolbar.items.firstIndex(where: { $0.itemIdentifier == .gitPane }) {
                     toolbar.insertItem(withItemIdentifier: id, at: paneIndex)
@@ -276,6 +291,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             // otherwise opening on a repo would leave the item out until the next
             // unrelated change.
             _ = git.repo
+            // The markdown preview displaces the git controls while it's up, so
+            // their presence tracks it.
+            _ = markdown.isOpen
             // The branch name, so the button's title follows a checkout made in
             // the terminal.
             if let repo = git.repo {
@@ -321,7 +339,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         // Present at launch if the restored session already has the panel open on
         // a repo, so it isn't missing until the first change wakes the observer.
         if showsBranchItem, let paneIndex = ids.firstIndex(of: .gitPane) {
-            ids.insert(contentsOf: [.gitControls, .gitMenu], at: paneIndex)
+            ids.insert(contentsOf: [.gitMenu, .gitControls], at: paneIndex)
         }
         return ids
     }
@@ -329,7 +347,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         var ids = identifiers
         if let paneIndex = ids.firstIndex(of: .gitPane) {
-            ids.insert(contentsOf: [.gitControls, .gitMenu], at: paneIndex)
+            ids.insert(contentsOf: [.gitMenu, .gitControls], at: paneIndex)
         }
         return ids
     }

@@ -66,6 +66,10 @@ final class SessionManager {
     /// changed. The app layer uses this to refresh the source-control panel.
     @ObservationIgnored var onCommandFinished: ((Session) -> Void)?
 
+    /// A markdown file was clicked in a session's terminal (already resolved to
+    /// an absolute file URL). The app layer opens it in the right-hand preview.
+    @ObservationIgnored var onOpenMarkdown: ((URL) -> Void)?
+
     /// Whether Wortel is the frontmost app. A session the user is *actively
     /// viewing* (app active + window visible + selected) never raises
     /// attention — they can see it. Set by the app layer on activate/resign.
@@ -902,6 +906,11 @@ final class SessionManager {
             view.onCloseRequest = { [weak self] in
                 guard let self, let session = self.sessions.first(where: { $0.id == id }) else { return }
                 self.close(session)
+            }
+            // The runtime already resolved this to a local markdown file; just
+            // hand it up to the app layer, which opens the preview.
+            view.onOpenMarkdown = { [weak self] url in
+                self?.onOpenMarkdown?(url)
             }
         }
     }

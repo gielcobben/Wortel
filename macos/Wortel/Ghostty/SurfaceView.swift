@@ -28,6 +28,10 @@ final class SurfaceView: NSView {
     var onCommandFinished: ((_ exitCode: Int, _ durationNs: UInt64) -> Void)?
     /// The program asked for a desktop notification (OSC 9 / 777 / 99).
     var onNotification: ((_ title: String, _ body: String) -> Void)?
+    /// A clicked link resolved to a local markdown file (decided in the runtime's
+    /// OPEN_URL handler). The owner opens it in the right-hand preview. Non-markdown
+    /// links never reach here — libghostty handles those itself.
+    var onOpenMarkdown: ((_ url: URL) -> Void)?
 
     private(set) var pwd: String?
     private(set) var focused: Bool = false

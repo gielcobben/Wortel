@@ -244,6 +244,11 @@ targets:
       # and it's plain string handling (Foundation only) that `Session` — which
       # does drag in AppKit — only delegates to.
       - path: Wortel/Sessions/SessionName.swift
+      # The markdown block parser: pure Foundation, and the fiddly line-based
+      # structure (tables, task lists, fences, quote coalescing) is exactly the
+      # kind of thing that fails silently. The renderer and tree-sitter code
+      # highlighter stay out — they'd drag in SwiftUI and the grammars.
+      - path: Wortel/Markdown/MarkdownParser.swift
     scheme:
       testTargets:
         - WortelTests

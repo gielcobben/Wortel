@@ -24,15 +24,23 @@ final class MainSplitViewController: NSSplitViewController {
     private let runtime: GhosttyRuntime
     private let manager: SessionManager
     private let git: GitPanelModel
+    private let markdown: MarkdownPreviewModel
 
     private var inspectorItem: NSSplitViewItem!
     /// Guards against the observer→collapse→observer feedback loop.
     private var syncingInspector = false
+    /// Whether the markdown preview was open at the last visibility apply, so we
+    /// can tell a preview-driven column change (animate) from a git one.
+    private var lastMarkdownOpen = false
+    /// Whether the git panel was visible at the last apply, so showing it can
+    /// reclaim the column from a preview (they're mutually exclusive views of it).
+    private var lastGitVisible = false
 
-    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel) {
+    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel, markdown: MarkdownPreviewModel) {
         self.runtime = runtime
         self.manager = manager
         self.git = git
+        self.markdown = markdown
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -70,7 +78,7 @@ final class MainSplitViewController: NSSplitViewController {
         // thickness, so min/max are overridden right after to make it draggable.
         // collapseBehavior keeps the *window* still when the panel opens/closes,
         // resizing the terminal instead.
-        let inspector = NSHostingController(rootView: SourceControlPanel(panel: git))
+        let inspector = NSHostingController(rootView: InspectorContainer(git: git, markdown: markdown))
         inspector.view.setFrameSize(NSSize(width: 420, height: inspector.view.frame.height))
         let item = NSSplitViewItem(inspectorWithViewController: inspector)
         item.minimumThickness = 260
@@ -78,7 +86,7 @@ final class MainSplitViewController: NSSplitViewController {
         item.canCollapse = true
         item.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
         item.holdingPriority = NSLayoutConstraint.Priority(260)
-        item.isCollapsed = !git.isVisible
+        item.isCollapsed = !(git.isVisible || markdown.isOpen)
         addSplitViewItem(item)
         inspectorItem = item
 
@@ -88,36 +96,52 @@ final class MainSplitViewController: NSSplitViewController {
         // name is assigned, so every item has to exist by then.
         splitView.autosaveName = "main-split"
 
-        observeGitVisibility()
+        observeInspector()
     }
 
     // MARK: - Inspector visibility
 
-    /// Mirror `GitPanelModel.isVisible` onto the inspector item. @Observable's
-    /// tracking is one-shot, so the observer re-arms itself after each change.
-    private func observeGitVisibility() {
+    /// Mirror the inspector's want-to-be-open state onto the split item. The
+    /// column is up when the git panel is visible *or* a markdown preview is
+    /// open — they share it. @Observable's tracking is one-shot, so the observer
+    /// re-arms itself after each change.
+    private func observeInspector() {
         withObservationTracking {
             _ = git.isVisible
+            _ = markdown.isOpen
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.applyGitVisibility()
-                self.observeGitVisibility()
+                self.applyInspectorVisibility()
+                self.observeInspector()
             }
         }
     }
 
-    /// Animate only when the *user* asked for the change. When it's a session
-    /// switch driving it (visibility is per-session), snap: switching sessions is
-    /// supposed to be instant, and an animated collapse would reflow the terminal
-    /// on every frame of it.
-    private func applyGitVisibility() {
-        guard let inspectorItem, inspectorItem.isCollapsed == git.isVisible else { return }
+    /// Show the column when either side wants it. Animate when the user asked —
+    /// a markdown preview opening/closing (always a click) or the git panel being
+    /// toggled — but snap when a *session switch* drove the git side, since
+    /// switching sessions is meant to be instant and an animated collapse would
+    /// reflow the terminal every frame.
+    private func applyInspectorVisibility() {
+        // Showing the git panel (⌘⌥G, a pane click, a focus that reveals it)
+        // reclaims the column from a preview — the two never share it, and
+        // without this the git state would flip while the preview sat unmoved on
+        // top, making the next toggle feel inverted.
+        if git.isVisible && !lastGitVisible && markdown.isOpen {
+            markdown.close()
+        }
+        lastGitVisible = git.isVisible
+
+        let show = git.isVisible || markdown.isOpen
+        let markdownChanged = markdown.isOpen != lastMarkdownOpen
+        lastMarkdownOpen = markdown.isOpen
+        guard let inspectorItem, inspectorItem.isCollapsed == show else { return }
         syncingInspector = true
-        if git.animatesVisibilityChange {
-            inspectorItem.animator().isCollapsed = !git.isVisible
+        if markdownChanged || git.animatesVisibilityChange {
+            inspectorItem.animator().isCollapsed = !show
         } else {
-            inspectorItem.isCollapsed = !git.isVisible
+            inspectorItem.isCollapsed = !show
         }
         syncingInspector = false
     }
@@ -129,6 +153,19 @@ final class MainSplitViewController: NSSplitViewController {
         super.splitViewDidResizeSubviews(notification)
         guard !syncingInspector, let inspectorItem else { return }
         let visible = !inspectorItem.isCollapsed
-        if visible != git.isVisible { git.isPresented = visible }
+        guard visible != (git.isVisible || markdown.isOpen) else { return }
+        if visible {
+            // Dragged open — there's nothing to restore a preview to, so this
+            // means the git panel.
+            if !markdown.isOpen { git.isPresented = true }
+        } else if markdown.isOpen {
+            // Dragged shut while a preview covered the column — the user is
+            // dismissing the *preview*, not the git panel underneath. Close only
+            // the preview and leave the session's git state alone; if git was
+            // visible it simply re-takes the column.
+            markdown.close()
+        } else if git.isVisible {
+            git.isPresented = false
+        }
     }
 }

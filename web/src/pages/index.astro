@@ -6,6 +6,25 @@ import WortelApp from '../demo/WortelApp.svelte';
 // mirrored to Wortel-latest.zip, so a single stable download URL works forever.
 const DOWNLOAD = 'https://updates.wortel.sh/Wortel-latest.zip';
 
+// The version shown under the button is read from that same feed at build time,
+// so it only refreshes when the site is redeployed. If the feed is unreachable
+// we drop the line rather than fail the build or show a stale hardcoded number.
+async function latestVersion() {
+  try {
+    const res = await fetch('https://updates.wortel.sh/appcast.xml');
+    if (!res.ok) return null;
+    const xml = await res.text();
+    const version = xml.match(/<sparkle:shortVersionString>([^<]+)</)?.[1];
+    if (!version) return null;
+    // "14.0" reads better as plain "14" next to the version number.
+    const min = xml.match(/<sparkle:minimumSystemVersion>([^<]+)</)?.[1]?.replace(/\.0$/, '');
+    return { version, min };
+  } catch {
+    return null;
+  }
+}
+const LATEST = await latestVersion();
+
 const features = [
   ['Sessions', 'Named, not numbered'],
   ['Launch', 'Cold start stays lean'],
@@ -36,6 +55,11 @@ const features = [
             Download for macOS
           </a>
         </p>
+        {LATEST && (
+          <p class="version">
+            Version {LATEST.version}{LATEST.min && ` · macOS ${LATEST.min}+`}
+          </p>
+        )}
       </div>
 
       <div class="features">

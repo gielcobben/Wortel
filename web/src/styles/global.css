@@ -157,6 +157,7 @@ body.dragging-app, body.dragging-app * {
 .links .download svg { flex: none; }
 .links .download:hover { opacity: 0.88; }
 .links .download:active { transform: translateY(1px); }
+.version { margin-top: 8px; font-size: 13px; color: var(--text-50); }
 
 .features .head { color: var(--text-50); margin-bottom: 14px; }
 .features dl { display: flex; flex-direction: column; gap: 7px; }

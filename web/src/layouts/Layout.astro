@@ -27,6 +27,59 @@ const {
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
+    <svg class="mat-rulers" aria-hidden="true"></svg>
     <slot />
+    <!-- is:inline so the rulers exist on first paint instead of popping in.
+         How many ticks/numbers fit depends on the viewport, so the SVG is
+         generated here rather than authored statically. -->
+    <script is:inline>
+      (() => {
+        const CELL = 36, MAJOR = 5, M = 36; // M = the margin band the rulers live in
+        const svg = document.querySelector('.mat-rulers');
+
+        function draw() {
+          // the mat covers the PAGE, not the viewport — on the stacked layout
+          // the page is taller than the screen and the mat scrolls with it
+          const w = document.body.clientWidth, h = document.body.clientHeight;
+          // frame's right/bottom edges, snapped down to whole cells — must
+          // mirror body::before's round(down, 100% - 72px, 36px)
+          const fr = M + Math.floor((w - 2 * M) / CELL) * CELL;
+          const fb = M + Math.floor((h - 2 * M) / CELL) * CELL;
+          if (fr - M < CELL || fb - M < CELL) { svg.innerHTML = ''; return; }
+          svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+
+          const out = [`<rect class="frame" x="${M}" y="${M}" width="${fr - M}" height="${fb - M}"/>`];
+          const tick = (x1, y1, x2, y2) =>
+            out.push(`<line class="tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`);
+          const label = (x, y, v) => out.push(`<text x="${x}" y="${y}">${v}</text>`);
+
+          // The top/left bands are always exactly 36px, so their label/tick
+          // offsets are fixed. The cell snap can leave the bottom/right bands
+          // anywhere from 36 to 71px, so those labels center in what's left
+          // between the tick ends and the viewport edge.
+          const by = (fb + 20 + h) / 2 + 4;  // bottom labels' baseline
+          const bx = (fr + 20 + w) / 2;      // right labels' center
+
+          for (let x = M; x <= fr; x += CELL) {
+            const n = (x - M) / CELL, major = n % MAJOR === 0;
+            tick(x, 16, x, major ? M : 26);                  // top: majors reach the frame
+            tick(x, fb + (major ? 0 : 10), x, fb + 20);      // bottom, mirrored
+            if (major) { label(x, 12, n); label(x, by, n); }
+          }
+          for (let y = fb; y >= M; y -= CELL) {
+            const n = (fb - y) / CELL, major = n % MAJOR === 0; // 0 at the bottom, like a real mat
+            tick(16, y, major ? M : 26, y);
+            tick(fr + (major ? 0 : 10), y, fr + 20, y);
+            if (major) { label(12, y + 3, n); label(bx, y + 3, n); }
+          }
+          svg.innerHTML = out.join('');
+        }
+
+        // observe the body, not the window: on the stacked layout the page
+        // height changes as content loads, without any window resize
+        new ResizeObserver(draw).observe(document.body);
+        draw();
+      })();
+    </script>
   </body>
 </html>

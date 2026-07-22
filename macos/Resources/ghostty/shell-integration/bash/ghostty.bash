@@ -248,6 +248,13 @@ function __ghostty_precmd() {
     builtin printf "\e]7;kitty-shell-cwd://localhost%s\a" "$PWD"
   fi
 
+  # Wortel: clear this session's agent marker at every prompt, so a marker only
+  # survives while an agent is actually running — which is precisely when no
+  # prompt fires. See __ghostty_wortel_agent.
+  if [[ -n "$WORTEL_SESSION_ID" ]]; then
+    command rm -f "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+  fi
+
   _ghostty_executing=0
 }
 
@@ -305,6 +312,57 @@ function __ghostty_wortel_interactive() {
   return 1
 }
 
+# Wortel: directory shared with the app (AgentResumeStore) for agent markers.
+_ghostty_wortel_agent_dir="$HOME/Library/Application Support/Wortel/agents"
+
+# Wortel: echo the agent-CLI basename if the command line launches one (the
+# resumable subset), else nothing. Same launcher/env-assignment skipping as
+# __ghostty_wortel_interactive. Recorded per session (keyed by WORTEL_SESSION_ID)
+# so a relaunch can resume the agent.
+function __ghostty_wortel_agent() {
+  builtin local -a words
+  builtin read -ra words <<< "$1"
+  builtin local w cmd=""
+  builtin local -i i=0 n=${#words[@]}
+  while (( i < n )); do
+    w="${words[i]}"
+    case "$w" in
+      *=*)                                              ((i++)); continue ;;
+      sudo|doas|command|builtin|exec|nohup|nice|stdbuf|setsid|env)
+                                                        ((i++)); continue ;;
+      -*)                                               ((i++)); continue ;;
+      *)                                                cmd="$w"; break ;;
+    esac
+  done
+  [[ -z $cmd ]] && return
+  cmd="${cmd##*/}"
+  case "$cmd" in
+    claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp)
+      builtin printf '%s' "$cmd" ;;
+  esac
+}
+
+# Wortel: echo the model the command line selects (--model/-m/--models value),
+# else nothing. Best-effort, for the sidebar badge; only consulted for commands
+# __ghostty_wortel_agent already matched.
+function __ghostty_wortel_model() {
+  builtin local -a words
+  builtin read -ra words <<< "$1"
+  builtin local w v=""
+  builtin local -i i=0 n=${#words[@]}
+  while (( i < n )); do
+    w="${words[i]}"
+    case "$w" in
+      --model=*|--models=*|-m=*)  v="${w#*=}" ;;
+      --model|--models|-m)        ((i++)); v="${words[i]}" ;;
+      *)                          ((i++)); continue ;;
+    esac
+    v="${v#[\"\']}"; v="${v%[\"\']}"
+    builtin printf '%s' "$v"
+    return
+  done
+}
+
 function __ghostty_preexec() {
   builtin local cmd="$1"
 
@@ -324,6 +382,26 @@ function __ghostty_preexec() {
   # for those (see __ghostty_wortel_interactive).
   if ! __ghostty_wortel_interactive "$cmd"; then
     builtin printf "\e]9;4;3;\a"
+  fi
+  # Wortel: record a launched agent CLI so a relaunch can resume it. key=value
+  # marker keyed by the surface's session id; cleared at the next prompt. A
+  # marker that outlives the app means the agent was still running at quit.
+  if [[ -n "$WORTEL_SESSION_ID" ]]; then
+    builtin local _wortel_agent
+    _wortel_agent="$(__ghostty_wortel_agent "$cmd")"
+    if [[ -n "$_wortel_agent" ]]; then
+      command mkdir -p "$_ghostty_wortel_agent_dir" 2>/dev/null
+      { builtin printf 'agent=%s\n' "$_wortel_agent"
+        builtin printf 'model=%s\n' "$(__ghostty_wortel_model "$cmd")"
+        builtin printf 'cwd=%s\n' "$PWD"
+        builtin printf 'argv=%s\n' "${cmd//$'\n'/ }"
+        # The shell's own pid — see the zsh integration: it lets the app verify
+        # from the process table that the agent is really still running.
+        builtin printf 'shellpid=%s\n' "$$"
+        # When the agent started — see the zsh integration.
+        builtin printf 'startedat=%s\n' "$(command date +%s)"
+      } > "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+    fi
   fi
   _ghostty_executing=1
 }

@@ -250,6 +250,12 @@ targets:
       # and it's plain string handling (Foundation only) that `Session` — which
       # does drag in AppKit — only delegates to.
       - path: Wortel/Sessions/SessionName.swift
+      # The agent marker format is a contract between two languages — the shell
+      # integration writes it, Swift parses it — so nothing catches a drift on
+      # either side at compile time. Same for the agent→resume-command table: a
+      # wrong entry doesn't throw, it silently leaves a session cold or types the
+      # wrong command. Foundation only.
+      - path: Wortel/Sessions/AgentResumeStore.swift
       # The markdown block parser: pure Foundation, and the fiddly line-based
       # structure (tables, task lists, fences, quote coalescing) is exactly the
       # kind of thing that fails silently. The renderer and tree-sitter code

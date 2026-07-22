@@ -124,6 +124,25 @@ final class Session: Identifiable {
     /// authoritatively on command-finished so it can never get stuck. Drives
     /// the sidebar busy spinner.
     var isBusy: Bool = false
+    /// The agent CLI currently running in this session (its command basename,
+    /// e.g. `claude`), or nil when none is. Mirrors the live shell-integration
+    /// marker, kept in sync by `SessionManager`'s agents-directory watcher, and
+    /// drives the sidebar's small "which agent" line. Observed so it updates live.
+    var runningAgent: String?
+    /// The model the running agent was launched with (`--model`/`-m` value), when
+    /// it carried one — shown next to `runningAgent`. nil for the agent's default.
+    var runningModel: String?
+    /// The running agent's exact launch command, kept so a quit can record it for
+    /// agents with no "continue last" flag. Not shown, so not observed.
+    @ObservationIgnored var runningArgv: String?
+    /// The pid of the shell the running agent was launched from, so a quit can
+    /// confirm against the process table that it is genuinely still running
+    /// before recording it for resume. See `AgentLiveness`.
+    @ObservationIgnored var runningShellPID: pid_t?
+    /// When the running agent launched, used to identify which transcript it
+    /// created and so which conversation it is in.
+    @ObservationIgnored var runningStartedAt: Date?
+
     /// The live terminal view. Not observed by SwiftUI (it's an NSView we host
     /// directly), so exclude it from observation tracking.
     @ObservationIgnored private(set) var surfaceView: SurfaceView?
@@ -133,6 +152,18 @@ final class Session: Identifiable {
     /// running at quit. Consumed once by `ensureSurfaceView`. Transient (not
     /// persisted, not observed). See AgentResumeStore.
     @ObservationIgnored var pendingResumeInput: String?
+
+    /// The agent behind a not-yet-delivered `pendingResumeInput`. Kept so that a
+    /// quit *before* the session's shell is ever created — it may never be warmed
+    /// (`warmRemainingSurfaces` stops at 20) or clicked — re-persists the agent
+    /// instead of dropping it, which would strand that session cold forever.
+    /// Cleared together with `pendingResumeInput` once the surface takes it.
+    @ObservationIgnored var pendingResumeAgent: AgentMarker?
+
+    /// The exact conversation id restored alongside `pendingResumeAgent`, carried
+    /// for the same reason: a quit before the shell is ever created must re-persist
+    /// it rather than fall back to guessing by modification time.
+    @ObservationIgnored var pendingResumeConversationID: String?
 
     /// Called whenever a surface view is created for this session (eager or
     /// lazy). The SessionManager wires the view's callbacks here.
@@ -184,6 +215,8 @@ final class Session: Identifiable {
         let view = SurfaceView(runtime: runtime, workingDirectory: cwd,
                                sessionID: id, initialInput: pendingResumeInput)
         pendingResumeInput = nil // consumed once
+        pendingResumeAgent = nil // the resume has been dispatched; the live marker takes over
+        pendingResumeConversationID = nil
         surfaceView = view
         onSurfaceCreated?(view)
         return view

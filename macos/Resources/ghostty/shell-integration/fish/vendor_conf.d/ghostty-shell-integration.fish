@@ -284,6 +284,72 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
         return 1
     end
 
+    # Wortel: directory shared with the app (AgentResumeStore) for agent markers.
+    # Global, not local: the event-driven functions below read it at run time,
+    # long after this one-shot setup function's locals are gone.
+    set --global _ghostty_wortel_agent_dir "$HOME/Library/Application Support/Wortel/agents"
+
+    # Wortel: echo the agent-CLI basename if the command line launches one (the
+    # resumable subset), else nothing. Same launcher/env-assignment skipping as
+    # __ghostty_wortel_interactive. Recorded per session so a relaunch can resume it.
+    function __ghostty_wortel_agent
+        set --local words (string split --no-empty ' ' -- $argv[1])
+        set --local n (count $words)
+        set --local i 1
+        set --local cmd ''
+        while test $i -le $n
+            set --local w $words[$i]
+            switch $w
+                case '*=*'
+                    set i (math $i + 1)
+                case sudo doas command builtin exec nohup nice stdbuf setsid env
+                    set i (math $i + 1)
+                case '-*'
+                    set i (math $i + 1)
+                case '*'
+                    set cmd $w
+                    break
+            end
+        end
+        test -z "$cmd"; and return
+        set cmd (string replace --regex '^.*/' '' -- $cmd)
+        switch $cmd
+            case claude pi aider codex cursor-agent gemini opencode goose cline ollama llm crush amp
+                echo -n $cmd
+        end
+    end
+
+    # Wortel: echo the model the command line selects (--model/-m/--models value),
+    # else nothing. Best-effort, for the sidebar badge; only consulted for commands
+    # __ghostty_wortel_agent already matched.
+    function __ghostty_wortel_model
+        set --local words (string split --no-empty ' ' -- $argv[1])
+        set --local n (count $words)
+        set --local i 1
+        set --local val ''
+        while test $i -le $n
+            set --local w $words[$i]
+            switch $w
+                case '--model=*' '--models=*' '-m=*'
+                    set val (string replace --regex '^[^=]*=' '' -- $w)
+                    break
+                case --model --models -m
+                    set --local j (math $i + 1)
+                    test $j -le $n; and set val $words[$j]
+                    break
+            end
+            set i (math $i + 1)
+        end
+        test -n "$val"; and echo -n (string replace --all --regex "[\"']" '' -- $val)
+    end
+
+    # Wortel: clear this session's agent marker at every prompt, so a marker only
+    # survives while an agent is actually running — which is precisely when no
+    # prompt fires. See __ghostty_wortel_agent.
+    function __ghostty_wortel_clear_agent --on-event fish_prompt
+        test -n "$WORTEL_SESSION_ID"; and command rm -f $_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID 2>/dev/null
+    end
+
     function __ghostty_mark_output_start --on-event fish_preexec
         set --global __ghostty_prompt_state pre-exec
         echo -en "\e]133;C\a"
@@ -293,6 +359,27 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
         # skip it for those (see __ghostty_wortel_interactive).
         if not __ghostty_wortel_interactive $argv[1]
             echo -en "\e]9;4;3;\a"
+        end
+        # Wortel: record a launched agent CLI so a relaunch can resume it. key=value
+        # marker keyed by the surface's session id; cleared at the next prompt. A
+        # marker that outlives the app means the agent was still running at quit.
+        if test -n "$WORTEL_SESSION_ID"
+            set --local _wortel_agent (__ghostty_wortel_agent $argv[1])
+            if test -n "$_wortel_agent"
+                command mkdir -p $_ghostty_wortel_agent_dir 2>/dev/null
+                begin
+                    echo "agent=$_wortel_agent"
+                    echo "model="(__ghostty_wortel_model $argv[1])
+                    echo "cwd=$PWD"
+                    echo "argv="(string join ' ' (string split \n -- $argv[1]))
+                    # The shell's own pid — see the zsh integration: it lets the
+                    # app verify from the process table that the agent is really
+                    # still running.
+                    echo "shellpid=$fish_pid"
+                    # When the agent started — see the zsh integration.
+                    echo "startedat="(command date +%s)
+                end >$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID 2>/dev/null
+            end
         end
     end
 

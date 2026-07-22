@@ -20,13 +20,42 @@ struct PersistedSession: Codable {
     /// the panel on every session you'd hidden.
     let gitPanelVisible: Bool?
 
+    /// The agent CLI running in this session when the app last quit, and how it
+    /// was launched — the input to resuming it on the next launch.
+    ///
+    /// This is recorded here rather than read back from the shell integration's
+    /// marker file because a **clean quit destroys that marker**: killing the
+    /// agent hands control back to the shell, which prints one last prompt on its
+    /// way down, and that prompt's `precmd` deletes the marker before the next
+    /// launch can ever read it. The app already knows what's running (the live
+    /// badge), so it snapshots it at termination instead. Markers remain the
+    /// live-state source and still cover the crash case, where nothing gets to
+    /// clean up.
+    let runningAgent: String?
+    let runningModel: String?
+    /// The exact launch command, for agents with no "continue last" primitive.
+    let runningArgv: String?
+    /// The agent's own conversation id, observed from the transcript file the
+    /// running agent held open at quit. Exact, where `cwd` alone can only guess —
+    /// it's what lets a repo with two agent sessions resume each into the right
+    /// conversation. nil when it couldn't be observed; the guess still applies.
+    let runningConversationID: String?
+
     // Tolerate older files without a `name` / `nameIsUserSet` field.
-    enum CodingKeys: String, CodingKey { case id, name, title, cwd, selected, nameIsUserSet, gitPanelVisible }
+    enum CodingKeys: String, CodingKey {
+        case id, name, title, cwd, selected, nameIsUserSet, gitPanelVisible
+        case runningAgent, runningModel, runningArgv, runningConversationID
+    }
     init(id: UUID, name: String, title: String, cwd: String?, selected: Bool,
-         nameIsUserSet: Bool, gitPanelVisible: Bool?) {
+         nameIsUserSet: Bool, gitPanelVisible: Bool?,
+         runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
+         runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
         self.selected = selected; self.nameIsUserSet = nameIsUserSet
         self.gitPanelVisible = gitPanelVisible
+        self.runningAgent = runningAgent; self.runningModel = runningModel
+        self.runningArgv = runningArgv
+        self.runningConversationID = runningConversationID
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -42,6 +71,13 @@ struct PersistedSession: Codable {
         // field should fall back to is a migration decision, and this type stays
         // a plain reading of the file. `SessionManager.restore` resolves it.
         gitPanelVisible = try c.decodeIfPresent(Bool.self, forKey: .gitPanelVisible)
+        // Absent in files written before agent resume moved off the marker file,
+        // and absent for any session with no agent running at quit — both mean
+        // "nothing to resume", so a plain nil is the whole migration.
+        runningAgent = try c.decodeIfPresent(String.self, forKey: .runningAgent)
+        runningModel = try c.decodeIfPresent(String.self, forKey: .runningModel)
+        runningArgv = try c.decodeIfPresent(String.self, forKey: .runningArgv)
+        runningConversationID = try c.decodeIfPresent(String.self, forKey: .runningConversationID)
     }
 }
 

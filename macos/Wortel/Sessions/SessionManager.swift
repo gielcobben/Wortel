@@ -350,6 +350,10 @@ final class SessionManager {
     /// session's shell spawns before the first frame; the rest warm up shortly
     /// after so launch stays lean.
     func restore() {
+        // Before the early return below: a first launch has nothing to restore but
+        // still needs the watcher, or nothing would ever record a running agent and
+        // the *next* launch would have nothing to resume.
+        startAgentActivityWatch()
         let persisted = store.load()
         guard !persisted.isEmpty else {
             newSession()
@@ -363,13 +367,69 @@ final class SessionManager {
             // nil means the file predates per-session visibility — inherit the
             // old app-wide flag just this once.
             session.gitPanelVisible = entry.gitPanelVisible ?? SessionStore.legacyGitPanelVisible
-            session.pendingResumeInput = resume[entry.id]
+            // A surviving marker means the app died without cleaning up (a crash),
+            // and is the most direct evidence. A clean quit leaves none — killing
+            // the agent hands control back to the shell, whose last prompt clears
+            // it on the way down — so fall back to what we recorded at termination.
+            let agent = resume[entry.id] ?? entry.runningAgent.map {
+                // No pid: the shell that ran it died with the last launch. Liveness
+                // was already checked when this was recorded at quit.
+                AgentMarker(agent: $0, model: entry.runningModel,
+                            cwd: entry.cwd, argv: entry.runningArgv,
+                            shellPID: nil, startedAt: nil)
+            }
+            session.pendingResumeInput = agent.flatMap {
+                AgentResumeStore.resumeInput(for: $0,
+                                             knownConversationID: entry.runningConversationID)
+            }
+            session.pendingResumeAgent = session.pendingResumeInput == nil ? nil : agent
+            session.pendingResumeConversationID =
+                session.pendingResumeInput == nil ? nil : entry.runningConversationID
             appendRestored(session)
         }
         syncFolderOrder() // seed/prune the persisted folder order for the restored set
         selectedID = (persisted.first(where: \.selected) ?? persisted[0]).id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.warmRemainingSurfaces()
+        }
+    }
+
+    // MARK: - Live agent activity
+
+    /// Watches the shared `agents/` directory the shell integration writes its
+    /// markers into, so the sidebar can show which agent (and model) is running
+    /// in each session while it runs. Markers appear at an agent's preexec and
+    /// vanish at the next prompt, so a directory change is exactly the moment the
+    /// badges need refreshing. Fail-safe: if the watch can't be set up the badges
+    /// simply never appear.
+    private var agentWatchSource: DispatchSourceFileSystemObject?
+
+    private func startAgentActivityWatch() {
+        guard agentWatchSource == nil else { return }
+        let dir = AgentResumeStore.directory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fd = Darwin.open(dir.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .delete, .rename], queue: .main)
+        source.setEventHandler { [weak self] in self?.refreshAgentActivity() }
+        source.setCancelHandler { Darwin.close(fd) }
+        agentWatchSource = source
+        source.resume()
+        refreshAgentActivity()
+    }
+
+    /// Re-read all live markers and mirror them onto the sessions. Cheap: the
+    /// directory holds at most one tiny file per running agent.
+    private func refreshAgentActivity() {
+        let live = AgentResumeStore.currentMarkers()
+        for session in sessions {
+            let marker = live[session.id]
+            if session.runningAgent != marker?.agent { session.runningAgent = marker?.agent }
+            if session.runningModel != marker?.model { session.runningModel = marker?.model }
+            session.runningArgv = marker?.argv
+            session.runningShellPID = marker?.shellPID
+            session.runningStartedAt = marker?.startedAt
         }
     }
 
@@ -823,10 +883,44 @@ final class SessionManager {
     // MARK: - Persistence
 
     private func persistedSessions() -> [PersistedSession] {
-        sessions.map {
-            PersistedSession(id: $0.id, name: $0.name, title: $0.title, cwd: $0.cwd,
-                             selected: $0.id == selectedID, nameIsUserSet: $0.nameIsUserSet,
-                             gitPanelVisible: $0.gitPanelVisible)
+        sessions.map { session in
+            // What to record as "the agent to resume next launch", resolved as one
+            // unit so a model or command can never outlive the agent it belongs to.
+            //
+            // A live agent only counts if the process table still vouches for it:
+            // a marker outlives an agent killed without its shell reaching another
+            // prompt, and resuming from that reopens a conversation the user had
+            // already stopped. Failing that, a resume we restored but haven't
+            // delivered yet still counts, so it survives another quit instead of
+            // being silently dropped.
+            var conversationID = session.pendingResumeConversationID
+            let agent: AgentMarker? = {
+                if let running = session.runningAgent,
+                   AgentLiveness.isRunning(agent: running, shellPID: session.runningShellPID) {
+                    // Ask the live agent which conversation it's actually writing to,
+                    // while it's still there to ask — after it dies only a guess is left.
+                    // Ask which transcript this agent created, while it's still
+                    // running. Nil means it resumed an existing conversation
+                    // (a resume appends rather than creating), so the id we already
+                    // know for this session stands.
+                    if running == "claude", let cwd = session.cwd,
+                       let startedAt = session.runningStartedAt {
+                        conversationID = AgentResumeStore.claudeConversationID(
+                            cwd: cwd, startedAt: startedAt) ?? conversationID
+                    }
+                    return AgentMarker(agent: running, model: session.runningModel,
+                                       cwd: session.cwd, argv: session.runningArgv,
+                                       shellPID: nil, startedAt: nil)
+                }
+                return session.pendingResumeAgent
+            }()
+            return PersistedSession(
+                id: session.id, name: session.name, title: session.title, cwd: session.cwd,
+                selected: session.id == selectedID, nameIsUserSet: session.nameIsUserSet,
+                gitPanelVisible: session.gitPanelVisible,
+                runningAgent: agent?.agent, runningModel: agent?.model,
+                runningArgv: agent?.argv,
+                runningConversationID: agent == nil ? nil : conversationID)
         }
     }
 

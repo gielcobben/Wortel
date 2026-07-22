@@ -91,4 +91,38 @@ final class PersistedSessionTests: XCTestCase {
     func testMissingIDFails() {
         XCTAssertThrowsError(try decode(#"{"name":"Session 1"}"#))
     }
+
+    // MARK: - Agent resume
+
+    /// The agent running at quit is recorded here rather than left to the shell
+    /// integration's marker file, because a clean quit destroys that marker: the
+    /// agent dies first, the shell prints one last prompt on its way down, and
+    /// that prompt's `precmd` deletes it before the next launch can read it.
+    func testRunningAgentRoundTrips() throws {
+        let session = try decode(#"""
+            {"id":"\#(UUID())","runningAgent":"claude","runningModel":"opus","runningArgv":"claude --model opus"}
+            """#)
+        XCTAssertEqual(session.runningAgent, "claude")
+        XCTAssertEqual(session.runningModel, "opus")
+        XCTAssertEqual(session.runningArgv, "claude --model opus")
+    }
+
+    /// Two different "nothing to resume" cases share one representation, and that
+    /// is deliberate: a file written before agent resume moved off the marker
+    /// file, and a session that simply had no agent running at quit. Both must
+    /// resume nothing, so neither needs distinguishing.
+    func testAbsentAgentMeansNothingToResume() throws {
+        let session = try decode(#"{"id":"\#(UUID())","name":"Wortel/Web"}"#)
+        XCTAssertNil(session.runningAgent)
+        XCTAssertNil(session.runningModel)
+        XCTAssertNil(session.runningArgv)
+    }
+
+    /// An agent left on its default model records the agent and nothing else —
+    /// the common case, since most agents are launched without a `--model` flag.
+    func testAgentWithoutAModelIsStillResumable() throws {
+        let session = try decode(#"{"id":"\#(UUID())","runningAgent":"codex"}"#)
+        XCTAssertEqual(session.runningAgent, "codex")
+        XCTAssertNil(session.runningModel)
+    }
 }

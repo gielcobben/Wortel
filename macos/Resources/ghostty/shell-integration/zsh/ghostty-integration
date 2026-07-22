@@ -295,6 +295,25 @@ _ghostty_deferred_init() {
         esac
     }
 
+    # Wortel: echo the model the command line selects (--model/-m/--models value),
+    # else nothing. Best-effort, for the sidebar badge and to record what an agent
+    # was using. Only consulted for commands _ghostty_wortel_agent already matched.
+    _ghostty_wortel_model() {
+        builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+        builtin local -a words
+        words=(${(Q)${(z)1}})
+        builtin local -i i=1 n=$#words
+        builtin local w
+        while (( i <= n )); do
+            w=$words[i]
+            case $w in
+                --model=*|--models=*|-m=*)  builtin print -r -- ${w#*=}; return ;;
+                --model|--models|-m)        (( i++ )); [[ -n $words[i] ]] && builtin print -r -- $words[i]; return ;;
+            esac
+            (( i++ ))
+        done
+    }
+
     # Wortel: directory shared with the app (AgentResumeStore) for agent markers.
     _ghostty_wortel_agent_dir="$HOME/Library/Application Support/Wortel/agents"
 
@@ -339,8 +358,23 @@ _ghostty_deferred_init() {
         if [[ -n $WORTEL_SESSION_ID ]]; then
             builtin local _wortel_agent="$(_ghostty_wortel_agent "$1")"
             if [[ -n $_wortel_agent ]]; then
+                # key=value marker read by AgentResumeStore: the agent, the model
+                # it was launched with (if any), the cwd (to resume the right
+                # project), and the exact command (one line) as a resume fallback.
                 command mkdir -p "$_ghostty_wortel_agent_dir" 2>/dev/null
-                builtin print -r -- "$_wortel_agent" > "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+                {
+                    builtin print -r -- "agent=$_wortel_agent"
+                    builtin print -r -- "model=$(_ghostty_wortel_model "$1")"
+                    builtin print -r -- "cwd=$PWD"
+                    builtin print -r -- "argv=${1//$'\n'/ }"
+                    # The shell's own pid. The agent runs as a descendant of it,
+                    # so the app can ask the process table whether it is *really*
+                    # still running rather than trusting this file to be current.
+                    builtin print -r -- "shellpid=$$"
+                    # When the agent started, so the app can tell which transcript
+                    # the agent created (and so which conversation it is in).
+                    builtin print -r -- "startedat=$(command date +%s)"
+                } > "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
             fi
         fi
         (( _ghostty_state = 1 ))

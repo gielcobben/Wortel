@@ -6,18 +6,30 @@ import SwiftUI
 /// `GitPanelModel`, which points it at the selected session's repo.
 struct SourceControlPanel: View {
     @Bindable var panel: GitPanelModel
+    /// The in-app browser shown for the Browser pane. Lives above the git panel
+    /// (app-wide, repo-independent), passed down so this one view can render all
+    /// three panes of the shared column.
+    let browser: BrowserModel
 
     var body: some View {
         Group {
-            if let repo = panel.repo {
-                switch panel.pane {
-                case .changes:
+            switch panel.pane {
+            case .browser:
+                // The only pane that doesn't need a repo — it renders whatever
+                // the cwd is, or nothing at all.
+                BrowserPane(model: browser)
+            case .changes:
+                if let repo = panel.repo {
                     RepoView(repo: repo, focusRequest: panel.listFocusRequest)
-                case .history:
-                    HistoryView(repo: repo, focusRequest: panel.listFocusRequest)
+                } else {
+                    emptyState
                 }
-            } else {
-                emptyState
+            case .history:
+                if let repo = panel.repo {
+                    HistoryView(repo: repo, focusRequest: panel.listFocusRequest)
+                } else {
+                    emptyState
+                }
             }
         }
         // No background on purpose. As an inspector split item the system supplies

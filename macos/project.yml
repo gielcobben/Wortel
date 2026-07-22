@@ -200,6 +200,12 @@ targets:
         NSHumanReadableCopyright: "© Giel Cobben"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSSupportsSuddenTermination: false
+        # The in-app browser (Browser pane) needs to load http://localhost:PORT
+        # dev servers. NSAllowsLocalNetworking lifts ATS's block on cleartext HTTP
+        # for loopback / .local / unqualified hosts only — public sites still
+        # require HTTPS.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         # Sparkle auto-update feed (served from the wortel-updates R2 bucket).
         SUFeedURL: https://updates.wortel.sh/appcast.xml
         # EdDSA public key — private half lives in the login Keychain (shared

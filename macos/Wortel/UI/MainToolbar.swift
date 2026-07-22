@@ -246,10 +246,14 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         Task { @MainActor in branchPopover = nil }
     }
 
-    /// Whether there's a branch worth showing: the panel is open, pointed at an
-    /// actual repo, and not currently displaced by the markdown preview (whose
-    /// content the branch/actions/pane controls don't apply to).
-    private var showsBranchItem: Bool { git.isVisible && git.repo != nil && !markdown.isOpen }
+    /// Whether there's a branch worth showing: the panel is open on a git pane,
+    /// pointed at an actual repo, and not currently displaced by the markdown
+    /// preview (whose content the branch/actions controls don't apply to). The
+    /// Browser pane shares the toggle group but isn't git, so the branch chip and
+    /// repo-actions button come out while it's up.
+    private var showsBranchItem: Bool {
+        git.isVisible && git.repo != nil && !markdown.isOpen && git.pane != .browser
+    }
 
     /// Insert or remove the repo-scoped items — the branch chip and the "···"
     /// actions button — so they exist only when the panel does. Removed rather

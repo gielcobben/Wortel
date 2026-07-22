@@ -8,12 +8,13 @@ import SwiftUI
 struct InspectorContainer: View {
     @Bindable var git: GitPanelModel
     @Bindable var markdown: MarkdownPreviewModel
+    let browser: BrowserModel
 
     var body: some View {
         if markdown.isOpen {
             MarkdownPreviewPanel(model: markdown)
         } else {
-            SourceControlPanel(panel: git)
+            SourceControlPanel(panel: git, browser: browser)
         }
     }
 }

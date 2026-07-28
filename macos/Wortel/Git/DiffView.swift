@@ -33,12 +33,20 @@ struct DiffView: NSViewRepresentable {
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         context.coordinator.configure(font: font)
 
-        let table = NSTableView()
+        let table = DiffTableView()
         table.identifier = Self.tableIdentifier
         table.headerView = nil
         table.backgroundColor = .clear
         table.gridStyleMask = []
-        table.selectionHighlightStyle = .none
+        // Rows are selectable so lines of code can be copied out (⌘C or the
+        // right-click menu) — the "agent changed this, grab those three lines"
+        // path. Selection is line-granular: the rows are hand-drawn, so there
+        // is no character-level text machinery to hook into, and whole lines
+        // are what pasting into a terminal wants anyway.
+        table.allowsMultipleSelection = true
+        table.selectionText = { [weak coordinator = context.coordinator] rows in
+            coordinator?.selectionText(for: rows) ?? ""
+        }
         table.rowSizeStyle = .custom
         table.usesAutomaticRowHeights = false
         table.rowHeight = context.coordinator.rowHeight
@@ -87,7 +95,10 @@ struct DiffView: NSViewRepresentable {
         guard result.reload else { return }
         table.reloadData()
         if result.scrollToTop {
-            // New file selected — jump back to the top.
+            // New file selected — jump back to the top, and drop the old file's
+            // selection (reloadData keeps row indexes selected, which would
+            // silently select unrelated lines of the new file).
+            table.deselectAll(nil)
             table.scroll(.zero)
             scroll.contentView.scroll(to: .zero)
         }
@@ -98,6 +109,7 @@ struct DiffView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         static let columnID = NSUserInterfaceItemIdentifier("diff")
         private static let cellID = NSUserInterfaceItemIdentifier("diffCell")
+        private static let rowID = NSUserInterfaceItemIdentifier("diffRow")
 
         private(set) var lines: [DiffLine] = []
         private var highlights: [Int: [HighlightSpan]] = [:]
@@ -171,7 +183,22 @@ struct DiffView: NSViewRepresentable {
             columnWidth = gutterWidth + CGFloat(maxChars) * charWidth + 16
         }
 
+        /// The pasteboard text for a set of selected rows: the raw line text
+        /// joined by newlines — no gutter numbers, no +/- signs — so what's
+        /// pasted into a terminal is code, not diff decoration.
+        func selectionText(for rows: IndexSet) -> String {
+            rows.compactMap { lines.indices.contains($0) ? lines[$0].text : nil }
+                .joined(separator: "\n")
+        }
+
         func numberOfRows(in tableView: NSTableView) -> Int { lines.count }
+
+        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+            let rowView = tableView.makeView(withIdentifier: Self.rowID, owner: self) as? DiffRowView
+                ?? DiffRowView()
+            rowView.identifier = Self.rowID
+            return rowView
+        }
 
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             let cell = tableView.makeView(withIdentifier: Self.cellID, owner: self) as? DiffLineCellView
@@ -183,6 +210,47 @@ struct DiffView: NSViewRepresentable {
             cell.configure(line: lines[row], spans: highlights[lines[row].id] ?? [])
             return cell
         }
+    }
+}
+
+/// The diff's table, subclassed for copying: `copy:` is dispatched nil-target
+/// from the Edit menu, so implementing it here is all ⌘C needs once the table
+/// is first responder (which clicking a row makes it). Right-click offers the
+/// same copy without touching keyboard focus.
+final class DiffTableView: NSTableView {
+    /// Supplies the pasteboard text for the selected rows — set by `DiffView`
+    /// to the Coordinator's line store, which owns what the rows mean.
+    var selectionText: ((IndexSet) -> String)?
+
+    @objc func copy(_ sender: Any?) {
+        guard let text = selectionText?(selectedRowIndexes), !text.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    /// Right-click: pull the clicked row into the selection if it's outside it
+    /// (the native table convention), then offer Copy.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = row(at: convert(event.locationInWindow, from: nil))
+        guard row >= 0 else { return nil }
+        if !selectedRowIndexes.contains(row) {
+            selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
+        let menu = NSMenu()
+        menu.addItem(ClosureMenuItem(title: "Copy") { [weak self] in self?.copy(nil) })
+        return menu
+    }
+}
+
+/// Selection stays the unemphasized gray even while the table has keyboard
+/// focus: the row tints (green/red at low alpha) blend over the selection
+/// fill, and the label-colored code stays readable where the emphasized
+/// accent blue would fight both.
+final class DiffRowView: NSTableRowView {
+    override var isEmphasized: Bool {
+        get { false }
+        set {}
     }
 }
 

@@ -191,14 +191,6 @@ struct SessionRow: View {
     // Not while editing: the rename field sits on a normal background.
     private var onAccent: Bool { isSelected && !isEditing }
 
-    /// The running-agent line under the name: "claude · opus", or just "claude"
-    /// when the agent used its default model. nil when no agent is running.
-    private var agentLabel: String? {
-        guard let agent = session.runningAgent else { return nil }
-        if let model = session.runningModel { return "\(agent) · \(model)" }
-        return agent
-    }
-
     var body: some View {
         // Content padded inside an inset accent pill (~6pt from the cell edges,
         // so it's not edge-to-edge). The indicator is centered against the whole
@@ -245,14 +237,6 @@ struct SessionRow: View {
                     // it opens with only the leaf selected (`selectLeafName`).
                     Text(session.leafName)
                         .foregroundStyle(onAccent ? .white : .primary)
-                    if let label = agentLabel {
-                        // A running agent labels the row with what it is (and its
-                        // model, when launched with one): "claude · opus".
-                        Text(label)
-                            .font(.system(size: 10))
-                            .foregroundStyle(onAccent ? .white.opacity(0.8) : .secondary)
-                            .lineLimit(1)
-                    }
                 }
             }
             Spacer(minLength: 4)

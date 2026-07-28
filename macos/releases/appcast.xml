@@ -3,6 +3,14 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.31.1</title>
+            <pubDate>Tue, 28 Jul 2026 13:33:08 -0400</pubDate>
+            <sparkle:version>2026.31.1</sparkle:version>
+            <sparkle:shortVersionString>2026.31.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.31.1.zip" length="17189344" type="application/octet-stream" sparkle:edSignature="prn8vda5DJLCyD9yWazgwnpzV3pBrGWpLz3WZ4l3D3cNX+P0pEMDHlMseeAogGHtlVp0Hy9ZlNpaXy5eua3aAA=="/>
+        </item>
+        <item>
             <title>2026.30.3</title>
             <pubDate>Wed, 22 Jul 2026 09:33:09 -0400</pubDate>
             <sparkle:version>2026.30.3</sparkle:version>
@@ -17,14 +25,6 @@
             <sparkle:shortVersionString>2026.30.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.30.2.zip" length="17031172" type="application/octet-stream" sparkle:edSignature="P+ExLpQdbKiFpBrbQZvstdYulHagxb9PLNrpXiIKFyYZID4+346UZ1qAX8U85PJbfjRDsCAQTQEWgXJ/j3MFBQ=="/>
-        </item>
-        <item>
-            <title>2026.30.1</title>
-            <pubDate>Mon, 20 Jul 2026 08:16:05 -0400</pubDate>
-            <sparkle:version>2026.30.1</sparkle:version>
-            <sparkle:shortVersionString>2026.30.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.30.1.zip" length="16850168" type="application/octet-stream" sparkle:edSignature="W2i3veSYNpLi23gWYPAJ11MEZ8geuiQ7nkCAgsRAhhODFZL6FXdeoHcOxInOiBxL2Tmu3u3EYqqzdEaDCFIdAQ=="/>
         </item>
     </channel>
 </rss>

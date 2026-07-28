@@ -52,6 +52,20 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// The open branch popover, kept only so a second click while it's up doesn't
     /// stack a second one.
     private var branchPopover: NSPopover?
+    /// The last branch the chip was sized for, so `updateBranchButton` only
+    /// touches the width constraint on an actual change — re-fitting on every
+    /// observation tick made the chip (and everything after it) jitter.
+    private var lastBranchTitle: String?
+    /// The toolbar items with custom views, held so their overflow-menu forms
+    /// can track live state. Without a `menuFormRepresentation`, a view item
+    /// that lands in the toolbar's `»` menu is a dead, disabled label.
+    private weak var paneItem: NSToolbarItem?
+    private weak var gitControlsItem: NSToolbarItem?
+    private weak var gitMenuItem: NSToolbarItem?
+    /// The chip stops growing here and truncates the branch name instead — the
+    /// inspector section is 260pt at its narrowest, and an unbounded chip was
+    /// what shoved the whole section into the `»` menu.
+    private static let maxBranchChipWidth: CGFloat = 180
 
     init(splitView: NSSplitView, git: GitPanelModel, markdown: MarkdownPreviewModel) {
         self.splitView = splitView
@@ -73,14 +87,20 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// control, because `.selectAny` tracking lets a click land the control on a
     /// state the model would never hold (both selected, or none while visible).
     @objc private func paneChanged(_ sender: NSSegmentedControl) {
+        activatePane(at: sender.selectedSegment)
+    }
+
+    /// The shared pane-click behavior, also the action behind the overflow (`»`)
+    /// menu's pane entries — which is why it's index-based rather than reading
+    /// the segmented control.
+    private func activatePane(at index: Int) {
         let panes = GitInspectorPane.allCases
-        let clicked = sender.selectedSegment
         // While the markdown preview owns the column, a pane click means "give me
         // that git pane back" — close the preview and show the pane, never toggle
         // the column shut.
         if markdown.isOpen {
             markdown.close()
-            if panes.indices.contains(clicked) { git.pane = panes[clicked] }
+            if panes.indices.contains(index) { git.pane = panes[index] }
             git.isPresented = true
             syncToolbar()
             return
@@ -88,13 +108,13 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         // `.selectAny` reports -1 when the click *deselected* a segment, which can
         // only be the pane already on screen. Guarding on the index too keeps the
         // close working if AppKit reports the clicked index instead.
-        if clicked < 0 {
+        if index < 0 {
             git.isPresented = false
-        } else if panes.indices.contains(clicked) {
-            if git.isVisible && git.pane == panes[clicked] {
+        } else if panes.indices.contains(index) {
+            if git.isVisible && git.pane == panes[index] {
                 git.isPresented = false
             } else {
-                git.pane = panes[clicked]
+                git.pane = panes[index]
                 git.isPresented = true
             }
         }
@@ -114,6 +134,42 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         }
         syncRepoItems()
         updateBranchButton()
+        updateMenuForms()
+    }
+
+    /// Keep each custom-view item's `menuFormRepresentation` current. This is
+    /// what the toolbar's overflow (`»`) menu shows when the window or inspector
+    /// is too narrow for the item itself — without it, AppKit lists the item as
+    /// a disabled label and the control is simply lost. Rebuilt on every sync so
+    /// the entries reflect live state (selected pane, repo actions).
+    private func updateMenuForms() {
+        if let paneItem {
+            let submenu = NSMenu()
+            for (index, pane) in GitInspectorPane.allCases.enumerated() {
+                let entry = ClosureMenuItem(title: pane.title) { [weak self] in
+                    self?.activatePane(at: index)
+                }
+                entry.state = (git.isVisible && !markdown.isOpen && pane == git.pane) ? .on : .off
+                submenu.addItem(entry)
+            }
+            let form = NSMenuItem(title: "Source Control", action: nil, keyEquivalent: "")
+            form.submenu = submenu
+            paneItem.menuFormRepresentation = form
+        }
+        if let gitControlsItem {
+            // Anchor on the pane control when the chip itself is overflowed (a
+            // popover needs an on-screen view); the chip when it's visible.
+            gitControlsItem.menuFormRepresentation = ClosureMenuItem(title: "Switch Branch…") { [weak self] in
+                guard let self else { return }
+                let anchor = branchButton?.window != nil ? branchButton : paneControl
+                if let anchor { presentBranchSwitcher(from: anchor) }
+            }
+        }
+        if let gitMenuItem {
+            let form = NSMenuItem(title: "Repository", action: nil, keyEquivalent: "")
+            form.submenu = repoActionsMenu()
+            gitMenuItem.menuFormRepresentation = form
+        }
     }
 
     /// Pop the repo-actions menu — fetch, push — below the "···" button. Built
@@ -122,7 +178,14 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// disabled item just can't be chosen. `autoenablesItems = false` so our
     /// explicit `isEnabled` wins over AppKit's target/action validation.
     @objc private func openGitMenu(_ sender: NSButton) {
-        guard let repo = git.repo else { return }
+        guard let menu = repoActionsMenu() else { return }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    /// The fetch/push menu, shared by the "···" click and the overflow (`»`)
+    /// form. nil when no repo is open.
+    private func repoActionsMenu() -> NSMenu? {
+        guard let repo = git.repo else { return nil }
         let menu = NSMenu()
         menu.autoenablesItems = false
         let busy = repo.isFetching || repo.isPushing
@@ -149,8 +212,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         push.image = NSImage(systemSymbolName: "arrow.up", accessibilityDescription: nil)
         push.isEnabled = !busy && repo.canPush
         menu.addItem(push)
-
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+        return menu
     }
 
     /// The branch button's title: a leading branch glyph and the branch name. The
@@ -160,13 +222,21 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// the switcher, not status.
     private func updateBranchButton() {
         guard let button = branchButton, let repo = git.repo else { return }
-        button.attributedTitle = Self.branchTitle(repo.status.branch ?? "detached")
+        let branch = repo.status.branch ?? "detached"
+        // Only re-fit on an actual branch change: this runs on every observation
+        // tick, and toggling the width constraint each time made the chip (and
+        // the controls beside it) jitter.
+        guard branch != lastBranchTitle else { return }
+        lastBranchTitle = branch
+        button.attributedTitle = Self.branchTitle(branch)
         button.toolTip = "Switch branch"
         // Widen past the fitted size so the bezel centres the content with a
         // little air on each side. Deactivate the width first so `fittingSize`
-        // reports the content width, not the last padded one.
+        // reports the content width, not the last padded one. Capped so a long
+        // branch name truncates (the title's paragraph style) instead of pushing
+        // the whole section into the toolbar's `»` menu.
         branchWidthConstraint?.isActive = false
-        branchWidthConstraint?.constant = button.fittingSize.width + 28
+        branchWidthConstraint?.constant = min(button.fittingSize.width + 28, Self.maxBranchChipWidth)
         branchWidthConstraint?.isActive = true
     }
 
@@ -211,9 +281,13 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             result.append(NSAttributedString(attachment: attachment))
             result.append(NSAttributedString(string: " "))
         }
+        // Truncate rather than clip when the chip hits its width cap.
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
         result.append(NSAttributedString(string: branch, attributes: [
             .font: font,
             .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraph,
         ]))
         return result
     }
@@ -224,9 +298,16 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// and keep that height once the branches arrive. The read is a
     /// `for-each-ref`, fast enough that the click still feels immediate.
     @objc private func openBranchSwitcher(_ sender: NSButton) {
+        presentBranchSwitcher(from: sender)
+    }
+
+    private func presentBranchSwitcher(from anchor: NSView) {
         guard branchPopover == nil, let repo = git.repo else { return }
         Task {
             await repo.loadBranches()
+            // The anchor can leave the window while branches load (the item can
+            // overflow or be removed) — a popover on a windowless view throws.
+            guard anchor.window != nil else { return }
             let popover = NSPopover()
             popover.behavior = .transient
             let list = BranchList(repo: repo, dismiss: { [weak self] in
@@ -237,7 +318,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             popover.contentViewController = host
             popover.delegate = self
             branchPopover = popover
-            popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+            popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
         }
     }
 
@@ -391,6 +472,10 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             item.view = button
             item.label = "Branch"
             item.visibilityPriority = .low
+            gitControlsItem = item
+            // A fresh button starts at width 0, so the change-guard in
+            // `updateBranchButton` must not skip it.
+            lastBranchTitle = nil
             updateBranchButton()
             return item
         case .gitMenu:
@@ -407,6 +492,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             item.label = "Actions"
             item.toolTip = "Fetch, push, and more"
             item.visibilityPriority = .low
+            gitMenuItem = item
             return item
         case .gitPane:
             // A plain NSSegmentedControl rather than an NSToolbarItemGroup: the
@@ -442,7 +528,12 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.view = segmented
             item.label = "Source Control"
+            // The panel's only opener — it overflows last, after the branch chip
+            // and "···" (both `.low`), which act on an open panel and lose
+            // nothing by dropping into the `»` menu first.
+            item.visibilityPriority = .high
             paneControl = segmented
+            paneItem = item
             syncToolbar()
             return item
         default:

@@ -16,17 +16,29 @@ Current (Apple Silicon, 1 session):
 - App bundle: **7.1 MB**
 - Memory: **~92 MB** (includes the Metal renderer + atlas; comparable to Ghostty)
 
-## Throughput (vs Ghostty.app)
+## Throughput (vs every terminal installed)
 
-`./bench/gen.sh` writes three streams to `bench/data/` (gitignored):
-`scrolling.txt` (plain), `colors.txt` (24-bit truecolor), `cursor.txt` (SGR churn).
+```
+./bench/compare.sh          # → bench/results/report.md
+```
 
-Run the same command in **Wortel** and in **Ghostty.app**, compare wall time:
-```
-time cat bench/data/scrolling.txt
-time cat bench/data/colors.txt
-time cat bench/data/cursor.txt
-```
+One command: detects the installed terminals (Ghostty, kitty, Alacritty,
+iTerm2, Apple Terminal — installing one adds it to the report), streams the
+three fixtures through each sequentially, and writes a median table relative
+to Wortel. Timing is DSR-synced (`timed_stream.py`): the clock stops when the
+terminal answers `ESC[6n`, i.e. after it has *parsed* everything — `time cat`
+stops when the pty buffer accepts the last write, which rewards buffer depth,
+not speed.
+
+Wortel has no CLI, so the script types into a fresh session (⌘N) via System
+Events — grant Accessibility to the terminal running the script, or paste the
+printed `runner.sh` command into Wortel by hand when prompted. Wortel is left
+running afterwards; the other terminals are quit.
+
+`./bench/gen.sh` (re)writes the fixtures to `bench/data/` (gitignored):
+`scrolling.txt` (plain), `colors.txt` (24-bit truecolor), `cursor.txt`
+(SGR churn). `compare.sh` runs it automatically when they're missing.
+
 Accept: within noise of Ghostty.app.
 
 ## Render stress

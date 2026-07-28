@@ -217,13 +217,10 @@ struct CommitFileChange: Identifiable, Hashable {
 }
 
 /// Which pane the trailing inspector shows. Persisted app-wide by GitPanelModel,
-/// and driven by the toolbar's segmented control. Named for its origin — two git
-/// panes — but it also carries the (non-git) Browser pane, which shares the same
-/// column and toggle group.
+/// and driven by the toolbar's segmented control.
 enum GitInspectorPane: String, CaseIterable, Identifiable {
     case changes
     case history
-    case browser
 
     var id: String { rawValue }
 
@@ -231,7 +228,6 @@ enum GitInspectorPane: String, CaseIterable, Identifiable {
         switch self {
         case .changes: return "Changes"
         case .history: return "History"
-        case .browser: return "Browser"
         }
     }
 
@@ -239,7 +235,6 @@ enum GitInspectorPane: String, CaseIterable, Identifiable {
         switch self {
         case .changes: return "doc.on.doc"
         case .history: return "clock"
-        case .browser: return "globe"
         }
     }
 }

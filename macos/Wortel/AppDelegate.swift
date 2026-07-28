@@ -19,10 +19,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Drives the Markdown preview that shares the trailing column — opened by
     /// clicking a `.md` path in the terminal.
     private let markdownPreview = MarkdownPreviewModel()
-    /// Drives the in-app browser that shares the trailing column — the Browser
-    /// pane in the same toggle group as Changes and History. App-wide and
-    /// repo-independent, so it isn't reset on session switch.
-    private let browser = BrowserModel()
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
     /// background update checks start at launch; the "Check for Updates…" menu
     /// item drives manual checks through it.
@@ -63,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // off the linked SDK, not the deployment target); on 14 they render as a
         // conventional unified toolbar.
         window.toolbarStyle = .unified
-        let split = MainSplitViewController(runtime: runtime, manager: manager, git: gitPanel, markdown: markdownPreview, browser: browser)
+        let split = MainSplitViewController(runtime: runtime, manager: manager, git: gitPanel, markdown: markdownPreview)
         self.splitController = split
         window.contentViewController = split
         installToolbar(on: window, splitView: split.splitView)
@@ -91,16 +87,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // preview (which shares the column with the git panel).
         manager.onOpenMarkdown = { [weak self] url in
             self?.markdownPreview.open(url)
-        }
-        // A web link was ⌘-clicked in the terminal → reveal the Browser pane and
-        // load it. The preview and the browser can't share the column, so close
-        // any open preview first.
-        manager.onOpenURL = { [weak self] url in
-            guard let self else { return }
-            self.markdownPreview.close()
-            self.browser.load(url)
-            self.gitPanel.pane = .browser
-            self.gitPanel.isPresented = true
         }
         manager.onAttentionCleared = { session in
             // The user answered (or the session closed) — pull the banner out
@@ -130,9 +116,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Panel visibility is session state, so a toggle has to reach
         // sessions.json.
         gitPanel.onVisibilityChanged = { [weak manager] in manager?.sessionStateChanged() }
-        // Detaching the browser to the system default browser closes the in-app
-        // pane — visibility lives on the git panel, so it's dismissed from here.
-        browser.onRequestClose = { [weak self] in self?.gitPanel.isPresented = false }
 
         manager.restore()
         // Point the panel at the restored selection: it's what raises the panel

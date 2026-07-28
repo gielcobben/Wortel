@@ -322,14 +322,14 @@ final class GhosttyRuntime {
 
         case GHOSTTY_ACTION_OPEN_URL:
             // A ⌘-clicked link — a URL, an OSC 8 hyperlink, or a matched path. We
-            // intercept two kinds: a local markdown file (→ the in-app preview)
-            // and a web link (→ the in-app browser). Everything else — other
-            // files, mailto:, custom schemes — returns false so libghostty
-            // performs its own default open. Each decision is synchronous and
-            // cwd-free (see MarkdownLink / the scheme check) because the return
-            // value gates libghostty right here — we can't defer to the main actor
-            // and still answer "did you handle it?". So Wortel never becomes the
-            // thing that launches an arbitrary file on a single click.
+            // intercept one kind: a local markdown file (→ the in-app preview).
+            // Everything else — web links, other files, mailto:, custom schemes —
+            // returns false so libghostty performs its own default open (web
+            // links land in the system browser). The decision is synchronous and
+            // cwd-free (see MarkdownLink) because the return value gates
+            // libghostty right here — we can't defer to the main actor and still
+            // answer "did you handle it?". So Wortel never becomes the thing
+            // that launches an arbitrary file on a single click.
             guard let view = surfaceView(fromTarget: target) else { return false }
             let open = action.action.open_url
             guard let ptr = open.url else { return false }
@@ -337,11 +337,6 @@ final class GhosttyRuntime {
             let link = String(decoding: Data(bytes: ptr, count: Int(open.len)), as: UTF8.self)
             if let fileURL = MarkdownLink.fileURL(from: link) {
                 DispatchQueue.main.async { view.onOpenMarkdown?(fileURL) }
-                return true
-            }
-            if let url = URL(string: link), let scheme = url.scheme?.lowercased(),
-               scheme == "http" || scheme == "https" {
-                DispatchQueue.main.async { view.onOpenURL?(url) }
                 return true
             }
             return false

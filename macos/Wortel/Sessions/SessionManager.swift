@@ -70,10 +70,6 @@ final class SessionManager {
     /// an absolute file URL). The app layer opens it in the right-hand preview.
     @ObservationIgnored var onOpenMarkdown: ((URL) -> Void)?
 
-    /// A web link was ⌘-clicked in a session's terminal (http/https). The app
-    /// layer opens it in the in-app browser pane.
-    @ObservationIgnored var onOpenURL: ((URL) -> Void)?
-
     /// Whether Wortel is the frontmost app. A session the user is *actively
     /// viewing* (app active + window visible + selected) never raises
     /// attention — they can see it. Set by the app layer on activate/resign.
@@ -1009,11 +1005,6 @@ final class SessionManager {
             // hand it up to the app layer, which opens the preview.
             view.onOpenMarkdown = { [weak self] url in
                 self?.onOpenMarkdown?(url)
-            }
-            // A ⌘-clicked web link — hand it up to the app layer, which reveals
-            // the browser pane and loads it.
-            view.onOpenURL = { [weak self] url in
-                self?.onOpenURL?(url)
             }
         }
     }

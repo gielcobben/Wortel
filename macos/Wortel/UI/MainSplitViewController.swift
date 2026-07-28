@@ -25,7 +25,6 @@ final class MainSplitViewController: NSSplitViewController {
     private let manager: SessionManager
     private let git: GitPanelModel
     private let markdown: MarkdownPreviewModel
-    private let browser: BrowserModel
 
     private var inspectorItem: NSSplitViewItem!
     /// Guards against the observer→collapse→observer feedback loop.
@@ -37,12 +36,11 @@ final class MainSplitViewController: NSSplitViewController {
     /// reclaim the column from a preview (they're mutually exclusive views of it).
     private var lastGitVisible = false
 
-    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel, markdown: MarkdownPreviewModel, browser: BrowserModel) {
+    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel, markdown: MarkdownPreviewModel) {
         self.runtime = runtime
         self.manager = manager
         self.git = git
         self.markdown = markdown
-        self.browser = browser
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -80,14 +78,11 @@ final class MainSplitViewController: NSSplitViewController {
         // thickness, so min/max are overridden right after to make it draggable.
         // collapseBehavior keeps the *window* still when the panel opens/closes,
         // resizing the terminal instead.
-        let inspector = NSHostingController(rootView: InspectorContainer(git: git, markdown: markdown, browser: browser))
+        let inspector = NSHostingController(rootView: InspectorContainer(git: git, markdown: markdown))
         inspector.view.setFrameSize(NSSize(width: 420, height: inspector.view.frame.height))
         let item = NSSplitViewItem(inspectorWithViewController: inspector)
         item.minimumThickness = 260
-        // Generous cap so the Browser pane can be dragged wide enough to render a
-        // real page — a diff was happy at 680, a web app isn't. The terminal's low
-        // holding priority and 80pt floor still let it give up the room.
-        item.maximumThickness = 1600
+        item.maximumThickness = 680
         item.canCollapse = true
         item.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
         item.holdingPriority = NSLayoutConstraint.Priority(260)

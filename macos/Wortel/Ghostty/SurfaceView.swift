@@ -32,9 +32,6 @@ final class SurfaceView: NSView {
     /// OPEN_URL handler). The owner opens it in the right-hand preview. Non-markdown
     /// links never reach here — libghostty handles those itself.
     var onOpenMarkdown: ((_ url: URL) -> Void)?
-    /// A ⌘-clicked web link (http/https, decided in the runtime's OPEN_URL
-    /// handler). The owner opens it in the in-app browser pane.
-    var onOpenURL: ((_ url: URL) -> Void)?
 
     private(set) var pwd: String?
     private(set) var focused: Bool = false

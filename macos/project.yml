@@ -262,6 +262,12 @@ targets:
       # so it is deliberately a pure value type testable against a fake clock,
       # with the libghostty screen read living apart in a SurfaceView extension.
       - path: Wortel/Sessions/AgentActivity.swift
+      # The launcher-environment scrub: pure dictionary-in, decision-out, and it
+      # runs before the app exists (main.swift, ahead of NSApplication) so there
+      # is nothing else to host it. Both directions need pinning — what it drops
+      # fails silently (an agent that records no transcript), and what it must
+      # keep fails loudly in every session (a shell with no TMPDIR or PATH).
+      - path: Wortel/InheritedEnvironment.swift
     scheme:
       testTargets:
         - WortelTests

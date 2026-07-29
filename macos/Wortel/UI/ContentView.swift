@@ -285,29 +285,38 @@ struct SessionRow: View {
     /// mint = an agent finished its turn, blue = a plain command finished. On
     /// the accent selection pill everything goes white for contrast (but a
     /// selected row has already cleared its attention). A non-selected session
-    /// you haven't caught up with shows a quiet hollow ring instead.
+    /// you haven't caught up with also carries a quiet hollow ring, which sits
+    /// *next to* the spinner rather than being replaced by it — otherwise a
+    /// session that failed and immediately started working again would look
+    /// like any other busy session.
     @ViewBuilder
     private var activityIndicator: some View {
-        if let kind = session.attention {
-            // Urgent states (waiting on you / failed) breathe to catch the eye
-            // in peripheral vision; a clean finish sits still.
-            AttentionDot(
-                color: onAccent ? .white : Self.attentionColor(kind),
-                pulses: kind.pulses && !reduceMotion)
-        } else if session.isBusy {
-            ProgressView()
-                .progressViewStyle(.circular)
-                .controlSize(.small)
-                .scaleEffect(0.7)
-                .frame(width: 12, height: 12)
-                .tint(onAccent ? .white : .secondary)
-        } else if let kind = session.unread, !isSelected {
-            // Quiet "you haven't caught up here" trail: a hollow ring in the
-            // kind's colour, no pulse. Hidden on the selected row (you're on it,
-            // the dwell clock is running).
-            Circle()
-                .stroke(Self.attentionColor(kind).opacity(0.8), lineWidth: 1.5)
-                .frame(width: 7, height: 7)
+        HStack(spacing: 4) {
+            // The unread trail sits *beside* the spinner rather than behind it:
+            // a session that failed and is already working again still says so.
+            // Hidden while a loud dot is up (the dot outranks it) and on the
+            // selected row (you're on it, the dwell clock is running).
+            if let kind = session.unread, !isSelected, session.attention == nil {
+                // Quiet "you haven't caught up here" trail: a hollow ring in the
+                // kind's colour, no pulse.
+                Circle()
+                    .stroke(Self.attentionColor(kind).opacity(0.8), lineWidth: 1.5)
+                    .frame(width: 7, height: 7)
+            }
+            if let kind = session.attention {
+                // Urgent states (waiting on you / failed) breathe to catch the eye
+                // in peripheral vision; a clean finish sits still.
+                AttentionDot(
+                    color: onAccent ? .white : Self.attentionColor(kind),
+                    pulses: kind.pulses && !reduceMotion)
+            } else if session.isBusy {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+                    .frame(width: 12, height: 12)
+                    .tint(onAccent ? .white : .secondary)
+            }
         }
     }
 

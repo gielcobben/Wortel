@@ -427,6 +427,104 @@ final class SessionManager {
             session.runningShellPID = marker?.shellPID
             session.runningStartedAt = marker?.startedAt
         }
+        // Markers appearing/vanishing is exactly when the screen sampler has
+        // work to start or stop doing.
+        updateAgentScreenSampling()
+    }
+
+    // MARK: - Agent screen activity (fallback for agents that emit nothing)
+
+    /// Per-session sampling state. Only holds entries for sessions currently
+    /// being watched; the sampler drops a session's state the moment it stops
+    /// qualifying, so becoming eligible again always starts from a fresh
+    /// baseline and grace window.
+    @ObservationIgnored private var agentScreenTrackers: [Session.ID: AgentActivityTracker] = [:]
+    /// When a session last produced an explicit signal (OSC progress, title
+    /// spinner). Those agents speak for themselves and are left alone.
+    @ObservationIgnored private var explicitSignalAt: [Session.ID: Date] = [:]
+    /// Nil whenever no agent is running anywhere — the common case, and the
+    /// reason this costs nothing in an ordinary terminal session.
+    @ObservationIgnored private var agentScreenTimer: Timer?
+    /// Held while any agent is being watched. Without it, App Nap throttles a
+    /// backgrounded app's timers — precisely the situation this whole feature
+    /// exists for, since a session you're looking at never needs a
+    /// notification. It also keeps the *existing* quiesce timers punctual.
+    /// `allowingIdleSystemSleep` because the Mac should still be free to sleep;
+    /// we only want to stay awake as long as it is.
+    @ObservationIgnored private var agentActivityAssertion: NSObjectProtocol?
+
+    private func noteExplicitSignal(_ session: Session) {
+        explicitSignalAt[session.id] = Date()
+    }
+
+    private func updateAgentScreenSampling() {
+        let wanted = sessions.contains { $0.runningAgent != nil }
+        if wanted, agentScreenTimer == nil {
+            let timer = Timer.scheduledTimer(
+                withTimeInterval: AgentActivity.sampleInterval, repeats: true
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.sampleAgentScreens() }
+            }
+            // A background poll has no deadline; the tolerance lets the OS
+            // coalesce it with other timers instead of waking the CPU alone.
+            timer.tolerance = AgentActivity.sampleInterval / 4
+            agentScreenTimer = timer
+            agentActivityAssertion = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiatedAllowingIdleSystemSleep],
+                reason: "Watching a running agent so its turn-end is noticed promptly")
+        } else if !wanted, agentScreenTimer != nil {
+            agentScreenTimer?.invalidate()
+            agentScreenTimer = nil
+            agentScreenTrackers.removeAll()
+            if let assertion = agentActivityAssertion {
+                ProcessInfo.processInfo.endActivity(assertion)
+                agentActivityAssertion = nil
+            }
+        }
+    }
+
+    /// One pass over the sessions worth watching. A session qualifies only
+    /// while an agent is running in it, you are not looking at it, it has a
+    /// live surface, and it hasn't recently spoken for itself — anything else
+    /// drops its tracker, so the next qualifying moment re-baselines.
+    private func sampleAgentScreens() {
+        Signposts.interval("agent-screen-sample") { sampleAgentScreensPass() }
+    }
+
+    private func sampleAgentScreensPass() {
+        let now = Date()
+        for session in sessions {
+            guard session.runningAgent != nil,
+                  !isActivelyViewing(session),
+                  let view = session.surfaceView,
+                  explicitSignalAt[session.id].map({
+                      now.timeIntervalSince($0) >= AgentActivity.explicitSignalTrust
+                  }) ?? true
+            else {
+                agentScreenTrackers.removeValue(forKey: session.id)
+                continue
+            }
+            guard let digest = view.activeScreenDigest() else { continue }
+
+            var tracker = agentScreenTrackers[session.id] ?? AgentActivityTracker(now: now)
+            let event = tracker.sample(digest: digest, now: now)
+            agentScreenTrackers[session.id] = tracker
+
+            switch event {
+            case .startedWorking:
+                AgentStatusLog.log.debug("screen: working (\(session.runningAgent ?? "?", privacy: .public))")
+                markBusy(session)
+            case .wentQuiet:
+                // The one moment the content itself is worth reading: is the
+                // agent blocked on you, or simply done?
+                let blocked = view.activeScreenTail().map(AgentPrompt.looksBlocked) ?? false
+                AgentStatusLog.log.debug(
+                    "screen: quiet, blocked=\(blocked, privacy: .public) (\(session.runningAgent ?? "?", privacy: .public))")
+                progressEnded(session, inferred: blocked ? .needsInput : .turnDone)
+            case nil:
+                break
+            }
+        }
     }
 
     // MARK: - Operations
@@ -471,6 +569,8 @@ final class SessionManager {
         busyStartedAt.removeValue(forKey: session.id)
         lastBusyInterval.removeValue(forKey: session.id)
         titleShowsWorking.remove(session.id)
+        agentScreenTrackers.removeValue(forKey: session.id)
+        explicitSignalAt.removeValue(forKey: session.id)
         autoNamedAt.removeValue(forKey: session.id)
         autoNameSignature.removeValue(forKey: session.id)
         autoNaming.remove(session.id)
@@ -695,10 +795,14 @@ final class SessionManager {
         }
         if trimmed.hasPrefix("✋") || trimmed.contains("Action Required") {
             titleShowsWorking.remove(session.id)
+            noteExplicitSignal(session)
             clearBusy(session)
             raiseAttention(session, kind: .needsInput, title: session.name, body: "Action required")
         } else if Self.hasWorkingMarker(trimmed) {
             titleShowsWorking.insert(session.id)
+            // A title spinner is this session speaking for itself; the screen
+            // sampler defers to it.
+            noteExplicitSignal(session)
             markBusy(session)
         } else if wasWorking {
             titleShowsWorking.remove(session.id)
@@ -727,7 +831,10 @@ final class SessionManager {
     /// but send no bell or desktop notification under Ghostty. So: if the
     /// session was visibly busy long enough, raise attention after a short
     /// settle window (cancelled if progress resumes or a prompt returns).
-    private func progressEnded(_ session: Session) {
+    /// `inferred` is what to raise if the settle window passes quietly. The OSC
+    /// path can't tell "blocked" from "done" and so leaves it at `.turnDone`;
+    /// the screen path reads the stopped screen and may already know better.
+    private func progressEnded(_ session: Session, inferred kind: AttentionKind = .turnDone) {
         let busyLongEnough = busyStartedAt[session.id].map {
             Date().timeIntervalSince($0) >= Self.minBusyForQuiesceAttention
         } ?? false
@@ -742,7 +849,9 @@ final class SessionManager {
             // turn-end. If it *did* prompt (a notification / action-required
             // title), that already raised a louder .needsInput which priority
             // keeps from being downgraded here.
-            self.raiseAttention(session, kind: .turnDone, title: session.name, body: "Finished — your move")
+            self.raiseAttention(
+                session, kind: kind, title: session.name,
+                body: kind == .needsInput ? "Waiting on you" : "Finished — your move")
             // A finished turn is the best moment to (re)name the session from
             // what's now on screen — even when it's the one you're watching.
             self.considerAutoName(session)
@@ -983,6 +1092,9 @@ final class SessionManager {
             }
             view.onProgress = { [weak self, weak session] active in
                 guard let self, let session else { return }
+                // An agent reporting its own progress is authoritative — note
+                // it so the screen sampler stays out of this session's way.
+                self.noteExplicitSignal(session)
                 if active { self.markBusy(session) } else { self.progressEnded(session) }
             }
             view.onCommandFinished = { [weak self, weak session] exitCode, durationNs in

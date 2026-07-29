@@ -255,6 +255,13 @@ targets:
       # kind of thing that fails silently. The renderer and tree-sitter code
       # highlighter stay out — they'd drag in SwiftUI and the grammars.
       - path: Wortel/Markdown/MarkdownParser.swift
+      # Agent activity inference: a state machine over screen digests plus the
+      # blocked-prompt reading. It decides when the app makes a sound at you,
+      # and its failure modes are all timing-shaped — a transition emitted twice
+      # postpones the notification forever, one emitted too early cries wolf —
+      # so it is deliberately a pure value type testable against a fake clock,
+      # with the libghostty screen read living apart in a SurfaceView extension.
+      - path: Wortel/Sessions/AgentActivity.swift
     scheme:
       testTargets:
         - WortelTests

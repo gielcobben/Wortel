@@ -34,13 +34,29 @@ enum AttentionKind {
         }
     }
 
-    /// A blocked prompt or an outright failure is worth a sound; an inferred
-    /// turn-end and an informational finish arrive silently.
-    var playsSound: Bool {
+    /// How loud this kind's native notification should be. Two audible tiers,
+    /// deliberately tellable apart with the app in the background: a blocked
+    /// prompt or a failure rings the standard alert, while an agent simply
+    /// finishing its turn gets a quieter, shorter chime — you want to know it's
+    /// your move without it sounding like something broke. A plain command
+    /// finishing stays silent; that's what the sidebar dot is for.
+    var chime: Chime {
         switch self {
-        case .needsInput, .failed: return true
-        case .turnDone, .finished: return false
+        case .needsInput, .failed: return .alert
+        case .turnDone: return .soft
+        case .finished: return .none
         }
+    }
+
+    /// Sound tier for a kind's notification, mapped to a real sound in the app
+    /// layer (the model stays free of UserNotifications).
+    enum Chime {
+        /// The system default notification sound.
+        case alert
+        /// A quiet, distinct chime for "your move, nothing is blocked".
+        case soft
+        /// Silent.
+        case none
     }
 
     /// Whether the sidebar dot should breathe. Anything that wants your next

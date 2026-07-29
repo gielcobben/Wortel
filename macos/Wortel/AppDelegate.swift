@@ -111,7 +111,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // work.
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // The grant is remembered because the turn-end chime is played by us,
+        // not by Notification Center (see playTurnDoneChime): someone who
+        // declined notifications should not be chimed at anyway.
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            DispatchQueue.main.async { Self.notificationsAuthorized = granted }
+        }
 
         // Panel visibility is session state, so a toggle has to reach
         // sessions.json.
@@ -214,11 +219,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         content.body = body
         // Sound only on an escalation the manager flagged, so a program that
         // re-fires the same kind updates the banner text without re-dinging.
-        content.sound = (alert && kind.playsSound) ? .default : nil
+        //
+        // Only the standard alert goes through UNNotificationSound: on macOS
+        // that API reliably plays exactly one sound, `.default`. Naming a system
+        // sound is not a documented path and reportedly just plays nothing —
+        // and a chime that is silently silent is worse than no chime, since it
+        // looks shipped. So the quieter turn-end tier is played directly
+        // through NSSound, which does read /System/Library/Sounds.
+        // Trade-off: an NSSound isn't routed by Notification Center, so it is
+        // heard even when a Focus would have suppressed the banner.
+        content.sound = (alert && kind.chime == .alert) ? .default : nil
+        if alert, kind.chime == .soft { Self.playTurnDoneChime() }
         content.userInfo = [Self.sessionKey: session.id.uuidString]
         let request = UNNotificationRequest(
             identifier: session.id.uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Whether the user allowed notifications, remembered from the launch
+    /// prompt. Only gates the chime we play ourselves — everything Notification
+    /// Center delivers is already gated by the system.
+    private static var notificationsAuthorized = false
+
+    /// Held for the app's lifetime: an NSSound stops if its object goes away
+    /// mid-play, and this one is re-triggered rather than rebuilt each time.
+    private static let turnDoneChime = NSSound(named: "Tink")
+
+    /// "Your move" — quieter and clearly distinct from the alert ding, so the
+    /// two are tellable apart from the next room. Restarted rather than
+    /// overlapped when two agents finish at once.
+    private static func playTurnDoneChime() {
+        guard notificationsAuthorized, let chime = turnDoneChime else { return }
+        chime.stop()
+        chime.play()
     }
 
     /// Foreground delivery: still show the banner (the user is in another

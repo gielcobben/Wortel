@@ -275,6 +275,16 @@ function __ghostty_wortel_interactive() {
       *=*)                                              ((i++)); continue ;;
       sudo|doas|command|builtin|exec|nohup|nice|stdbuf|setsid|env)
                                                         ((i++)); continue ;;
+      npx|bunx|pnpx|uvx|pipx)                           ((i++)); continue ;;
+      npm|pnpm|yarn|bun|deno)
+        # Package runners: in `pnpm dlx codex` or `bun x pi` the program is the
+        # word after the subcommand. Only skip when the subcommand is actually
+        # there — a bare `bun` is a REPL and must keep reaching the dual-use
+        # check below.
+        case "${words[i+1]}" in
+          x|dlx|exec|run)                               ((i+=2)); continue ;;
+        esac
+        cmd="$w"; break ;;
       -*)                                               ((i++)); continue ;;
       *)                                                cmd="$w"; break ;;
     esac
@@ -330,6 +340,16 @@ function __ghostty_wortel_agent() {
       *=*)                                              ((i++)); continue ;;
       sudo|doas|command|builtin|exec|nohup|nice|stdbuf|setsid|env)
                                                         ((i++)); continue ;;
+      npx|bunx|pnpx|uvx|pipx)                           ((i++)); continue ;;
+      npm|pnpm|yarn|bun|deno)
+        # Package runners: in `pnpm dlx codex` or `bun x pi` the program is the
+        # word after the subcommand. Only skip when the subcommand is actually
+        # there — a bare `bun` is a REPL and must keep reaching the dual-use
+        # check below.
+        case "${words[i+1]}" in
+          x|dlx|exec|run)                               ((i+=2)); continue ;;
+        esac
+        cmd="$w"; break ;;
       -*)                                               ((i++)); continue ;;
       *)                                                cmd="$w"; break ;;
     esac

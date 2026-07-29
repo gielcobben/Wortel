@@ -86,20 +86,57 @@ enum MainMenu {
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
         sessionMenu.addItem(withTitle: "Close Session", action: #selector(AppDelegate.closeSession(_:)), keyEquivalent: "w")
         sessionMenu.addItem(.separator())
-        // ⌘⌥↑/↓ walk the sidebar. Arrows rather than ⌘{/⌘}: the binding should
-        // read as "move in the list", and ⌘⌥ keeps it in the same family as
-        // ⌘⌥] below. Free of a wortel.conf keybind — that file binds alt+arrow
-        // (word motion) and cmd+arrow (line motion), never both together.
+        // ⌘⇧[ / ⌘⇧] walk the sidebar. They're the system-wide convention for
+        // "previous/next thing in this window" — Safari, Chrome, Finder,
+        // Ghostty — so they're what the menu advertises, even though Wortel's
+        // sessions aren't tabs. Free of a wortel.conf keybind (that file binds
+        // alt+arrow and cmd+arrow, never a shifted bracket).
         let prev = sessionMenu.addItem(
             withTitle: "Previous Session",
             action: #selector(AppDelegate.selectPreviousSession(_:)),
-            keyEquivalent: String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!))
-        prev.keyEquivalentModifierMask = [.command, .option]
+            keyEquivalent: "[")
+        prev.keyEquivalentModifierMask = [.command, .shift]
         let next = sessionMenu.addItem(
             withTitle: "Next Session",
             action: #selector(AppDelegate.selectNextSession(_:)),
+            keyEquivalent: "]")
+        next.keyEquivalentModifierMask = [.command, .shift]
+        // AppKit matches a key equivalent against the event's
+        // charactersIgnoringModifiers, which *keeps* Shift applied — so
+        // depending on the event, ⌘⇧] arrives as "]" or as "}", and an item
+        // authored the conventional way ("]" + ⌘⇧) only matches the former.
+        // Rather than bet on one shape, carry a hidden twin for the other.
+        // Verified: whichever shape arrives, exactly one item fires — matching
+        // stops at the first hit, so this can't skip two sessions at once.
+        let prevShifted = sessionMenu.addItem(
+            withTitle: "Previous Session",
+            action: #selector(AppDelegate.selectPreviousSession(_:)),
+            keyEquivalent: "{")
+        prevShifted.keyEquivalentModifierMask = [.command, .shift]
+        prevShifted.isHidden = true
+        let nextShifted = sessionMenu.addItem(
+            withTitle: "Next Session",
+            action: #selector(AppDelegate.selectNextSession(_:)),
+            keyEquivalent: "}")
+        nextShifted.keyEquivalentModifierMask = [.command, .shift]
+        nextShifted.isHidden = true
+        // ⌘⌥↑/↓ keep working — they read as "move in the list" and were the
+        // original binding, so muscle memory shouldn't break. Hidden rather
+        // than shown twice: a hidden item is skipped when the menu is drawn but
+        // still matched by NSMenu.performKeyEquivalent, which is exactly the
+        // "second binding, one menu entry" shape we want.
+        let prevArrow = sessionMenu.addItem(
+            withTitle: "Previous Session",
+            action: #selector(AppDelegate.selectPreviousSession(_:)),
+            keyEquivalent: String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!))
+        prevArrow.keyEquivalentModifierMask = [.command, .option]
+        prevArrow.isHidden = true
+        let nextArrow = sessionMenu.addItem(
+            withTitle: "Next Session",
+            action: #selector(AppDelegate.selectNextSession(_:)),
             keyEquivalent: String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!))
-        next.keyEquivalentModifierMask = [.command, .option]
+        nextArrow.keyEquivalentModifierMask = [.command, .option]
+        nextArrow.isHidden = true
         // Jump straight to whatever is waiting on you, wherever it sits in the
         // list. Disabled (via AppDelegate.validateMenuItem) when nothing waits.
         let nextAlert = sessionMenu.addItem(withTitle: "Next Waiting Session", action: #selector(AppDelegate.selectNextAttentionSession(_:)), keyEquivalent: "]")

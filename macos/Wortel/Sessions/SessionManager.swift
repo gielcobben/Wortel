@@ -678,6 +678,21 @@ final class SessionManager {
     private func titleChanged(_ session: Session, title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         let wasWorking = titleShowsWorking.contains(session.id)
+        // The title is the murkiest of the busy signals — log what arrived and
+        // how it was read, with the leading scalars spelled out so an invisible
+        // padding character can't hide. Titles are bursty (an agent animating a
+        // spinner retitles several times a second, per session), so the string
+        // building is gated on someone actually listening rather than done and
+        // thrown away.
+        if AgentStatusLog.isTracing {
+            let scalars = trimmed.unicodeScalars.prefix(4)
+                .map { "U+\(String($0.value, radix: 16, uppercase: true))" }
+                .joined(separator: " ")
+            AgentStatusLog.log.debug("""
+                title \(scalars, privacy: .public) \
+                working=\(Self.hasWorkingMarker(trimmed), privacy: .public) — \(trimmed, privacy: .private)
+                """)
+        }
         if trimmed.hasPrefix("✋") || trimmed.contains("Action Required") {
             titleShowsWorking.remove(session.id)
             clearBusy(session)
@@ -691,9 +706,19 @@ final class SessionManager {
         }
     }
 
+    /// A leading braille *spinner* frame means working — but U+2800 (BRAILLE
+    /// PATTERN BLANK) is not a spinner frame, it's the blank one. TUIs use it
+    /// as a fixed-width spacer, and a title padded with it read as permanently
+    /// working: the spinner never stopped, so the session could never go quiet
+    /// and its status dot never got a chance to show. So: skip leading blanks
+    /// (spaces and U+2800 alike) and judge the first character that actually
+    /// draws ink.
     private static func hasWorkingMarker(_ title: String) -> Bool {
-        guard let first = title.unicodeScalars.first else { return false }
-        return first == "✦" || first == "⏲" || (0x2800...0x28FF).contains(first.value)
+        let inked = title.unicodeScalars.drop {
+            $0 == "\u{2800}" || CharacterSet.whitespaces.contains($0)
+        }
+        guard let first = inked.first else { return false }
+        return first == "✦" || first == "⏲" || (0x2801...0x28FF).contains(first.value)
     }
 
     /// A progress-emitting program reported it stopped working (OSC 9;4;0).

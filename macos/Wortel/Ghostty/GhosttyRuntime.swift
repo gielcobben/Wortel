@@ -293,12 +293,21 @@ final class GhosttyRuntime {
             return true
 
         case GHOSTTY_ACTION_PROGRESS_REPORT:
-            // OSC 9;4 (ConEmu). Any state other than REMOVE means a command is
+            // OSC 9;4 (ConEmu). SET / ERROR / INDETERMINATE mean a command is
             // actively working; REMOVE clears it. The bundled shell integration
             // emits an indeterminate report at preexec so this fires for every
             // command, not just tools that report their own progress.
+            //
+            // PAUSE is *not* working: a program that reports progress and then
+            // pauses it is waiting — typically on the user. Treating it as busy
+            // left the spinner turning with nothing running, and worse, hid the
+            // sidebar status behind it. Same handling as REMOVE, so the quiesce
+            // path can raise attention instead.
             guard let view = surfaceView(fromTarget: target) else { return false }
-            let active = action.action.progress_report.state != GHOSTTY_PROGRESS_STATE_REMOVE
+            let state = action.action.progress_report.state
+            let active = state != GHOSTTY_PROGRESS_STATE_REMOVE && state != GHOSTTY_PROGRESS_STATE_PAUSE
+            AgentStatusLog.log.debug(
+                "progress state=\(state.rawValue, privacy: .public) → busy=\(active, privacy: .public)")
             DispatchQueue.main.async { view.onProgress?(active) }
             return true
 

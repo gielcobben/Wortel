@@ -319,6 +319,47 @@ function __ghostty_wortel_interactive() {
       done
       return 0 ;;
   esac
+  # The leading word is not a program we know. It may well be a wrapper no list
+  # can ever enumerate — `devx pi`, a repo's own `./run claude`, a company shim —
+  # so look just past it: if one of the next couple of bare words names an agent,
+  # believe that over the wrapper. Only two words, flags skipped, to keep it from
+  # reading an agent's name out of an unrelated argument. The asymmetry is
+  # deliberate: a false positive costs a missing spinner on one command, a false
+  # negative leaves a spinner turning for the whole session.
+  # (Output discarded — this caller only wants the verdict; letting it through
+  # would print the agent's name into the terminal at every command.)
+  __ghostty_wortel_wrapped_agent "$cmd" "${words[@]:i+1}" >/dev/null && return 0
+  return 1
+}
+
+# Wortel: given the leading command and the words after it, echo the agent it
+# wraps — else nothing. Shared by the interactive check and the marker so a wrapper-launched
+# agent is both spinner-exempt and resumable.
+function __ghostty_wortel_wrapped_agent() {
+  builtin local lead="${1##*/}" w
+  builtin shift
+  # Tools whose arguments are patterns or paths are excluded outright: `rg claude
+  # src` and `git log claude` are ordinary commands that must keep their spinner,
+  # and no syntax distinguishes a wrapper's subcommand from a search term.
+  case "$lead" in
+    git|hg|svn|jj|grep|rg|ag|ack|fd|find|ls|cat|sed|awk|jq|yq|xargs|echo|printf) return 1 ;;
+    cp|mv|rm|ln|mkdir|touch|tar|zip|unzip|open|chmod|chown|stat|file|du|df) return 1 ;;
+    curl|wget|scp|rsync|diff|patch|wc|sort|uniq|head|tail|tr|cut|comm|tee) return 1 ;;
+    make|cargo|go|rustc|swift|swiftc|xcodebuild|gradle|mvn|pip|pip3|brew|docker|kubectl) return 1 ;;
+    which|type|whereis|whatis|history|kill|pkill|pgrep|ps|test) return 1 ;;
+  esac
+  builtin local -i looked=0
+  for w in "$@"; do
+    case "$w" in
+      -*|*=*) continue ;;
+    esac
+    ((looked++))
+    case "${w##*/}" in
+      claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp)
+        builtin printf '%s' "${w##*/}"; return 0 ;;
+    esac
+    (( looked >= 2 )) && break
+  done
   return 1
 }
 
@@ -358,8 +399,11 @@ function __ghostty_wortel_agent() {
   cmd="${cmd##*/}"
   case "$cmd" in
     claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp)
-      builtin printf '%s' "$cmd" ;;
+      builtin printf '%s' "$cmd"; return ;;
   esac
+  # Wrapper form (`devx pi`): record the agent, not the wrapper, so the session
+  # is resumable and the app knows which agent is running.
+  __ghostty_wortel_wrapped_agent "$cmd" "${words[@]:i+1}"
 }
 
 # Wortel: echo the model the command line selects (--model/-m/--models value),

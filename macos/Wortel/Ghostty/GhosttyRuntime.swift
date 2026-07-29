@@ -306,8 +306,13 @@ final class GhosttyRuntime {
             guard let view = surfaceView(fromTarget: target) else { return false }
             let state = action.action.progress_report.state
             let active = state != GHOSTTY_PROGRESS_STATE_REMOVE && state != GHOSTTY_PROGRESS_STATE_PAUSE
-            AgentStatusLog.log.debug(
-                "progress state=\(state.rawValue, privacy: .public) → busy=\(active, privacy: .public)")
+            // Gated like the title trace: a program reporting real progress can
+            // emit these many times a second, and this runs on libghostty's
+            // thread.
+            if AgentStatusLog.isTracing {
+                AgentStatusLog.log.debug(
+                    "progress state=\(state.rawValue, privacy: .public) → busy=\(active, privacy: .public)")
+            }
             DispatchQueue.main.async { view.onProgress?(active) }
             return true
 

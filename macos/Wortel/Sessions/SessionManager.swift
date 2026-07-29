@@ -457,6 +457,25 @@ final class SessionManager {
         explicitSignalAt[session.id] = Date()
     }
 
+    /// Drop markers whose agent is provably gone, which stops the sampler and
+    /// releases the assertion. Fail-open: `AgentLiveness` answers `unknown` when
+    /// it can't read enough to be sure, and unknown must never delete a marker
+    /// for an agent that is merely hard to see.
+    private func sweepDeadAgentMarkers() {
+        var removedAny = false
+        for session in sessions where session.runningAgent != nil {
+            guard let agent = session.runningAgent,
+                  !AgentLiveness.isRunning(agent: agent, shellPID: session.runningShellPID)
+            else { continue }
+            AgentStatusLog.log.debug("dropping stale marker for \(agent, privacy: .public)")
+            AgentResumeStore.remove(sessionID: session.id)
+            removedAny = true
+        }
+        // Mirrors the markers back onto the sessions, which also stops the
+        // sampler and releases the assertion when the last one goes.
+        if removedAny { refreshAgentActivity() }
+    }
+
     private func updateAgentScreenSampling() {
         let wanted = sessions.contains { $0.runningAgent != nil }
         if wanted, agentScreenTimer == nil {
@@ -491,8 +510,22 @@ final class SessionManager {
         Signposts.interval("agent-screen-sample") { sampleAgentScreensPass() }
     }
 
+    /// Ticks since the last stale-marker sweep. A marker normally vanishes at
+    /// the agent's next prompt, and a closed session drops its own, but a shell
+    /// killed outright leaves one behind — which would now keep the activity
+    /// assertion alive and the sampler running against nothing. Reading the
+    /// process table costs a full sysctl, far too much per tick, so it is
+    /// checked about once a minute: slow enough to be free, fast enough that a
+    /// stale marker can't quietly drain a battery.
+    @ObservationIgnored private var livenessTicks = 0
+
     private func sampleAgentScreensPass() {
         let now = Date()
+        livenessTicks += 1
+        if livenessTicks >= Int(60 / AgentActivity.sampleInterval) {
+            livenessTicks = 0
+            sweepDeadAgentMarkers()
+        }
         for session in sessions {
             guard session.runningAgent != nil,
                   !isActivelyViewing(session),

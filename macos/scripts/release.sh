@@ -20,7 +20,9 @@
 # and year rollovers, and the 0.3.x -> 2026.x transition all rank forward, so the
 # sequence never regresses). CFBundleShortVersionString is stamped to the same
 # value, so the update dialog reads "2026.28.3 is available — you have 2026.27.1".
-# releases/BUILD records the last published version.
+# The Nth counter is derived from the *live appcast* (falling back to the
+# releases/BUILD record), because that feed is the only state shared by every
+# machine that can publish — see the comment at the derivation.
 #
 # The signing identity is auto-detected (Developer ID Application, else Apple
 # Development). Override with WORTEL_SIGN_IDENTITY. Notarization uses a stored
@@ -47,7 +49,29 @@ case "${1:-}" in
     PUBLISH=1
     NOTARIZE=1                          # publishing a non-notarized zip fails Gatekeeper on other Macs
     VERSION="${2:-}"
-    last=$(cat "$BUILD_FILE" 2>/dev/null || echo "")
+    # What's actually out there. `releases/BUILD` is only ever *this checkout's*
+    # memory of it: a release cut from another machine or a worktree, or one
+    # whose commit was discarded, leaves it stale — and then the counter below
+    # re-derives a number that is already taken and overwrites it in the bucket.
+    # That is not hypothetical: 2026.31.2 shipped twice, as two different
+    # binaries, because BUILD still said 2026.31.1. Everyone on the first one was
+    # stranded, since Sparkle only offers a *strictly greater* version.
+    #
+    # The appcast is the one piece of state every machine shares, so ask it and
+    # take whichever is higher. A cache-buster because the feed is served through
+    # Cloudflare, and `|| true` throughout so an unreachable feed degrades to the
+    # old BUILD-only behaviour rather than restarting at .1 over a live release.
+    recorded=$(cat "$BUILD_FILE" 2>/dev/null || echo "")
+    published=$(curl -fsS --max-time 15 "$FEED_BASE/appcast.xml?t=$(date +%s)" 2>/dev/null \
+      | sed -n 's/.*<sparkle:version>\([^<]*\)<.*/\1/p' | sort -V | tail -1 || true)
+    if [ -z "$published" ]; then
+      echo "!  Could not read $FEED_BASE/appcast.xml — falling back to releases/BUILD (${recorded:-none})." >&2
+      echo "   If a release was published elsewhere, this run can silently reuse its version." >&2
+    fi
+    last=$(printf '%s\n%s\n' "$recorded" "$published" | grep -v '^$' | sort -V | tail -1 || true)
+    if [ -n "$published" ] && [ "$published" != "$recorded" ]; then
+      echo "==> Live feed is at $published; releases/BUILD says ${recorded:-none} — counting from $last"
+    fi
     if [ -z "$VERSION" ]; then
       # CalVer, auto-derived (Framer-style): <ISO-week-year>.<ISO-week>.<Nth
       # release that week>. %G/%V are the ISO week-numbering year and week, so
@@ -65,6 +89,8 @@ case "${1:-}" in
     # Guard against a version that isn't strictly newer than the last published
     # one — that would make Sparkle silently never offer the update. sort -V
     # orders dotted-numeric versions the same way Sparkle's comparator does.
+    # Now that `last` includes the live feed, this also catches an explicit
+    # --publish <version> that collides with a release cut somewhere else.
     if [ -n "$last" ]; then
       newest=$(printf '%s\n%s\n' "$last" "$VERSION" | sort -V | tail -1)
       { [ "$VERSION" != "$last" ] && [ "$newest" = "$VERSION" ]; } || { echo "✗ Version $VERSION is not newer than the last published $last" >&2; exit 1; }

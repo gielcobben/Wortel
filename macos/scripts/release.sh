@@ -8,9 +8,11 @@
 #   ./scripts/release.sh --notarize     + hardened runtime, notarize, staple, .dmg
 #   ./scripts/release.sh --publish      full release: derive a CalVer version,
 #                                         notarize, EdDSA-sign a zip, regenerate
-#                                         the appcast, and upload to the
-#                                         wortel-updates R2 bucket (Sparkle feed).
-#                                         Implies --notarize.
+#                                         the appcast, upload to the
+#                                         wortel-updates R2 bucket (Sparkle
+#                                         feed), and redeploy web/ so wortel.sh
+#                                         shows the new version. Implies
+#                                         --notarize.
 #   ./scripts/release.sh --publish 2026.30.1   force a specific version
 #
 # Versioning is CalVer (Framer-style): <ISO-week-year>.<ISO-week>.<Nth release
@@ -230,9 +232,37 @@ if [ "$PUBLISH" = 1 ]; then
   # doesn't advance the record. Commit this file alongside appcast.xml.
   echo "$VERSION" > "$BUILD_FILE"
 
+  # Redeploy the landing page. It reads the version number out of the appcast at
+  # *build time* (see web/src/pages/index.astro), so a publish alone never
+  # changes what wortel.sh says — the site had drifted three releases behind
+  # before this ran automatically. It goes after the uploads above so the build
+  # reads the feed we just pushed (that URL is served uncached, cf-cache-status
+  # DYNAMIC, so there's no stale-read window to design around).
+  #
+  # A failure here does not fail the release: by this point the zip and appcast
+  # are already live and users are being offered the update. Exiting would skip
+  # the install below and imply the publish came apart, which isn't true — so
+  # say loudly what's wrong and carry on.
+  WEB="$ROOT/../web"
+  if [ -d "$WEB" ]; then
+    echo "==> Deploying the website (wortel.sh)"
+    (
+      cd "$WEB"
+      [ -d node_modules ] || npm install --silent
+      npm run deploy
+    ) || {
+      echo "!  Website deploy failed. The release itself is published and live;" >&2
+      echo "   wortel.sh will keep showing the previous version until you run:" >&2
+      echo "     cd web && npm run deploy" >&2
+    }
+  else
+    echo "!  No web/ directory beside macos/ — skipping the website deploy." >&2
+  fi
+
   echo "==> Published $VERSION"
   echo "    Appcast:         $FEED_BASE/appcast.xml"
   echo "    Latest download: $FEED_BASE/Wortel-latest.zip"
+  echo "    Website:         https://wortel.sh"
 fi
 
 # --- Install + launch -------------------------------------------------------

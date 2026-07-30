@@ -42,6 +42,11 @@ final class SessionManager {
     /// the sidebar so double-click, the context menu, and ⌘R all drive one path.
     var editingID: Session.ID?
 
+    /// The session row the pointer is over (nil = none). Transient view state
+    /// like `editingID` — never persisted. The sidebar's close button appears on
+    /// this row, and the row's status indicator steps aside to make room for it.
+    var hoveredID: Session.ID?
+
     /// Called when the last session closes (the window should close).
     @ObservationIgnored var onAllClosed: (() -> Void)?
 

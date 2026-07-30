@@ -76,6 +76,7 @@ struct SidebarRowContent: View {
             session: session,
             isSelected: manager.selectedID == session.id,
             isEditing: manager.editingID == session.id,
+            isHovered: manager.hoveredID == session.id,
             commit: { newName in
                 manager.rename(session, to: newName)
                 manager.editingID = nil
@@ -179,6 +180,9 @@ struct SessionRow: View {
     let session: Session
     let isSelected: Bool
     let isEditing: Bool
+    /// The pointer is on this row, so the cell is showing its close button in
+    /// the trailing slot — see SidebarCellView.
+    let isHovered: Bool
     let commit: (String) -> Void
     let cancel: () -> Void
 
@@ -240,7 +244,11 @@ struct SessionRow: View {
                 }
             }
             Spacer(minLength: 4)
-            activityIndicator
+            // The close button occupies this slot while the row is hovered, so
+            // the indicator steps aside rather than sitting under it. Nothing is
+            // lost: hovering is a deliberate act, and the dot is back the moment
+            // the pointer leaves.
+            if !isHovered { activityIndicator }
         }
         .padding(.vertical, 6)
     }

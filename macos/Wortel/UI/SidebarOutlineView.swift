@@ -6,26 +6,235 @@ import SwiftUI
 /// it spans the full sidebar width — across the chevron gutter and indentation
 /// — like Mail's and Icon Composer's selection, instead of hugging the cell.
 final class SidebarPillRowView: NSTableRowView {
+    /// How far the pill is inset from the row. Also what the close button keeps
+    /// clear of the pill's edges, so its padding reads the same on all three
+    /// sides it touches.
+    private static let pillInset = NSSize(width: 10, height: 2)
+
     var showsPill = false {
-        didSet { if showsPill != oldValue { needsDisplay = true } }
+        didSet {
+            guard showsPill != oldValue else { return }
+            needsDisplay = true
+            closeButton.onAccent = showsPill
+        }
     }
     /// A dragged session is hovering this folder header (drop-on / append).
     var showsDropHighlight = false {
         didSet { if showsDropHighlight != oldValue { needsDisplay = true } }
     }
+    /// The pointer is over this row. Drawn as a very light fill in the pill's
+    /// shape — enough to say *this* is the row the “×” would close, without
+    /// competing with the accent pill of the selected one.
+    private var showsHover = false {
+        didSet { if showsHover != oldValue { needsDisplay = true } }
+    }
+
+    /// The pill, and the box the close button is laid out against.
+    private var pillRect: NSRect {
+        bounds.insetBy(dx: Self.pillInset.width, dy: Self.pillInset.height)
+    }
 
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
-        let rect = bounds.insetBy(dx: 10, dy: 2)
+        let rect = pillRect
         if showsPill {
             NSColor.controlAccentColor.setFill()
             NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
         } else if showsDropHighlight {
             NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+        } else if showsHover {
+            NSColor.labelColor.withAlphaComponent(0.06).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
         }
     }
 
+    // MARK: - Close button
+    //
+    // It lives on the *row* rather than in the cell view because only the row
+    // shares the pill's geometry: the source-list style insets cell views from
+    // the row, so "12pt from the cell's trailing edge" stops well short of the
+    // pill's right edge — and a cell can't be clicked outside its own bounds.
+
+    private let closeButton = SidebarCloseButton()
+    /// Whether this row has anything to close — false for folder headers, which
+    /// therefore stay bare on hover.
+    private var closable = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        closeButton.isHidden = true
+        addSubview(closeButton)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    /// What the close button does. Session rows set this; folder headers don't.
+    func setCloseAction(_ handler: @escaping () -> Void) {
+        closeButton.onClick = handler
+        closable = true
+    }
+
+    override func layout() {
+        super.layout()
+        let pill = pillRect
+        let size = SidebarCloseButton.size
+        // Equal clearance top, bottom and right, so the glyph reads as inset from
+        // the pill rather than floating in the row.
+        let gap = max(0, (pill.height - size) / 2)
+        // Backing-aligned: the sidebar's width isn't always integral, and a
+        // circle on a half-pixel origin draws visibly lopsided.
+        closeButton.frame = backingAlignedRect(
+            NSRect(x: pill.maxX - gap - size, y: pill.midY - size / 2,
+                   width: size, height: size),
+            options: .alignAllEdgesNearest)
+    }
+
+    /// AppKit inserts the cell view after our button, which would bury it. Keep
+    /// it in front so it can take its own clicks.
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        guard subview !== closeButton, closeButton.superview === self else { return }
+        addSubview(closeButton, positioned: .above, relativeTo: nil)
+    }
+
+    // MARK: - Row hover
+    //
+    // Tracked here rather than in SwiftUI so the area spans the whole row
+    // *including* the button: moving the pointer onto the “×” must not read as
+    // leaving the row and yank it out from under the click.
+
+    /// Reported so the hosted SwiftUI content can react too — it drops the status
+    /// indicator to free the slot the button occupies.
+    var onHoverChange: ((Bool) -> Void)?
+
+    private var hoverArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        // `.inVisibleRect` keeps the area right as the list scrolls, so the rect
+        // passed here is ignored.
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { setRowHovered(true) }
+    override func mouseExited(with event: NSEvent) { setRowHovered(false) }
+
+    private func setRowHovered(_ hovered: Bool) {
+        // Toggled straight from the event rather than through the observation
+        // loop, so the highlight and button track the pointer without a runloop
+        // turn of lag. Folder headers aren't closable and stay flat: the cue is
+        // about which session you might close.
+        let shows = hovered && closable
+        showsHover = shows
+        if closeButton.isHidden == shows {
+            closeButton.isHidden = !shows
+            if !shows { closeButton.setHovering(false) }
+        }
+        guard closable else { return }
+        onHoverChange?(hovered)
+    }
+}
+
+/// The trailing “×” on the session row the pointer is over.
+///
+/// Deliberately AppKit rather than part of the hosted SwiftUI content:
+/// NSTableView routes a click anywhere over a cell to *itself* — that's how row
+/// selection and drag-to-reorder start — and only lets a hit view keep the click
+/// if `validateProposedFirstResponder` says so, which it won't for the row's
+/// `NSHostingView`. A real NSButton claims exactly its own box (see the override
+/// in `SidebarOutline`) and leaves the rest of the row to the outline.
+final class SidebarCloseButton: NSButton {
+    /// Diameter of the glyph's hover disc, and so of the button itself.
+    static let size: CGFloat = 18
+
+    var onClick: () -> Void = {}
+
+    /// The row underneath is the accent selection pill, so glyph and disc both
+    /// have to come off it. Unselected rows sit on the sidebar material instead.
+    var onAccent = false {
+        didSet {
+            guard onAccent != oldValue else { return }
+            contentTintColor = onAccent ? .white : .secondaryLabelColor
+            applyHover()
+        }
+    }
+
+    private var hovering = false
+    private var hoverArea: NSTrackingArea?
+
+    init() {
+        super.init(frame: .zero)
+        isBordered = false
+        imagePosition = .imageOnly
+        image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Session")?
+            .withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
+        contentTintColor = .secondaryLabelColor
+        toolTip = "Close Session"
+        target = self
+        action = #selector(fire)
+        // The terminal owns keyboard focus; closing a session must not take it.
+        refusesFirstResponder = true
+        wantsLayer = true
+        setAccessibilityLabel("Close Session")
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func fire() { onClick() }
+
+    /// Radius from the live bounds rather than a constant, so the hover
+    /// background is a true circle whatever height the row hands us.
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = min(bounds.width, bounds.height) / 2
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        // `.inVisibleRect` keeps the area correct as the row scrolls, so the
+        // passed rect is ignored.
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { setHovering(true) }
+    override func mouseExited(with event: NSEvent) { setHovering(false) }
+
+    /// A faint disc behind the glyph once the pointer is on the button itself —
+    /// the row-level hover only decides whether the “×” is there at all.
+    func setHovering(_ hovering: Bool) {
+        guard hovering != self.hovering else { return }
+        self.hovering = hovering
+        applyHover()
+    }
+
+    private func applyHover() {
+        guard hovering else {
+            layer?.backgroundColor = nil
+            return
+        }
+        let tint = onAccent
+            ? NSColor.white.withAlphaComponent(0.22)
+            : NSColor.labelColor.withAlphaComponent(0.12)
+        // labelColor is appearance-dependent, and `cgColor` resolves against
+        // whatever appearance is current — which during event handling isn't
+        // necessarily this view's.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = tint.cgColor
+        }
+    }
 }
 
 /// The cell view hosting one row's SwiftUI content. It's an NSTableCellView
@@ -137,6 +346,15 @@ final class SidebarOutline: NSOutlineView {
             onHeaderPressed?(item)
         }
         super.mouseDown(with: event)
+    }
+
+    /// Let a row's close button keep its own clicks. NSTableView claims every
+    /// click over a cell for selection and drag-to-reorder unless this says
+    /// otherwise; the default answer for anything inside a cell view is no.
+    override func validateProposedFirstResponder(_ responder: NSResponder,
+                                                 for event: NSEvent?) -> Bool {
+        if responder is SidebarCloseButton { return true }
+        return super.validateProposedFirstResponder(responder, for: event)
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -401,10 +619,25 @@ struct SidebarOutlineView: NSViewRepresentable {
         }
 
         /// Row views draw the selection pill (full row width, across the
-        /// chevron gutter and indentation — Mail-style). See SidebarPillRowView.
+        /// chevron gutter and indentation — Mail-style) and carry the hover close
+        /// button, which needs that same full-width geometry. See
+        /// SidebarPillRowView.
         func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
             let rowView = SidebarPillRowView()
             rowView.showsPill = showsPill(item)
+            guard let session = item as? SessionItem else { return rowView }
+
+            let manager = self.manager, target = session.session, id = session.id
+            rowView.setCloseAction { manager.requestClose(target) }
+            rowView.onHoverChange = { hovered in
+                if hovered {
+                    manager.hoveredID = id
+                } else if manager.hoveredID == id {
+                    // Only clear if it's still ours: the next row's enter can
+                    // land before this one's exit.
+                    manager.hoveredID = nil
+                }
+            }
             return rowView
         }
 
@@ -415,9 +648,10 @@ struct SidebarOutlineView: NSViewRepresentable {
             return manager.selectedID == session.id && manager.editingID != session.id
         }
 
-        /// Re-render pills whenever selection or rename state changes. The
-        /// hosted SwiftUI cells track Observation on their own; the AppKit row
-        /// views need this explicit loop.
+        /// Re-render the selection pill whenever selection or rename state
+        /// changes — which also re-tints the row's close button for the
+        /// background it now sits on. The hosted SwiftUI cells track Observation
+        /// on their own; the AppKit row views need this explicit loop.
         func observeSelection() {
             withObservationTracking {
                 _ = manager.selectedID
@@ -425,13 +659,13 @@ struct SidebarOutlineView: NSViewRepresentable {
             } onChange: { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    self.refreshPills()
+                    self.refreshSelection()
                     self.observeSelection() // re-arm; tracking is one-shot
                 }
             }
         }
 
-        private func refreshPills() {
+        private func refreshSelection() {
             guard let outline else { return }
             for row in 0..<outline.numberOfRows {
                 guard let rowView = outline.rowView(atRow: row, makeIfNecessary: false)

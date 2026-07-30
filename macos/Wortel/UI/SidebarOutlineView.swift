@@ -57,12 +57,19 @@ final class SidebarPillRowView: NSTableRowView {
     // pill's right edge — and a cell can't be clicked outside its own bounds.
 
     private let closeButton = SidebarCloseButton()
+    /// The status dot / spinner, hosted here rather than in the row's SwiftUI
+    /// content so it can share the button's slot exactly. Trailing-aligning it
+    /// inside the cell instead left it further from the pill's edge than the
+    /// button, because the source-list style insets cell views from the row.
+    private let statusHost = NonInteractiveHostingView<AnyView>(rootView: AnyView(EmptyView()))
     /// Whether this row has anything to close — false for folder headers, which
     /// therefore stay bare on hover.
     private var closable = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        statusHost.sizingOptions = []
+        addSubview(statusHost)
         closeButton.isHidden = true
         addSubview(closeButton)
     }
@@ -74,6 +81,10 @@ final class SidebarPillRowView: NSTableRowView {
         closable = true
     }
 
+    /// The SwiftUI status indicator for this row. Session rows set one; folder
+    /// headers leave the slot empty.
+    func setStatusContent(_ content: AnyView) { statusHost.rootView = content }
+
     override func layout() {
         super.layout()
         let pill = pillRect
@@ -83,18 +94,27 @@ final class SidebarPillRowView: NSTableRowView {
         let gap = max(0, (pill.height - size) / 2)
         // Backing-aligned: the sidebar's width isn't always integral, and a
         // circle on a half-pixel origin draws visibly lopsided.
-        closeButton.frame = backingAlignedRect(
+        let slot = backingAlignedRect(
             NSRect(x: pill.maxX - gap - size, y: pill.midY - size / 2,
                    width: size, height: size),
             options: .alignAllEdgesNearest)
+        // One rect for both, so hovering swaps the glyph without moving it.
+        closeButton.frame = slot
+        statusHost.frame = slot
     }
 
-    /// AppKit inserts the cell view after our button, which would bury it. Keep
-    /// it in front so it can take its own clicks.
+    /// AppKit inserts the cell view after ours, which would bury them. Keep both
+    /// in front — the button so it can take its own clicks, the indicator so it
+    /// isn't drawn behind the row's content.
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
-        guard subview !== closeButton, closeButton.superview === self else { return }
-        addSubview(closeButton, positioned: .above, relativeTo: nil)
+        guard subview !== closeButton, subview !== statusHost else { return }
+        if statusHost.superview === self {
+            addSubview(statusHost, positioned: .above, relativeTo: nil)
+        }
+        if closeButton.superview === self {
+            addSubview(closeButton, positioned: .above, relativeTo: nil)
+        }
     }
 
     // MARK: - Row hover
@@ -102,10 +122,6 @@ final class SidebarPillRowView: NSTableRowView {
     // Tracked here rather than in SwiftUI so the area spans the whole row
     // *including* the button: moving the pointer onto the “×” must not read as
     // leaving the row and yank it out from under the click.
-
-    /// Reported so the hosted SwiftUI content can react too — it drops the status
-    /// indicator to free the slot the button occupies.
-    var onHoverChange: ((Bool) -> Void)?
 
     private var hoverArea: NSTrackingArea?
 
@@ -133,13 +149,21 @@ final class SidebarPillRowView: NSTableRowView {
         // about which session you might close.
         let shows = hovered && closable
         showsHover = shows
-        if closeButton.isHidden == shows {
-            closeButton.isHidden = !shows
-            if !shows { closeButton.setHovering(false) }
-        }
-        guard closable else { return }
-        onHoverChange?(hovered)
+        guard closeButton.isHidden == shows else { return }
+        closeButton.isHidden = !shows
+        // The two share one rect, so the indicator has to give it up rather than
+        // sit under the button.
+        statusHost.isHidden = shows
+        if !shows { closeButton.setHovering(false) }
     }
+}
+
+/// A hosting view that never takes a click. The row's status indicator is pure
+/// decoration sitting on top of the row, and the outline underneath has to stay
+/// clickable and draggable through it — including in the instant between a click
+/// arriving and the hover that would have swapped it for the close button.
+final class NonInteractiveHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// The trailing “×” on the session row the pointer is over.
@@ -627,17 +651,10 @@ struct SidebarOutlineView: NSViewRepresentable {
             rowView.showsPill = showsPill(item)
             guard let session = item as? SessionItem else { return rowView }
 
-            let manager = self.manager, target = session.session, id = session.id
+            let manager = self.manager, target = session.session
             rowView.setCloseAction { manager.requestClose(target) }
-            rowView.onHoverChange = { hovered in
-                if hovered {
-                    manager.hoveredID = id
-                } else if manager.hoveredID == id {
-                    // Only clear if it's still ours: the next row's enter can
-                    // land before this one's exit.
-                    manager.hoveredID = nil
-                }
-            }
+            rowView.setStatusContent(
+                AnyView(SessionStatusIndicator(manager: manager, session: target)))
             return rowView
         }
 

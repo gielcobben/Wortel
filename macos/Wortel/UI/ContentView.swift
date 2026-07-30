@@ -76,7 +76,6 @@ struct SidebarRowContent: View {
             session: session,
             isSelected: manager.selectedID == session.id,
             isEditing: manager.editingID == session.id,
-            isHovered: manager.hoveredID == session.id,
             commit: { newName in
                 manager.rename(session, to: newName)
                 manager.editingID = nil
@@ -85,7 +84,11 @@ struct SidebarRowContent: View {
             // The selection pill is drawn by the row view (SidebarPillRowView),
             // full row width — this content just sits on top of it.
             .padding(.leading, 12)
-            .padding(.trailing, 8)
+            // Keeps a long name clear of the trailing slot, which the row view
+            // owns (status indicator, or the close button while hovered). Only
+            // decides where the name truncates, so it's deliberately generous
+            // rather than measured against the cell's inset.
+            .padding(.trailing, 24)
             // Fill the row height and center vertically — otherwise the short
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.
@@ -175,21 +178,24 @@ struct SidebarHeaderContent: View {
     }
 }
 
-/// One sidebar row: session name with the path below it.
+/// One sidebar row: the session name, and the inline rename field it becomes.
+///
+/// The trailing slot — status indicator, or the close button while the row is
+/// hovered — is *not* here. It lives on the row view (SidebarPillRowView),
+/// because only the row shares the selection pill's geometry: cell views are
+/// inset by the source-list style, so anything trailing-aligned in here sits
+/// further from the edge than the button does. Putting both in one slot the row
+/// view owns is what keeps them interchangeable.
 struct SessionRow: View {
     let session: Session
     let isSelected: Bool
     let isEditing: Bool
-    /// The pointer is on this row, so the cell is showing its close button in
-    /// the trailing slot — see SidebarCellView.
-    let isHovered: Bool
     let commit: (String) -> Void
     let cancel: () -> Void
 
     @State private var draft = ""
     @State private var cancelling = false
     @FocusState private var fieldFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // The selected row sits on an always-accent pill, so its content is white.
     // Not while editing: the rename field sits on a normal background.
@@ -197,8 +203,7 @@ struct SessionRow: View {
 
     var body: some View {
         // Content padded inside an inset accent pill (~6pt from the cell edges,
-        // so it's not edge-to-edge). The indicator is centered against the whole
-        // row, not pinned to the title line.
+        // so it's not edge-to-edge).
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
@@ -244,11 +249,6 @@ struct SessionRow: View {
                 }
             }
             Spacer(minLength: 4)
-            // The close button occupies this slot while the row is hovered, so
-            // the indicator steps aside rather than sitting under it. Nothing is
-            // lost: hovering is a deliberate act, and the dot is back the moment
-            // the pointer leaves.
-            if !isHovered { activityIndicator }
         }
         .padding(.vertical, 6)
     }
@@ -285,20 +285,37 @@ struct SessionRow: View {
             if (try? await Task.sleep(for: .milliseconds(16))) == nil { return }
         }
     }
+}
 
-    /// Trailing status glyph. Attention (blocked on you / failed / long command
-    /// done while unselected) wins over busy — once you select the session the
-    /// attention clears and the spinner shows if a command is still running.
-    /// The dot's colour encodes *why*: amber = waiting on you, red = failed,
-    /// mint = an agent finished its turn, blue = a plain command finished. On
-    /// the accent selection pill everything goes white for contrast (but a
-    /// selected row has already cleared its attention). A non-selected session
-    /// you haven't caught up with also carries a quiet hollow ring, which sits
-    /// *next to* the spinner rather than being replaced by it — otherwise a
-    /// session that failed and immediately started working again would look
-    /// like any other busy session.
-    @ViewBuilder
-    private var activityIndicator: some View {
+/// The row's trailing status glyph, hosted by the row view in the same slot as
+/// the close button so the two are interchangeable — see SidebarPillRowView.
+///
+/// Attention (blocked on you / failed / long command done while unselected) wins
+/// over busy — once you select the session the attention clears and the spinner
+/// shows if a command is still running. The dot's colour encodes *why*: amber =
+/// waiting on you, red = failed, mint = an agent finished its turn, blue = a
+/// plain command finished. On the accent selection pill everything goes white
+/// for contrast (but a selected row has already cleared its attention). A
+/// non-selected session you haven't caught up with also carries a quiet hollow
+/// ring, which sits *next to* the spinner rather than being replaced by it —
+/// otherwise a session that failed and immediately started working again would
+/// look like any other busy session.
+///
+/// It reads the manager directly rather than taking its state as arguments, so
+/// selection and attention changes redraw it through Observation without the
+/// outline reloading anything.
+struct SessionStatusIndicator: View {
+    let manager: SessionManager
+    let session: Session
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var isSelected: Bool { manager.selectedID == session.id }
+    /// Matches SessionRow: the rename field sits on a normal background, so the
+    /// glyph comes off the accent only while the pill is actually drawn.
+    private var onAccent: Bool { isSelected && manager.editingID != session.id }
+
+    var body: some View {
         HStack(spacing: 4) {
             // The unread trail sits *beside* the spinner rather than behind it:
             // a session that failed and is already working again still says so.
@@ -326,6 +343,9 @@ struct SessionRow: View {
                     .tint(onAccent ? .white : .secondary)
             }
         }
+        // Centre in whatever slot the row view gives us — the same rect the
+        // close button gets, so swapping between them doesn't shift anything.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private static func attentionColor(_ kind: AttentionKind) -> Color {

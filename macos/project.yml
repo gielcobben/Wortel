@@ -238,6 +238,11 @@ targets:
       # needs no window, repo or shell to check. The rest of Wortel/Files stays
       # out: it's AppKit, FileManager and a live git repo.
       - path: Wortel/Files/FileTreeDecorations.swift
+      # AppKit only, and the requirement it has to meet — surviving AppKit's own
+      # copyWithZone: when the toolbar builds its `»` menu — is invisible at
+      # every call site and crashed the app when it went unmet. A menu item copy
+      # needs no window, so it's pinned here.
+      - path: Wortel/UI/ClosureMenuItem.swift
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/GitRepoModel.swift
       - path: Wortel/Git/GitRepoWatcher.swift

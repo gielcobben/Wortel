@@ -323,10 +323,18 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     }
 
     /// Whether there's a branch worth showing: the panel is open, pointed at an
-    /// actual repo, and not currently displaced by the markdown preview (whose
-    /// content the branch/actions controls don't apply to).
+    /// actual repo, and showing something the branch and repo-action controls
+    /// actually apply to — not the markdown preview, and not the file tree.
+    ///
+    /// Dropping them on the Files pane is not only tidiness. This whole section
+    /// is bounded by the tracking separator on divider 1, so the space it has is
+    /// the *inspector's* width, not the window's — at the pane's 260pt minimum,
+    /// three segments plus a 180pt branch chip plus "···" cannot fit however
+    /// wide the window is, and the surplus goes to the `»` menu. Reclaiming
+    /// ~210pt exactly when the tree is up is what keeps that from being the
+    /// normal state of the toolbar.
     private var showsBranchItem: Bool {
-        git.isVisible && git.repo != nil && !markdown.isOpen
+        git.isVisible && git.repo != nil && !markdown.isOpen && git.pane.isSourceControl
     }
 
     /// Insert or remove the repo-scoped items — the branch chip and the "···"

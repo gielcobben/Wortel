@@ -14,6 +14,16 @@
 #                                         shows the new version. Implies
 #                                         --notarize.
 #   ./scripts/release.sh --publish 2026.30.1   force a specific version
+#   ./scripts/release.sh --publish --no-install   publish, but leave the
+#                                         installed app alone
+#
+# --no-install exists for one specific hazard: the install step below quits
+# Wortel, and a release is often cut from a shell running *inside* Wortel. That
+# quit kills the shell — and with it this script, somewhere between the
+# `rm -rf /Applications/Wortel.app` and the `cp` that replaces it, which can
+# leave no installed app at all. Publishing itself never touches the running
+# app, so skip the install and take the update through Sparkle
+# (Wortel ▸ Check for Updates…) like any other user would.
 #
 # Versioning is CalVer (Framer-style): <ISO-week-year>.<ISO-week>.<Nth release
 # that week>, e.g. 2026.28.3 — auto-derived from the date, so there's no version
@@ -43,8 +53,19 @@ RELEASES_DIR="$ROOT/releases"           # canonical archive store; appcast regen
 # --- Args -------------------------------------------------------------------
 NOTARIZE=0
 PUBLISH=0
+INSTALL=1
 VERSION=""
 BUILD_FILE="$RELEASES_DIR/BUILD"        # tracked record: last published version string
+# Lift --no-install out of the argument list before the positional parse below,
+# so it can be passed in any position — including after a forced version.
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --no-install) INSTALL=0 ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+set -- ${ARGS[@]+"${ARGS[@]}"}
 case "${1:-}" in
   --notarize) NOTARIZE=1 ;;
   --publish)
@@ -266,6 +287,15 @@ if [ "$PUBLISH" = 1 ]; then
 fi
 
 # --- Install + launch -------------------------------------------------------
+if [ "$INSTALL" = 0 ]; then
+  echo "==> Skipping install (--no-install); the running app is untouched."
+  echo "    Built: $APP"
+  if [ "$PUBLISH" = 1 ]; then
+    echo "    Take the update in-app: Wortel ▸ Check for Updates…"
+  fi
+  exit 0
+fi
+
 echo "==> Installing to /Applications"
 osascript -e 'tell application "Wortel" to quit' 2>/dev/null || true
 sleep 1

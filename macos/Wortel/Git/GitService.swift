@@ -15,7 +15,14 @@ enum GitService {
     /// Run `git <args>` with `directory` as the working directory. Non-blocking:
     /// the Process runs on a global queue; stdout/stderr are drained
     /// concurrently so a large diff on stdout can't deadlock against stderr.
-    static func run(_ args: [String], in directory: String) async -> CommandResult {
+    ///
+    /// `input`, when given, is written to the child's stdin and the pipe closed —
+    /// for the commands that take a list there rather than as arguments
+    /// (`check-ignore --stdin`). It's written from its own thread alongside the
+    /// two readers, because a list long enough to fill the pipe buffer would
+    /// otherwise block us while the child is blocked writing output nobody is
+    /// draining yet.
+    static func run(_ args: [String], in directory: String, input: Data? = nil) async -> CommandResult {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
@@ -34,6 +41,8 @@ enum GitService {
                 let errPipe = Pipe()
                 process.standardOutput = outPipe
                 process.standardError = errPipe
+                let inPipe = input.map { _ in Pipe() }
+                if let inPipe { process.standardInput = inPipe }
 
                 do {
                     try process.run()
@@ -57,6 +66,18 @@ enum GitService {
                 DispatchQueue.global(qos: .userInitiated).async {
                     errData = errPipe.fileHandleForReading.readDataToEndOfFile()
                     group.leave()
+                }
+                if let inPipe, let input {
+                    group.enter()
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        // The close is what tells git the list is finished; without
+                        // it `--stdin` waits forever. try? because a child that
+                        // exited early (a bad argument) leaves us writing to a
+                        // broken pipe, which is a failed command, not a crash.
+                        try? inPipe.fileHandleForWriting.write(contentsOf: input)
+                        try? inPipe.fileHandleForWriting.close()
+                        group.leave()
+                    }
                 }
                 process.waitUntilExit()
                 group.wait()
@@ -349,6 +370,24 @@ enum GitService {
             in: root)
         guard result.ok else { return GitStatus() }
         return GitStatusParser.parse(result.stdout)
+    }
+
+    /// Which of `paths` (repo-relative) git ignores.
+    ///
+    /// Asked per **expanded directory** rather than for the repo, because the
+    /// obvious alternative — `status --ignored` — walks `node_modules` on every
+    /// refresh to answer a question about the twenty rows on screen. This is the
+    /// file tree's version of the rule the whole panel is built around: cost
+    /// tracks the window, not the repo.
+    ///
+    /// `check-ignore` exits 1 when *nothing* matched, which is a perfectly
+    /// ordinary answer here, so the exit status is deliberately not checked —
+    /// only stdout is read. `-z` because a filename may contain a newline.
+    static func checkIgnore(root: String, paths: [String]) async -> Set<String> {
+        guard !paths.isEmpty else { return [] }
+        let input = Data((paths.joined(separator: "\0") + "\0").utf8)
+        let result = await run(["check-ignore", "-z", "--stdin"], in: root, input: input)
+        return Set(result.stdout.split(separator: "\0").map(String.init))
     }
 
     /// Unified diff text for one file. Untracked files have no index entry, so

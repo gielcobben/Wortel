@@ -433,27 +433,35 @@ private struct AttentionFlashOverlay: View {
 /// rather than a child of this view, and the window owns the title and toolbar —
 /// so neither .navigationTitle nor .toolbar belongs here any more. Pane width is
 /// the split item's business too (see MainSplitViewController), not a .frame.
-/// The git model is still here only to keep the panel pointed at the selected
-/// session — its visibility and its repo both follow from that — which is
-/// naturally expressed as a SwiftUI onChange.
+/// The git and file-tree models are still here only to keep the inspector
+/// pointed at the selected session — visibility, pane, repo and tree root all
+/// follow from that — which is naturally expressed as a SwiftUI onChange.
 struct DetailPane: View {
     let runtime: GhosttyRuntime
     @Bindable var manager: SessionManager
     @Bindable var git: GitPanelModel
+    @Bindable var files: FileTreeModel
 
     var body: some View {
         TerminalContainer(runtime: runtime, session: manager.selected)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay { AttentionFlashOverlay(flash: manager.attentionFlash) }
-            .onAppear {
-                git.focus(session: manager.selected)
-            }
-            .onChange(of: manager.selectedID) { _, _ in
-                git.focus(session: manager.selected)
-            }
-            .onChange(of: manager.selected?.cwd) { _, _ in
-                git.focus(session: manager.selected)
-            }
+            .onAppear { focusInspector() }
+            .onChange(of: manager.selectedID) { _, _ in focusInspector() }
+            .onChange(of: manager.selected?.cwd) { _, _ in focusInspector() }
+            // The repo resolves a beat after the cwd (a work-tree root has to be
+            // walked to), and the tree roots on it — so re-root when it lands,
+            // or a session would show its cwd where its repo root belongs until
+            // something else moved.
+            .onChange(of: git.repo?.root) { _, _ in files.reroot() }
+            // The tree's git colouring is a view of the same status the changes
+            // list draws, so it follows the same refreshes.
+            .onChange(of: git.repo?.status) { _, _ in files.refreshDecorations() }
+    }
+
+    private func focusInspector() {
+        git.focus(session: manager.selected)
+        files.focus(session: manager.selected)
     }
 }
 

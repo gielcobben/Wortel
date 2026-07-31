@@ -53,6 +53,49 @@ final class PersistedSessionTests: XCTestCase {
         }
     }
 
+    // MARK: - Inspector pane
+
+    /// The pane is per-session, but "no pane recorded" is a real and common
+    /// state: a file written before panes were per-session, and a session that
+    /// has simply never had one chosen, are the same thing — both defer to the
+    /// last pane chosen anywhere (`GitPanelModel.defaultPane`). So nil must stay
+    /// nil through the decoder rather than being defaulted to `.changes` here,
+    /// or every existing session would be pinned to Changes on the first launch
+    /// after the update.
+    func testAbsentPaneStaysUnrecorded() throws {
+        let session = try decode(#"{"id":"\#(UUID())","gitPanelVisible":true}"#)
+        XCTAssertNil(session.inspectorPane, "an older file said nothing about the pane")
+    }
+
+    func testRecordedPaneDecodes() throws {
+        for raw in ["changes", "history", "files"] {
+            let session = try decode(#"{"id":"\#(UUID())","inspectorPane":"\#(raw)"}"#)
+            XCTAssertEqual(session.inspectorPane, raw)
+        }
+    }
+
+    /// The raw string is kept as-is rather than parsed into the enum, so a value
+    /// this build doesn't know (a pane added, then removed, or a hand-edited
+    /// file) reaches `SessionManager.restore` intact for it to reject — the same
+    /// division of labour as `gitPanelVisible`: this type reads the file, the
+    /// restore decides what an unusable value means.
+    func testUnknownPaneSurvivesDecoding() throws {
+        let session = try decode(#"{"id":"\#(UUID())","inspectorPane":"blame"}"#)
+        XCTAssertEqual(session.inspectorPane, "blame")
+    }
+
+    func testPaneRoundTrips() throws {
+        for pane in ["files", nil] {
+            let original = PersistedSession(
+                id: UUID(), name: "Wortel/App", title: "shell", cwd: "/tmp",
+                selected: true, nameIsUserSet: true, gitPanelVisible: true,
+                inspectorPane: pane)
+            let data = try JSONEncoder().encode([original])
+            let decoded = try JSONDecoder().decode([PersistedSession].self, from: data)
+            XCTAssertEqual(decoded.first?.inspectorPane, pane)
+        }
+    }
+
     // MARK: - Older files
 
     /// A real pre-per-session file: every session decodes, and says nothing about

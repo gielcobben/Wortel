@@ -45,6 +45,47 @@ struct RightClickCatcher: NSViewRepresentable {
     }
 }
 
+// MARK: - Native double-click
+
+/// The same trick as `RightClickCatcher`, for double-clicks: an invisible
+/// overlay that claims an event only when it is the *second* click of a pair,
+/// and is transparent to everything else.
+///
+/// SwiftUI's `.onTapGesture(count: 2)` is the obvious alternative and the wrong
+/// one — it has to wait out the double-click interval before it can rule a
+/// single click in, so every single click in the row picks up a visible delay.
+/// Reading `clickCount` off the current event needs no such wait: a single click
+/// falls straight through to the SwiftUI content and selects immediately, and
+/// only the second click of a genuine double is intercepted here.
+struct DoubleClickCatcher: NSViewRepresentable {
+    let onDoubleClick: () -> Void
+
+    func makeNSView(context: Context) -> CatcherView {
+        let view = CatcherView()
+        view.onDoubleClick = onDoubleClick
+        return view
+    }
+
+    func updateNSView(_ view: CatcherView, context: Context) {
+        view.onDoubleClick = onDoubleClick
+    }
+
+    final class CatcherView: NSView {
+        var onDoubleClick: () -> Void = {}
+
+        override func mouseDown(with event: NSEvent) {
+            guard event.clickCount == 2 else { return }
+            onDoubleClick()
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            let event = NSApp.currentEvent
+            guard event?.type == .leftMouseDown, event?.clickCount == 2 else { return nil }
+            return self
+        }
+    }
+}
+
 /// An `NSMenuItem` that runs a closure when chosen, so a menu can be built
 /// inline without a separate target/selector object.
 final class ClosureMenuItem: NSMenuItem {

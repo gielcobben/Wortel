@@ -118,6 +118,14 @@ final class Session: Identifiable {
     /// it, the one in a repo always does. New sessions start hidden. Read and
     /// written by GitPanelModel, which mirrors it onto the inspector.
     var gitPanelVisible: Bool = false
+    /// Which pane the inspector shows while this session is selected, or nil for
+    /// a session that has never expressed a preference — those follow
+    /// `GitPanelModel.defaultPane` (the last pane chosen anywhere), so a new
+    /// session inherits your habit instead of snapping back to Changes.
+    /// Per-session for the same reason visibility is: the repo session wants
+    /// Changes, the one you're exploring wants Files. Persisted; read and
+    /// written by GitPanelModel.
+    var inspectorPane: InspectorPane?
     /// Full title reported by the shell (user@host:cwd, or the running
     /// program). Kept for reference; not currently shown.
     var title: String

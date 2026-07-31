@@ -77,11 +77,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
 
     /// The pane buttons are the *only* control over the panel — there is no
     /// separate show/hide button — so each click means both "show this pane" and
-    /// "toggle, if this pane is already what's on screen":
-    ///
-    /// - hidden → open on the clicked pane
-    /// - showing the *other* pane → swap in place, don't close
-    /// - showing the clicked pane → close
+    /// "toggle, if this pane is already what's on screen". The rule itself lives
+    /// on `GitPanelModel.activate(_:)` so the View menu's ⌘⌥G / ⌘⌥E drive the
+    /// identical behaviour.
     ///
     /// Selection is asserted from the model afterwards rather than left to the
     /// control, because `.selectAny` tracking lets a click land the control on a
@@ -94,14 +92,16 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// menu's pane entries — which is why it's index-based rather than reading
     /// the segmented control.
     private func activatePane(at index: Int) {
-        let panes = GitInspectorPane.allCases
+        let panes = InspectorPane.allCases
         // While the markdown preview owns the column, a pane click means "give me
-        // that git pane back" — close the preview and show the pane, never toggle
+        // that pane back" — close the preview and show the pane, never toggle
         // the column shut.
         if markdown.isOpen {
             markdown.close()
-            if panes.indices.contains(index) { git.pane = panes[index] }
-            git.isPresented = true
+            // `show`, not `activate`: the pane clicked may be the one the model
+            // already holds, and toggling would read that as "close" when the
+            // click meant "replace the preview with this".
+            if panes.indices.contains(index) { git.show(panes[index]) }
             syncToolbar()
             return
         }
@@ -111,12 +111,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         if index < 0 {
             git.isPresented = false
         } else if panes.indices.contains(index) {
-            if git.isVisible && git.pane == panes[index] {
-                git.isPresented = false
-            } else {
-                git.pane = panes[index]
-                git.isPresented = true
-            }
+            git.activate(panes[index])
         }
         syncToolbar()
     }
@@ -126,7 +121,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// something on screen.
     private func syncToolbar() {
         if let paneControl {
-            for (index, pane) in GitInspectorPane.allCases.enumerated() {
+            for (index, pane) in InspectorPane.allCases.enumerated() {
                 // A pane reads selected only when its git pane is actually on
                 // screen — not while the markdown preview has taken the column.
                 paneControl.setSelected(git.isVisible && !markdown.isOpen && pane == git.pane, forSegment: index)
@@ -145,7 +140,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private func updateMenuForms() {
         if let paneItem {
             let submenu = NSMenu()
-            for (index, pane) in GitInspectorPane.allCases.enumerated() {
+            for (index, pane) in InspectorPane.allCases.enumerated() {
                 let entry = ClosureMenuItem(title: pane.title) { [weak self] in
                     self?.activatePane(at: index)
                 }
@@ -504,7 +499,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             // already on screen would be swallowed and the panel could never be
             // dismissed from here. The cost is that the control can land on states
             // the model doesn't have — `paneChanged` re-asserts it.
-            let panes = GitInspectorPane.allCases
+            let panes = InspectorPane.allCases
             let segmented = NSSegmentedControl(
                 images: panes.map {
                     NSImage(systemSymbolName: $0.symbol, accessibilityDescription: $0.title)

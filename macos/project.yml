@@ -232,6 +232,12 @@ targets:
       # here — it pulls in ~20 C grammars the unit tests have no need for.
       - path: Wortel/Git/DiffSyntax.swift
       - path: Wortel/Git/GitStatusParser.swift
+      # The file tree's git decoration. Pure value type by design — the ancestor
+      # roll-up is the one piece of that pane that can be silently wrong (a
+      # prefix match decorating `src/foobar` because `src/foo` changed), and it
+      # needs no window, repo or shell to check. The rest of Wortel/Files stays
+      # out: it's AppKit, FileManager and a live git repo.
+      - path: Wortel/Files/FileTreeDecorations.swift
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/GitRepoModel.swift
       - path: Wortel/Git/GitRepoWatcher.swift

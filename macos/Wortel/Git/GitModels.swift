@@ -46,6 +46,27 @@ struct GitFileChange: Identifiable, Hashable {
     var isDeletion: Bool { statusCode == "D" }
 }
 
+/// How significant a porcelain status code is, when two of them describe the
+/// same thing and only one can be drawn: a file that is both staged and modified
+/// in the changes list, or a collapsed directory whose dot has to stand for
+/// everything beneath it. A conflict outranks a deletion outranks a
+/// modification outranks a plain addition or an untracked file.
+///
+/// Lives here rather than beside the colours because it's a fact about git, not
+/// about drawing — and because `FileTreeDecorations`, which needs it, is
+/// deliberately free of any UI framework so it can be tested without one.
+func gitStatusRank(_ code: Character) -> Int {
+    switch code {
+    case "U": return 5
+    case "D": return 4
+    case "M", "T": return 3
+    case "R", "C": return 2
+    case "A": return 1
+    case "?": return 0
+    default: return -1
+    }
+}
+
 /// A snapshot of `git status`, plus branch/ahead-behind from the `--branch`
 /// header. Value type — the model swaps a whole new one in on each refresh.
 struct GitStatus: Equatable {
@@ -216,18 +237,31 @@ struct CommitFileChange: Identifiable, Hashable {
     var directory: String { (path as NSString).deletingLastPathComponent }
 }
 
-/// Which pane the trailing inspector shows. Persisted app-wide by GitPanelModel,
-/// and driven by the toolbar's segmented control.
-enum GitInspectorPane: String, CaseIterable, Identifiable {
+/// Which pane the trailing inspector shows. Held per session by GitPanelModel
+/// (see `setPane`), and driven by the toolbar's segmented control — whose
+/// segments, tooltips and overflow entries are all built from `allCases`, so a
+/// case added here appears in the toolbar without touching it.
+///
+/// `files` is not source control, but it lives here because the *column* is one
+/// thing with three panes and one selection; splitting the enum would just mean
+/// mapping two of them onto the same control.
+enum InspectorPane: String, CaseIterable, Identifiable {
     case changes
     case history
+    case files
 
     var id: String { rawValue }
+
+    /// Whether this pane is a view of the repository, i.e. one of the two the
+    /// "Show Source Control" command can land on. Files is reachable on its own
+    /// command instead, and is what makes this distinction necessary.
+    var isSourceControl: Bool { self != .files }
 
     var title: String {
         switch self {
         case .changes: return "Changes"
         case .history: return "History"
+        case .files: return "Files"
         }
     }
 
@@ -235,6 +269,7 @@ enum GitInspectorPane: String, CaseIterable, Identifiable {
         switch self {
         case .changes: return "doc.on.doc"
         case .history: return "clock"
+        case .files: return "folder"
         }
     }
 }

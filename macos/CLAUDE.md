@@ -174,12 +174,55 @@ the session is for — a manager sitting in `~` never wants it, the one in a rep
 always does. So `GitPanelModel` holds no visibility state of its own. `isVisible`
 mirrors the focused `Session.gitPanelVisible`, re-read on every `focus(session:)`
 and written back through `setVisible` (the one funnel, so a divider-drag
-dismissal is recorded like a ⌘⌥G); `SessionStore` persists it. Two consequences:
-a session switch that changes visibility **snaps** the inspector rather than
-animating it (`animatesVisibilityChange`) — animating would reflow the terminal
-on every frame of a switch that's meant to be instant — and the *pane*
-(Changes/History) deliberately stays app-wide in `UserDefaults`, being a reading
-preference rather than a fact about a session.
+dismissal is recorded like a ⌘⌥G); `SessionStore` persists it. A session switch
+that changes visibility **snaps** the inspector rather than animating it
+(`animatesVisibilityChange`) — animating would reflow the terminal on every frame
+of a switch that's meant to be instant.
+
+**Which pane** the column shows (`InspectorPane`: Changes / History / Files) is
+per session for the same reason and by the same mechanism — `pane` mirrors
+`Session.inspectorPane` through the `setPane` funnel. A session with no stored
+pane is a real state, not a gap: both an older `sessions.json` and a session
+you've never picked a pane on defer to `GitPanelModel.defaultPane`, the last pane
+chosen anywhere, so a new session inherits your habit instead of snapping to
+Changes. `lastSourceControlPane` is tracked separately so ⌘⌥G coming back from
+Files lands on History if that's where you were. One rule drives all three
+openers — the toolbar segments, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
+hidden → open on that pane, showing another → swap, showing that one → close.
+
+**Files pane** (`Wortel/Files/`) — the project as a tree, rooted at the repo
+work-tree root (the session's cwd outside a repo, which therefore re-roots as you
+`cd`, since outside a repo there's no project to hold still for). Read-only by
+design: it opens, reveals, copies paths and feeds them to the prompt, because the
+shell beside it does `mv` and `rm` better. Dragging a row into the terminal needs
+nothing new — `SurfaceView` already registers `.fileURL` and inserts the escaped
+path.
+
+It inherits the git panel's cost rule, and that is the whole design:
+
+- **Only expanded directories exist.** They're the only ones listed, the only
+  ones watched, and the only ones `check-ignore`d. A collapsed `node_modules` is
+  one row and no work at all; expanding one is capped at
+  `FileTreeModel.listingCap` entries with a trailing "N more items" row, because
+  a truncated list that doesn't say so reads as "this is everything".
+- **`DirectoryWatcher`, not `GitRepoWatcher`.** FSEvents is always recursive,
+  which is exactly wrong here — a session rooted at `~` would watch
+  `~/Library`. One `DispatchSource` vnode watcher per open directory instead,
+  opened on expand and closed on collapse, with a per-directory debounce so an
+  `npm install` inside an open folder can't outpace the UI.
+- **Ignored entries are shown greyed, not hidden**, and answered per expanded
+  directory by `GitService.checkIgnore` — `status --ignored` would walk
+  `node_modules` on every refresh to answer a question about twenty rows. Only
+  `.git` is hidden outright; `.gitignore` and `.env` are things you look for.
+- **`FileTreeDecorations` is a pure value type** (and the one part of the pane in
+  `WortelTests`) because its ancestor roll-up is silently wrong in both
+  directions if you reach for `hasPrefix`: `src/foo` changing must not decorate
+  `src/foobar`, and a collapsed directory that fails to roll up just looks clean.
+
+The Markdown preview still takes the **whole** column when it opens (a terminal
+with two right columns gets cramped), so opening a `.md` from the tree hides the
+tree until the preview is closed or the Files segment reclaims it — the same rule
+as clicking a `.md` path in the terminal.
 
 **Menus** (`Wortel/MainMenu.swift`) — built programmatically and kept small
 because AppKit scans key equivalents on every keypress. The menu is

@@ -25,6 +25,7 @@ final class MainSplitViewController: NSSplitViewController {
     private let manager: SessionManager
     private let git: GitPanelModel
     private let markdown: MarkdownPreviewModel
+    private let files: FileTreeModel
 
     private var inspectorItem: NSSplitViewItem!
     /// Guards against the observer→collapse→observer feedback loop.
@@ -36,11 +37,13 @@ final class MainSplitViewController: NSSplitViewController {
     /// reclaim the column from a preview (they're mutually exclusive views of it).
     private var lastGitVisible = false
 
-    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel, markdown: MarkdownPreviewModel) {
+    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
+         markdown: MarkdownPreviewModel, files: FileTreeModel) {
         self.runtime = runtime
         self.manager = manager
         self.git = git
         self.markdown = markdown
+        self.files = files
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -68,7 +71,7 @@ final class MainSplitViewController: NSSplitViewController {
         // their width, the terminal gives. An 80pt floor keeps the window
         // shrinkable; ghostty reflows to whatever width it gets, so a narrow
         // terminal is cramped rather than broken.
-        let detail = NSHostingController(rootView: DetailPane(runtime: runtime, manager: manager, git: git))
+        let detail = NSHostingController(rootView: DetailPane(runtime: runtime, manager: manager, git: git, files: files))
         let contentItem = NSSplitViewItem(viewController: detail)
         contentItem.minimumThickness = 80
         contentItem.holdingPriority = NSLayoutConstraint.Priority(250)
@@ -78,7 +81,7 @@ final class MainSplitViewController: NSSplitViewController {
         // thickness, so min/max are overridden right after to make it draggable.
         // collapseBehavior keeps the *window* still when the panel opens/closes,
         // resizing the terminal instead.
-        let inspector = NSHostingController(rootView: InspectorContainer(git: git, markdown: markdown))
+        let inspector = NSHostingController(rootView: InspectorContainer(git: git, markdown: markdown, files: files))
         inspector.view.setFrameSize(NSSize(width: 420, height: inspector.view.frame.height))
         let item = NSSplitViewItem(inspectorWithViewController: inspector)
         item.minimumThickness = 260

@@ -22,6 +22,12 @@ struct SourceControlPanel: View {
                 } else {
                     emptyState
                 }
+            case .files:
+                // Unreachable: InspectorContainer routes the Files pane to
+                // FileTreePanel and only builds this view for the two
+                // source-control panes. Listed so the switch stays exhaustive
+                // over the shared enum rather than swallowing a future case.
+                EmptyView()
             }
         }
         // No background on purpose. As an inspector split item the system supplies
@@ -475,17 +481,9 @@ private struct ChangeRow: View {
         return menu
     }
 
-    private var statusColor: Color {
-        switch change.statusCode {
-        case "M", "T": return .orange
-        case "A": return .green
-        case "D": return .red
-        case "R", "C": return .blue
-        case "?": return .green
-        case "U": return .red
-        default: return .secondary
-        }
-    }
+    /// Shared with the file tree so the two panes can't disagree about what
+    /// "modified" looks like. See GitStatusStyle.
+    private var statusColor: Color { GitStatusStyle.color(for: change.statusCode) }
 }
 
 // `RightClickCatcher` (the native right-click overlay) and `ClosureMenuItem`

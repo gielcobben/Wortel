@@ -170,9 +170,15 @@ enum MainMenu {
         let sourceControl = viewMenu.addItem(withTitle: "Show Source Control", action: #selector(AppDelegate.toggleSourceControl(_:)), keyEquivalent: "g")
         sourceControl.keyEquivalentModifierMask = [.command, .option]
         sourceControl.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)
+        // ⌘⌥E for the third pane of the same column — free in both this file and
+        // wortel.conf. It behaves exactly like ⌘⌥G and the toolbar segments: open
+        // on Files, swap to Files, or close if Files is already up.
+        let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "e")
+        files.keyEquivalentModifierMask = [.command, .option]
+        files.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
         // ⌘⌥L: reveal the panel (if hidden) and move focus into whichever list is
-        // showing — files on Changes, commits on History — so ↑/↓ navigate it
-        // without reaching for the mouse.
+        // showing — files on Changes, commits on History, the tree on Files — so
+        // ↑/↓ navigate it without reaching for the mouse.
         let focusList = viewMenu.addItem(withTitle: "Focus List", action: #selector(AppDelegate.focusSourceControlList(_:)), keyEquivalent: "l")
         focusList.keyEquivalentModifierMask = [.command, .option]
         focusList.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: nil)

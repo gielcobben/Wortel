@@ -19,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Drives the Markdown preview that shares the trailing column — opened by
     /// clicking a `.md` path in the terminal.
     private let markdownPreview = MarkdownPreviewModel()
+    /// Drives the Files pane — the third view of the same column. Reads the repo
+    /// the git panel has already resolved, so it costs no extra git work.
+    private lazy var fileTree = FileTreeModel(git: gitPanel)
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
     /// background update checks start at launch; the "Check for Updates…" menu
     /// item drives manual checks through it.
@@ -59,7 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // off the linked SDK, not the deployment target); on 14 they render as a
         // conventional unified toolbar.
         window.toolbarStyle = .unified
-        let split = MainSplitViewController(runtime: runtime, manager: manager, git: gitPanel, markdown: markdownPreview)
+        let split = MainSplitViewController(
+            runtime: runtime, manager: manager, git: gitPanel,
+            markdown: markdownPreview, files: fileTree)
         self.splitController = split
         window.contentViewController = split
         installToolbar(on: window, splitView: split.splitView)
@@ -86,6 +91,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // A markdown path was clicked in the terminal → open it in the trailing
         // preview (which shares the column with the git panel).
         manager.onOpenMarkdown = { [weak self] url in
+            self?.markdownPreview.open(url)
+        }
+        // Opening a .md from the file tree goes to the same preview, so a file
+        // reached either way lands in one place.
+        fileTree.onPreviewMarkdown = { [weak self] url in
             self?.markdownPreview.open(url)
         }
         manager.onAttentionCleared = { session in
@@ -118,15 +128,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             DispatchQueue.main.async { Self.notificationsAuthorized = granted }
         }
 
-        // Panel visibility is session state, so a toggle has to reach
-        // sessions.json.
-        gitPanel.onVisibilityChanged = { [weak manager] in manager?.sessionStateChanged() }
+        // Panel visibility and the chosen pane are session state, so a toggle has
+        // to reach sessions.json.
+        gitPanel.onStateChanged = { [weak manager] in manager?.sessionStateChanged() }
 
         manager.restore()
         // Point the panel at the restored selection: it's what raises the panel
         // if that session had it up, and it seeds the cwd so the first toggle
         // resolves the right repo (no git work runs while it's hidden).
         gitPanel.focus(session: manager.selected)
+        fileTree.focus(session: manager.selected)
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -354,8 +365,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.select(index: item.tag)
     }
 
+    /// ⌘⌥G — show, swap to, or close the source-control side of the inspector.
+    /// It lands on whichever git pane was last chosen, so coming back from Files
+    /// returns you to History if that's where you were.
     @objc func toggleSourceControl(_ sender: Any?) {
-        gitPanel.toggle()
+        gitPanel.activate(GitPanelModel.lastSourceControlPane)
+    }
+
+    /// ⌘⌥E — the same rule for the Files pane.
+    @objc func toggleFileTree(_ sender: Any?) {
+        gitPanel.activate(.files)
     }
 
     @objc func focusSourceControlList(_ sender: Any?) {
@@ -372,8 +391,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(checkForUpdates(_:)) {
             return updater.canCheckForUpdates
         }
+        // Each pane command reads "Hide" only when *its* pane is the one on
+        // screen — with Files up, ⌘⌥G swaps rather than closes, so calling it
+        // "Hide Source Control" would describe the wrong action.
         if menuItem.action == #selector(toggleSourceControl(_:)) {
-            menuItem.title = gitPanel.isVisible ? "Hide Source Control" : "Show Source Control"
+            let showing = gitPanel.isVisible && gitPanel.pane.isSourceControl
+            menuItem.title = showing ? "Hide Source Control" : "Show Source Control"
+            return true
+        }
+        if menuItem.action == #selector(toggleFileTree(_:)) {
+            let showing = gitPanel.isVisible && gitPanel.pane == .files
+            menuItem.title = showing ? "Hide Files" : "Show Files"
             return true
         }
         // Only offer "Next Waiting Session" when something is actually waiting.

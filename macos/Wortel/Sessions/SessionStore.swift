@@ -20,6 +20,18 @@ struct PersistedSession: Codable {
     /// the panel on every session you'd hidden.
     let gitPanelVisible: Bool?
 
+    /// Which inspector pane this session shows, as its raw value — "changes",
+    /// "history", "files". Kept a `String?` rather than the enum for the same
+    /// reason `gitPanelVisible` is a `Bool?`: this type is a plain reading of
+    /// the file, and what an absent *or unrecognised* value should fall back to
+    /// is a migration decision. `SessionManager.restore` resolves both.
+    ///
+    /// nil means either a file written before panes were per-session, or a
+    /// session that has simply never had one chosen. Those are the same thing
+    /// here — both defer to the last pane chosen anywhere — which is why, unlike
+    /// `gitPanelVisible`, this needs no separate legacy flag.
+    let inspectorPane: String?
+
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
     ///
@@ -43,16 +55,17 @@ struct PersistedSession: Codable {
 
     // Tolerate older files without a `name` / `nameIsUserSet` field.
     enum CodingKeys: String, CodingKey {
-        case id, name, title, cwd, selected, nameIsUserSet, gitPanelVisible
+        case id, name, title, cwd, selected, nameIsUserSet, gitPanelVisible, inspectorPane
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
     init(id: UUID, name: String, title: String, cwd: String?, selected: Bool,
-         nameIsUserSet: Bool, gitPanelVisible: Bool?,
+         nameIsUserSet: Bool, gitPanelVisible: Bool?, inspectorPane: String? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
         self.selected = selected; self.nameIsUserSet = nameIsUserSet
         self.gitPanelVisible = gitPanelVisible
+        self.inspectorPane = inspectorPane
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -71,6 +84,10 @@ struct PersistedSession: Codable {
         // field should fall back to is a migration decision, and this type stays
         // a plain reading of the file. `SessionManager.restore` resolves it.
         gitPanelVisible = try c.decodeIfPresent(Bool.self, forKey: .gitPanelVisible)
+        // Same reasoning, and the same deliberate nil: an absent pane is a
+        // session with no preference, and which pane that should mean is
+        // `restore`'s call, not this type's.
+        inspectorPane = try c.decodeIfPresent(String.self, forKey: .inspectorPane)
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.

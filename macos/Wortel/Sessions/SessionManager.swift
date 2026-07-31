@@ -363,6 +363,12 @@ final class SessionManager {
             // nil means the file predates per-session visibility — inherit the
             // old app-wide flag just this once.
             session.gitPanelVisible = entry.gitPanelVisible ?? SessionStore.legacyGitPanelVisible
+            // nil (a file predating per-session panes, or a session that never
+            // had one chosen) and an unrecognised raw value both mean "no
+            // preference" — leave it nil and let GitPanelModel.defaultPane
+            // answer, so the session follows the last pane chosen anywhere
+            // rather than being pinned to a guess made here.
+            session.inspectorPane = entry.inspectorPane.flatMap(InspectorPane.init(rawValue:))
             // A surviving marker means the app died without cleaning up (a crash),
             // and is the most direct evidence. A clean quit leaves none — killing
             // the agent hands control back to the shell, whose last prompt clears
@@ -1081,6 +1087,7 @@ final class SessionManager {
                 id: session.id, name: session.name, title: session.title, cwd: session.cwd,
                 selected: session.id == selectedID, nameIsUserSet: session.nameIsUserSet,
                 gitPanelVisible: session.gitPanelVisible,
+                inspectorPane: session.inspectorPane?.rawValue,
                 runningAgent: agent?.agent, runningModel: agent?.model,
                 runningArgv: agent?.argv,
                 runningConversationID: agent == nil ? nil : conversationID)
@@ -1091,8 +1098,9 @@ final class SessionManager {
         store.scheduleSave { [weak self] in self?.persistedSessions() ?? [] }
     }
 
-    /// GitPanelModel flipped a session's `gitPanelVisible`. It owns that bit (it
-    /// holds the session), but persistence is ours — wired up in AppDelegate.
+    /// GitPanelModel flipped a session's `gitPanelVisible` or `inspectorPane`.
+    /// It owns those bits (it holds the session), but persistence is ours —
+    /// wired up in AppDelegate.
     func sessionStateChanged() {
         scheduleSave()
     }

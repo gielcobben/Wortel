@@ -232,10 +232,12 @@ body.dragging-app, body.dragging-app * {
   position: relative;
   z-index: 2;
 }
-/* The measure, unchanged at every width: text from x=36 to x=720, which is 19
-   grid cells wide and shares its left edge with the wordmark above. */
+/* The measure. Left edge is always x=36, the wordmark's, so the page keeps one
+   left edge top to bottom; only the ragged right edge moves.
+   540 = 36 + 468 + 36, i.e. 15 cells. Narrower than a typical article because
+   the sections are short and the page is a product page, not an essay. */
 .doc .prose {
-  max-width: 756px;      /* 36 + 684 + 36 */
+  max-width: 540px;
   padding: 0 36px;
 }
 
@@ -322,7 +324,10 @@ body.dragging-app, body.dragging-app * {
 .doc tbody th {
   color: var(--text);
   white-space: nowrap;
-  padding-right: 24px;
+  /* 12, not 24: the shortcut column is nowrap by necessity (⌘⇧[ / ⌘⇧] must not
+     break across lines), so every px it takes is one the action column wraps
+     without, and the measure beside the tour window is only 324px. */
+  padding-right: 12px;
   font-family: var(--mono);
   font-size: 13px;
 }
@@ -331,7 +336,15 @@ body.dragging-app, body.dragging-app * {
 
 .faq { display: flex; flex-direction: column; gap: 24px; }
 
-.shot { margin-top: 8px; }
+/* The one thing that must NOT obey the measure. A screenshot rendered 468px
+   wide is unreadable, and it is the only full view of the app a narrow-screen
+   reader gets. It breaks right out of the prose column, keeping the x=36 left
+   edge, and caps at the app-frame's own 1044px. The body clips the overflow. */
+.shot {
+  margin-top: 8px;
+  width: min(1044px, calc(100vw - 72px));
+  max-width: none;
+}
 .shot img {
   display: block;
   width: 100%;
@@ -364,33 +377,46 @@ body.dragging-app, body.dragging-app * {
 
 /* ==========================================================================
    The scroll tour: prose left, one pinned app window right.
-   1332 = 756 (the measure) + 504 (14 cells, the narrowest window still worth
-   showing) + 36 (right gutter). Below it there is no honest way to place a
-   window that is never scaled, so the column simply doesn't exist and the
-   static screenshot further down carries the visual on its own.
+
+   Paired with a window, the prose drops to the SAME 396px column the hero's
+   text sits in (11 cells, text from x=36 to x=360), so the two halves of the
+   page read as one column of text with one window beside it rather than as two
+   different layouts. Giving the measure back is what lets the window grow to
+   1080px here, near its 1266px reference, instead of the 720px it gets when the
+   prose keeps 756.
+
+   972 = 396 (the column) + 540 (15 cells, the narrowest window worth showing)
+   + 36 (right gutter). Below that the aside doesn't render at all: there is no
+   honest way to place a window that is never scaled, and the static screenshot
+   further down carries the visual on its own.
    ========================================================================== */
-@media (min-width: 1332px) {
+@media (min-width: 972px) {
   .doc-tour {
     display: grid;
-    grid-template-columns: 756px minmax(0, 1fr);
+    grid-template-columns: 396px minmax(0, 1fr);
     align-items: start;
   }
+  /* the hero's column width exactly: 396 - 36 - 36 = 324 of text */
+  .doc-tour .prose { max-width: 396px; }
   .tour {
     display: block;
     position: sticky;
     top: 0;
     height: 100vh;
-    /* the window sits on the same 36px gutter the hero's does */
-    padding: 0 36px 0 0;
+    /* 36px each side puts the window's left edge on x=432, the exact line the
+       hero's app-frame sits on, and leaves it the same 1044px width there. The
+       two windows are the same window at the same place, one screen apart. */
+    padding: 0 36px;
     display: flex;
     align-items: center;
   }
   .tour-frame {
     /* Snapped to whole cells like the hero's app-frame, and capped at the
-       reference window so it never stretches past its real size. The height is
-       a fixed 17 cells: a shorter macOS window, not a squashed one. */
+       reference window so it never stretches past its real size. The height
+       caps at 19 cells and yields to short viewports: a shorter macOS window,
+       never a squashed one. */
     width: round(down, min(100%, var(--app-max-w)), 36px);
-    height: 612px;
+    height: min(684px, calc(100vh - 144px));
     border-radius: 10px;
     /* Its own stacking context so the window's shadow can't paint over the
        prose in the column beside it. */

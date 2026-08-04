@@ -70,40 +70,36 @@ export const SECTIONS: Section[] = [
       'A macOS terminal emulator with one window, a sidebar of named sessions, and nothing to configure.',
     blocks: [
       {
-        p: 'Wortel runs Ghostty’s real terminal engine inside an app shell built for one job: keeping a lot of long-running shells straight. The VT parser, the Metal renderer and the glyph atlas are the ones that ship in Ghostty.app, so raw throughput, render and input latency are Ghostty-class because it is Ghostty doing the work.',
+        p: 'It runs Ghostty’s real terminal engine: the same VT parser, Metal renderer and glyph atlas that ship in Ghostty.app. Throughput, render and input latency are Ghostty-class because it is Ghostty doing the work.',
       },
       {
-        p: 'What it drops is the arranging. There are no tabs, no splits, no panes to tile, no profiles, no settings window and no config file to maintain. You name a session; it stays named, stays in its directory, and comes back after a restart. The window you open on Monday is the window you left on Friday.',
+        p: 'What it drops is the arranging. No tabs, no splits, no profiles, no settings window, no config file. You name a session; it stays named, stays in its directory, and comes back after a restart.',
       },
       {
-        p: 'It is a native AppKit and SwiftUI app: a signed, notarized Mac application, not a web view in a wrapper. It updates itself through Sparkle, and it is free to download, for macOS ' +
+        p: 'Native, signed and notarized. Free, for macOS ' +
           SITE.minMacOS +
           ' ' +
           SITE.minMacOSName +
-          ' or later.',
-      },
-      {
-        p: '“Wortel” is Dutch for root, as in the root of a plant and the root shell you actually work in.',
+          ' or later. “Wortel” is Dutch for root.',
       },
     ],
   },
 
   {
     id: 'ghostty-engine',
-    title: 'Built on Ghostty’s engine, not a re-implementation',
+    title: 'Built on Ghostty’s engine',
     lead:
-      'Wortel embeds libghostty through the GhosttyKit Swift package. The terminal is upstream Ghostty; only the shell around it is Wortel’s.',
+      'Wortel embeds libghostty. The terminal is upstream Ghostty; only the shell around it is Wortel’s.',
     blocks: [
       {
         list: [
-          'The VT parser, the Metal renderer, the glyph atlas and the per-surface IO threads are Ghostty’s, unmodified.',
-          'Every session owns exactly one libghostty surface, rendering from its own thread into an IOSurface-backed layer.',
-          'Wortel’s own code is input plumbing, session persistence, the sidebar, the git and files panes, and menu wiring. The parts a terminal emulator does not need to reinvent are not reinvented.',
-          'The design target is stated plainly in the repo: indistinguishable from Ghostty.app, faster to launch, instant session switch.',
+          'The VT parser, Metal renderer, glyph atlas and per-surface IO threads are Ghostty’s, unmodified.',
+          'Every session owns one libghostty surface, rendering from its own thread.',
+          'Wortel’s own code is the shell: input, session persistence, the sidebar, the git and files panes.',
         ],
       },
       {
-        p: 'That choice is also why Wortel has no plugin API and no theme gallery. Terminal behaviour, fonts, colours and keybinds live in a read-only config bundled inside the app; your real ~/.config/ghostty is never read, so nothing you did to another terminal can change how this one behaves.',
+        p: 'It is also why there is no plugin API and no theme gallery. Fonts, colours and keybinds live in a read-only config inside the app, and your ~/.config/ghostty is never read.',
       },
     ],
   },
@@ -112,14 +108,14 @@ export const SECTIONS: Section[] = [
     id: 'sessions',
     title: 'Sessions instead of tabs',
     lead:
-      'A tab is a number you have to remember. A session is a name, a directory and a shell that survives quitting the app.',
+      'A tab is a number you have to remember. A session is a name, a directory, and a shell that survives quitting the app.',
     blocks: [
       {
         list: [
-          'Every session has a name you type, not an index you count to. Put a slash in the name and the part before it becomes a section, so twelve shells across four projects read as four groups rather than one long list.',
-          'Names, order, working directories, the selected session and each session’s inspector state persist to disk and come back on launch.',
-          'Switching is instant and does not flash. Every session’s surface stays in the view hierarchy for the life of the app. Switching hides and shows, it never tears a view down and rebuilds it, so coming back to a session costs one frame.',
-          'Launch stays lean by spawning only the selected session’s shell before the first frame; the rest warm up one per runloop turn, behind the window you are already looking at.',
+          'Names you type, not indices you count to. A slash in the name makes a section, so twelve shells across four projects read as four groups.',
+          'Names, order, directories and selection persist to disk and come back on launch.',
+          'Switching costs one frame. Every surface stays in the view hierarchy for the life of the app: switching hides and shows, it never rebuilds.',
+          'Launch spawns only the selected shell before the first frame. The rest warm up behind the window.',
         ],
       },
     ],
@@ -129,17 +125,17 @@ export const SECTIONS: Section[] = [
     id: 'coding-agents',
     title: 'Built for coding agents',
     lead:
-      'If you run Claude Code, Codex, Aider or anything like them across several repos at once, the hard part is no longer the terminal. It is knowing which one is waiting for you.',
+      'Run Claude Code, Codex or Aider across several repos and the hard part is no longer the terminal. It is knowing which one is waiting for you.',
     blocks: [
       {
-        p: 'Wortel answers that from the screen itself. A session whose output keeps changing is an agent still working; a session that has held still is an agent waiting on you. Where an agent does emit precise signals (OSC 9;4 progress, OSC 133 command marks, a spinner in the title), those stay authoritative. But nothing is required of the agent, so agents that do not exist yet are covered too.',
+        p: 'Wortel answers that from the screen. Output that keeps changing is an agent working; a screen that has held still is one waiting on you. Precise signals (OSC 9;4, OSC 133, a title spinner) win where an agent sends them, but none are required, so agents that do not exist yet are covered too.',
       },
       {
         list: [
-          'The sidebar marks which sessions are working and which are waiting, so a glance answers the question without switching.',
-          'A macOS notification fires when a background agent goes quiet. It covers only sessions you are not looking at, and only after a grace window, so your own typing and an agent’s noisy startup never trigger it.',
-          '⌘⌥] jumps straight to the next waiting session, wherever it sits in the list.',
-          'Agents still running when you quit are recorded and resumed on the next launch, in the directory they were started in, with the model they were started with.',
+          'The sidebar marks which sessions are working and which are waiting.',
+          'A notification fires when a background agent goes quiet, never for the session you are looking at.',
+          '⌘⌥] jumps to the next waiting session.',
+          'Agents still running at quit are resumed on the next launch, in the same directory, with the same model.',
         ],
       },
     ],
@@ -147,22 +143,21 @@ export const SECTIONS: Section[] = [
 
   {
     id: 'git-and-files',
-    title: 'Git and your project, in the same window',
+    title: 'Git and your project',
     lead:
-      'An inspector column beside the terminal, with three panes: Changes, History and Files. It is per session, because a shell sitting in ~ never wants it and the one in a repo always does.',
+      'An inspector beside the terminal: Changes, History and Files. Per session, because a shell in ~ never wants it and one in a repo always does.',
     blocks: [
       {
         list: [
-          'Changes: working-tree status, per-file diffs with syntax highlighting, and a commit box.',
-          'History: the commit list with a branch-graph gutter, and the diff for any commit, expandable per changed file.',
-          'Files: the project as a tree rooted at the repository’s work-tree root. It is read-only on purpose. It opens, reveals and copies paths, and drops an escaped path into the prompt when you drag a row into the terminal; the shell beside it does mv and rm better.',
-          'Markdown files open in a rendered preview, from the tree or from a path in the terminal.',
+          'Changes: working-tree status, per-file diffs with syntax highlighting, a commit box.',
+          'History: the commit list with a branch graph, and the diff for any commit.',
+          'Files: the project as a tree. Read-only, so dragging a row into the terminal drops an escaped path at the prompt.',
+          'Markdown opens in a rendered preview.',
         ],
       },
       {
-        p: 'One rule shapes all of it: cost tracks the window on screen, not the size of the repository. History pages instead of walking the whole graph, diffs are parsed off the main actor and capped, and the file tree lists, watches and ignore-checks only the directories you actually expanded, so a collapsed node_modules is one row and no work. The terminal next to it has to stay smooth on a monorepo, and that constraint outranks convenience everywhere the two disagree.',
+        p: 'One rule shapes it: cost tracks the window on screen, not the size of the repository. A collapsed node_modules is one row and no work at all. ⌘⌥G opens source control, ⌘⌥E opens files.',
       },
-      { p: '⌘⌥G opens source control, ⌘⌥E opens files, and either key closes the pane it opened.' },
     ],
   },
 
@@ -170,13 +165,10 @@ export const SECTIONS: Section[] = [
     id: 'zero-config',
     title: 'Zero configuration, on purpose',
     lead:
-      'Wortel’s entire configuration is a read-only file inside the app bundle. There is no settings window and no dotfile to maintain.',
+      'Wortel’s entire configuration is a read-only file inside the app bundle. No settings window, no dotfile.',
     blocks: [
       {
-        p: 'This is the feature, not a gap. A terminal you can spend an afternoon tuning is a terminal you will spend an afternoon tuning. Wortel ships one set of defaults (font, theme, keybinds, scrollback, shell integration) and treats them as finished. Font size is the one thing adjustable at runtime, and it is per session.',
-      },
-      {
-        p: 'The absences are load-bearing too. No tabs, no splits, no command palette, no terminal inspector, no profiles. Requests for those from the underlying engine are deliberately declined rather than half-implemented, which is what keeps the surface small enough to stay fast.',
+        p: 'This is the feature, not a gap. A terminal you can spend an afternoon tuning is a terminal you will. Wortel ships one set of defaults and treats them as finished; font size is the only runtime adjustment, and it is per session.',
       },
     ],
   },

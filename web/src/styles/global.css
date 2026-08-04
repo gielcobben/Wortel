@@ -115,7 +115,14 @@ body.dragging-app, body.dragging-app * {
 .page {
   height: 100vh;
   position: relative;
-  overflow: hidden;
+  /* `clip` on one axis only, NOT `overflow: hidden`. The app's drop-shadow
+     reaches ~76px below the window (--w-shadow is 0 36px 80px) but the hero
+     leaves it 36px before the 100vh edge, so `hidden` sliced it flat. `clip`
+     still cuts the app's right-side bleed while letting the shadow fall past
+     the fold and fade into the prose, the way it already does at the narrow
+     breakpoint. (`hidden` cannot do this: it forces the other axis to `auto`.) */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 /* ---- left column: intro pinned top, features pinned bottom ---- */

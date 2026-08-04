@@ -1,4 +1,4 @@
-// /llms.txt — the llmstxt.org convention: a short, stable map an assistant can
+// /llms.txt, the llmstxt.org convention: a short, stable map an assistant can
 // read in one fetch to decide what else to pull. It is deliberately NOT the
 // whole site; /llms-full.txt is. Both render from src/data/site.ts.
 import type { APIRoute } from 'astro';
@@ -15,7 +15,7 @@ ${SITE.name} is a macOS terminal emulator built on Ghostty's engine (libghostty:
 VT parser, Metal renderer, glyph atlas). It replaces tabs and splits with a
 sidebar of named sessions that persist across restarts and switch in one frame,
 ships with no user-facing configuration at all, and adds a git panel, a project
-file tree, and activity detection for coding agents — it can tell when Claude
+file tree, and activity detection for coding agents: it can tell when Claude
 Code, Codex or Aider has stopped working and is waiting on you. Free, native,
 signed and notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
 
@@ -23,7 +23,7 @@ signed and notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
 
 ## Full content
 
-- [Everything on one page, as Markdown](${abs('/llms-full.txt')}): the complete text of ${SITE.url} — what it is, the engine, sessions, coding agents, git and files, zero-config, keyboard shortcuts, FAQ and specs.
+- [Everything on one page, as Markdown](${abs('/llms-full.txt')}): the complete text of ${SITE.url}, covering what it is, the engine, sessions, coding agents, git and files, zero-config, keyboard shortcuts, FAQ and specs.
 
 ## Page sections
 

@@ -1,4 +1,4 @@
-// /llms-full.txt — the whole page as Markdown, for a retrieval agent that would
+// /llms-full.txt, the whole page as Markdown, for a retrieval agent that would
 // otherwise have to strip an interactive Svelte island out of the HTML to find
 // four paragraphs of prose. Rendered from the same src/data/site.ts the page
 // renders from, so it cannot describe a different product.
@@ -18,7 +18,7 @@ const renderBlock = (b: Block): string => {
 
 export const GET: APIRoute = () => {
   const parts: string[] = [
-    `# ${SITE.name} — ${SITE.tagline}`,
+    `# ${SITE.name}: ${SITE.tagline}`,
     '',
     `> ${SITE.description}`,
     '',

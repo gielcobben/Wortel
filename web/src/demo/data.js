@@ -1,5 +1,5 @@
 // ==========================================================================
-// Wortel app demo — content, transcribed 1:1 from the reference screenshots
+// Wortel app demo: content, transcribed 1:1 from the reference screenshots
 // (web/public/refs/*.png). Line breaks are hard-coded to match the reference
 // exactly; the components render rows verbatim rather than re-wrapping.
 // ==========================================================================
@@ -50,7 +50,7 @@ export const transcriptFull = [
   { t: 'can also zoom into regions for pixel-level detail on chrome/spacing.' },
   { t: '' },
   { t: 'One thing the test shot reveals: the landing page currently embeds a *real* PNG' },
-  { t: 'screenshot of the app ([app-shot-dark.png](#)) in the stage — that’s exactly the' },
+  { t: 'screenshot of the app ([app-shot-dark.png](#)) in the stage, that’s exactly the' },
   { t: 'thing we’re replacing with the live Svelte faux-app.' },
   { t: '' },
   { t: 'Ready to start building. Want me to kick off with the **window shell + sessions**' },
@@ -107,7 +107,7 @@ export const changes = [
           { k: 'ctx', o: 2, n: 2, t: "import { defineConfig } from 'astro/config';" },
           { k: 'add', o: null, n: 3, t: "import svelte from '@astrojs/svelte';" },
           { k: 'ctx', o: 3, n: 4, t: '' },
-          { k: 'ctx', o: 4, n: 5, t: '// The landing page is fully static — Astro builds' },
+          { k: 'ctx', o: 4, n: 5, t: '// The landing page is fully static. Astro builds' },
           { k: 'ctx', o: 5, n: 6, t: '// Cloudflare Worker in wrangler.jsonc serves as st' },
           { k: 'add', o: null, n: 7, t: '// Svelte powers the interactive product demo (src/' },
           { k: 'add', o: null, n: 8, t: '// client island on /demo; the landing page itself' },

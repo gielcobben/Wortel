@@ -10,7 +10,7 @@ const DOWNLOAD = SITE.download;
 // The version shown under the button is read from that same feed at build time,
 // so it only refreshes when the site is redeployed. If the feed is unreachable
 // we drop the line rather than fail the build or show a stale hardcoded number.
-// The same fetch feeds softwareVersion/fileSize in the JSON-LD below — a
+// The same fetch feeds softwareVersion/fileSize in the JSON-LD below. A
 // hardcoded version in structured data is a version that goes stale silently.
 async function latestRelease() {
   try {
@@ -87,7 +87,7 @@ const app = {
     'Built-in git panel: working-tree changes, commit history with a branch graph, and diffs',
     'Project file tree with drag-to-terminal path insertion',
     'Rendered Markdown preview',
-    'Zero configuration — no settings UI and no dotfile',
+    'Zero configuration: no settings UI and no dotfile',
   ],
 };
 
@@ -125,7 +125,7 @@ const schema = [website, webpage, person, app];
   <main>
     <!-- The hero is a fixed 100vh board: the text column sits on the 36px grid
          and the app replica renders at native 1:1 beside it. The prose below is
-         a separate, ordinary scrolling document — it must not change any length
+         a separate, ordinary scrolling document. It must not change any length
          in here, or the whole grid drifts. -->
     <div class="page">
       <div class="left">
@@ -133,7 +133,7 @@ const schema = [website, webpage, person, app];
           <h1 class="mark">Wortel</h1>
           <p class="tagline">A minimal, native macOS terminal.</p>
           <p class="desc">
-            Ghostty’s engine, stripped to what you actually use — named sessions,
+            Ghostty’s engine, stripped to what you actually use: named sessions,
             instant launch, instant switching. No tabs, no splits, no config to
             babysit. It’s finished the moment you open it.
           </p>
@@ -274,7 +274,7 @@ const schema = [website, webpage, person, app];
 
     <footer class="foot">
       <p>
-        <strong>Wortel</strong> — a minimal, native macOS terminal built on Ghostty.
+        <strong>Wortel</strong>: a minimal, native macOS terminal built on Ghostty.
         Dutch for <em>root</em>.
       </p>
       <nav aria-label="Footer">
@@ -290,14 +290,14 @@ const schema = [website, webpage, person, app];
        centered position, and a deferred script would let the app paint top-left
        first and then visibly jump to centre on load. -->
   <script is:inline>
-    // Snap the app box to whole 36px grid cells — but as explicit pixel values so
+    // Snap the app box to whole 36px grid cells, but as explicit pixel values so
     // the CSS width/height transition has two real lengths to ease between. (A
     // pure-CSS `round(down, 100%, 36px)` snaps correctly but can't animate: its
     // computed value never changes, only the used/pixel value does at layout time,
     // and transitions only fire on computed-value changes.)
     const CELL = 36;
-    const TITLEBAR = 51;  // the app's chrome strip — its drag handle
-    // The cap is defined once, in global.css, and read back here — the stylesheet
+    const TITLEBAR = 51;  // the app's chrome strip, i.e. its drag handle
+    // The cap is defined once, in global.css, and read back here: the stylesheet
     // needs it to paint the right size immediately, and this script needs it to
     // work out the leftover slack. Two copies would drift and reintroduce the
     // resize-on-load.
@@ -309,8 +309,8 @@ const schema = [website, webpage, person, app];
     const frame = document.querySelector('.app-frame');
     const narrow = window.matchMedia('(max-width: 900px)');
 
-    let slack = { x: 0, y: 0 };  // exact px the window may travel — the drag's bounds
-    let range = { x: 0, y: 0 };  // the same, floored to whole cells — where it rests
+    let slack = { x: 0, y: 0 };  // exact px the window may travel, the drag's bounds
+    let range = { x: 0, y: 0 };  // the same, floored to whole cells, where it rests
     let pos = { x: 0, y: 0 };    // where it is, relative to its (432,36) anchor
     let dragged = false;         // until the user drags, the window stays centered
                                  // in the slack; after, it stays where they left it
@@ -343,7 +343,7 @@ const schema = [website, webpage, person, app];
     }
 
     function layout() {
-      // Below the stacking breakpoint the desktop grid math doesn't apply — hand
+      // Below the stacking breakpoint the desktop grid math doesn't apply, so hand
       // sizing back to the stylesheet.
       if (narrow.matches) {
         frame.style.width = frame.style.height = frame.style.transform = '';
@@ -366,7 +366,7 @@ const schema = [website, webpage, person, app];
         y: Math.floor(slack.y / CELL) * CELL,
       };
       // Until the first drag, sit centered in the slack (rest() then snaps that to
-      // the nearest cell). Afterwards honour where the user left it — rest() just
+      // the nearest cell). Afterwards honour where the user left it; rest() just
       // re-clamps in case the slack shrank out from under it.
       if (!dragged) pos = { x: slack.x / 2, y: slack.y / 2 };
       rest(false);
@@ -383,7 +383,7 @@ const schema = [website, webpage, person, app];
       frame.classList.remove('settling');
 
       const grab = { x: e.clientX - pos.x, y: e.clientY - pos.y };
-      // flip on the first actual move, not on click — a click that doesn't move
+      // flip on the first actual move, not on click: a click that doesn't move
       // shouldn't pin the window and disable auto-centering
       const onMove = (ev) => { dragged = true; drag(ev.clientX - grab.x, ev.clientY - grab.y); };
       const stop = () => {

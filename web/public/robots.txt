@@ -1,7 +1,7 @@
 # wortel.sh
 #
 # Everything here is a public product page. Crawling it is the point, so this
-# file exists to say so explicitly and to point at the sitemap — not to gate.
+# file exists to say so explicitly and to point at the sitemap, not to gate.
 #
 # Note: shipping this file replaces Cloudflare's managed robots.txt, which was
 # the Content Signals boilerplate and carried no directives at all. The signal

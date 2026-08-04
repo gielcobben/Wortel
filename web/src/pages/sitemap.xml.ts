@@ -9,7 +9,7 @@ const PAGES: { path: string; changefreq: string; priority: string }[] = [
 ];
 
 export const GET: APIRoute = () => {
-  // Build date, not "now at request time" — the output is prerendered, and a
+  // Build date, not "now at request time". The output is prerendered, and a
   // lastmod that claims today on every crawl is a lastmod crawlers learn to
   // ignore. This one only moves when the site is actually redeployed.
   const lastmod = new Date().toISOString().slice(0, 10);

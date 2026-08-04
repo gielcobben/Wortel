@@ -12,14 +12,18 @@
 // model reads out of llms-full.txt is the same sentence a person reads on the
 // page, and the structured data can't advertise a feature the copy dropped.
 // Add content HERE, not in the templates.
+//
+// HOUSE RULE: no em dashes anywhere in copy. Use a colon, a full stop, a
+// semicolon or parentheses instead. This applies to every string in this file,
+// to the templates, and to any HTML comment that ships in the build.
 // ==========================================================================
 
 export const SITE = {
   name: 'Wortel',
   url: 'https://wortel.sh',
-  /** ~58 chars — inside the ~60 Google renders before truncating. */
-  title: 'Wortel — a minimal, native macOS terminal built on Ghostty',
-  /** ~150 chars — inside the ~155–160 shown in a result snippet. */
+  /** ~56 chars, inside the ~60 Google renders before truncating. */
+  title: 'Wortel: a minimal, native macOS terminal built on Ghostty',
+  /** ~150 chars, inside the ~155-160 shown in a result snippet. */
   description:
     'A zero-config macOS terminal on Ghostty’s real engine. Named sessions instead of tabs, instant launch and switching, with git, files and coding agents built in.',
   tagline: 'A minimal, native macOS terminal.',
@@ -66,13 +70,13 @@ export const SECTIONS: Section[] = [
       'A macOS terminal emulator with one window, a sidebar of named sessions, and nothing to configure.',
     blocks: [
       {
-        p: 'Wortel runs Ghostty’s real terminal engine — the same VT parser, Metal renderer and glyph atlas that ship in Ghostty.app — inside an app shell built for one job: keeping a lot of long-running shells straight. Raw throughput, render and input latency are Ghostty-class because it is Ghostty doing the work.',
+        p: 'Wortel runs Ghostty’s real terminal engine inside an app shell built for one job: keeping a lot of long-running shells straight. The VT parser, the Metal renderer and the glyph atlas are the ones that ship in Ghostty.app, so raw throughput, render and input latency are Ghostty-class because it is Ghostty doing the work.',
       },
       {
         p: 'What it drops is the arranging. There are no tabs, no splits, no panes to tile, no profiles, no settings window and no config file to maintain. You name a session; it stays named, stays in its directory, and comes back after a restart. The window you open on Monday is the window you left on Friday.',
       },
       {
-        p: 'It is a native AppKit and SwiftUI app — a signed, notarized Mac application, not a web view in a wrapper — and it updates itself through Sparkle. Free to download, for macOS ' +
+        p: 'It is a native AppKit and SwiftUI app: a signed, notarized Mac application, not a web view in a wrapper. It updates itself through Sparkle, and it is free to download, for macOS ' +
           SITE.minMacOS +
           ' ' +
           SITE.minMacOSName +
@@ -94,7 +98,7 @@ export const SECTIONS: Section[] = [
         list: [
           'The VT parser, the Metal renderer, the glyph atlas and the per-surface IO threads are Ghostty’s, unmodified.',
           'Every session owns exactly one libghostty surface, rendering from its own thread into an IOSurface-backed layer.',
-          'Wortel’s own code is input plumbing, session persistence, the sidebar, the git and files panes, and menu wiring — the parts a terminal emulator does not need to reinvent are not reinvented.',
+          'Wortel’s own code is input plumbing, session persistence, the sidebar, the git and files panes, and menu wiring. The parts a terminal emulator does not need to reinvent are not reinvented.',
           'The design target is stated plainly in the repo: indistinguishable from Ghostty.app, faster to launch, instant session switch.',
         ],
       },
@@ -114,7 +118,7 @@ export const SECTIONS: Section[] = [
         list: [
           'Every session has a name you type, not an index you count to. Put a slash in the name and the part before it becomes a section, so twelve shells across four projects read as four groups rather than one long list.',
           'Names, order, working directories, the selected session and each session’s inspector state persist to disk and come back on launch.',
-          'Switching is instant and does not flash. Every session’s surface stays in the view hierarchy for the life of the app — switching hides and shows, it never tears a view down and rebuilds it, so coming back to a session costs one frame.',
+          'Switching is instant and does not flash. Every session’s surface stays in the view hierarchy for the life of the app. Switching hides and shows, it never tears a view down and rebuilds it, so coming back to a session costs one frame.',
           'Launch stays lean by spawning only the selected session’s shell before the first frame; the rest warm up one per runloop turn, behind the window you are already looking at.',
         ],
       },
@@ -125,15 +129,15 @@ export const SECTIONS: Section[] = [
     id: 'coding-agents',
     title: 'Built for coding agents',
     lead:
-      'If you run Claude Code, Codex, Aider or anything like them across several repos at once, the hard part is no longer the terminal — it is knowing which one is waiting for you.',
+      'If you run Claude Code, Codex, Aider or anything like them across several repos at once, the hard part is no longer the terminal. It is knowing which one is waiting for you.',
     blocks: [
       {
-        p: 'Wortel answers that from the screen itself. A session whose output keeps changing is an agent still working; a session that has held still is an agent waiting on you. Where an agent does emit precise signals — OSC 9;4 progress, OSC 133 command marks, a spinner in the title — those stay authoritative, but nothing is required of the agent, so agents that do not exist yet are covered too.',
+        p: 'Wortel answers that from the screen itself. A session whose output keeps changing is an agent still working; a session that has held still is an agent waiting on you. Where an agent does emit precise signals (OSC 9;4 progress, OSC 133 command marks, a spinner in the title), those stay authoritative. But nothing is required of the agent, so agents that do not exist yet are covered too.',
       },
       {
         list: [
           'The sidebar marks which sessions are working and which are waiting, so a glance answers the question without switching.',
-          'A macOS notification fires when a background agent goes quiet — only for sessions you are not looking at, and only after a grace window, so your own typing and an agent’s noisy startup never trigger it.',
+          'A macOS notification fires when a background agent goes quiet. It covers only sessions you are not looking at, and only after a grace window, so your own typing and an agent’s noisy startup never trigger it.',
           '⌘⌥] jumps straight to the next waiting session, wherever it sits in the list.',
           'Agents still running when you quit are recorded and resumed on the next launch, in the directory they were started in, with the model they were started with.',
         ],
@@ -149,14 +153,14 @@ export const SECTIONS: Section[] = [
     blocks: [
       {
         list: [
-          'Changes — working-tree status, per-file diffs with syntax highlighting, and a commit box.',
-          'History — the commit list with a branch-graph gutter, and the diff for any commit, expandable per changed file.',
-          'Files — the project as a tree rooted at the repository’s work-tree root. Read-only on purpose: it opens, reveals and copies paths, and drops an escaped path into the prompt when you drag a row into the terminal. The shell beside it does mv and rm better.',
+          'Changes: working-tree status, per-file diffs with syntax highlighting, and a commit box.',
+          'History: the commit list with a branch-graph gutter, and the diff for any commit, expandable per changed file.',
+          'Files: the project as a tree rooted at the repository’s work-tree root. It is read-only on purpose. It opens, reveals and copies paths, and drops an escaped path into the prompt when you drag a row into the terminal; the shell beside it does mv and rm better.',
           'Markdown files open in a rendered preview, from the tree or from a path in the terminal.',
         ],
       },
       {
-        p: 'One rule shapes all of it: cost tracks the window on screen, not the size of the repository. History pages instead of walking the whole graph, diffs are parsed off the main actor and capped, and the file tree lists, watches and ignore-checks only the directories you actually expanded — a collapsed node_modules is one row and no work. The terminal next to it has to stay smooth on a monorepo, and that constraint outranks convenience everywhere the two disagree.',
+        p: 'One rule shapes all of it: cost tracks the window on screen, not the size of the repository. History pages instead of walking the whole graph, diffs are parsed off the main actor and capped, and the file tree lists, watches and ignore-checks only the directories you actually expanded, so a collapsed node_modules is one row and no work. The terminal next to it has to stay smooth on a monorepo, and that constraint outranks convenience everywhere the two disagree.',
       },
       { p: '⌘⌥G opens source control, ⌘⌥E opens files, and either key closes the pane it opened.' },
     ],
@@ -169,7 +173,7 @@ export const SECTIONS: Section[] = [
       'Wortel’s entire configuration is a read-only file inside the app bundle. There is no settings window and no dotfile to maintain.',
     blocks: [
       {
-        p: 'This is the feature, not a gap. A terminal you can spend an afternoon tuning is a terminal you will spend an afternoon tuning. Wortel ships one set of defaults — font, theme, keybinds, scrollback, shell integration — and treats them as finished. Font size is the one thing adjustable at runtime, and it is per session.',
+        p: 'This is the feature, not a gap. A terminal you can spend an afternoon tuning is a terminal you will spend an afternoon tuning. Wortel ships one set of defaults (font, theme, keybinds, scrollback, shell integration) and treats them as finished. Font size is the one thing adjustable at runtime, and it is per session.',
       },
       {
         p: 'The absences are load-bearing too. No tabs, no splits, no command palette, no terminal inspector, no profiles. Requests for those from the underlying engine are deliberately declined rather than half-implemented, which is what keeps the surface small enough to stay fast.',
@@ -220,7 +224,7 @@ export const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What does “Wortel” mean?',
-    a: 'Wortel is Dutch for root — the root of a plant, and the root shell you work in.',
+    a: 'Wortel is Dutch for root: the root of a plant, and the root shell you work in.',
   },
   {
     q: 'How is Wortel different from Ghostty?',
@@ -228,19 +232,19 @@ export const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How is Wortel different from iTerm2, Warp, Kitty or Alacritty?',
-    a: 'Wortel is deliberately smaller than all of them. It has no settings UI, no plugin system, no AI chat box, no tabs and no splits. What it adds instead is session management — named shells that survive a restart and switch in one frame — and knowing when a coding agent in a background session has stopped working and is waiting on you.',
+    a: 'Wortel is deliberately smaller than all of them. It has no settings UI, no plugin system, no AI chat box, no tabs and no splits. What it adds instead is session management (named shells that survive a restart and switch in one frame) plus knowing when a coding agent in a background session has stopped working and is waiting on you.',
   },
   {
     q: 'Does Wortel have tabs or split panes?',
     a: 'No, and that is intentional. One window holds a sidebar of named sessions; switching between them is instant, so the arranging a tab bar or a split layout exists to support is not needed. Requests for tabs, splits and the command palette are declined by the app rather than partially implemented.',
   },
   {
-    q: 'Can I configure Wortel — fonts, colours, keybinds?',
+    q: 'Can I configure Wortel’s fonts, colours and keybinds?',
     a: 'Only font size, which is adjustable per session with ⌘+ and ⌘−. Everything else is fixed: the whole configuration is a read-only file inside the app bundle, and your ~/.config/ghostty is never read. Zero configuration is the design goal, not a missing feature.',
   },
   {
     q: 'How does Wortel know when a coding agent is waiting for me?',
-    a: 'By watching what the session draws. A screen that keeps changing means the agent is still working; a screen that has held still past a threshold means it is waiting on you. Precise signals — OSC 9;4 progress, OSC 133 command marks, a title spinner — are used where an agent emits them, but none are required, so the rule covers Claude Code, Codex, Aider and agents that do not exist yet. Detection only runs on sessions you are not currently looking at.',
+    a: 'By watching what the session draws. A screen that keeps changing means the agent is still working; a screen that has held still past a threshold means it is waiting on you. Precise signals (OSC 9;4 progress, OSC 133 command marks, a title spinner) are used where an agent emits them, but none are required, so the rule covers Claude Code, Codex, Aider and agents that do not exist yet. Detection only runs on sessions you are not currently looking at.',
   },
   {
     q: 'Does Wortel work with Claude Code, Codex and Aider?',
@@ -252,16 +256,16 @@ export const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel read my existing shell configuration?',
-    a: 'Your shell configuration — .zshrc, .bashrc, fish config — is yours and runs normally. It is only Wortel’s own terminal configuration that is fixed and bundled; the user-level Ghostty config file is deliberately not loaded.',
+    a: 'Your shell configuration (.zshrc, .bashrc, fish config) is yours and runs normally. It is only Wortel’s own terminal configuration that is fixed and bundled; the user-level Ghostty config file is deliberately not loaded.',
   },
 ];
 
 // ---- specs ----------------------------------------------------------------
 export const SPECS: [string, string][] = [
   ['Platform', 'macOS ' + SITE.minMacOS + ' ' + SITE.minMacOSName + ' or later'],
-  ['Engine', 'libghostty — Ghostty’s VT parser, Metal renderer and glyph atlas'],
-  ['Built with', 'Swift, AppKit and SwiftUI — fully native'],
+  ['Engine', 'libghostty: Ghostty’s VT parser, Metal renderer and glyph atlas'],
+  ['Built with', 'Swift, AppKit and SwiftUI, fully native'],
   ['Price', 'Free'],
   ['Updates', 'Sparkle, signed and notarized'],
-  ['Configuration', 'None — read-only and bundled'],
+  ['Configuration', 'None: read-only and bundled'],
 ];

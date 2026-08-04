@@ -15,7 +15,13 @@
   // wants. Set it and each change is replayed through the SAME open/close calls
   // the toolbar buttons make, so a driven window can't reach a state a clicked
   // one couldn't. See Tour.svelte.
-  let { sidebar = false, initialTab = 'changes', view = null } = $props();
+  let { sidebar = false, initialTab = 'changes', view = null, scene = null } = $props();
+
+  // The window's own chrome follows the scene: the session name and the working
+  // directory in the titlebar change as the narrative moves, so a section
+  // boundary is visible even in the parts of the window the panels don't touch.
+  const title = $derived(scene?.title ?? windowTitle);
+  const subtitle = $derived(scene?.subtitle ?? windowSubtitle);
 
   // The app renders at native 1:1 always (never scaled); it stays usable by
   // RESPONDING like a real macOS window. As it's squeezed the app makes default
@@ -125,8 +131,8 @@
     <PanelLeft size={20} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />
   </button>
   <div class="title">
-    <div class="t1">{windowTitle}</div>
-    <div class="t2">{windowSubtitle}</div>
+    <div class="t1">{title}</div>
+    <div class="t2">{subtitle}</div>
   </div>
 
   <!-- pane toolbar: window chrome, survives the panel collapsing under it.
@@ -171,7 +177,7 @@
   <div class="main" class:dragging bind:this={mainEl} style="--git-w: {gitW}px">
     <div class="termcol">
       <div class="tb-term"></div>
-      <Terminal />
+      <Terminal rows={scene?.rows} sceneId={scene?.id ?? 'arrive'} status={!!scene?.status} />
     </div>
 
     <div class="inspector">

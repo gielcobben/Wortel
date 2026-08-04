@@ -22,48 +22,153 @@ export const groups = [
   },
 ];
 
-export const windowTitle = 'Wortel/Web';
-export const windowSubtitle = '~/Developer/wortel';
 
-// ---- terminal transcript --------------------------------------------------
-// An agent doing ordinary work in this repo: read a bug, explain it, fix it.
-// It is invented, but the bug is real (see macos/CLAUDE.md on
-// FileTreeDecorations), which is why it reads like a session and not like copy.
+// ---- terminal scenes -------------------------------------------------------
+// The tour walks a narrative, not a slideshow: you land in a shell, poke around,
+// start an agent, watch it work, and end up back in the app. Each section of the
+// page owns one scene (see Tour.svelte), and the terminal re-streams whenever
+// the scene changes, so every section boundary visibly does something.
 //
 // Rows: { g: gutter glyph, cls: colour class, t: text with inline markup }.
 // Markup: **bold**, *italic*, [text](#) renders in the link colour. Blank t is
-// an empty line.
+// an empty line. `block: true` is the agent's user-message card.
 //
-// Text is authored UNWRAPPED, as whole paragraphs. Terminal.svelte measures the
-// terminal and re-wraps to its column count on every resize, exactly like the
-// real thing: the same paragraph is six lines beside an open inspector and
-// three with the panels closed. Do NOT hard-code line breaks in here. They were
-// hard-coded once, transcribed from a reference screenshot, and that made every
-// width except the reference one wrong.
-export const transcript = [
-  {
-    block: true,
-    g: '❯',
-    t: 'the file tree lights up the wrong folders when I edit something. take a look?',
-  },
-  { t: '' },
-  { g: '●', t: 'Reading **FileTreeDecorations.swift**' },
-  { t: '' },
-  { t: 'The ancestor roll-up compares with **hasPrefix**, so editing a file in [src/foo](#) also decorates [src/foobar](#). It needs a path-component compare, not a string one.' },
-  { t: '' },
-  { t: 'The reverse is worse: a collapsed directory that fails to roll up just looks clean. Neither direction throws, so a test is the only thing that catches either.' },
-  { t: '' },
-  { g: '●', t: 'Fixed, and pinned both directions in **FileTreeDecorationTests**.' },
-  { t: '' },
-  { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 14s · 1 shell still running' },
-  { t: '' },
-  { g: '›', caret: true },
-];
+// Text is authored UNWRAPPED. Terminal.svelte measures the terminal and
+// re-wraps to its column count on every resize, exactly like the real thing.
+// Do NOT hard-code line breaks in here.
+//
+// Everything is invented EXCEPT the bug, which is real (macos/CLAUDE.md, on
+// FileTreeDecorations). Deliberately no benchmark numbers: a fabricated
+// measurement on a landing page is a claim, and this is a replica, not a claim.
+
+// 1. You just opened the app. A shell, a repo, nothing else.
+const arrive = {
+  id: 'arrive',
+  title: 'Wortel/Web',
+  subtitle: '~/Developer/wortel',
+  rows: [
+    { g: '›', t: 'git status -sb' },
+    // Short enough to survive the hero's 33 columns: the ...origin/ form wraps
+    // and strands '##' alone on a line. `git status -sb` prints exactly this for
+    // a branch with no upstream set.
+    { cls: 'dim', t: '## web-app-demo' },
+    { t: ' M macos/releases/appcast.xml' },
+    { t: ' M macos/releases/BUILD' },
+    { t: '' },
+    { g: '›', caret: true },
+  ],
+};
+
+// 2. The engine section. Panels closed, so this is the widest the terminal ever
+//    gets: give it output worth the width.
+const build = {
+  id: 'build',
+  title: 'Wortel/Build',
+  subtitle: '~/Developer/wortel/macos',
+  rows: [
+    { g: '›', t: 'xcodebuild -scheme Wortel -configuration Release build' },
+    { t: '' },
+    { cls: 'dim', t: 'CompileSwift normal arm64 GhosttyRuntime.swift' },
+    { cls: 'dim', t: 'CompileSwift normal arm64 SurfaceView.swift' },
+    { cls: 'dim', t: 'Ld Wortel.app/Contents/MacOS/Wortel normal arm64' },
+    { t: '' },
+    // ** ** is the inline bold marker, so xcodebuild's literal asterisks would
+    // be eaten either way; bold is the better reading of them anyway.
+    { t: '**BUILD SUCCEEDED**' },
+    { t: '' },
+    { g: '›', caret: true },
+  ],
+};
+
+// 3. Sessions. Naming one is the whole feature, so the scene is a rename.
+const sessions = {
+  id: 'sessions',
+  title: 'Pontueel/Dashboard',
+  subtitle: '~/Developer/pontueel',
+  rows: [
+    { g: '›', t: 'cd ~/Developer/pontueel' },
+    { t: '' },
+    { g: '›', t: 'npm run dev' },
+    { t: '' },
+    { cls: 'dim', t: 'VITE ready in 214 ms' },
+    { cls: 'dim', t: 'Local: [http://localhost:5173/](#)' },
+    { t: '' },
+    { g: '›', caret: true },
+  ],
+};
+
+// 4. The agent starts. This is the turn the whole page is about.
+const agent = {
+  id: 'agent',
+  title: 'Wortel/Web',
+  subtitle: '~/Developer/wortel',
+  status: true,
+  rows: [
+    { g: '›', t: 'claude' },
+    { t: '' },
+    {
+      block: true,
+      g: '❯',
+      t: 'the file tree lights up the wrong folders when I edit something. take a look?',
+    },
+    { t: '' },
+    { g: '●', t: 'Reading **FileTreeDecorations.swift**' },
+    { t: '' },
+    { g: '✳', gcls: 'active', cls: 'active', t: 'Tinkering… (9s · thinking more with high effort)' },
+    { t: '' },
+    { g: '›', caret: true },
+  ],
+};
+
+// 5. It answers, and the inspector opens on the diff it just made.
+const answer = {
+  id: 'answer',
+  title: 'Wortel/Web',
+  subtitle: '~/Developer/wortel',
+  status: true,
+  rows: [
+    { g: '●', t: 'Reading **FileTreeDecorations.swift**' },
+    { t: '' },
+    { t: 'The ancestor roll-up compares with **hasPrefix**, so editing a file in [src/foo](#) also decorates [src/foobar](#). It needs a path-component compare, not a string one.' },
+    { t: '' },
+    { t: 'The reverse is worse: a collapsed directory that fails to roll up just looks clean. Neither direction throws, so a test is the only thing that catches either.' },
+    { t: '' },
+    { g: '●', t: 'Fixed, and pinned both directions in **FileTreeDecorationTests**.' },
+    { t: '' },
+    { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 14s · 1 shell still running' },
+    { t: '' },
+    { g: '›', caret: true },
+  ],
+};
+
+// 6. Zero config, made as one command and its answer.
+const noconfig = {
+  id: 'noconfig',
+  title: 'Wortel/Web',
+  subtitle: '~/Developer/wortel',
+  rows: [
+    { g: '›', t: 'ls ~/.config/wortel' },
+    { cls: 'dim', t: 'ls: /Users/giel/.config/wortel: No such file or directory' },
+    { t: '' },
+    { g: '›', t: 'defaults read sh.wortel.Wortel' },
+    { cls: 'dim', t: 'Domain sh.wortel.Wortel does not exist' },
+    { t: '' },
+    { g: '›', caret: true },
+  ],
+};
+
+export const SCENES = { arrive, build, sessions, agent, answer, noconfig };
+
+// The scene the window opens on, and Terminal's fallback.
+export const transcript = arrive.rows;
+export const windowTitle = arrive.title;
+export const windowSubtitle = arrive.subtitle;
 
 // ---- status bar -----------------------------------------------------------
-// Claude Code's TUI. A status line cannot wrap, so Terminal.svelte drops
-// trailing segments until it fits: the full strip at a wide terminal, and just
-// the mode and the shell count beside an open inspector.
+// Claude Code's TUI, so it only exists while an agent is running (scene.status).
+// A status line cannot wrap, so Terminal.svelte drops trailing segments until it
+// fits: the full strip at a wide terminal, and just the mode and the shell count
+// beside an open inspector.
 export const statusBar = [
   { t: '▶▶', cls: 'amber' },
   { t: ' auto mode on', cls: 'amber' },

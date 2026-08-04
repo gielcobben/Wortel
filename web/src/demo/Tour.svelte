@@ -8,20 +8,27 @@
   // as dragging the real app's edge would. That is why a view below can ask for
   // a panel the window has no room for and still get the right answer.
   import WortelApp from './WortelApp.svelte';
+  import { SCENES } from './data.js';
 
   let { sidebar = true, initialTab = 'history' } = $props();
 
-  // Section id -> what the window shows. Deliberately fewer distinct views than
-  // sections: neighbours about the same surface share one, so the window changes
-  // where the subject changes rather than twitching at every heading.
+  // Section id -> what the window shows: which panels are open AND which scene
+  // is in the terminal. Every adjacent pair differs in at least one of the two,
+  // so no section boundary is silent. Panels alone were not enough: `sessions`
+  // and `coding-agents` want the same panels, and scrolling between them did
+  // nothing at all.
+  //
+  // The scenes run as a narrative rather than a slideshow: land in a shell,
+  // build, move to another project, start the agent, read what it found, and
+  // check there is nothing to configure. See SCENES in data.js.
   const VIEWS = {
-    'what-is-wortel': { sidebar: true, pane: 'history' },   // the whole app
-    'ghostty-engine': { sidebar: false, pane: null },       // just the terminal
-    'sessions':       { sidebar: true, pane: null },        // the sidebar
-    'coding-agents':  { sidebar: true, pane: null },        // ...and its indicators
-    'git-and-files':  { sidebar: false, pane: 'changes' },  // the inspector
-    'zero-config':    { sidebar: false, pane: null },
-    'keyboard':       { sidebar: true, pane: 'history' },
+    'what-is-wortel': { sidebar: true,  pane: 'history', scene: SCENES.arrive },
+    'ghostty-engine': { sidebar: false, pane: null,      scene: SCENES.build },
+    'sessions':       { sidebar: true,  pane: null,      scene: SCENES.sessions },
+    'coding-agents':  { sidebar: true,  pane: null,      scene: SCENES.agent },
+    'git-and-files':  { sidebar: false, pane: 'changes', scene: SCENES.answer },
+    'zero-config':    { sidebar: false, pane: null,      scene: SCENES.noconfig },
+    'keyboard':       { sidebar: true,  pane: 'history', scene: SCENES.answer },
   };
 
   // null until a section actually reaches the reading band. The hero's authored
@@ -75,4 +82,4 @@
   });
 </script>
 
-<WortelApp {view} {sidebar} {initialTab} />
+<WortelApp {view} {sidebar} {initialTab} scene={view?.scene ?? SCENES.arrive} />

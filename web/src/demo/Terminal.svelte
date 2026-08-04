@@ -2,8 +2,11 @@
   import { transcript, statusBar, statusBarRight } from './data.js';
   import { parseInline, wrapSegments } from './util.js';
 
-  // Which transcript to draw.
-  let { rows = transcript } = $props();
+  // Which scene to draw. `sceneId` is the re-stream trigger: when the tour
+  // moves to a new section the rows are rebuilt from scratch, so their CSS
+  // reveal animations run again and the output visibly types itself in. A width
+  // change must NOT do that, which is why the key is the scene and not the rows.
+  let { rows = transcript, sceneId = 'arrive', status = false } = $props();
 
   // Rows are authored UNWRAPPED and re-wrapped here to whatever width the
   // terminal currently is, because that is what a terminal does. This window is
@@ -58,7 +61,8 @@
   });
 
   // an empty terminal is just the prompt at the top; a filled one pins the
-  // prompt to the bottom and shows the status bar
+  // prompt to the bottom. The status strip is Claude Code's, so it belongs to
+  // the scenes where an agent is actually running.
   const filled = $derived(rows.length > 1);
 
   // The status line is a TUI, not prose: it cannot wrap, so it drops trailing
@@ -75,15 +79,24 @@
     return out;
   });
 
-  // The reveal is one-shot. Re-wrapping rebuilds every line, and without this
-  // the whole transcript would fade in again each time the tour opens a panel.
+  // The reveal runs once per SCENE. Reading sceneId is what re-arms it; the
+  // effect then clears the flag when the last line has landed, so a re-wrap
+  // (a panel opening, the window resizing) redraws without re-animating.
   let streaming = $state(true);
   $effect(() => {
+    // Reading sceneId is what re-arms the reveal. Bound to `key` rather than
+    // left as a bare expression so the timer below can compare against it.
+    const key = sceneId;
     if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
       streaming = false;
       return;
     }
-    const id = setTimeout(() => (streaming = false), 4000);
+    streaming = true;
+    // The guard is why `key` is used rather than voided: a scene that changes
+    // again mid-reveal must not have the outgoing scene's timer clear its flag.
+    const id = setTimeout(() => {
+      if (key === sceneId) streaming = false;
+    }, 2600);
     return () => clearTimeout(id);
   });
 </script>
@@ -93,6 +106,10 @@
   <span class="cellprobe" bind:this={probeEl} aria-hidden="true">MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM</span>
 
   <div class="scroll" class:filled class:streaming bind:this={scrollEl}>
+    <!-- keyed on the scene: a new section rebuilds every line, which is what
+         restarts the reveal. {#key} emits no element, so `.scroll > .row`
+         still selects them. -->
+    {#key sceneId}
     {#each items as item}
       {#if item.row.block}
         <!-- user message block: the background wraps every wrapped line -->
@@ -118,11 +135,12 @@
         {/each}
       {/if}
     {/each}
+    {/key}
   </div>
 
-  <!-- the status bar is Claude Code's TUI, i.e. terminal content, hidden while
-       the terminal is empty -->
-  {#if filled}
+  <!-- the status bar is Claude Code's TUI, i.e. terminal content, so it only
+       exists in the scenes where an agent is running -->
+  {#if status}
     <div class="statusbar">
       {#each statusLeft as s}<span class="sb-{s.cls}">{s.t}</span>{/each}
       <span class="sb-spacer"></span>
@@ -189,7 +207,8 @@
     opacity: 0;
     transform: translateY(3px);
     animation: term-in 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
-    animation-delay: calc(var(--i, 0) * 85ms + 250ms);
+    /* capped, so a long scene still finishes arriving promptly */
+    animation-delay: calc(min(var(--i, 0), 24) * 45ms + 120ms);
   }
   @keyframes term-in {
     to { opacity: 1; transform: none; }
@@ -239,7 +258,7 @@
     /* Waits out the reveal so it starts blinking when the prompt lands, not
        while the output above it is still arriving. */
     animation: caret-blink 1.06s steps(1, end) infinite;
-    animation-delay: 2.4s;
+    animation-delay: 1.5s;
   }
   @keyframes caret-blink {
     0%, 55% { opacity: 1; }

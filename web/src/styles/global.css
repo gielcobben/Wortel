@@ -112,31 +112,53 @@ body.dragging-app, body.dragging-app * {
   user-select: none;
 }
 
-.page {
-  height: 100vh;
+/* ==========================================================================
+   The shell: one scrolling column of text, one window pinned beside it.
+
+   The hero's first screen is unchanged, to the pixel. .hero-left is 100vh with
+   the intro at the top and the features at the bottom, text at x=36; the rail's
+   36px padding puts the window's left edge on x=432 and, at a 1512x900 viewport,
+   makes it exactly 1044x792 sitting at y=72. Same numbers the absolutely
+   positioned version produced, now from a grid that can keep going.
+   ========================================================================== */
+.shell {
   position: relative;
-  /* `clip` on one axis only, NOT `overflow: hidden`. The app's drop-shadow
-     reaches ~76px below the window (--w-shadow is 0 36px 80px) but the hero
-     leaves it 36px before the 100vh edge, so `hidden` sliced it flat. `clip`
-     still cuts the app's right-side bleed while letting the shadow fall past
-     the fold and fade into the prose, the way it already does at the narrow
-     breakpoint. (`hidden` cannot do this: it forces the other axis to `auto`.) */
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 396px minmax(0, 1fr); /* 11 cells, divider on x=396 */
+  align-items: start;
+  /* Cuts the window's right-side bleed here rather than letting it reach the
+     document and widen the page. `clip` and not `hidden`: hidden would force
+     the other axis to `auto`, making this a scroll container, which would both
+     slice the drop-shadow at the fold and break the rail's sticky. Verified
+     sticky still pins under it. */
   overflow-x: clip;
   overflow-y: visible;
 }
+.col { min-width: 0; }
 
-/* ---- left column: intro pinned top, features pinned bottom ---- */
-.left {
-  position: absolute;
-  z-index: 2;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 396px; /* 11 grid cells — puts the text/app divider on the x=396 line */
-  padding: 36px 36px 36px 36px; /* content top-left snaps to the (36,36) grid intersection */
+.hero-left {
+  min-height: 100vh;
+  padding: 36px;               /* content top-left on the (36,36) intersection */
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+}
+
+/* ---- the window ----------------------------------------------------------
+   NEVER scaled: always native 1:1. It stays usable by RESPONDING (panes reflow,
+   sidebar auto-hides) and, when the rail is narrower than its minimum, by
+   bleeding off the right edge, which the body's overflow-x clips. */
+.rail {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 36px;
+  /* The rail's right edge sits on the viewport edge, where the body's
+     overflow-x: clip already cuts the bleed. Only the LEFT edge, on the x=396
+     divider, would slice the window's drop-shadow, so keep overflow visible and
+     let the shadow fade out over the text column's gutter. */
+  overflow: visible;
 }
 
 .mark {
@@ -184,41 +206,36 @@ body.dragging-app, body.dragging-app * {
 .features dt { color: var(--text); }
 .features dd { color: var(--text-70); }
 
-/* ---- app: NEVER scaled — always native 1:1. It fills the space beside the
-   text column and stays usable by responding (panes reflow, sidebar auto-
-   hides). When the space is narrower than the app's minimum, the app simply
-   bleeds off the right edge (clipped) rather than shrinking. ---- */
-.stage {
-  position: absolute;
-  inset: 0 0 0 396px; /* left edge on the x=396 grid line, flush with the text column */
-  padding: 36px; /* app window's top-left corner lands on the (432,36) grid intersection */
-  /* The stage's right/top/bottom edges sit on the viewport edges, where the page's
-     own overflow:hidden already clips the app's right-side bleed. Only the LEFT
-     edge (on the x=396 divider) would cut into the window's drop-shadow — so keep
-     overflow visible and let that shadow fade out over the text-column gutter. */
-  overflow: visible;
-}
 .app-frame {
-  /* Snap the app box down to whole grid cells. Its top-left already sits on the
+  /* Snap the app box to whole grid cells. Its top-left already sits on the
      (432,36) intersection, so rounding width/height to 36px multiples lands the
-     right and bottom edges on grid lines too — at any viewport size.
+     right and bottom edges on grid lines too, at any viewport size.
      The min() caps this first paint at the reference window, matching what the
      script computes: without it the app would paint full-width and then animate
      down to the cap on every load. */
   width: round(down, min(100%, var(--app-max-w)), 36px);
   height: round(down, min(100%, var(--app-max-h)), 36px);
-  /* The snap is discrete (36px steps), which reads as a hard jump while resizing.
-     Ease each step so the app settles onto the grid instead of teleporting. */
+  /* The snap is discrete (36px steps), which reads as a hard jump while
+     resizing. Ease each step so the app settles onto the grid instead of
+     teleporting. */
   transition: width 0.2s ease, height 0.2s ease, transform var(--settle, 0s);
 }
 /* A drag must track the pointer exactly, so transform is untransitioned by
    default (--settle falls back to 0s). index.astro adds .settling on release,
    which eases the window the last few px onto the nearest intersection. Routing
-   it through a custom property — rather than a second transition declaration —
+   it through a custom property, rather than a second transition declaration,
    keeps the reduced-motion rule below able to switch the whole thing off. */
 .app-frame.settling { --settle: 0.18s cubic-bezier(0.3, 0.9, 0.3, 1); }
 @media (prefers-reduced-motion: reduce) {
   .app-frame { transition: none; }
+  /* The window's panels slide when the PAGE scrolls, not when the reader acts,
+     which is the motion this setting is actually about. */
+  .app-frame *,
+  .app-frame *::before,
+  .app-frame *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }
 .app-frame > :global(.wortel-app) { width: 100%; height: 100%; }
 
@@ -241,10 +258,11 @@ body.dragging-app, body.dragging-app * {
   padding: 0 36px;
 }
 
-/* The pinned tour window is desktop-only. Below the breakpoint the aside is not
-   rendered at all (see the media query at the bottom), and the prose is the
-   single column it already was. */
-.tour { display: none; }
+/* Inside the shell the prose inherits the hero's 396px column, so the page has
+   one text column from the wordmark to the footer. The tail articles below the
+   shell (screenshot, FAQ, specs) have no window beside them and keep the wider
+   measure above. */
+.doc-tour .prose { max-width: 396px; }
 
 .sect {
   padding: 60px 0;
@@ -376,97 +394,44 @@ body.dragging-app, body.dragging-app * {
 .foot nav a:hover { color: var(--text); text-decoration: underline; }
 
 /* ==========================================================================
-   The scroll tour: prose left, one pinned app window right.
-
-   Paired with a window, the prose drops to the SAME 396px column the hero's
-   text sits in (11 cells, text from x=36 to x=360), so the two halves of the
-   page read as one column of text with one window beside it rather than as two
-   different layouts. Giving the measure back is what lets the window grow to
-   1080px here, near its 1266px reference, instead of the 720px it gets when the
-   prose keeps 756.
-
-   972 = 396 (the column) + 540 (15 cells, the narrowest window worth showing)
-   + 36 (right gutter). Below that the aside doesn't render at all: there is no
-   honest way to place a window that is never scaled, and the static screenshot
-   further down carries the visual on its own.
+   Stack on narrow screens. The grid collapses, the window stops being sticky
+   and becomes an ordinary block under the hero text, and the prose gets its
+   wider measure back: a 324px column with nothing beside it is not a measure,
+   it is an accident.
    ========================================================================== */
-@media (min-width: 972px) {
-  .doc-tour {
-    display: grid;
-    grid-template-columns: 396px minmax(0, 1fr);
-    align-items: start;
-  }
-  /* the hero's column width exactly: 396 - 36 - 36 = 324 of text */
-  .doc-tour .prose { max-width: 396px; }
-  .tour {
-    display: block;
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    /* 36px each side puts the window's left edge on x=432, the exact line the
-       hero's app-frame sits on, and leaves it the same 1044px width there. The
-       two windows are the same window at the same place, one screen apart. */
-    padding: 0 36px;
-    display: flex;
-    align-items: center;
-  }
-  .tour-frame {
-    /* Snapped to whole cells like the hero's app-frame, and capped at the
-       reference window so it never stretches past its real size. The height
-       caps at 19 cells and yields to short viewports: a shorter macOS window,
-       never a squashed one. */
-    width: round(down, min(100%, var(--app-max-w)), 36px);
-    height: min(684px, calc(100vh - 144px));
-    border-radius: 10px;
-    /* Its own stacking context so the window's shadow can't paint over the
-       prose in the column beside it. */
-    isolation: isolate;
-  }
-  .tour-frame > :global(.wortel-app) { width: 100%; height: 100%; }
-
-  /* The hero's window animates because someone clicked it; this one animates
-     because the page scrolled, which is the kind of motion the setting is
-     actually about. Cut the panel slides here and leave the hero alone. */
-  @media (prefers-reduced-motion: reduce) {
-    .tour-frame *,
-    .tour-frame *::before,
-    .tour-frame *::after {
-      transition-duration: 0.01ms !important;
-      animation-duration: 0.01ms !important;
-    }
-  }
-}
-
-/* stack on narrow screens */
 @media (max-width: 900px) {
-  /* overflow-x: clip kills the horizontal scroll from the app bleeding off the
-     right, WITHOUT clipping vertically (so the app's drop-shadow isn't sliced)
-     and without creating a scroll container the way overflow:hidden would.
-     (The body already clips this way at every width; only .page has to drop
-     the desktop hero's fixed height and hard clip.) */
-  .page { height: auto; overflow: visible; overflow-x: clip; }
-  .left {
-    position: static;
-    width: 100%;
-    padding: 36px 36px 24px; /* left edge on the x=36 grid line, matching the app */
+  /* The window is the SECOND child of .shell but the prose lives inside the
+     first, so simply un-gridding would drop it below everything. `display:
+     contents` on .col lifts the hero text and the prose into the flex container
+     as siblings of the rail, and the three then order themselves: hero text,
+     window, prose. No duplicate markup, no second instance. */
+  .shell { display: flex; flex-direction: column; }
+  .col { display: contents; }
+  .hero-left { order: 1; }
+  .rail { order: 2; }
+  .doc-tour { order: 3; }
+
+  .hero-left {
+    min-height: 0;
+    padding: 36px 36px 24px;   /* left edge on x=36, matching the window */
   }
   .intro { margin-bottom: 36px; }
   .features { order: 3; margin-top: 36px; }
-  .stage {
+  .rail {
     position: static;
-    inset: auto;
-    display: block;
-    overflow: visible;        /* let the app's drop-shadow show; the page clips the right-side bleed */
-    margin: 8px 0 72px;       /* room below the app for its drop-shadow (~90px) + breathing space */
-    padding: 0 0 0 36px;      /* app's left edge on the x=36 grid line */
     height: 60vh;
     min-height: 420px;
+    overflow: visible;         /* let the shadow show; the body clips the bleed */
+    margin: 8px 0 72px;        /* room below for the drop-shadow (~76px) */
+    padding: 0 0 0 36px;       /* window's left edge on the x=36 grid line */
   }
-  /* Horizontal snap only: the app's left edge sits on x=36 and its width rounds to
-     whole cells so the right edge lands on a line too (when it isn't clipped by a
-     narrow screen). Height stays fluid — the grid is viewport-fixed while the page
-     scrolls, so there's no stable vertical line to snap to. */
+  /* Horizontal snap only: the window's left edge sits on x=36 and its width
+     rounds to whole cells so the right edge lands on a line too (when it isn't
+     clipped by a narrow screen). Height stays fluid, because the grid is
+     viewport-fixed while the page scrolls, so there is no stable vertical line
+     to snap to. */
   .app-frame { width: round(down, 100%, 36px); height: 100%; }
+  .doc-tour .prose { max-width: 540px; }
 
   .sect { padding: 44px 0; }
   .doc h2 { font-size: 20px; }

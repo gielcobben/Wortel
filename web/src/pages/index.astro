@@ -1,6 +1,5 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import WortelApp from '../demo/WortelApp.svelte';
 import Tour from '../demo/Tour.svelte';
 import { SITE, FEATURES, SECTIONS, FAQ, SPECS } from '../data/site';
 
@@ -124,12 +123,13 @@ const schema = [website, webpage, person, app];
 
 <Layout path="/" schema={schema}>
   <main>
-    <!-- The hero is a fixed 100vh board: the text column sits on the 36px grid
-         and the app replica renders at native 1:1 beside it. The prose below is
-         a separate, ordinary scrolling document. It must not change any length
-         in here, or the whole grid drifts. -->
-    <div class="page">
-      <div class="left">
+    <!-- One window for the whole page. The left column scrolls (the hero's text,
+         then the prose); the right column pins the app beside it and swaps what
+         it shows as each section goes by. The hero's first screen is still an
+         exact 100vh board on the 36px grid: text at x=36, window at x=432. -->
+    <div class="shell">
+      <div class="col">
+        <div class="hero-left">
         <div class="intro">
           <h1 class="mark">Wortel</h1>
           <p class="tagline">A minimal, native macOS terminal.</p>
@@ -166,23 +166,17 @@ const schema = [website, webpage, person, app];
             ))}
           </dl>
         </div>
-      </div>
-
-      <div class="stage">
-        <div class="app-frame">
-          <WortelApp client:load sidebar={true} initialTab="history" />
         </div>
-      </div>
-    </div>
 
-    <!-- ---- the readable document ------------------------------------------
-         Everything a search engine or a retrieval agent has to work with lives
-         here, rendered from src/data/site.ts. Same source as /llms-full.txt, so
-         the two can't disagree. -->
-    <article class="doc doc-tour">
-      <div class="prose">
+      <!-- ---- the readable document --------------------------------------
+           Everything a search engine or a retrieval agent has to work with
+           lives here, rendered from src/data/site.ts. Same source as
+           /llms-full.txt, so the two can't disagree. Each section's data-view
+           is what the window shows while you're reading it (see Tour.svelte). -->
+      <article class="doc doc-tour">
+        <div class="prose">
       {SECTIONS.map((section) => (
-        <section id={section.id} class="sect" data-view={section.id}>
+          <section id={section.id} class="sect" data-view={section.id}>
           <h2>{section.title}</h2>
           {section.lead && <p class="lead">{section.lead}</p>}
           {section.blocks.map((block) => (
@@ -210,22 +204,22 @@ const schema = [website, webpage, person, app];
               )}
             </>
           ))}
-        </section>
-      ))}
+          </section>
+        ))}
+        </div>
+      </article>
       </div>
 
-      <!-- The pinned window. inert + aria-hidden on purpose: it says nothing the
-           prose beside it doesn't already say, the hero above holds the window
-           you can actually click, and a second copy in the tab order would make
-           every reader walk the same toolbar twice. Rendered client:only so a
-           second full app doesn't ship in the HTML for a decoration; .tour-frame
-           reserves its box in CSS, so nothing shifts when it hydrates. -->
-      <aside class="tour" inert aria-hidden="true">
-        <div class="tour-frame">
-          <Tour client:only="svelte" />
+      <!-- The window. client:load, not client:visible: it is the hero, so it has
+           to be in the HTML at first paint. Tour drives which part of the app it
+           shows from the reader's position, and stops driving the moment you
+           take it over yourself (see Tour.svelte). -->
+      <div class="rail">
+        <div class="app-frame">
+          <Tour client:load sidebar={true} initialTab="history" />
         </div>
-      </aside>
-    </article>
+      </div>
+    </div>
 
     <article class="doc">
       <div class="prose">
@@ -324,7 +318,7 @@ const schema = [website, webpage, person, app];
     const MAX_W = parseFloat(rootStyle.getPropertyValue('--app-max-w'));
     const MAX_H = parseFloat(rootStyle.getPropertyValue('--app-max-h'));
 
-    const stage = document.querySelector('.stage');
+    const rail = document.querySelector('.rail');
     const frame = document.querySelector('.app-frame');
     const narrow = window.matchMedia('(max-width: 900px)');
 
@@ -370,9 +364,9 @@ const schema = [website, webpage, person, app];
         range = { x: 0, y: 0 };
         return;
       }
-      const cs = getComputedStyle(stage);
-      const availW = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-      const availH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      const cs = getComputedStyle(rail);
+      const availW = rail.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const availH = rail.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
       // cap at the reference window first, then snap down to whole cells
       const w = Math.max(CELL, Math.floor(Math.min(availW, MAX_W) / CELL) * CELL);
       const h = Math.max(CELL, Math.floor(Math.min(availH, MAX_H) / CELL) * CELL);
@@ -419,8 +413,8 @@ const schema = [website, webpage, person, app];
       e.preventDefault();  // no text selection while dragging
     });
 
-    // Observe the stage rather than window so we react to its actual box changing.
-    new ResizeObserver(layout).observe(stage);
+    // Observe the rail rather than window so we react to its actual box changing.
+    new ResizeObserver(layout).observe(rail);
     narrow.addEventListener('change', layout);
     layout();
   </script>

@@ -1,20 +1,21 @@
 <script>
-  // One app window, pinned beside the prose, showing whichever part of the app
-  // the section you're reading is about.
+  // The page's ONE app window. It is the hero, it is interactive, and it is
+  // pinned beside the prose for the whole scroll, showing whichever part of the
+  // app the section you're reading is about.
   //
-  // It is the SAME component as the hero's, at a different size. The window is
-  // never scaled: a narrower tour window is a narrower macOS window, and the
-  // container queries inside it auto-collapse panels exactly as they would if
-  // you dragged the real app's edge in. That is why the views below can ask for
+  // The window is never scaled. When the rail is narrow the window is a NARROWER
+  // macOS window, and the container queries inside auto-collapse panels exactly
+  // as dragging the real app's edge would. That is why a view below can ask for
   // a panel the window has no room for and still get the right answer.
   import WortelApp from './WortelApp.svelte';
 
+  let { sidebar = true, initialTab = 'history' } = $props();
+
   // Section id -> what the window shows. Deliberately fewer distinct views than
-  // sections: neighbours that are about the same surface share one, so the
-  // window changes at the points where the subject actually changes rather than
-  // twitching at every heading.
+  // sections: neighbours about the same surface share one, so the window changes
+  // where the subject changes rather than twitching at every heading.
   const VIEWS = {
-    'what-is-wortel': { sidebar: true, pane: 'changes' },   // the whole app
+    'what-is-wortel': { sidebar: true, pane: 'history' },   // the whole app
     'ghostty-engine': { sidebar: false, pane: null },       // just the terminal
     'sessions':       { sidebar: true, pane: null },        // the sidebar
     'coding-agents':  { sidebar: true, pane: null },        // ...and its indicators
@@ -23,9 +24,21 @@
     'keyboard':       { sidebar: true, pane: 'history' },
   };
 
-  const FIRST = 'what-is-wortel';
-  let active = $state(FIRST);
-  const view = $derived(VIEWS[active] ?? VIEWS[FIRST]);
+  // null until a section actually reaches the reading band. The hero's authored
+  // state (sidebar + History) then stands untouched while you're still looking
+  // at the first screen; anything else would flip the window the instant the
+  // island hydrates.
+  let active = $state(null);
+  let view = $state(null);
+
+  // Apply ONLY when the active section changes, never on every render. That is
+  // what lets you take the window over: click a pane and it stays on your pane,
+  // because your click doesn't change `active`. Cross into the next section and
+  // the tour picks it up again. No pause flag, no timers, no fighting.
+  $effect(() => {
+    const id = active;
+    if (id && VIEWS[id]) view = VIEWS[id];
+  });
 
   $effect(() => {
     const els = [...document.querySelectorAll('[data-view]')];
@@ -44,7 +57,7 @@
           if (e.isIntersecting) inBand.add(e.target);
           else inBand.delete(e.target);
         }
-        if (!inBand.size) return;  // between bands: hold the last view, don't reset
+        if (!inBand.size) return;  // between bands: hold the last view
         let best = null;
         for (const el of inBand) {
           if (!best || order.get(el) < order.get(best)) best = el;
@@ -62,4 +75,4 @@
   });
 </script>
 
-<WortelApp {view} sidebar={true} initialTab="changes" />
+<WortelApp {view} {sidebar} {initialTab} />

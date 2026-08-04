@@ -93,9 +93,18 @@ export function wrapSegments(segs, cols) {
       if (len + piece.length > cols && len > 0) flush();
       let word = piece;
       // A single word longer than the line gets broken, like a terminal does.
+      //
+      // `take` is computed ONCE, before put() runs. put() advances `len`, so
+      // reading `cols - len` a second time to slice the remainder read the
+      // ALREADY-ADVANCED len, came out as 0, and left `word` untouched: an
+      // infinite loop appending `cols` characters per turn until the tab died.
+      // It only fired when a word was longer than the column count, i.e. only
+      // once the window was dragged narrow enough. Math.max(1, ...) keeps the
+      // loop making progress no matter what `len` is on entry.
       while (word.length > cols) {
-        put(seg, word.slice(0, cols - len));
-        word = word.slice(cols - len);
+        const take = Math.max(1, cols - len);
+        put(seg, word.slice(0, take));
+        word = word.slice(take);
         flush();
       }
       put(seg, word);

@@ -14,10 +14,10 @@
 
 <div class="term">
   <div class="scroll" class:filled>
-    {#each rows as row}
+    {#each rows as row, i}
       {#if row.block}
         <!-- user message block: bg wraps gutter + lines -->
-        <div class="ublock">
+        <div class="ublock" style="--i:{i}">
           <div class="row">
             <span class="g">{row.g}</span>
             <span class="t">{row.lines[0]}</span>
@@ -27,7 +27,7 @@
           {/each}
         </div>
       {:else}
-        <div class="row {row.cls ?? ''}" class:right={row.right} class:flow={row.flow}>
+        <div class="row {row.cls ?? ''}" class:right={row.right} class:flow={row.flow} style="--i:{i}">
           {#if !row.flow}<span class="g {row.gcls ?? ''}">{row.g ?? ''}</span>{/if}
           <span class="t" class:ind={row.ind}>
             {#if row.caret}<span class="caret"></span>
@@ -72,9 +72,44 @@
     line-height: var(--w-term-line);
     font-variant-ligatures: none;
   }
-  .scroll { flex: 1; overflow: hidden; padding: 25px 0 0 0; display: flex; flex-direction: column; }
-  /* when filled, the prompt row pins to the bottom, like the real app */
-  .scroll.filled > :global(:last-child) { margin-top: auto; margin-bottom: 9px; }
+  /* min-height: 0 is load-bearing. As a flex item .term's automatic minimum is
+     its CONTENT height, so a transcript taller than the window pushed the
+     terminal out through the bottom of the app instead of being clipped by it:
+     at a 1520x800 viewport the window is 720px tall and the terminal was 760,
+     spilling 41px past the rounded corner with a hard edge. Only visible once
+     the terminal had content in it and the viewport was short enough. */
+  .term { min-height: 0; }
+
+  .scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 25px 0 0 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Anchor the output to the BOTTOM, which is what a terminal does: the newest
+     line sits above the prompt and older ones scroll off the top. It also means
+     overflow can only ever clip scrollback, never the prompt, so the window can
+     be any height and still look right. */
+  .scroll.filled { justify-content: flex-end; }
+  .scroll.filled > :global(:last-child) { margin-bottom: 9px; }
+
+  /* ---- the output arriving -------------------------------------------------
+     A staggered reveal, in CSS rather than JS on purpose: the island is
+     server-rendered, so a JS counter would paint the whole transcript, then
+     blank it on hydration, then type it back. Every row is authored visible and
+     starts at opacity 0 under an animation that lands it, so the first paint is
+     already mid-stream and nothing flashes. */
+  .row, .ublock {
+    opacity: 0;
+    transform: translateY(3px);
+    animation: term-in 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+    animation-delay: calc(var(--i, 0) * 85ms + 250ms);
+  }
+  @keyframes term-in {
+    to { opacity: 1; transform: none; }
+  }
 
   .row {
     display: grid;
@@ -118,6 +153,20 @@
     height: 19px;
     vertical-align: top;
     background: var(--w-caret);
+    /* Waits out the reveal so it starts blinking when the prompt lands, not
+       while the output above it is still arriving. */
+    animation: caret-blink 1.06s steps(1, end) infinite;
+    animation-delay: 2.4s;
+  }
+  @keyframes caret-blink {
+    0%, 55% { opacity: 1; }
+    56%, 100% { opacity: 0; }
+  }
+
+  /* Nothing here is information, so under reduced motion it all simply is. */
+  @media (prefers-reduced-motion: reduce) {
+    .row, .ublock { opacity: 1; transform: none; animation: none; }
+    .caret { animation: none; }
   }
 
   /* Measured: hairline at y=749, text at 761 → 48 tall, 12px top padding */

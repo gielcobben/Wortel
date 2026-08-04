@@ -26,68 +26,55 @@ export const windowTitle = 'Wortel/Web';
 export const windowSubtitle = '~/Developer/wortel';
 
 // ---- terminal transcript --------------------------------------------------
-// An agent doing ordinary work in this repo: run the test target, read the one
-// failure, explain it, offer the fix. It is invented, but the bug is real (see
-// macos/CLAUDE.md on FileTreeDecorations), which is why it reads like a session
-// instead of like marketing.
+// An agent doing ordinary work in this repo: read a bug, explain it, fix it.
+// It is invented, but the bug is real (see macos/CLAUDE.md on
+// FileTreeDecorations), which is why it reads like a session and not like copy.
 //
 // Rows: { g: gutter glyph, cls: colour class, t: text with inline markup }.
 // Markup: **bold**, *italic*, [text](#) renders in the link colour. Blank t is
-// an empty line. Line breaks are HARD-CODED and never re-wrapped, so they are
-// sized to ~68 columns: wide enough to look like a real terminal when both
-// panels are closed, short enough that the panelled views clip little.
+// an empty line. Line breaks are HARD-CODED and never re-wrapped.
+//
+// WIDTH IS THE WHOLE CONSTRAINT. In the hero the window is 1044px with the
+// sidebar (228) and the inspector (450) both open, which leaves the terminal
+// 366px, and the text column inside that is 335px: THIRTY-THREE characters.
+// So every `t` below is <= 33 rendered characters (markup excluded) and the
+// copy is written short rather than wrapped long and clipped. That is also why
+// it reads as minimal: at this width, minimal is the only honest option.
 export const transcript = [
   {
     block: true,
     g: '❯',
-    lines: ['Run the git panel tests and tell me what breaks.'],
+    lines: ['fix the file tree decoration bug'],
   },
   { t: '' },
-  { g: '●', t: '**Running WortelTests** · xcodebuild -scheme WortelTests test' },
+  { g: '●', t: 'Reading **FileTreeDecorations**' },
   { t: '' },
-  { cls: 'dim', t: '  ✓  CommitOrderTests             14 passed' },
-  { cls: 'dim', t: '  ✓  CommitGraphTests             11 passed' },
-  { cls: 'dim', t: '  ✓  DiffParserTests               9 passed' },
-  { cls: 'dim', t: '  ✓  PersistedSessionTests         6 passed' },
-  { t: '  ✗  FileTreeDecorationTests      1 failed' },
+  { t: 'The ancestor roll-up compares' },
+  { t: 'with **hasPrefix**, so editing' },
+  { t: '[src/foo](#) also decorates' },
+  { t: '[src/foobar](#). It needs a' },
+  { t: 'path-component compare.' },
   { t: '' },
-  { t: 'One failure, and it is the interesting one:' },
+  { t: 'Neither direction throws, so' },
+  { t: 'the test is the only way to' },
+  { t: 'see it.' },
   { t: '' },
-  { t: '  **rollUpStopsAtPathComponents**' },
-  { t: '  expected [src/foobar](#) undecorated, got *.modified*' },
-  { t: '  [FileTreeDecorations.swift:64](#)' },
+  { g: '●', t: 'Fixed, and pinned both ways.' },
   { t: '' },
-  { t: 'The ancestor roll-up compares with **hasPrefix**, so editing a file' },
-  { t: 'in [src/foo](#) also lights up [src/foobar](#). It needs a path-' },
-  { t: 'component compare, not a string one.' },
-  { t: '' },
-  { t: 'The reverse case is the one that would have shipped: a collapsed' },
-  { t: 'directory that fails to roll up just looks clean. Neither' },
-  { t: 'direction throws, which is why this is a test and not a crash.' },
-  { t: '' },
-  { t: 'Want me to fix it and re-run?' },
-  { t: '' },
-  { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 14s · 1 shell still running' },
-  { t: '' },
-  { g: '✳', gcls: 'active', cls: 'active', t: 'Tinkering… (9s · rewriting the ancestor compare)' },
-  { g: '└', gcls: 'dim', cls: 'dim', t: 'Tip: ⌘⌥] jumps to whichever session is waiting on you', ind: 1 },
-  { cls: 'dim', t: 'Still working. [Check in from your phone](#)', right: true },
+  { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 14s' },
   { t: '' },
   { g: '›', caret: true },
 ];
 
 // ---- status bar -----------------------------------------------------------
+// Claude Code's TUI, i.e. terminal content, and it lives under the same 33-char
+// ceiling as the transcript: the full "esc to interrupt / 1 agent / to manage"
+// strip clips to nonsense at this width.
 export const statusBar = [
   { t: '▶▶', cls: 'amber' },
   { t: ' auto mode on', cls: 'amber' },
   { t: ' · ', cls: 'dim' },
   { t: '1 shell', cls: 'teal' },
-  { t: ' · ', cls: 'dim' },
-  { t: 'esc to interrupt', cls: 'dim' },
-  { t: ' · ', cls: 'dim' },
-  { t: '← 1 agent', cls: 'dim' },
-  { t: ' · ', cls: 'dim' },
-  { t: '↓ to manage', cls: 'dim' },
 ];
 export const statusBarRight = { t: '/rc', cls: 'rc' };
 

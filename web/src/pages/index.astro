@@ -214,7 +214,7 @@ const schema = [website, webpage, person, app];
            to be in the HTML at first paint. Tour drives which part of the app it
            shows from the reader's position, and stops driving the moment you
            take it over yourself (see Tour.svelte). -->
-      <div class="rail">
+      <div class="app-rail">
         <div class="app-frame">
           <Tour client:load sidebar={true} initialTab="history" />
         </div>
@@ -318,7 +318,7 @@ const schema = [website, webpage, person, app];
     const MAX_W = parseFloat(rootStyle.getPropertyValue('--app-max-w'));
     const MAX_H = parseFloat(rootStyle.getPropertyValue('--app-max-h'));
 
-    const rail = document.querySelector('.rail');
+    const rail = document.querySelector('.app-rail');
     const frame = document.querySelector('.app-frame');
     const narrow = window.matchMedia('(max-width: 900px)');
 

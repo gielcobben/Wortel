@@ -146,10 +146,16 @@ body.dragging-app, body.dragging-app * {
 }
 
 /* ---- the window ----------------------------------------------------------
+   NAMING: `.app-rail`, not `.rail`. This stylesheet is global and the demo's
+   GitPanel has its own `.rail` (the SVG that draws the commit graph). Svelte
+   scoping raises the component's specificity, so its own declarations win, but
+   anything the component does NOT set still lands: a global `padding: 36px`
+   shoved the branch graph 36px right, straight through the commit subjects.
+   Page-level class names have to assume the demo already owns the obvious ones.
    NEVER scaled: always native 1:1. It stays usable by RESPONDING (panes reflow,
    sidebar auto-hides) and, when the rail is narrower than its minimum, by
    bleeding off the right edge, which the body's overflow-x clips. */
-.rail {
+.app-rail {
   position: sticky;
   top: 0;
   height: 100vh;
@@ -408,7 +414,7 @@ body.dragging-app, body.dragging-app * {
   .shell { display: flex; flex-direction: column; }
   .col { display: contents; }
   .hero-left { order: 1; }
-  .rail { order: 2; }
+  .app-rail { order: 2; }
   .doc-tour { order: 3; }
 
   .hero-left {
@@ -417,7 +423,7 @@ body.dragging-app, body.dragging-app * {
   }
   .intro { margin-bottom: 36px; }
   .features { order: 3; margin-top: 36px; }
-  .rail {
+  .app-rail {
     position: static;
     height: 60vh;
     min-height: 420px;

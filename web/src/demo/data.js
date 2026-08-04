@@ -32,49 +32,47 @@ export const windowSubtitle = '~/Developer/wortel';
 //
 // Rows: { g: gutter glyph, cls: colour class, t: text with inline markup }.
 // Markup: **bold**, *italic*, [text](#) renders in the link colour. Blank t is
-// an empty line. Line breaks are HARD-CODED and never re-wrapped.
+// an empty line.
 //
-// WIDTH IS THE WHOLE CONSTRAINT. In the hero the window is 1044px with the
-// sidebar (228) and the inspector (450) both open, which leaves the terminal
-// 366px, and the text column inside that is 335px: THIRTY-THREE characters.
-// So every `t` below is <= 33 rendered characters (markup excluded) and the
-// copy is written short rather than wrapped long and clipped. That is also why
-// it reads as minimal: at this width, minimal is the only honest option.
+// Text is authored UNWRAPPED, as whole paragraphs. Terminal.svelte measures the
+// terminal and re-wraps to its column count on every resize, exactly like the
+// real thing: the same paragraph is six lines beside an open inspector and
+// three with the panels closed. Do NOT hard-code line breaks in here. They were
+// hard-coded once, transcribed from a reference screenshot, and that made every
+// width except the reference one wrong.
 export const transcript = [
   {
     block: true,
     g: '❯',
-    lines: ['fix the file tree decoration bug'],
+    t: 'the file tree lights up the wrong folders when I edit something. take a look?',
   },
   { t: '' },
-  { g: '●', t: 'Reading **FileTreeDecorations**' },
+  { g: '●', t: 'Reading **FileTreeDecorations.swift**' },
   { t: '' },
-  { t: 'The ancestor roll-up compares' },
-  { t: 'with **hasPrefix**, so editing' },
-  { t: '[src/foo](#) also decorates' },
-  { t: '[src/foobar](#). It needs a' },
-  { t: 'path-component compare.' },
+  { t: 'The ancestor roll-up compares with **hasPrefix**, so editing a file in [src/foo](#) also decorates [src/foobar](#). It needs a path-component compare, not a string one.' },
   { t: '' },
-  { t: 'Neither direction throws, so' },
-  { t: 'the test is the only way to' },
-  { t: 'see it.' },
+  { t: 'The reverse is worse: a collapsed directory that fails to roll up just looks clean. Neither direction throws, so a test is the only thing that catches either.' },
   { t: '' },
-  { g: '●', t: 'Fixed, and pinned both ways.' },
+  { g: '●', t: 'Fixed, and pinned both directions in **FileTreeDecorationTests**.' },
   { t: '' },
-  { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 14s' },
+  { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 14s · 1 shell still running' },
   { t: '' },
   { g: '›', caret: true },
 ];
 
 // ---- status bar -----------------------------------------------------------
-// Claude Code's TUI, i.e. terminal content, and it lives under the same 33-char
-// ceiling as the transcript: the full "esc to interrupt / 1 agent / to manage"
-// strip clips to nonsense at this width.
+// Claude Code's TUI. A status line cannot wrap, so Terminal.svelte drops
+// trailing segments until it fits: the full strip at a wide terminal, and just
+// the mode and the shell count beside an open inspector.
 export const statusBar = [
   { t: '▶▶', cls: 'amber' },
   { t: ' auto mode on', cls: 'amber' },
   { t: ' · ', cls: 'dim' },
   { t: '1 shell', cls: 'teal' },
+  { t: ' · ', cls: 'dim' },
+  { t: 'esc to interrupt', cls: 'dim' },
+  { t: ' · ', cls: 'dim' },
+  { t: '↓ to manage', cls: 'dim' },
 ];
 export const statusBarRight = { t: '/rc', cls: 'rc' };
 

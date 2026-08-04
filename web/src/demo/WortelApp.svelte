@@ -70,9 +70,33 @@
 
   // ---- inspector resize grip (replaces paneforge for the horizontal split so
   //      the inspector can slide rather than flex-squeeze) ----
-  let gitW = $state(450);       // inspector width in px (measured default)
   let dragging = $state(false); // suppress the slide transition while dragging
   let mainEl = $state();
+  let mainW = $state(0);        // the window's inner width, measured
+  let userW = $state(null);     // set once you drag the grip, and then it sticks
+
+  // The inspector is a SHARE of the window, not a fixed slab. 450px was measured
+  // off the 1266px reference window, where it is 36% and leaves the terminal 59
+  // columns. Kept literal, it is 43% of a 1044px window and 55%+ once the clamp
+  // bites, so the terminal paid for every pixel the window lost: 36 columns at
+  // 1512, which is not a terminal anyone would recognise. As a proportion the
+  // two panels shrink together and the terminal keeps its share.
+  const AUTO_SHARE = 0.36;
+  const AUTO_MIN = 260;   // narrower and the commit box stops being usable
+  const AUTO_MAX = 450;   // the reference width; never wider than the real app
+  const gitW = $derived(
+    userW ?? Math.round(Math.min(AUTO_MAX, Math.max(AUTO_MIN, (mainW || 1266) * AUTO_SHARE))),
+  );
+
+  // Measure the window rather than the viewport: this app is embedded, and at
+  // one viewport width it is one size in the hero and another when the rail
+  // narrows around it.
+  $effect(() => {
+    if (!mainEl) return;
+    const ro = new ResizeObserver(([entry]) => { mainW = entry.contentRect.width; });
+    ro.observe(mainEl);
+    return () => ro.disconnect();
+  });
 
   function gripDown(e) {
     e.preventDefault();
@@ -81,7 +105,9 @@
     const startW = gitW;
     const maxW = (mainEl?.clientWidth ?? 1266) * 0.7;
     const move = (ev) => {
-      gitW = Math.max(220, Math.min(maxW, startW + (startX - ev.clientX)));
+      // Writing userW is what takes the inspector off auto: drag it once and it
+      // is yours, at the px you left it, until the page is reloaded.
+      userW = Math.max(220, Math.min(maxW, startW + (startX - ev.clientX)));
     };
     const up = () => {
       dragging = false;

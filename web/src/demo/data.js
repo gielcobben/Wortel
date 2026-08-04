@@ -26,53 +26,51 @@ export const windowTitle = 'Wortel/Web';
 export const windowSubtitle = '~/Developer/wortel';
 
 // ---- terminal transcript --------------------------------------------------
-// The live demo currently shows an EMPTY terminal (just the prompt); the full
-// transcribed session below is kept as `transcriptFull` to wire back in later.
+// An agent doing ordinary work in this repo: run the test target, read the one
+// failure, explain it, offer the fix. It is invented, but the bug is real (see
+// macos/CLAUDE.md on FileTreeDecorations), which is why it reads like a session
+// instead of like marketing.
+//
+// Rows: { g: gutter glyph, cls: colour class, t: text with inline markup }.
+// Markup: **bold**, *italic*, [text](#) renders in the link colour. Blank t is
+// an empty line. Line breaks are HARD-CODED and never re-wrapped, so they are
+// sized to ~68 columns: wide enough to look like a real terminal when both
+// panels are closed, short enough that the panelled views clip little.
 export const transcript = [
-  { g: '›', caret: true },
-];
-
-// rows: { g: gutter glyph, cls: color class, t: text with inline markup }
-// markup: **bold**, *italic*, [text](#) → link color. Blank t = empty line.
-export const transcriptFull = [
-  { g: '›', cls: '', t: '        /var/folders/wt/4961wd_x4xx1kgr95wm_pxqm0000gn/T/claude-chrome (148.3K' },
-  { flow: true, cls: '', t: '[image]  -screenshots-dK6Bfg/screenshot-1784226033738-0.jpg                B)' },
-  { t: '' },
-  { g: '●', cls: '', t: '✅ **Screenshots confirmed working.** Full pipeline is live:' },
-  { t: '' },
-  { t: '- **Dev server** running at [http://localhost:4321/](#) (background, auto-reloads on' },
-  { t: 'file changes)', ind: 1 },
-  { t: '- **Chrome tab** open on it (tabId [864128900](#))' },
-  { t: '- **Capture → save → send** all working, as you can see above' },
-  { t: '' },
-  { t: 'So the remote-control loop is ready: I edit a component → the server' },
-  { t: 'hot-reloads → I screenshot → I send it to you → you tell me what to change. I' },
-  { t: 'can also zoom into regions for pixel-level detail on chrome/spacing.' },
-  { t: '' },
-  { t: 'One thing the test shot reveals: the landing page currently embeds a *real* PNG' },
-  { t: 'screenshot of the app ([app-shot-dark.png](#)) in the stage, that’s exactly the' },
-  { t: 'thing we’re replacing with the live Svelte faux-app.' },
-  { t: '' },
-  { t: 'Ready to start building. Want me to kick off with the **window shell + sessions**' },
-  { t: '**sidebar** (the outer chrome, traffic lights, and the named-sessions list on the' },
-  { t: 'left), then screenshot it against that reference PNG so you can compare?' },
-  { t: '' },
-  { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 1m 4s · 1 shell still running' },
-  { t: '' },
   {
     block: true,
     g: '❯',
-    lines: [
-      'Alright, now run the app or make a screenshot of the app were im typing in',
-      'and make you u have the latest. the once in public are outdated. Also the',
-      'whole re-creation of the app should work light and dark mode and switch based',
-      'on the OS appearance. We already do this for the website.',
-    ],
+    lines: ['Run the git panel tests and tell me what breaks.'],
   },
   { t: '' },
-  { g: '✳', gcls: 'active', cls: 'active', t: 'Tinkering… (27s · thinking more with high effort)' },
-  { g: '└', gcls: 'dim', cls: 'dim', t: 'Tip: Ask Claude to create a todo list when working on complex tasks to', ind: 1 },
-  { cls: 'dim', t: ' track progress and remain on track', ind: 1 },
+  { g: '●', t: '**Running WortelTests** · xcodebuild -scheme WortelTests test' },
+  { t: '' },
+  { cls: 'dim', t: '  ✓  CommitOrderTests             14 passed' },
+  { cls: 'dim', t: '  ✓  CommitGraphTests             11 passed' },
+  { cls: 'dim', t: '  ✓  DiffParserTests               9 passed' },
+  { cls: 'dim', t: '  ✓  PersistedSessionTests         6 passed' },
+  { t: '  ✗  FileTreeDecorationTests      1 failed' },
+  { t: '' },
+  { t: 'One failure, and it is the interesting one:' },
+  { t: '' },
+  { t: '  **rollUpStopsAtPathComponents**' },
+  { t: '  expected [src/foobar](#) undecorated, got *.modified*' },
+  { t: '  [FileTreeDecorations.swift:64](#)' },
+  { t: '' },
+  { t: 'The ancestor roll-up compares with **hasPrefix**, so editing a file' },
+  { t: 'in [src/foo](#) also lights up [src/foobar](#). It needs a path-' },
+  { t: 'component compare, not a string one.' },
+  { t: '' },
+  { t: 'The reverse case is the one that would have shipped: a collapsed' },
+  { t: 'directory that fails to roll up just looks clean. Neither' },
+  { t: 'direction throws, which is why this is a test and not a crash.' },
+  { t: '' },
+  { t: 'Want me to fix it and re-run?' },
+  { t: '' },
+  { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 14s · 1 shell still running' },
+  { t: '' },
+  { g: '✳', gcls: 'active', cls: 'active', t: 'Tinkering… (9s · rewriting the ancestor compare)' },
+  { g: '└', gcls: 'dim', cls: 'dim', t: 'Tip: ⌘⌥] jumps to whichever session is waiting on you', ind: 1 },
   { cls: 'dim', t: 'Still working. [Check in from your phone](#)', right: true },
   { t: '' },
   { g: '›', caret: true },

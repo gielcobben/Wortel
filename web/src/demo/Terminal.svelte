@@ -1,11 +1,11 @@
 <script>
-  import { transcriptFull, statusBar, statusBarRight } from './data.js';
+  import { transcript, statusBar, statusBarRight } from './data.js';
   import { parseInline } from './util.js';
 
   // Which transcript to draw. Defaults to the full session: a terminal is the
   // one part of this replica that looks broken when it's empty, and the tour
   // needs a window with something in it at every stop.
-  let { rows = transcriptFull } = $props();
+  let { rows = transcript } = $props();
 
   // an empty terminal is just the prompt at the top; a filled one pins the
   // prompt to the bottom and shows the status bar

@@ -1,0 +1,74 @@
+# wortel.sh
+#
+# Everything here is a public product page. Crawling it is the point, so this
+# file exists to say so explicitly and to point at the sitemap — not to gate.
+#
+# Note: shipping this file replaces Cloudflare's managed robots.txt, which was
+# the Content Signals boilerplate and carried no directives at all. The signal
+# below keeps that mechanism, set to permissive.
+
+# search:   indexing and returning links/excerpts
+# ai-input: retrieval / grounding for generative answers
+# ai-train: training or fine-tuning models
+# All yes: a landing page benefits from being quotable and from being known.
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
+
+User-agent: *
+Allow: /
+
+# Named explicitly so a future blanket rule can't strand them by accident.
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+Sitemap: https://wortel.sh/sitemap.xml

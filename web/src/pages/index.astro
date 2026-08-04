@@ -1,85 +1,289 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import WortelApp from '../demo/WortelApp.svelte';
+import { SITE, FEATURES, SECTIONS, FAQ, SPECS } from '../data/site';
 
 // The Sparkle feed lives at updates.wortel.sh; the newest signed zip is always
 // mirrored to Wortel-latest.zip, so a single stable download URL works forever.
-const DOWNLOAD = 'https://updates.wortel.sh/Wortel-latest.zip';
+const DOWNLOAD = SITE.download;
 
 // The version shown under the button is read from that same feed at build time,
 // so it only refreshes when the site is redeployed. If the feed is unreachable
 // we drop the line rather than fail the build or show a stale hardcoded number.
-async function latestVersion() {
+// The same fetch feeds softwareVersion/fileSize in the JSON-LD below — a
+// hardcoded version in structured data is a version that goes stale silently.
+async function latestRelease() {
   try {
-    const res = await fetch('https://updates.wortel.sh/appcast.xml');
+    const res = await fetch(SITE.appcast);
     if (!res.ok) return null;
     const xml = await res.text();
     const version = xml.match(/<sparkle:shortVersionString>([^<]+)</)?.[1];
     if (!version) return null;
     // "14.0" reads better as plain "14" next to the version number.
     const min = xml.match(/<sparkle:minimumSystemVersion>([^<]+)</)?.[1]?.replace(/\.0$/, '');
-    return { version, min };
+    const bytes = Number(xml.match(/<enclosure[^>]*\slength="(\d+)"/)?.[1]);
+    const date = xml.match(/<pubDate>([^<]+)</)?.[1];
+    return {
+      version,
+      min,
+      size: Number.isFinite(bytes) && bytes > 0 ? `${Math.round(bytes / 1e6)} MB` : null,
+      date: date ? new Date(date).toISOString().slice(0, 10) : null,
+    };
   } catch {
     return null;
   }
 }
-const LATEST = await latestVersion();
+const LATEST = await latestRelease();
 
-const features = [
-  ['Sessions', 'Named, not numbered'],
-  ['Launch', 'Cold start stays lean'],
-  ['Switching', 'One frame, no flash'],
-  ['No config', 'No tabs, splits, or settings'],
-  ['Engine', 'Ghostty VT parser + Metal'],
-];
+const features = FEATURES;
+
+// ---- structured data ------------------------------------------------------
+// One @graph rather than several <script> tags: the nodes cross-reference by
+// @id (the app is the page's mainEntity, the person publishes both), and a
+// crawler can only resolve those references inside a single document.
+const abs = (p: string) => new URL(p, SITE.url).href;
+
+const person = {
+  '@type': 'Person',
+  '@id': abs('/#author'),
+  name: SITE.author,
+  url: SITE.url,
+};
+
+const app = {
+  '@type': 'SoftwareApplication',
+  '@id': abs('/#app'),
+  name: SITE.name,
+  alternateName: 'Wortel Terminal',
+  description: SITE.description,
+  applicationCategory: 'DeveloperApplication',
+  applicationSubCategory: 'Terminal Emulator',
+  operatingSystem: `macOS ${SITE.minMacOS}.0 or later`,
+  softwareRequirements: `macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later`,
+  url: SITE.url,
+  downloadUrl: DOWNLOAD,
+  installUrl: SITE.url,
+  screenshot: abs('/screenshot.png'),
+  image: abs('/og.png'),
+  author: { '@id': person['@id'] },
+  publisher: { '@id': person['@id'] },
+  ...(LATEST?.version && { softwareVersion: LATEST.version }),
+  ...(LATEST?.date && { datePublished: LATEST.date }),
+  ...(LATEST?.size && { fileSize: LATEST.size }),
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+    availability: 'https://schema.org/InStock',
+    url: SITE.url,
+  },
+  featureList: [
+    'Named, persistent terminal sessions instead of tabs',
+    'Instant session switching with no flash or rebuild',
+    'Runs Ghostty’s VT parser, Metal renderer and glyph atlas via libghostty',
+    'Activity detection for coding agents such as Claude Code, Codex and Aider',
+    'Notifies you when a background agent stops working and waits on you',
+    'Resumes agents that were still running at quit',
+    'Built-in git panel: working-tree changes, commit history with a branch graph, and diffs',
+    'Project file tree with drag-to-terminal path insertion',
+    'Rendered Markdown preview',
+    'Zero configuration — no settings UI and no dotfile',
+  ],
+};
+
+const website = {
+  '@type': 'WebSite',
+  '@id': abs('/#website'),
+  url: SITE.url,
+  name: SITE.name,
+  description: SITE.description,
+  inLanguage: 'en',
+  publisher: { '@id': person['@id'] },
+};
+
+const webpage = {
+  '@type': ['WebPage', 'FAQPage'],
+  '@id': abs('/#webpage'),
+  url: SITE.url,
+  name: SITE.title,
+  description: SITE.description,
+  isPartOf: { '@id': website['@id'] },
+  about: { '@id': app['@id'] },
+  mainEntity: FAQ.map((item) => ({
+    '@type': 'Question',
+    name: item.q,
+    acceptedAnswer: { '@type': 'Answer', text: item.a },
+  })),
+  primaryImageOfPage: { '@type': 'ImageObject', url: abs('/screenshot.png') },
+  inLanguage: 'en',
+};
+
+const schema = [website, webpage, person, app];
 ---
 
-<Layout>
-  <main class="page">
-    <div class="left">
-      <div class="intro">
-        <h1 class="mark">Wortel</h1>
-        <p class="tagline">A minimal, native macOS terminal.</p>
-        <p class="desc">
-          Ghostty’s engine, stripped to what you actually use — named sessions,
-          instant launch, instant switching. No tabs, no splits, no config to
-          babysit. It’s finished the moment you open it.
-        </p>
-        <p class="links">
+<Layout path="/" schema={schema}>
+  <main>
+    <!-- The hero is a fixed 100vh board: the text column sits on the 36px grid
+         and the app replica renders at native 1:1 beside it. The prose below is
+         a separate, ordinary scrolling document — it must not change any length
+         in here, or the whole grid drifts. -->
+    <div class="page">
+      <div class="left">
+        <div class="intro">
+          <h1 class="mark">Wortel</h1>
+          <p class="tagline">A minimal, native macOS terminal.</p>
+          <p class="desc">
+            Ghostty’s engine, stripped to what you actually use — named sessions,
+            instant launch, instant switching. No tabs, no splits, no config to
+            babysit. It’s finished the moment you open it.
+          </p>
+          <p class="links">
+            <a class="download" href={DOWNLOAD}>
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                <path d="M8 1v8.5M8 9.5 4.75 6.25M8 9.5l3.25-3.25M2.5 12.5h11"
+                  fill="none" stroke="currentColor" stroke-width="1.4"
+                  stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Download for macOS
+            </a>
+          </p>
+          {LATEST && (
+            <p class="version">
+              Version {LATEST.version}{LATEST.min && ` · macOS ${LATEST.min}+`}
+            </p>
+          )}
+        </div>
+
+        <div class="features">
+          <p class="head">Features</p>
+          <dl>
+            {features.map(([name, desc]) => (
+              <div>
+                <dt>{name}</dt>
+                <dd>{desc}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="app-frame">
+          <WortelApp client:load sidebar={true} initialTab="history" />
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- the readable document ------------------------------------------
+         Everything a search engine or a retrieval agent has to work with lives
+         here, rendered from src/data/site.ts. Same source as /llms-full.txt, so
+         the two can't disagree. -->
+    <article class="doc">
+      {SECTIONS.map((section) => (
+        <section id={section.id} class="sect">
+          <h2>{section.title}</h2>
+          {section.lead && <p class="lead">{section.lead}</p>}
+          {section.blocks.map((block) => (
+            <>
+              {'p' in block && <p>{block.p}</p>}
+              {'list' in block && (
+                <ul>{block.list.map((li) => <li>{li}</li>)}</ul>
+              )}
+              {'table' in block && (
+                <div class="scroller">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col">{block.table.head[0]}</th>
+                        <th scope="col">{block.table.head[1]}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {block.table.rows.map(([k, v]) => (
+                        <tr><th scope="row">{k}</th><td>{v}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          ))}
+        </section>
+      ))}
+
+      <section id="screenshot" class="sect">
+        <h2>Wortel in one screen</h2>
+        <figure class="shot">
+          <picture>
+            <source srcset="/screenshot-dark.avif" type="image/avif" media="(prefers-color-scheme: dark)" />
+            <source srcset="/screenshot-light.avif" type="image/avif" media="(prefers-color-scheme: light)" />
+            <img
+              src="/screenshot.png"
+              width="1392"
+              height="912"
+              loading="lazy"
+              decoding="async"
+              alt="The Wortel macOS terminal: a sidebar of named sessions grouped into two projects on the left, a terminal running a coding agent in the middle, and the git inspector on the right showing changed files, a diff and a commit box."
+            />
+          </picture>
+          <figcaption>
+            One window: named sessions on the left, the terminal in the middle, git
+            and files on the right.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="faq" class="sect">
+        <h2>Frequently asked questions</h2>
+        <div class="faq">
+          {FAQ.map((item) => (
+            <div class="qa">
+              <h3>{item.q}</h3>
+              <p>{item.a}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section id="specs" class="sect">
+        <h2>At a glance</h2>
+        <div class="scroller">
+          <table>
+            <tbody>
+              {SPECS.map(([k, v]) => (
+                <tr><th scope="row">{k}</th><td>{v}</td></tr>
+              ))}
+              {LATEST?.version && (
+                <tr><th scope="row">Latest version</th><td>{LATEST.version}{LATEST.date && ` · released ${LATEST.date}`}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p class="cta">
           <a class="download" href={DOWNLOAD}>
             <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
               <path d="M8 1v8.5M8 9.5 4.75 6.25M8 9.5l3.25-3.25M2.5 12.5h11"
                 fill="none" stroke="currentColor" stroke-width="1.4"
                 stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            Download for macOS
+            Download Wortel for macOS
           </a>
         </p>
-        {LATEST && (
-          <p class="version">
-            Version {LATEST.version}{LATEST.min && ` · macOS ${LATEST.min}+`}
-          </p>
-        )}
-      </div>
+      </section>
+    </article>
 
-      <div class="features">
-        <p class="head">Features</p>
-        <dl>
-          {features.map(([name, desc]) => (
-            <div>
-              <dt>{name}</dt>
-              <dd>{desc}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-    </div>
-
-    <div class="stage">
-      <div class="app-frame">
-        <WortelApp client:load sidebar={true} initialTab="history" />
-      </div>
-    </div>
+    <footer class="foot">
+      <p>
+        <strong>Wortel</strong> — a minimal, native macOS terminal built on Ghostty.
+        Dutch for <em>root</em>.
+      </p>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href={DOWNLOAD}>Download</a>
+        <a href="#faq">FAQ</a>
+        <a href="/llms.txt">llms.txt</a>
+      </nav>
+    </footer>
   </main>
 
   <!-- is:inline so it runs synchronously before first paint: it sets the window's

@@ -69,8 +69,13 @@ body {
   line-height: 1.5;
   letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
-  height: 100vh;
-  overflow: hidden;
+  /* The hero is still exactly one viewport (.page below owns that), but the
+     document continues past it, so the body scrolls. `overflow-x: clip` kills
+     the sideways scroll from the app bleeding off the right WITHOUT making the
+     body a scroll container — which `overflow: hidden` would, and which would
+     strand the prose below the fold. */
+  min-height: 100vh;
+  overflow-x: clip;
   position: relative;
 }
 
@@ -141,7 +146,9 @@ body.dragging-app, body.dragging-app * {
   text-wrap: pretty;
 }
 .links { margin-top: 38px; display: flex; gap: 12px; } /* snaps the button's top edge to the y=252 line */
-.links .download {
+/* Unscoped so the repeat call-to-action at the foot of the prose is the same
+   button, not a copy of its rules. */
+.download {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -154,9 +161,9 @@ body.dragging-app, body.dragging-app * {
   line-height: 1;
   transition: transform 0.12s ease, opacity 0.15s ease;
 }
-.links .download svg { flex: none; }
-.links .download:hover { opacity: 0.88; }
-.links .download:active { transform: translateY(1px); }
+.download svg { flex: none; }
+.download:hover { opacity: 0.88; }
+.download:active { transform: translateY(1px); }
 .version { margin-top: 8px; font-size: 13px; color: var(--text-50); }
 
 .features .head { color: var(--text-50); margin-bottom: 14px; }
@@ -208,12 +215,144 @@ body.dragging-app, body.dragging-app * {
 }
 .app-frame > :global(.wortel-app) { width: 100%; height: 100%; }
 
+/* ==========================================================================
+   The prose below the hero.
+   Left-anchored at x=36 like everything above it, so the page keeps one
+   left edge from the wordmark all the way down to the footer. The measure
+   (684px of text) is 19 grid cells, which lands the right edge on x=720.
+   ========================================================================== */
+.doc {
+  position: relative;
+  z-index: 2;
+  max-width: 756px;      /* 36 + 684 + 36 */
+  padding: 0 36px;
+}
+
+.sect {
+  padding: 60px 0;
+  border-top: 1px solid var(--grid);
+}
+.sect:first-child { border-top: 0; }
+
+.doc h2 {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  margin-bottom: 16px;
+  text-wrap: balance;
+}
+.doc h3 {
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  text-wrap: pretty;
+}
+.doc .lead {
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--text);
+  margin-bottom: 18px;
+  text-wrap: pretty;
+}
+.doc p { color: var(--text-70); text-wrap: pretty; }
+.doc p + p { margin-top: 14px; }
+.doc .lead + p { margin-top: 0; }
+
+.doc ul {
+  list-style: none;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.doc li {
+  position: relative;
+  padding-left: 18px;
+  color: var(--text-70);
+  text-wrap: pretty;
+}
+/* A grid tick rather than a bullet — the same 1px line the background is made of. */
+.doc li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.65em;
+  width: 8px;
+  height: 1px;
+  background: var(--text-50);
+}
+.doc ul + p { margin-top: 16px; }
+
+/* Tables (the shortcut list, the spec sheet) scroll inside themselves rather
+   than widening the page — the body must never scroll sideways. */
+.doc .scroller { overflow-x: auto; margin-top: 4px; }
+.doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.doc th, .doc td {
+  text-align: left;
+  font-weight: 400;
+  padding: 9px 12px 9px 0;
+  border-bottom: 1px solid var(--grid);
+  vertical-align: baseline;
+}
+.doc thead th {
+  color: var(--text-50);
+  font-size: 13px;
+}
+.doc tbody th {
+  color: var(--text);
+  white-space: nowrap;
+  padding-right: 24px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.doc td { color: var(--text-70); }
+.doc tbody tr:last-child th, .doc tbody tr:last-child td { border-bottom: 0; }
+
+.faq { display: flex; flex-direction: column; gap: 24px; }
+
+.shot { margin-top: 8px; }
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid var(--grid);
+}
+.shot figcaption {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-50);
+  text-wrap: pretty;
+}
+
+.doc .cta { margin-top: 28px; }
+
+.foot {
+  position: relative;
+  z-index: 2;
+  max-width: 756px;
+  padding: 28px 36px 60px;
+  border-top: 1px solid var(--grid);
+  font-size: 13px;
+  color: var(--text-50);
+}
+.foot strong { color: var(--text-70); font-weight: 500; }
+.foot nav { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 18px; }
+.foot nav a { color: var(--text-50); }
+.foot nav a:hover { color: var(--text); text-decoration: underline; }
+
 /* stack on narrow screens */
 @media (max-width: 900px) {
   /* overflow-x: clip kills the horizontal scroll from the app bleeding off the
      right, WITHOUT clipping vertically (so the app's drop-shadow isn't sliced)
-     and without creating a scroll container the way overflow:hidden would. */
-  body { height: auto; overflow: visible; overflow-x: clip; }
+     and without creating a scroll container the way overflow:hidden would.
+     (The body already clips this way at every width; only .page has to drop
+     the desktop hero's fixed height and hard clip.) */
   .page { height: auto; overflow: visible; overflow-x: clip; }
   .left {
     position: static;
@@ -237,4 +376,8 @@ body.dragging-app, body.dragging-app * {
      narrow screen). Height stays fluid — the grid is viewport-fixed while the page
      scrolls, so there's no stable vertical line to snap to. */
   .app-frame { width: round(down, 100%, 36px); height: 100%; }
+
+  .sect { padding: 44px 0; }
+  .doc h2 { font-size: 20px; }
+  .doc .lead { font-size: 16px; }
 }

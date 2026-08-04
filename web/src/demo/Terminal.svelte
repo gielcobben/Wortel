@@ -1,15 +1,20 @@
 <script>
-  import { transcript, statusBar, statusBarRight } from './data.js';
+  import { transcriptFull, statusBar, statusBarRight } from './data.js';
   import { parseInline } from './util.js';
+
+  // Which transcript to draw. Defaults to the full session: a terminal is the
+  // one part of this replica that looks broken when it's empty, and the tour
+  // needs a window with something in it at every stop.
+  let { rows = transcriptFull } = $props();
 
   // an empty terminal is just the prompt at the top; a filled one pins the
   // prompt to the bottom and shows the status bar
-  const filled = transcript.length > 1;
+  const filled = $derived(rows.length > 1);
 </script>
 
 <div class="term">
   <div class="scroll" class:filled>
-    {#each transcript as row}
+    {#each rows as row}
       {#if row.block}
         <!-- user message block: bg wraps gutter + lines -->
         <div class="ublock">

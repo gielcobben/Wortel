@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte';
   import './tokens.css';
   import PanelLeft from '@lucide/svelte/icons/panel-left';
   import GitBranch from '@lucide/svelte/icons/git-branch';
@@ -9,7 +10,12 @@
   import { createDrawer } from './drawer.svelte.js';
   import { windowTitle, windowSubtitle, branch } from './data.js';
 
-  let { sidebar = false, initialTab = 'changes' } = $props();
+  // `view` is the scroll-driven tour's handle on this window: { sidebar, pane }.
+  // Leave it null and the window is purely user-driven, which is what the hero
+  // wants. Set it and each change is replayed through the SAME open/close calls
+  // the toolbar buttons make, so a driven window can't reach a state a clicked
+  // one couldn't. See Tour.svelte.
+  let { sidebar = false, initialTab = 'changes', view = null } = $props();
 
   // The app renders at native 1:1 always (never scaled); it stays usable by
   // RESPONDING like a real macOS window. As it's squeezed the app makes default
@@ -28,6 +34,26 @@
   const right = createDrawer(true, '--fits-git', getProbe);         // inspector
 
   let gitTab = $state(initialTab);
+
+  // Drive the window from `view` when the tour supplies one.
+  //
+  // untrack() around the writes is load-bearing: set() reads `wanted` on its way
+  // to writing it, and an effect that both reads and writes the same state
+  // re-runs itself forever. Only the two fields of `view` are meant to be
+  // dependencies, so they're read outside and the state work happens inside.
+  //
+  // The drawers are asked to open even when the tour's window is too narrow to
+  // fit them; that's the `force` path in createDrawer, i.e. the same "keep it
+  // open and squeeze the window" the real toggle does at narrow widths.
+  $effect(() => {
+    if (!view) return;
+    const wantSidebar = !!view.sidebar;
+    const pane = view.pane ?? null;
+    untrack(() => {
+      if (wantSidebar) left.open(); else left.close();
+      if (pane) { gitTab = pane; right.open(); } else { right.close(); }
+    });
+  });
 
   // Pane-button behavior, ported from MainToolbar.swift: clicking the inactive
   // pane switches to it (opening the inspector), clicking the ACTIVE pane closes

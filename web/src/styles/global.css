@@ -231,9 +231,18 @@ body.dragging-app, body.dragging-app * {
 .doc {
   position: relative;
   z-index: 2;
+}
+/* The measure, unchanged at every width: text from x=36 to x=720, which is 19
+   grid cells wide and shares its left edge with the wordmark above. */
+.doc .prose {
   max-width: 756px;      /* 36 + 684 + 36 */
   padding: 0 36px;
 }
+
+/* The pinned tour window is desktop-only. Below the breakpoint the aside is not
+   rendered at all (see the media query at the bottom), and the prose is the
+   single column it already was. */
+.tour { display: none; }
 
 .sect {
   padding: 60px 0;
@@ -352,6 +361,55 @@ body.dragging-app, body.dragging-app * {
 .foot nav { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 18px; }
 .foot nav a { color: var(--text-50); }
 .foot nav a:hover { color: var(--text); text-decoration: underline; }
+
+/* ==========================================================================
+   The scroll tour: prose left, one pinned app window right.
+   1332 = 756 (the measure) + 504 (14 cells, the narrowest window still worth
+   showing) + 36 (right gutter). Below it there is no honest way to place a
+   window that is never scaled, so the column simply doesn't exist and the
+   static screenshot further down carries the visual on its own.
+   ========================================================================== */
+@media (min-width: 1332px) {
+  .doc-tour {
+    display: grid;
+    grid-template-columns: 756px minmax(0, 1fr);
+    align-items: start;
+  }
+  .tour {
+    display: block;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    /* the window sits on the same 36px gutter the hero's does */
+    padding: 0 36px 0 0;
+    display: flex;
+    align-items: center;
+  }
+  .tour-frame {
+    /* Snapped to whole cells like the hero's app-frame, and capped at the
+       reference window so it never stretches past its real size. The height is
+       a fixed 17 cells: a shorter macOS window, not a squashed one. */
+    width: round(down, min(100%, var(--app-max-w)), 36px);
+    height: 612px;
+    border-radius: 10px;
+    /* Its own stacking context so the window's shadow can't paint over the
+       prose in the column beside it. */
+    isolation: isolate;
+  }
+  .tour-frame > :global(.wortel-app) { width: 100%; height: 100%; }
+
+  /* The hero's window animates because someone clicked it; this one animates
+     because the page scrolled, which is the kind of motion the setting is
+     actually about. Cut the panel slides here and leave the hero alone. */
+  @media (prefers-reduced-motion: reduce) {
+    .tour-frame *,
+    .tour-frame *::before,
+    .tour-frame *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
 
 /* stack on narrow screens */
 @media (max-width: 900px) {

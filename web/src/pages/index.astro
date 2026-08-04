@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import WortelApp from '../demo/WortelApp.svelte';
+import Tour from '../demo/Tour.svelte';
 import { SITE, FEATURES, SECTIONS, FAQ, SPECS } from '../data/site';
 
 // The Sparkle feed lives at updates.wortel.sh; the newest signed zip is always
@@ -178,9 +179,10 @@ const schema = [website, webpage, person, app];
          Everything a search engine or a retrieval agent has to work with lives
          here, rendered from src/data/site.ts. Same source as /llms-full.txt, so
          the two can't disagree. -->
-    <article class="doc">
+    <article class="doc doc-tour">
+      <div class="prose">
       {SECTIONS.map((section) => (
-        <section id={section.id} class="sect">
+        <section id={section.id} class="sect" data-view={section.id}>
           <h2>{section.title}</h2>
           {section.lead && <p class="lead">{section.lead}</p>}
           {section.blocks.map((block) => (
@@ -210,7 +212,23 @@ const schema = [website, webpage, person, app];
           ))}
         </section>
       ))}
+      </div>
 
+      <!-- The pinned window. inert + aria-hidden on purpose: it says nothing the
+           prose beside it doesn't already say, the hero above holds the window
+           you can actually click, and a second copy in the tab order would make
+           every reader walk the same toolbar twice. Rendered client:only so a
+           second full app doesn't ship in the HTML for a decoration; .tour-frame
+           reserves its box in CSS, so nothing shifts when it hydrates. -->
+      <aside class="tour" inert aria-hidden="true">
+        <div class="tour-frame">
+          <Tour client:only="svelte" />
+        </div>
+      </aside>
+    </article>
+
+    <article class="doc">
+      <div class="prose">
       <section id="screenshot" class="sect">
         <h2>Wortel in one screen</h2>
         <figure class="shot">
@@ -270,6 +288,7 @@ const schema = [website, webpage, person, app];
           </a>
         </p>
       </section>
+      </div>
     </article>
 
     <footer class="foot">

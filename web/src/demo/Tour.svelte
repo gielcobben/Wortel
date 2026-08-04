@@ -8,28 +8,29 @@
   // as dragging the real app's edge would. That is why a view below can ask for
   // a panel the window has no room for and still get the right answer.
   import WortelApp from './WortelApp.svelte';
-  import { SCENES } from './data.js';
+  import { STORY, AGENT_BEAT } from './data.js';
 
   let { sidebar = true, initialTab = 'history' } = $props();
 
-  // Section id -> what the window shows: which panels are open AND which scene
-  // is in the terminal. Every adjacent pair differs in at least one of the two,
-  // so no section boundary is silent. Panels alone were not enough: `sessions`
-  // and `coding-agents` want the same panels, and scrolling between them did
-  // nothing at all.
-  //
-  // The scenes run as a narrative rather than a slideshow: land in a shell,
-  // build, move to another project, start the agent, read what it found, and
-  // check there is nothing to configure. See SCENES in data.js.
+  // Section id -> which panels are open AND how far into the story we are.
+  // `beat` indexes STORY: the terminal shows every beat up to it, so reading
+  // down the page continues one session rather than replacing its contents,
+  // and reading back up rewinds it. Every adjacent pair differs in the beat, so
+  // no section boundary is silent even where the panels are the same.
   const VIEWS = {
-    'what-is-wortel': { sidebar: true,  pane: 'history', scene: SCENES.arrive },
-    'ghostty-engine': { sidebar: false, pane: null,      scene: SCENES.build },
-    'sessions':       { sidebar: true,  pane: null,      scene: SCENES.sessions },
-    'coding-agents':  { sidebar: true,  pane: null,      scene: SCENES.agent },
-    'git-and-files':  { sidebar: false, pane: 'changes', scene: SCENES.answer },
-    'zero-config':    { sidebar: false, pane: null,      scene: SCENES.noconfig },
-    'keyboard':       { sidebar: true,  pane: 'history', scene: SCENES.answer },
+    'what-is-wortel': { sidebar: true,  pane: 'history', beat: 0 },
+    'ghostty-engine': { sidebar: false, pane: null,      beat: 1 },
+    'sessions':       { sidebar: true,  pane: null,      beat: 2 },
+    'coding-agents':  { sidebar: true,  pane: null,      beat: 3 },
+    'git-and-files':  { sidebar: false, pane: 'changes', beat: 4 },
+    'zero-config':    { sidebar: false, pane: null,      beat: 5 },
+    'keyboard':       { sidebar: true,  pane: 'history', beat: 6 },
   };
+
+  // The story so far. Before any section reaches the reading band we are still
+  // on the hero, which is beat 0.
+  const beat = $derived(view?.beat ?? 0);
+  const beats = $derived(STORY.slice(0, beat + 1));
 
   // null until a section actually reaches the reading band. The hero's authored
   // state (sidebar + History) then stands untouched while you're still looking
@@ -82,4 +83,4 @@
   });
 </script>
 
-<WortelApp {view} {sidebar} {initialTab} scene={view?.scene ?? SCENES.arrive} />
+<WortelApp {view} {sidebar} {initialTab} {beats} arriving={beat} status={beat >= AGENT_BEAT} />

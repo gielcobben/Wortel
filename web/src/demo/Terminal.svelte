@@ -2,11 +2,12 @@
   import { transcript, statusBar, statusBarRight } from './data.js';
   import { parseInline, wrapSegments } from './util.js';
 
-  // Which scene to draw. `sceneId` is the re-stream trigger: when the tour
-  // moves to a new section the rows are rebuilt from scratch, so their CSS
-  // reveal animations run again and the output visibly types itself in. A width
-  // change must NOT do that, which is why the key is the scene and not the rows.
-  let { rows = transcript, sceneId = 'arrive', status = false } = $props();
+  // ONE session, told in beats. `beats` is every beat up to and including the
+  // section you are reading, so scrolling APPENDS rather than replaces: older
+  // output rides up and off the top like real scrollback. `arriving` is the
+  // index of the beat that just landed, and only its lines animate in. A width
+  // change re-wraps everything and must animate nothing.
+  let { beats = [transcript], arriving = -1, status = false } = $props();
 
   // Rows are authored UNWRAPPED and re-wrapped here to whatever width the
   // terminal currently is, because that is what a terminal does. This window is
@@ -46,19 +47,36 @@
     return () => ro.disconnect();
   });
 
-  // Source rows become items carrying their wrapped lines plus the index of
-  // their first line, so the reveal staggers continuously down the OUTPUT
-  // rather than jumping several steps at a paragraph.
+  // Every beat's rows become items carrying their wrapped lines, the beat they
+  // belong to, and the index of their first line WITHIN that beat, so the
+  // stagger restarts per beat instead of counting from the top of a transcript
+  // that only ever grows.
   const items = $derived.by(() => {
-    let i = 0;
-    return rows.map((row) => {
-      const width = row.block ? blockCols : cols;
-      const lines = row.caret ? [[]] : wrapSegments(parseInline(row.t ?? ''), width);
-      const item = { row, lines, i0: i };
-      i += lines.length;
-      return item;
+    const out = [];
+    let tail = 0;
+    beats.forEach((rows, beat) => {
+      let i = 0;
+      for (const row of rows) {
+        const width = row.block ? blockCols : cols;
+        const lines = wrapSegments(parseInline(row.t ?? ''), width);
+        out.push({ row, lines, beat, i0: i });
+        i += lines.length;
+      }
+      tail = i;
     });
+    // Exactly one cursor, at the bottom, because that is how many a terminal
+    // has. Beats do not carry their own prompt row: concatenating six of them
+    // stacked six blinking carets down the transcript.
+    out.push({
+      row: { g: '›', caret: true },
+      lines: [[]],
+      beat: Math.max(0, beats.length - 1),
+      i0: tail,
+    });
+    return out;
   });
+
+  const rows = $derived(beats.flat());
 
   // an empty terminal is just the prompt at the top; a filled one pins the
   // prompt to the bottom. The status strip is Claude Code's, so it belongs to
@@ -79,24 +97,20 @@
     return out;
   });
 
-  // The reveal runs once per SCENE. Reading sceneId is what re-arms it; the
-  // effect then clears the flag when the last line has landed, so a re-wrap
-  // (a panel opening, the window resizing) redraws without re-animating.
-  let streaming = $state(true);
+  // Which beat is currently animating. It disarms itself once the last line has
+  // landed, so a resize AFTER the reveal re-wraps in place and animates nothing.
+  // Without that, every drag of the window would replay the newest beat.
+  let armed = $state(-1);
   $effect(() => {
-    // Reading sceneId is what re-arms the reveal. Bound to `key` rather than
-    // left as a bare expression so the timer below can compare against it.
-    const key = sceneId;
+    const beat = arriving;
     if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      streaming = false;
+      armed = -1;
       return;
     }
-    streaming = true;
-    // The guard is why `key` is used rather than voided: a scene that changes
-    // again mid-reveal must not have the outgoing scene's timer clear its flag.
+    armed = beat;
     const id = setTimeout(() => {
-      if (key === sceneId) streaming = false;
-    }, 2600);
+      if (armed === beat) armed = -1;
+    }, 1800);
     return () => clearTimeout(id);
   });
 </script>
@@ -105,15 +119,13 @@
   <!-- 40 characters of the terminal's own font, measured for the cell advance -->
   <span class="cellprobe" bind:this={probeEl} aria-hidden="true">MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM</span>
 
-  <div class="scroll" class:filled class:streaming bind:this={scrollEl}>
-    <!-- keyed on the scene: a new section rebuilds every line, which is what
-         restarts the reveal. {#key} emits no element, so `.scroll > .row`
-         still selects them. -->
-    {#key sceneId}
+  <div class="scroll" class:filled bind:this={scrollEl}>
+    <!-- Only the arriving beat carries .in, so appending a beat animates just
+         its own lines: everything above is already on screen and stays put. -->
     {#each items as item}
       {#if item.row.block}
         <!-- user message block: the background wraps every wrapped line -->
-        <div class="ublock" style="--i:{item.i0}">
+        <div class="ublock" class:in={item.beat === armed} style="--i:{item.i0}">
           {#each item.lines as line, j}
             <div class="row">
               <span class="g">{j === 0 ? (item.row.g ?? '') : ''}</span>
@@ -123,7 +135,7 @@
         </div>
       {:else}
         {#each item.lines as line, j}
-          <div class="row {item.row.cls ?? ''}" style="--i:{item.i0 + j}">
+          <div class="row {item.row.cls ?? ''}" class:in={item.beat === armed} style="--i:{item.i0 + j}">
             <!-- a wrapped continuation carries no gutter glyph, like the app -->
             <span class="g {item.row.gcls ?? ''}">{j === 0 ? (item.row.g ?? '') : ''}</span>
             <span class="t" class:ind={item.row.ind}>
@@ -135,7 +147,6 @@
         {/each}
       {/if}
     {/each}
-    {/key}
   </div>
 
   <!-- the status bar is Claude Code's TUI, i.e. terminal content, so it only
@@ -198,12 +209,12 @@
   /* ---- the output arriving -------------------------------------------------
      A staggered reveal, in CSS rather than JS on purpose: the island is
      server-rendered, so a JS counter would paint the whole transcript, then
-     blank it on hydration, then type it back. Every line is authored visible
-     and starts at opacity 0 under an animation that lands it, so the first
-     paint is already mid-stream and nothing flashes. Direct children only, so
-     a user block fades as one card rather than line by line. */
-  .scroll.streaming > .row,
-  .scroll.streaming > .ublock {
+     blank it on hydration, then type it back. Lines are authored visible and
+     start at opacity 0 under an animation that lands them, so the first paint
+     is already mid-stream and nothing flashes. Direct children only, so a user
+     block fades as one card rather than line by line. */
+  .scroll > .row.in,
+  .scroll > .ublock.in {
     opacity: 0;
     transform: translateY(3px);
     animation: term-in 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
@@ -267,8 +278,8 @@
 
   /* Nothing here is information, so under reduced motion it all simply is. */
   @media (prefers-reduced-motion: reduce) {
-    .scroll.streaming > .row,
-    .scroll.streaming > .ublock { opacity: 1; transform: none; animation: none; }
+    .scroll > .row.in,
+    .scroll > .ublock.in { opacity: 1; transform: none; animation: none; }
     .caret { animation: none; }
   }
 

@@ -65,57 +65,54 @@ export type Section = {
 export const SECTIONS: Section[] = [
   {
     id: 'what-is-wortel',
-    title: 'What Wortel is',
-    lead:
-      'A macOS terminal emulator with one window, a sidebar of named sessions, and nothing to configure.',
+    title: 'A terminal you never have to arrange',
+    lead: 'One window. A sidebar of names. Nothing to set up, and nothing to tidy.',
     blocks: [
       {
-        p: 'It runs Ghostty’s real terminal engine: the same VT parser, Metal renderer and glyph atlas that ship in Ghostty.app. Throughput, render and input latency are Ghostty-class because it is Ghostty doing the work.',
+        p: 'Wortel is a native macOS terminal built on Ghostty’s engine. Open it and the work is where you left it: every session still named, still pointed at its own directory, ready to pick up.',
       },
       {
-        p: 'What it drops is the arranging. No tabs, no splits, no profiles, no settings window, no config file. You name a session; it stays named, stays in its directory, and comes back after a restart.',
+        p: 'There are no tabs to count. No panes to tile. No profiles to keep in step with one another. The arranging is simply gone, and what is left is the work.',
       },
       {
-        p: 'Native, signed and notarized. Free, for macOS ' +
+        p: 'Free, signed and notarized, for macOS ' +
           SITE.minMacOS +
           ' ' +
           SITE.minMacOSName +
-          ' or later. “Wortel” is Dutch for root.',
+          ' or later. Wortel is Dutch for root.',
       },
     ],
   },
 
   {
     id: 'ghostty-engine',
-    title: 'Built on Ghostty’s engine',
-    lead:
-      'Wortel embeds libghostty. The terminal is upstream Ghostty; only the shell around it is Wortel’s.',
+    title: 'Ghostty’s engine, exactly as it ships',
+    lead: 'The terminal inside Wortel is Ghostty. Not a port of it. Not inspired by it.',
     blocks: [
       {
         list: [
-          'The VT parser, Metal renderer, glyph atlas and per-surface IO threads are Ghostty’s, unmodified.',
-          'Every session owns one libghostty surface, rendering from its own thread.',
-          'Wortel’s own code is the shell: input, session persistence, the sidebar, the git and files panes.',
+          'The VT parser, the Metal renderer, the glyph atlas and the per-surface IO threads are upstream’s, unmodified.',
+          'Every session owns one libghostty surface, drawing from its own thread.',
+          'Wortel’s own code is only the shell around it: input, session persistence, the sidebar, the git and files panes.',
         ],
       },
       {
-        p: 'It is also why there is no plugin API and no theme gallery. Fonts, colours and keybinds live in a read-only config inside the app, and your ~/.config/ghostty is never read.',
+        p: 'Which is also why there is no plugin API and no theme gallery. Fonts, colours and keybinds live in a read-only file inside the app, and your ~/.config/ghostty is never read. Nothing you did to another terminal can reach this one.',
       },
     ],
   },
 
   {
     id: 'sessions',
-    title: 'Sessions instead of tabs',
-    lead:
-      'A tab is a number you have to remember. A session is a name, a directory, and a shell that survives quitting the app.',
+    title: 'Sessions, not tabs',
+    lead: 'A tab is a number you have to remember. A session is a name you chose.',
     blocks: [
       {
         list: [
-          'Names you type, not indices you count to. A slash in the name makes a section, so twelve shells across four projects read as four groups.',
-          'Names, order, directories and selection persist to disk and come back on launch.',
-          'Switching costs one frame. Every surface stays in the view hierarchy for the life of the app: switching hides and shows, it never rebuilds.',
-          'Launch spawns only the selected shell before the first frame. The rest warm up behind the window.',
+          'Name a session and it keeps the name. Put a slash in it and everything before the slash becomes a section, so twelve shells across four projects read as four groups.',
+          'Names, order, directories and selection are written to disk and come back on launch.',
+          'Switching costs a single frame. Every surface stays alive inside the window, so returning to one is instant and never flashes.',
+          'Launch stays quick. Only the session you had selected starts before the first frame; the rest warm up quietly behind it.',
         ],
       },
     ],
@@ -123,19 +120,19 @@ export const SECTIONS: Section[] = [
 
   {
     id: 'coding-agents',
-    title: 'Built for coding agents',
+    title: 'A coding agent in every session',
     lead:
-      'Run Claude Code, Codex or Aider across several repos and the hard part is no longer the terminal. It is knowing which one is waiting for you.',
+      'Hand one repository to Claude Code, another to Codex, a third to Aider, and the terminal stops being the hard part. Knowing which one needs you becomes the hard part.',
     blocks: [
       {
-        p: 'Wortel answers that from the screen. Output that keeps changing is an agent working; a screen that has held still is one waiting on you. Precise signals (OSC 9;4, OSC 133, a title spinner) win where an agent sends them, but none are required, so agents that do not exist yet are covered too.',
+        p: 'Wortel reads that straight off the screen. Output that keeps moving is an agent still working. A screen that has gone still is an agent waiting on you. Where an agent announces itself properly, with OSC 9;4 progress or a spinner in the title, Wortel takes its word for it. Where it says nothing at all, which is most of them, Wortel still knows.',
       },
       {
         list: [
-          'The sidebar marks which sessions are working and which are waiting.',
-          'A notification fires when a background agent goes quiet, never for the session you are looking at.',
-          '⌘⌥] jumps to the next waiting session.',
-          'Agents still running at quit are resumed on the next launch, in the same directory, with the same model.',
+          'The sidebar marks what is working and what is waiting, so a glance is enough.',
+          'A notification arrives when a background agent goes quiet. Never for the session in front of you, and never before a grace period, so your own typing cannot set it off.',
+          '⌘⌥] takes you to the next one waiting, wherever it sits in the list.',
+          'Agents still running when you quit are picked back up on the next launch, in the same directory, with the same model.',
         ],
       },
     ],
@@ -143,32 +140,32 @@ export const SECTIONS: Section[] = [
 
   {
     id: 'git-and-files',
-    title: 'Git and your project',
+    title: 'Your repository, in the same window',
     lead:
-      'An inspector beside the terminal: Changes, History and Files. Per session, because a shell in ~ never wants it and one in a repo always does.',
+      'An inspector beside the terminal, with three panes: Changes, History and Files. It belongs to the session, because a shell sitting in your home directory never wants it and one inside a repository always does.',
     blocks: [
       {
         list: [
-          'Changes: working-tree status, per-file diffs with syntax highlighting, a commit box.',
-          'History: the commit list with a branch graph, and the diff for any commit.',
-          'Files: the project as a tree. Read-only, so dragging a row into the terminal drops an escaped path at the prompt.',
-          'Markdown opens in a rendered preview.',
+          'Changes: what the worktree has, file by file, with syntax-highlighted diffs and somewhere to write the commit.',
+          'History: the commit list with its branch graph, and the diff behind any commit.',
+          'Files: the project as a tree. Read-only on purpose, so dragging a row into the terminal drops the escaped path at your prompt.',
+          'Markdown opens rendered, from the tree or from a path in the output.',
         ],
       },
       {
-        p: 'One rule shapes it: cost tracks the window on screen, not the size of the repository. A collapsed node_modules is one row and no work at all. ⌘⌥G opens source control, ⌘⌥E opens files.',
+        p: 'One rule holds all of it together: the cost tracks the window on screen, never the size of the repository. A collapsed node_modules is one row and no work at all. ⌘⌥G opens source control, ⌘⌥E opens files.',
       },
     ],
   },
 
   {
     id: 'zero-config',
-    title: 'Zero configuration, on purpose',
+    title: 'Nothing to configure, on purpose',
     lead:
-      'Wortel’s entire configuration is a read-only file inside the app bundle. No settings window, no dotfile.',
+      'Wortel’s entire configuration is one read-only file inside the app. There is no settings window, and there is no dotfile.',
     blocks: [
       {
-        p: 'This is the feature, not a gap. A terminal you can spend an afternoon tuning is a terminal you will. Wortel ships one set of defaults and treats them as finished; font size is the only runtime adjustment, and it is per session.',
+        p: 'This is the feature. A terminal you can spend an afternoon tuning is a terminal you will spend an afternoon tuning. Wortel chooses the font, the theme, the keybinds and the scrollback once, and treats them as finished. Font size is the one thing you can change, and it is per session.',
       },
     ],
   },

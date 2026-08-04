@@ -69,10 +69,7 @@ export const SECTIONS: Section[] = [
     lead: 'One window. A sidebar of names. Nothing to set up, and nothing to tidy.',
     blocks: [
       {
-        p: 'Wortel is a native macOS terminal built on Ghostty’s engine. Open it and the work is where you left it: every session still named, still pointed at its own directory, ready to pick up.',
-      },
-      {
-        p: 'There are no tabs to count. No panes to tile. No profiles to keep in step with one another. The arranging is simply gone, and what is left is the work.',
+        p: 'Wortel is a native macOS terminal built on Ghostty’s engine. Open it and the work is where you left it: every session still named, still in its own directory. No tabs to count, no panes to tile, no profiles to keep in step.',
       },
       {
         p: 'Free, signed and notarized, for macOS ' +
@@ -90,14 +87,10 @@ export const SECTIONS: Section[] = [
     lead: 'The terminal inside Wortel is Ghostty. Not a port of it. Not inspired by it.',
     blocks: [
       {
-        list: [
-          'The VT parser, the Metal renderer, the glyph atlas and the per-surface IO threads are upstream’s, unmodified.',
-          'Every session owns one libghostty surface, drawing from its own thread.',
-          'Wortel’s own code is only the shell around it: input, session persistence, the sidebar, the git and files panes.',
-        ],
+        p: 'Wortel embeds libghostty, so the VT parser, the Metal renderer and the glyph atlas are upstream’s, unmodified. Its own code is only the shell around them.',
       },
       {
-        p: 'Which is also why there is no plugin API and no theme gallery. Fonts, colours and keybinds live in a read-only file inside the app, and your ~/.config/ghostty is never read. Nothing you did to another terminal can reach this one.',
+        p: 'Which is why there is no plugin API and no theme gallery. Fonts, colours and keybinds live in a read-only file inside the app; your ~/.config/ghostty is never read.',
       },
     ],
   },
@@ -108,12 +101,10 @@ export const SECTIONS: Section[] = [
     lead: 'A tab is a number you have to remember. A session is a name you chose.',
     blocks: [
       {
-        list: [
-          'Name a session and it keeps the name. Put a slash in it and everything before the slash becomes a section, so twelve shells across four projects read as four groups.',
-          'Names, order, directories and selection are written to disk and come back on launch.',
-          'Switching costs a single frame. Every surface stays alive inside the window, so returning to one is instant and never flashes.',
-          'Launch stays quick. Only the session you had selected starts before the first frame; the rest warm up quietly behind it.',
-        ],
+        p: 'Name a session and it keeps the name. Put a slash in it and everything before the slash becomes a section, so twelve shells across four projects read as four groups. Names, directories and selection come back on launch.',
+      },
+      {
+        p: 'Switching costs a single frame, because every surface stays alive inside the window. Only the one you had selected starts before the first frame; the rest warm up behind it.',
       },
     ],
   },
@@ -125,15 +116,10 @@ export const SECTIONS: Section[] = [
       'Hand one repository to Claude Code, another to Codex, a third to Aider, and the terminal stops being the hard part. Knowing which one needs you becomes the hard part.',
     blocks: [
       {
-        p: 'Wortel reads that straight off the screen. Output that keeps moving is an agent still working. A screen that has gone still is an agent waiting on you. Where an agent announces itself properly, with OSC 9;4 progress or a spinner in the title, Wortel takes its word for it. Where it says nothing at all, which is most of them, Wortel still knows.',
+        p: 'Wortel reads that off the screen. Output that keeps moving is an agent working; a screen gone still is one waiting on you. Where an agent announces itself, with OSC 9;4 progress or a spinner in the title, Wortel takes its word for it. Where it says nothing, which is most of them, Wortel still knows.',
       },
       {
-        list: [
-          'The sidebar marks what is working and what is waiting, so a glance is enough.',
-          'A notification arrives when a background agent goes quiet. Never for the session in front of you, and never before a grace period, so your own typing cannot set it off.',
-          '⌘⌥] takes you to the next one waiting, wherever it sits in the list.',
-          'Agents still running when you quit are picked back up on the next launch, in the same directory, with the same model.',
-        ],
+        p: 'The sidebar marks what is working and what is waiting. A notification arrives when a background agent goes quiet, never for the session in front of you. ⌘⌥] jumps to the next one waiting, and anything still running when you quit is picked back up on the next launch.',
       },
     ],
   },
@@ -141,19 +127,13 @@ export const SECTIONS: Section[] = [
   {
     id: 'git-and-files',
     title: 'Your repository, in the same window',
-    lead:
-      'An inspector beside the terminal, with three panes: Changes, History and Files. It belongs to the session, because a shell sitting in your home directory never wants it and one inside a repository always does.',
+    lead: 'An inspector beside the terminal, with three panes: Changes, History and Files.',
     blocks: [
       {
-        list: [
-          'Changes: what the worktree has, file by file, with syntax-highlighted diffs and somewhere to write the commit.',
-          'History: the commit list with its branch graph, and the diff behind any commit.',
-          'Files: the project as a tree. Read-only on purpose, so dragging a row into the terminal drops the escaped path at your prompt.',
-          'Markdown opens rendered, from the tree or from a path in the output.',
-        ],
+        p: 'Changes is the worktree file by file, with syntax-highlighted diffs and somewhere to write the commit. History is the commit list with its branch graph. Files is the project as a tree: drag a row into the terminal and the escaped path lands at your prompt.',
       },
       {
-        p: 'One rule holds all of it together: the cost tracks the window on screen, never the size of the repository. A collapsed node_modules is one row and no work at all. ⌘⌥G opens source control, ⌘⌥E opens files.',
+        p: 'It belongs to the session, because a shell in your home directory never wants it and one inside a repository always does. Cost tracks the window on screen, never the size of the repository: a collapsed node_modules is one row and no work at all.',
       },
     ],
   },
@@ -165,7 +145,7 @@ export const SECTIONS: Section[] = [
       'Wortel’s entire configuration is one read-only file inside the app. There is no settings window, and there is no dotfile.',
     blocks: [
       {
-        p: 'This is the feature. A terminal you can spend an afternoon tuning is a terminal you will spend an afternoon tuning. Wortel chooses the font, the theme, the keybinds and the scrollback once, and treats them as finished. Font size is the one thing you can change, and it is per session.',
+        p: 'This is the feature. A terminal you can spend an afternoon tuning is a terminal you will. Wortel chooses the font, the theme, the keybinds and the scrollback once, and treats them as finished. Font size is the one thing you can change.',
       },
     ],
   },

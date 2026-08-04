@@ -15,14 +15,16 @@
   // wants. Set it and each change is replayed through the SAME open/close calls
   // the toolbar buttons make, so a driven window can't reach a state a clicked
   // one couldn't. See Tour.svelte.
-  // `beats`/`arriving`/`status` are the story the terminal is telling; see
-  // Tour.svelte. The titlebar does NOT follow them: it is one session in one
-  // directory for the whole page, which is the point of it being one story.
+  // `beats`/`arriving`/`status` are the story the terminal is telling, and
+  // `cwd` is where its shell has got to; see Tour.svelte. The session NAME never
+  // changes, because it is one session for the whole page, but the directory
+  // does, exactly when the transcript shows the `cd`.
   let {
     sidebar = false,
     initialTab = 'changes',
     view = null,
     beats = undefined,
+    cwd = windowSubtitle,
     arriving = -1,
     status = false,
   } = $props();
@@ -136,7 +138,7 @@
   </button>
   <div class="title">
     <div class="t1">{windowTitle}</div>
-    <div class="t2">{windowSubtitle}</div>
+    <div class="t2">{cwd}</div>
   </div>
 
   <!-- pane toolbar: window chrome, survives the panel collapsing under it.

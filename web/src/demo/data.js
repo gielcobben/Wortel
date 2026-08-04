@@ -27,25 +27,37 @@ export const groups = [
 // ONE session, told in beats. Scrolling the page does not swap the terminal's
 // contents, it CONTINUES them: each section appends its beat to the same
 // transcript, older output rides up and off the top the way scrollback does,
-// and only the newly arrived lines animate in. Scroll back up and the story
-// rewinds to that point.
+// and only the newly arrived lines animate in. Scroll back and it rewinds.
 //
-// So it has to read as one sitting at one machine. You land in the repo, build
-// it, start the dev server, hand the work to an agent, watch it find and fix
-// something, and then just talk to it. Nothing here changes directory or
-// session, because a single story cannot.
+// IT HAS TO AGREE WITH THE PANEL BESIDE IT. The git panel below is transcribed
+// 1:1 from the reference screenshots and cannot move, so the terminal is
+// written to match it, not the other way round:
+//
+//   · `git log --oneline -3` prints the first three rows of the History pane,
+//     same shas, same subjects.
+//   · The work is what the Changes pane shows: on branch web-app-demo, the
+//     Svelte demo being wired into Astro. That is exactly the diff the pane
+//     has open (the @astrojs/svelte import and `integrations: [svelte()]`),
+//     which is why the install touches package.json and package-lock.json and
+//     why src/demo/tokens.css is untracked.
+//   · The agent's summary names those four files, in the pane's order, and
+//     "Four files changed" is the pane's own "Changes (4)".
+//   · The Changes pane only opens at the git section, which is the beat right
+//     after the agent finishes making them. Before that the hero shows History,
+//     which is what beat 0 is reading.
+//
+// So: change one of these and change the other.
 //
 // Rows: { g: gutter glyph, cls: colour class, t: text with inline markup }.
 // Markup: **bold**, *italic*, [text](#) renders in the link colour. Blank t is
-// an empty line. `block: true` is the agent's user-message card.
+// an empty line. `block: true` is the agent's user-message card. A beat may
+// declare `cwd`, which moves the titlebar the way a real `cd` does.
 //
 // Text is authored UNWRAPPED. Terminal.svelte measures the terminal and
-// re-wraps to its column count on every resize, exactly like the real thing.
-// Do NOT hard-code line breaks in here.
+// re-wraps to its column count on every resize. Do NOT hard-code line breaks.
 //
-// Everything is invented EXCEPT the bug, which is real (macos/CLAUDE.md, on
-// FileTreeDecorations). Deliberately no benchmark numbers: a fabricated
-// measurement on a landing page is a claim, and this is a replica, not a claim.
+// Beats do NOT end with a prompt row. A terminal has exactly one cursor and it
+// is at the bottom, so Terminal appends a single one after the last beat.
 
 export const windowTitle = 'Wortel/Web';
 export const windowSubtitle = '~/Developer/wortel';
@@ -54,90 +66,105 @@ export const windowSubtitle = '~/Developer/wortel';
 export const AGENT_BEAT = 3;
 
 export const STORY = [
-  // 0 · you just opened the app
-  [
-    { g: '›', t: 'git status -sb' },
-    { cls: 'dim', t: '## web-app-demo' },
-    // Short enough to survive the hero's 33 columns; a longer path wraps and
-    // strands the ' M ' status flag alone on a line.
-    { t: ' M web/src/demo/data.js' },
-    { t: '' },
-  ],
+  // 0 · you just opened the app. A cd, then a look at where the repo is.
+  //     These three lines are the History pane's top three rows.
+  {
+    cwd: '~/Developer/wortel/web',
+    rows: [
+      { g: '›', t: 'cd web' },
+      { t: '' },
+      { g: '›', t: 'git log --oneline -3' },
+      { cls: 'dim', t: '0393580 Release 2026.29.11' },
+      { cls: 'dim', t: 'e7a3827 Git History: harden accordion correctness and performance' },
+      { cls: 'dim', t: '4dfe045 Git History: render images inline, size them, single scroll, sticky headers' },
+      { t: '' },
+    ],
+  },
 
-  // 1 · the engine section, where both panels are closed and the terminal is
-  //     at its widest. Give it output worth the width.
-  [
-    { g: '›', t: 'xcodebuild -scheme Wortel -configuration Release build' },
-    { cls: 'dim', t: 'CompileSwift normal arm64 GhosttyRuntime.swift' },
-    { cls: 'dim', t: 'CompileSwift normal arm64 SurfaceView.swift' },
-    { cls: 'dim', t: 'Ld Wortel.app normal arm64' },
-    // ** ** is the inline bold marker, so xcodebuild's literal asterisks would
-    // be eaten either way; bold is the better reading of them anyway.
-    { t: '**BUILD SUCCEEDED**' },
-    { t: '' },
-  ],
+  // 1 · the engine section, where both panels are closed and the terminal is at
+  //     its widest. This install is what the package.json/lock changes are.
+  {
+    rows: [
+      { g: '›', t: 'npm install @astrojs/svelte' },
+      { cls: 'dim', t: 'added 9 packages in 1s' },
+      { t: '' },
+      { g: '›', t: 'npm run build' },
+      { cls: 'dim', t: 'building client (vite)' },
+      { cls: 'dim', t: '312 modules transformed' },
+      { cls: 'dim', t: 'dist/_astro/WortelApp.js   73.92 kB │ gzip: 26.26 kB' },
+      { t: '**Complete!**' },
+      { t: '' },
+    ],
+  },
 
   // 2 · a long-running process is the reason a second session exists at all,
   //     which is what the sidebar beside this beat is showing.
-  [
-    { g: '›', t: 'npm run dev' },
-    { cls: 'dim', t: 'VITE ready in 214 ms' },
-    { cls: 'dim', t: 'Local: [http://localhost:4321/](#)' },
-    { t: '' },
-  ],
+  {
+    rows: [
+      { g: '›', t: 'npm run dev' },
+      { cls: 'dim', t: 'astro v5.18.2 ready in 214 ms' },
+      { cls: 'dim', t: 'Local [http://localhost:4321/](#)' },
+      { cls: 'dim', t: 'watching for file changes…' },
+      { t: '' },
+    ],
+  },
 
-  // 3 · the agent arrives
-  [
-    { g: '›', t: 'claude' },
-    { t: '' },
-    {
-      block: true,
-      g: '❯',
-      t: 'the file tree lights up the wrong folders when I edit something. take a look?',
-    },
-    { t: '' },
-    { g: '●', t: 'Reading **FileTreeDecorations.swift**' },
-    { t: '' },
-    { g: '✳', gcls: 'active', cls: 'active', t: 'Tinkering… (9s · thinking more with high effort)' },
-    { t: '' },
-  ],
+  // 3 · the agent arrives, and is asked for the change the panel is showing
+  {
+    rows: [
+      { g: '›', t: 'claude' },
+      { t: '' },
+      {
+        block: true,
+        g: '❯',
+        t: 'wire the svelte demo into astro, and pull the shared variables into their own file',
+      },
+      { t: '' },
+      { g: '●', t: 'Reading **astro.config.mjs**' },
+      { t: '' },
+      { g: '✳', gcls: 'active', cls: 'active', t: 'Tinkering… (9s · thinking more with high effort)' },
+      { t: '' },
+    ],
+  },
 
-  // 4 · it answers, and the inspector opens on the diff it just made
-  [
-    { t: 'The ancestor roll-up compares with **hasPrefix**, so editing a file in [src/foo](#) also decorates [src/foobar](#). It needs a path-component compare, not a string one.' },
-    { t: '' },
-    { t: 'The reverse is worse: a collapsed directory that fails to roll up just looks clean. Neither direction throws, so a test is the only thing that catches either.' },
-    { t: '' },
-    { g: '●', t: 'Fixed, and pinned both directions in **FileTreeDecorationTests**.' },
-    { t: '' },
-    { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 14s' },
-    { t: '' },
-  ],
+  // 4 · it answers, and the Changes pane opens on the diff it just made
+  {
+    rows: [
+      { g: '●', t: 'Registered the integration in [astro.config.mjs](#), and the shared variables are their own file now at [src/demo/tokens.css](#).' },
+      { t: '' },
+      { t: 'The island stays client-side, so the landing page itself is still fully static.' },
+      { t: '' },
+      { g: '●', t: 'Four files changed: **astro.config.mjs**, **package-lock.json**, **package.json**, and the new **src/demo/tokens.css**.' },
+      { t: '' },
+      { g: '✳', gcls: 'dim', cls: 'dim', t: 'Cogitated for 14s' },
+      { t: '' },
+    ],
+  },
 
   // 5 · zero config, asked rather than demonstrated: by now you are talking to
   //     the agent, not to a shell, and a story cannot step back out of that.
-  [
-    { block: true, g: '❯', t: 'where does wortel keep its settings?' },
-    { t: '' },
-    { g: '●', t: 'It doesn’t. The whole configuration is one read-only file inside the app bundle, and your [~/.config/ghostty](#) is never read. There is nothing to keep in sync.' },
-    { t: '' },
-  ],
+  {
+    rows: [
+      { block: true, g: '❯', t: 'where does wortel keep its settings?' },
+      { t: '' },
+      { g: '●', t: 'It doesn’t. The whole configuration is one read-only file inside the app bundle, and your [~/.config/ghostty](#) is never read.' },
+      { t: '' },
+    ],
+  },
 
-  // 6 · and the shortcut that the last section is about
-  [
-    { block: true, g: '❯', t: 'if I leave you running, how do I find you again?' },
-    { t: '' },
-    { g: '●', t: 'The sidebar marks me while I work and again when I stop. **⌘⌥]** jumps straight to whichever session is waiting on you.' },
-    { t: '' },
-  ],
+  // 6 · and the shortcut the last section is about
+  {
+    rows: [
+      { block: true, g: '❯', t: 'if I leave you running, how do I find you again?' },
+      { t: '' },
+      { g: '●', t: 'The sidebar marks me while I work, and again when I stop. **⌘⌥]** jumps straight to whichever session is waiting on you.' },
+      { t: '' },
+    ],
+  },
 ];
 
-// Beats do NOT end with a prompt row. A terminal has exactly one cursor and it
-// is at the bottom, so Terminal appends a single one after the last beat; giving
-// each beat its own left four of them stacked down the transcript.
-
 // Terminal's fallback when nothing is driving it.
-export const transcript = STORY[0];
+export const transcript = STORY[0].rows;
 
 // ---- status bar -----------------------------------------------------------
 // Claude Code's TUI, so it only exists once the agent is running (AGENT_BEAT).

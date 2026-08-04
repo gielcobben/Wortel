@@ -8,7 +8,7 @@
   // as dragging the real app's edge would. That is why a view below can ask for
   // a panel the window has no room for and still get the right answer.
   import WortelApp from './WortelApp.svelte';
-  import { STORY, AGENT_BEAT } from './data.js';
+  import { STORY, AGENT_BEAT, windowSubtitle } from './data.js';
 
   let { sidebar = true, initialTab = 'history' } = $props();
 
@@ -30,7 +30,11 @@
   // The story so far. Before any section reaches the reading band we are still
   // on the hero, which is beat 0.
   const beat = $derived(view?.beat ?? 0);
-  const beats = $derived(STORY.slice(0, beat + 1));
+  const story = $derived(STORY.slice(0, beat + 1));
+  const beats = $derived(story.map((b) => b.rows));
+  // The titlebar follows the last `cd` the story has actually reached, so the
+  // window's directory and its transcript can never disagree.
+  const cwd = $derived([...story].reverse().find((b) => b.cwd)?.cwd ?? windowSubtitle);
 
   // null until a section actually reaches the reading band. The hero's authored
   // state (sidebar + History) then stands untouched while you're still looking
@@ -83,4 +87,4 @@
   });
 </script>
 
-<WortelApp {view} {sidebar} {initialTab} {beats} arriving={beat} status={beat >= AGENT_BEAT} />
+<WortelApp {view} {sidebar} {initialTab} {beats} {cwd} arriving={beat} status={beat >= AGENT_BEAT} />

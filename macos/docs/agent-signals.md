@@ -23,6 +23,26 @@ re-verify before relying on details.
    extension.
 4. **Bell** and **command-finished ≥10s while unselected** — classic paths for
    non-agent commands.
+5. **Screen activity** (`AgentActivity`) — the fallback for agents that emit
+   none of the above (opencode, goose, aider). A watched session's active screen
+   is hashed once a second; a screen that keeps changing is an agent working, one
+   that then holds still for 3s is a turn ending. It is the only *guessing* tier,
+   so it is fenced in hard:
+   - It never watches a session whose agent has already announced itself
+     (`SessionManager.speaksForItself`) — proof lasts for that whole agent run,
+     not for a timeout. An idle Claude Code session has no signals to show for
+     the last hour and must not therefore look like a silent agent.
+   - It never watches the session you're looking at, or one with no agent marker.
+   - **Two changed samples within 5s** make a working agent; one does not. A
+     terminal repaints for reasons that aren't the agent — a window/inspector
+     resize re-wraps every session at once, and a focus report makes every agent
+     TUI redraw when you ⌘-tab — and each of those is a single frame.
+   - Those two events (`SurfaceView.onSizeChange`, app activate/resign, window
+     occlusion) also re-baseline every tracker, so the repaint they cause is
+     thrown away rather than counted.
+   - `AgentPrompt.looksBlocked` decides how loud a turn-end is. "esc to
+     interrupt" is a *working* marker and vetoes the blocked reading — it is not
+     a prompt affordance, however much it looks like one.
 
 Focus matters: Codex, crush, Amp, and Gemini only notify while the terminal
 reports *unfocused* (DECSET 1004). Wortel reports per-surface focus =

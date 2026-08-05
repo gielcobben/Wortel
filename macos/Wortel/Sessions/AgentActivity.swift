@@ -21,12 +21,20 @@ import Foundation
 /// Two decisions keep the false-positive rate down, and both matter more than
 /// the detection itself, because a terminal that cries wolf gets muted:
 ///
-/// - It only runs on sessions you are **not** looking at. The one you're
-///   watching needs no notification, and your own typing changes the screen —
-///   which would otherwise read as the agent working.
+/// - It only runs on sessions you are **not** looking at, and only on ones whose
+///   agent has never announced itself. The one you're watching needs no
+///   notification, and your own typing changes the screen — which would
+///   otherwise read as the agent working.
 /// - A change is only evidence *after* a grace window, so an agent's noisy
 ///   startup, and the repaint that happens the moment you switch away, are not
 ///   mistaken for work.
+/// - **One change is never enough.** A terminal repaints for reasons that have
+///   nothing to do with the agent: the window or the inspector resizing re-wraps
+///   every session at once, and a focus report (DECSET 1004) makes every agent
+///   TUI redraw the moment you ⌘-tab. Each of those is a single frame of
+///   difference on an otherwise frozen screen, and treating it as work is how an
+///   agent that has been idle for days ends up announcing a finished turn. Work
+///   has to keep moving to count.
 enum AgentActivity {
     /// How often a watched session's screen is sampled.
     static let sampleInterval: TimeInterval = 1.0
@@ -37,10 +45,14 @@ enum AgentActivity {
     /// Long enough to ride out an agent that pauses mid-render, short enough
     /// that a finished turn is still news.
     static let quietAfter: TimeInterval = 3.0
-    /// How long an explicit signal (OSC progress, a title spinner) keeps a
-    /// session off the screen tier. Agents that speak for themselves are
-    /// believed; this tier is strictly a fallback for the ones that don't.
-    static let explicitSignalTrust: TimeInterval = 60.0
+    /// How many changed samples make a working agent, rather than a one-off
+    /// repaint (see the note above). Two, because the cheapest way to tell a
+    /// reflow from an agent is that the reflow happens once.
+    static let changesForWork = 2
+    /// How long those changes have to arrive within. Wide enough for an agent
+    /// that prints a line every few seconds, short enough that two unrelated
+    /// repaints minutes apart never add up to a turn.
+    static let evidenceWindow: TimeInterval = 5.0
 }
 
 /// What a sample says just happened. Edge-triggered on purpose: the session
@@ -59,6 +71,10 @@ struct AgentActivityTracker: Equatable {
     private var working = false
     /// Samples before this are baseline only.
     private let graceUntil: Date
+    /// Changes counted toward the current evidence window, and when that window
+    /// opened. A lone repaint expires instead of accumulating.
+    private var changes = 0
+    private var changesSince: Date?
 
     init(now: Date, grace: TimeInterval = AgentActivity.graceWindow) {
         lastChange = now
@@ -79,7 +95,23 @@ struct AgentActivityTracker: Equatable {
             lastChange = now
             // A change during the grace window re-baselines instead of
             // counting: an agent painting its banner is not doing your work.
-            guard now >= graceUntil, !working else { return nil }
+            guard now >= graceUntil, !working else {
+                changes = 0
+                changesSince = nil
+                return nil
+            }
+            // Evidence accumulates only while it keeps arriving: a change that
+            // lands outside the window opens a new one instead of joining the
+            // last, so two repaints an hour apart never add up to a turn.
+            if let since = changesSince, now.timeIntervalSince(since) <= AgentActivity.evidenceWindow {
+                changes += 1
+            } else {
+                changesSince = now
+                changes = 1
+            }
+            guard changes >= AgentActivity.changesForWork else { return nil }
+            changes = 0
+            changesSince = nil
             working = true
             return .startedWorking
         }
@@ -117,7 +149,7 @@ enum AgentPrompt {
     /// are what the agents have in common.
     private static let blockedMarkers = [
         "y/n", "yes/no", "(y)es", "[y]es",
-        "esc to cancel", "esc to interrupt",
+        "esc to cancel",
         "enter to select", "enter to confirm", "enter to continue", "press enter",
         "to navigate", "select an option", "choose an option",
         "do you want", "do you trust", "would you like",
@@ -125,9 +157,20 @@ enum AgentPrompt {
         "permission", "approve", "authorize", "confirm",
     ]
 
+    /// Phrases that mean the agent is *working* and you may interrupt it — the
+    /// exact opposite of blocked, and easy to confuse with a prompt because both
+    /// offer you Esc. Claude Code sits on "esc to interrupt" for the whole of a
+    /// turn, which read as a permission prompt and made every false quiesce
+    /// arrive at the loudest possible volume. Their presence vetoes the blocked
+    /// reading outright.
+    private static let workingMarkers = [
+        "esc to interrupt", "esc to stop", "ctrl+c to stop", "ctrl-c to stop",
+    ]
+
     /// True when the tail of a stopped screen reads as a prompt awaiting input.
     static func looksBlocked(_ screenTail: String) -> Bool {
         let text = screenTail.lowercased()
+        guard !workingMarkers.contains(where: text.contains) else { return false }
         return blockedMarkers.contains { text.contains($0) }
     }
 }

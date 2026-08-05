@@ -228,6 +228,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        // Which session this is about, always. When the program authored the
+        // notification the title is its own ("Codex", "Waiting for Approval")
+        // and named no session at all, which leaves the banner indistinguishable
+        // from one raised by any other session running the same agent.
+        if title != session.name { content.subtitle = session.name }
         // Sound only on an escalation the manager flagged, so a program that
         // re-fires the same kind updates the banner text without re-dinging.
         //

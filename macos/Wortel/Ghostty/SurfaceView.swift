@@ -32,6 +32,10 @@ final class SurfaceView: NSView {
     /// OPEN_URL handler). The owner opens it in the right-hand preview. Non-markdown
     /// links never reach here — libghostty handles those itself.
     var onOpenMarkdown: ((_ url: URL) -> Void)?
+    /// The surface was resized, so its content re-wrapped. Fires for every
+    /// session, not just the visible one — they all autoresize with the window.
+    /// The agent-activity sampler listens so a reflow isn't read as work.
+    var onSizeChange: (() -> Void)?
 
     private(set) var pwd: String?
     private(set) var focused: Bool = false
@@ -185,7 +189,9 @@ final class SurfaceView: NSView {
 
     private func sizeDidChange(_ size: NSSize) {
         guard window != nil else { return }
+        let reflowed = size != contentSize
         contentSize = size
+        if reflowed { onSizeChange?() }
         let scaled = convertToBacking(size)
         setSurfaceSize(width: UInt32(max(0, scaled.width)), height: UInt32(max(0, scaled.height)))
     }

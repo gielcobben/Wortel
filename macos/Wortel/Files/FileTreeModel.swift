@@ -434,8 +434,18 @@ final class FileTreeModel {
     private func watch(_ node: FileNode) {
         let path = node.url.path
         guard watchers[path] == nil, isExpanded(node) else { return }
-        watchers[path] = DirectoryWatcher(path: path) { [weak self] in
-            Task { @MainActor in self?.scheduleRefresh(path) }
+        watchers[path] = DirectoryWatcher(path: path) { [weak self] vanished in
+            Task { @MainActor in
+                guard let self else { return }
+                // The directory this watch was on is gone. Whatever sits at the
+                // path now — a fresh checkout of it, a rebuilt `dist/` — is a
+                // different inode, and the old watch will never report on it
+                // again. Drop it so the re-listing below can put a live one back
+                // (`load` ends in `watch`), or the subtree silently stops
+                // updating for the rest of the session.
+                if vanished { self.watchers.removeValue(forKey: path) }
+                self.scheduleRefresh(path)
+            }
         }
     }
 
@@ -467,11 +477,26 @@ final class FileTreeModel {
         return rows.first { $0.node.url.path == path }?.node
     }
 
-    /// Re-list every open directory — the Refresh command, and the safety net
-    /// for anything a watcher missed.
+    /// Re-list every open directory — the Refresh command. Also drops the
+    /// `check-ignore` answers, which is the difference from `resync`: those
+    /// change with `.gitignore`, not with the files, and re-asking costs a git
+    /// process per open directory.
     func refreshAll() {
         ignoreChecked.removeAll()
-        guard let root else { return }
+        resync()
+    }
+
+    /// Re-list every open directory, keeping what we already know about ignores.
+    ///
+    /// The safety net under the watchers. They are per-inode and per-directory,
+    /// so there are events they structurally cannot see — an ancestor renamed
+    /// out from under them, a volume remounted, a machine asleep while a branch
+    /// changed — and the failure is silent: a tree that stopped updating looks
+    /// exactly like a tree with nothing to report. Cheap enough to run on a
+    /// glance because it walks only what's open, which is the pane's whole cost
+    /// rule.
+    func resync() {
+        guard let root, isShowing else { return }
         // Snapshot the open directories first: each `load` rebuilds `rows`, so
         // iterating it while awaiting would walk a list changing underneath.
         let open = rows.map(\.node).filter { $0.isDirectory && isExpanded($0) }
@@ -481,6 +506,13 @@ final class FileTreeModel {
                 await load(node)
             }
         }
+    }
+
+    /// Whether the tree is the thing the inspector is currently showing. A
+    /// re-listing for a pane nobody is looking at is work the pane exists to
+    /// avoid.
+    private var isShowing: Bool {
+        git?.isVisible == true && git?.pane == .files
     }
 
     // MARK: - Rows

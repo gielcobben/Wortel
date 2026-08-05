@@ -207,6 +207,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidBecomeActive(_ notification: Notification) {
         manager?.appDidBecomeActive()
+        // Whatever happened to the work tree while we were away — a branch
+        // switched in another window, a build run from another terminal — the
+        // file tree's watchers may not have been able to see it. Coming back is
+        // the natural moment to re-read what's open. No-ops unless the tree is
+        // the pane on screen.
+        fileTree.resync()
     }
 
     func applicationDidResignActive(_ notification: Notification) {

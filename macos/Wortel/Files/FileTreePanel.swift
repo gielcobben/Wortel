@@ -37,7 +37,13 @@ struct FileTreePanel: View {
         // supplies the material itself. See SourceControlPanel.
         .onChange(of: focusRequest) { _, req in applyFocusRequest(req) }
         .onChange(of: model.focusRequest) { _, req in applyFocusRequest(req) }
-        .onAppear { applyFocusRequest(focusRequest) }
+        .onAppear {
+            applyFocusRequest(focusRequest)
+            // Nothing watches this pane's directories while another pane owns
+            // the column — well, the watchers do, but a tree you come back to
+            // should be right on arrival rather than one event later.
+            model.resync()
+        }
     }
 
     private var emptyState: some View {

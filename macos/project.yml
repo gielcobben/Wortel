@@ -238,6 +238,11 @@ targets:
       # needs no window, repo or shell to check. The rest of Wortel/Files stays
       # out: it's AppKit, FileManager and a live git repo.
       - path: Wortel/Files/FileTreeDecorations.swift
+      # Pure Foundation, and it carries a fact about the kernel that no reading
+      # of the code reveals: a vnode watch follows an inode, so a directory that
+      # is replaced silently stops reporting. The tree's refresh depends on the
+      # watcher saying so, and the failure mode is a pane that looks calm.
+      - path: Wortel/Files/DirectoryWatcher.swift
       # AppKit only, and the requirement it has to meet — surviving AppKit's own
       # copyWithZone: when the toolbar builds its `»` menu — is invisible at
       # every call site and crashed the app when it went unmet. A menu item copy

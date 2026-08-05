@@ -66,6 +66,30 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// inspector section is 260pt at its narrowest, and an unbounded chip was
     /// what shoved the whole section into the `»` menu.
     private static let maxBranchChipWidth: CGFloat = 180
+    /// Below this the chip stops being a name at all and becomes the branch glyph
+    /// alone. A name squeezed under this is two characters and an ellipsis —
+    /// it identifies nothing, and it's still wide enough to push the section into
+    /// the `»` menu, which is the worse outcome of the two: an icon that opens the
+    /// switcher is a control, and a `»` menu is a control you have to go looking
+    /// for.
+    private static let minBranchChipWidth: CGFloat = 96
+    /// The glyph-only chip: one symbol in a toolbar bezel.
+    private static let iconOnlyChipWidth: CGFloat = 34
+    /// Whether the chip is currently in that glyph-only state, so the title is
+    /// only rebuilt when the mode actually flips.
+    private var branchChipIsIconOnly = false
+    /// The chip's width with the name at full length, recomputed only when the
+    /// name or the mode changes — `fittingSize` needs the width constraint off,
+    /// and toggling that on every observation tick is what used to make the whole
+    /// section jitter.
+    private var branchNaturalWidth: CGFloat = 0
+    /// The width last written to the constraint, so a resize that doesn't move the
+    /// chip doesn't touch layout at all.
+    private var lastChipWidth: CGFloat = -1
+
+    /// Observer for the split view's resizes, which is what changes how much room
+    /// the branch chip has. Kept so it can be removed with the delegate.
+    private var resizeObserver: NSObjectProtocol?
 
     init(splitView: NSSplitView, git: GitPanelModel, markdown: MarkdownPreviewModel) {
         self.splitView = splitView
@@ -73,6 +97,20 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         self.markdown = markdown
         super.init()
         observePanel()
+        // The chip's room is the inspector's width, so a divider drag or a window
+        // resize is as much a reason to re-fit it as a checkout is. Straight off
+        // the notification rather than plumbed through the split controller: this
+        // is the toolbar's own business. `updateBranchButton` no-ops unless the
+        // width it computes actually moved, so a drag costs a comparison a frame.
+        resizeObserver = NotificationCenter.default.addObserver(
+            forName: NSSplitView.didResizeSubviewsNotification, object: splitView, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateBranchButton() }
+        }
+    }
+
+    deinit {
+        if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
     }
 
     /// The pane buttons are the *only* control over the panel — there is no
@@ -218,21 +256,74 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private func updateBranchButton() {
         guard let button = branchButton, let repo = git.repo else { return }
         let branch = repo.status.branch ?? "detached"
-        // Only re-fit on an actual branch change: this runs on every observation
-        // tick, and toggling the width constraint each time made the chip (and
+        let available = availableBranchChipWidth()
+        let iconOnly = available < Self.minBranchChipWidth
+
+        // Re-title only on an actual change of name or mode: this runs on every
+        // observation tick *and* on every frame of a divider drag, and toggling
+        // the width constraint to re-measure is what used to make the chip (and
         // the controls beside it) jitter.
-        guard branch != lastBranchTitle else { return }
-        lastBranchTitle = branch
-        button.attributedTitle = Self.branchTitle(branch)
-        button.toolTip = "Switch branch"
-        // Widen past the fitted size so the bezel centres the content with a
-        // little air on each side. Deactivate the width first so `fittingSize`
-        // reports the content width, not the last padded one. Capped so a long
-        // branch name truncates (the title's paragraph style) instead of pushing
-        // the whole section into the toolbar's `»` menu.
-        branchWidthConstraint?.isActive = false
-        branchWidthConstraint?.constant = min(button.fittingSize.width + 28, Self.maxBranchChipWidth)
-        branchWidthConstraint?.isActive = true
+        if branch != lastBranchTitle || iconOnly != branchChipIsIconOnly {
+            lastBranchTitle = branch
+            branchChipIsIconOnly = iconOnly
+            if iconOnly {
+                // No room for a name worth reading: the chip becomes the branch
+                // glyph, and the name moves to the tooltip. The chevron goes too
+                // — it's an affordance, and an affordance that costs half the
+                // control's width at this size isn't one.
+                button.attributedTitle = NSAttributedString(string: "")
+                button.image = Self.branchGlyphImage()
+                button.imagePosition = .imageOnly
+            } else {
+                button.attributedTitle = Self.branchTitle(branch)
+                button.image = Self.chevronImage()
+                button.imagePosition = .imageTrailing
+            }
+            // Widen past the fitted size so the bezel centres the content with a
+            // little air on each side. Deactivate the width first so
+            // `fittingSize` reports the content width, not the last padded one.
+            branchWidthConstraint?.isActive = false
+            branchNaturalWidth = button.fittingSize.width + 28
+            branchWidthConstraint?.isActive = true
+        }
+        button.toolTip = iconOnly ? "\(branch) — switch branch" : "Switch branch"
+
+        // The chip takes what the name needs, bounded by its own cap and by the
+        // room the inspector section actually has. Truncation (the title's
+        // paragraph style) takes it from there, so the name shortens as the
+        // column narrows rather than the whole section dropping into `»`.
+        let width = iconOnly
+            ? Self.iconOnlyChipWidth
+            : max(Self.minBranchChipWidth,
+                  min(branchNaturalWidth, Self.maxBranchChipWidth, available))
+        guard abs(width - lastChipWidth) > 0.5 else { return }
+        lastChipWidth = width
+        branchWidthConstraint?.constant = width
+    }
+
+    /// How much room the branch chip can take without pushing anything into the
+    /// toolbar's overflow menu.
+    ///
+    /// The chip sits *after* the tracking separator on divider 1, so the space it
+    /// is competing for is the inspector's width — not the window's. That's the
+    /// whole reason a fixed chip misbehaved: a 180pt chip is fine on a wide
+    /// column and impossible on a 260pt one, and the toolbar's answer to
+    /// impossible is to hide the section behind `»`.
+    private func availableBranchChipWidth() -> CGFloat {
+        guard let inspector = splitView?.arrangedSubviews.last else {
+            return Self.maxBranchChipWidth
+        }
+        let section = inspector.frame.width
+        // Before the first layout there's nothing to measure; don't let that read
+        // as "no room" and start the chip out as an icon.
+        guard section > 1 else { return Self.maxBranchChipWidth }
+        let panes = paneControl.map { max($0.frame.width, $0.fittingSize.width) } ?? 110
+        // The "···" button, the gaps between the three items, and the window's
+        // trailing margin. Measured rather than derived — AppKit doesn't publish
+        // toolbar item spacing — and deliberately generous: guessing high costs a
+        // few points of branch name, guessing low costs the whole section.
+        let chrome: CGFloat = 88
+        return section - panes - chrome
     }
 
     /// The trailing chevron, padded on its leading edge with transparent space so
@@ -254,6 +345,14 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         padded.unlockFocus()
         padded.isTemplate = false
         return padded
+    }
+
+    /// The whole chip when there's no room for a name: the same branch symbol the
+    /// title carries inline, as the button's own template image so the toolbar
+    /// tints it like every other icon button up there.
+    private static func branchGlyphImage() -> NSImage? {
+        NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "Switch branch")?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
     }
 
     private static func branchTitle(_ branch: String) -> NSAttributedString {

@@ -190,6 +190,19 @@ Files lands on History if that's where you were. One rule drives all three
 openers — the toolbar segments, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
 hidden → open on that pane, showing another → swap, showing that one → close.
 
+**How wide** the column is, on the other hand, is per *occupant* rather than per
+session — `MainSplitViewController.InspectorOccupant` (the three panes plus the
+Markdown preview, which is a view of no pane at all). A tree of short names, a
+diff with a gutter and a rendered page want visibly different widths, and one
+remembered width for all of them means every switch is followed by a drag back.
+Each occupant carries its own default and its own `minimumThickness`, and
+`InspectorWidthStore` persists what you drag it to. Two rules keep that honest:
+only a *divider* drag is a preference (a window resize squeezing the terminal to
+its floor is not), and the width is committed once the drag settles, because
+dragging to the edge is how you close the panel and the last width before it goes
+is the minimum. The split view's `autosaveName` still carries the sidebar; the
+inspector's width it saves but does not get to decide (see `viewDidLayout`).
+
 **Files pane** (`Wortel/Files/`) — the project as a tree, rooted at the repo
 work-tree root (the session's cwd outside a repo, which therefore re-roots as you
 `cd`, since outside a repo there's no project to hold still for). Read-only by
@@ -214,6 +227,17 @@ It inherits the git panel's cost rule, and that is the whole design:
   directory by `GitService.checkIgnore` — `status --ignored` would walk
   `node_modules` on every refresh to answer a question about twenty rows. Only
   `.git` is hidden outright; `.gitignore` and `.env` are things you look for.
+- **⌥ takes the subtree** (⌥-click a chevron, ⌥→/⌥←, or the row's context menu),
+  and that gesture is where the cost rule has to be defended rather than stated:
+  "expand everything under it" is a promise a tree can't keep. So the walk never
+  *descends* into an ignored directory (the one you point at still opens — you
+  asked), it stops at `recursiveExpandCap` directories and `recursiveExpandDepth`
+  levels even outside a repo where there's no ignore file, it trims each level to
+  the remaining budget *before* touching the disk, and it asks `check-ignore` once
+  per level rather than once per directory. ⌥-collapse is the mirror image and
+  costs nothing: it also *forgets* the subtree's shape, which plain collapse
+  deliberately remembers. On the root — which never collapses — it means
+  "collapse all".
 - **`FileTreeDecorations` is a pure value type** (and the one part of the pane in
   `WortelTests`) because its ancestor roll-up is silently wrong in both
   directions if you reach for `hasPrefix`: `src/foo` changing must not decorate

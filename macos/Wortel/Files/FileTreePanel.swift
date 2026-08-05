@@ -63,7 +63,7 @@ struct FileTreePanel: View {
                             isExpanded: model.isExpanded(row.node),
                             statusCode: statusCode(for: row.node),
                             select: { model.select(row.node) },
-                            toggle: { model.toggleExpansion(row.node) },
+                            toggle: { toggle(row.node) },
                             open: { open(row.node) },
                             makeMenu: { contextMenu(for: row.node) })
                         // The overflow row for a directory the listing capped.
@@ -85,8 +85,13 @@ struct FileTreePanel: View {
         // ←/→ walk the tree's shape rather than its rows: → opens a directory
         // (or steps into an open one), ← closes it, and ← on a leaf goes to the
         // parent — the standard outline behaviour.
-        .onKeyPress(.leftArrow) { collapseOrGoToParent(); return .handled }
-        .onKeyPress(.rightArrow) { expandOrStepIn(); return .handled }
+        // Holding ⌥ makes both take the whole subtree with them, matching the
+        // ⌥-click on the chevron and every other outline view on the Mac.
+        // ⌥ is read from the current event rather than `KeyPress.modifiers`,
+        // matching the chevron's click: the key-equivalent overload hands the
+        // action no press to inspect, and the flags are live during handling.
+        .onKeyPress(.leftArrow) { collapseOrGoToParent(recursive: optionHeld); return .handled }
+        .onKeyPress(.rightArrow) { expandOrStepIn(recursive: optionHeld); return .handled }
         .onKeyPress(.return) { openSelected(); return .handled }
         .onKeyPress(characters: .alphanumerics.union(.punctuationCharacters)) { press in
             typeToSelect(press.characters)
@@ -135,19 +140,32 @@ struct FileTreePanel: View {
         model.rows.first { $0.id == model.selectedID }?.node
     }
 
-    private func expandOrStepIn() {
+    /// ⌥ is read from the current event rather than tracked as state: the flags
+    /// are live during event handling, which is exactly when these run, and a
+    /// modifier watcher would re-render every row on every ⌥ press.
+    private var optionHeld: Bool { NSEvent.modifierFlags.contains(.option) }
+
+    /// A click on a row's chevron. With ⌥ it takes the whole subtree.
+    private func toggle(_ node: FileNode) {
+        model.toggleExpansion(node, recursive: optionHeld)
+    }
+
+    private func expandOrStepIn(recursive: Bool = false) {
         guard let node = selectedNode else { return }
         if node.isDirectory && !model.isExpanded(node) {
-            model.expand(node)
+            recursive ? model.expandRecursively(node) : model.expand(node)
+        } else if recursive, node.isDirectory {
+            // Already open: ⌥→ still means "and everything under it".
+            model.expandRecursively(node)
         } else {
             model.selectAdjacent(1)
         }
     }
 
-    private func collapseOrGoToParent() {
+    private func collapseOrGoToParent(recursive: Bool = false) {
         guard let node = selectedNode else { return }
         if node.isDirectory && model.isExpanded(node) {
-            model.collapse(node)
+            recursive ? model.collapseRecursively(node) : model.collapse(node)
         } else if let parent = model.parent(of: node) {
             model.select(parent)
         }
@@ -189,7 +207,19 @@ struct FileTreePanel: View {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        if !node.isDirectory {
+        if node.isDirectory {
+            // The discoverable form of the ⌥ gesture — the shortcut is shown so
+            // the menu teaches it rather than replacing it.
+            let expand = ClosureMenuItem(title: "Expand All") { model.expandRecursively(node) }
+            expand.keyEquivalent = "\u{F703}" // →
+            expand.keyEquivalentModifierMask = [.option]
+            menu.addItem(expand)
+            let collapse = ClosureMenuItem(title: "Collapse All") { model.collapseRecursively(node) }
+            collapse.keyEquivalent = "\u{F702}" // ←
+            collapse.keyEquivalentModifierMask = [.option]
+            menu.addItem(collapse)
+            menu.addItem(.separator())
+        } else {
             if node.url.pathExtension.lowercased() == "md" {
                 menu.addItem(ClosureMenuItem(title: "Preview") {
                     model.onPreviewMarkdown?(node.url)

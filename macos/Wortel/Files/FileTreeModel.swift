@@ -90,6 +90,14 @@ final class FileTreeModel {
     /// say so reads as "this is everything".
     static let listingCap = 1000
 
+    /// The most directories one ⌥-expand will open, and how deep it will go. Both
+    /// are backstops rather than targets: a source tree is tens of directories,
+    /// and anything that reaches these numbers is a subtree you didn't mean.
+    /// The cap also bounds the open file descriptors the walk takes, since an
+    /// expanded directory is a watched directory.
+    static let recursiveExpandCap = 200
+    static let recursiveExpandDepth = 8
+
     /// The panel this one reads the repo from. `GitPanelModel` has already
     /// resolved the session's work-tree root and keeps its `GitStatus` fresh, so
     /// asking it costs nothing where a second `rev-parse` per `cd` would not.
@@ -183,12 +191,14 @@ final class FileTreeModel {
 
     func isExpanded(_ node: FileNode) -> Bool { expanded.contains(node.url.path) }
 
-    func toggleExpansion(_ node: FileNode) {
+    /// `recursive` is the ⌥ gesture — ⌥-click on a chevron, ⌥→/⌥← — which every
+    /// outline view on the platform reads as "and everything under it".
+    func toggleExpansion(_ node: FileNode, recursive: Bool = false) {
         guard node.isDirectory else { return }
         if isExpanded(node) {
-            collapse(node)
+            recursive ? collapseRecursively(node) : collapse(node)
         } else {
-            expand(node)
+            recursive ? expandRecursively(node) : expand(node)
         }
     }
 
@@ -212,6 +222,86 @@ final class FileTreeModel {
         for path in watchers.keys where path == node.url.path || path.hasPrefix(node.url.path + "/") {
             watchers.removeValue(forKey: path)
         }
+        persistExpansion()
+        rebuildRows()
+    }
+
+    /// ⌥-collapse: shut this directory *and* forget the shape underneath it, so
+    /// reopening it comes back closed rather than restoring the subtree. That
+    /// difference is the whole point of the gesture — plain collapse deliberately
+    /// remembers. On the root (which never collapses) it means "collapse all",
+    /// which is the other half of what people reach for ⌥ to do.
+    func collapseRecursively(_ node: FileNode) {
+        let prefix = node.url.path + "/"
+        let isRoot = node.url.path == root?.url.path
+        guard isRoot || isExpanded(node) else { return }
+        expanded = expanded.filter { path in
+            if path == node.url.path { return isRoot }
+            return !path.hasPrefix(prefix)
+        }
+        for path in watchers.keys where path.hasPrefix(prefix) || (!isRoot && path == node.url.path) {
+            watchers.removeValue(forKey: path)
+        }
+        persistExpansion()
+        rebuildRows()
+    }
+
+    /// ⌥-expand: open this directory and everything under it — bounded, because
+    /// "everything under it" is a promise a file tree can't keep. One
+    /// `node_modules` is tens of thousands of directories, and the pane's whole
+    /// design is that cost tracks the window rather than the repo.
+    ///
+    /// Three things keep it honest, in the order they matter:
+    ///
+    /// 1. **Ignored directories are not descended into.** `node_modules`, `dist`,
+    ///    `.venv` and friends are already answered by `git check-ignore`, and they
+    ///    are exactly the subtrees nobody means to open. The directory you point
+    ///    at always opens — the rule is about what the walk *wanders* into, so
+    ///    ⌥-clicking `node_modules` shows you its contents and stops there.
+    /// 2. **A directory budget and a depth limit** (`recursiveExpandCap`,
+    ///    `recursiveExpandDepth`) bound the walk even outside a repo, where
+    ///    there's no ignore file to consult. What the budget doesn't reach stays
+    ///    closed, which the chevrons say for themselves.
+    /// 3. **One `check-ignore` per level, not per directory.** The batched form
+    ///    takes the whole level's children in a single call, so the walk costs a
+    ///    handful of git invocations rather than one per folder.
+    func expandRecursively(_ node: FileNode) {
+        guard node.isDirectory else { return }
+        Task { await expandSubtree(node) }
+    }
+
+    private func expandSubtree(_ start: FileNode) async {
+        let tree = root
+        var level = [start]
+        var depth = 0
+        var opened = 0
+
+        while !level.isEmpty, depth <= Self.recursiveExpandDepth,
+              opened < Self.recursiveExpandCap {
+            // Trim to the remaining budget *before* touching the disk, so a
+            // directory with five thousand children costs five thousand listings
+            // only if that's what the budget actually allows.
+            let batch = Array(level.prefix(Self.recursiveExpandCap - opened))
+            for directory in batch where directory.children == nil {
+                let listing = await Self.list(directory.url, cap: Self.listingCap, repoRoot: repoRoot)
+                guard root === tree else { return } // re-rooted while we were away
+                apply(listing, to: directory)
+            }
+            for directory in batch {
+                expanded.insert(directory.url.path)
+                watch(directory)
+            }
+            opened += batch.count
+            rebuildRows() // once per level, not once per directory
+
+            await checkIgnoredBatch(batch)
+            guard root === tree else { return }
+
+            level = batch.flatMap { $0.children ?? [] }
+                .filter { $0.isDirectory && $0.isIgnored != true }
+            depth += 1
+        }
+
         persistExpansion()
         rebuildRows()
     }
@@ -312,6 +402,26 @@ final class FileTreeModel {
         guard !relatives.isEmpty else { return }
         let ignored = await GitService.checkIgnore(root: rootPath, paths: relatives)
         ignoreChecked.insert(node.url.path)
+        for child in children {
+            guard let relative = child.relativePath else { continue }
+            child.isIgnored = ignored.contains(relative)
+        }
+        rebuildRows()
+    }
+
+    /// The same question as `checkIgnored`, asked for a whole level of the tree
+    /// at once. `git check-ignore` reads paths from stdin, so a hundred
+    /// directories' children cost one invocation instead of a hundred — which is
+    /// what makes ⌥-expand affordable, since the answer is also what stops the
+    /// walk descending into `node_modules`.
+    private func checkIgnoredBatch(_ directories: [FileNode]) async {
+        guard let rootPath = repoRoot else { return }
+        let pending = directories.filter { !ignoreChecked.contains($0.url.path) }
+        let children = pending.flatMap { $0.children ?? [] }
+        let relatives = children.compactMap(\.relativePath).filter { !$0.isEmpty }
+        guard !relatives.isEmpty else { return }
+        let ignored = await GitService.checkIgnore(root: rootPath, paths: relatives)
+        for directory in pending { ignoreChecked.insert(directory.url.path) }
         for child in children {
             guard let relative = child.relativePath else { continue }
             child.isIgnored = ignored.contains(relative)

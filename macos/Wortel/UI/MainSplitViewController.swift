@@ -49,7 +49,7 @@ final class MainSplitViewController: NSSplitViewController {
         /// half again as much; a rendered Markdown page wants a readable measure.
         var defaultWidth: CGFloat {
             switch self {
-            case .files: return 280
+            case .files: return 260
             case .changes, .history: return 420
             case .preview: return 520
             }
@@ -203,8 +203,12 @@ final class MainSplitViewController: NSSplitViewController {
         guard !didApplyInitialWidth, splitView.bounds.width > 0 else { return }
         didApplyInitialWidth = true
         lastSplitWidth = splitView.bounds.width
-        if let inspectorItem, !inspectorItem.isCollapsed {
-            applyInspectorWidth(for: InspectorOccupant(git: git, markdown: markdown))
+        // A turn later, deliberately: NSSplitView applies its autosaved divider
+        // positions during this same layout pass, and the per-occupant width is
+        // the one that has to win. Doing it inline is a race with that restore.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let item = self.inspectorItem, !item.isCollapsed else { return }
+            self.applyInspectorWidth(for: InspectorOccupant(git: self.git, markdown: self.markdown))
         }
     }
 

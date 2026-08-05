@@ -310,7 +310,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         guard abs(width - lastChipWidth) > 0.5 else { return }
         lastChipWidth = width
         branchWidthConstraint?.constant = width
-        Self.log.info("""
+        Self.log.debug("""
             branch chip: section=\(section, privacy: .public) \
             available=\(available, privacy: .public) width=\(width, privacy: .public) \
             iconOnly=\(iconOnly, privacy: .public) \
@@ -363,7 +363,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self, self.showsBranchItem, let item = self.gitControlsItem else { return }
             guard !item.isVisible, abs(self.inspectorSectionWidth() - section) < 1 else { return }
-            Self.log.info("branch chip overflowed at section=\(section, privacy: .public)")
+            Self.log.debug("branch chip overflowed at section=\(section, privacy: .public)")
             self.overflowedAtSection = max(self.overflowedAtSection, section)
             self.updateBranchButton()
             // Shrinking a view the toolbar has already banished doesn't

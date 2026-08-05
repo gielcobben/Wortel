@@ -45,6 +45,51 @@ struct RightClickCatcher: NSViewRepresentable {
     }
 }
 
+// MARK: - Native press
+
+/// The same trick again, for a control that should act the instant you press it
+/// rather than when you let go — a disclosure triangle, which is what every
+/// outline view on the platform does (including Wortel's own sidebar headers,
+/// see `SidebarOutline.headerPressed`).
+///
+/// A SwiftUI `Button` fires on mouse-*up*, and only if the up lands back inside
+/// the target. On a 12pt-wide chevron that is a coin flip with a trackpad: press,
+/// drift two points, release — nothing happened, and the row underneath doesn't
+/// even select, because the button swallowed the click. That reads as "I have to
+/// click these twice". Claiming the press directly removes both halves of the
+/// problem: it acts immediately, and there is no release to miss.
+struct PressCatcher: NSViewRepresentable {
+    let onPress: () -> Void
+
+    func makeNSView(context: Context) -> CatcherView {
+        let view = CatcherView()
+        view.onPress = onPress
+        return view
+    }
+
+    func updateNSView(_ view: CatcherView, context: Context) {
+        view.onPress = onPress
+    }
+
+    final class CatcherView: NSView {
+        var onPress: () -> Void = {}
+
+        override func mouseDown(with event: NSEvent) { onPress() }
+
+        /// Claims the first click of a press and nothing else — hover, drags,
+        /// right-clicks and the second click of a double all fall through to the
+        /// row beneath, which owns them.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            let event = NSApp.currentEvent
+            guard event?.type == .leftMouseDown, event?.clickCount == 1,
+                  let local = superview.map({ convert(point, from: $0) }),
+                  bounds.contains(local)
+            else { return nil }
+            return self
+        }
+    }
+}
+
 // MARK: - Native double-click
 
 /// The same trick as `RightClickCatcher`, for double-clicks: an invisible

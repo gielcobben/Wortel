@@ -116,7 +116,10 @@ struct FileTreePanel: View {
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .padding(.leading, CGFloat(row.depth + 1) * 12 + 20)
+                // Lines up with the row content one level in: the chevron slot
+                // (16) plus the stack's spacing, so widening the slot moves this
+                // with it.
+                .padding(.leading, CGFloat(row.depth + 1) * 12 + 24)
                 .padding(.vertical, 3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -289,17 +292,21 @@ private struct FileRow: View {
     var body: some View {
         HStack(spacing: 4) {
             // The chevron is the directory's own control, so clicking it opens
-            // the folder without also opening the file next to it.
+            // the folder without also opening the file next to it. The glyph is
+            // small; the thing you click is not — it fills the row's height and
+            // reaches into the gap on either side, because a 9pt chevron is a
+            // target you miss. Pressing it acts immediately (see PressCatcher),
+            // matching the sidebar's folder headers and every outline view on
+            // the platform.
             if row.node.isDirectory {
-                Button(action: toggle) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.tertiary))
-                        .frame(width: 12)
-                }
-                .buttonStyle(.plain)
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.tertiary))
+                    .frame(width: 16, height: 22)
+                    .contentShape(Rectangle())
+                    .overlay(PressCatcher(onPress: toggle))
             } else {
-                Spacer().frame(width: 12)
+                Spacer().frame(width: 16)
             }
             Image(systemName: row.node.isDirectory ? "folder" : "doc")
                 .font(.system(size: 11))

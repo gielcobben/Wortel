@@ -461,7 +461,12 @@ final class SessionManager {
     @ObservationIgnored private var agentActivityAssertion: NSObjectProtocol?
 
     private func noteExplicitSignal(_ session: Session) {
+        let wasUnproven = explicitSignalAt[session.id] == nil
         explicitSignalAt[session.id] = Date()
+        // An agent that just proved it announces itself may have been the only
+        // reason the sampler was running. Ask again rather than waiting for the
+        // next marker change, which for a long-lived agent is when it exits.
+        if wasUnproven { updateAgentScreenSampling() }
     }
 
     /// Whether the agent currently running in `session` has already proved it
@@ -516,8 +521,23 @@ final class SessionManager {
         if removedAny { refreshAgentActivity() }
     }
 
+    /// Whether any session actually needs its screen read. Deliberately the same
+    /// question the sampler asks, minus "are you looking at it" — which changes
+    /// with every click and is no reason to tear a timer down.
+    ///
+    /// The distinction matters more than it looks: an agent that announces its
+    /// own turns never needs this tier, so with only such agents running (Claude
+    /// Code, Codex, crush — the common case) the timer never starts, no screen is
+    /// ever read, and, most importantly, the App Nap assertion below is never
+    /// taken. Keyed off the marker alone, an idle agent left open overnight kept
+    /// this app awake until morning to watch a screen it had already been told
+    /// about.
+    private var wantsScreenSampling: Bool {
+        sessions.contains { $0.runningAgent != nil && !speaksForItself($0) }
+    }
+
     private func updateAgentScreenSampling() {
-        let wanted = sessions.contains { $0.runningAgent != nil }
+        let wanted = wantsScreenSampling
         if wanted, agentScreenTimer == nil {
             let timer = Timer.scheduledTimer(
                 withTimeInterval: AgentActivity.sampleInterval, repeats: true

@@ -92,6 +92,10 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// which is what turns the width estimate below from a promise into a guess
     /// that gets corrected.
     private var overflowedAtSection: CGFloat = 0
+    /// The one pending "did that fit?" check (see `verifyChipFits`).
+    private var fitCheckWork: DispatchWorkItem?
+    /// Measured width of the section's fixed items; see `fixedSectionWidth`.
+    private var cachedFixedSectionWidth: CGFloat?
     private static let log = Logger(subsystem: "com.gielcobben.Wortel", category: "toolbar")
 
     /// Observer for the split view's resizes, which is what changes how much room
@@ -339,9 +343,22 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         // Before the first layout there's nothing to measure; don't let that read
         // as "no room" and start the chip out as a glyph.
         guard section > 1 else { return Self.maxBranchChipWidth }
-        let panes = paneControl.map { max($0.frame.width, $0.fittingSize.width) } ?? 110
-        let actions = gitMenuItem?.view.map { max($0.frame.width, $0.fittingSize.width) } ?? 34
-        return section - panes - actions - Self.sectionChrome
+        return section - fixedSectionWidth() - Self.sectionChrome
+    }
+
+    /// What the section holds besides the chip: three fixed segments and one
+    /// glyph button. Measured once and kept, because neither ever changes size
+    /// and `fittingSize` is a layout query — not a thing to ask twice a frame
+    /// while a divider is being dragged. Cleared when either item is rebuilt.
+    private func fixedSectionWidth() -> CGFloat {
+        if let cachedFixedSectionWidth { return cachedFixedSectionWidth }
+        let panes = paneControl.map { max($0.frame.width, $0.fittingSize.width) } ?? 0
+        let actions = gitMenuItem?.view.map { max($0.frame.width, $0.fittingSize.width) } ?? 0
+        // Nothing laid out yet — answer from the defaults and don't cache a
+        // measurement of views that don't have a size to give.
+        guard panes > 1, actions > 1 else { return 110 + 34 }
+        cachedFixedSectionWidth = panes + actions
+        return panes + actions
     }
 
     /// Item spacing, the window's trailing margin, and room for the `»` button
@@ -360,7 +377,11 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// dragging through would pin the chip to a glyph at widths that fit.
     private func verifyChipFits(section: CGFloat) {
         guard !branchChipIsIconOnly, section > 1 else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+        // One pending check, not one per frame: a divider drag changes the width
+        // sixty times a second, and each would otherwise leave a closure sitting
+        // in the queue to re-ask a question only the final width can answer.
+        fitCheckWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
             guard let self, self.showsBranchItem, let item = self.gitControlsItem else { return }
             guard !item.isVisible, abs(self.inspectorSectionWidth() - section) < 1 else { return }
             Self.log.debug("branch chip overflowed at section=\(section, privacy: .public)")
@@ -378,6 +399,8 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
                 toolbar.insertItem(withItemIdentifier: .gitControls, at: index)
             }
         }
+        fitCheckWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     /// The trailing chevron, padded on its leading edge with transparent space so
@@ -647,6 +670,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             item.toolTip = "Fetch, push, and more"
             item.visibilityPriority = .low
             gitMenuItem = item
+            cachedFixedSectionWidth = nil // this item is one of the two it measures
             return item
         case .gitPane:
             // A plain NSSegmentedControl rather than an NSToolbarItemGroup: the
@@ -688,6 +712,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             item.visibilityPriority = .high
             paneControl = segmented
             paneItem = item
+            cachedFixedSectionWidth = nil // this item is one of the two it measures
             syncToolbar()
             return item
         default:

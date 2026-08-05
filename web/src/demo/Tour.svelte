@@ -40,6 +40,8 @@
   // state (sidebar + History) then stands untouched while you're still looking
   // at the first screen; anything else would flip the window the instant the
   // island hydrates.
+  const FIRST_SECTION = Object.keys(VIEWS)[0];
+
   let active = $state(null);
   let view = $state(null);
 
@@ -47,9 +49,22 @@
   // what lets you take the window over: click a pane and it stays on your pane,
   // because your click doesn't change `active`. Cross into the next section and
   // the tour picks it up again. No pause flag, no timers, no fighting.
+  //
+  // The same change lights the section in the prose. It is done from here, and
+  // not from a second observer in the page, because the text and the window
+  // have to name the SAME section: two observers with their own thresholds
+  // would eventually disagree, and a lit paragraph beside the wrong pane is
+  // worse than no highlight at all.
   $effect(() => {
     const id = active;
     if (id && VIEWS[id]) view = VIEWS[id];
+    // Falls back to the first section so nothing is dimmed-but-unlit: while you
+    // are still on the hero, and on the way into the first heading before it
+    // reaches the reading band, the section you are heading for is already lit.
+    const shown = id ?? FIRST_SECTION;
+    for (const el of document.querySelectorAll('[data-view]')) {
+      el.classList.toggle('lit', el.dataset.view === shown);
+    }
   });
 
   $effect(() => {
@@ -83,7 +98,18 @@
     );
 
     els.forEach((el) => io.observe(el));
-    return () => io.disconnect();
+
+    // The dimming is opt-in from JS: without this attribute the stylesheet
+    // leaves every section at full opacity, so a reader with no JS gets plain
+    // legible prose rather than a page permanently dimmed to 38%.
+    const doc = els[0].closest('.doc-tour');
+    doc?.setAttribute('data-lit', '');
+
+    return () => {
+      io.disconnect();
+      doc?.removeAttribute('data-lit');
+      els.forEach((el) => el.classList.remove('lit'));
+    };
   });
 </script>
 

@@ -270,11 +270,27 @@ body.dragging-app, body.dragging-app * {
    measure above. */
 .doc-tour .prose { max-width: 396px; }
 
-.sect {
-  padding: 60px 0;
-  border-top: 1px solid var(--grid);
+.sect { padding: 60px 0; }
+
+/* ---- reading position ------------------------------------------------------
+   The section you are on is lit and the rest step back, so the prose says the
+   same thing the window beside it is already saying. Tour.svelte owns both, and
+   `data-lit` is its opt-in: with no JS the attribute never lands and everything
+   stays at full opacity rather than dimming forever. */
+.doc-tour[data-lit] .sect {
+  opacity: 0.38;
+  transition: opacity 0.35s ease;
 }
-.sect:first-child { border-top: 0; }
+.doc-tour[data-lit] .sect.lit { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-tour[data-lit] .sect { transition: none; }
+}
+/* Dimmed body text does not clear AA, so anyone who has asked for more contrast
+   gets the reading position from the window alone. */
+@media (prefers-contrast: more) {
+  .doc-tour[data-lit] .sect { opacity: 1; }
+}
 
 .doc h2 {
   font-size: 22px;
@@ -438,6 +454,10 @@ body.dragging-app, body.dragging-app * {
      to snap to. */
   .app-frame { width: round(down, 100%, 36px); height: 100%; }
   .doc-tour .prose { max-width: 540px; }
+  /* Stacked, the window sits above the prose rather than beside it, so dimming
+     no longer pairs a lit paragraph with a matching pane. It just makes most of
+     the page harder to read on the smallest screen. */
+  .doc-tour[data-lit] .sect { opacity: 1; }
 
   .sect { padding: 44px 0; }
   .doc h2 { font-size: 20px; }

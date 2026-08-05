@@ -63,10 +63,19 @@
     /* Out to both gutters: the prose column's 36px padding is undone here so the
        window can sit on the grid line itself, exactly like the hero's does. */
     width: 100vw;
-    margin-left: -36px;
     height: 468px; /* 13 cells */
-    margin-top: 28px;
-    overflow: hidden;
+    /* One shorthand, all four sides. Written as `margin-left` plus a later
+       `margin: 28px 0 76px` it silently lost the -36 and every frame sat a
+       gutter to the right of where it belonged.
+       Left -36 undoes the prose column's padding so the frame reaches the
+       viewport edge; the bottom 76 is room for the drop-shadow, which falls
+       about that far below the window (--w-shadow is 0 36px 80px). */
+    margin: 28px 0 76px -36px;
+    /* clip, and on ONE axis. `hidden` cut the shadow flat along the bottom;
+       clipping only the horizontal bleed lets the shadow fall past the frame
+       the way the hero's does. */
+    overflow-x: clip;
+    overflow-y: visible;
     /* A picture, not a control. A thumb dragging here scrolls the page. */
     pointer-events: none;
     /* NO content-visibility: auto here, tempting as it is. It skips layout for
@@ -86,12 +95,17 @@
     width: 1260px;
   }
   .swin.start .swin-app { left: 36px; }
-  /* END aligns the INSPECTOR's left edge to the gutter, not the window's right
-     edge. The inspector is 450px wide and a phone gives about 318, so one of
-     its edges has to go: cutting the right loses the commit box's far side,
-     cutting the left loses the start of every filename. Content wins over the
-     window corner. 1260 - 450 puts the inspector 810px into the window. */
-  .swin.end .swin-app { left: calc(36px - (1260px - 450px)); }
+  /* END frames the inspector, so the inspector is sized to the space a phone
+     actually has instead of being cropped to fit it. --git-w cascades into the
+     app (WortelApp leaves it unset so a stylesheet can win) and 450px stays the
+     cap, so a wide tablet still gets the reference width.
+     Its left edge then goes on the gutter: the pane starts 1260 - its width
+     into the window, and we pull that back to 36. */
+  .swin.end {
+    --pane-w: min(450px, calc(100vw - 72px));
+    --git-w: var(--pane-w);
+  }
+  .swin.end .swin-app { left: calc(36px - 1260px + var(--pane-w)); }
   /* Fitted: both gutters honoured and the width falls out of them. */
   .swin.fit .swin-app { left: 36px; right: 36px; width: auto; }
   /* WortelApp carries `min-width: 480px`, and its comment says why: on a

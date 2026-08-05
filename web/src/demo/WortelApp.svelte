@@ -85,22 +85,24 @@
   let dragging = $state(false); // suppress the slide transition while dragging
   let mainEl = $state();
 
-  // 450px, measured off the reference screenshots, and it stays literal.
-  // Deriving it from the window width (as a share) does make the terminal wider
-  // when the window is under the 1266px reference, but it also stops this being
-  // a 1:1 replica: at 375px the commit rows truncate earlier and the History
-  // graph gutter sits at the wrong x. Fidelity wins. The terminal's answer is
-  // its own copy being short, not the inspector being the wrong size.
-  let gitW = $state(450);
+  // The inspector's width lives in CSS, not here. `--git-shown-w` already falls
+  // back to 450px, measured off the reference screenshots, so leaving --git-w
+  // unset gives the desktop exactly the literal 450 it needs to stay a 1:1
+  // replica. Setting it inline unconditionally would beat any stylesheet, and
+  // the mobile frames need to narrow it so a 450px panel fits a phone.
+  //
+  // Dragging the grip writes it, and from then on the drag owns it.
+  let userW = $state(null);
 
   function gripDown(e) {
     e.preventDefault();
     dragging = true;
     const startX = e.clientX;
-    const startW = gitW;
+    // Start from what is actually on screen, which may have come from CSS.
+    const startW = mainEl?.querySelector('.inspector')?.getBoundingClientRect().width ?? 450;
     const maxW = (mainEl?.clientWidth ?? 1266) * 0.7;
     const move = (ev) => {
-      gitW = Math.max(220, Math.min(maxW, startW + (startX - ev.clientX)));
+      userW = Math.max(220, Math.min(maxW, startW + (startX - ev.clientX)));
     };
     const up = () => {
       dragging = false;
@@ -180,7 +182,7 @@
   <!-- terminal fills the width; the inspector overlays the right and the
        terminal pads-right to make room — mirror image of the left sidebar.
        .dragging suppresses the slide transition so resize tracks the pointer. -->
-  <div class="main" class:dragging bind:this={mainEl} style="--git-w: {gitW}px">
+  <div class="main" class:dragging bind:this={mainEl} style={userW == null ? null : `--git-w: ${userW}px`}>
     <div class="termcol">
       <div class="tb-term"></div>
       <Terminal {beats} {arriving} {status} />

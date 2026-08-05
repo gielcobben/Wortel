@@ -172,8 +172,10 @@ export const SECTIONS: Section[] = [
             ['New section', '⌘⇧N'],
             ['Rename session', '⌘R'],
             ['Close session', '⌘W'],
-            ['Previous / next session', '⌘⇧[ / ⌘⇧]'],
-            ['Previous / next session', '⌘⌥↑ / ⌘⌥↓'],
+            // One row, two bindings, like ⌘N or ⌘T above. MainMenu.swift shows
+            // exactly one "Previous Session" item and hides the arrow twin, so
+            // two identical actions here read as a mistake rather than a pair.
+            ['Previous / next session', '⌘⇧[ ⌘⇧] or ⌘⌥↑ ⌘⌥↓'],
             ['Jump to session by position', '⌘1 … ⌘9'],
             ['Jump to the next waiting session', '⌘⌥]'],
             ['Show source control', '⌘⌥G'],

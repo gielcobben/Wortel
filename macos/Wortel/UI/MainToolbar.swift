@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import SwiftUI
+import os
 
 /// The window toolbar.
 ///
@@ -86,6 +87,12 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// The width last written to the constraint, so a resize that doesn't move the
     /// chip doesn't touch layout at all.
     private var lastChipWidth: CGFloat = -1
+    /// The widest inspector section the chip has actually been seen to overflow
+    /// at. Everything at or below it shows the glyph alone — see `verifyChipFits`,
+    /// which is what turns the width estimate below from a promise into a guess
+    /// that gets corrected.
+    private var overflowedAtSection: CGFloat = 0
+    private static let log = Logger(subsystem: "com.gielcobben.Wortel", category: "toolbar")
 
     /// Observer for the split view's resizes, which is what changes how much room
     /// the branch chip has. Kept so it can be removed with the delegate.
@@ -256,8 +263,12 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private func updateBranchButton() {
         guard let button = branchButton, let repo = git.repo else { return }
         let branch = repo.status.branch ?? "detached"
-        let available = availableBranchChipWidth()
-        let iconOnly = available < Self.minBranchChipWidth
+        let section = inspectorSectionWidth()
+        let available = availableBranchChipWidth(section: section)
+        // Two ways to end up as a glyph: the estimate says there's no room for a
+        // name, or we have watched the chip overflow at this width before and
+        // know the estimate was optimistic.
+        let iconOnly = available < Self.minBranchChipWidth || section <= overflowedAtSection
 
         // Re-title only on an actual change of name or mode: this runs on every
         // observation tick *and* on every frame of a divider drag, and toggling
@@ -299,31 +310,74 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         guard abs(width - lastChipWidth) > 0.5 else { return }
         lastChipWidth = width
         branchWidthConstraint?.constant = width
+        Self.log.info("""
+            branch chip: section=\(section, privacy: .public) \
+            available=\(available, privacy: .public) width=\(width, privacy: .public) \
+            iconOnly=\(iconOnly, privacy: .public) \
+            overflowedAt=\(self.overflowedAtSection, privacy: .public)
+            """)
+        verifyChipFits(section: section)
+    }
+
+    /// The width of the toolbar's trailing section: the chip sits *after* the
+    /// tracking separator on divider 1, so what it competes for is the
+    /// inspector's width, not the window's. That's the whole reason a fixed chip
+    /// misbehaved — 180pt is fine on a wide column and impossible on a narrow
+    /// one, and the toolbar's answer to impossible is to hide the section behind
+    /// `»`.
+    private func inspectorSectionWidth() -> CGFloat {
+        splitView?.arrangedSubviews.last?.frame.width ?? 0
     }
 
     /// How much room the branch chip can take without pushing anything into the
-    /// toolbar's overflow menu.
-    ///
-    /// The chip sits *after* the tracking separator on divider 1, so the space it
-    /// is competing for is the inspector's width — not the window's. That's the
-    /// whole reason a fixed chip misbehaved: a 180pt chip is fine on a wide
-    /// column and impossible on a 260pt one, and the toolbar's answer to
-    /// impossible is to hide the section behind `»`.
-    private func availableBranchChipWidth() -> CGFloat {
-        guard let inspector = splitView?.arrangedSubviews.last else {
-            return Self.maxBranchChipWidth
-        }
-        let section = inspector.frame.width
+    /// overflow menu. An estimate, and knowingly so: AppKit publishes neither the
+    /// spacing between toolbar items nor the width the `»` button claims once it
+    /// appears — and that last one is what makes an optimistic guess
+    /// self-fulfilling. Deliberately pessimistic, with `verifyChipFits` behind it
+    /// to correct what's left.
+    private func availableBranchChipWidth(section: CGFloat) -> CGFloat {
         // Before the first layout there's nothing to measure; don't let that read
-        // as "no room" and start the chip out as an icon.
+        // as "no room" and start the chip out as a glyph.
         guard section > 1 else { return Self.maxBranchChipWidth }
         let panes = paneControl.map { max($0.frame.width, $0.fittingSize.width) } ?? 110
-        // The "···" button, the gaps between the three items, and the window's
-        // trailing margin. Measured rather than derived — AppKit doesn't publish
-        // toolbar item spacing — and deliberately generous: guessing high costs a
-        // few points of branch name, guessing low costs the whole section.
-        let chrome: CGFloat = 88
-        return section - panes - chrome
+        let actions = gitMenuItem?.view.map { max($0.frame.width, $0.fittingSize.width) } ?? 34
+        return section - panes - actions - Self.sectionChrome
+    }
+
+    /// Item spacing, the window's trailing margin, and room for the `»` button
+    /// itself. Guessing high costs a few points of branch name; guessing low
+    /// costs the whole section.
+    private static let sectionChrome: CGFloat = 96
+
+    /// Check the one thing that isn't a guess: whether the chip is in the toolbar
+    /// or in the `»` menu. If it overflowed, this section width is now known to
+    /// be too small for a name, and never gets one again until the column is
+    /// genuinely wider — which makes the estimate above self-correcting rather
+    /// than something that has to be right first time on every Mac.
+    ///
+    /// Checked late enough to clear the insert animation, and only while the
+    /// column hasn't moved on, because recording a width the user was merely
+    /// dragging through would pin the chip to a glyph at widths that fit.
+    private func verifyChipFits(section: CGFloat) {
+        guard !branchChipIsIconOnly, section > 1 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self, self.showsBranchItem, let item = self.gitControlsItem else { return }
+            guard !item.isVisible, abs(self.inspectorSectionWidth() - section) < 1 else { return }
+            Self.log.info("branch chip overflowed at section=\(section, privacy: .public)")
+            self.overflowedAtSection = max(self.overflowedAtSection, section)
+            self.updateBranchButton()
+            // Shrinking a view the toolbar has already banished doesn't
+            // necessarily bring it back — that was decided at its last layout,
+            // and the item isn't in the toolbar any more to prompt another.
+            // Taking it out and putting it back is what makes the decision
+            // happen again, and the replacement is built as a glyph from the
+            // start because `overflowedAtSection` now says so.
+            if let toolbar = self.toolbar,
+               let index = toolbar.items.firstIndex(where: { $0.itemIdentifier == .gitControls }) {
+                toolbar.removeItem(at: index)
+                toolbar.insertItem(withItemIdentifier: .gitControls, at: index)
+            }
+        }
     }
 
     /// The trailing chevron, padded on its leading edge with transparent space so

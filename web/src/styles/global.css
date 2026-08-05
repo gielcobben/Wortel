@@ -426,18 +426,21 @@ body.dragging-app, body.dragging-app * {
   .features { order: 3; margin-top: 36px; }
   .app-rail {
     position: static;
-    height: 60vh;
-    min-height: 420px;
+    height: 468px;   /* 13 cells, the same as the per-section windows */
     overflow: visible;         /* let the shadow show; the body clips the bleed */
     margin: 8px 0 72px;        /* room below for the drop-shadow (~76px) */
     padding: 0 0 0 36px;       /* window's left edge on the x=36 grid line */
   }
-  /* Horizontal snap only: the window's left edge sits on x=36 and its width
-     rounds to whole cells so the right edge lands on a line too (when it isn't
-     clipped by a narrow screen). Height stays fluid, because the grid is
-     viewport-fixed while the page scrolls, so there is no stable vertical line
-     to snap to. */
-  .app-frame { width: round(down, 100%, 36px); height: 100%; }
+  /* The hero's window gets the same treatment the per-section ones do: its REAL
+     width, bleeding off the right, rather than shrunk to fit. Shrinking put it
+     under the app's own container-query thresholds (900 for the sidebar, 560
+     for the inspector), so both panels collapsed and the window on a phone was
+     a bare terminal. 1260 is the reference window snapped to whole cells.
+     Left edge stays on x=36. */
+  .app-frame { width: 1260px; height: 100%; }
+  /* A thumb on this should scroll the page, not grab a titlebar or a resize
+     grip. On a phone the window is a picture, not a control. */
+  .app-rail { pointer-events: none; }
   .doc-tour .prose { max-width: 540px; }
   /* Stacked, the window sits above the prose rather than beside it, so dimming
      no longer pairs a lit paragraph with a matching pane. It just makes most of

@@ -9,23 +9,9 @@
   // a panel the window has no room for and still get the right answer.
   import WortelApp from './WortelApp.svelte';
   import { STORY, AGENT_BEAT, windowSubtitle } from './data.js';
+  import { VIEWS, FIRST_SECTION } from './views.js';
 
   let { sidebar = true, initialTab = 'history' } = $props();
-
-  // Section id -> which panels are open AND how far into the story we are.
-  // `beat` indexes STORY: the terminal shows every beat up to it, so reading
-  // down the page continues one session rather than replacing its contents,
-  // and reading back up rewinds it. Every adjacent pair differs in the beat, so
-  // no section boundary is silent even where the panels are the same.
-  const VIEWS = {
-    'what-is-wortel': { sidebar: true,  pane: 'history', beat: 0 },
-    'ghostty-engine': { sidebar: false, pane: null,      beat: 1 },
-    'sessions':       { sidebar: true,  pane: null,      beat: 2 },
-    'coding-agents':  { sidebar: true,  pane: null,      beat: 3 },
-    'git-and-files':  { sidebar: false, pane: 'changes', beat: 4 },
-    'zero-config':    { sidebar: false, pane: null,      beat: 5 },
-    'keyboard':       { sidebar: true,  pane: 'history', beat: 6 },
-  };
 
   // The story so far. Before any section reaches the reading band we are still
   // on the hero, which is beat 0.
@@ -40,8 +26,6 @@
   // state (sidebar + History) then stands untouched while you're still looking
   // at the first screen; anything else would flip the window the instant the
   // island hydrates.
-  const FIRST_SECTION = Object.keys(VIEWS)[0];
-
   let active = $state(null);
   let view = $state(null);
 

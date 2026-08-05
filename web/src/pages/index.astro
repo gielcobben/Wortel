@@ -1,6 +1,8 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import Tour from '../demo/Tour.svelte';
+import SectionWindow from '../demo/SectionWindow.svelte';
+import { VIEWS, FIRST_SECTION } from '../demo/views.js';
 import { SITE, FEATURES, SECTIONS, FAQ, SPECS } from '../data/site';
 
 // The Sparkle feed lives at updates.wortel.sh; the newest signed zip is always
@@ -204,6 +206,19 @@ const schema = [website, webpage, person, app];
               )}
             </>
           ))}
+          {/* Mobile only, and client:only so the HTML everyone downloads carries
+              none of it: seven of these is 2800 nodes and 180KB. The first
+              section is skipped because the hero's own window sits directly
+              above it. See SectionWindow.svelte. */}
+          {section.id !== FIRST_SECTION && (
+            <SectionWindow
+              client:only="svelte"
+              beat={VIEWS[section.id].beat}
+              sidebar={VIEWS[section.id].sidebar}
+              pane={VIEWS[section.id].pane}
+              focus={VIEWS[section.id].focus}
+            />
+          )}
           </section>
         ))}
         </div>

@@ -114,7 +114,7 @@ const webpage = {
     name: item.q,
     acceptedAnswer: { '@type': 'Answer', text: item.a },
   })),
-  primaryImageOfPage: { '@type': 'ImageObject', url: abs('/screenshot.png') },
+  primaryImageOfPage: { '@type': 'ImageObject', url: abs('/og.png') },
   inLanguage: 'en',
 };
 
@@ -223,28 +223,6 @@ const schema = [website, webpage, person, app];
 
     <article class="doc">
       <div class="prose">
-      <section id="screenshot" class="sect">
-        <h2>Wortel in one screen</h2>
-        <figure class="shot">
-          <picture>
-            <source srcset="/screenshot-dark.avif" type="image/avif" media="(prefers-color-scheme: dark)" />
-            <source srcset="/screenshot-light.avif" type="image/avif" media="(prefers-color-scheme: light)" />
-            <img
-              src="/screenshot.png"
-              width="1392"
-              height="912"
-              loading="lazy"
-              decoding="async"
-              alt="The Wortel macOS terminal: a sidebar of named sessions grouped into two projects on the left, a terminal running a coding agent in the middle, and the git inspector on the right showing changed files, a diff and a commit box."
-            />
-          </picture>
-          <figcaption>
-            One window: named sessions on the left, the terminal in the middle, git
-            and files on the right.
-          </figcaption>
-        </figure>
-      </section>
-
       <section id="faq" class="sect">
         <h2>Frequently asked questions</h2>
         <div class="faq">

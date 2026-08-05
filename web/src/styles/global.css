@@ -266,7 +266,7 @@ body.dragging-app, body.dragging-app * {
 
 /* Inside the shell the prose inherits the hero's 396px column, so the page has
    one text column from the wordmark to the footer. The tail articles below the
-   shell (screenshot, FAQ, specs) have no window beside them and keep the wider
+   shell (the FAQ and the spec sheet) have no window beside them and keep the
    measure above. */
 .doc-tour .prose { max-width: 396px; }
 
@@ -375,29 +375,6 @@ body.dragging-app, body.dragging-app * {
 .doc tbody tr:last-child th, .doc tbody tr:last-child td { border-bottom: 0; }
 
 .faq { display: flex; flex-direction: column; gap: 24px; }
-
-/* The one thing that must NOT obey the measure. A screenshot rendered 468px
-   wide is unreadable, and it is the only full view of the app a narrow-screen
-   reader gets. It breaks right out of the prose column, keeping the x=36 left
-   edge, and caps at the app-frame's own 1044px. The body clips the overflow. */
-.shot {
-  margin-top: 8px;
-  width: min(1044px, calc(100vw - 72px));
-  max-width: none;
-}
-.shot img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 10px;
-  border: 1px solid var(--grid);
-}
-.shot figcaption {
-  margin-top: 10px;
-  font-size: 13px;
-  color: var(--text-50);
-  text-wrap: pretty;
-}
 
 .doc .cta { margin-top: 28px; }
 

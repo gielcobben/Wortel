@@ -353,26 +353,34 @@ body.dragging-app, body.dragging-app * {
 .doc th, .doc td {
   text-align: left;
   font-weight: 400;
-  padding: 9px 12px 9px 0;
-  border-bottom: 1px solid var(--grid);
+  /* No rules between rows. The two columns sit far enough apart to read as rows
+     on their own, and a ruled grid was the loudest thing left on a page whose
+     sections no longer separate themselves with lines either. */
+  padding: 7px 12px 7px 0;
   vertical-align: baseline;
 }
 .doc thead th {
   color: var(--text-50);
   font-size: 13px;
+  padding-bottom: 10px;
 }
-.doc tbody th {
-  color: var(--text);
-  white-space: nowrap;
-  /* 12, not 24: the shortcut column is nowrap by necessity (⌘⇧[ / ⌘⇧] must not
-     break across lines), so every px it takes is one the action column wraps
-     without, and the measure beside the tour window is only 324px. */
-  padding-right: 12px;
+.doc tbody th { color: var(--text); padding-right: 24px; }
+.doc td { color: var(--text-70); }
+
+/* Whichever column holds literal keys or values is the monospaced one, and it
+   is the one that must not wrap: ⌘⇧[ / ⌘⇧] breaking across two lines is not a
+   shortcut any more. The prose column takes the wrapping instead, which matters
+   at the 324px measure beside the tour window. */
+.doc .mono-first tbody th,
+.doc .mono-last td {
   font-family: var(--mono);
   font-size: 13px;
+  white-space: nowrap;
 }
-.doc td { color: var(--text-70); }
-.doc tbody tr:last-child th, .doc tbody tr:last-child td { border-bottom: 0; }
+/* The shortcut sits at the right-hand edge, so its column is only as wide as
+   its longest binding and the actions get everything else. */
+.doc .mono-last td { text-align: right; }
+.doc .mono-last thead th:last-child { text-align: right; }
 
 .faq { display: flex; flex-direction: column; gap: 24px; }
 

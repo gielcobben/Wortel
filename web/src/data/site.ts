@@ -53,7 +53,14 @@ export const FEATURES: [string, string][] = [
 export type Block =
   | { p: string }
   | { list: string[] }
-  | { table: { head: [string, string]; rows: [string, string][] } };
+  | {
+      table: {
+        head: [string, string];
+        rows: [string, string][];
+        /** Which column holds literal keys/values and is set in mono. */
+        mono?: 'first' | 'last';
+      };
+    };
 
 export type Section = {
   id: string;
@@ -156,22 +163,25 @@ export const SECTIONS: Section[] = [
     blocks: [
       {
         table: {
-          head: ['Shortcut', 'Action'],
+          // Action first: you arrive knowing what you want to do, not which
+          // keys do it. The shortcut is the answer, so it reads on the right.
+          head: ['Action', 'Shortcut'],
+          mono: 'last',
           rows: [
-            ['⌘N or ⌘T', 'New session'],
-            ['⌘⇧N', 'New section'],
-            ['⌘R', 'Rename session'],
-            ['⌘W', 'Close session'],
-            ['⌘⇧[ / ⌘⇧]', 'Previous / next session'],
-            ['⌘⌥↑ / ⌘⌥↓', 'Previous / next session'],
-            ['⌘1 … ⌘9', 'Jump to session by position'],
-            ['⌘⌥]', 'Jump to the next waiting session'],
-            ['⌘⌥G', 'Show source control'],
-            ['⌘⌥E', 'Show files'],
-            ['⌘⌥S', 'Toggle sidebar'],
-            ['⌘⌥L', 'Focus the source-control list'],
-            ['⌘+ / ⌘− / ⌘0', 'Increase / decrease / reset font size'],
-            ['⌘⇧A', 'Select all (⌘A clears the input line)'],
+            ['New session', '⌘N or ⌘T'],
+            ['New section', '⌘⇧N'],
+            ['Rename session', '⌘R'],
+            ['Close session', '⌘W'],
+            ['Previous / next session', '⌘⇧[ / ⌘⇧]'],
+            ['Previous / next session', '⌘⌥↑ / ⌘⌥↓'],
+            ['Jump to session by position', '⌘1 … ⌘9'],
+            ['Jump to the next waiting session', '⌘⌥]'],
+            ['Show source control', '⌘⌥G'],
+            ['Show files', '⌘⌥E'],
+            ['Toggle sidebar', '⌘⌥S'],
+            ['Focus the source-control list', '⌘⌥L'],
+            ['Increase / decrease / reset font size', '⌘+ / ⌘− / ⌘0'],
+            ['Select all (⌘A clears the input line)', '⌘⇧A'],
           ],
         },
       },

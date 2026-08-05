@@ -187,7 +187,7 @@ const schema = [website, webpage, person, app];
               )}
               {'table' in block && (
                 <div class="scroller">
-                  <table>
+                  <table class={block.table.mono === 'last' ? 'mono-last' : 'mono-first'}>
                     <thead>
                       <tr>
                         <th scope="col">{block.table.head[0]}</th>
@@ -238,7 +238,7 @@ const schema = [website, webpage, person, app];
       <section id="specs" class="sect">
         <h2>At a glance</h2>
         <div class="scroller">
-          <table>
+          <table class="mono-first">
             <tbody>
               {SPECS.map(([k, v]) => (
                 <tr><th scope="row">{k}</th><td>{v}</td></tr>

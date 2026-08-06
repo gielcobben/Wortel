@@ -120,17 +120,24 @@ private struct RepoView: View {
 
     // MARK: Changes list
 
+    @ViewBuilder
     private var changesList: some View {
+        // A clean work tree has nothing to scroll, so it isn't a list with one
+        // line at the top of it — it's an empty state, and it sits in the middle
+        // of its pane like the diff's does. Sharing `centered` is the point: the
+        // two halves of this panel are empty at the same moments, and they
+        // should say so the same way.
+        if repo.status.isClean {
+            centered("No changes")
+        } else {
+            populatedChangesList
+        }
+    }
+
+    private var populatedChangesList: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if repo.status.isClean {
-                        Text("No changes")
-                            .font(.callout)
-                            .foregroundStyle(.tertiary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 24)
-                    }
                     changeSection(
                         title: "Staged Changes",
                         changes: repo.status.stagedChanges,

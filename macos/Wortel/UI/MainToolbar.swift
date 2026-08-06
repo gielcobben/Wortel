@@ -49,14 +49,41 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// Widens the button past its content so the bezel centres it with a little
     /// air on each side — the native way to add horizontal padding, instead of
     /// padding the title string with spaces. Its constant follows the title.
-    private weak var branchWidthConstraint: NSLayoutConstraint?
+    ///
+    /// Held strongly, unlike the views around it: measuring the natural width
+    /// means deactivating this, and a deactivated constraint is owned by nobody
+    /// — a weak reference to one can be nil again by the time we go to switch it
+    /// back on, leaving a chip whose width nothing controls.
+    private var branchWidthConstraint: NSLayoutConstraint?
     /// The open branch popover, kept only so a second click while it's up doesn't
     /// stack a second one.
     private var branchPopover: NSPopover?
-    /// The last branch the chip was sized for, so `updateBranchButton` only
-    /// touches the width constraint on an actual change — re-fitting on every
-    /// observation tick made the chip (and everything after it) jitter.
-    private var lastBranchTitle: String?
+    /// Everything `updateBranchButton` remembers about the chip it last drew,
+    /// kept together because it belongs to **the button**, not to this delegate.
+    ///
+    /// `syncRepoItems` rebuilds that button every time the panel opens, closes
+    /// or changes pane, and a fresh one that inherits the previous one's memory
+    /// is a chip that never gets sized: every change-guard answers "no change",
+    /// and the width constraint keeps the zero it was born with. That is a chip
+    /// collapsed to an ellipsis, and it was one forgotten line away — so the
+    /// reset is one assignment, not four.
+    private struct BranchChipState {
+        /// The branch the chip was last sized for. Re-fitting on every
+        /// observation tick made the chip (and the controls beside it) jitter.
+        var title: String?
+        /// Whether it's currently the glyph alone, so the title is only rebuilt
+        /// when the mode actually flips.
+        var isIconOnly = false
+        /// Its width with the name at full length. `fittingSize` needs the width
+        /// constraint off to answer, so this is only remeasured when the name or
+        /// the mode changes.
+        var naturalWidth: CGFloat = 0
+        /// The width last written to the constraint, so a resize that doesn't
+        /// move the chip doesn't touch layout at all. Negative until written,
+        /// which is what makes a fresh button always get sized.
+        var width: CGFloat = -1
+    }
+    private var chip = BranchChipState()
     /// The toolbar items with custom views, held so their overflow-menu forms
     /// can track live state. Without a `menuFormRepresentation`, a view item
     /// that lands in the toolbar's `»` menu is a dead, disabled label.
@@ -76,17 +103,6 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private static let minBranchChipWidth: CGFloat = 96
     /// The glyph-only chip: one symbol in a toolbar bezel.
     private static let iconOnlyChipWidth: CGFloat = 34
-    /// Whether the chip is currently in that glyph-only state, so the title is
-    /// only rebuilt when the mode actually flips.
-    private var branchChipIsIconOnly = false
-    /// The chip's width with the name at full length, recomputed only when the
-    /// name or the mode changes — `fittingSize` needs the width constraint off,
-    /// and toggling that on every observation tick is what used to make the whole
-    /// section jitter.
-    private var branchNaturalWidth: CGFloat = 0
-    /// The width last written to the constraint, so a resize that doesn't move the
-    /// chip doesn't touch layout at all.
-    private var lastChipWidth: CGFloat = -1
     /// The widest inspector section the chip has actually been seen to overflow
     /// at. Everything at or below it shows the glyph alone — see `verifyChipFits`,
     /// which is what turns the width estimate below from a promise into a guess
@@ -278,9 +294,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         // observation tick *and* on every frame of a divider drag, and toggling
         // the width constraint to re-measure is what used to make the chip (and
         // the controls beside it) jitter.
-        if branch != lastBranchTitle || iconOnly != branchChipIsIconOnly {
-            lastBranchTitle = branch
-            branchChipIsIconOnly = iconOnly
+        if branch != chip.title || iconOnly != chip.isIconOnly {
+            chip.title = branch
+            chip.isIconOnly = iconOnly
             if iconOnly {
                 // No room for a name worth reading: the chip becomes the branch
                 // glyph, and the name moves to the tooltip. The chevron goes too
@@ -298,7 +314,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             // little air on each side. Deactivate the width first so
             // `fittingSize` reports the content width, not the last padded one.
             branchWidthConstraint?.isActive = false
-            branchNaturalWidth = button.fittingSize.width + 28
+            chip.naturalWidth = button.fittingSize.width + 28
             branchWidthConstraint?.isActive = true
         }
         button.toolTip = iconOnly ? "\(branch) — switch branch" : "Switch branch"
@@ -310,9 +326,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         let width = iconOnly
             ? Self.iconOnlyChipWidth
             : max(Self.minBranchChipWidth,
-                  min(branchNaturalWidth, Self.maxBranchChipWidth, available))
-        guard abs(width - lastChipWidth) > 0.5 else { return }
-        lastChipWidth = width
+                  min(chip.naturalWidth, Self.maxBranchChipWidth, available))
+        guard abs(width - chip.width) > 0.5 else { return }
+        chip.width = width
         branchWidthConstraint?.constant = width
         Self.log.debug("""
             branch chip: section=\(section, privacy: .public) \
@@ -376,7 +392,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// column hasn't moved on, because recording a width the user was merely
     /// dragging through would pin the chip to a glyph at widths that fit.
     private func verifyChipFits(section: CGFloat) {
-        guard !branchChipIsIconOnly, section > 1 else { return }
+        guard !chip.isIconOnly, section > 1 else { return }
         // One pending check, not one per frame: a divider drag changes the width
         // sixty times a second, and each would otherwise leave a closure sitting
         // in the queue to re-ask a question only the final width can answer.
@@ -650,9 +666,11 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             item.label = "Branch"
             item.visibilityPriority = .low
             gitControlsItem = item
-            // A fresh button starts at width 0, so the change-guard in
-            // `updateBranchButton` must not skip it.
-            lastBranchTitle = nil
+            // A fresh button starts at width 0 and remembers nothing, so
+            // neither may we — every guard in `updateBranchButton` has to read
+            // as "changed" or the chip is never sized. This one line is the
+            // whole reason that state is a struct.
+            chip = BranchChipState()
             updateBranchButton()
             return item
         case .gitMenu:

@@ -626,6 +626,11 @@ private struct CommitRow: View {
             }
             .padding(.trailing, 4)
         }
+        // Hold the pointer on a row to read the message the row had to truncate
+        // — the subject in full, and the body under it. On the whole row rather
+        // than the text, so it's a forgiving target; the unpushed dot keeps its
+        // own tooltip, since the narrower one wins.
+        .help(commit.fullMessage)
     }
 }
 

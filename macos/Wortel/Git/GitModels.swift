@@ -188,8 +188,21 @@ struct GitCommit: Identifiable, Hashable {
     /// Branches and tags pointing here, for the row's chips. Empty for the vast
     /// majority of commits.
     let refs: [GitRef]
+    /// Everything after the subject line, trimmed. Read by the row's tooltip and
+    /// nothing else — a log row shows one line, and this is how you read the rest
+    /// without leaving the pane. Defaulted so the graph and ordering tests, which
+    /// build commits by hand, don't have to care about it. A `var` purely so the
+    /// memberwise initialiser still accepts it — a `let` with a default is
+    /// dropped from that initialiser entirely.
+    var body: String = ""
 
     var id: String { sha }
+    /// Subject and body as one block, for hovering a row whose subject the pane
+    /// had to truncate. Just the message: the author, SHA and age are already
+    /// their own columns on the row.
+    var fullMessage: String {
+        body.isEmpty ? subject : "\(subject)\n\n\(body)"
+    }
     var shortSHA: String { String(sha.prefix(7)) }
     var isMerge: Bool { parents.count > 1 }
     /// True when HEAD is at this commit — the row "Jump to HEAD" reveals.

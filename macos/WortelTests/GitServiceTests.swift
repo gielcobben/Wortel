@@ -24,6 +24,35 @@ final class GitServiceTests: XCTestCase {
         let commits = await GitService.log(root: repo.path, limit: 100)
         XCTAssertEqual(commits.count, 3, "a multi-paragraph message must stay one row")
         XCTAssertEqual(commits.map(\.subject), ["third", "subject line", "first"])
+        // The body is carried alongside, and the subject must not absorb it —
+        // the row's tooltip is the only place a long message can be read.
+        XCTAssertEqual(commits[1].body, "a body paragraph")
+        XCTAssertEqual(commits[1].fullMessage, "subject line\n\na body paragraph")
+        XCTAssertEqual(commits[0].body, "", "a subject-only commit has no body")
+        XCTAssertEqual(commits[0].fullMessage, "third")
+    }
+
+    /// A body is free text over many lines, and the row it belongs to has to
+    /// survive whatever is in it. The commits either side are the actual
+    /// assertion: a body that shears its record would take them with it.
+    func testAwkwardBodiesStayInsideTheirOwnCommit() async {
+        repo = GitFixture.newRepo("bodies")
+        GitFixture.commit("before", in: repo)
+        GitFixture.sh("""
+            git commit -q --allow-empty -m 'awkward' \
+              -m 'line one
+
+            a paragraph with a colon: and a | pipe
+            - a bullet
+            '
+            """, in: repo)
+        GitFixture.commit("after", in: repo)
+
+        let commits = await GitService.log(root: repo.path, limit: 100)
+        XCTAssertEqual(commits.map(\.subject), ["after", "awkward", "before"])
+        XCTAssertTrue(commits[1].body.contains("a | pipe"))
+        XCTAssertTrue(commits[1].body.contains("- a bullet"))
+        XCTAssertTrue(commits[1].body.hasPrefix("line one"))
     }
 
     func testParsesAuthorDateAndParents() async {

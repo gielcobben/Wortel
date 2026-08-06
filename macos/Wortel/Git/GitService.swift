@@ -132,11 +132,18 @@ enum GitService {
     /// scratch anyway.
     /// `%D` rides along for the row chips. It costs nothing extra to ask for —
     /// git already has the decoration loaded — and `--decorate=full` is what makes
-    /// it parseable (see GitRef.parse). The subject stays last: it's the only
-    /// field that can itself contain the US separator's neighbours, so keeping it
-    /// at the end means a weird subject can't shift the fields after it.
+    /// it parseable (see GitRef.parse). The message stays last: subject and body
+    /// are the only fields that can contain anything at all, so keeping them at
+    /// the end means a weird one can't shift the fields before it.
+    ///
+    /// The body rides along for the row's hover tooltip. It costs no extra
+    /// process — git is already reading these commits — only bytes, and it's the
+    /// only way to show a full message without a `git show` per row. It's split
+    /// from the subject on a *group* separator so the record still has exactly
+    /// six unit-separated fields: a multi-line body must not be able to change
+    /// how many fields a record has.
     static func log(root: String, limit: Int = 300, skip: Int = 0) async -> [GitCommit] {
-        let format = "%H\u{1f}%an\u{1f}%at\u{1f}%P\u{1f}%D\u{1f}%s\u{1e}"
+        let format = "%H\u{1f}%an\u{1f}%at\u{1f}%P\u{1f}%D\u{1f}%s\u{1d}%b\u{1e}"
         var args = ["log", "--max-count=\(limit)", "--decorate=full"]
         if skip > 0 { args.append("--skip=\(skip)") }
         args.append("--format=\(format)")
@@ -146,15 +153,23 @@ enum GitService {
             let fields = record
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: "\u{1f}")
-            guard fields.count == 6, !fields[0].isEmpty,
+            // `>= 6`, not `== 6`: a separator turning up inside a message is
+            // vanishingly unlikely but the answer to it is to put the message
+            // back together, not to drop the commit out of the history.
+            guard fields.count >= 6, !fields[0].isEmpty,
                   let epoch = TimeInterval(fields[2]) else { return nil }
+            let message = fields[5...].joined(separator: "\u{1f}")
+                .split(separator: "\u{1d}", maxSplits: 1, omittingEmptySubsequences: false)
             return GitCommit(
                 sha: fields[0],
                 author: fields[1],
                 date: Date(timeIntervalSince1970: epoch),
-                subject: fields[5],
+                subject: String(message[0]),
                 parents: fields[3].split(separator: " ").map(String.init),
-                refs: GitRef.parse(decoration: fields[4]))
+                refs: GitRef.parse(decoration: fields[4]),
+                body: message.count > 1
+                    ? String(message[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    : "")
         }
     }
 

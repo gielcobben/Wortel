@@ -211,6 +211,12 @@ shell beside it does `mv` and `rm` better. Dragging a row into the terminal need
 nothing new — `SurfaceView` already registers `.fileURL` and inserts the escaped
 path.
 
+**Move to Trash is the one exception**, and it's the exception that proves the
+rule: `rm` has no Trash, so recoverable deletion is the single file operation a
+terminal does *worse*. It refuses the root (that's the project), and doesn't
+confirm — the Trash is the confirmation, which is exactly why `rm` doesn't get an
+entry here and this does.
+
 It inherits the git panel's cost rule, and that is the whole design:
 
 - **Only expanded directories exist.** They're the only ones listed, the only

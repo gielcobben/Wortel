@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -340,6 +341,40 @@ final class FileTreeModel {
     }
 
     func requestFocus() { focusRequest += 1 }
+
+    /// Move an entry to the Trash.
+    ///
+    /// The one thing this pane changes on disk, and the exception proves the
+    /// rule rather than breaking it: everything else here is read-only because
+    /// the shell beside it does `mv` and `rm` better — but `rm` has no Trash.
+    /// Recoverable deletion is the single file operation a terminal does
+    /// *worse*, which is exactly what earns it a place in this menu.
+    ///
+    /// The root is refused: the tree is rooted at the work tree, and "delete the
+    /// project you're looking at" is not a thing a context menu should offer.
+    /// No confirmation otherwise — Finder doesn't ask either, because the
+    /// Trash is the confirmation.
+    func moveToTrash(_ node: FileNode) {
+        guard node.url.path != root?.url.path else { return }
+        let parent = parent(of: node)
+        NSWorkspace.shared.recycle([node.url]) { [weak self] _, error in
+            Task { @MainActor in
+                guard let self else { return }
+                guard error == nil else {
+                    // A permission problem or a volume with no Trash. Rare, and
+                    // the shell is right there to say why — a beep is the
+                    // macOS-shaped "that didn't happen".
+                    NSSound.beep()
+                    return
+                }
+                // The row goes on its own: the parent directory is expanded (or
+                // this row wouldn't be drawn), so its watcher reports the entry
+                // vanishing and the re-listing drops it. Only the selection
+                // needs saying — it would otherwise point at something gone.
+                if self.selectedID == node.id { self.selectedID = parent?.id }
+            }
+        }
+    }
 
     /// Put a path at the focused session's prompt, escaped and with a trailing
     /// space so the user can keep typing — the same treatment a dropped file

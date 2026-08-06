@@ -99,6 +99,14 @@ struct FileTreePanel: View {
         .onKeyPress(.leftArrow) { collapseOrGoToParent(recursive: optionHeld); return .handled }
         .onKeyPress(.rightArrow) { expandOrStepIn(recursive: optionHeld); return .handled }
         .onKeyPress(.return) { openSelected(); return .handled }
+        // ⌘⌫, as Finder has it. Bare ⌫ is deliberately not bound: the modifier
+        // is the whole reason this can't be typed by accident.
+        .onKeyPress(.delete) {
+            guard NSEvent.modifierFlags.contains(.command), let node = selectedNode
+            else { return .ignored }
+            model.moveToTrash(node)
+            return .handled
+        }
         .onKeyPress(characters: .alphanumerics.union(.punctuationCharacters)) { press in
             typeToSelect(press.characters)
             return .handled
@@ -256,6 +264,15 @@ struct FileTreePanel: View {
         menu.addItem(ClosureMenuItem(title: "Insert Path in Terminal") {
             model.insertPath(node.url)
         })
+        // The root is the project itself — offering to trash it would be a
+        // context menu with a loaded gun in it.
+        if node.url.path != model.root?.url.path {
+            menu.addItem(.separator())
+            let trash = ClosureMenuItem(title: "Move to Trash") { model.moveToTrash(node) }
+            trash.keyEquivalent = "\u{8}" // ⌫, as Finder has it
+            trash.keyEquivalentModifierMask = [.command]
+            menu.addItem(trash)
+        }
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(title: "Refresh") {
             model.refreshAll()

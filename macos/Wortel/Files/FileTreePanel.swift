@@ -302,7 +302,12 @@ private struct FileRow: View {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.tertiary))
-                    .frame(width: 16, height: 22)
+                    // Fills the row's height rather than declaring one: a fixed
+                    // height here is the tallest thing in the stack and sets the
+                    // row's, which made every row taller to make one glyph
+                    // easier to hit. The name still decides how tall a row is.
+                    .frame(width: 16)
+                    .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .overlay(PressCatcher(onPress: toggle))
             } else {

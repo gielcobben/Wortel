@@ -201,15 +201,18 @@ func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = ni
 private func promptBranch(existing: [String]) -> String? {
     let alert = NSAlert()
     alert.messageText = "New Session on Branch"
-    alert.informativeText = existing.isEmpty
-        ? "The session runs in its own worktree, on this branch."
-        : "Type a new branch, or pick one that exists. A branch that already has "
-            + "a worktree opens in it rather than making a second."
+    // **No informative text**, and that is what makes this look like the folder
+    // rename rather than a warning: an NSAlert carrying a body paragraph switches
+    // to the wide, left-aligned layout, while one with only a title and an
+    // accessory keeps the compact centred form. The placeholder says the little
+    // that needs saying.
     alert.addButton(withTitle: "Create")
     alert.addButton(withTitle: "Cancel")
 
-    let combo = NSComboBox(frame: NSRect(x: 0, y: 0, width: 260, height: 26))
+    // Same width as the rename field, so the two dialogs are the same size.
+    let combo = NSComboBox(frame: NSRect(x: 0, y: 0, width: 220, height: 26))
     combo.addItems(withObjectValues: existing)
+    combo.placeholderString = "Branch name"
     // Inline completion, so an existing branch is a few keystrokes rather than
     // an exact recital — and a near-miss shows itself before you commit to it.
     combo.completes = true

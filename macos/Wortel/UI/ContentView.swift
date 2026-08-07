@@ -24,8 +24,6 @@ func promptFolderName(title: String, confirm: String, initial: String = "") -> S
 /// the system material, and painting over it would block the glass.
 struct SidebarPane: View {
     @Bindable var manager: SessionManager
-    /// The branch picker's popover, anchored to the + button below.
-    @State private var branchPicker = BranchPickerState()
 
     var body: some View {
         // The session list is a native NSOutlineView (SidebarOutlineView), not a
@@ -45,7 +43,7 @@ struct SidebarPane: View {
                         Button("New Session") { manager.newSession() }
                         // Its own branch and its own files: what makes running
                         // two agents in one repository safe.
-                        Button("New Session on Branch…") { branchPicker.open(manager) }
+                        Button("New Session on Branch…") { newSessionOnBranch(manager) }
                         Button("New Folder…") {
                             if let name = promptFolderName(title: "New Folder", confirm: "Create") {
                                 manager.addFolder(named: name)
@@ -60,22 +58,6 @@ struct SidebarPane: View {
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .help("New Session or Folder")
-                    // A popover rather than a dialog, anchored to the button
-                    // that opened it — the same shape the toolbar's branch
-                    // switcher uses, because it answers the same question.
-                    .popover(isPresented: $branchPicker.isPresented,
-                             attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                        BranchPicker(branches: branchPicker.branches,
-                                     withWorktree: branchPicker.withWorktree) { branch in
-                            branchPicker.isPresented = false
-                            openSessionOnBranch(manager, branch: branch,
-                                                inFolder: branchPicker.folder)
-                        }
-                    }
-                    .onReceive(NotificationCenter.default
-                        .publisher(for: .wortelOpenBranchPicker)) { note in
-                        branchPicker.open(manager, folder: note.userInfo?["folder"] as? String)
-                    }
                     Spacer()
                 }
                 .padding(.horizontal, 10)
@@ -196,6 +178,34 @@ struct SidebarRowContent: View {
 /// wrote them — "already checked out at …" names the directory you want, and
 /// rewriting it would take that away.
 @MainActor
+func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = nil) {
+    Task { @MainActor in
+        let branches = await manager.localBranches()
+        let withWorktree = await manager.branchesWithWorktrees()
+        guard let branch = promptBranch(branches: branches, withWorktree: withWorktree) else {
+            return
+        }
+        openSessionOnBranch(manager, branch: branch, inFolder: folder)
+    }
+}
+
+/// The dialog: the compact alert, with the branch chooser as its one control.
+@MainActor
+private func promptBranch(branches: [String], withWorktree: Set<String>) -> String? {
+    let alert = NSAlert()
+    alert.messageText = "New Session on Branch"
+    // No informative text, which is what keeps this the compact centred alert
+    // rather than the wide left-aligned one — see promptFolderName.
+    alert.addButton(withTitle: "Create")
+    alert.addButton(withTitle: "Cancel")
+    let chooser = BranchChooser(branches: branches, withWorktree: withWorktree)
+    alert.accessoryView = chooser
+    alert.window.initialFirstResponder = chooser
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    return chooser.branch
+}
+
+@MainActor
 func openSessionOnBranch(
     _ manager: SessionManager, branch: String, inFolder folder: String? = nil
 ) {
@@ -254,8 +264,7 @@ struct SidebarHeaderContent: View {
             manager.newSession(inFolder: folder)
         })
         menu.addItem(ClosureMenuItem(title: "New Session on Branch…") {
-            NotificationCenter.default.post(
-                name: .wortelOpenBranchPicker, object: nil, userInfo: ["folder": folder])
+            newSessionOnBranch(manager, inFolder: folder)
         })
         menu.addItem(ClosureMenuItem(title: "Rename Folder…") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {

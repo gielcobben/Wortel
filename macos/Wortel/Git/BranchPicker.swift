@@ -1,109 +1,140 @@
+import AppKit
 import SwiftUI
 
-extension Notification.Name {
-    /// Posted by a folder's context menu, which has no anchor of its own to hang
-    /// a popover from — the sidebar catches it and opens the picker on the +
-    /// button, remembering which folder asked.
-    static let wortelOpenBranchPicker = Notification.Name("wortel.openBranchPicker")
-}
-
-/// What the picker needs, loaded before it appears.
+/// The branch control inside the "New Session on Branch" dialog: a button that
+/// shows the chosen branch and opens a popover to choose another — Xcode's
+/// scheme picker, which is the same problem (one value, a filterable list of
+/// candidates, and the option of a new one).
 ///
-/// Presented only once the branches are in: a popover that opens empty and fills
-/// in a moment later reads as a glitch, and the load is two fast git calls.
-@Observable
+/// The dialog stays a dialog: it's a decision you came to make, so it belongs in
+/// front of you rather than pinned to whichever button opened it — which is how
+/// the picker ended up in the bottom-left corner over the terminal. What hangs
+/// off a control is the *list*, because that part is browsing.
 @MainActor
-final class BranchPickerState {
-    var isPresented = false
-    private(set) var branches: [String] = []
-    private(set) var withWorktree: Set<String> = []
-    /// The folder the new session should land in, when a folder's menu asked.
-    private(set) var folder: String?
+final class BranchChooser: NSView {
+    private let button = NSPopUpButton(frame: .zero, pullsDown: true)
+    private let popover = NSPopover()
+    private let model: BranchPickerModel
 
-    func open(_ manager: SessionManager, folder: String? = nil) {
-        self.folder = folder
-        Task {
-            branches = await manager.localBranches()
-            withWorktree = await manager.branchesWithWorktrees()
-            isPresented = true
-        }
+    /// The branch to open: whatever was picked, or typed into the filter.
+    var branch: String? { model.chosen }
+
+    init(branches: [String], withWorktree: Set<String>) {
+        model = BranchPickerModel(branches: branches, withWorktree: withWorktree)
+        super.init(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
+
+        // A pull-down button, because this opens a chooser rather than cycling a
+        // value: its title is the current answer, not a menu item.
+        button.frame = bounds
+        button.autoenablesItems = false
+        button.addItem(withTitle: "Choose a branch\u{2026}")
+        button.target = self
+        button.action = #selector(choose)
+        addSubview(button)
+
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(
+            rootView: BranchPicker(model: model) { [weak self] branch in
+                self?.select(branch)
+            })
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+    /// Open on click, and keep the button looking like a menu rather than
+    /// actually being one — an NSPopUpButton would otherwise show its own empty
+    /// menu on top of the popover.
+    @objc private func choose() {
+        guard !popover.isShown else { return popover.performClose(nil) }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY)
+    }
+
+    private func select(_ branch: String) {
+        model.chosen = branch
+        button.item(at: 0)?.title = branch
+        button.synchronizeTitleAndSelectedItem()
+        popover.performClose(nil)
     }
 }
 
-/// Pick a branch to open a session on, or type a new one.
-///
-/// The same shape as `BranchList` — a filter over a list — because it answers
-/// the same question and should read as the same thing. What it adds is the
-/// second half: one field both filters what exists *and* names what doesn't, and
-/// a "Create" row appears the moment what you typed isn't already a branch.
-///
-/// That combination is why this replaced a dialog. Both answers are legitimate
-/// here, and every control that tries to serve them at once in an alert is
-/// worse: an `NSComboBox`'s dropdown is unstyled legacy AppKit, and a field with
-/// a menu button beside it pops a menu outside the alert's own frame. A popover
-/// is what the app already uses for exactly this question, one screenshot away
-/// in the toolbar.
-struct BranchPicker: View {
+/// What the popover shows, and what the dialog reads back.
+@Observable
+@MainActor
+final class BranchPickerModel {
     let branches: [String]
-    /// Branches that already have a worktree — opening one of those *goes* to it
-    /// rather than making a second, and saying so before the click is cheaper
-    /// than explaining it afterwards.
+    /// Branches that already have a worktree. Choosing one *goes* to it rather
+    /// than making a second, which is worth saying before the click.
     let withWorktree: Set<String>
-    let choose: (String) -> Void
+    var query = ""
+    var chosen: String?
 
-    @State private var filter = ""
-    @FocusState private var filterFocused: Bool
+    init(branches: [String], withWorktree: Set<String>) {
+        self.branches = branches
+        self.withWorktree = withWorktree
+    }
 
-    private var matches: [String] {
-        let query = filter.trimmingCharacters(in: .whitespaces)
+    var matches: [String] {
+        let query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return branches }
         return branches.filter { $0.localizedCaseInsensitiveContains(query) }
     }
 
-    /// What you typed, when it isn't already a branch. Trimmed, because a
-    /// trailing space is never part of a branch name you meant.
-    private var newBranch: String? {
-        let query = filter.trimmingCharacters(in: .whitespaces)
+    /// What's been typed, when it isn't already a branch — the "or make a new
+    /// one" half, which is why one field can serve both answers.
+    var newBranch: String? {
+        let query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty,
               !branches.contains(where: { $0.caseInsensitiveCompare(query) == .orderedSame })
         else { return nil }
         return query
     }
+}
+
+/// The popover: a filter over the branches, and a "Create" row for a name that
+/// isn't one yet. Deliberately the same shape and row metrics as `BranchList`,
+/// the toolbar's branch switcher — they answer the same question, and a
+/// difference here would read as a different feature.
+struct BranchPicker: View {
+    @Bindable var model: BranchPickerModel
+    let choose: (String) -> Void
+    @FocusState private var filterFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TextField("Branch name", text: $filter)
+            TextField("Filter or new branch", text: $model.query)
                 .textFieldStyle(.roundedBorder)
                 .focused($filterFocused)
-                // Return takes the obvious answer: the branch you're typing if
-                // it's new, otherwise the one match left standing.
                 .onSubmit {
-                    if let newBranch { choose(newBranch) }
-                    else if let only = matches.first, matches.count == 1 { choose(only) }
+                    if let new = model.newBranch { choose(new) }
+                    else if model.matches.count == 1, let only = model.matches.first {
+                        choose(only)
+                    }
                 }
                 .padding(8)
 
             Divider()
 
-            if let newBranch {
-                row(newBranch, systemImage: "plus", label: "Create branch",
-                    action: { choose(newBranch) })
-                if !matches.isEmpty { Divider().padding(.vertical, 2) }
+            if let new = model.newBranch {
+                BranchPickerRow(name: new, systemImage: "plus",
+                                label: "Create branch", action: { choose(new) })
+                if !model.matches.isEmpty { Divider().padding(.vertical, 2) }
             }
 
-            if matches.isEmpty && newBranch == nil {
-                Text(branches.isEmpty ? "No branches" : "No matches")
+            if model.matches.isEmpty && model.newBranch == nil {
+                Text(model.branches.isEmpty ? "No branches" : "No matches")
                     .font(.callout)
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-            } else if !matches.isEmpty {
+            } else if !model.matches.isEmpty {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(matches, id: \.self) { branch in
-                            row(branch,
-                                systemImage: "arrow.triangle.branch",
-                                label: withWorktree.contains(branch) ? "Has a worktree" : nil,
+                        ForEach(model.matches, id: \.self) { branch in
+                            BranchPickerRow(
+                                name: branch, systemImage: "arrow.triangle.branch",
+                                label: model.withWorktree.contains(branch)
+                                    ? "Has a worktree" : nil,
                                 action: { choose(branch) })
                         }
                     }
@@ -112,19 +143,11 @@ struct BranchPicker: View {
                 .frame(maxHeight: 240)
             }
         }
-        .frame(width: 280)
+        .frame(width: 260)
         .onAppear { filterFocused = true }
-    }
-
-    private func row(
-        _ name: String, systemImage: String, label: String?, action: @escaping () -> Void
-    ) -> some View {
-        BranchPickerRow(name: name, systemImage: systemImage, label: label, action: action)
     }
 }
 
-/// Deliberately the same metrics as `BranchList`'s row — the two popovers answer
-/// the same question and a difference here would read as a different feature.
 private struct BranchPickerRow: View {
     let name: String
     let systemImage: String

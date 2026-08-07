@@ -41,6 +41,9 @@ struct SidebarPane: View {
                 HStack {
                     Menu {
                         Button("New Session") { manager.newSession() }
+                        // Its own branch and its own files: what makes running
+                        // two agents in one repository safe.
+                        Button("New Session on Branch…") { newSessionOnBranch(manager) }
                         Button("New Folder…") {
                             if let name = promptFolderName(title: "New Folder", confirm: "Create") {
                                 manager.addFolder(named: name)
@@ -112,8 +115,40 @@ struct SidebarRowContent: View {
         menu.addItem(ClosureMenuItem(title: "Rename") { manager.editingID = session.id })
         if let moveTo = moveToMenuItem() { menu.addItem(moveTo) }
         menu.addItem(.separator())
+        // Only for a worktree Wortel made, and it closes the session with it —
+        // the directory is what the session *is*. git refuses while there are
+        // uncommitted changes, and that refusal is shown rather than overridden:
+        // a worktree is where work lives.
+        if isInOwnWorktree {
+            menu.addItem(ClosureMenuItem(title: "Remove Worktree\u{2026}") { removeWorktree() })
+        }
         menu.addItem(ClosureMenuItem(title: "Close Session") { manager.requestClose(session) })
         return menu
+    }
+
+    /// Cheap enough to ask while building a menu: a path prefix, no git call.
+    /// The authoritative check happens in the manager before anything is removed.
+    private var isInOwnWorktree: Bool {
+        session.cwd?.hasPrefix(GitWorktree.root.path + "/") == true
+    }
+
+    private func removeWorktree() {
+        let confirm = NSAlert()
+        confirm.messageText = "Remove the worktree for \u{201c}\(session.leafName)\u{201d}?"
+        confirm.informativeText = "The directory is deleted and the session closes. "
+            + "The branch and its commits are untouched, and nothing is removed if there "
+            + "are uncommitted changes."
+        confirm.addButton(withTitle: "Remove")
+        confirm.addButton(withTitle: "Cancel")
+        confirm.alertStyle = .warning
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+        manager.removeWorktree(of: session) { message in
+            let alert = NSAlert()
+            alert.messageText = "Couldn't remove the worktree"
+            alert.informativeText = message
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
     }
 
     /// "Move To" submenu: top level plus every other folder — the no-drag way
@@ -138,6 +173,56 @@ struct SidebarRowContent: View {
         return item
     }
 }
+
+/// Open a session on a branch, in its own worktree. Failures are shown as git
+/// wrote them — "already checked out at …" names the directory you want, and
+/// rewriting it would take that away.
+@MainActor
+func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = nil) {
+    Task { @MainActor in
+        let branches = await manager.localBranches()
+        let withWorktree = await manager.branchesWithWorktrees()
+        guard let branch = promptBranch(branches: branches, withWorktree: withWorktree) else {
+            return
+        }
+        openSessionOnBranch(manager, branch: branch, inFolder: folder)
+    }
+}
+
+/// The dialog: the compact alert, with the branch chooser as its one control.
+@MainActor
+private func promptBranch(branches: [String], withWorktree: Set<String>) -> String? {
+    let alert = NSAlert()
+    alert.messageText = "New Session on Branch"
+    // No informative text, which is what keeps this the compact centred alert
+    // rather than the wide left-aligned one — see promptFolderName.
+    alert.addButton(withTitle: "Create")
+    alert.addButton(withTitle: "Cancel")
+    let chooser = BranchChooser(branches: branches, withWorktree: withWorktree)
+    alert.accessoryView = chooser
+    alert.window.initialFirstResponder = chooser
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    return chooser.branch
+}
+
+@MainActor
+func openSessionOnBranch(
+    _ manager: SessionManager, branch: String, inFolder folder: String? = nil
+) {
+    manager.newSession(onBranch: branch, inFolder: folder) { message in
+        let alert = NSAlert()
+        alert.messageText = "Couldn't open a worktree for \u{201c}\(branch)\u{201d}"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+}
+
+/// A branch prompt: type a new name, or pick one that exists with type-ahead.
+///
+/// A combo box rather than a plain field because both answers are legitimate
+/// here — an existing branch or a new one — and a bare text field quietly turns
+/// a typo into a *third* branch called `mian`.
 
 /// A folder header row's SwiftUI content: the section title styled like a
 /// native sidebar header, plus the folder context menu. Expansion, the
@@ -177,6 +262,9 @@ struct SidebarHeaderContent: View {
         let menu = NSMenu()
         menu.addItem(ClosureMenuItem(title: "New Session in “\(folder)”") {
             manager.newSession(inFolder: folder)
+        })
+        menu.addItem(ClosureMenuItem(title: "New Session on Branch…") {
+            newSessionOnBranch(manager, inFolder: folder)
         })
         menu.addItem(ClosureMenuItem(title: "Rename Folder…") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {

@@ -242,6 +242,75 @@ enum GitService {
         }
     }
 
+    // MARK: - Worktrees
+
+    /// Every checkout of this repository, primary first.
+    static func worktrees(root: String) async -> [GitWorktree] {
+        let result = await run(["worktree", "list", "--porcelain"], in: root)
+        guard result.ok else { return [] }
+        return GitWorktree.parse(porcelain: result.stdout)
+    }
+
+    /// What a new worktree checks out.
+    enum WorktreeSource {
+        /// A branch that already exists: `git worktree add <path> <branch>`.
+        case existingBranch
+        /// A new branch forked from `base`, or — when `base` is nil, which is a
+        /// repository with no commits yet — from nothing. Git calls that an
+        /// orphan and infers it happily; what it *won't* accept is being handed
+        /// `HEAD` as a base when HEAD doesn't resolve, which is what a freshly
+        /// `git init`ed repo does and where this used to fail outright.
+        case newBranch(from: String?)
+    }
+
+    /// Add a worktree for `branch` at `path`.
+    ///
+    /// Returns nil on success, or git's own message. Its errors are worth
+    /// surfacing verbatim rather than rewriting: "already checked out at …" and
+    /// "not a valid object name" both tell the user exactly what to do next, and
+    /// a paraphrase would only lose the path.
+    static func addWorktree(
+        root: String, at path: String, branch: String, source: WorktreeSource
+    ) async -> String? {
+        try? FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        // Drop records for worktrees whose directories are gone — deleted by
+        // hand, or on a volume that isn't mounted. Git keeps the registration
+        // either way, and the next `add` for that branch fails on a directory
+        // nobody can see.
+        _ = await run(["worktree", "prune"], in: root)
+
+        var args = ["worktree", "add"]
+        switch source {
+        case .existingBranch:
+            args += [path, branch]
+        case .newBranch(let base):
+            args += ["-b", branch, path]
+            if let base { args.append(base) }
+        }
+        let result = await run(args, in: root)
+        guard !result.ok else { return nil }
+        let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? "git worktree add failed" : message
+    }
+
+    /// Whether the repository has any commit yet. A fresh `git init` has none,
+    /// and HEAD points at a branch that doesn't exist — which is legal, and the
+    /// state most things quietly assume away.
+    static func hasCommits(root: String) async -> Bool {
+        await run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root).ok
+    }
+
+    /// Remove a worktree. Refuses when it has uncommitted changes — deliberately
+    /// not forced: the whole point of a worktree is that work lives in it.
+    static func removeWorktree(root: String, at path: String) async -> String? {
+        let result = await run(["worktree", "remove", path], in: root)
+        guard !result.ok else { return nil }
+        let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? "git worktree remove failed" : message
+    }
+
     /// Whether the repo has any remote configured — decides whether "unpushed"
     /// means anything (see unpushedSHAs).
     static func hasRemotes(root: String) async -> Bool {

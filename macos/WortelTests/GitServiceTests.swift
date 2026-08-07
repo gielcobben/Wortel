@@ -320,4 +320,164 @@ final class GitServiceTests: XCTestCase {
         let absent = await GitService.workingTreeState(root: repo.path, path: "never-existed.txt")
         XCTAssertEqual(absent, .unchanged)
     }
+
+    // MARK: - Worktrees
+
+    /// Against real git: a worktree on a new branch, listed back, then removed.
+    /// The parse is unit-tested separately; this pins that the commands we build
+    /// are the ones git actually accepts.
+    func testAddListAndRemoveAWorktree() async {
+        repo = GitFixture.newRepo("worktree")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+
+        let path = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+        let failure = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "feature/x", source: .newBranch(from: "HEAD"))
+        XCTAssertNil(failure, "git refused: \(failure ?? "")")
+
+        let trees = await GitService.worktrees(root: repo.path)
+        XCTAssertEqual(trees.count, 2)
+        XCTAssertTrue(trees[0].isPrimary)
+        XCTAssertEqual(trees.first(where: { !$0.isPrimary })?.branch, "feature/x")
+        // The branch is really checked out there, not just registered.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path + "/a.txt"))
+
+        let removal = await GitService.removeWorktree(root: repo.path, at: path)
+        XCTAssertNil(removal)
+        let after = await GitService.worktrees(root: repo.path)
+        XCTAssertEqual(after.count, 1)
+    }
+
+    /// One branch, two worktrees is what git refuses — and the reason the
+    /// session path looks for an existing worktree before creating one.
+    func testABranchCannotBeCheckedOutTwice() async {
+        repo = GitFixture.newRepo("worktree-twice")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        let base = repo.deletingLastPathComponent()
+
+        let first = base.appendingPathComponent("wt1-\(UUID().uuidString)").path
+        let firstFailure = await GitService.addWorktree(
+            root: repo.path, at: first, branch: "shared", source: .newBranch(from: "HEAD"))
+        XCTAssertNil(firstFailure)
+
+        let second = base.appendingPathComponent("wt2-\(UUID().uuidString)").path
+        let failure = await GitService.addWorktree(
+            root: repo.path, at: second, branch: "shared", source: .existingBranch)
+        XCTAssertNotNil(failure, "git allowed one branch in two worktrees")
+        // The message names where it already is, which is why it's shown verbatim.
+        XCTAssertTrue(failure?.contains(first) == true, failure ?? "")
+
+        _ = await GitService.removeWorktree(root: repo.path, at: first)
+    }
+
+    /// A worktree with uncommitted work is not removed. That refusal is the
+    /// safety in "remove worktree" being a menu item rather than a side effect
+    /// of closing a session.
+    func testWorktreeWithChangesIsNotRemoved() async {
+        repo = GitFixture.newRepo("worktree-dirty")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        let path = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+        let added = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "dirty", source: .newBranch(from: "HEAD"))
+        XCTAssertNil(added)
+
+        GitFixture.sh("printf 'uncommitted\\n' >> a.txt", in: URL(fileURLWithPath: path))
+        let refusal = await GitService.removeWorktree(root: repo.path, at: path)
+        XCTAssertNotNil(refusal, "git removed a worktree containing uncommitted work")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path + "/a.txt"))
+
+        GitFixture.sh("git checkout -- a.txt", in: URL(fileURLWithPath: path))
+        _ = await GitService.removeWorktree(root: repo.path, at: path)
+    }
+
+    /// A freshly `git init`ed repository has no commits, so HEAD points at a
+    /// branch that does not exist. Handing that HEAD to `worktree add` as a base
+    /// fails with `invalid reference: HEAD` — which is what "git init, then open
+    /// a session on a branch" did.
+    func testWorktreeInARepositoryWithNoCommits() async {
+        repo = GitFixture.newRepo("unborn")
+        let hasCommits = await GitService.hasCommits(root: repo.path)
+        XCTAssertFalse(hasCommits, "a fresh init has no commits")
+
+        let path = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+        // Asking for HEAD is the bug, kept here so the fix can't quietly regress.
+        let withHead = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "first", source: .newBranch(from: "HEAD"))
+        XCTAssertNotNil(withHead)
+        XCTAssertTrue(withHead?.contains("HEAD") == true, withHead ?? "")
+
+        // Without a base, git infers an orphan branch — the right answer for the
+        // first branch in an empty repository.
+        let orphan = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "first", source: .newBranch(from: nil))
+        XCTAssertNil(orphan, "git refused an orphan worktree: \(orphan ?? "")")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+
+        _ = await GitService.removeWorktree(root: repo.path, at: path)
+    }
+
+    func testHasCommitsBecomesTrueAfterTheFirstOne() async {
+        repo = GitFixture.newRepo("first-commit")
+        var has = await GitService.hasCommits(root: repo.path)
+        XCTAssertFalse(has)
+        GitFixture.commit("first", in: repo)
+        has = await GitService.hasCommits(root: repo.path)
+        XCTAssertTrue(has)
+    }
+
+    /// A worktree whose directory was deleted by hand stays registered, and the
+    /// next `add` for that branch fails on a directory nobody can see. Adding
+    /// prunes first.
+    func testStaleWorktreeRecordDoesNotBlockANewOne() async {
+        repo = GitFixture.newRepo("stale")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        let path = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+
+        let added = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "recycled", source: .newBranch(from: "HEAD"))
+        XCTAssertNil(added)
+        try? FileManager.default.removeItem(atPath: path) // deleted behind git's back
+
+        let again = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "recycled", source: .existingBranch)
+        XCTAssertNil(again, "a stale record blocked reuse: \(again ?? "")")
+        _ = await GitService.removeWorktree(root: repo.path, at: path)
+    }
+
+    /// `rev-parse --show-toplevel` run inside a linked worktree answers with
+    /// *that worktree's* path, not the repository's — so anything deriving a
+    /// repo identity from it is wrong the moment it runs in a worktree. The
+    /// listing is the reliable source: the primary tree is always first.
+    func testPrimaryWorktreeIsFoundFromInsideALinkedOne() async {
+        repo = GitFixture.newRepo("from-linked")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        let linked = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+        let added = await GitService.addWorktree(
+            root: repo.path, at: linked, branch: "linked", source: .newBranch(from: "HEAD"))
+        XCTAssertNil(added)
+
+        // Resolved on both sides: git reports real paths, and on macOS /var is
+        // a symlink to /private/var — the same trap the worktree-ownership check
+        // has to avoid.
+        func resolved(_ path: String?) -> String? {
+            path.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
+        }
+
+        // What the naive question answers, from inside the worktree.
+        let toplevel = await GitService.repoRoot(for: linked)
+        XCTAssertEqual(resolved(toplevel), resolved(linked),
+                       "show-toplevel answers with the worktree")
+
+        // What the listing answers, asked from the same place.
+        let trees = await GitService.worktrees(root: linked)
+        XCTAssertEqual(resolved(trees.first(where: { $0.isPrimary })?.path),
+                       resolved(repo.path))
+
+        _ = await GitService.removeWorktree(root: repo.path, at: linked)
+    }
 }

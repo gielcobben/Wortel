@@ -121,7 +121,11 @@ struct PreviewContent: View {
         if document.blocks.isEmpty {
             empty("Empty document")
         } else {
-            MarkdownView(blocks: document.blocks)
+            // Rendered text has a type *scale*, not a font size — headings and
+            // code sit in fixed proportion to the body. So ⌘+ moves the whole
+            // sheet by the ratio the source view is running at.
+            MarkdownView(blocks: document.blocks,
+                         scale: settings.fontSize / PreviewSettings.defaultFontSize)
         }
     }
 

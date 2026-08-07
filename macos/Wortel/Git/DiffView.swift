@@ -88,6 +88,11 @@ struct DiffView: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        // The table measures its row height, gutter and column width from the
+        // font — once, in `makeNSView`. So a font size arriving later (⌘+/⌘− in
+        // a preview window) has to be adopted here, or it changes a number in
+        // the model and nothing on screen moves, which reads as a dead menu item.
+        let resized = context.coordinator.setFontSize(fontSize)
         let result = context.coordinator.update(lines: lines, highlights: highlights)
         guard let table = scroll.documentView as? NSTableView else { return }
         // Always re-fit the column to the viewport (the panel may have resized).
@@ -97,8 +102,18 @@ struct DiffView: NSViewRepresentable {
         // without this guard each full-height table (every row realized) would
         // reloadData on every sibling's load — O(files²) on Expand All.
         context.coordinator.focus(focusedLine, in: table)
-        guard result.reload else { return }
+        guard result.reload || resized else { return }
+        // The row being read, noted before the rows change height underneath it:
+        // the scroll offset is in points, so resizing the type without this walks
+        // the reader somewhere else in the file on every press of ⌘+.
+        let anchor = resized ? table.rows(in: scroll.documentVisibleRect).location : -1
+        if resized { table.rowHeight = context.coordinator.rowHeight }
         table.reloadData()
+        if anchor > 0, anchor < table.numberOfRows {
+            scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX,
+                                                  y: table.rect(ofRow: anchor).minY))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
         context.coordinator.focus(focusedLine, in: table, force: true)
         if result.scrollToTop {
             // New file selected — jump back to the top, and drop the old file's
@@ -148,6 +163,16 @@ struct DiffView: NSViewRepresentable {
             guard let table else { return }
             let viewport = scroll?.contentView.bounds.width ?? 0
             table.tableColumns.first?.width = max(columnWidth, viewport)
+        }
+
+        /// Adopt a new size, reporting whether it actually differs — the caller
+        /// only pays for a reload when it does. Everything geometric follows:
+        /// `configure` recomputes the character width and row height, and the
+        /// column width falls out of `recomputeGeometry` on the next update.
+        func setFontSize(_ size: CGFloat) -> Bool {
+            guard size != font.pointSize else { return false }
+            configure(font: .monospacedSystemFont(ofSize: size, weight: .regular))
+            return true
         }
 
         func configure(font: NSFont) {

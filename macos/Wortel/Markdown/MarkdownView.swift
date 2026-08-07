@@ -7,6 +7,12 @@ import SwiftUI
 /// `CodeBlockView`). No WebView, no markdown library.
 struct MarkdownView: View {
     let blocks: [MarkdownBlock]
+    /// Multiplies the whole type scale — text, headings, code, and the gaps
+    /// between blocks — so ⌘+/⌘− move a rendered document the way they move
+    /// source. A ratio rather than a point size because a document has a *scale*,
+    /// not one font: scaling it keeps the proportions the design chose. 1 is the
+    /// designed size.
+    var scale: CGFloat = 1
 
     var body: some View {
         ScrollView {
@@ -19,7 +25,7 @@ struct MarkdownView: View {
                     blockView(block)
                         .padding(.top, Self.topGap(
                             previous: index > 0 ? blocks[index - 1].kind : nil,
-                            current: block.kind))
+                            current: block.kind) * scale)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -57,10 +63,10 @@ struct MarkdownView: View {
         switch block.kind {
         case .heading(let level):
             Text(Self.inline(block.text))
-                .font(Self.headingFont(level))
+                .font(headingFont(level))
         case .paragraph:
             Text(Self.inline(block.text))
-                .font(.system(size: Self.bodySize))
+                .font(.system(size: bodySize))
                 .fixedSize(horizontal: false, vertical: true)
         case .bullet(let indent):
             listRow(marker: "•", text: block.text, indent: indent)
@@ -74,14 +80,14 @@ struct MarkdownView: View {
                     .fill(.tertiary)
                     .frame(width: 3)
                 Text(Self.inline(block.text))
-                    .font(.system(size: Self.bodySize))
+                    .font(.system(size: bodySize))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .rule:
             Divider().padding(.vertical, 2)
         case .code(let language):
-            CodeBlockView(code: block.text, language: language)
+            CodeBlockView(code: block.text, language: language, scale: scale)
         case .table(let header, let rows):
             tableView(header: header, rows: rows)
         }
@@ -90,11 +96,11 @@ struct MarkdownView: View {
     private func listRow(marker: String, text: String, indent: Int) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(verbatim: marker)
-                .font(.system(size: Self.bodySize))
+                .font(.system(size: bodySize))
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 18, alignment: .trailing)
             Text(Self.inline(text))
-                .font(.system(size: Self.bodySize))
+                .font(.system(size: bodySize))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -106,11 +112,11 @@ struct MarkdownView: View {
     private func taskRow(checked: Bool, text: String, indent: Int) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: checked ? "checkmark.square.fill" : "square")
-                .font(.system(size: Self.bodySize))
+                .font(.system(size: bodySize))
                 .foregroundStyle(checked ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
                 .frame(minWidth: 18, alignment: .trailing)
             Text(Self.inline(text))
-                .font(.system(size: Self.bodySize))
+                .font(.system(size: bodySize))
                 .foregroundStyle(checked ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -125,7 +131,7 @@ struct MarkdownView: View {
                 GridRow {
                     ForEach(0..<columns, id: \.self) { column in
                         Text(Self.inline(column < header.count ? header[column] : ""))
-                            .font(.system(size: Self.bodySize, weight: .semibold))
+                            .font(.system(size: bodySize, weight: .semibold))
                     }
                 }
                 Divider().gridCellColumns(columns)
@@ -133,7 +139,7 @@ struct MarkdownView: View {
                     GridRow {
                         ForEach(0..<columns, id: \.self) { column in
                             Text(Self.inline(column < rows[row].count ? rows[row][column] : ""))
-                                .font(.system(size: Self.bodySize))
+                                .font(.system(size: bodySize))
                         }
                     }
                 }
@@ -145,14 +151,18 @@ struct MarkdownView: View {
     /// Base reading size for body text; the rest of the type scale derives from
     /// it. Larger than the system `.body` (~13pt) — this is a document you read,
     /// not chrome.
-    static let bodySize: CGFloat = 14
+    static let baseBodySize: CGFloat = 14
 
-    private static func headingFont(_ level: Int) -> Font {
+    /// The reading size after `scale`. Every other size in the sheet is either
+    /// this or a fixed multiple of the base, so one ratio moves the document.
+    var bodySize: CGFloat { Self.baseBodySize * scale }
+
+    private func headingFont(_ level: Int) -> Font {
         switch level {
-        case 1: return .system(size: 28, weight: .bold)
-        case 2: return .system(size: 22, weight: .bold)
-        case 3: return .system(size: 18, weight: .semibold)
-        case 4: return .system(size: 16, weight: .semibold)
+        case 1: return .system(size: 28 * scale, weight: .bold)
+        case 2: return .system(size: 22 * scale, weight: .bold)
+        case 3: return .system(size: 18 * scale, weight: .semibold)
+        case 4: return .system(size: 16 * scale, weight: .semibold)
         default: return .system(size: bodySize, weight: .semibold)
         }
     }
@@ -199,6 +209,9 @@ struct MarkdownView: View {
 private struct CodeBlockView: View {
     let code: String
     let language: String?
+    /// Same ratio the surrounding document uses, so code keeps its relationship
+    /// to the prose around it at every size.
+    var scale: CGFloat = 1
 
     @State private var highlighted: AttributedString?
 
@@ -210,7 +223,7 @@ private struct CodeBlockView: View {
                     .foregroundStyle(.secondary)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(highlighted ?? Self.plain(code))
+                Text(highlighted ?? Self.plain(code, size: MarkdownView.baseBodySize * scale))
                     .lineSpacing(2)
                     .textSelection(.enabled)
                     .padding(.trailing, 4)
@@ -225,9 +238,9 @@ private struct CodeBlockView: View {
         .task(id: code) { await highlight() }
     }
 
-    private static func plain(_ code: String) -> AttributedString {
+    private static func plain(_ code: String, size: CGFloat) -> AttributedString {
         var attr = AttributedString(code.isEmpty ? " " : code)
-        attr.font = .system(size: 14, design: .monospaced)
+        attr.font = .system(size: size, design: .monospaced)
         return attr
     }
 
@@ -236,7 +249,7 @@ private struct CodeBlockView: View {
         guard let language, let grammar = Grammar(fence: language) else { return }
         let spans = await MarkdownCodeHighlighter.shared.spans(for: code, grammar: grammar)
         guard !spans.isEmpty else { return }
-        highlighted = Self.colored(code: code, spans: spans)
+        highlighted = Self.colored(code: code, spans: spans, size: MarkdownView.baseBodySize * scale)
     }
 
     /// Apply the tree-sitter spans in a single forward pass. Mapping each span's
@@ -245,8 +258,9 @@ private struct CodeBlockView: View {
     /// the string once, recording the index at every span boundary, then colour
     /// by lookup. Boundaries that fall mid-grapheme simply aren't recorded, so
     /// that span is skipped rather than mis-placed.
-    private static func colored(code: String, spans: [(range: NSRange, token: HighlightToken)]) -> AttributedString {
-        var attr = plain(code)
+    private static func colored(code: String, spans: [(range: NSRange, token: HighlightToken)],
+                                size: CGFloat) -> AttributedString {
+        var attr = plain(code, size: size)
 
         var boundaries: Set<Int> = []
         for (range, _) in spans {

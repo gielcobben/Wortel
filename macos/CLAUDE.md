@@ -262,6 +262,19 @@ with two right columns gets cramped), so opening a `.md` from the tree hides the
 tree until the preview is closed or the Files segment reclaims it — the same rule
 as clicking a `.md` path in the terminal.
 
+**Preview windows** (`Wortel/Preview/`) — double-click a file (the tree, a
+Changes row, a file in a commit) or ⌘-click a path in the terminal and it opens
+in its own window: Source, Diff or Rendered Markdown, plus Quick Look for
+anything that isn't text. See `docs/file-preview.md` for the decisions; the three
+that shape the code are that **`DiffView` renders both Source and Diff** (the file
+is handed over as an all-context diff, so they match by construction and the diff
+highlighter needs no new code), that **loading is `MarkdownPreviewModel`'s old
+pattern** (watch the parent directory, because an agent replacing a file replaces
+its inode; stat before reading; keep the last good content), and that **previews
+are accessories** — they close with the main window and are not restored, so
+quitting stays what it was. They are also why the inspector no longer shares its
+column with anything.
+
 **Menus** (`Wortel/MainMenu.swift`) — built programmatically and kept small
 because AppKit scans key equivalents on every keypress. The menu is
 **authoritative** for key equivalents, and this interacts with `wortel.conf`

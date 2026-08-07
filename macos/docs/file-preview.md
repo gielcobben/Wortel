@@ -32,9 +32,17 @@ three states, and "why did this window change under me" is a question a preview
 should never provoke. The plan argued for it; using it settled it.
 
 **Modes: Source · Diff · Rendered**, plus images and anything else Quick Look
-handles. Only Source exists so far. The mode is inferred once, when the window
-opens — a file with changes opens on Diff, `.md` on Rendered, everything else on
-Source — and is sticky from then on.
+handles. The mode is inferred once, when the window opens — a file with changes
+opens on Diff, `.md` on Rendered, everything else on Source — and is sticky from
+then on. The control only appears when there is more than one to choose from: one
+mode is not a control, it's a decoration costing a row of titlebar.
+
+**⌘F** searches whatever is on screen. It finds *lines* — the thing being
+searched is a table of hand-drawn rows, not text, so `NSTextFinder` has nothing
+to attach to — and it lives in the Edit menu, resolving through the responder
+chain to the preview's window controller. That's what makes it live exactly while
+a preview is key and greyed out everywhere else, so it can carry ⌘F without
+taking it from the shell.
 
 **Which diff depends on where you opened it from**, because the question differs:
 
@@ -80,6 +88,29 @@ replace the inode, so we watch the parent, not a file descriptor", stats before
 reading so directory events for other files cost nothing, and keeps the last good
 content when a read fails mid-rewrite. The preview's document loader is that,
 serving every mode.
+
+### Windows that open and can't be seen
+
+Six separate bugs presented as "opening a file does nothing", and every one of
+them was in the window rather than the click that opened it. Worth reading
+before touching `PreviewWindowController`:
+
+- **`tabbingMode = .preferred` overrides System Settings.** On a default Mac
+  ("tabs in full screen only") it silently merged every preview into one window:
+  same frame, only the selected one on screen. `.automatic` respects the setting.
+- **One frame autosave name shared by several windows** means each new one
+  restores the last one's frame, so they arrive stacked exactly. Size is
+  remembered by hand instead; position cascades.
+- **`NSWindowController.shouldCascadeWindows` repositions a window when shown**,
+  undoing any placement made before that — and it can't do the job itself,
+  because each preview has its own controller and a controller only cascades
+  against windows *it* has shown.
+- **`window.screen` is nil until a window has been shown**, so a placement guarded
+  on it never runs.
+- **A hosting controller resizes its window to fit its content**, and a SwiftUI
+  root of flexible frames has an ideal size of nothing (see below).
+- **`.fullSizeContentView` with no toolbar** hides the file's first lines behind
+  the titlebar.
 
 ### Three things that cost a night
 
@@ -131,13 +162,15 @@ that can break something in daily use — it touches the split controller, the
 toolbar and `InspectorContainer`, where everything else is additive.
 
 1. Window shell, Source mode, images, live reload — **done**
-2. Diff mode, and the entry points from the Changes list and History
-3. Markdown moves in — and the inspector's sharing apparatus is **deleted**:
-   `InspectorOccupant.preview`, `lastMarkdownOpen`, the reclaim-the-column dance
-   in `applyInspectorVisibility`, the `markdown.isOpen` checks in the toolbar,
-   and the "dragged shut while a preview covered it" branch in the divider
-   handler. The inspector goes back to three panes that own their column.
+2. Diff mode, and the entry points from the Changes list and History — **done**
+3. Markdown moves in, and the inspector's sharing apparatus is deleted —
+   **done**: `InspectorOccupant.preview`, `lastMarkdownOpen`, `lastGitVisible`,
+   the reclaim-the-column dance, the `markdown.isOpen` checks in the toolbar,
+   `MarkdownPreviewModel`, `MarkdownPreviewPanel`, and `observePreviewSession`.
+   The inspector is three panes that own their column.
+4. ⌘F — **done**.
 
-Then, in order, once it has earned them: ⌘F (v1.1), ⌘O quick-open by name — the
-thing that makes this reachable when you don't know where the file lives, which
-is the story the whole idea came from — and editing, if still wanted.
+Left, in order, once they've been earned: **⌘O quick-open by name** — the thing
+that makes this reachable when you don't know where the file lives, which is the
+story the whole idea came from — and **editing**, if still wanted: ⌘S and nothing
+else, gated behind a modification check so it can never clobber an agent mid-run.

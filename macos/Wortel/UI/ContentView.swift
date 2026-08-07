@@ -197,6 +197,42 @@ func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = ni
 /// A combo box rather than a plain field because both answers are legitimate
 /// here — an existing branch or a new one — and a bare text field quietly turns
 /// a typo into a *third* branch called `mian`.
+/// Completions for the branch field: the native inline list, rather than
+/// `NSComboBox`'s.
+///
+/// The combo box was the obvious control and the wrong one. Its dropdown is
+/// legacy AppKit that never got the modern menu treatment — cramped rows, no
+/// hover — and next to everything else on macOS 26 it reads as broken. A plain
+/// text field with a completions delegate gets the same list Xcode and "Go to
+/// Folder" use, and a menu button beside it gets a real `NSMenu`.
+private final class BranchCompleter: NSObject, NSTextFieldDelegate {
+    private let branches: [String]
+    /// Completing while you delete fights you: it re-inserts what you just
+    /// removed. Backspace has to be able to win.
+    private var lastLength = 0
+
+    init(branches: [String]) {
+        self.branches = branches
+    }
+
+    func control(
+        _ control: NSControl, textView: NSTextView, completions words: [String],
+        forPartialWordRange charRange: NSRange, indexOfSelectedItem index: UnsafeMutablePointer<Int>
+    ) -> [String] {
+        let typed = (textView.string as NSString).substring(with: charRange).lowercased()
+        guard !typed.isEmpty else { return branches }
+        return branches.filter { $0.lowercased().hasPrefix(typed) }
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField else { return }
+        let length = field.stringValue.count
+        defer { lastLength = length }
+        guard length > lastLength else { return } // deleting
+        field.currentEditor()?.complete(nil)
+    }
+}
+
 @MainActor
 private func promptBranch(existing: [String]) -> String? {
     let alert = NSAlert()
@@ -209,24 +245,63 @@ private func promptBranch(existing: [String]) -> String? {
     alert.addButton(withTitle: "Create")
     alert.addButton(withTitle: "Cancel")
 
-    // Same width as the rename field, so the two dialogs are the same size.
-    let combo = NSComboBox(frame: NSRect(x: 0, y: 0, width: 220, height: 26))
-    combo.addItems(withObjectValues: existing)
-    combo.placeholderString = "Branch name"
-    // Inline completion, so an existing branch is a few keystrokes rather than
-    // an exact recital — and a near-miss shows itself before you commit to it.
-    combo.completes = true
-    combo.numberOfVisibleItems = 10
-    combo.hasVerticalScroller = true
-    // Deliberately empty: prefilling the current branch would offer the one
-    // branch that *can't* have a second worktree, since it's checked out here.
-    combo.stringValue = ""
-    alert.accessoryView = combo
-    alert.window.initialFirstResponder = combo
+    let width: CGFloat = 220
+    let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 24))
+    // The same field as the folder rename, so the two dialogs match exactly.
+    let field = NSTextField(frame: NSRect(x: 0, y: 0,
+                                          width: existing.isEmpty ? width : width - 26,
+                                          height: 24))
+    field.placeholderString = "Branch name"
+    let completer = BranchCompleter(branches: existing)
+    field.delegate = completer
+    container.addSubview(field)
 
-    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-    let branch = combo.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !existing.isEmpty {
+        // A real NSMenu for browsing — modern metrics, hover, the lot.
+        let button = NSButton(frame: NSRect(x: width - 22, y: 0, width: 22, height: 24))
+        button.bezelStyle = .accessoryBarAction
+        button.image = NSImage(systemSymbolName: "chevron.down",
+                               accessibilityDescription: "Existing branches")
+        button.imagePosition = .imageOnly
+        let menu = NSMenu()
+        for branch in existing {
+            menu.addItem(ClosureMenuItem(title: branch) { field.stringValue = branch })
+        }
+        let opener = MenuOpener(menu: menu, under: button)
+        button.target = opener
+        button.action = #selector(MenuOpener.open)
+        objc_setAssociatedObject(button, Unmanaged.passUnretained(button).toOpaque(),
+                                 opener, .OBJC_ASSOCIATION_RETAIN)
+        container.addSubview(button)
+    }
+
+    alert.accessoryView = container
+    alert.window.initialFirstResponder = field
+
+    // `completer` has to outlive the modal run; the field only holds it weakly.
+    let branch = withExtendedLifetime(completer) { () -> String in
+        guard alert.runModal() == .alertFirstButtonReturn else { return "" }
+        return field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     return branch.isEmpty ? nil : branch
+}
+
+/// Pops a menu under a button. A tiny object because a button's action needs a
+/// target, and the closure-carrying menu item we already have is for menu items.
+private final class MenuOpener: NSObject {
+    private let menu: NSMenu
+    private weak var anchor: NSView?
+
+    init(menu: NSMenu, under anchor: NSView) {
+        self.menu = menu
+        self.anchor = anchor
+    }
+
+    @objc func open() {
+        guard let anchor else { return }
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
+    }
 }
 
 /// A folder header row's SwiftUI content: the section title styled like a

@@ -155,12 +155,12 @@ private struct RepoView: View {
                 }
                 .padding(.vertical, 4)
             }
-            // Keep the selected row visible as ↑/↓ (or a click) moves it.
-            .onChange(of: repo.selectedChangeID) { _, id in
-                guard let id else { return }
-                withAnimation(.easeOut(duration: 0.12)) {
-                    proxy.scrollTo(id, anchor: .center)
-                }
+            // Reveal on ↑/↓ only, and only as far as needed. A clicked row is
+            // already visible; scrolling it anyway slides it out from under the
+            // pointer, which is how the second click of a double-click misses.
+            .onChange(of: repo.revealRequest) { _, _ in
+                guard let id = repo.selectedChangeID else { return }
+                withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
             }
         }
         // While focused, ↑/↓ walk the changes and load each diff.

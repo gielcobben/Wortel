@@ -561,6 +561,7 @@ final class GitRepoModel {
 
     /// ↑/↓ through the history list, mirroring selectAdjacent for changes.
     func selectAdjacentCommit(_ delta: Int) {
+        revealRequest += 1
         guard !commits.isEmpty else { return }
         let index: Int
         if let id = selectedCommitID, let current = commits.firstIndex(where: { $0.id == id }) {
@@ -587,11 +588,20 @@ final class GitRepoModel {
         guard let id = selectedChangeID,
               let index = ordered.firstIndex(where: { $0.id == id }) else {
             select(ordered.first?.id)
+            revealRequest += 1
             return
         }
         let next = max(0, min(ordered.count - 1, index + delta))
-        if next != index { select(ordered[next].id) }
+        if next != index {
+            select(ordered[next].id)
+            revealRequest += 1
+        }
     }
+
+    /// Bumped only by keyboard navigation — see `FileTreeModel.revealRequest`.
+    /// A clicked row is already on screen; scrolling it anyway moves it out from
+    /// under the pointer between the two halves of a double-click.
+    private(set) var revealRequest = 0
 
     func select(_ id: String?) {
         selectedChangeID = id

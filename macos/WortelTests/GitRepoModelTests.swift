@@ -247,4 +247,30 @@ final class GitRepoModelTests: XCTestCase {
     private func settle() async {
         try? await Task.sleep(for: .milliseconds(30))
     }
+
+    /// Clicking a row must not scroll the list.
+    ///
+    /// The list revealed whatever became selected, however it became selected —
+    /// so a click scrolled the row it had just selected into the *centre* of the
+    /// pane, sliding it out from under the pointer. Disorienting on its own, and
+    /// actively broken for double-click: the second press lands where the row
+    /// used to be. Only the keyboard asks to be revealed now, because only the
+    /// keyboard can move the selection somewhere you can't see.
+    func testOnlyKeyboardNavigationAsksToBeRevealed() async {
+        repo = GitFixture.newRepo("reveal")
+        GitFixture.sh("printf 'one\n' > a.txt && printf 'two\n' > b.txt", in: repo)
+        GitFixture.sh("git add -A && git commit -q -m first", in: repo)
+        GitFixture.sh("printf 'edit\n' >> a.txt && printf 'edit\n' >> b.txt", in: repo)
+
+        let model = GitRepoModel(root: repo.path)
+        await model.refresh()
+        XCTAssertEqual(model.status.changes.count, 2)
+
+        let before = model.revealRequest
+        model.select(model.orderedChanges.first?.id)
+        XCTAssertEqual(model.revealRequest, before, "a click reveals nothing — you clicked it")
+
+        model.selectAdjacent(1)
+        XCTAssertGreaterThan(model.revealRequest, before, "↑/↓ can move off screen, so it reveals")
+    }
 }

@@ -305,6 +305,10 @@ targets:
       # max-not-latest rule whose failure mode is silence: a blocked agent
       # hidden behind a folder that reports something calmer.
       - path: Wortel/Sessions/AttentionKind.swift
+      # The CLI's wire protocol and argument parsing. Pure, and the layer where
+      # a command-line tool rots: an argument silently ignored, a relative path
+      # resolved against the wrong directory, an error a script can't detect.
+      - path: Wortel/CLI/WortelCommand.swift
       # The markdown block parser: pure Foundation, and the fiddly line-based
       # structure (tables, task lists, fences, quote coalescing) is exactly the
       # kind of thing that fails silently. The renderer and tree-sitter code

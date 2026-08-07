@@ -717,6 +717,15 @@ final class SessionManager {
         }
     }
 
+    /// Local branches of the selected session's repository, most recently
+    /// committed first — the order a picker wants, since the branch you mean is
+    /// nearly always one you touched recently. Empty outside a repository.
+    func localBranches() async -> [String] {
+        guard let cwd = selected?.cwd,
+              let root = await GitService.repoRoot(for: cwd) else { return [] }
+        return await GitService.branches(root: root).filter { !$0.isRemote }.map(\.name)
+    }
+
     /// The worktree a session is sitting in, when it's one Wortel created — the
     /// gate on offering to remove it. A session in the repository's own checkout,
     /// or in a worktree someone made by hand, is not ours to tidy up.

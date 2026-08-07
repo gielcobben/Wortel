@@ -179,15 +179,51 @@ struct SidebarRowContent: View {
 /// and rewriting it would take that away.
 @MainActor
 func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = nil) {
-    guard let branch = promptFolderName(
-        title: "New Session on Branch", confirm: "Create") else { return }
-    manager.newSession(onBranch: branch, inFolder: folder) { message in
-        let alert = NSAlert()
-        alert.messageText = "Couldn't open a worktree for “\(branch)”"
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.runModal()
+    Task { @MainActor in
+        let existing = await manager.localBranches()
+        guard let branch = promptBranch(existing: existing) else { return }
+        manager.newSession(onBranch: branch, inFolder: folder) { message in
+            let alert = NSAlert()
+            alert.messageText = "Couldn't open a worktree for \u{201c}\(branch)\u{201d}"
+            alert.informativeText = message
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
     }
+}
+
+/// A branch prompt: type a new name, or pick one that exists with type-ahead.
+///
+/// A combo box rather than a plain field because both answers are legitimate
+/// here — an existing branch or a new one — and a bare text field quietly turns
+/// a typo into a *third* branch called `mian`.
+@MainActor
+private func promptBranch(existing: [String]) -> String? {
+    let alert = NSAlert()
+    alert.messageText = "New Session on Branch"
+    alert.informativeText = existing.isEmpty
+        ? "The session runs in its own worktree, on this branch."
+        : "Type a new branch, or pick one that exists. A branch that already has "
+            + "a worktree opens in it rather than making a second."
+    alert.addButton(withTitle: "Create")
+    alert.addButton(withTitle: "Cancel")
+
+    let combo = NSComboBox(frame: NSRect(x: 0, y: 0, width: 260, height: 26))
+    combo.addItems(withObjectValues: existing)
+    // Inline completion, so an existing branch is a few keystrokes rather than
+    // an exact recital — and a near-miss shows itself before you commit to it.
+    combo.completes = true
+    combo.numberOfVisibleItems = 10
+    combo.hasVerticalScroller = true
+    // Deliberately empty: prefilling the current branch would offer the one
+    // branch that *can't* have a second worktree, since it's checked out here.
+    combo.stringValue = ""
+    alert.accessoryView = combo
+    alert.window.initialFirstResponder = combo
+
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    let branch = combo.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    return branch.isEmpty ? nil : branch
 }
 
 /// A folder header row's SwiftUI content: the section title styled like a

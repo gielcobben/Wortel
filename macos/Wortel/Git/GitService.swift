@@ -405,6 +405,14 @@ enum GitService {
         return Set(result.stdout.split(separator: "\0").map(String.init))
     }
 
+    /// Whether one file differs from HEAD in any way — staged, unstaged or
+    /// untracked. One line of porcelain rather than a whole patch, because the
+    /// only question being asked is "should this open on its diff?".
+    static func hasChanges(root: String, path: String) async -> Bool {
+        let result = await run(["status", "--porcelain", "--", path], in: root)
+        return result.ok && !result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// Everything that has happened to one file since the last commit — staged
     /// and unstaged together. This is the question the file tree and a ⌘-clicked
     /// path are asking, where the Changes pane's staged/unstaged split has no

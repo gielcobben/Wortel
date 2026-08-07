@@ -340,29 +340,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// everything since HEAD, because that's the question you're asking when you
     /// point at a file rather than at one side of its change. Outside a repo
     /// there's no diff to offer and the window says so by not having the mode.
+    /// Repo root per directory. The answer never changes for a given directory
+    /// in a session, and asking git twice for the same one is a process we
+    /// don't need to spawn.
+    private var repoRootCache: [String: String?] = [:]
+
+    /// Open a file in a preview window, working out what its diff should be.
+    ///
+    /// Deliberately **not** dependent on the git panel being open. The panel
+    /// resolves its repo only while it's visible — a good rule for a panel that
+    /// would otherwise run git for a column nobody is looking at, and exactly
+    /// the wrong one here: it meant a file opened with the inspector closed had
+    /// no repo, so no diff source, so no Diff mode at all. When the panel
+    /// happens to have the answer it's free; when it doesn't, we ask.
     private func openPreview(_ url: URL) {
-        guard let repo = gitPanel.repo else {
-            previewWindows.open(url)
+        let url = url.resolvingSymlinksInPath().standardizedFileURL
+        // Already open: focus it and do no git work whatsoever.
+        if previewWindows.focus(url) { return }
+
+        // The panel already knows this repo and its status — free, and it also
+        // knows *which side* of a change the file is on.
+        if let repo = gitPanel.repo, let relative = Self.relativePath(of: url, in: repo.root) {
+            let change = repo.status.unstagedChanges.first { $0.path == relative }
+                ?? repo.status.stagedChanges.first { $0.path == relative }
+            if let change {
+                previewWindows.open(url, diff: .change(root: repo.root, change: change), hasChanges: true)
+            } else {
+                previewWindows.open(url, diff: .workingTree(root: repo.root, path: relative))
+            }
             return
         }
-        let root = repo.root
-        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
-        let relative = path.hasPrefix(root + "/")
-            ? String(path.dropFirst(root.count + 1))
-            : nil
-        // Unstaged first: it's the side that's still moving, and the one you
-        // almost always mean when you open a file an agent just touched.
-        let change = relative.flatMap { rel in
-            repo.status.unstagedChanges.first { $0.path == rel }
-                ?? repo.status.stagedChanges.first { $0.path == rel }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let directory = url.deletingLastPathComponent().path
+            let root: String?
+            if let cached = repoRootCache[directory] {
+                root = cached
+            } else {
+                root = await GitService.repoRoot(for: directory)
+                repoRootCache[directory] = root
+            }
+            guard let root, let relative = Self.relativePath(of: url, in: root) else {
+                previewWindows.open(url)
+                return
+            }
+            // One line of porcelain, not a patch: all this decides is whether
+            // the window opens on the diff or on the file.
+            let changed = await GitService.hasChanges(root: root, path: relative)
+            previewWindows.open(
+                url, diff: .workingTree(root: root, path: relative), hasChanges: changed)
         }
-        if let change {
-            previewWindows.open(url, diff: .change(root: root, change: change), hasChanges: true)
-        } else if let relative {
-            previewWindows.open(url, diff: .workingTree(root: root, path: relative))
-        } else {
-            previewWindows.open(url)
-        }
+    }
+
+    private static func relativePath(of url: URL, in root: String) -> String? {
+        let path = url.path
+        guard path.hasPrefix(root + "/") else { return nil }
+        return String(path.dropFirst(root.count + 1))
     }
 
     // MARK: - Menu actions (reached via the responder chain, target nil)

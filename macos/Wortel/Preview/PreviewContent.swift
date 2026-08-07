@@ -12,12 +12,8 @@ import SwiftUI
 struct PreviewContent: View {
     @Bindable var document: PreviewDocument
     @Bindable var find: PreviewFind
+    @Bindable var settings: PreviewSettings
     @FocusState private var findFocused: Bool
-
-    /// Matches the diff in the inspector exactly. A preview that set its own
-    /// size would make the same file look like two different files depending on
-    /// which half of the app you opened it from.
-    private static let fontSize: CGFloat = 12
 
     var body: some View {
         Group {
@@ -97,7 +93,7 @@ struct PreviewContent: View {
             DiffView(lines: document.sourceLines,
                      highlights: document.sourceHighlights,
                      focusedLine: find.focusedLine,
-                     fontSize: Self.fontSize)
+                     fontSize: settings.fontSize)
         }
     }
 
@@ -116,7 +112,7 @@ struct PreviewContent: View {
             DiffView(lines: document.diffLines,
                      highlights: document.diffHighlights,
                      focusedLine: find.focusedLine,
-                     fontSize: Self.fontSize)
+                     fontSize: settings.fontSize)
         }
     }
 

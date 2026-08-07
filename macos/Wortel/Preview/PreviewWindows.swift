@@ -19,6 +19,8 @@ final class PreviewWindows {
     /// and every window after the first landed on the same centred spot, so
     /// three open files looked like one.
     private var nextTopLeft: NSPoint?
+    /// One reading size for every preview; ⌘+ in any window moves all of them.
+    private let settings = PreviewSettings()
 
     init(highlighter: (any DiffHighlighting)? = nil) {
         self.highlighter = highlighter
@@ -28,20 +30,26 @@ final class PreviewWindows {
     /// has a window focuses that one rather than making a second — including
     /// when it's reached from somewhere else, so a file opened from the tree and
     /// then from the Changes list is still one window.
+    /// Focus the window already showing `url`, if there is one. Returns whether
+    /// it did, so a caller can skip the work of deciding how to open it.
+    @discardableResult
+    func focus(_ url: URL) -> Bool {
+        let url = url.resolvingSymlinksInPath().standardizedFileURL
+        guard let existing = windows.first(where: { $0.file.url == url }) else { return false }
+        existing.showWindow(nil)
+        return true
+    }
+
     func open(_ url: URL, diff: PreviewDiffSource = .none, hasChanges: Bool = false) {
         let url = url.resolvingSymlinksInPath().standardizedFileURL
-
-        if let existing = windows.first(where: { $0.file.url == url }) {
-            existing.showWindow(nil)
-            return
-        }
+        if focus(url) { return }
 
         let document = PreviewDocument(
             url: url,
             diffSource: diff,
             mode: PreviewMode.inferred(for: url, hasChanges: hasChanges, hasDiffSource: diff.exists),
             highlighter: highlighter)
-        let controller = PreviewWindowController(document: document)
+        let controller = PreviewWindowController(document: document, settings: settings)
         controller.onClose = { [weak self] closed in
             self?.windows.removeAll { $0 === closed }
         }

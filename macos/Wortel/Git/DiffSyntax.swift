@@ -101,6 +101,13 @@ enum DiffSyntax {
         }
 
         for line in lines {
+            // A patch announces each file in a hunk header, so that's where the
+            // path normally comes from. A *whole file* handed over as
+            // all-context — which is how the preview window shows source — has
+            // no header to announce it, and without a path there's no grammar,
+            // so nothing was highlighted at all. Every line carries its own file;
+            // take it from the first one that does.
+            if path == nil { path = line.path }
             switch line.kind {
             case .hunkHeader:
                 flush()

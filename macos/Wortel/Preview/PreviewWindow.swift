@@ -20,6 +20,8 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     /// ⌘F state, owned here because the menu item reaches this object through
     /// the responder chain — a window controller sits in it, after its window.
     private let find = PreviewFind()
+    /// Shared with every other preview, so ⌘+ resizes the text in all of them.
+    private let settings: PreviewSettings
 
     private static let defaultSize = NSSize(width: 720, height: 640)
     private static let sizeKey = "preview.size"
@@ -34,8 +36,9 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         return NSSize(width: width, height: height)
     }
 
-    init(document: PreviewDocument) {
+    init(document: PreviewDocument, settings: PreviewSettings) {
         self.file = document
+        self.settings = settings
 
         // No `.fullSizeContentView`: there's no toolbar to run the content under,
         // and with an ordinary titlebar it would hide the file's first lines
@@ -80,7 +83,8 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // measured against the window server). It opens perfectly and cannot be
         // seen, which looks exactly like a double-click doing nothing. Same
         // idiom the sidebar's hosted rows already use.
-        let hosting = NSHostingController(rootView: PreviewContent(document: document, find: find))
+        let hosting = NSHostingController(
+            rootView: PreviewContent(document: document, find: find, settings: settings))
         hosting.sizingOptions = []
         window.contentViewController = hosting
         window.contentMinSize = NSSize(width: 360, height: 240)
@@ -117,6 +121,16 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         window?.toolbar = toolbar
         window?.toolbarStyle = .unified
     }
+
+    // View ▸ Increase/Decrease/Reset Font Size (⌘+ ⌘− ⌘0). The menu already
+    // routes those selectors through the responder chain to whatever implements
+    // them — the terminal's SurfaceView in the main window, this controller in a
+    // preview. Nothing new is bound, and the terminal keeps its own ⌘+ exactly
+    // as before: the menu item simply acts on the window you're looking at.
+
+    @objc func increaseFontSize(_ sender: Any?) { settings.increase() }
+    @objc func decreaseFontSize(_ sender: Any?) { settings.decrease() }
+    @objc func resetFontSize(_ sender: Any?) { settings.reset() }
 
     /// Edit ▸ Find (⌘F). Reached through the responder chain, so it's live
     /// exactly when a preview window is key and greyed out everywhere else —

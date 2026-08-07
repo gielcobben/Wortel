@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 /// What a preview window is showing a file *as*.
 ///
@@ -23,6 +24,22 @@ enum PreviewMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The View ▸ Preview item that selects this mode, identified by tag rather
+    /// than by menu position: the items are fixed, the modes a given file offers
+    /// are not, so ⌘2 means "source" in every window rather than "whatever the
+    /// second segment happens to be here".
+    var menuTag: Int {
+        switch self {
+        case .diff: return 1
+        case .source: return 2
+        case .rendered: return 3
+        }
+    }
+
+    static func mode(menuTag: Int) -> PreviewMode? {
+        allCases.first { $0.menuTag == menuTag }
+    }
+
     /// Matched to the inspector's own pane control, so the two toolbars read as
     /// one vocabulary rather than two.
     var symbol: String {
@@ -33,13 +50,21 @@ enum PreviewMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Which modes a file can offer. Rendered only for Markdown, Diff only when
-    /// the window was opened somewhere that *has* a diff to show — outside a
-    /// repo there is no such question to ask.
+    /// Which modes a file can offer, in the order they're offered. Rendered only
+    /// for Markdown, Diff only when the window was opened somewhere that *has* a
+    /// diff to show — outside a repo there is no such question to ask.
+    ///
+    /// The order is Diff → Source → Rendered, and it's a scale rather than a
+    /// list: each step is one further from the bytes on disk. Diff is the
+    /// narrowest view (only what changed), Source is the whole file, Rendered is
+    /// the file as something else entirely. Putting Rendered on the end also
+    /// keeps the two views that *are* the same text side by side, so ⌘1/⌘2 flip
+    /// between neighbours.
     static func available(for url: URL, hasDiffSource: Bool) -> [PreviewMode] {
-        var modes: [PreviewMode] = [.source]
-        if hasDiffSource { modes.insert(.diff, at: 0) }
-        if isMarkdown(url) { modes.insert(.rendered, at: 0) }
+        var modes: [PreviewMode] = []
+        if hasDiffSource { modes.append(.diff) }
+        modes.append(.source)
+        if isRenderableText(url) { modes.append(.rendered) }
         return modes
     }
 
@@ -51,13 +76,32 @@ enum PreviewMode: String, CaseIterable, Identifiable, Sendable {
     /// file with changes opens on its diff because the reason you reached for it
     /// is almost always what just happened to it. Everything else is source.
     static func inferred(for url: URL, hasChanges: Bool, hasDiffSource: Bool) -> PreviewMode {
-        if isMarkdown(url) { return .rendered }
+        if isRenderableText(url) { return .rendered }
         if hasChanges, hasDiffSource { return .diff }
         return .source
     }
 
     static func isMarkdown(_ url: URL) -> Bool {
         ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased())
+    }
+
+    /// Text that is also a picture of something. Markdown is the obvious one; an
+    /// SVG is the interesting one — it is a text file *and* an image, so it's the
+    /// only kind of file where "show me the code" and "show me the thing" are
+    /// both reasonable and neither is a fallback for the other. ⌘1/⌘2 between
+    /// them is the whole feature.
+    static func isRenderableText(_ url: URL) -> Bool {
+        isMarkdown(url) || isSVG(url)
+    }
+
+    static func isSVG(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == "svg"
+    }
+
+    /// Anything the system calls an image — PNG, JPEG, GIF, TIFF, HEIC, SVG.
+    /// Asked of the *type* rather than a list of extensions kept up to date here.
+    static func isImage(_ url: URL) -> Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) ?? false
     }
 }
 
@@ -71,7 +115,12 @@ enum PreviewMode: String, CaseIterable, Identifiable, Sendable {
 /// last commit".
 enum PreviewDiffSource: Equatable {
     case none
-    case workingTree(root: String, path: String)
+    /// Everything since HEAD for one path. `untracked` because git can't diff a
+    /// file it has never seen: `diff HEAD -- new.swift` prints nothing at all, so
+    /// a brand-new file opened from the tree would show "No changes to this file"
+    /// while sitting there full of changes. Untracked files diff against
+    /// /dev/null instead, which is what the Changes list already does.
+    case workingTree(root: String, path: String, untracked: Bool)
     case change(root: String, change: GitFileChange)
     case commit(root: String, sha: String, path: String, originalPath: String?)
 

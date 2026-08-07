@@ -109,4 +109,47 @@ final class DiffSyntaxTests: XCTestCase {
         let spans = DiffSyntax.distribute([(NSRange(location: 10, length: 3), .keyword)], over: seg)
         XCTAssertNil(spans[2], "an unowned line must not receive spans")
     }
+
+    /// A patch announces each file in a hunk header, so that's where the path
+    /// normally comes from. A whole file handed over as all-context — which is
+    /// how the preview window shows source — has no header at all, and a segment
+    /// with no path gets no grammar and no colour. This shipped: every preview
+    /// rendered in plain grey, and nothing anywhere failed.
+    func testWholeFileWithNoHunkHeaderStillCarriesItsPath() {
+        let segs = DiffSyntax.segments([
+            line(0, .context, "import AppKit", path: "AppDelegate.swift"),
+            line(1, .context, "let a = 1", path: "AppDelegate.swift"),
+        ])
+        XCTAssertEqual(segs.count, 1, "one side, and no second pass that colours nothing")
+        XCTAssertEqual(segs.first?.path, "AppDelegate.swift")
+        XCTAssertEqual(segs.first?.ownedIDs, [0, 1])
+    }
+
+    /// And a hunk header still wins where there is one, so a concatenated
+    /// multi-file patch keeps tagging its segments correctly.
+    func testHunkHeaderStillRetagsAfterALeadingContextLine() {
+        let segs = DiffSyntax.segments([
+            line(0, .context, "let a = 1", path: "a.swift"),
+            line(1, .hunkHeader, "@@", path: "b.css"),
+            line(2, .addition, ".x {}", path: "b.css"),
+        ])
+        XCTAssertEqual(segs.map(\.path), ["a.swift", "b.css"])
+    }
+
+    /// A hunk with deletions does still need both sides — that pass is the only
+    /// thing that colours a removed line.
+    func testDeletionsGetTheirOwnSegment() {
+        let segs = DiffSyntax.segments([
+            line(0, .hunkHeader, "@@"),
+            line(1, .context, "let a = 1"),
+            line(2, .deletion, "let b = 2"),
+            line(3, .addition, "let b = 3"),
+        ])
+        XCTAssertEqual(segs.count, 2)
+        XCTAssertEqual(segs[0].ownedIDs, [1, 3], "post-image owns context and additions")
+        XCTAssertEqual(segs[1].ownedIDs, [2], "pre-image owns only the deletion")
+        // The deletion's segment still *contains* the context around it, or a
+        // block comment spanning the hunk would parse as unterminated.
+        XCTAssertTrue(segs[1].text.contains("let a = 1"))
+    }
 }

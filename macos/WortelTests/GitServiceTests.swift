@@ -231,4 +231,93 @@ final class GitServiceTests: XCTestCase {
             root: repo.path, sha: head, path: "café.txt", originalPath: nil)
         XCTAssertTrue(diff.contains("+there"), "the diff resolves under the real name")
     }
+
+    // MARK: - What a preview window asks about one file
+
+    /// Three states, not a bool, and the reason is the third one: git cannot
+    /// diff a file it has never seen. `diff HEAD -- new.swift` prints *nothing*
+    /// for an untracked file, so a window that treated "untracked" as "changed"
+    /// opened on a diff and announced "No changes to this file" over a file that
+    /// was nothing but changes.
+    func testWorkingTreeStateSeparatesUntrackedFromChanged() async {
+        repo = GitFixture.newRepo("state")
+        GitFixture.sh("printf 'one\n' > tracked.txt && git add -A && git commit -q -m first",
+                      in: repo)
+
+        var state = await GitService.workingTreeState(root: repo.path, path: "tracked.txt")
+        XCTAssertEqual(state, .unchanged)
+        XCTAssertFalse(state.hasChanges)
+
+        GitFixture.sh("printf 'two\n' >> tracked.txt", in: repo)
+        state = await GitService.workingTreeState(root: repo.path, path: "tracked.txt")
+        XCTAssertEqual(state, .changed)
+        XCTAssertTrue(state.hasChanges)
+
+        GitFixture.sh("printf 'new\n' > fresh.txt", in: repo)
+        state = await GitService.workingTreeState(root: repo.path, path: "fresh.txt")
+        XCTAssertEqual(state, .untracked)
+        XCTAssertTrue(state.hasChanges, "an untracked file is not an unchanged one")
+    }
+
+    /// Staging doesn't change the answer: the tree and a ⌘-clicked path are
+    /// asking "what has happened to this file since the last commit", which is
+    /// both sides at once.
+    func testWorkingTreeStateCountsStagedChanges() async {
+        repo = GitFixture.newRepo("staged")
+        GitFixture.sh("printf 'one\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        GitFixture.sh("printf 'two\n' >> a.txt && git add a.txt", in: repo)
+
+        let state = await GitService.workingTreeState(root: repo.path, path: "a.txt")
+        XCTAssertEqual(state, .changed)
+    }
+
+    /// The bug this pair exists for, stated as git's own behaviour: the diff
+    /// against HEAD is empty for a file git has never seen, and the /dev/null
+    /// diff is what actually shows it.
+    func testUntrackedFileHasNoDiffAgainstHeadButDoesAgainstNothing() async {
+        repo = GitFixture.newRepo("untracked-diff")
+        GitFixture.sh("printf 'one\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        GitFixture.sh("printf 'hello\nworld\n' > fresh.txt", in: repo)
+
+        let againstHead = await GitService.diffAgainstHead(root: repo.path, path: "fresh.txt")
+        XCTAssertTrue(againstHead.isEmpty, "git has nothing to say about a file it never saw")
+
+        let againstNothing = await GitService.untrackedDiff(root: repo.path, path: "fresh.txt")
+        let added = DiffParser.parse(againstNothing).lines.filter { $0.kind == .addition }
+        XCTAssertEqual(added.map(\.text), ["hello", "world"],
+                       "an untracked file reads as all additions")
+    }
+
+    /// Everything since the last commit, both sides together — the question the
+    /// file tree is asking, where the staged/unstaged split has no meaning.
+    func testDiffAgainstHeadIncludesStagedAndUnstagedTogether() async {
+        repo = GitFixture.newRepo("both-sides")
+        GitFixture.sh("printf 'one\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        GitFixture.sh("printf 'staged\n' >> a.txt && git add a.txt", in: repo)
+        GitFixture.sh("printf 'unstaged\n' >> a.txt", in: repo)
+
+        let patch = await GitService.diffAgainstHead(root: repo.path, path: "a.txt")
+        let added = DiffParser.parse(patch).lines.filter { $0.kind == .addition }.map(\.text)
+        XCTAssertEqual(added, ["staged", "unstaged"])
+    }
+
+    /// A path outside the repo, a repo with no commits, a deleted file: none of
+    /// these should throw or hang a window that is only asking which view to open
+    /// on.
+    func testWorkingTreeStateOnAwkwardInput() async {
+        repo = GitFixture.newRepo("awkward")
+
+        // No commits at all yet — `status` still answers.
+        GitFixture.sh("printf 'x\n' > a.txt", in: repo)
+        let beforeAnyCommit = await GitService.workingTreeState(root: repo.path, path: "a.txt")
+        XCTAssertEqual(beforeAnyCommit, .untracked)
+
+        GitFixture.sh("git add -A && git commit -q -m first", in: repo)
+        GitFixture.sh("rm a.txt", in: repo)
+        let deleted = await GitService.workingTreeState(root: repo.path, path: "a.txt")
+        XCTAssertEqual(deleted, .changed, "a deleted file has changed")
+
+        let absent = await GitService.workingTreeState(root: repo.path, path: "never-existed.txt")
+        XCTAssertEqual(absent, .unchanged)
+    }
 }

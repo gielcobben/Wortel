@@ -41,13 +41,16 @@ final class PreviewWindows {
     }
 
     func open(_ url: URL, diff: PreviewDiffSource = .none, hasChanges: Bool = false) {
-        let url = url.resolvingSymlinksInPath().standardizedFileURL
+        // Identity is the resolved path — two aliases to one file are one window
+        // — but the document is handed the path as *asked for*, so it can say the
+        // file lives somewhere else. It resolves for itself.
         if focus(url) { return }
 
         let document = PreviewDocument(
             url: url,
             diffSource: diff,
-            mode: PreviewMode.inferred(for: url, hasChanges: hasChanges, hasDiffSource: diff.exists),
+            mode: PreviewMode.inferred(for: url.resolvingSymlinksInPath(),
+                                       hasChanges: hasChanges, hasDiffSource: diff.exists),
             highlighter: highlighter)
         let controller = PreviewWindowController(document: document, settings: settings)
         controller.onClose = { [weak self] closed in

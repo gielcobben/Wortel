@@ -93,7 +93,15 @@ enum DiffSyntax {
             if !postIDs.isEmpty {
                 out.append(make(path: path, texts: postTexts, ids: postIDs, owned: ownedPost))
             }
-            if !preIDs.isEmpty {
+            // Only if it colours something. The pre-image exists to colour
+            // deletions, and it carries the surrounding context purely so
+            // multi-line constructs parse — `distribute` then throws away every
+            // line the segment doesn't own. With no deletions in the hunk that
+            // is the *whole* segment, so parsing it is a tree-sitter pass whose
+            // entire output is discarded: twice the highlighting cost for a
+            // hunk of pure additions, and for every file the preview window
+            // shows as source, which is all context by construction.
+            if !preIDs.isEmpty, !ownedPre.isEmpty {
                 out.append(make(path: path, texts: preTexts, ids: preIDs, owned: ownedPre))
             }
             postTexts = []; postIDs = []; ownedPost = []

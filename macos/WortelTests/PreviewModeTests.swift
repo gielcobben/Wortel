@@ -97,4 +97,62 @@ final class PreviewModeTests: XCTestCase {
             }
         }
     }
+
+    /// The segment order the toolbar and ⌘1…⌘3 both read from: each step one
+    /// further from the bytes on disk, with Rendered — the odd medium out — last.
+    func testModeOrderIsDiffSourceRendered() {
+        XCTAssertEqual(PreviewMode.available(for: url("README.md"), hasDiffSource: true),
+                       [.diff, .source, .rendered])
+        XCTAssertEqual(PreviewMode.available(for: url("README.md"), hasDiffSource: false),
+                       [.source, .rendered])
+        XCTAssertEqual(PreviewMode.available(for: url("main.swift"), hasDiffSource: true),
+                       [.diff, .source])
+    }
+
+    /// The menu tags are what ⌘1…⌘3 mean, so they're per mode and not per
+    /// position — ⌘2 is the file in every window, whatever else that window offers.
+    func testMenuTagsRoundTrip() {
+        for mode in PreviewMode.allCases {
+            XCTAssertEqual(PreviewMode.mode(menuTag: mode.menuTag), mode)
+        }
+        XCTAssertEqual([PreviewMode.diff, .source, .rendered].map(\.menuTag), [1, 2, 3])
+    }
+
+    // MARK: - SVG
+
+    /// An SVG is the one file that is genuinely both: text you edit and a
+    /// picture you look at. So it offers both, and opens on the picture —
+    /// double-clicking an icon to read XML is not what anyone meant.
+    func testSVGOffersRenderedAndSource() {
+        XCTAssertEqual(PreviewMode.available(for: url("icon.svg"), hasDiffSource: false),
+                       [.source, .rendered])
+        XCTAssertEqual(PreviewMode.inferred(for: url("icon.svg"),
+                                            hasChanges: false, hasDiffSource: false),
+                       .rendered)
+    }
+
+    /// Even with changes: you opened a picture.
+    func testChangedSVGStillOpensRendered() {
+        XCTAssertEqual(PreviewMode.inferred(for: url("icon.svg"),
+                                            hasChanges: true, hasDiffSource: true),
+                       .rendered)
+        XCTAssertEqual(PreviewMode.available(for: url("icon.svg"), hasDiffSource: true),
+                       [.diff, .source, .rendered])
+    }
+
+    /// A bitmap is not text, so it gets no Rendered *mode* — the window shows the
+    /// image whatever the mode says, and the control is disabled.
+    func testBitmapImagesGetNoRenderedMode() {
+        XCTAssertEqual(PreviewMode.available(for: url("shot.png"), hasDiffSource: false), [.source])
+        XCTAssertFalse(PreviewMode.isRenderableText(url("shot.png")))
+    }
+
+    func testImageDetectionCoversTheCommonTypes() {
+        for name in ["a.png", "a.jpg", "a.jpeg", "a.gif", "a.tiff", "a.heic", "a.svg"] {
+            XCTAssertTrue(PreviewMode.isImage(url(name)), "\(name) should be an image")
+        }
+        for name in ["a.swift", "a.md", "a.zip", "a.pdf", "a"] {
+            XCTAssertFalse(PreviewMode.isImage(url(name)), "\(name) should not be an image")
+        }
+    }
 }

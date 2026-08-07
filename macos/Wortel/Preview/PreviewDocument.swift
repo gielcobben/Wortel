@@ -8,11 +8,16 @@ import Observation
 /// The watching is `MarkdownPreviewModel`'s, generalised — that model solved this
 /// hazard first and every part of its reasoning is load-bearing:
 ///
-/// - **Watch the parent directory, not the file.** A vnode watch follows an
-///   inode, and an agent saving a file replaces it (write temp, rename over). A
-///   watch on the file's own descriptor dies on the first save and reports
-///   nothing ever again — and a preview that stopped updating looks exactly like
-///   a file nobody is touching.
+/// - **Watch the file *and* its directory, and never the subtree.** A vnode
+///   watch follows an inode, and an agent saving a file replaces it (write temp,
+///   rename over): the watch on the old inode reports the unlink and then goes
+///   deaf, and a preview that stopped updating looks exactly like a file nobody
+///   is touching. So the file's own watch reports in-place writes and re-arms
+///   itself when it dies, and one watch on the containing directory notices the
+///   file coming back. Not `GitRepoWatcher`: FSEvents is always recursive, so a
+///   README previewed at a repo root would watch the entire repo — `.git`,
+///   `node_modules` and all — which is the same mistake the file tree documents
+///   not making.
 /// - **Stat before reading.** The directory fires for every file in it, and in a
 ///   repo an agent is working through, that is constantly. A modification date
 ///   that hasn't moved costs a stat instead of a read, a decode and a parse.
@@ -28,13 +33,44 @@ final class PreviewDocument {
     /// The file this document is for. Canonical (symlinks resolved), because it
     /// is also the identity a window is looked up by.
     let url: URL
+    /// The path the window was *asked* for, before symlinks were resolved. `url`
+    /// is canonical because it's the identity a window is looked up by — but a
+    /// file reached through an alias is worth saying out loud, since what you
+    /// edit is the target and the tree gave no hint of it.
+    let requestedURL: URL
     /// Where this window's diff comes from; `.none` outside a repo.
     let diffSource: PreviewDiffSource
 
     /// What the window is showing. Set by its toolbar; loads on demand.
     var mode: PreviewMode {
-        didSet { if mode != oldValue { loadCurrentMode() } }
+        didSet {
+            guard mode != oldValue else { return }
+            // Keep the reader's place. The outgoing view has been reporting the
+            // source line at its top, and that line is the one coordinate all
+            // three modes share — the rendered document, the file and the diff
+            // are the same file seen three ways. Without it, ⌘2 to copy the
+            // paragraph you were reading means finding it again from the top.
+            anchorLine = visibleLine
+            selectsAll = false
+            loadCurrentMode()
+        }
     }
+
+    /// The source line at the top of whatever view is on screen, kept current by
+    /// that view. Deliberately unobserved: it changes on every scroll frame, and
+    /// nothing draws from it — it's read once, when the mode changes.
+    @ObservationIgnored var visibleLine = 1
+    /// Where the incoming view should scroll to. Unobserved for the same reason
+    /// it doesn't need to be: switching mode rebuilds the view that reads it.
+    @ObservationIgnored var anchorLine: Int?
+
+    /// Select All, for the one mode that can't do it itself. Source and Diff are
+    /// a table: they select rows natively and copy them. A rendered document is a
+    /// stack of separate SwiftUI `Text` views, and SwiftUI selects *within* one —
+    /// a drag stops dead at a heading — so "select everything" is a state the
+    /// document holds and the view draws. To copy prose out properly, ⌘2 to the
+    /// source: it's the same file, in a view built for selecting.
+    var selectsAll = false
 
     // MARK: What each mode draws
 
@@ -55,10 +91,21 @@ final class PreviewDocument {
     /// Not text we can show — an image, a binary. The window hands these to
     /// Quick Look, which knows more formats than we ever will.
     private(set) var isBinary = false
+    /// Bumped whenever the content is replaced. Views that read the file
+    /// themselves — the image preview — redraw on this rather than on every
+    /// SwiftUI update, since a find-bar keystroke re-renders the window and
+    /// decoding a screenshot per keypress is real work.
+    private(set) var contentVersion = 0
     /// The file is gone from disk. The content stays on screen (it's still worth
     /// reading, and a branch switch may well bring it back); the window says so,
     /// and clears this the moment it returns.
     private(set) var isMissing = false
+
+    /// The document as plain text, for Copy: the file itself, which is what a
+    /// rendered preview is a rendering *of*.
+    var plainText: String {
+        sourceLines.map(\.text).joined(separator: "\n")
+    }
 
     var availableModes: [PreviewMode] {
         PreviewMode.available(for: url, hasDiffSource: diffSource.exists)
@@ -71,23 +118,53 @@ final class PreviewDocument {
     static let maxBytes = 8 * 1024 * 1024
 
     @ObservationIgnored private let highlighter: (any DiffHighlighting)?
-    @ObservationIgnored private var watcher: GitRepoWatcher?
+    @ObservationIgnored private var fileWatcher: DirectoryWatcher?
+    @ObservationIgnored private var directoryWatcher: DirectoryWatcher?
     @ObservationIgnored private var lastModified: Date?
     /// Rising token, so a slow read or highlight for a previous revision can't
     /// land on top of a newer one.
     @ObservationIgnored private var revision = 0
 
+    /// The file is an alias, and `url` is where it really is.
+    var isAlias: Bool { requestedURL != url }
+
     init(url: URL,
          diffSource: PreviewDiffSource = .none,
          mode: PreviewMode = .source,
          highlighter: (any DiffHighlighting)? = nil) {
+        self.requestedURL = url.standardizedFileURL
         self.url = url.resolvingSymlinksInPath().standardizedFileURL
         self.diffSource = diffSource
         self.mode = mode
         self.highlighter = highlighter
         reload()
-        watcher = GitRepoWatcher(root: self.url.deletingLastPathComponent().path) { [weak self] in
-            Task { @MainActor in self?.reload() }
+        watchFile()
+        // The directory's only job is the file coming *back* — deleted and
+        // rewritten, or restored by a branch switch — because at that moment
+        // there is no file watch left to fire.
+        directoryWatcher = DirectoryWatcher(path: self.url.deletingLastPathComponent().path) {
+            [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.fileWatcher == nil else { return }
+                self.watchFile()
+                self.reload()
+            }
+        }
+    }
+
+    /// Watch the file itself for in-place writes, and re-arm when it is replaced
+    /// — a rename over the top unlinks the inode this is watching, which arrives
+    /// as `vanished` and is the last thing this watch will ever say.
+    private func watchFile() {
+        fileWatcher = DirectoryWatcher(path: url.path) { [weak self] vanished in
+            Task { @MainActor in
+                guard let self else { return }
+                if vanished {
+                    self.fileWatcher = nil
+                    self.watchFile()
+                }
+                self.reload()
+            }
         }
     }
 
@@ -114,12 +191,14 @@ final class PreviewDocument {
             // Content stays; only the mark changes.
             if !isMissing { isMissing = true }
         case .binary(let modified):
+            contentVersion += 1
             lastModified = modified
             isMissing = false
             isBinary = true
             sourceLines = []
             sourceHighlights = [:]
         case .text(let lines, let markdown, let modified, let truncated):
+            contentVersion += 1
             lastModified = modified
             isMissing = false
             isBinary = false
@@ -150,8 +229,12 @@ final class PreviewDocument {
         guard source.exists else { return }
         let token = revision
         Task { [weak self] in
-            let patch = await Self.patch(for: source)
-            let parsed = DiffParser.parse(patch)
+            // Both the git call *and* the parse happen off the main actor. A
+            // `Task {}` started here would otherwise inherit this class's
+            // isolation and parse on the main thread — which is the exact freeze
+            // the git panel documents: a regenerated lock file's 51MB patch took
+            // 1.2s, terminal included.
+            let parsed = await Self.parsedPatch(for: source)
             guard let self, token == self.revision else { return }
             self.diffLines = parsed.lines
             self.diffIsBinary = parsed.isBinary
@@ -162,12 +245,18 @@ final class PreviewDocument {
         }
     }
 
+    nonisolated private static func parsedPatch(for source: PreviewDiffSource) async -> DiffResult {
+        DiffParser.parse(await patch(for: source))
+    }
+
     nonisolated private static func patch(for source: PreviewDiffSource) async -> String {
         switch source {
         case .none:
             return ""
-        case .workingTree(let root, let path):
-            return await GitService.diffAgainstHead(root: root, path: path)
+        case .workingTree(let root, let path, let untracked):
+            return untracked
+                ? await GitService.untrackedDiff(root: root, path: path)
+                : await GitService.diffAgainstHead(root: root, path: path)
         case .change(let root, let change):
             return await GitService.diff(root: root, change: change)
         case .commit(let root, let sha, let path, let originalPath):
@@ -192,7 +281,8 @@ final class PreviewDocument {
 
     // MARK: - Reading (off the main actor)
 
-    private enum LoadResult {
+    /// Internal, with `read`, so the tests can name what they got back.
+    enum LoadResult {
         case text([DiffLine], [MarkdownBlock], Date?, Bool)
         case binary(Date?)
         case unchanged
@@ -200,8 +290,11 @@ final class PreviewDocument {
     }
 
     /// Reads and splits the file. `nonisolated` and static: this touches the
-    /// disk, and the terminal must not wait on a slow volume.
-    nonisolated private static func read(
+    /// disk, and the terminal must not wait on a slow volume. Internal rather
+    /// than private so `PreviewDocumentTests` can hand it a real file — it is
+    /// the whole of what a preview shows, and every one of its edge cases fails
+    /// quietly.
+    nonisolated static func read(
         _ url: URL, ifNewerThan previous: Date?, parseMarkdown: Bool
     ) async -> LoadResult {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
@@ -210,7 +303,11 @@ final class PreviewDocument {
         let modified = attributes[.modificationDate] as? Date
         if let modified, let previous, modified == previous { return .unchanged }
 
+        // The size cap comes *before* the read, which is the only place it can do
+        // any good: checking it afterwards still pulls the whole file into memory
+        // first, so a stray 2GB log allocated 2GB on its way to being rejected.
         let size = (attributes[.size] as? Int) ?? 0
+        guard size <= maxBytes else { return .binary(modified) }
         // Deliberately not `.mappedIfSafe`: these files are being rewritten by
         // agents, and a mapped file truncated under us faults the whole app. The
         // size cap is what makes a plain read affordable.
@@ -219,9 +316,7 @@ final class PreviewDocument {
         // it answers the only question the window has: can this be shown as lines
         // of text?
         if data.prefix(8_000).contains(0) { return .binary(modified) }
-        guard size <= maxBytes, let text = String(data: data, encoding: .utf8) else {
-            return .binary(modified)
-        }
+        guard let text = String(data: data, encoding: .utf8) else { return .binary(modified) }
 
         var split = text.split(separator: "\n", omittingEmptySubsequences: false)
         // A trailing newline ends the file; it isn't a final empty line.

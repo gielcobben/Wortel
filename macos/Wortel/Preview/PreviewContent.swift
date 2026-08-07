@@ -18,7 +18,14 @@ struct PreviewContent: View {
     var body: some View {
         Group {
             if document.isBinary {
-                QuickLook(url: document.url)
+                // An image is shown as an image: at its own size, scaled down
+                // only when it doesn't fit. Quick Look scales *up* to fill the
+                // window, which turns a 16pt icon into a wall of blur.
+                if PreviewMode.isImage(document.url) {
+                    ImagePreview(url: document.url, version: document.contentVersion)
+                } else {
+                    QuickLook(url: document.url)
+                }
             } else {
                 switch document.mode {
                 case .source: source
@@ -93,7 +100,10 @@ struct PreviewContent: View {
             DiffView(lines: document.sourceLines,
                      highlights: document.sourceHighlights,
                      focusedLine: find.focusedLine,
-                     fontSize: settings.fontSize)
+                     fontSize: settings.fontSize,
+                     gutter: .file,
+                     anchorLine: document.anchorLine,
+                     onTopLine: { document.visibleLine = $0 })
         }
     }
 
@@ -112,20 +122,30 @@ struct PreviewContent: View {
             DiffView(lines: document.diffLines,
                      highlights: document.diffHighlights,
                      focusedLine: find.focusedLine,
-                     fontSize: settings.fontSize)
+                     fontSize: settings.fontSize,
+                     anchorLine: document.anchorLine,
+                     onTopLine: { document.visibleLine = $0 })
         }
     }
 
     @ViewBuilder
     private var rendered: some View {
-        if document.blocks.isEmpty {
+        if PreviewMode.isSVG(document.url) {
+            // The picture the code makes. NSImage renders SVG as vector, so it's
+            // sharp at any size rather than a bitmap of one.
+            ImagePreview(url: document.url, version: document.contentVersion)
+        } else if document.blocks.isEmpty {
             empty("Empty document")
         } else {
             // Rendered text has a type *scale*, not a font size — headings and
             // code sit in fixed proportion to the body. So ⌘+ moves the whole
             // sheet by the ratio the source view is running at.
             MarkdownView(blocks: document.blocks,
-                         scale: settings.fontSize / PreviewSettings.defaultFontSize)
+                         scale: settings.fontSize / PreviewSettings.defaultFontSize,
+                         isSelected: document.selectsAll,
+                         anchorLine: document.anchorLine,
+                         onTopLine: { document.visibleLine = $0 })
+                .onExitCommand { document.selectsAll = false }
         }
     }
 
@@ -134,12 +154,10 @@ struct PreviewContent: View {
     @ViewBuilder
     private var notices: some View {
         let truncated = document.mode == .diff ? document.diffTruncated : document.sourceTruncated
-        if document.isMissing || truncated {
+        if document.isMissing || truncated || document.isAlias {
             HStack(spacing: 6) {
-                Image(systemName: document.isMissing ? "questionmark.circle" : "scissors")
-                Text(document.isMissing
-                     ? "This file is no longer on disk"
-                     : "Showing the first \(PreviewDocument.maxLines) lines")
+                Image(systemName: noticeSymbol(truncated: truncated))
+                Text(noticeText(truncated: truncated))
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -151,6 +169,22 @@ struct PreviewContent: View {
         }
     }
 
+    private func noticeSymbol(truncated: Bool) -> String {
+        if document.isMissing { return "questionmark.circle" }
+        if truncated { return "scissors" }
+        return "arrow.up.forward"
+    }
+
+    /// One strip, in order of urgency: gone, cut short, or somewhere else. An
+    /// alias is the mildest — it's not a problem, it's a fact you'd otherwise
+    /// have to discover by editing the wrong copy.
+    private func noticeText(truncated: Bool) -> String {
+        if document.isMissing { return "This file is no longer on disk" }
+        if truncated { return "Showing the first \(PreviewDocument.maxLines) lines" }
+        return "Alias — the file is at "
+            + document.url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    }
+
     private func empty(_ text: String) -> some View {
         Text(text)
             .font(.callout)
@@ -159,8 +193,44 @@ struct PreviewContent: View {
     }
 }
 
-/// Anything that isn't text we can show. Quick Look handles images, PDFs, fonts
-/// and archives, and it costs a view to ask.
+/// An image at its own size.
+///
+/// `.scaleProportionallyDown` is the whole point: it fits an image too big for
+/// the window and leaves everything else exactly as authored. A 16×16 icon
+/// should look like a 16×16 icon — blown up to 700pt it tells you nothing about
+/// itself except that it's blurry.
+private struct ImagePreview: NSViewRepresentable {
+    let url: URL
+    /// Changes only when the file does — see `PreviewDocument.contentVersion`.
+    let version: Int
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator { var loaded: Int? }
+
+    func makeNSView(context: Context) -> NSImageView {
+        let view = NSImageView()
+        view.imageScaling = .scaleProportionallyDown
+        view.imageAlignment = .alignCenter
+        // A transparent PNG on a transparent background is an invisible PNG.
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.5).cgColor
+        view.image = NSImage(contentsOf: url)
+        context.coordinator.loaded = version
+        return view
+    }
+
+    func updateNSView(_ view: NSImageView, context: Context) {
+        // Re-read rather than trusting NSImage's URL cache — an agent rewriting
+        // an icon has to redraw here — but only when the file actually moved.
+        guard context.coordinator.loaded != version else { return }
+        context.coordinator.loaded = version
+        view.image = NSImage(contentsOf: url)
+    }
+}
+
+/// Anything that isn't text we can show. Quick Look handles PDFs, fonts and
+/// archives, and it costs a view to ask.
 private struct QuickLook: NSViewRepresentable {
     let url: URL
 

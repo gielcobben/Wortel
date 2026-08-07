@@ -6,9 +6,8 @@ import SwiftUI
 /// An `NSWindowController` rather than anything SwiftUI offers a window, because
 /// the details that make this feel native are AppKit's: `representedURL` for the
 /// proxy icon (⌘-click it for the path hierarchy, drag it into the terminal —
-/// `SurfaceView` already accepts a `.fileURL` and inserts the escaped path), a
-/// subtitle for the path so the title stays just the filename, and a tabbing
-/// identifier so a second window merges into tabs on its own.
+/// `SurfaceView` already accepts a `.fileURL` and inserts the escaped path) and
+/// a tabbing identifier so a second window merges into tabs on its own.
 @MainActor
 final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     /// Named `file` rather than `document`: NSWindowController already has a
@@ -98,6 +97,26 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         applyIdentity()
         installToolbar()
+        observeBinary()
+    }
+
+    /// A file that turns out not to be text goes to Quick Look whatever the
+    /// segments say, so leaving them live is a control that does nothing —
+    /// double-click a PNG in a repo and you'd get Diff and Source segments that
+    /// change the window not at all. Whether a file is binary is only known once
+    /// it has been read, which is after the toolbar exists, so it's observed
+    /// rather than decided up front. `withObservationTracking` fires once; the
+    /// re-arm is what makes it a subscription.
+    private func observeBinary() {
+        withObservationTracking {
+            _ = file.isBinary
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.modeControl?.isEnabled = !self.file.isBinary
+                self.observeBinary()
+            }
+        }
     }
 
     @available(*, unavailable)
@@ -132,6 +151,48 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     @objc func decreaseFontSize(_ sender: Any?) { settings.decrease() }
     @objc func resetFontSize(_ sender: Any?) { settings.reset() }
 
+    // MARK: - Select All and Copy
+    //
+    // Source and Diff select natively once the table has focus, which this hands
+    // it — a window hosting SwiftUI opens with the window itself as first
+    // responder, so ⌘A would otherwise reach nothing. Rendered has no rows, and
+    // SwiftUI selects within one `Text`, so there ⌘A means "the document" and ⌘C
+    // copies the file. Selecting *part* of a rendered document is what ⌘2 is
+    // for: the same file, in a view built for it.
+
+    @objc override func selectAll(_ sender: Any?) {
+        if let table = diffTable {
+            window?.makeFirstResponder(table)
+            table.selectAll(sender)
+        } else {
+            file.selectsAll = true
+        }
+    }
+
+    @objc func copy(_ sender: Any?) {
+        // Only reached when nothing is focused to answer it — otherwise the
+        // table or the text view has already handled ⌘C with its selection.
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(file.plainText, forType: .string)
+    }
+
+    /// The diff's table, found the way `SidebarSelectionStyler` finds its own: by
+    /// walking the window for the identifier `DiffView` stamps on it. The
+    /// alternative is threading a handle back out of a SwiftUI view, which is
+    /// more machinery for the same answer.
+    private var diffTable: NSTableView? {
+        func search(_ view: NSView) -> NSTableView? {
+            if let table = view as? NSTableView, table.identifier == DiffView.tableIdentifier {
+                return table
+            }
+            for subview in view.subviews {
+                if let found = search(subview) { return found }
+            }
+            return nil
+        }
+        return window?.contentView.flatMap(search)
+    }
+
     /// Edit ▸ Find (⌘F). Reached through the responder chain, so it's live
     /// exactly when a preview window is key and greyed out everywhere else —
     /// which is why the menu item can carry ⌘F without stealing it from the
@@ -142,7 +203,22 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         find.isPresented = true
     }
 
+    /// View ▸ Preview ▸ Diff / Source / Rendered, and the ⌘1…⌘3 that `MainMenu`
+    /// lends those items while a preview is key.
+    @objc func showPreviewMode(_ sender: NSMenuItem) {
+        guard let mode = PreviewMode.mode(menuTag: sender.tag),
+              file.availableModes.contains(mode) else { return }
+        select(mode)
+    }
+
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(showPreviewMode(_:)) {
+            guard let mode = PreviewMode.mode(menuTag: menuItem.tag) else { return false }
+            // A checkmark on the mode you're in: the segmented control says the
+            // same thing, but only the menu can say it while it's open.
+            menuItem.state = file.mode == mode ? .on : .off
+            return !file.isBinary && file.availableModes.contains(mode)
+        }
         guard menuItem.action == #selector(showPreviewFind(_:)) else { return true }
         // Nothing to search in a rendered document or a Quick Look preview.
         return file.mode != .rendered && !file.isBinary
@@ -154,19 +230,48 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         file.mode = modes[sender.selectedSegment]
     }
 
-    /// Title, subtitle and proxy icon, all from the file itself.
+    /// Change mode from anywhere that isn't the control itself, bringing the
+    /// control along — it's an AppKit view, so it doesn't hear about the model
+    /// the way the SwiftUI content does.
+    private func select(_ mode: PreviewMode) {
+        file.mode = mode
+        modeControl?.selectedSegment = file.availableModes.firstIndex(of: mode) ?? 0
+    }
+
+    /// Title and proxy icon, both from the file itself.
+    ///
+    /// **No subtitle**, though the path would be the obvious thing to put there.
+    /// Measured on this OS: with a toolbar installed, setting `subtitle` makes
+    /// the title stack reserve a 14pt row for it and then draws nothing in it —
+    /// the title field lands at y 57–73 in a 32–84 titlebar, sitting 7pt above
+    /// centre with a blank strip underneath. Clear the subtitle and the one line
+    /// there actually is centres exactly (48–67 of 32–84). The path isn't lost:
+    /// ⌘-click the proxy icon for the whole hierarchy, which is where a Mac user
+    /// looks for it anyway.
     private func applyIdentity() {
         guard let window else { return }
         window.title = file.url.lastPathComponent
-        window.subtitle = file.url.deletingLastPathComponent().path
-            .replacingOccurrences(of: NSHomeDirectory(), with: "~")
         // The proxy icon. Set last: AppKit reads the title from it otherwise.
         window.representedURL = file.url
     }
 
     /// One size for all previews rather than one per file: you size a preview
     /// once to suit your screen, and every one after it should arrive that way.
-    func windowDidResize(_ notification: Notification) {
+    /// Once per gesture, not once per frame of one: `windowDidResize` fires
+    /// continuously while a corner is being dragged, and none of those
+    /// intermediate sizes is a preference.
+    func windowDidEndLiveResize(_ notification: Notification) {
+        persistSize()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        // Zoom and full-screen resize a window without ever ending a live
+        // resize, so closing is the other place the final size is known.
+        persistSize()
+        onClose?(self)
+    }
+
+    private func persistSize() {
         // The *content* size, measured the same way it's applied — mixing a
         // frame size into a content size grows every new window by the height of
         // a titlebar, which compounds on each launch (653 → 681 → 710 …).
@@ -175,10 +280,6 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         guard size.width >= 360, size.height >= 240 else { return }
         UserDefaults.standard.set(Double(size.width), forKey: Self.sizeKey + ".width")
         UserDefaults.standard.set(Double(size.height), forKey: Self.sizeKey + ".height")
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        onClose?(self)
     }
 }
 
@@ -219,6 +320,7 @@ extension PreviewWindowController: NSToolbarDelegate {
             control.setToolTip(mode.title, forSegment: index)
         }
         control.selectedSegment = modes.firstIndex(of: file.mode) ?? 0
+        control.isEnabled = !file.isBinary
         modeControl = control
 
         let item = NSToolbarItem(itemIdentifier: itemIdentifier)

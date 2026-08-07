@@ -353,8 +353,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the wrong one here: it meant a file opened with the inspector closed had
     /// no repo, so no diff source, so no Diff mode at all. When the panel
     /// happens to have the answer it's free; when it doesn't, we ask.
-    private func openPreview(_ url: URL) {
-        let url = url.resolvingSymlinksInPath().standardizedFileURL
+    private func openPreview(_ requested: URL) {
+        // Two paths, deliberately: git and the window registry work on the real
+        // file, while the window is opened with the path you actually clicked so
+        // it can tell you when that was an alias.
+        let url = requested.resolvingSymlinksInPath().standardizedFileURL
         // Already open: focus it and do no git work whatsoever.
         if previewWindows.focus(url) { return }
 
@@ -364,9 +367,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let change = repo.status.unstagedChanges.first { $0.path == relative }
                 ?? repo.status.stagedChanges.first { $0.path == relative }
             if let change {
-                previewWindows.open(url, diff: .change(root: repo.root, change: change), hasChanges: true)
+                previewWindows.open(requested, diff: .change(root: repo.root, change: change),
+                                    hasChanges: true)
             } else {
-                previewWindows.open(url, diff: .workingTree(root: repo.root, path: relative))
+                previewWindows.open(
+                    requested,
+                    diff: .workingTree(root: repo.root, path: relative, untracked: false))
             }
             return
         }
@@ -382,14 +388,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 repoRootCache[directory] = root
             }
             guard let root, let relative = Self.relativePath(of: url, in: root) else {
-                previewWindows.open(url)
+                previewWindows.open(requested)
                 return
             }
-            // One line of porcelain, not a patch: all this decides is whether
-            // the window opens on the diff or on the file.
-            let changed = await GitService.hasChanges(root: root, path: relative)
+            // One line of porcelain, not a patch: it decides whether the window
+            // opens on the diff or on the file, and whether that diff is against
+            // HEAD or against nothing at all.
+            let state = await GitService.workingTreeState(root: root, path: relative)
             previewWindows.open(
-                url, diff: .workingTree(root: root, path: relative), hasChanges: changed)
+                requested,
+                diff: .workingTree(root: root, path: relative, untracked: state == .untracked),
+                hasChanges: state.hasChanges)
         }
     }
 

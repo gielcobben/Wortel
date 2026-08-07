@@ -37,6 +37,53 @@ opens on Diff, `.md` on Rendered, everything else on Source — and is sticky fr
 then on. The control only appears when there is more than one to choose from: one
 mode is not a control, it's a decoration costing a row of titlebar.
 
+The three run **Diff · Source · Rendered**, left to right, each one step further
+from the bytes on disk: only what changed, then the whole file, then the file as
+something else entirely. Rendered goes last because it's the odd medium out —
+which also leaves the two views of the same text next to each other, so ⌘1/⌘2
+flip between neighbours.
+
+**⌘1 ⌘2 ⌘3 pick a mode**, and they are *lent* by the Session menu rather than
+added alongside it. ⌘1 already meant "session 1", and validation cannot arbitrate
+between two items claiming one shortcut: measured, `performKeyEquivalent` stops
+at the first item whose key equivalent matches and swallows the event when that
+item validates disabled — it never looks for a second match, so a duplicate
+further down the menu bar is unreachable. So `MainMenu.syncPreviewShortcuts`
+moves the key equivalents themselves whenever the key window changes. The happy
+side effect is that both menus tell the truth: with a preview key, the Session
+menu shows no ⌘1 to give.
+
+**Images render at their own size**, scaled down only when they don't fit. Quick
+Look scales *up* to fill the window, which turns a 16pt icon into a wall of blur
+and tells you nothing about the icon. Anything that isn't an image — PDFs, fonts,
+archives — still goes to Quick Look, which knows more formats than we ever will.
+
+**An SVG gets both modes**, and it's the only file type where that's genuinely
+true: it is text you edit *and* a picture you look at, so ⌘1 shows the picture
+(NSImage renders SVG as vector, sharp at any size) and ⌘2 shows the XML. It opens
+on the picture — double-clicking an icon to read markup is not what anyone meant.
+
+**Rendered Markdown is one SwiftUI view per block**, and its selection is
+per-paragraph as a result — SwiftUI selects *within* a single `Text`, so a drag
+can't cross a heading. ⌘A marks the whole document and ⌘C copies the file; to
+select *part* of it, ⌘2 to the source, which is the same file in a view built for
+selecting.
+
+That limitation was worth one serious attempt to remove. The renderer was rebuilt
+on TextKit — one `NSAttributedString`, `NSTextTable` for tables, code cards and
+inline chips drawn behind the glyphs — which delivered exactly the selection
+SwiftUI can't, and lost on everything else. A text engine is not a document
+renderer: every card, chip, quote bar and table rule becomes hand-drawn geometry,
+and some of it can't be reached at all (a code block can't scroll horizontally
+while it shares a text container with the prose, so wide listings had to shrink
+to fit). Three rounds of screenshots closed real bugs — `enumerateEnclosingRects`
+returns *selection* rects, so a wrapped chip painted a slab out through both
+margins; `paragraphSpacingBefore` applies per paragraph, and a fenced block is one
+paragraph per line — and it still didn't read as well as the SwiftUI version. The
+verdict is recorded here so it isn't retried by accident: **rendering quality won
+over selection**, and the escape hatch is the mode switch, not a better
+renderer.
+
 **⌘F** searches whatever is on screen. It finds *lines* — the thing being
 searched is a table of hand-drawn rows, not text, so `NSTextFinder` has nothing
 to attach to — and it lives in the Edit menu, resolving through the responder

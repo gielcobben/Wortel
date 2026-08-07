@@ -408,9 +408,27 @@ enum GitService {
     /// Whether one file differs from HEAD in any way — staged, unstaged or
     /// untracked. One line of porcelain rather than a whole patch, because the
     /// only question being asked is "should this open on its diff?".
-    static func hasChanges(root: String, path: String) async -> Bool {
+    static func workingTreeState(root: String, path: String) async -> WorkingTreeState {
         let result = await run(["status", "--porcelain", "--", path], in: root)
-        return result.ok && !result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard result.ok else { return .unchanged }
+        let line = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.isEmpty { return .unchanged }
+        return line.hasPrefix("??") ? .untracked : .changed
+    }
+
+    /// A file git has never seen, shown as additions against nothing — the same
+    /// `--no-index` trick `diff(root:change:)` uses for an untracked row.
+    static func untrackedDiff(root: String, path: String) async -> String {
+        // --no-index exits 1 when the files differ (always, here); the diff is on
+        // stdout regardless of exit status.
+        await run(["diff", "--no-index", "--", "/dev/null", path], in: root).stdout
+    }
+
+    /// What the working tree has done to one path. Three states rather than a
+    /// bool because untracked is not a kind of changed: git diffs it differently.
+    enum WorkingTreeState {
+        case unchanged, changed, untracked
+        var hasChanges: Bool { self != .unchanged }
     }
 
     /// Everything that has happened to one file since the last commit — staged
@@ -427,11 +445,7 @@ enum GitService {
     /// their whole content is shown as additions via `--no-index`.
     static func diff(root: String, change: GitFileChange) async -> String {
         if change.untracked {
-            // --no-index exits 1 when the files differ (always, here); the diff
-            // is on stdout regardless of exit status.
-            let result = await run(
-                ["diff", "--no-index", "--", "/dev/null", change.path], in: root)
-            return result.stdout
+            return await untrackedDiff(root: root, path: change.path)
         }
         var args = ["diff"]
         if change.staged { args.append("--cached") }

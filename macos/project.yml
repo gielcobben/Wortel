@@ -232,6 +232,13 @@ targets:
       # here — it pulls in ~20 C grammars the unit tests have no need for.
       - path: Wortel/Git/DiffSyntax.swift
       - path: Wortel/Git/GitStatusParser.swift
+      # The diff table. Its *views* aren't testable without a window, but its
+      # metrics are, and they carry an invariant nothing else enforces: the
+      # coordinator's row height must equal the static `rowHeight(forFontSize:)`
+      # the History accordion sizes inline diffs with. When the two disagreed,
+      # rows came out 16pt where the font wanted 18 and every descender in the
+      # pane was clipped — a build-clean, test-green, entirely visual failure.
+      - path: Wortel/Git/DiffView.swift
       # The file tree's git decoration. Pure value type by design — the ancestor
       # roll-up is the one piece of that pane that can be silently wrong (a
       # prefix match decorating `src/foobar` because `src/foo` changed), and it
@@ -247,6 +254,19 @@ targets:
       # of that feature that can be wrong without looking wrong: a sticky mode
       # decided once means a bad rule is the wrong view every single time.
       - path: Wortel/Preview/PreviewMode.swift
+      # Reading a file that an agent is rewriting underneath: the size cap, the
+      # NUL sniff, the line-count truncation and the trailing-newline rule.
+      # Every one of those is a silent failure — a cap applied after the read
+      # still allocates the file, a phantom last line shifts every line number
+      # under it — and `read` is a pure static over a path, so it needs no
+      # window. The watching around it does, and stays out.
+      - path: Wortel/Preview/PreviewDocument.swift
+      # Line-based find: index arithmetic with wraparound, which is the one part
+      # of a find bar that is wrong by exactly one and looks almost right.
+      - path: Wortel/Preview/PreviewFind.swift
+      # The font-size clamp, which is a `didSet` that assigns to its own
+      # property — correct here, and one edit away from unbounded recursion.
+      - path: Wortel/Preview/PreviewSettings.swift
       # AppKit only, and the requirement it has to meet — surviving AppKit's own
       # copyWithZone: when the toolbar builds its `»` menu — is invisible at
       # every call site and crashed the app when it went unmet. A menu item copy
@@ -275,6 +295,9 @@ targets:
       # kind of thing that fails silently. The renderer and tree-sitter code
       # highlighter stay out — they'd drag in SwiftUI and the grammars.
       - path: Wortel/Markdown/MarkdownParser.swift
+      # Inline markdown: the intents that make a code span a chip and a bare URL
+      # a link. Pure Foundation, and both fail by looking like ordinary text.
+      - path: Wortel/Markdown/MarkdownInline.swift
       # Agent activity inference: a state machine over screen digests plus the
       # blocked-prompt reading. It decides when the app makes a sound at you,
       # and its failure modes are all timing-shaped — a transition emitted twice

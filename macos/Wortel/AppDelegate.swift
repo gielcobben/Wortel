@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Drives the Files pane — the third view of the same column. Reads the repo
     /// the git panel has already resolved, so it costs no extra git work.
     private lazy var fileTree = FileTreeModel(git: gitPanel)
+    /// The preview windows. Accessories to the main window — they close with it,
+    /// so quitting stays what it has always been.
+    private lazy var previewWindows = PreviewWindows(highlighter: DiffHighlighter.shared)
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
     /// background update checks start at launch; the "Check for Updates…" menu
     /// item drives manual checks through it.
@@ -76,6 +79,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.window = window
 
         manager.onAllClosed = { [weak self] in self?.window?.close() }
+        // Previews are accessories: without this, closing the last session would
+        // leave a preview window standing, which both keeps the app alive (the
+        // last window hasn't closed) and leaves a terminal with no terminal in it.
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.previewWindows.closeAll() }
+        }
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
@@ -97,6 +108,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // reached either way lands in one place.
         fileTree.onPreviewMarkdown = { [weak self] url in
             self?.markdownPreview.open(url)
+        }
+        // A double-click opens a preview window; moving the selection afterwards
+        // only ever retargets one that's already open (see PreviewWindows).
+        fileTree.onOpenPreview = { [weak self] url, pinned in
+            self?.previewWindows.open(url, pinned: pinned)
+        }
+        fileTree.onSelectionPreview = { [weak self] url in
+            self?.previewWindows.retarget(url)
         }
         manager.onAttentionCleared = { session in
             // The user answered (or the session closed) — pull the banner out

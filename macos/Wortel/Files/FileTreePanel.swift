@@ -215,7 +215,10 @@ struct FileTreePanel: View {
         } else if node.url.pathExtension.lowercased() == "md" {
             model.onPreviewMarkdown?(node.url)
         } else {
-            NSWorkspace.shared.open(node.url)
+            // ⌥ opens a window that won't follow the selection afterwards —
+            // "keep this one" in a single gesture, for when you already know
+            // you're going to want it beside the next thing you look at.
+            model.onOpenPreview?(node.url, optionHeld)
         }
     }
 

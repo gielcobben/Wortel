@@ -107,6 +107,13 @@ final class FileTreeModel {
     /// over. A closure rather than a reference so the tree doesn't depend on the
     /// preview's model.
     @ObservationIgnored var onPreviewMarkdown: ((URL) -> Void)?
+    /// Open a file in a preview window — a double-click, or ⌥-double-click for a
+    /// window that won't follow the selection afterwards.
+    @ObservationIgnored var onOpenPreview: ((URL, _ pinned: Bool) -> Void)?
+    /// The selection moved. Only retargets a preview window that is *already*
+    /// open and tracking; it must never summon one, or arrowing through the tree
+    /// would throw windows at you.
+    @ObservationIgnored var onSelectionPreview: ((URL) -> Void)?
 
     @ObservationIgnored private weak var session: Session?
     /// Expanded directory paths for the current root.
@@ -313,18 +320,28 @@ final class FileTreeModel {
         return rows.first { $0.node.url.path == parentPath }?.node
     }
 
-    func select(_ node: FileNode) { selectedID = node.id }
+    func select(_ node: FileNode) { moveSelection(to: node) }
+
+    /// The one place the selection changes. A preview window that's up follows
+    /// it — every selection, including the ones ↑/↓ and type-to-select make,
+    /// which is what turns walking a list of files into scrubbing through them.
+    /// Clicks and keys have to share this funnel or the two would disagree about
+    /// what selecting means.
+    private func moveSelection(to node: FileNode) {
+        selectedID = node.id
+        if !node.isDirectory { onSelectionPreview?(node.url) }
+    }
 
     /// Move the selection by `delta` rows, clamped at both ends — the shape
     /// `keyboardNavigableList` expects.
     func selectAdjacent(_ delta: Int) {
         guard !rows.isEmpty else { return }
         guard let current = rows.firstIndex(where: { $0.id == selectedID }) else {
-            selectedID = rows.first?.id
+            if let first = rows.first { moveSelection(to: first.node) }
             return
         }
         let next = min(max(current + delta, 0), rows.count - 1)
-        selectedID = rows[next].id
+        moveSelection(to: rows[next].node)
     }
 
     /// Select the next visible row whose name starts with `prefix`, wrapping —
@@ -336,7 +353,7 @@ final class FileTreeModel {
         if let hit = order.first(where: {
             $0.node.name.lowercased().hasPrefix(prefix.lowercased())
         }) {
-            selectedID = hit.id
+            moveSelection(to: hit.node)
         }
     }
 

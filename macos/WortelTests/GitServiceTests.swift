@@ -333,7 +333,7 @@ final class GitServiceTests: XCTestCase {
         let path = repo.deletingLastPathComponent()
             .appendingPathComponent("wt-\(UUID().uuidString)").path
         let failure = await GitService.addWorktree(
-            root: repo.path, at: path, branch: "feature/x", createFrom: "HEAD")
+            root: repo.path, at: path, branch: "feature/x", source: .newBranch(from: "HEAD"))
         XCTAssertNil(failure, "git refused: \(failure ?? "")")
 
         let trees = await GitService.worktrees(root: repo.path)
@@ -358,12 +358,12 @@ final class GitServiceTests: XCTestCase {
 
         let first = base.appendingPathComponent("wt1-\(UUID().uuidString)").path
         let firstFailure = await GitService.addWorktree(
-            root: repo.path, at: first, branch: "shared", createFrom: "HEAD")
+            root: repo.path, at: first, branch: "shared", source: .newBranch(from: "HEAD"))
         XCTAssertNil(firstFailure)
 
         let second = base.appendingPathComponent("wt2-\(UUID().uuidString)").path
         let failure = await GitService.addWorktree(
-            root: repo.path, at: second, branch: "shared", createFrom: nil)
+            root: repo.path, at: second, branch: "shared", source: .existingBranch)
         XCTAssertNotNil(failure, "git allowed one branch in two worktrees")
         // The message names where it already is, which is why it's shown verbatim.
         XCTAssertTrue(failure?.contains(first) == true, failure ?? "")
@@ -380,7 +380,7 @@ final class GitServiceTests: XCTestCase {
         let path = repo.deletingLastPathComponent()
             .appendingPathComponent("wt-\(UUID().uuidString)").path
         let added = await GitService.addWorktree(
-            root: repo.path, at: path, branch: "dirty", createFrom: "HEAD")
+            root: repo.path, at: path, branch: "dirty", source: .newBranch(from: "HEAD"))
         XCTAssertNil(added)
 
         GitFixture.sh("printf 'uncommitted\\n' >> a.txt", in: URL(fileURLWithPath: path))
@@ -389,6 +389,62 @@ final class GitServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: path + "/a.txt"))
 
         GitFixture.sh("git checkout -- a.txt", in: URL(fileURLWithPath: path))
+        _ = await GitService.removeWorktree(root: repo.path, at: path)
+    }
+
+    /// A freshly `git init`ed repository has no commits, so HEAD points at a
+    /// branch that does not exist. Handing that HEAD to `worktree add` as a base
+    /// fails with `invalid reference: HEAD` — which is what "git init, then open
+    /// a session on a branch" did.
+    func testWorktreeInARepositoryWithNoCommits() async {
+        repo = GitFixture.newRepo("unborn")
+        let hasCommits = await GitService.hasCommits(root: repo.path)
+        XCTAssertFalse(hasCommits, "a fresh init has no commits")
+
+        let path = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+        // Asking for HEAD is the bug, kept here so the fix can't quietly regress.
+        let withHead = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "first", source: .newBranch(from: "HEAD"))
+        XCTAssertNotNil(withHead)
+        XCTAssertTrue(withHead?.contains("HEAD") == true, withHead ?? "")
+
+        // Without a base, git infers an orphan branch — the right answer for the
+        // first branch in an empty repository.
+        let orphan = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "first", source: .newBranch(from: nil))
+        XCTAssertNil(orphan, "git refused an orphan worktree: \(orphan ?? "")")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+
+        _ = await GitService.removeWorktree(root: repo.path, at: path)
+    }
+
+    func testHasCommitsBecomesTrueAfterTheFirstOne() async {
+        repo = GitFixture.newRepo("first-commit")
+        var has = await GitService.hasCommits(root: repo.path)
+        XCTAssertFalse(has)
+        GitFixture.commit("first", in: repo)
+        has = await GitService.hasCommits(root: repo.path)
+        XCTAssertTrue(has)
+    }
+
+    /// A worktree whose directory was deleted by hand stays registered, and the
+    /// next `add` for that branch fails on a directory nobody can see. Adding
+    /// prunes first.
+    func testStaleWorktreeRecordDoesNotBlockANewOne() async {
+        repo = GitFixture.newRepo("stale")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        let path = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+
+        let added = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "recycled", source: .newBranch(from: "HEAD"))
+        XCTAssertNil(added)
+        try? FileManager.default.removeItem(atPath: path) // deleted behind git's back
+
+        let again = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "recycled", source: .existingBranch)
+        XCTAssertNil(again, "a stale record blocked reuse: \(again ?? "")")
         _ = await GitService.removeWorktree(root: repo.path, at: path)
     }
 }

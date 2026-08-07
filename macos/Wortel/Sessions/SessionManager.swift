@@ -696,8 +696,16 @@ final class SessionManager {
                 // means when you're standing on the branch you want to fork.
                 let known = await GitService.branches(root: root)
                     .contains { !$0.isRemote && $0.name == branch }
+                // A repository with no commits has a HEAD that resolves to
+                // nothing, so it can't be a base — git infers an orphan branch
+                // instead, which is exactly right for a first branch in a fresh
+                // repo. Handing it `HEAD` regardless is what made "git init and
+                // then a session" fail with `invalid reference: HEAD`.
+                let source: GitService.WorktreeSource = known
+                    ? .existingBranch
+                    : .newBranch(from: await GitService.hasCommits(root: root) ? "HEAD" : nil)
                 if let error = await GitService.addWorktree(
-                    root: root, at: path, branch: branch, createFrom: known ? nil : "HEAD") {
+                    root: root, at: path, branch: branch, source: source) {
                     onFailure(error)
                     return
                 }

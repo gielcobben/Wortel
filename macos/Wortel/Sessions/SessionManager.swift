@@ -726,6 +726,16 @@ final class SessionManager {
         return await GitService.branches(root: root).filter { !$0.isRemote }.map(\.name)
     }
 
+    /// Which of those already have a worktree — the picker says so on the row,
+    /// because choosing one goes to it rather than making a second.
+    func branchesWithWorktrees() async -> Set<String> {
+        guard let cwd = selected?.cwd,
+              let root = await GitService.repoRoot(for: cwd) else { return [] }
+        return Set(await GitService.worktrees(root: root)
+            .filter { !$0.isPrimary }
+            .compactMap(\.branch))
+    }
+
     /// The worktree a session is sitting in, when it's one Wortel created — the
     /// gate on offering to remove it. A session in the repository's own checkout,
     /// or in a worktree someone made by hand, is not ours to tidy up.

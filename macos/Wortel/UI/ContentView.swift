@@ -24,6 +24,8 @@ func promptFolderName(title: String, confirm: String, initial: String = "") -> S
 /// the system material, and painting over it would block the glass.
 struct SidebarPane: View {
     @Bindable var manager: SessionManager
+    /// The branch picker's popover, anchored to the + button below.
+    @State private var branchPicker = BranchPickerState()
 
     var body: some View {
         // The session list is a native NSOutlineView (SidebarOutlineView), not a
@@ -43,7 +45,7 @@ struct SidebarPane: View {
                         Button("New Session") { manager.newSession() }
                         // Its own branch and its own files: what makes running
                         // two agents in one repository safe.
-                        Button("New Session on Branch…") { newSessionOnBranch(manager) }
+                        Button("New Session on Branch…") { branchPicker.open(manager) }
                         Button("New Folder…") {
                             if let name = promptFolderName(title: "New Folder", confirm: "Create") {
                                 manager.addFolder(named: name)
@@ -58,6 +60,22 @@ struct SidebarPane: View {
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .help("New Session or Folder")
+                    // A popover rather than a dialog, anchored to the button
+                    // that opened it — the same shape the toolbar's branch
+                    // switcher uses, because it answers the same question.
+                    .popover(isPresented: $branchPicker.isPresented,
+                             attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                        BranchPicker(branches: branchPicker.branches,
+                                     withWorktree: branchPicker.withWorktree) { branch in
+                            branchPicker.isPresented = false
+                            openSessionOnBranch(manager, branch: branch,
+                                                inFolder: branchPicker.folder)
+                        }
+                    }
+                    .onReceive(NotificationCenter.default
+                        .publisher(for: .wortelOpenBranchPicker)) { note in
+                        branchPicker.open(manager, folder: note.userInfo?["folder"] as? String)
+                    }
                     Spacer()
                 }
                 .padding(.horizontal, 10)
@@ -174,21 +192,19 @@ struct SidebarRowContent: View {
     }
 }
 
-/// Ask for a branch and open a session in a worktree for it. Failures are shown
-/// as git wrote them — "already checked out at …" names the directory you want,
-/// and rewriting it would take that away.
+/// Open a session on a branch, in its own worktree. Failures are shown as git
+/// wrote them — "already checked out at …" names the directory you want, and
+/// rewriting it would take that away.
 @MainActor
-func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = nil) {
-    Task { @MainActor in
-        let existing = await manager.localBranches()
-        guard let branch = promptBranch(existing: existing) else { return }
-        manager.newSession(onBranch: branch, inFolder: folder) { message in
-            let alert = NSAlert()
-            alert.messageText = "Couldn't open a worktree for \u{201c}\(branch)\u{201d}"
-            alert.informativeText = message
-            alert.alertStyle = .warning
-            alert.runModal()
-        }
+func openSessionOnBranch(
+    _ manager: SessionManager, branch: String, inFolder folder: String? = nil
+) {
+    manager.newSession(onBranch: branch, inFolder: folder) { message in
+        let alert = NSAlert()
+        alert.messageText = "Couldn't open a worktree for \u{201c}\(branch)\u{201d}"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 }
 
@@ -197,112 +213,6 @@ func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = ni
 /// A combo box rather than a plain field because both answers are legitimate
 /// here — an existing branch or a new one — and a bare text field quietly turns
 /// a typo into a *third* branch called `mian`.
-/// Completions for the branch field: the native inline list, rather than
-/// `NSComboBox`'s.
-///
-/// The combo box was the obvious control and the wrong one. Its dropdown is
-/// legacy AppKit that never got the modern menu treatment — cramped rows, no
-/// hover — and next to everything else on macOS 26 it reads as broken. A plain
-/// text field with a completions delegate gets the same list Xcode and "Go to
-/// Folder" use, and a menu button beside it gets a real `NSMenu`.
-private final class BranchCompleter: NSObject, NSTextFieldDelegate {
-    private let branches: [String]
-    /// Completing while you delete fights you: it re-inserts what you just
-    /// removed. Backspace has to be able to win.
-    private var lastLength = 0
-
-    init(branches: [String]) {
-        self.branches = branches
-    }
-
-    func control(
-        _ control: NSControl, textView: NSTextView, completions words: [String],
-        forPartialWordRange charRange: NSRange, indexOfSelectedItem index: UnsafeMutablePointer<Int>
-    ) -> [String] {
-        let typed = (textView.string as NSString).substring(with: charRange).lowercased()
-        guard !typed.isEmpty else { return branches }
-        return branches.filter { $0.lowercased().hasPrefix(typed) }
-    }
-
-    func controlTextDidChange(_ notification: Notification) {
-        guard let field = notification.object as? NSTextField else { return }
-        let length = field.stringValue.count
-        defer { lastLength = length }
-        guard length > lastLength else { return } // deleting
-        field.currentEditor()?.complete(nil)
-    }
-}
-
-@MainActor
-private func promptBranch(existing: [String]) -> String? {
-    let alert = NSAlert()
-    alert.messageText = "New Session on Branch"
-    // **No informative text**, and that is what makes this look like the folder
-    // rename rather than a warning: an NSAlert carrying a body paragraph switches
-    // to the wide, left-aligned layout, while one with only a title and an
-    // accessory keeps the compact centred form. The placeholder says the little
-    // that needs saying.
-    alert.addButton(withTitle: "Create")
-    alert.addButton(withTitle: "Cancel")
-
-    let width: CGFloat = 220
-    let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 24))
-    // The same field as the folder rename, so the two dialogs match exactly.
-    let field = NSTextField(frame: NSRect(x: 0, y: 0,
-                                          width: existing.isEmpty ? width : width - 26,
-                                          height: 24))
-    field.placeholderString = "Branch name"
-    let completer = BranchCompleter(branches: existing)
-    field.delegate = completer
-    container.addSubview(field)
-
-    if !existing.isEmpty {
-        // A real NSMenu for browsing — modern metrics, hover, the lot.
-        let button = NSButton(frame: NSRect(x: width - 22, y: 0, width: 22, height: 24))
-        button.bezelStyle = .accessoryBarAction
-        button.image = NSImage(systemSymbolName: "chevron.down",
-                               accessibilityDescription: "Existing branches")
-        button.imagePosition = .imageOnly
-        let menu = NSMenu()
-        for branch in existing {
-            menu.addItem(ClosureMenuItem(title: branch) { field.stringValue = branch })
-        }
-        let opener = MenuOpener(menu: menu, under: button)
-        button.target = opener
-        button.action = #selector(MenuOpener.open)
-        objc_setAssociatedObject(button, Unmanaged.passUnretained(button).toOpaque(),
-                                 opener, .OBJC_ASSOCIATION_RETAIN)
-        container.addSubview(button)
-    }
-
-    alert.accessoryView = container
-    alert.window.initialFirstResponder = field
-
-    // `completer` has to outlive the modal run; the field only holds it weakly.
-    let branch = withExtendedLifetime(completer) { () -> String in
-        guard alert.runModal() == .alertFirstButtonReturn else { return "" }
-        return field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    return branch.isEmpty ? nil : branch
-}
-
-/// Pops a menu under a button. A tiny object because a button's action needs a
-/// target, and the closure-carrying menu item we already have is for menu items.
-private final class MenuOpener: NSObject {
-    private let menu: NSMenu
-    private weak var anchor: NSView?
-
-    init(menu: NSMenu, under anchor: NSView) {
-        self.menu = menu
-        self.anchor = anchor
-    }
-
-    @objc func open() {
-        guard let anchor else { return }
-        menu.popUp(positioning: nil,
-                   at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
-    }
-}
 
 /// A folder header row's SwiftUI content: the section title styled like a
 /// native sidebar header, plus the folder context menu. Expansion, the
@@ -344,7 +254,8 @@ struct SidebarHeaderContent: View {
             manager.newSession(inFolder: folder)
         })
         menu.addItem(ClosureMenuItem(title: "New Session on Branch…") {
-            newSessionOnBranch(manager, inFolder: folder)
+            NotificationCenter.default.post(
+                name: .wortelOpenBranchPicker, object: nil, userInfo: ["folder": folder])
         })
         menu.addItem(ClosureMenuItem(title: "Rename Folder…") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {

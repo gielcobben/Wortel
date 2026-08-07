@@ -11,6 +11,8 @@ import SwiftUI
 /// Look, which knows more formats than we ever will.
 struct PreviewContent: View {
     @Bindable var document: PreviewDocument
+    @Bindable var find: PreviewFind
+    @FocusState private var findFocused: Bool
 
     /// Matches the diff in the inspector exactly. A preview that set its own
     /// size would make the same file look like two different files depending on
@@ -29,7 +31,62 @@ struct PreviewContent: View {
                 }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) { findBar }
         .safeAreaInset(edge: .bottom, spacing: 0) { notices }
+        // The bar searches whatever is on screen, so a mode switch re-runs it.
+        .onChange(of: document.mode) { _, _ in find.update(lines: searchableLines) }
+        .onChange(of: document.sourceLines.count) { _, _ in find.update(lines: searchableLines) }
+        .onChange(of: document.diffLines.count) { _, _ in find.update(lines: searchableLines) }
+        .onChange(of: find.isPresented) { _, presented in
+            if presented {
+                find.update(lines: searchableLines)
+                findFocused = true
+            }
+        }
+    }
+
+    /// What ⌘F searches: the lines the window is actually showing. Rendered
+    /// Markdown has no lines to point at, so the bar doesn't open over it.
+    private var searchableLines: [DiffLine] {
+        switch document.mode {
+        case .source: return document.sourceLines
+        case .diff: return document.diffLines
+        case .rendered: return []
+        }
+    }
+
+    @ViewBuilder
+    private var findBar: some View {
+        if find.isPresented {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Find", text: $find.query)
+                    .textFieldStyle(.plain)
+                    .focused($findFocused)
+                    // Enter walks matches without leaving the field, the way
+                    // every find bar on the platform does.
+                    .onSubmit { find.next() }
+                Text(find.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                HStack(spacing: 2) {
+                    Button { find.previous() } label: { Image(systemName: "chevron.up") }
+                    Button { find.next() } label: { Image(systemName: "chevron.down") }
+                }
+                .buttonStyle(.borderless)
+                .disabled(find.matches.isEmpty)
+                Button("Done") { find.dismiss() }
+                    .buttonStyle(.borderless)
+            }
+            .font(.callout)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.bar)
+            .overlay(alignment: .bottom) { Divider() }
+            .onExitCommand { find.dismiss() }
+        }
     }
 
     @ViewBuilder
@@ -39,6 +96,7 @@ struct PreviewContent: View {
         } else {
             DiffView(lines: document.sourceLines,
                      highlights: document.sourceHighlights,
+                     focusedLine: find.focusedLine,
                      fontSize: Self.fontSize)
         }
     }
@@ -57,6 +115,7 @@ struct PreviewContent: View {
         } else {
             DiffView(lines: document.diffLines,
                      highlights: document.diffHighlights,
+                     focusedLine: find.focusedLine,
                      fontSize: Self.fontSize)
         }
     }

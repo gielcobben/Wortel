@@ -65,6 +65,14 @@ enum MainMenu {
         // the field, then flips it back.
         let selectAll = editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
         selectAll.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        // Only ever enabled while a preview window is key: it resolves through
+        // the responder chain to PreviewWindowController, and nothing in the
+        // main window implements it. That's what lets ⌘F live in the menu
+        // without taking it away from the shell, where ⌘F is the terminal's.
+        editMenu.addItem(withTitle: "Find",
+                         action: #selector(PreviewWindowController.showPreviewFind(_:)),
+                         keyEquivalent: "f")
         selectAllItem = selectAll
 
         // Session menu — the heart of the app, all keyboard-driven.

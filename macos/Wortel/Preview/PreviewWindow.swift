@@ -17,6 +17,9 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     let file: PreviewDocument
     /// Called when the window closes, so the registry can forget it.
     var onClose: ((PreviewWindowController) -> Void)?
+    /// ⌘F state, owned here because the menu item reaches this object through
+    /// the responder chain — a window controller sits in it, after its window.
+    private let find = PreviewFind()
 
     private static let defaultSize = NSSize(width: 720, height: 640)
     private static let sizeKey = "preview.size"
@@ -77,7 +80,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // measured against the window server). It opens perfectly and cannot be
         // seen, which looks exactly like a double-click doing nothing. Same
         // idiom the sidebar's hosted rows already use.
-        let hosting = NSHostingController(rootView: PreviewContent(document: document))
+        let hosting = NSHostingController(rootView: PreviewContent(document: document, find: find))
         hosting.sizingOptions = []
         window.contentViewController = hosting
         window.contentMinSize = NSSize(width: 360, height: 240)
@@ -113,6 +116,22 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         toolbar.displayMode = .iconOnly
         window?.toolbar = toolbar
         window?.toolbarStyle = .unified
+    }
+
+    /// Edit ▸ Find (⌘F). Reached through the responder chain, so it's live
+    /// exactly when a preview window is key and greyed out everywhere else —
+    /// which is why the menu item can carry ⌘F without stealing it from the
+    /// terminal, where ⌘F belongs to the shell.
+    @objc func showPreviewFind(_ sender: Any?) {
+        // Rendered Markdown has no lines to point at, so there's nothing to
+        // search; the menu validation below keeps the item disabled there.
+        find.isPresented = true
+    }
+
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(showPreviewFind(_:)) else { return true }
+        // Nothing to search in a rendered document or a Quick Look preview.
+        return file.mode != .rendered && !file.isBinary
     }
 
     @objc private func modeChanged(_ sender: NSSegmentedControl) {

@@ -11,6 +11,10 @@ struct DiffView: NSViewRepresentable {
     /// Syntax-highlight spans by `DiffLine.id`, filled in asynchronously (see
     /// `DiffResult.highlights`). Empty renders as plain monospaced text.
     var highlights: [Int: [HighlightSpan]] = [:]
+    /// A row to select and scroll into view — how the preview window's find bar
+    /// says "this one". Nil leaves the reader's selection and scroll alone,
+    /// which is every other use of this view.
+    var focusedLine: Int?
     let fontSize: CGFloat
 
     /// Marks this table so the sidebar's SidebarSelectionStyler (which walks the
@@ -92,8 +96,10 @@ struct DiffView: NSViewRepresentable {
         // accordion, any file's diff loading re-renders every mounted DiffView;
         // without this guard each full-height table (every row realized) would
         // reloadData on every sibling's load — O(files²) on Expand All.
+        context.coordinator.focus(focusedLine, in: table)
         guard result.reload else { return }
         table.reloadData()
+        context.coordinator.focus(focusedLine, in: table, force: true)
         if result.scrollToTop {
             // New file selected — jump back to the top, and drop the old file's
             // selection (reloadData keeps row indexes selected, which would
@@ -156,6 +162,19 @@ struct DiffView: NSViewRepresentable {
         /// in place, leaving the reader's scroll alone. Nothing changed means
         /// neither, so a re-render caused by a *sibling* file loading doesn't
         /// reload this (full-height, fully-realized) table.
+        /// Move the selection to a row and scroll it into view. Only on an
+        /// actual change, or every unrelated re-render would yank the reader
+        /// back to the last match.
+        private var focusedLine: Int?
+
+        func focus(_ line: Int?, in table: NSTableView, force: Bool = false) {
+            guard force || line != focusedLine else { return }
+            focusedLine = line
+            guard let line, line >= 0, line < table.numberOfRows else { return }
+            table.selectRowIndexes(IndexSet(integer: line), byExtendingSelection: false)
+            table.scrollRowToVisible(line)
+        }
+
         func update(
             lines: [DiffLine], highlights: [Int: [HighlightSpan]]
         ) -> (reload: Bool, scrollToTop: Bool) {

@@ -148,11 +148,23 @@ struct SidebarHeaderContent: View {
     let folder: String
 
     var body: some View {
-        Text(folder)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+        HStack(spacing: 6) {
+            Text(folder)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            // What the folder is hiding. Same dot as a session row's, so it
+            // reads as the same fact rather than as a new kind of badge — and
+            // it pulses for the same reason, because a blocked agent you can't
+            // see is exactly the case this whole system is for.
+            if let kind = manager.attention(inFolder: folder) {
+                AttentionDot(color: SessionStatusIndicator.attentionColor(kind),
+                             pulses: kind == .needsInput)
+            }
+            Spacer(minLength: 0)
+        }
             .padding(.leading, 12)
+            .padding(.trailing, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             // Native right-click, instant on rightMouseDown — same reasoning as
@@ -348,7 +360,7 @@ struct SessionStatusIndicator: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private static func attentionColor(_ kind: AttentionKind) -> Color {
+    static func attentionColor(_ kind: AttentionKind) -> Color {
         switch kind {
         case .needsInput: return .orange
         case .failed: return .red
@@ -361,7 +373,7 @@ struct SessionStatusIndicator: View {
 /// A 7pt status dot that optionally "breathes" (opacity + a touch of scale) to
 /// draw peripheral attention. The animation starts on appear and stops on its
 /// own when the dot leaves the tree (attention cleared).
-private struct AttentionDot: View {
+struct AttentionDot: View {
     let color: Color
     let pulses: Bool
     @State private var animating = false

@@ -134,7 +134,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // The grant is remembered because the turn-end chime is played by us,
         // not by Notification Center (see playTurnDoneChime): someone who
         // declined notifications should not be chimed at anyway.
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        // `.badge` is here for the **Dock badge**, which is drawn by us rather
+        // than by Notification Center — `NSApp.dockTile.badgeLabel`. Once an app
+        // registers with `UNUserNotificationCenter`, macOS gates that badge on
+        // the same per-app "Badges" permission, so an app that asks only for
+        // alerts and sounds can set `badgeLabel` all day and the Dock will
+        // ignore it. Which is exactly what it was doing.
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
             DispatchQueue.main.async { Self.notificationsAuthorized = granted }
         }
 

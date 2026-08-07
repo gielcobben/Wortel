@@ -40,6 +40,17 @@ struct MarkdownBlock: Identifiable, Equatable {
     /// Inline-markdown text for text-bearing blocks; the raw code for `.code`;
     /// empty for `.rule` and `.table` (whose data rides in the kind).
     let text: String
+    /// A blank line came before this block. Only lists care: two lists in a row
+    /// are separate lists, and without this they run together as one — the
+    /// blank line is the *only* thing that distinguishes them.
+    var afterBlank = false
+    /// The 1-based line in the source this block starts on.
+    ///
+    /// It's what lets a preview window keep your place across a mode switch: the
+    /// rendered document and the source are the same file seen two ways, and a
+    /// line number is the only coordinate both of them share. Without it, ⌘2 to
+    /// copy a paragraph means finding it again from the top.
+    var line: Int = 1
 }
 
 /// Parses a Markdown string into `[MarkdownBlock]`. Pure and synchronous.
@@ -48,11 +59,14 @@ enum MarkdownParser {
         var blocks: [MarkdownBlock] = []
         for segment in segments(from: source) {
             switch segment {
-            case .code(let language, let code):
-                blocks.append(MarkdownBlock(id: blocks.count, kind: .code(language: language), text: code))
-            case .text(let run):
-                for (kind, text) in textBlocks(from: run) {
-                    blocks.append(MarkdownBlock(id: blocks.count, kind: kind, text: text))
+            case .code(let language, let code, let line):
+                blocks.append(MarkdownBlock(id: blocks.count, kind: .code(language: language),
+                                            text: code, line: line))
+            case .text(let run, let line):
+                for block in textBlocks(from: run) {
+                    blocks.append(MarkdownBlock(id: blocks.count, kind: block.kind,
+                                                text: block.text, afterBlank: block.afterBlank,
+                                                line: line + block.line))
                 }
             }
         }
@@ -62,8 +76,9 @@ enum MarkdownParser {
     // MARK: - Fenced-code segmentation
 
     private enum Segment {
-        case text(String)
-        case code(language: String?, code: String)
+        /// `line` is the 1-based source line the segment starts on.
+        case text(String, line: Int)
+        case code(language: String?, code: String, line: Int)
     }
 
     /// Splits `source` on ``` fences into text runs and code blocks. An
@@ -75,20 +90,27 @@ enum MarkdownParser {
         var codeLines: [Substring] = []
         var codeLanguage: String?
         var inCode = false
+        // 1-based, and tracked rather than derived: a fence's content starts on
+        // the line after the fence, so counting afterwards gets it wrong.
+        var lineNumber = 0
+        var textStart = 1
+        var codeStart = 1
 
         func flushText() {
             let joined = textLines.joined(separator: "\n")
             textLines = []
             guard !joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            segments.append(.text(joined))
+            segments.append(.text(joined, line: textStart))
         }
         func flushCode() {
-            segments.append(.code(language: codeLanguage, code: codeLines.joined(separator: "\n")))
+            segments.append(.code(language: codeLanguage,
+                                  code: codeLines.joined(separator: "\n"), line: codeStart))
             codeLines = []
             codeLanguage = nil
         }
 
         for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
+            lineNumber += 1
             let stripped = line.trimmingCharacters(in: .whitespaces)
             if stripped.hasPrefix("```") {
                 if inCode {
@@ -97,12 +119,18 @@ enum MarkdownParser {
                 } else {
                     inCode = true
                     flushText()
+                    codeStart = lineNumber + 1
                     let language = stripped.dropFirst(3).trimmingCharacters(in: .whitespaces)
                     codeLanguage = language.isEmpty ? nil : language
                 }
                 continue
             }
-            if inCode { codeLines.append(line) } else { textLines.append(line) }
+            if inCode {
+                codeLines.append(line)
+            } else {
+                if textLines.isEmpty { textStart = lineNumber }
+                textLines.append(line)
+            }
         }
         if inCode { flushCode() } else { flushText() }
         return segments
@@ -110,21 +138,29 @@ enum MarkdownParser {
 
     // MARK: - Block-level parsing of a text run
 
-    private static func textBlocks(from run: String) -> [(kind: MarkdownBlock.Kind, text: String)] {
-        var blocks: [(MarkdownBlock.Kind, String)] = []
+    private static func textBlocks(
+        from run: String
+    ) -> [(kind: MarkdownBlock.Kind, text: String, afterBlank: Bool, line: Int)] {
+        var blocks: [(MarkdownBlock.Kind, String, Bool, Int)] = []
+        // Carried onto the next block emitted, then cleared.
+        var afterBlank = false
         var paragraph: [String] = []
+        var paragraphStart = 0
         var quote: [String] = []
+        var quoteStart = 0
 
         func flushParagraph() {
             guard !paragraph.isEmpty else { return }
-            let joined = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            let joined = joinSoftWrapped(paragraph).trimmingCharacters(in: .whitespacesAndNewlines)
             paragraph = []
             guard !joined.isEmpty else { return }
-            blocks.append((.paragraph, joined))
+            blocks.append((.paragraph, joined, afterBlank, paragraphStart))
+            afterBlank = false
         }
         func flushQuote() {
             guard !quote.isEmpty else { return }
-            blocks.append((.quote, quote.joined(separator: "\n")))
+            blocks.append((.quote, joinSoftWrapped(quote), afterBlank, quoteStart))
+            afterBlank = false
             quote = []
         }
 
@@ -137,6 +173,7 @@ enum MarkdownParser {
             if trimmed.isEmpty {
                 flushParagraph()
                 flushQuote()
+                afterBlank = true
                 index += 1
                 continue
             }
@@ -144,6 +181,7 @@ enum MarkdownParser {
             // Block quote: consecutive `>` lines coalesce, markers stripped.
             if trimmed.hasPrefix(">") {
                 flushParagraph()
+                if quote.isEmpty { quoteStart = index }
                 var q = trimmed.dropFirst()
                 if q.hasPrefix(" ") { q = q.dropFirst() }
                 quote.append(String(q))
@@ -163,15 +201,47 @@ enum MarkdownParser {
                     rows.append(cells)
                     cursor += 1
                 }
-                blocks.append((.table(header: header, rows: rows), ""))
+                blocks.append((.table(header: header, rows: rows), "", afterBlank, index))
+                afterBlank = false
                 index = cursor
+                continue
+            }
+
+            // Setext heading: a line of `===` or `---` directly under a
+            // paragraph underlines it rather than ruling the page — and it has to
+            // be checked before the rule, since `---` is both. Common enough in
+            // hand-written READMEs that missing it turns a document's title into
+            // a stray paragraph with a line under it.
+            if !paragraph.isEmpty, let level = setextLevel(trimmed) {
+                let text = joinSoftWrapped(paragraph).trimmingCharacters(in: .whitespacesAndNewlines)
+                let start = paragraphStart
+                paragraph = []
+                if !text.isEmpty {
+                    blocks.append((.heading(level: level), text, afterBlank, start))
+                    afterBlank = false
+                }
+                index += 1
+                continue
+            }
+
+            // A line indented under a list item *continues* it — CommonMark's
+            // lazy continuation. Read as its own block instead, it renders as a
+            // paragraph back at the left margin, which is the one place in a
+            // document it visibly does not belong.
+            if paragraph.isEmpty, quote.isEmpty, let last = blocks.indices.last,
+               isListItem(blocks[last].0), line.hasPrefix("  "),
+               structuralBlock(from: line) == nil {
+                blocks[last].1 = joinSoftWrapped([blocks[last].1, trimmed])
+                index += 1
                 continue
             }
 
             if let structural = structuralBlock(from: line) {
                 flushParagraph()
-                blocks.append(structural)
+                blocks.append((structural.0, structural.1, afterBlank, index))
+                afterBlank = false
             } else {
+                if paragraph.isEmpty { paragraphStart = index }
                 paragraph.append(line)
             }
             index += 1
@@ -179,6 +249,44 @@ enum MarkdownParser {
         flushParagraph()
         flushQuote()
         return blocks
+    }
+
+    /// Join a paragraph's source lines the way Markdown means them: a newline in
+    /// the source is a *soft* break — the text re-flows to whatever width you're
+    /// reading at, it doesn't break there. Only the explicit forms are hard
+    /// breaks: two trailing spaces, or a trailing backslash.
+    ///
+    /// Keeping the source newlines instead is a quiet disaster, because SwiftUI's
+    /// `Text` renders them literally: a README hard-wrapped at 80 columns came out
+    /// as a ragged column down the left of a wide window, every line ending where
+    /// the author's editor happened to end it.
+    static func joinSoftWrapped(_ lines: [String]) -> String {
+        var out = ""
+        for (index, line) in lines.enumerated() {
+            let hard = line.hasSuffix("  ") || line.hasSuffix("\\")
+            var text = line.trimmingCharacters(in: .whitespaces)
+            if text.hasSuffix("\\") { text.removeLast() }
+            out += text
+            guard index < lines.count - 1 else { continue }
+            out += hard ? "\n" : " "
+        }
+        return out
+    }
+
+    /// The heading level a `===` / `---` underline gives the paragraph above it,
+    /// or nil when the line isn't one.
+    private static func setextLevel(_ trimmed: String) -> Int? {
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.allSatisfy({ $0 == "=" }) { return 1 }
+        if trimmed.allSatisfy({ $0 == "-" }) { return 2 }
+        return nil
+    }
+
+    private static func isListItem(_ kind: MarkdownBlock.Kind) -> Bool {
+        switch kind {
+        case .bullet, .ordered, .task: return true
+        default: return false
+        }
     }
 
     /// A single structural line — heading / rule / bullet / ordered — or nil for

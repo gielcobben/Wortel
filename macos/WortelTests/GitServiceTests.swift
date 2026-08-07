@@ -320,4 +320,75 @@ final class GitServiceTests: XCTestCase {
         let absent = await GitService.workingTreeState(root: repo.path, path: "never-existed.txt")
         XCTAssertEqual(absent, .unchanged)
     }
+
+    // MARK: - Worktrees
+
+    /// Against real git: a worktree on a new branch, listed back, then removed.
+    /// The parse is unit-tested separately; this pins that the commands we build
+    /// are the ones git actually accepts.
+    func testAddListAndRemoveAWorktree() async {
+        repo = GitFixture.newRepo("worktree")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+
+        let path = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+        let failure = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "feature/x", createFrom: "HEAD")
+        XCTAssertNil(failure, "git refused: \(failure ?? "")")
+
+        let trees = await GitService.worktrees(root: repo.path)
+        XCTAssertEqual(trees.count, 2)
+        XCTAssertTrue(trees[0].isPrimary)
+        XCTAssertEqual(trees.first(where: { !$0.isPrimary })?.branch, "feature/x")
+        // The branch is really checked out there, not just registered.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path + "/a.txt"))
+
+        let removal = await GitService.removeWorktree(root: repo.path, at: path)
+        XCTAssertNil(removal)
+        let after = await GitService.worktrees(root: repo.path)
+        XCTAssertEqual(after.count, 1)
+    }
+
+    /// One branch, two worktrees is what git refuses — and the reason the
+    /// session path looks for an existing worktree before creating one.
+    func testABranchCannotBeCheckedOutTwice() async {
+        repo = GitFixture.newRepo("worktree-twice")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        let base = repo.deletingLastPathComponent()
+
+        let first = base.appendingPathComponent("wt1-\(UUID().uuidString)").path
+        let firstFailure = await GitService.addWorktree(
+            root: repo.path, at: first, branch: "shared", createFrom: "HEAD")
+        XCTAssertNil(firstFailure)
+
+        let second = base.appendingPathComponent("wt2-\(UUID().uuidString)").path
+        let failure = await GitService.addWorktree(
+            root: repo.path, at: second, branch: "shared", createFrom: nil)
+        XCTAssertNotNil(failure, "git allowed one branch in two worktrees")
+        // The message names where it already is, which is why it's shown verbatim.
+        XCTAssertTrue(failure?.contains(first) == true, failure ?? "")
+
+        _ = await GitService.removeWorktree(root: repo.path, at: first)
+    }
+
+    /// A worktree with uncommitted work is not removed. That refusal is the
+    /// safety in "remove worktree" being a menu item rather than a side effect
+    /// of closing a session.
+    func testWorktreeWithChangesIsNotRemoved() async {
+        repo = GitFixture.newRepo("worktree-dirty")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        let path = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+        let added = await GitService.addWorktree(
+            root: repo.path, at: path, branch: "dirty", createFrom: "HEAD")
+        XCTAssertNil(added)
+
+        GitFixture.sh("printf 'uncommitted\\n' >> a.txt", in: URL(fileURLWithPath: path))
+        let refusal = await GitService.removeWorktree(root: repo.path, at: path)
+        XCTAssertNotNil(refusal, "git removed a worktree containing uncommitted work")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path + "/a.txt"))
+
+        GitFixture.sh("git checkout -- a.txt", in: URL(fileURLWithPath: path))
+        _ = await GitService.removeWorktree(root: repo.path, at: path)
+    }
 }

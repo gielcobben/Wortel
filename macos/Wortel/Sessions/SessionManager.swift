@@ -653,6 +653,92 @@ final class SessionManager {
         return "\(base) \(n)"
     }
 
+    /// Open a session on `branch`, in its own worktree.
+    ///
+    /// The point is several agents in one repository at once: each gets its own
+    /// branch *and* its own files, so they can't edit over each other and no one
+    /// changes the ground under a running agent by switching branches. A
+    /// worktree rather than a clone — history, objects and remotes stay shared,
+    /// so this costs a directory rather than a copy of the repo.
+    ///
+    /// Reuses the worktree if that branch already has one: creating a session
+    /// for a branch you already have open should land you in it, not fail with
+    /// git's "already checked out" — which is the same rule as double-clicking a
+    /// file that already has a preview window.
+    ///
+    /// `onFailure` receives git's own message. They're worth showing verbatim:
+    /// "already checked out at …" and "not a valid object name" each tell you
+    /// exactly what to do next, and a paraphrase would drop the path.
+    func newSession(
+        onBranch branch: String,
+        inFolder folder: String? = nil,
+        onFailure: @escaping (String) -> Void
+    ) {
+        let branch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty else { return }
+        guard let cwd = selected?.cwd else {
+            onFailure("No session to take a repository from.")
+            return
+        }
+        Task { [weak self] in
+            guard let root = await GitService.repoRoot(for: cwd) else {
+                onFailure("\(cwd) isn't inside a git repository.")
+                return
+            }
+            let existing = await GitService.worktrees(root: root)
+            let path: String
+            if let match = existing.first(where: { $0.branch == branch }) {
+                path = match.path
+            } else {
+                path = GitWorktree.path(forBranch: branch, repoRoot: root)
+                // A branch that exists gets checked out; one that doesn't is
+                // created from HEAD, which is what "new session on a new branch"
+                // means when you're standing on the branch you want to fork.
+                let known = await GitService.branches(root: root)
+                    .contains { !$0.isRemote && $0.name == branch }
+                if let error = await GitService.addWorktree(
+                    root: root, at: path, branch: branch, createFrom: known ? nil : "HEAD") {
+                    onFailure(error)
+                    return
+                }
+            }
+            guard let self else { return }
+            let session = self.newSession(cwd: path, inFolder: folder)
+            // Named for the branch rather than for the slug the directory got.
+            self.rename(session, to: session.folderPath.map { "\($0)/\(branch)" } ?? branch)
+        }
+    }
+
+    /// The worktree a session is sitting in, when it's one Wortel created — the
+    /// gate on offering to remove it. A session in the repository's own checkout,
+    /// or in a worktree someone made by hand, is not ours to tidy up.
+    func worktree(of session: Session) async -> GitWorktree? {
+        guard let cwd = session.cwd,
+              cwd.hasPrefix(GitWorktree.root.path + "/"),
+              let root = await GitService.repoRoot(for: cwd) else { return nil }
+        return await GitService.worktrees(root: root)
+            .first { $0.path == cwd && !$0.isPrimary }
+    }
+
+    /// Remove a session's worktree. Never forced: git refuses while there are
+    /// uncommitted changes, and that refusal is the feature — a worktree is
+    /// where work lives, and the branch survives the directory either way.
+    func removeWorktree(of session: Session, onFailure: @escaping (String) -> Void) {
+        Task { [weak self] in
+            guard let self, let worktree = await self.worktree(of: session),
+                  let cwd = session.cwd,
+                  let root = await GitService.repoRoot(for: cwd) else {
+                onFailure("This session isn't in a worktree Wortel created.")
+                return
+            }
+            if let error = await GitService.removeWorktree(root: root, at: worktree.path) {
+                onFailure(error)
+                return
+            }
+            self.close(session)
+        }
+    }
+
     private func appendRestored(_ session: Session) {
         wire(session)
         sessions.append(session)

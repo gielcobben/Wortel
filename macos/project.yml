@@ -232,6 +232,11 @@ targets:
       # here — it pulls in ~20 C grammars the unit tests have no need for.
       - path: Wortel/Git/DiffSyntax.swift
       - path: Wortel/Git/GitStatusParser.swift
+      # Worktree paths and the `worktree list --porcelain` parse. Both are string
+      # handling that fails silently: a slug that collides puts two branches in
+      # one directory, and a mis-parsed listing hides an existing worktree so the
+      # next attempt tries to create it again.
+      - path: Wortel/Git/GitWorktree.swift
       # The diff table. Its *views* aren't testable without a window, but its
       # metrics are, and they carry an invariant nothing else enforces: the
       # coordinator's row height must equal the static `rowHeight(forFontSize:)`

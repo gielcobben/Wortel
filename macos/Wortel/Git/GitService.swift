@@ -242,6 +242,49 @@ enum GitService {
         }
     }
 
+    // MARK: - Worktrees
+
+    /// Every checkout of this repository, primary first.
+    static func worktrees(root: String) async -> [GitWorktree] {
+        let result = await run(["worktree", "list", "--porcelain"], in: root)
+        guard result.ok else { return [] }
+        return GitWorktree.parse(porcelain: result.stdout)
+    }
+
+    /// Add a worktree for `branch` at `path`, creating the branch from `base`
+    /// when it doesn't exist yet.
+    ///
+    /// Returns nil on success, or git's own message. Its errors are worth
+    /// surfacing verbatim rather than rewriting: "already checked out at …" and
+    /// "not a valid object name" both tell the user exactly what to do next, and
+    /// a paraphrase would only lose the path.
+    static func addWorktree(
+        root: String, at path: String, branch: String, createFrom base: String?
+    ) async -> String? {
+        try? FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        var args = ["worktree", "add"]
+        if let base {
+            args += ["-b", branch, path, base]
+        } else {
+            args += [path, branch]
+        }
+        let result = await run(args, in: root)
+        guard !result.ok else { return nil }
+        let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? "git worktree add failed" : message
+    }
+
+    /// Remove a worktree. Refuses when it has uncommitted changes — deliberately
+    /// not forced: the whole point of a worktree is that work lives in it.
+    static func removeWorktree(root: String, at path: String) async -> String? {
+        let result = await run(["worktree", "remove", path], in: root)
+        guard !result.ok else { return nil }
+        let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? "git worktree remove failed" : message
+    }
+
     /// Whether the repo has any remote configured — decides whether "unpushed"
     /// means anything (see unpushedSHAs).
     static func hasRemotes(root: String) async -> Bool {

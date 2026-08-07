@@ -1089,6 +1089,9 @@ final class SessionManager {
     private func refreshDockBadge() {
         let count = sessions.reduce(into: 0) { $0 += $1.needsAttention ? 1 : 0 }
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
+        // Setting the label is supposed to be enough, and mostly is; asking for
+        // the redraw costs nothing and removes the one case where it isn't.
+        NSApp.dockTile.display()
     }
 
     // MARK: - Auto-naming

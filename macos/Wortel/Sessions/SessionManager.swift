@@ -80,7 +80,6 @@ final class SessionManager {
     /// "actively viewing" anything. Set by the app layer on occlusion changes.
     @ObservationIgnored var windowIsVisible = true
 
-    @ObservationIgnored private var sessionCounter = 0
 
     /// Busy is shown only after a command has been running this long, so
     /// instant commands (ls, cd, git status) never flash the spinner.
@@ -124,20 +123,11 @@ final class SessionManager {
     /// by session; cancelled the moment you navigate away.
     @ObservationIgnored private var unreadDwellTimers: [Session.ID: DispatchWorkItem] = [:]
 
-    /// Auto-naming throttle: don't re-summarise a session more often than this.
-    /// Naming happens on turn/command end, which is already sparse; this just
-    /// stops a burst of quick turns from relabelling on every one.
-    private static let autoNameMinInterval: TimeInterval = 45
-    /// The distilled-screen text must have at least this many characters — below
-    /// it there's too little on screen to name from.
-    private static let autoNameMinChars = 80
-    /// When each session was last auto-named (throttle clock).
-    @ObservationIgnored private var autoNamedAt: [Session.ID: Date] = [:]
-    /// Hash of the distilled screen text each session was last named from, so an
-    /// unchanged screen doesn't spend a model call to produce the same name.
-    @ObservationIgnored private var autoNameSignature: [Session.ID: Int] = [:]
-    /// Sessions with an auto-name request in flight — one at a time each.
-    @ObservationIgnored private var autoNaming: Set<Session.ID> = []
+    /// Whether a session has changed enough to be worth naming again. The rules
+    /// and their reasoning live in `AutoNameThrottle`, which is pure so they can
+    /// be tested against a fake clock.
+    @ObservationIgnored private let autoNameThrottle = AutoNameThrottle()
+    @ObservationIgnored private var autoNameState: [Session.ID: AutoNameThrottle.State] = [:]
 
     var selected: Session? {
         sessions.first { $0.id == selectedID }
@@ -630,12 +620,18 @@ final class SessionManager {
     /// working directory.
     @discardableResult
     func newSession(cwd: String? = nil, inFolder folder: String? = nil) -> Session {
-        sessionCounter += 1
-        let leaf = "Session \(sessionCounter)"
         // New sessions land next to what you're looking at: the explicit folder
         // (header context menu) or the selected session's folder, else top level.
         let dir = folder ?? selected?.folderPath
-        let session = Session(name: dir.map { "\($0)/\(leaf)" } ?? leaf, cwd: cwd ?? selected?.cwd)
+        let directory = cwd ?? selected?.cwd
+        // Named for where it is, not for what number it is. "Session 3" tells you
+        // nothing, and it's what a session is stuck with until an agent turn ends
+        // and the model gets a look — on a machine without Apple Intelligence,
+        // forever. The directory is known at creation and is nearly always the
+        // answer you'd have typed. Auto-naming still overrides it later: a
+        // directory name isn't user-set.
+        let leaf = uniqueLeaf(Self.defaultTitle(forCwd: directory), in: dir)
+        let session = Session(name: dir.map { "\($0)/\(leaf)" } ?? leaf, cwd: directory)
         session.title = Self.defaultTitle(forCwd: session.cwd)
         wire(session)
         sessions.append(session)
@@ -646,12 +642,18 @@ final class SessionManager {
         return session
     }
 
+    /// `base`, or `base 2`, `base 3`… — the first that no session in `folder`
+    /// is already using. Two shells open in one repo are the common case, and
+    /// two identical rows would be worse than the numbers this replaces.
+    private func uniqueLeaf(_ base: String, in folder: String?) -> String {
+        let taken = Set(sessions.filter { $0.folderPath == folder }.map(\.leafName))
+        guard taken.contains(base) else { return base }
+        var n = 2
+        while taken.contains("\(base) \(n)") { n += 1 }
+        return "\(base) \(n)"
+    }
+
     private func appendRestored(_ session: Session) {
-        // Keep the default-name counter ahead of any restored "Session N"
-        // (parse the leaf: the folder prefix isn't part of the number).
-        if let n = Self.sessionNumber(from: session.leafName) {
-            sessionCounter = max(sessionCounter, n)
-        }
         wire(session)
         sessions.append(session)
     }
@@ -668,9 +670,7 @@ final class SessionManager {
         titleShowsWorking.remove(session.id)
         agentScreenTrackers.removeValue(forKey: session.id)
         explicitSignalAt.removeValue(forKey: session.id)
-        autoNamedAt.removeValue(forKey: session.id)
-        autoNameSignature.removeValue(forKey: session.id)
-        autoNaming.remove(session.id)
+        autoNameState.removeValue(forKey: session.id)
         // The killed shell never reaches its prompt to clear its own agent
         // marker; drop it so a closed session isn't resumed on next launch.
         AgentResumeStore.remove(sessionID: session.id)
@@ -1072,6 +1072,19 @@ final class SessionManager {
         }
     }
 
+    /// What a collapsed folder should show on behalf of the sessions inside it.
+    ///
+    /// Only when collapsed: an open folder's rows carry their own dots, and
+    /// repeating them on the header is noise. A rollup exists to surface what is
+    /// *hidden* — a blocked agent behind a collapsed folder is otherwise
+    /// completely silent in the sidebar, which is the one thing the attention
+    /// system exists to prevent.
+    func attention(inFolder folder: String) -> AttentionKind? {
+        guard collapsedFolders.contains(folder) else { return nil }
+        return AttentionKind.loudest(
+            of: sessions.lazy.filter { $0.folderPath == folder }.map(\.attention))
+    }
+
     /// Dock badge = number of background sessions waiting on the user.
     private func refreshDockBadge() {
         let count = sessions.reduce(into: 0) { $0 += $1.needsAttention ? 1 : 0 }
@@ -1089,17 +1102,20 @@ final class SessionManager {
     /// actor; a no-op everywhere Apple Intelligence is unavailable.
     private func considerAutoName(_ session: Session) {
         guard #available(macOS 26.0, *), SessionNameGenerator.isAvailable else { return }
-        guard !session.nameIsUserSet, !autoNaming.contains(session.id) else { return }
-        if let last = autoNamedAt[session.id],
-           Date().timeIntervalSince(last) < Self.autoNameMinInterval { return }
+        guard !session.nameIsUserSet else { return }
         guard let raw = session.surfaceView?.readScreenText() else { return }
         let distilled = SessionNameGenerator.distill(raw)
-        guard distilled.count >= Self.autoNameMinChars else { return }
-        let signature = distilled.hashValue
-        guard autoNameSignature[session.id] != signature else { return }
 
-        autoNaming.insert(session.id)
         let id = session.id
+        let now = Date()
+        guard case .proceed(let lines) = autoNameThrottle.decide(
+            screen: distilled, state: autoNameState[id] ?? .init(), now: now)
+        else { return }
+
+        var state = autoNameState[id] ?? .init()
+        state.inFlightSince = now
+        autoNameState[id] = state
+
         let cwd = session.cwd
         let current = session.leafName
         // SessionManager is @MainActor, so this Task is main-actor-isolated; the
@@ -1107,11 +1123,17 @@ final class SessionManager {
         Task { [weak self, weak session] in
             let name = try? await SessionNameGenerator.generate(
                 screenText: distilled, cwd: cwd, currentName: current)
-            guard let self, let session else { return }
-            self.autoNaming.remove(id)
-            self.autoNamedAt[id] = Date()
-            self.autoNameSignature[id] = signature
-            guard self.sessions.contains(where: { $0.id == id }),
+            guard let self else { return }
+            // Recorded whether or not the model produced anything: the cooldown
+            // has to anchor on the *attempt*, or a summariser that keeps failing
+            // is retried at full speed forever.
+            var state = self.autoNameState[id] ?? .init()
+            state.inFlightSince = nil
+            state.lastAttemptAt = Date()
+            state.lastLines = lines
+            self.autoNameState[id] = state
+
+            guard let session, self.sessions.contains(where: { $0.id == id }),
                   !session.nameIsUserSet, // may have been renamed while we waited
                   let name, !name.isEmpty, name != session.leafName else { return }
             self.applyAutoName(session, to: name)
@@ -1279,11 +1301,6 @@ final class SessionManager {
         return (cwd as NSString).lastPathComponent
     }
 
-    private static func sessionNumber(from name: String) -> Int? {
-        let prefix = "Session "
-        guard name.hasPrefix(prefix) else { return nil }
-        return Int(name.dropFirst(prefix.count))
-    }
 }
 
 /// Trimmed-string convenience used by the folder create/rename helpers.

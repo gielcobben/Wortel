@@ -290,6 +290,16 @@ targets:
       # wrong entry doesn't throw, it silently leaves a session cold or types the
       # wrong command. Foundation only.
       - path: Wortel/Sessions/AgentResumeStore.swift
+      # The auto-naming gate. Pure, and every one of its failure modes is
+      # timing-shaped and invisible: too eager and the sidebar relabels itself
+      # while you read it, too shy and a session keeps a name that stopped being
+      # true an hour ago. A fake clock is the only way to pin that.
+      - path: Wortel/Sessions/AutoNameThrottle.swift
+      # Why a session is asking for attention, and the rollup rule a collapsed
+      # folder shows on behalf of what it hides. Pure, and the rollup is a
+      # max-not-latest rule whose failure mode is silence: a blocked agent
+      # hidden behind a folder that reports something calmer.
+      - path: Wortel/Sessions/AttentionKind.swift
       # The markdown block parser: pure Foundation, and the fiddly line-based
       # structure (tables, task lists, fences, quote coalescing) is exactly the
       # kind of thing that fails silently. The renderer and tree-sitter code

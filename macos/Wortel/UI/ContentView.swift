@@ -189,20 +189,34 @@ func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = ni
     }
 }
 
-/// The dialog: the compact alert, with the branch chooser as its one control.
+/// The dialog. Its accessory *is* the picker — field and list together — so a
+/// row click is the same decision as pressing Create, and there is nothing to
+/// align against anything else.
 @MainActor
 private func promptBranch(branches: [String], withWorktree: Set<String>) -> String? {
+    let model = BranchPickerModel(branches: branches, withWorktree: withWorktree)
     let alert = NSAlert()
     alert.messageText = "New Session on Branch"
     // No informative text, which is what keeps this the compact centred alert
     // rather than the wide left-aligned one — see promptFolderName.
     alert.addButton(withTitle: "Create")
     alert.addButton(withTitle: "Cancel")
-    let chooser = BranchChooser(branches: branches, withWorktree: withWorktree)
-    alert.accessoryView = chooser
-    alert.window.initialFirstResponder = chooser
+
+    // Clicking a row *is* choosing, so it ends the modal the same way Create
+    // does — one decision, two ways to express it.
+    let picker = BranchPicker(model: model) { branch in
+        model.query = branch
+        NSApp.stopModal(withCode: .alertFirstButtonReturn)
+    }
+    let host = NSHostingView(rootView: picker)
+    // Sized here rather than left to the hosting view: a SwiftUI ScrollView has
+    // no height of its own to report, so an unsized host stretches to whatever
+    // the alert will give it — which was most of the screen.
+    host.frame = NSRect(x: 0, y: 0, width: 260, height: 244)
+    alert.accessoryView = host
+
     guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-    return chooser.branch
+    return model.effective
 }
 
 @MainActor

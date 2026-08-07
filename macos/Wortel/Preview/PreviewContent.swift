@@ -212,6 +212,13 @@ private struct ImagePreview: NSViewRepresentable {
         let view = NSImageView()
         view.imageScaling = .scaleProportionallyDown
         view.imageAlignment = .alignCenter
+        // An image view resists being made smaller than its image. Left at the
+        // default it wins that argument and the picture is clipped by the window
+        // rather than fitted to it.
+        for axis in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
+            view.setContentCompressionResistancePriority(.defaultLow, for: axis)
+            view.setContentHuggingPriority(.defaultLow, for: axis)
+        }
         // A transparent PNG on a transparent background is an invisible PNG.
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.5).cgColor
@@ -226,6 +233,26 @@ private struct ImagePreview: NSViewRepresentable {
         guard context.coordinator.loaded != version else { return }
         context.coordinator.loaded = version
         view.image = NSImage(contentsOf: url)
+    }
+
+    /// Fit if it's too big, natural size if it isn't.
+    ///
+    /// `.scaleProportionallyDown` already says that, and says it about the
+    /// *drawing* — but the view still asks for its image's full size, and an
+    /// `NSViewRepresentable` that asks for more than it's offered simply
+    /// overflows. So the size has to be negotiated here: never above 1, so a
+    /// 16pt icon stays a 16pt icon, and clamped to whichever axis runs out
+    /// first, so a wide screenshot fits the width and a tall one the height.
+    func sizeThatFits(
+        _ proposal: ProposedViewSize, nsView: NSImageView, context: Context
+    ) -> CGSize? {
+        guard let natural = nsView.image?.size,
+              natural.width > 0, natural.height > 0 else { return nil }
+        let available = CGSize(width: proposal.width ?? natural.width,
+                               height: proposal.height ?? natural.height)
+        let factor = min(1, available.width / natural.width, available.height / natural.height)
+        return CGSize(width: (natural.width * factor).rounded(),
+                      height: (natural.height * factor).rounded())
     }
 }
 

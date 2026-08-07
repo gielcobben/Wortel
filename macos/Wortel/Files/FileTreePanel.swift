@@ -68,8 +68,19 @@ struct FileTreePanel: View {
                             isSelected: model.selectedID == row.id,
                             isExpanded: model.isExpanded(row.node),
                             statusCode: statusCode(for: row.node),
-                            select: { model.select(row.node) },
-                            toggle: { toggle(row.node) },
+                            // Clicking a row both selects it and gives the tree
+                            // keyboard focus. Without the second half the click
+                            // looks like it worked — the row highlights — while
+                            // ↑/↓ keep going to the terminal, which in an agent
+                            // session means walking the *shell's* history.
+                            select: {
+                                model.select(row.node)
+                                listFocused = true
+                            },
+                            toggle: {
+                                toggle(row.node)
+                                listFocused = true
+                            },
                             open: { open(row.node) },
                             makeMenu: { contextMenu(for: row.node) })
                         // The overflow row for a directory the listing capped.
@@ -80,11 +91,14 @@ struct FileTreePanel: View {
                 }
                 .padding(.vertical, 4)
             }
-            .onChange(of: model.selectedID) { _, id in
-                guard let id else { return }
-                withAnimation(.easeOut(duration: 0.12)) {
-                    proxy.scrollTo(id, anchor: .center)
-                }
+            // Only when the *keyboard* moved the selection, and only far enough
+            // to reveal it — no anchor, so a row already on screen doesn't move
+            // at all. Centring every selection meant clicking a row slid it out
+            // from under the pointer, which is both disorienting and how the
+            // second click of a double-click misses.
+            .onChange(of: model.revealRequest) { _, _ in
+                guard let id = model.selectedID else { return }
+                withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
             }
         }
         .keyboardNavigableList(focused: $listFocused) { model.selectAdjacent($0) }
@@ -184,7 +198,9 @@ struct FileTreePanel: View {
         if node.isDirectory && model.isExpanded(node) {
             recursive ? model.collapseRecursively(node) : model.collapse(node)
         } else if let parent = model.parent(of: node) {
-            model.select(parent)
+            // ← from a leaf jumps to its parent, which is very often above the
+            // top of the pane — the one keyboard move that most needs revealing.
+            model.select(parent, reveal: true)
         }
     }
 
@@ -212,10 +228,10 @@ struct FileTreePanel: View {
         model.select(node)
         if node.isDirectory {
             model.toggleExpansion(node)
-        } else if node.url.pathExtension.lowercased() == "md" {
-            model.onPreviewMarkdown?(node.url)
         } else {
-            NSWorkspace.shared.open(node.url)
+            // Every file goes to a preview window now, Markdown included — it
+            // opens rendered rather than taking the inspector's column over.
+            model.onOpenPreview?(node.url)
         }
     }
 
@@ -237,18 +253,26 @@ struct FileTreePanel: View {
             menu.addItem(collapse)
             menu.addItem(.separator())
         } else {
-            if node.url.pathExtension.lowercased() == "md" {
-                menu.addItem(ClosureMenuItem(title: "Preview") {
-                    model.onPreviewMarkdown?(node.url)
-                })
-            }
             menu.addItem(ClosureMenuItem(title: "Open") {
-                NSWorkspace.shared.open(node.url)
+                model.onOpenPreview?(node.url)
             })
+            menu.addItem(.separator())
+            menu.addEditItems(for: node.url, exists: true)
         }
         menu.addItem(ClosureMenuItem(title: "Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([node.url])
         })
+        // Where the alias actually goes. Resolved here rather than at listing
+        // time: it's one syscall for one row you asked about, instead of one per
+        // entry in every directory you open.
+        if node.isSymlink {
+            let target = node.url.resolvingSymlinksInPath().standardizedFileURL
+            let item = ClosureMenuItem(title: "Reveal Original in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([target])
+            }
+            item.toolTip = target.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(title: "Copy Path") {
             copy(node.url.path)
@@ -330,23 +354,44 @@ private struct FileRow: View {
             } else {
                 Spacer().frame(width: 16)
             }
-            Image(systemName: row.node.isDirectory ? "folder" : "doc")
-                .font(.system(size: 11))
-                .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-                .frame(width: 14)
-            Text(row.node.name)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(nameStyle)
-            Spacer(minLength: 4)
-            // The roll-up dot: on a collapsed directory it stands for the most
-            // significant change anywhere beneath it, so you can see where work
-            // is without opening anything.
-            if let statusCode {
-                Circle()
-                    .fill(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(GitStatusStyle.color(for: statusCode)))
-                    .frame(width: 6, height: 6)
+            // Everything the row's left mouse does — select, double-click to
+            // open, drag the file out — belongs to one AppKit view, because
+            // those three cannot be split between SwiftUI and AppKit on the
+            // same row (see RowClickCatcher). It covers the content rather than
+            // the whole row so the chevron beside it keeps its own press.
+            HStack(spacing: 4) {
+                Image(systemName: row.node.isDirectory ? "folder" : "doc")
+                    .font(.system(size: 11))
+                    .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                    .frame(width: 14)
+                Text(row.node.name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(nameStyle)
+                // An alias marker beside the name rather than badged onto the
+                // icon: at 11pt a Finder-style badge lands *on* the folder glyph
+                // and both become mush. A linked folder is still a folder — it
+                // opens — so the icon shouldn't change; only the fact that it
+                // points elsewhere needs saying.
+                if row.node.isSymlink {
+                    Image(systemName: "arrow.up.forward")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(onAccent
+                            ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary))
+                        .padding(.leading, -1)
+                }
+                Spacer(minLength: 4)
+                // The roll-up dot: on a collapsed directory it stands for the
+                // most significant change anywhere beneath it, so you can see
+                // where work is without opening anything.
+                if let statusCode {
+                    Circle()
+                        .fill(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(GitStatusStyle.color(for: statusCode)))
+                        .frame(width: 6, height: 6)
+                }
             }
+            .contentShape(Rectangle())
+            .overlay(RowClickCatcher(onClick: select, onDoubleClick: open, url: row.node.url))
         }
         .padding(.leading, CGFloat(row.depth) * 12)
         .padding(.horizontal, 8)
@@ -360,13 +405,9 @@ private struct FileRow: View {
         }
         .padding(.horizontal, 4)
         .opacity(isIgnored && !isSelected ? 0.4 : 1)
-        .onTapGesture(perform: select)
-        // A file URL on the drag pasteboard is all the terminal needs: SurfaceView
-        // already registers `.fileURL` and inserts the shell-escaped path.
-        .onDrag { NSItemProvider(object: row.node.url as NSURL) }
-        // Both catchers are AppKit overlays that claim only their own event —
-        // see RightClickCatcher for why neither is a SwiftUI gesture.
-        .overlay(DoubleClickCatcher(onDoubleClick: open))
+        // Selection, double-click and drag all live in RowClickCatcher above:
+        // SwiftUI's .onDrag swallows the second click of a double, so they can't
+        // be split between the two worlds.
         .overlay(RightClickCatcher(onRightClick: select, makeMenu: makeMenu))
     }
 

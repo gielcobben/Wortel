@@ -16,12 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Drives the trailing source-control panel. Whether it's up follows the
     /// selected session (see GitPanelModel); new sessions start hidden.
     private let gitPanel = GitPanelModel()
-    /// Drives the Markdown preview that shares the trailing column — opened by
-    /// clicking a `.md` path in the terminal.
-    private let markdownPreview = MarkdownPreviewModel()
     /// Drives the Files pane — the third view of the same column. Reads the repo
     /// the git panel has already resolved, so it costs no extra git work.
     private lazy var fileTree = FileTreeModel(git: gitPanel)
+    /// The preview windows. Accessories to the main window — they close with it,
+    /// so quitting stays what it has always been.
+    private lazy var previewWindows = PreviewWindows(highlighter: DiffHighlighter.shared)
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
     /// background update checks start at launch; the "Check for Updates…" menu
     /// item drives manual checks through it.
@@ -63,8 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // conventional unified toolbar.
         window.toolbarStyle = .unified
         let split = MainSplitViewController(
-            runtime: runtime, manager: manager, git: gitPanel,
-            markdown: markdownPreview, files: fileTree)
+            runtime: runtime, manager: manager, git: gitPanel, files: fileTree)
         self.splitController = split
         window.contentViewController = split
         installToolbar(on: window, splitView: split.splitView)
@@ -76,6 +75,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.window = window
 
         manager.onAllClosed = { [weak self] in self?.window?.close() }
+        // Previews are accessories: without this, closing the last session would
+        // leave a preview window standing, which both keeps the app alive (the
+        // last window hasn't closed) and leaves a terminal with no terminal in it.
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.previewWindows.closeAll() }
+        }
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
@@ -88,15 +95,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let self, session.id == self.manager.selectedID else { return }
             self.gitPanel.refreshCurrent()
         }
-        // A markdown path was clicked in the terminal → open it in the trailing
-        // preview (which shares the column with the git panel).
+        // Everything that opens a file — a ⌘-clicked path in the terminal, a
+        // double-clicked row in the tree, a Changes row, a file in a commit —
+        // goes through one opener, so which diff a window shows is decided in
+        // one place rather than four.
         manager.onOpenMarkdown = { [weak self] url in
-            self?.markdownPreview.open(url)
+            self?.openPreview(url)
         }
-        // Opening a .md from the file tree goes to the same preview, so a file
-        // reached either way lands in one place.
-        fileTree.onPreviewMarkdown = { [weak self] url in
-            self?.markdownPreview.open(url)
+        fileTree.onOpenPreview = { [weak self] url in
+            self?.openPreview(url)
+        }
+        gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
+            self?.previewWindows.open(url, diff: diff, hasChanges: hasChanges)
         }
         manager.onAttentionCleared = { session in
             // The user answered (or the session closed) — pull the banner out
@@ -143,14 +153,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.activate(ignoringOtherApps: true)
 
         observeWindowTitle()
-        observePreviewSession()
     }
 
     /// The toolbar is retained here because NSWindow doesn't own its delegate.
     private var toolbarDelegate: MainToolbarDelegate?
 
     private func installToolbar(on window: NSWindow, splitView: NSSplitView) {
-        let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel, markdown: markdownPreview)
+        let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel)
         toolbarDelegate = delegate
         let toolbar = NSToolbar(identifier: "wortel.main")
         toolbar.delegate = delegate
@@ -184,23 +193,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func applyWindowTitle() {
         window?.title = manager.selected?.name ?? "Wortel"
         window?.subtitle = manager.selected?.abbreviatedPath ?? ""
-    }
-
-    /// The markdown preview is app-wide and shares the per-session inspector
-    /// column, so it must not outlive the session it was opened from — close it
-    /// whenever the selection changes, or it would cover the newly-selected
-    /// session's git panel with an unrelated file. @Observable tracking is
-    /// one-shot, so the observer re-arms after each change.
-    private func observePreviewSession() {
-        withObservationTracking {
-            _ = manager.selectedID
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.markdownPreview.close()
-                self.observePreviewSession()
-            }
-        }
     }
 
     // MARK: - Focus tracking (drives "actively viewing" → no attention shout)
@@ -339,40 +331,145 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // MARK: - Preview windows
+
+    /// Open a file in a preview window, working out what its diff should be.
+    ///
+    /// A file the repo already knows is changed opens on *its* row's diff, which
+    /// is what the Changes pane would have shown; anything else in a repo gets
+    /// everything since HEAD, because that's the question you're asking when you
+    /// point at a file rather than at one side of its change. Outside a repo
+    /// there's no diff to offer and the window says so by not having the mode.
+    /// Repo root per directory. The answer never changes for a given directory
+    /// in a session, and asking git twice for the same one is a process we
+    /// don't need to spawn.
+    private var repoRootCache: [String: String?] = [:]
+
+    /// Open a file in a preview window, working out what its diff should be.
+    ///
+    /// Deliberately **not** dependent on the git panel being open. The panel
+    /// resolves its repo only while it's visible — a good rule for a panel that
+    /// would otherwise run git for a column nobody is looking at, and exactly
+    /// the wrong one here: it meant a file opened with the inspector closed had
+    /// no repo, so no diff source, so no Diff mode at all. When the panel
+    /// happens to have the answer it's free; when it doesn't, we ask.
+    private func openPreview(_ requested: URL) {
+        // Two paths, deliberately: git and the window registry work on the real
+        // file, while the window is opened with the path you actually clicked so
+        // it can tell you when that was an alias.
+        let url = requested.resolvingSymlinksInPath().standardizedFileURL
+        // Already open: focus it and do no git work whatsoever.
+        if previewWindows.focus(url) { return }
+
+        // The panel already knows this repo and its status — free, and it also
+        // knows *which side* of a change the file is on.
+        if let repo = gitPanel.repo, let relative = Self.relativePath(of: url, in: repo.root) {
+            let change = repo.status.unstagedChanges.first { $0.path == relative }
+                ?? repo.status.stagedChanges.first { $0.path == relative }
+            if let change {
+                previewWindows.open(requested, diff: .change(root: repo.root, change: change),
+                                    hasChanges: true)
+            } else {
+                previewWindows.open(
+                    requested,
+                    diff: .workingTree(root: repo.root, path: relative, untracked: false))
+            }
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let directory = url.deletingLastPathComponent().path
+            let root: String?
+            if let cached = repoRootCache[directory] {
+                root = cached
+            } else {
+                root = await GitService.repoRoot(for: directory)
+                repoRootCache[directory] = root
+            }
+            guard let root, let relative = Self.relativePath(of: url, in: root) else {
+                previewWindows.open(requested)
+                return
+            }
+            // One line of porcelain, not a patch: it decides whether the window
+            // opens on the diff or on the file, and whether that diff is against
+            // HEAD or against nothing at all.
+            let state = await GitService.workingTreeState(root: root, path: relative)
+            previewWindows.open(
+                requested,
+                diff: .workingTree(root: root, path: relative, untracked: state == .untracked),
+                hasChanges: state.hasChanges)
+        }
+    }
+
+    private static func relativePath(of url: URL, in root: String) -> String? {
+        let path = url.path
+        guard path.hasPrefix(root + "/") else { return nil }
+        return String(path.dropFirst(root.count + 1))
+    }
+
     // MARK: - Menu actions (reached via the responder chain, target nil)
 
+    /// Every command below acts on the session list, which lives in the main
+    /// window — and the menu's key equivalents fire wherever you are. With a
+    /// preview window key that means ⌘N would open a session behind the window
+    /// you're looking at, and ⌘R would start an inline rename in a sidebar you
+    /// can't see. So a session command brings its own window forward first.
+    ///
+    /// ⌘W is the exception and gets its own handling: it closes what you're
+    /// looking at.
+    private func focusMainWindow() {
+        guard let window, !window.isKeyWindow else { return }
+        window.makeKeyAndOrderFront(nil)
+    }
+
     @objc func newSession(_ sender: Any?) {
+        focusMainWindow()
         manager.newSession()
     }
 
     @objc func newSection(_ sender: Any?) {
+        focusMainWindow()
         if let name = promptFolderName(title: "New Section", confirm: "Create") {
             manager.addFolder(named: name)
         }
     }
 
+    /// ⌘W closes **what you are looking at**. With a preview window key that is
+    /// the preview — closing a session from a file window is destructive, and no
+    /// Mac app does that with ⌘W. The menu item says "Close Session" because
+    /// that is what it does in the window it belongs to.
     @objc func closeSession(_ sender: Any?) {
+        if let key = NSApp.keyWindow, key !== window {
+            key.performClose(sender)
+            return
+        }
         manager.requestCloseSelected()
     }
 
     @objc func renameSession(_ sender: Any?) {
+        focusMainWindow()
         manager.beginRenameSelected()
     }
 
     @objc func selectNextSession(_ sender: Any?) {
+        focusMainWindow()
         manager.selectNext()
     }
 
     @objc func selectPreviousSession(_ sender: Any?) {
+        focusMainWindow()
         manager.selectPrevious()
     }
 
     @objc func selectNextAttentionSession(_ sender: Any?) {
+        focusMainWindow()
         manager.selectNextAttention()
     }
 
     @objc func selectSessionAtIndex(_ sender: Any?) {
         guard let item = sender as? NSMenuItem else { return }
+        focusMainWindow()
         manager.select(index: item.tag)
     }
 
@@ -380,6 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// It lands on whichever git pane was last chosen, so coming back from Files
     /// returns you to History if that's where you were.
     @objc func toggleSourceControl(_ sender: Any?) {
+        focusMainWindow()
         gitPanel.activate(GitPanelModel.lastSourceControlPane)
     }
 

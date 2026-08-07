@@ -97,6 +97,10 @@ final class GitRepoModel {
     /// didn't move either doesn't re-run rev-list. Nil until first computed.
     @ObservationIgnored private var unpushedKey: String?
 
+    /// Open a file in a preview window. Set by `GitPanelModel`, which forwards
+    /// to the app layer — the panes hold a repo, not the window machinery.
+    @ObservationIgnored var onOpenPreview: ((URL, PreviewDiffSource, Bool) -> Void)?
+
     /// FSEvents watcher on the work tree; keeps the changes list live when the
     /// repo changes out of band (an external commit, an agent editing files).
     @ObservationIgnored private var watcher: GitRepoWatcher?
@@ -129,6 +133,22 @@ final class GitRepoModel {
             // Callback is on a background queue — hop to the main actor.
             Task { @MainActor in self?.scheduleWatchRefresh() }
         }
+    }
+
+    /// A changed file, in its own window, showing that row's diff.
+    func openPreview(for change: GitFileChange) {
+        let url = URL(fileURLWithPath: root).appendingPathComponent(change.path)
+        onOpenPreview?(url, .change(root: root, change: change), true)
+    }
+
+    /// A file within a commit, in its own window, showing that commit's diff for
+    /// it — the question History is asking, which is neither of the other two.
+    func openPreview(for file: CommitFileChange, in sha: String) {
+        let url = URL(fileURLWithPath: root).appendingPathComponent(file.path)
+        onOpenPreview?(
+            url,
+            .commit(root: root, sha: sha, path: file.path, originalPath: file.originalPath),
+            true)
     }
 
     /// Debounce watch-driven refreshes: a burst of file writes (a build, an
@@ -541,6 +561,7 @@ final class GitRepoModel {
 
     /// ↑/↓ through the history list, mirroring selectAdjacent for changes.
     func selectAdjacentCommit(_ delta: Int) {
+        revealRequest += 1
         guard !commits.isEmpty else { return }
         let index: Int
         if let id = selectedCommitID, let current = commits.firstIndex(where: { $0.id == id }) {
@@ -567,11 +588,20 @@ final class GitRepoModel {
         guard let id = selectedChangeID,
               let index = ordered.firstIndex(where: { $0.id == id }) else {
             select(ordered.first?.id)
+            revealRequest += 1
             return
         }
         let next = max(0, min(ordered.count - 1, index + delta))
-        if next != index { select(ordered[next].id) }
+        if next != index {
+            select(ordered[next].id)
+            revealRequest += 1
+        }
     }
+
+    /// Bumped only by keyboard navigation — see `FileTreeModel.revealRequest`.
+    /// A clicked row is already on screen; scrolling it anyway moves it out from
+    /// under the pointer between the two halves of a double-click.
+    private(set) var revealRequest = 0
 
     func select(_ id: String?) {
         selectedChangeID = id

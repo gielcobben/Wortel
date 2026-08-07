@@ -29,11 +29,18 @@ final class FileNode: Identifiable {
     /// 6 will require, and free to do now.
     let id: String
 
-    init(url: URL, isDirectory: Bool, relativePath: String?) {
+    /// A link to somewhere else. Worth drawing, because the one thing a tree
+    /// must not do is let you edit a file believing it lives where you clicked
+    /// it — an aliased directory of skills or configs looks exactly like a real
+    /// one, right up until you wonder why your change didn't take.
+    let isSymlink: Bool
+
+    init(url: URL, isDirectory: Bool, isSymlink: Bool = false, relativePath: String?) {
         self.url = url
         self.id = url.path
         self.name = url.lastPathComponent
         self.isDirectory = isDirectory
+        self.isSymlink = isSymlink
         self.relativePath = relativePath
     }
 }
@@ -103,10 +110,8 @@ final class FileTreeModel {
     /// resolved the session's work-tree root and keeps its `GitStatus` fresh, so
     /// asking it costs nothing where a second `rev-parse` per `cd` would not.
     @ObservationIgnored private weak var git: GitPanelModel?
-    /// Opening a `.md` hands it to the shared preview, which takes the column
-    /// over. A closure rather than a reference so the tree doesn't depend on the
-    /// preview's model.
-    @ObservationIgnored var onPreviewMarkdown: ((URL) -> Void)?
+    /// Open a file in a preview window (a double-click).
+    @ObservationIgnored var onOpenPreview: ((URL) -> Void)?
 
     @ObservationIgnored private weak var session: Session?
     /// Expanded directory paths for the current root.
@@ -313,18 +318,36 @@ final class FileTreeModel {
         return rows.first { $0.node.url.path == parentPath }?.node
     }
 
-    func select(_ node: FileNode) { selectedID = node.id }
+    /// `reveal` is for keyboard moves only: they can land on a row that is off
+    /// screen, and a click cannot. See `revealRequest`.
+    func select(_ node: FileNode, reveal: Bool = false) {
+        moveSelection(to: node, reveal: reveal)
+    }
+
+    /// Bumped only when the selection moved by *keyboard*. The view scrolls the
+    /// selected row into view on this, not on `selectedID` — because a click
+    /// needs no scrolling (you clicked something you could already see) and
+    /// scrolling under the pointer is how a double-click loses its second click:
+    /// the row you aimed at slides away between the two presses.
+    private(set) var revealRequest = 0
+
+    /// The one place the selection changes — clicks and keys share it so the two
+    /// can never disagree about what selecting means.
+    private func moveSelection(to node: FileNode, reveal: Bool) {
+        selectedID = node.id
+        if reveal { revealRequest += 1 }
+    }
 
     /// Move the selection by `delta` rows, clamped at both ends — the shape
     /// `keyboardNavigableList` expects.
     func selectAdjacent(_ delta: Int) {
         guard !rows.isEmpty else { return }
         guard let current = rows.firstIndex(where: { $0.id == selectedID }) else {
-            selectedID = rows.first?.id
+            if let first = rows.first { moveSelection(to: first.node, reveal: true) }
             return
         }
         let next = min(max(current + delta, 0), rows.count - 1)
-        selectedID = rows[next].id
+        moveSelection(to: rows[next].node, reveal: true)
     }
 
     /// Select the next visible row whose name starts with `prefix`, wrapping —
@@ -336,7 +359,7 @@ final class FileTreeModel {
         if let hit = order.first(where: {
             $0.node.name.lowercased().hasPrefix(prefix.lowercased())
         }) {
-            selectedID = hit.id
+            moveSelection(to: hit.node, reveal: true)
         }
     }
 
@@ -422,6 +445,7 @@ final class FileTreeModel {
                 return kept
             }
             return FileNode(url: entry.url, isDirectory: entry.isDirectory,
+                            isSymlink: entry.isSymlink,
                             relativePath: entry.relativePath)
         }
         node.hiddenChildCount = listing.hiddenCount
@@ -586,6 +610,7 @@ final class FileTreeModel {
         struct Entry {
             let url: URL
             let isDirectory: Bool
+            let isSymlink: Bool
             let relativePath: String?
         }
         var entries: [Entry] = []
@@ -597,8 +622,13 @@ final class FileTreeModel {
     /// on a slow volume would stall the terminal's frame.
     nonisolated private static func list(_ url: URL, cap: Int, repoRoot: String?) async -> Listing {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
+        // **Resolve before listing.** `contentsOfDirectory(at:)` does not follow
+        // a symlink: handed the link itself it fails with ENOTDIR (verified —
+        // the path-based call does follow it, the URL-based one doesn't). That's
+        // why an aliased folder opened onto nothing at all.
+        let listingURL = url.resolvingSymlinksInPath()
         let contents = (try? FileManager.default.contentsOfDirectory(
-            at: url, includingPropertiesForKeys: keys,
+            at: listingURL, includingPropertiesForKeys: keys,
             options: [])) ?? []
 
         var entries: [Listing.Entry] = []
@@ -609,14 +639,33 @@ final class FileTreeModel {
             // other dotfile stays: .gitignore and .env are things you look for.
             if child.lastPathComponent == ".git" { continue }
             let values = try? child.resourceValues(forKeys: Set(keys))
-            // A symlink to a directory reports isDirectory through the resource
-            // value, which is what we want — expanding it walks the target.
-            // Depth is bounded by the user's own clicks, so a loop can't run
-            // away on its own.
-            let isDirectory = values?.isDirectory ?? false
+            let isSymlink = values?.isSymbolicLink ?? false
+            // A symlink's resource values describe the **link**, not what it
+            // points at — verified against a real one: a directory reached
+            // through an alias reports `isDirectory == false`. Believing that
+            // drew it as a leaf with a document icon and no chevron, so an
+            // aliased folder of skills or configs simply could not be opened.
+            // One extra stat, and only for the entries that are links.
+            var isDirectory = values?.isDirectory ?? false
+            if isSymlink {
+                isDirectory = (try? child.resolvingSymlinksInPath()
+                    .resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            }
+            // Depth is bounded by the user's own clicks (and by the recursive
+            // expand's own cap), so a symlink loop can't run away on its own.
+            // **Re-attached to the path navigated, not the target's.** The
+            // listing came from the resolved directory, so `child` lives under
+            // wherever the alias points — and a node's id is its path. Left that
+            // way, an aliased folder's children carry the *target's* ids, which
+            // collide with the same files' rows if that real directory is also
+            // open in the tree: `ForEach` sees duplicate identifiers and draws
+            // blank rows. Keeping ids in terms of where you clicked also keeps
+            // git-relative paths and the alias marker honest.
+            let entry = url.appendingPathComponent(child.lastPathComponent)
             entries.append(Listing.Entry(
-                url: child, isDirectory: isDirectory,
-                relativePath: repoRoot.map { relative(child.path, to: $0) }))
+                url: entry, isDirectory: isDirectory,
+                isSymlink: isSymlink,
+                relativePath: repoRoot.map { relative(entry.path, to: $0) }))
         }
 
         // Directories first, then case-insensitively by name — the order every

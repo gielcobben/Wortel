@@ -90,43 +90,94 @@ struct PressCatcher: NSViewRepresentable {
     }
 }
 
-// MARK: - Native double-click
+// MARK: - Native row clicks (select, double-click, drag)
 
-/// The same trick as `RightClickCatcher`, for double-clicks: an invisible
-/// overlay that claims an event only when it is the *second* click of a pair,
-/// and is transparent to everything else.
+/// One AppKit view that owns everything the left mouse does to a row: selecting,
+/// double-clicking to open, and dragging the row's file out.
 ///
-/// SwiftUI's `.onTapGesture(count: 2)` is the obvious alternative and the wrong
-/// one — it has to wait out the double-click interval before it can rule a
-/// single click in, so every single click in the row picks up a visible delay.
-/// Reading `clickCount` off the current event needs no such wait: a single click
-/// falls straight through to the SwiftUI content and selects immediately, and
-/// only the second click of a genuine double is intercepted here.
-struct DoubleClickCatcher: NSViewRepresentable {
+/// It exists because those three cannot be split between SwiftUI and AppKit on
+/// the same row. `.onDrag` starts tracking the mouse on the first click and
+/// **swallows the second**, so a double-click never reaches either a tap gesture
+/// or an overlay that decides by reading `NSApp.currentEvent.clickCount` —
+/// measured, the click counts a row sees go 1, 1, 1, 3, 4, never 2, which is why
+/// double-clicking did nothing and four fast clicks worked. Owning the whole
+/// gesture is the only way the second click survives.
+///
+/// The same conclusion the sidebar reached for its own rows, where a native
+/// `doubleAction` replaced `.onTapGesture(count: 2)`.
+struct RowClickCatcher: NSViewRepresentable {
+    let onClick: () -> Void
     let onDoubleClick: () -> Void
+    /// Dragged out when the row is dragged — the terminal accepts a `.fileURL`
+    /// and inserts the shell-escaped path.
+    let url: URL
 
     func makeNSView(context: Context) -> CatcherView {
         let view = CatcherView()
-        view.onDoubleClick = onDoubleClick
+        configure(view)
         return view
     }
 
-    func updateNSView(_ view: CatcherView, context: Context) {
+    func updateNSView(_ view: CatcherView, context: Context) { configure(view) }
+
+    private func configure(_ view: CatcherView) {
+        view.onClick = onClick
         view.onDoubleClick = onDoubleClick
+        view.url = url
     }
 
-    final class CatcherView: NSView {
+    final class CatcherView: NSView, NSDraggingSource {
+        var onClick: () -> Void = {}
         var onDoubleClick: () -> Void = {}
+        var url = URL(fileURLWithPath: "/")
+        private var mouseDownEvent: NSEvent?
 
-        override func mouseDown(with event: NSEvent) {
-            guard event.clickCount == 2 else { return }
-            onDoubleClick()
+        /// Claims the left button and nothing else: right-clicks and hover fall
+        /// through to the row beneath, which still owns those.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard NSApp.currentEvent?.type == .leftMouseDown,
+                  let local = superview.map({ convert(point, from: $0) }),
+                  bounds.contains(local)
+            else { return nil }
+            return self
         }
 
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            let event = NSApp.currentEvent
-            guard event?.type == .leftMouseDown, event?.clickCount == 2 else { return nil }
-            return self
+        override func mouseDown(with event: NSEvent) {
+            mouseDownEvent = event
+            // Act on the way down, like every outline view on the platform. The
+            // select fires for both clicks of a double, which is what makes the
+            // row highlight before the window appears.
+            onClick()
+            if event.clickCount == 2 { onDoubleClick() }
+        }
+
+        /// Past a few points of movement this is a drag, not a click.
+        override func mouseDragged(with event: NSEvent) {
+            guard let down = mouseDownEvent else { return }
+            let dx = event.locationInWindow.x - down.locationInWindow.x
+            let dy = event.locationInWindow.y - down.locationInWindow.y
+            guard dx * dx + dy * dy > 9 else { return }
+            mouseDownEvent = nil
+
+            // A small icon under the pointer, not the row's whole width — a
+            // 32pt icon stretched across a 300pt frame is what you get for
+            // passing `bounds` here.
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            let size = NSSize(width: 32, height: 32)
+            let origin = convert(down.locationInWindow, from: nil)
+            let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+            item.setDraggingFrame(
+                NSRect(x: origin.x - size.width / 2, y: origin.y - size.height / 2,
+                       width: size.width, height: size.height),
+                contents: icon)
+            beginDraggingSession(with: [item], event: down, source: self)
+        }
+
+        override func mouseUp(with event: NSEvent) { mouseDownEvent = nil }
+
+        func draggingSession(_ session: NSDraggingSession,
+                             sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+            .copy
         }
     }
 }

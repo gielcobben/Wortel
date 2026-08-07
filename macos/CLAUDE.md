@@ -233,6 +233,14 @@ It inherits the git panel's cost rule, and that is the whole design:
   directory by `GitService.checkIgnore` — `status --ignored` would walk
   `node_modules` on every refresh to answer a question about twenty rows. Only
   `.git` is hidden outright; `.gitignore` and `.env` are things you look for.
+- **One AppKit view owns a row's left mouse** (`RowClickCatcher`: select,
+  double-click to open a preview window, drag the file out). They cannot be
+  split: `.onDrag` starts tracking on the first click and **swallows the
+  second**, so a double-click reaches neither a tap gesture nor an overlay that
+  reads `NSApp.currentEvent.clickCount` while hit-testing. Measured, the click
+  counts a row saw went 1, 1, 1, 3, 4 — never 2, which is why four fast clicks
+  opened a file and two did nothing. The sidebar reached the same conclusion
+  with its native `doubleAction`.
 - **⌥ takes the subtree** (⌥-click a chevron, ⌥→/⌥←, or the row's context menu),
   and that gesture is where the cost rule has to be defended rather than stated:
   "expand everything under it" is a promise a tree can't keep. So the walk never
@@ -253,6 +261,19 @@ The Markdown preview still takes the **whole** column when it opens (a terminal
 with two right columns gets cramped), so opening a `.md` from the tree hides the
 tree until the preview is closed or the Files segment reclaims it — the same rule
 as clicking a `.md` path in the terminal.
+
+**Preview windows** (`Wortel/Preview/`) — double-click a file (the tree, a
+Changes row, a file in a commit) or ⌘-click a path in the terminal and it opens
+in its own window: Source, Diff or Rendered Markdown, plus Quick Look for
+anything that isn't text. See `docs/file-preview.md` for the decisions; the three
+that shape the code are that **`DiffView` renders both Source and Diff** (the file
+is handed over as an all-context diff, so they match by construction and the diff
+highlighter needs no new code), that **loading is `MarkdownPreviewModel`'s old
+pattern** (watch the parent directory, because an agent replacing a file replaces
+its inode; stat before reading; keep the last good content), and that **previews
+are accessories** — they close with the main window and are not restored, so
+quitting stays what it was. They are also why the inspector no longer shares its
+column with anything.
 
 **Menus** (`Wortel/MainMenu.swift`) — built programmatically and kept small
 because AppKit scans key equivalents on every keypress. The menu is

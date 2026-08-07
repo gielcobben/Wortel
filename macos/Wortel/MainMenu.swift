@@ -14,7 +14,42 @@ enum MainMenu {
     /// the modifier mask moves — the item and its `selectAll:` action are
     /// unchanged, so with the terminal focused it still selects the buffer.
     static func setTextEditing(_ active: Bool) {
-        selectAllItem?.keyEquivalentModifierMask = active ? [.command] : [.command, .shift]
+        textEditing = active
+        syncSelectAll()
+    }
+
+    private static var textEditing = false
+
+    /// ⌘A for Select All wherever it isn't spoken for: a rename field, and a
+    /// preview window — neither of which has the terminal's claim on it (⌘A is a
+    /// `wortel.conf` keybind that clears the input line). Only the modifier moves;
+    /// the `selectAll:` action is the same one the terminal answers on ⌘⇧A.
+    private static func syncSelectAll() {
+        let plain = textEditing || NSApp.keyWindow?.windowController is PreviewWindowController
+        selectAllItem?.keyEquivalentModifierMask = plain ? [.command] : [.command, .shift]
+    }
+
+    /// ⌘1…⌘3 have two meanings and only one can be true at a time: "session 1–3"
+    /// in the terminal window, "diff / source / rendered" in a preview.
+    /// Validation can't arbitrate that. Measured: `performKeyEquivalent` stops at
+    /// the *first* item whose key equivalent matches, and if that item validates
+    /// disabled it swallows the event rather than looking for a second match — so
+    /// a duplicate shortcut further down the menu bar is simply unreachable. The
+    /// shortcut has to physically move, which has the happy side effect of both
+    /// menus telling the truth: open the Session menu with a preview key and it
+    /// shows no ⌘1 to give.
+    private static var sessionDigitItems: [NSMenuItem] = []
+    private static var previewModeItems: [NSMenuItem] = []
+
+    static func syncPreviewShortcuts() {
+        let toPreview = NSApp.keyWindow?.windowController is PreviewWindowController
+        for (index, item) in previewModeItems.enumerated() {
+            item.keyEquivalent = toPreview ? "\(index + 1)" : ""
+        }
+        for (index, item) in sessionDigitItems.enumerated() {
+            item.keyEquivalent = toPreview ? "" : "\(index + 1)"
+        }
+        syncSelectAll()
     }
 
     static func build() -> NSMenu {
@@ -65,6 +100,14 @@ enum MainMenu {
         // the field, then flips it back.
         let selectAll = editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
         selectAll.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        // Only ever enabled while a preview window is key: it resolves through
+        // the responder chain to PreviewWindowController, and nothing in the
+        // main window implements it. That's what lets ⌘F live in the menu
+        // without taking it away from the shell, where ⌘F is the terminal's.
+        editMenu.addItem(withTitle: "Find",
+                         action: #selector(PreviewWindowController.showPreviewFind(_:)),
+                         keyEquivalent: "f")
         selectAllItem = selectAll
 
         // Session menu — the heart of the app, all keyboard-driven.
@@ -148,6 +191,7 @@ enum MainMenu {
                 action: #selector(AppDelegate.selectSessionAtIndex(_:)),
                 keyEquivalent: "\(i)")
             item.tag = i - 1
+            if i <= 3 { sessionDigitItems.append(item) }
         }
 
         // View menu (font size; session-local)
@@ -160,6 +204,23 @@ enum MainMenu {
         let smaller = viewMenu.addItem(withTitle: "Decrease Font Size", action: #selector(SurfaceView.decreaseFontSize(_:)), keyEquivalent: "-")
         smaller.keyEquivalentModifierMask = [.command]
         viewMenu.addItem(withTitle: "Reset Font Size", action: #selector(SurfaceView.resetFontSize(_:)), keyEquivalent: "0")
+        viewMenu.addItem(.separator())
+        // What a preview window is showing. A submenu rather than three more
+        // entries in View: "Show Source" sitting next to "Show Source Control"
+        // reads as a typo, and these three only ever mean something with a
+        // preview key. Their ⌘1…⌘3 are lent by `syncPreviewShortcuts`.
+        let previewItem = viewMenu.addItem(withTitle: "Preview", action: nil, keyEquivalent: "")
+        let previewMenu = NSMenu(title: "Preview")
+        previewItem.submenu = previewMenu
+        for mode in [PreviewMode.diff, .source, .rendered] {
+            let item = previewMenu.addItem(
+                withTitle: mode.title,
+                action: #selector(PreviewWindowController.showPreviewMode(_:)),
+                keyEquivalent: "")
+            item.tag = mode.menuTag
+            item.image = NSImage(systemSymbolName: mode.symbol, accessibilityDescription: nil)
+            previewModeItems.append(item)
+        }
         viewMenu.addItem(.separator())
         let toggleSidebar = viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
         toggleSidebar.keyEquivalentModifierMask = [.command, .option]
@@ -191,6 +252,17 @@ enum MainMenu {
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         NSApp.windowsMenu = windowMenu
+
+        // Which window is key is the only thing that moves ⌘1…⌘3. Read the key
+        // window a turn later rather than trusting the notification's window: a
+        // preview is still `NSApp.keyWindow` while it resigns, and going from one
+        // preview to another resigns and becomes in an order we shouldn't bet on.
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                DispatchQueue.main.async { syncPreviewShortcuts() }
+            }
+        }
+        syncPreviewShortcuts()
 
         return main
     }

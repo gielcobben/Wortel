@@ -405,15 +405,47 @@ enum GitService {
         return Set(result.stdout.split(separator: "\0").map(String.init))
     }
 
+    /// Whether one file differs from HEAD in any way — staged, unstaged or
+    /// untracked. One line of porcelain rather than a whole patch, because the
+    /// only question being asked is "should this open on its diff?".
+    static func workingTreeState(root: String, path: String) async -> WorkingTreeState {
+        let result = await run(["status", "--porcelain", "--", path], in: root)
+        guard result.ok else { return .unchanged }
+        let line = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.isEmpty { return .unchanged }
+        return line.hasPrefix("??") ? .untracked : .changed
+    }
+
+    /// A file git has never seen, shown as additions against nothing — the same
+    /// `--no-index` trick `diff(root:change:)` uses for an untracked row.
+    static func untrackedDiff(root: String, path: String) async -> String {
+        // --no-index exits 1 when the files differ (always, here); the diff is on
+        // stdout regardless of exit status.
+        await run(["diff", "--no-index", "--", "/dev/null", path], in: root).stdout
+    }
+
+    /// What the working tree has done to one path. Three states rather than a
+    /// bool because untracked is not a kind of changed: git diffs it differently.
+    enum WorkingTreeState {
+        case unchanged, changed, untracked
+        var hasChanges: Bool { self != .unchanged }
+    }
+
+    /// Everything that has happened to one file since the last commit — staged
+    /// and unstaged together. This is the question the file tree and a ⌘-clicked
+    /// path are asking, where the Changes pane's staged/unstaged split has no
+    /// meaning: you pointed at a file, not at one side of its change.
+    static func diffAgainstHead(root: String, path: String) async -> String {
+        let result = await run(
+            ["-c", "core.quotePath=false", "diff", "HEAD", "--", path], in: root)
+        return result.ok ? result.stdout : ""
+    }
+
     /// Unified diff text for one file. Untracked files have no index entry, so
     /// their whole content is shown as additions via `--no-index`.
     static func diff(root: String, change: GitFileChange) async -> String {
         if change.untracked {
-            // --no-index exits 1 when the files differ (always, here); the diff
-            // is on stdout regardless of exit status.
-            let result = await run(
-                ["diff", "--no-index", "--", "/dev/null", change.path], in: root)
-            return result.stdout
+            return await untrackedDiff(root: root, path: change.path)
         }
         var args = ["diff"]
         if change.staged { args.append("--cached") }

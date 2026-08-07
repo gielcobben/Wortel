@@ -11,7 +11,26 @@ struct DiffView: NSViewRepresentable {
     /// Syntax-highlight spans by `DiffLine.id`, filled in asynchronously (see
     /// `DiffResult.highlights`). Empty renders as plain monospaced text.
     var highlights: [Int: [HighlightSpan]] = [:]
+    /// A row to select and scroll into view — how the preview window's find bar
+    /// says "this one". Nil leaves the reader's selection and scroll alone,
+    /// which is every other use of this view.
+    var focusedLine: Int?
     let fontSize: CGFloat
+    /// What the left margin is for. A patch is two revisions at once, so it owes
+    /// you both sides' numbering and a +/− on every line. A whole file is one
+    /// revision, where the second column repeats the first digit for digit and
+    /// the sign column is a stripe of blanks — so `.file` draws one number and no
+    /// sign, and the code starts where the eye expects a first column.
+    var gutter: Gutter = .patch
+    /// The source line to put at the top when this view appears — how a preview
+    /// window keeps your place across a mode switch. Nil leaves the scroll alone,
+    /// which is every other use of this view.
+    var anchorLine: Int?
+    /// Reports the source line at the top of the view as it scrolls, so the mode
+    /// you switch to can open there.
+    var onTopLine: ((Int) -> Void)?
+
+    enum Gutter { case patch, file }
 
     /// Marks this table so the sidebar's SidebarSelectionStyler (which walks the
     /// whole window for NSTableViews) skips it — otherwise it would wire this
@@ -19,7 +38,7 @@ struct DiffView: NSViewRepresentable {
     static let tableIdentifier = NSUserInterfaceItemIdentifier("WortelDiffTable")
 
     /// The height of one diff row for a given font size — the same formula the
-    /// Coordinator uses in `configure`. Lets the History accordion give each
+    /// Coordinator uses in `setStyle`. Lets the History accordion give each
     /// inline diff a frame sized to its content, so small files fit exactly (no
     /// scroller of their own) and only a huge file keeps a bounded one.
     static func rowHeight(forFontSize size: CGFloat) -> CGFloat {
@@ -30,8 +49,12 @@ struct DiffView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        context.coordinator.configure(font: font)
+        // Unconditionally, not via `setStyle`: that early-returns when nothing
+        // *changed*, and at birth nothing has — the coordinator's initial
+        // charWidth and rowHeight are placeholders, not measurements. Letting it
+        // skip here left the inspector's 12pt diff on rowHeight 16 where the font
+        // wants 18, which clips every descender in the pane.
+        context.coordinator.applyStyle(fontSize: fontSize, gutter: gutter)
 
         let table = DiffTableView()
         table.identifier = Self.tableIdentifier
@@ -79,21 +102,46 @@ struct DiffView: NSViewRepresentable {
         // Follow live width changes so the row tints keep filling the panel as
         // it (or the window) is resized.
         scroll.contentView.postsFrameChangedNotifications = true
+        // …and scroll changes, which is what reports the top line.
+        scroll.contentView.postsBoundsChangedNotifications = true
         context.coordinator.observeResize(of: scroll)
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        // The table measures its row height, gutter and column width from the
+        // font — once, in `makeNSView`. So a font size arriving later (⌘+/⌘− in
+        // a preview window) has to be adopted here, or it changes a number in
+        // the model and nothing on screen moves, which reads as a dead menu item.
+        let resized = context.coordinator.setStyle(fontSize: fontSize, gutter: gutter)
+        context.coordinator.onTopLine = onTopLine
         let result = context.coordinator.update(lines: lines, highlights: highlights)
         guard let table = scroll.documentView as? NSTableView else { return }
+        defer {
+            // Last, so it wins over the scroll-to-top a new file otherwise gets:
+            // arriving in a mode with a place to be is not arriving at a new file.
+            context.coordinator.applyAnchor(anchorLine, in: table, scroll: scroll)
+        }
         // Always re-fit the column to the viewport (the panel may have resized).
         context.coordinator.applyColumnWidth()
         // But only reload rows when this table's own data changed. In the History
         // accordion, any file's diff loading re-renders every mounted DiffView;
         // without this guard each full-height table (every row realized) would
         // reloadData on every sibling's load — O(files²) on Expand All.
-        guard result.reload else { return }
+        context.coordinator.focus(focusedLine, in: table)
+        guard result.reload || resized else { return }
+        // The row being read, noted before the rows change height underneath it:
+        // the scroll offset is in points, so resizing the type without this walks
+        // the reader somewhere else in the file on every press of ⌘+.
+        let anchor = resized ? table.rows(in: scroll.documentVisibleRect).location : -1
+        if resized { table.rowHeight = context.coordinator.rowHeight }
         table.reloadData()
+        if anchor > 0, anchor < table.numberOfRows {
+            scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX,
+                                                  y: table.rect(ofRow: anchor).minY))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        context.coordinator.focus(focusedLine, in: table, force: true)
         if result.scrollToTop {
             // New file selected — jump back to the top, and drop the old file's
             // selection (reloadData keeps row indexes selected, which would
@@ -117,8 +165,11 @@ struct DiffView: NSViewRepresentable {
         private(set) var rowHeight: CGFloat = 16
         private(set) var columnWidth: CGFloat = 400
         private var gutterWidth: CGFloat = 60
+        /// Placeholders until `applyStyle` measures the real font — see
+        /// `makeNSView`, which is why that call is unconditional.
         private var font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         private var charWidth: CGFloat = 7
+        private var gutter: Gutter = .patch
         weak var table: NSTableView?
         private weak var scroll: NSScrollView?
 
@@ -131,9 +182,59 @@ struct DiffView: NSViewRepresentable {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(viewportResized),
                 name: NSView.frameDidChangeNotification, object: scroll.contentView)
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(scrolled),
+                name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         }
 
         @objc private func viewportResized() { applyColumnWidth() }
+
+        /// Report where the reader is, in source lines.
+        @objc private func scrolled() {
+            guard let onTopLine, let table, let scroll, !lines.isEmpty else { return }
+            let row = table.rows(in: scroll.documentVisibleRect).location
+            guard row >= 0, row < lines.count else { return }
+            onTopLine(sourceLine(atRow: row))
+        }
+
+        var onTopLine: ((Int) -> Void)?
+        private var appliedAnchor: Int?
+
+        /// A row's line in the file. Both sides carry it: for a whole file the
+        /// two agree, and in a patch the new side is the one that still exists.
+        private func sourceLine(atRow row: Int) -> Int {
+            lines[row].newLine ?? lines[row].oldLine ?? row + 1
+        }
+
+        /// The first row at or after `target`. A diff doesn't contain every line
+        /// of the file, so "the line you were on" is often one that was never
+        /// shown — landing just after it is the honest answer.
+        private func row(forSourceLine target: Int) -> Int? {
+            var last: Int?
+            for (index, line) in lines.enumerated() {
+                guard let number = line.newLine ?? line.oldLine else { continue }
+                if number >= target { return index }
+                last = index
+            }
+            return last
+        }
+
+        /// Put `line` at the top, once per (anchor, content) pair — the content
+        /// arrives after the anchor does, so this is driven by both.
+        func applyAnchor(_ line: Int?, in table: NSTableView, scroll: NSScrollView) {
+            // Not while the content is still empty: the anchor arrives with the
+            // mode switch, the lines a beat later, and this is what makes the
+            // first update that *has* rows the one that scrolls.
+            guard let line, !lines.isEmpty else { return }
+            // Exactly once per anchor. Re-applying on later reloads would drag the
+            // reader back to where they arrived every time the highlighter lands.
+            guard line != appliedAnchor else { return }
+            appliedAnchor = line
+            guard let row = row(forSourceLine: line), row < table.numberOfRows else { return }
+            scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX,
+                                                  y: table.rect(ofRow: row).minY))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
 
         /// The single column spans at least the full viewport so each row's
         /// background tint fills the panel edge-to-edge; when the content is
@@ -144,8 +245,20 @@ struct DiffView: NSViewRepresentable {
             table.tableColumns.first?.width = max(columnWidth, viewport)
         }
 
-        func configure(font: NSFont) {
-            self.font = font
+        /// Adopt a size and a gutter style, reporting whether either actually
+        /// differs — the caller only pays for a reload when it does. Everything
+        /// geometric follows: the character width and row height are recomputed
+        /// here, the gutter and column widths in `recomputeGeometry` on the
+        /// update that comes next.
+        func setStyle(fontSize: CGFloat, gutter: Gutter) -> Bool {
+            guard fontSize != font.pointSize || gutter != self.gutter else { return false }
+            applyStyle(fontSize: fontSize, gutter: gutter)
+            return true
+        }
+
+        func applyStyle(fontSize: CGFloat, gutter: Gutter) {
+            self.gutter = gutter
+            font = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
             charWidth = ("0" as NSString).size(withAttributes: [.font: font]).width
             rowHeight = ceil(font.ascender - font.descender + font.leading) + 3
         }
@@ -156,6 +269,19 @@ struct DiffView: NSViewRepresentable {
         /// in place, leaving the reader's scroll alone. Nothing changed means
         /// neither, so a re-render caused by a *sibling* file loading doesn't
         /// reload this (full-height, fully-realized) table.
+        /// Move the selection to a row and scroll it into view. Only on an
+        /// actual change, or every unrelated re-render would yank the reader
+        /// back to the last match.
+        private var focusedLine: Int?
+
+        func focus(_ line: Int?, in table: NSTableView, force: Bool = false) {
+            guard force || line != focusedLine else { return }
+            focusedLine = line
+            guard let line, line >= 0, line < table.numberOfRows else { return }
+            table.selectRowIndexes(IndexSet(integer: line), byExtendingSelection: false)
+            table.scrollRowToVisible(line)
+        }
+
         func update(
             lines: [DiffLine], highlights: [Int: [HighlightSpan]]
         ) -> (reload: Bool, scrollToTop: Bool) {
@@ -175,11 +301,11 @@ struct DiffView: NSViewRepresentable {
                 maxNo = max(maxNo, line.oldLine ?? 0, line.newLine ?? 0)
                 // +1 for the sign column; tabs expand to DiffLineCellView.tabWidth.
                 let expanded = line.text.reduce(0) { $0 + ($1 == "\t" ? DiffLineCellView.tabWidth : 1) }
-                maxChars = max(maxChars, expanded + 1)
+                maxChars = max(maxChars, expanded + (gutter == .patch ? 1 : 0))
             }
             let digits = max(2, String(maxNo).count)
             let numColumn = CGFloat(digits) * charWidth + 10
-            gutterWidth = numColumn * 2 + 6
+            gutterWidth = (gutter == .patch ? numColumn * 2 : numColumn) + 6
             columnWidth = gutterWidth + CGFloat(maxChars) * charWidth + 16
         }
 
@@ -206,6 +332,7 @@ struct DiffView: NSViewRepresentable {
             cell.font = font
             cell.charWidth = charWidth
             cell.gutterWidth = gutterWidth
+            cell.gutter = gutter
             cell.theme = theme
             cell.configure(line: lines[row], spans: highlights[lines[row].id] ?? [])
             return cell
@@ -266,6 +393,7 @@ final class DiffLineCellView: NSView {
     var font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular) { didSet { rebuild() } }
     var charWidth: CGFloat = 7
     var gutterWidth: CGFloat = 60
+    var gutter = DiffView.Gutter.patch
 
     /// The code column — sign + syntax-coloured text, tabs expanded — built once
     /// per (line, spans) and redrawn from cache on every scroll/resize. Dynamic
@@ -308,7 +436,9 @@ final class DiffLineCellView: NSView {
         s.mutableString.replaceOccurrences(
             of: "\t", with: String(repeating: " ", count: Self.tabWidth),
             options: [], range: NSRange(location: 0, length: s.length))
-        let signText = sign(for: line.kind)
+        // No sign column in a file: every line is context, so it draws a
+        // column of spaces that only pushes the code off its own margin.
+        let signText = gutter == .patch ? sign(for: line.kind) : ""
         if !signText.isEmpty {
             s.insert(NSAttributedString(
                 string: signText, attributes: [.font: font, .foregroundColor: base]), at: 0)
@@ -328,10 +458,16 @@ final class DiffLineCellView: NSView {
         ]
 
         if line.kind != .hunkHeader {
-            drawRightAligned(line.oldLine.map(String.init) ?? "",
-                             attrs: numberAttrs, rightEdge: numColumn - 2)
-            drawRightAligned(line.newLine.map(String.init) ?? "",
-                             attrs: numberAttrs, rightEdge: numColumn * 2 - 2)
+            switch gutter {
+            case .patch:
+                drawRightAligned(line.oldLine.map(String.init) ?? "",
+                                 attrs: numberAttrs, rightEdge: numColumn - 2)
+                drawRightAligned(line.newLine.map(String.init) ?? "",
+                                 attrs: numberAttrs, rightEdge: numColumn * 2 - 2)
+            case .file:
+                drawRightAligned((line.newLine ?? line.oldLine).map(String.init) ?? "",
+                                 attrs: numberAttrs, rightEdge: gutterWidth - 8)
+            }
         }
 
         let x = line.kind == .hunkHeader ? 8 : gutterWidth + 6

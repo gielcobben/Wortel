@@ -127,9 +127,11 @@ struct HistoryView: View {
                 // the walls makes it feel wedged in.
                 .padding(.horizontal, 6)
             }
-            .onChange(of: repo.selectedCommitID) { _, id in
-                guard let id else { return }
-                withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
+            // ↑/↓ only — see SourceControlPanel: scrolling a clicked row moves
+            // it out from under the pointer mid-double-click.
+            .onChange(of: repo.revealRequest) { _, _ in
+                guard let id = repo.selectedCommitID else { return }
+                withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
             }
         }
         // While focused, ↑/↓ walk the log and load each commit's diff.
@@ -147,7 +149,9 @@ struct HistoryView: View {
         } else if repo.commitFiles.isEmpty {
             centered("No file changes")
         } else {
-            CommitFilesList(repo: repo)
+            // The accordion is a separate view, but it sits inside this list —
+            // so a click in it focuses the commit list this pane's ↑/↓ drive.
+            CommitFilesList(repo: repo, onInteract: { listFocused = true })
         }
     }
 
@@ -186,6 +190,8 @@ struct TruncatedDiffNotice: View {
 /// on a numstat rather than parsing every patch up front.
 private struct CommitFilesList: View {
     @Bindable var repo: GitRepoModel
+    /// Hand keyboard focus back to the commit list this accordion lives in.
+    let onInteract: () -> Void
 
     /// Whole-commit totals for the header. Binary rows (count -1) don't add in.
     private var additions: Int { repo.commitFiles.reduce(0) { $0 + max(0, $1.additions) } }
@@ -214,7 +220,11 @@ private struct CommitFilesList: View {
                                 CommitFileRow(
                                     file: file,
                                     repo: repo,
-                                    isExpanded: repo.expandedCommitFiles.contains(file.path))
+                                    isExpanded: repo.expandedCommitFiles.contains(file.path),
+                                    // Same rule as the commit rows above: any
+                                    // click inside the panel claims the keyboard,
+                                    // or ↑/↓ silently keep driving the terminal.
+                                    onInteract: onInteract)
                                 Divider()
                             }
                             .background(.bar)
@@ -311,6 +321,8 @@ private struct CommitFileRow: View {
     let file: CommitFileChange
     let repo: GitRepoModel
     let isExpanded: Bool
+    /// Give the surrounding list keyboard focus — this row is inside it.
+    let onInteract: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -340,10 +352,20 @@ private struct CommitFileRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture { Task { await repo.toggleCommitFile(file) } }
-        // Right-click only — the catcher claims nothing else, so the tap above
-        // still toggles. No selection side effect: unlike the changes list, a
-        // file row here has no "selected" state to move.
+        // Click toggles the inline diff; double-click opens that commit's diff
+        // for this file in its own window, for when the accordion's slice isn't
+        // enough room to read it.
+        .overlay(RowClickCatcher(
+            onClick: {
+                onInteract()
+                Task { await repo.toggleCommitFile(file) }
+            },
+            onDoubleClick: {
+                if let sha = repo.selectedCommitID { repo.openPreview(for: file, in: sha) }
+            },
+            url: URL(fileURLWithPath: repo.root).appendingPathComponent(file.path)))
+        // Right-click keeps its own catcher: it claims nothing else, so the
+        // clicks above still land.
         .overlay(RightClickCatcher(onRightClick: {}, makeMenu: makeContextMenu))
     }
 
@@ -384,10 +406,6 @@ private struct CommitFileRow: View {
         FileManager.default.fileExists(atPath: fileURL.path)
     }
 
-    private var openerApps: [URL] {
-        fileExists ? NSWorkspace.shared.urlsForApplications(toOpen: fileURL) : []
-    }
-
     /// Build the native right-click menu, freshly each time it opens — the same
     /// Open / Open With / Show in Finder / Copy Path set the Changes rows use,
     /// minus the working-tree actions (stage/discard/ignore) that a committed
@@ -396,29 +414,16 @@ private struct CommitFileRow: View {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        let open = ClosureMenuItem(title: "Open") { NSWorkspace.shared.open(fileURL) }
-        open.isEnabled = fileExists
-        menu.addItem(open)
-
-        let apps = openerApps
-        let openWith = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
-        openWith.isEnabled = !apps.isEmpty
-        if !apps.isEmpty {
-            let submenu = NSMenu()
-            for app in apps {
-                let icon = NSWorkspace.shared.icon(forFile: app.path)
-                icon.size = NSSize(width: 16, height: 16)
-                let item = ClosureMenuItem(title: FileManager.default.displayName(atPath: app.path)) {
-                    NSWorkspace.shared.open(
-                        [fileURL], withApplicationAt: app,
-                        configuration: NSWorkspace.OpenConfiguration())
-                }
-                item.image = icon
-                submenu.addItem(item)
-            }
-            openWith.submenu = submenu
+        // Open is that commit's diff for this file — the reason you're in
+        // History. Edit below works on the file as it is *now*, which for an old
+        // commit is a different file, so the two must not share a name.
+        let open = ClosureMenuItem(title: "Open") {
+            if let sha = repo.selectedCommitID { repo.openPreview(for: file, in: sha) }
         }
-        menu.addItem(openWith)
+        open.isEnabled = repo.selectedCommitID != nil
+        menu.addItem(open)
+        menu.addItem(.separator())
+        menu.addEditItems(for: fileURL, exists: fileExists)
 
         let reveal = ClosureMenuItem(title: "Show in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([fileURL])

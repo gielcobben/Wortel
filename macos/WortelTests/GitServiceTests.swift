@@ -447,4 +447,37 @@ final class GitServiceTests: XCTestCase {
         XCTAssertNil(again, "a stale record blocked reuse: \(again ?? "")")
         _ = await GitService.removeWorktree(root: repo.path, at: path)
     }
+
+    /// `rev-parse --show-toplevel` run inside a linked worktree answers with
+    /// *that worktree's* path, not the repository's — so anything deriving a
+    /// repo identity from it is wrong the moment it runs in a worktree. The
+    /// listing is the reliable source: the primary tree is always first.
+    func testPrimaryWorktreeIsFoundFromInsideALinkedOne() async {
+        repo = GitFixture.newRepo("from-linked")
+        GitFixture.sh("printf 'one\\n' > a.txt && git add -A && git commit -q -m first", in: repo)
+        let linked = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+        let added = await GitService.addWorktree(
+            root: repo.path, at: linked, branch: "linked", source: .newBranch(from: "HEAD"))
+        XCTAssertNil(added)
+
+        // Resolved on both sides: git reports real paths, and on macOS /var is
+        // a symlink to /private/var — the same trap the worktree-ownership check
+        // has to avoid.
+        func resolved(_ path: String?) -> String? {
+            path.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
+        }
+
+        // What the naive question answers, from inside the worktree.
+        let toplevel = await GitService.repoRoot(for: linked)
+        XCTAssertEqual(resolved(toplevel), resolved(linked),
+                       "show-toplevel answers with the worktree")
+
+        // What the listing answers, asked from the same place.
+        let trees = await GitService.worktrees(root: linked)
+        XCTAssertEqual(resolved(trees.first(where: { $0.isPrimary })?.path),
+                       resolved(repo.path))
+
+        _ = await GitService.removeWorktree(root: repo.path, at: linked)
+    }
 }

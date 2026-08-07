@@ -686,11 +686,19 @@ final class SessionManager {
                 return
             }
             let existing = await GitService.worktrees(root: root)
+            // **The repository, not this checkout.** `rev-parse --show-toplevel`
+            // inside a linked worktree answers with the *worktree's* path, so a
+            // session created from a worktree session would have grouped the new
+            // one under the old branch's directory —
+            // ~/.wortel/worktrees/feature-x/other rather than
+            // ~/.wortel/worktrees/repo/other. The primary worktree is always the
+            // first git lists.
+            let repoRoot = existing.first(where: \.isPrimary)?.path ?? root
             let path: String
             if let match = existing.first(where: { $0.branch == branch }) {
                 path = match.path
             } else {
-                path = GitWorktree.path(forBranch: branch, repoRoot: root)
+                path = GitWorktree.path(forBranch: branch, repoRoot: repoRoot)
                 // A branch that exists gets checked out; one that doesn't is
                 // created from HEAD, which is what "new session on a new branch"
                 // means when you're standing on the branch you want to fork.
@@ -712,7 +720,12 @@ final class SessionManager {
             }
             guard let self else { return }
             let session = self.newSession(cwd: path, inFolder: folder)
-            // Named for the branch rather than for the slug the directory got.
+            // Named for the branch rather than for the slug its directory got —
+            // and deliberately as a *user* name, which is what `rename` records.
+            // A worktree session's identity is its branch: it's what the
+            // directory is, what the diff is against, and what you'd call it out
+            // loud. Auto-naming renaming it to whatever the agent is currently
+            // doing would disconnect the row from the checkout it belongs to.
             self.rename(session, to: session.folderPath.map { "\($0)/\(branch)" } ?? branch)
         }
     }
@@ -743,8 +756,15 @@ final class SessionManager {
         guard let cwd = session.cwd,
               cwd.hasPrefix(GitWorktree.root.path + "/"),
               let root = await GitService.repoRoot(for: cwd) else { return nil }
-        return await GitService.worktrees(root: root)
-            .first { $0.path == cwd && !$0.isPrimary }
+        // Compared resolved: git reports real paths, and a path that crosses a
+        // symlink — /var against /private/var, or a home directory on another
+        // volume — would otherwise never match, quietly making "Remove
+        // Worktree" decide the session wasn't in one of ours.
+        let resolved = URL(fileURLWithPath: cwd).resolvingSymlinksInPath().path
+        return await GitService.worktrees(root: root).first {
+            !$0.isPrimary
+                && URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == resolved
+        }
     }
 
     /// Remove a session's worktree. Never forced: git refuses while there are

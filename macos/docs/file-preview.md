@@ -6,8 +6,8 @@ rendered Markdown — opened from wherever you already are.
 The job it exists for is not "read files". It is **look at what an agent just
 did, and get back**: the agent rewrites six files, you want to read one properly,
 maybe nudge a value, and return to the prompt without losing your place. That
-sentence decides most of what follows, including why the window follows your
-selection and why it is an accessory rather than a document.
+sentence decides most of what follows, including why it is an accessory rather
+than a document.
 
 ## What it is not
 
@@ -23,25 +23,18 @@ mid-run.
 
 ## Behaviour
 
-**It follows you.** Double-click opens the window; after that it retargets on any
-selection change in the file tree or the Changes list — **including ↑/↓**, which
-turns arrowing down a list of changes into a scrubber over everything that moved.
-Only a deliberate act ever *summons* a window, so navigating never flings one at
-you. That distinction is the whole reason this works here where Xcode's version
-wouldn't: Xcode previews into a pane that is already on screen.
+**Double-click opens a window and focuses it.** Opening a file that already has
+a window focuses that one rather than making a second. That is the entire model.
 
-**Pin to keep one.** A visible toggle in the toolbar stops the window following;
-⌥-double-click opens straight to pinned. Once pinned it is an ordinary window and
-selection has nowhere to go, so nothing new appears until you double-click again,
-which starts a fresh tracking window. *Invariant: at most one tracking window
-exists; every other one is pinned.* The state is visible on purpose — Xcode's
-italic tab is confusing precisely because it isn't.
+An earlier version had the window *follow* your selection, with a pin to stop it
+following — Xcode's preview-tab rule. It was tried and removed: two gestures made
+three states, and "why did this window change under me" is a question a preview
+should never provoke. The plan argued for it; using it settled it.
 
 **Modes: Source · Diff · Rendered**, plus images and anything else Quick Look
-handles. The mode is inferred **once, when the window opens** — a file with
-changes opens on Diff, `.md` opens on Rendered, everything else on Source — and
-is **sticky** from then on. Scrubbing never moves the toolbar under your hands;
-Diff on an unchanged file says "No changes" and leaves the choice to you.
+handles. Only Source exists so far. The mode is inferred once, when the window
+opens — a file with changes opens on Diff, `.md` on Rendered, everything else on
+Source — and is sticky from then on.
 
 **Which diff depends on where you opened it from**, because the question differs:
 
@@ -51,9 +44,6 @@ Diff on an unchanged file says "No changes" and leaves the choice to you.
 | The file tree, or a ⌘-clicked path | Everything since HEAD (staged and unstaged) |
 | A commit's file list in History | That commit's diff for that file |
 | An untracked file | The whole file as additions, as the Changes list already renders it |
-
-Anything else would contradict the list being scrubbed: the Changes pane
-separates staged from unstaged, so a window following it has to as well.
 
 **Accessories, not peers.** They close when the main window closes, so quitting
 behaves exactly as it does today, and they are not restored on relaunch. A
@@ -91,6 +81,29 @@ reading so directory events for other files cost nothing, and keeps the last goo
 content when a read fails mid-rewrite. The preview's document loader is that,
 serving every mode.
 
+### Three things that cost a night
+
+All three presented as "double-clicking a file does nothing", and none of them
+was the thing it looked like:
+
+- **`.onDrag` swallows the second click of a double.** SwiftUI's drag machinery
+  starts tracking the mouse on the first click, so a double-click never reaches a
+  tap gesture *or* an overlay that decides by reading
+  `NSApp.currentEvent.clickCount` while hit-testing. Measured, the click counts a
+  row saw went 1, 1, 1, 3, 4 — never 2, which is why four fast clicks worked and
+  two never did. Select, double-click and drag therefore belong to one AppKit
+  view (`RowClickCatcher`), the same conclusion the sidebar reached for its rows.
+- **A hosting controller resizes its window to fit its content.** A SwiftUI root
+  of flexible frames has an ideal size of *nothing*, so the window collapses —
+  first to 1×1 when the controller is assigned, then a few points smaller on
+  every layout pass afterwards (725 → 723 → 709, measured against the window
+  server). `sizingOptions = []` is the fix, and it is the same idiom the
+  sidebar's hosted rows already use.
+- **`log` is a zsh builtin.** Every `log show` during that debugging ran the
+  shell's builtin instead of `/usr/bin/log` and returned nothing, which read as
+  "the code never ran" and sent the investigation after the window for an hour
+  while the real fault was in the click. Use the absolute path.
+
 ### Rules it inherits
 
 - Reading, decoding, parsing and highlighting run off the main actor. The
@@ -117,7 +130,7 @@ Within v1, the Markdown migration lands **last**, because it is the only part
 that can break something in daily use — it touches the split controller, the
 toolbar and `InspectorContainer`, where everything else is additive.
 
-1. Window shell, Source mode, images, tracking and pin, live reload
+1. Window shell, Source mode, images, live reload — **done**
 2. Diff mode, and the entry points from the Changes list and History
 3. Markdown moves in — and the inspector's sharing apparatus is **deleted**:
    `InspectorOccupant.preview`, `lastMarkdownOpen`, the reclaim-the-column dance

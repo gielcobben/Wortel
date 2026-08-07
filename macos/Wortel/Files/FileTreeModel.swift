@@ -103,17 +103,8 @@ final class FileTreeModel {
     /// resolved the session's work-tree root and keeps its `GitStatus` fresh, so
     /// asking it costs nothing where a second `rev-parse` per `cd` would not.
     @ObservationIgnored private weak var git: GitPanelModel?
-    /// Opening a `.md` hands it to the shared preview, which takes the column
-    /// over. A closure rather than a reference so the tree doesn't depend on the
-    /// preview's model.
-    @ObservationIgnored var onPreviewMarkdown: ((URL) -> Void)?
-    /// Open a file in a preview window — a double-click, or ⌥-double-click for a
-    /// window that won't follow the selection afterwards.
-    @ObservationIgnored var onOpenPreview: ((URL, _ pinned: Bool) -> Void)?
-    /// The selection moved. Only retargets a preview window that is *already*
-    /// open and tracking; it must never summon one, or arrowing through the tree
-    /// would throw windows at you.
-    @ObservationIgnored var onSelectionPreview: ((URL) -> Void)?
+    /// Open a file in a preview window (a double-click).
+    @ObservationIgnored var onOpenPreview: ((URL) -> Void)?
 
     @ObservationIgnored private weak var session: Session?
     /// Expanded directory paths for the current root.
@@ -322,14 +313,10 @@ final class FileTreeModel {
 
     func select(_ node: FileNode) { moveSelection(to: node) }
 
-    /// The one place the selection changes. A preview window that's up follows
-    /// it — every selection, including the ones ↑/↓ and type-to-select make,
-    /// which is what turns walking a list of files into scrubbing through them.
-    /// Clicks and keys have to share this funnel or the two would disagree about
-    /// what selecting means.
+    /// The one place the selection changes — clicks and keys share it so the two
+    /// can never disagree about what selecting means.
     private func moveSelection(to node: FileNode) {
         selectedID = node.id
-        if !node.isDirectory { onSelectionPreview?(node.url) }
     }
 
     /// Move the selection by `delta` rows, clamped at both ends — the shape

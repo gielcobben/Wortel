@@ -37,7 +37,6 @@ extension NSToolbarItem.Identifier {
 final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate {
     private weak var splitView: NSSplitView?
     private let git: GitPanelModel
-    private let markdown: MarkdownPreviewModel
     /// Held so the control can be re-synced when the panel is opened, closed, or
     /// switched from anywhere else — ⌘⌥G, ⌘⌥L, a divider drag, a session switch.
     private weak var paneControl: NSSegmentedControl?
@@ -118,10 +117,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// the branch chip has. Kept so it can be removed with the delegate.
     private var resizeObserver: NSObjectProtocol?
 
-    init(splitView: NSSplitView, git: GitPanelModel, markdown: MarkdownPreviewModel) {
+    init(splitView: NSSplitView, git: GitPanelModel) {
         self.splitView = splitView
         self.git = git
-        self.markdown = markdown
         super.init()
         observePanel()
         // The chip's room is the inspector's width, so a divider drag or a window
@@ -158,18 +156,6 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// the segmented control.
     private func activatePane(at index: Int) {
         let panes = InspectorPane.allCases
-        // While the markdown preview owns the column, a pane click means "give me
-        // that pane back" — close the preview and show the pane, never toggle
-        // the column shut.
-        if markdown.isOpen {
-            markdown.close()
-            // `show`, not `activate`: the pane clicked may be the one the model
-            // already holds, and toggling would read that as "close" when the
-            // click meant "replace the preview with this".
-            if panes.indices.contains(index) { git.show(panes[index]) }
-            syncToolbar()
-            return
-        }
         // `.selectAny` reports -1 when the click *deselected* a segment, which can
         // only be the pane already on screen. Guarding on the index too keeps the
         // close working if AppKit reports the clicked index instead.
@@ -187,9 +173,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private func syncToolbar() {
         if let paneControl {
             for (index, pane) in InspectorPane.allCases.enumerated() {
-                // A pane reads selected only when its git pane is actually on
-                // screen — not while the markdown preview has taken the column.
-                paneControl.setSelected(git.isVisible && !markdown.isOpen && pane == git.pane, forSegment: index)
+                paneControl.setSelected(git.isVisible && pane == git.pane, forSegment: index)
             }
         }
         syncRepoItems()
@@ -209,7 +193,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
                 let entry = ClosureMenuItem(title: pane.title) { [weak self] in
                     self?.activatePane(at: index)
                 }
-                entry.state = (git.isVisible && !markdown.isOpen && pane == git.pane) ? .on : .off
+                entry.state = (git.isVisible && pane == git.pane) ? .on : .off
                 submenu.addItem(entry)
             }
             let form = NSMenuItem(title: "Source Control", action: nil, keyEquivalent: "")
@@ -526,7 +510,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// ~210pt exactly when the tree is up is what keeps that from being the
     /// normal state of the toolbar.
     private var showsBranchItem: Bool {
-        git.isVisible && git.repo != nil && !markdown.isOpen && git.pane.isSourceControl
+        git.isVisible && git.repo != nil && git.pane.isSourceControl
     }
 
     /// Insert or remove the repo-scoped items — the branch chip and the "···"
@@ -569,9 +553,6 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             // otherwise opening on a repo would leave the item out until the next
             // unrelated change.
             _ = git.repo
-            // The markdown preview displaces the git controls while it's up, so
-            // their presence tracks it.
-            _ = markdown.isOpen
             // The branch name, so the button's title follows a checkout made in
             // the terminal.
             if let repo = git.repo {

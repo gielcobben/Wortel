@@ -78,6 +78,9 @@ final class GitPanelModel {
     /// Set by AppDelegate to persist a visibility or pane change: both are
     /// session state, so they belong in sessions.json rather than in this model.
     @ObservationIgnored var onStateChanged: (() -> Void)?
+    /// Open a file in a preview window. Set by the app layer and handed to each
+    /// repo model as it's created, so the Changes list and History can reach it.
+    @ObservationIgnored var onOpenPreview: ((URL, PreviewDiffSource, Bool) -> Void)?
 
     @ObservationIgnored private var cache: [String: GitRepoModel] = [:]
     @ObservationIgnored private var currentCwd: String?
@@ -229,6 +232,9 @@ final class GitPanelModel {
             await existing.refresh()
         } else {
             let model = GitRepoModel(root: root, highlighter: DiffHighlighter.shared)
+            model.onOpenPreview = { [weak self] url, diff, hasChanges in
+                self?.onOpenPreview?(url, diff, hasChanges)
+            }
             cache[root] = model
             repo = model
             resolvedNonRepo = false

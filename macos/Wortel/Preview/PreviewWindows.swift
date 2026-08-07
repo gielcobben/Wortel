@@ -1,62 +1,54 @@
 import AppKit
 
-/// Owns the preview windows and the one rule that governs them:
+/// Owns the preview windows. One per file, and that's the whole model.
 ///
-/// > At most one window is *tracking*. Every other one is pinned.
-///
-/// The tracking window is the one a selection change retargets. Nothing else
-/// follows anything, which is what keeps arrowing through a file tree from
-/// flinging windows across the screen — a window is only ever summoned by a
-/// deliberate act (`open`), never by navigation (`retarget`).
+/// An earlier version had windows that followed the selection, with a pin to
+/// stop one following — Xcode's preview-tab rule. It was a worse idea than it
+/// sounded: two gestures meant three states, and "why did this window change
+/// under me" is a question a preview should never provoke. Double-click opens a
+/// window and focuses it; the same file twice focuses the one already open.
 @MainActor
 final class PreviewWindows {
     private var windows: [PreviewWindowController] = []
-    /// Injected rather than reached for, so the unit tests that compile this
-    /// don't drag ~20 tree-sitter grammars in behind it.
+    /// Injected rather than reached for, so anything that compiles this doesn't
+    /// drag ~20 tree-sitter grammars in behind it.
     private let highlighter: (any DiffHighlighting)?
+    /// Where the next window's top-left goes, so windows step off each other
+    /// rather than stacking exactly. Done by hand: `cascadeTopLeft(from:)`
+    /// measured as a no-op here — it treats `NSZeroPoint` as "don't move me",
+    /// and every window after the first landed on the same centred spot, so
+    /// three open files looked like one.
+    private var nextTopLeft: NSPoint?
 
     init(highlighter: (any DiffHighlighting)? = nil) {
         self.highlighter = highlighter
     }
 
-    private var tracking: PreviewWindowController? {
-        windows.first { !$0.isPinned }
-    }
-
-    /// A deliberate open: a double-click, a ⌘-clicked path, a Changes row.
-    ///
-    /// Reuses the tracking window when there is one — the same window walking to
-    /// a new file, which is what makes this feel like one preview rather than a
-    /// pile of them. `pinned` is the ⌥ path: open it and leave it alone.
-    func open(_ url: URL, pinned: Bool = false) {
+    /// Show `url` in a window and put it in front. Opening a file that already
+    /// has a window focuses that one rather than making a second — including
+    /// when it's reached from somewhere else, so a file opened from the tree and
+    /// then from the Changes list is still one window.
+    func open(_ url: URL, diff: PreviewDiffSource = .none, hasChanges: Bool = false) {
         let url = url.resolvingSymlinksInPath().standardizedFileURL
-        // Already showing it somewhere: bring that window forward rather than
-        // making a second one for the same file.
+
         if let existing = windows.first(where: { $0.file.url == url }) {
             existing.showWindow(nil)
-            if pinned { existing.setPinned(true) }
             return
         }
-        if !pinned, let tracking {
-            replace(tracking, with: url)
-            tracking.showWindow(nil)
-            return
+
+        let document = PreviewDocument(
+            url: url,
+            diffSource: diff,
+            mode: PreviewMode.inferred(for: url, hasChanges: hasChanges, hasDiffSource: diff.exists),
+            highlighter: highlighter)
+        let controller = PreviewWindowController(document: document)
+        controller.onClose = { [weak self] closed in
+            self?.windows.removeAll { $0 === closed }
         }
-        present(url, pinned: pinned)
+        if let window = controller.window { place(window) }
+        windows.append(controller)
+        controller.showWindow(nil)
     }
-
-    /// A selection moved. Only the tracking window cares, and only if one is
-    /// already open — this must never summon a window.
-    func retarget(_ url: URL) {
-        guard let tracking else { return }
-        let url = url.resolvingSymlinksInPath().standardizedFileURL
-        guard tracking.file.url != url else { return }
-        replace(tracking, with: url)
-    }
-
-    /// Whether anything is following the selection — the cheap check callers use
-    /// before doing the work of resolving a URL to hand over.
-    var isTracking: Bool { tracking != nil }
 
     /// Previews are accessories: when the main window goes, so do they, and the
     /// app quits as it always has rather than lingering as a terminal with no
@@ -64,39 +56,22 @@ final class PreviewWindows {
     func closeAll() {
         for window in windows { window.close() }
         windows.removeAll()
+        nextTopLeft = nil
     }
 
-    // MARK: - Private
-
-    /// A window shows a different file by taking a new document — the old one's
-    /// watcher and content go with it, so nothing accumulates as you scrub.
-    private func replace(_ controller: PreviewWindowController, with url: URL) {
-        guard let index = windows.firstIndex(where: { $0 === controller }) else { return }
-        let wasKey = controller.window?.isKeyWindow ?? false
-        let frame = controller.window?.frame
-        controller.onClose = nil
-        controller.close()
-        windows.remove(at: index)
-        let replacement = present(url, pinned: false, frame: frame, activate: wasKey)
-        windows.remove(at: windows.count - 1)
-        windows.insert(replacement, at: index)
-    }
-
-    @discardableResult
-    private func present(_ url: URL, pinned: Bool,
-                         frame: NSRect? = nil, activate: Bool = true) -> PreviewWindowController {
-        let document = PreviewDocument(url: url, highlighter: highlighter)
-        let controller = PreviewWindowController(document: document, pinned: pinned)
-        controller.onClose = { [weak self] closed in
-            self?.windows.removeAll { $0 === closed }
-        }
-        if let frame { controller.window?.setFrame(frame, display: false) }
-        windows.append(controller)
-        if activate {
-            controller.showWindow(nil)
-        } else {
-            controller.window?.orderFront(nil)
-        }
-        return controller
+    /// Step this window down-right of the last one, and start over from centre
+    /// once the stair would walk off the screen.
+    private func place(_ window: NSWindow) {
+        if let point = nextTopLeft { window.setFrameTopLeftPoint(point) }
+        let frame = window.frame
+        let next = NSPoint(x: frame.minX + 26, y: frame.maxY - 26)
+        // `window.screen` is nil until a window has been shown, so the screen is
+        // only consulted for the wrap — never as a precondition for moving, or
+        // the first window's placement (and every one after it) is skipped.
+        let visible = (window.screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+        let wouldFit = visible.map {
+            $0.contains(NSPoint(x: next.x + frame.width, y: next.y - frame.height))
+        } ?? false
+        nextTopLeft = wouldFit ? next : nil
     }
 }

@@ -212,13 +212,10 @@ struct FileTreePanel: View {
         model.select(node)
         if node.isDirectory {
             model.toggleExpansion(node)
-        } else if node.url.pathExtension.lowercased() == "md" {
-            model.onPreviewMarkdown?(node.url)
         } else {
-            // ⌥ opens a window that won't follow the selection afterwards —
-            // "keep this one" in a single gesture, for when you already know
-            // you're going to want it beside the next thing you look at.
-            model.onOpenPreview?(node.url, optionHeld)
+            // Every file goes to a preview window now, Markdown included — it
+            // opens rendered rather than taking the inspector's column over.
+            model.onOpenPreview?(node.url)
         }
     }
 
@@ -240,12 +237,10 @@ struct FileTreePanel: View {
             menu.addItem(collapse)
             menu.addItem(.separator())
         } else {
-            if node.url.pathExtension.lowercased() == "md" {
-                menu.addItem(ClosureMenuItem(title: "Preview") {
-                    model.onPreviewMarkdown?(node.url)
-                })
-            }
-            menu.addItem(ClosureMenuItem(title: "Open") {
+            menu.addItem(ClosureMenuItem(title: "Open in Preview") {
+                model.onOpenPreview?(node.url)
+            })
+            menu.addItem(ClosureMenuItem(title: "Open in Default App") {
                 NSWorkspace.shared.open(node.url)
             })
         }
@@ -333,23 +328,32 @@ private struct FileRow: View {
             } else {
                 Spacer().frame(width: 16)
             }
-            Image(systemName: row.node.isDirectory ? "folder" : "doc")
-                .font(.system(size: 11))
-                .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-                .frame(width: 14)
-            Text(row.node.name)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(nameStyle)
-            Spacer(minLength: 4)
-            // The roll-up dot: on a collapsed directory it stands for the most
-            // significant change anywhere beneath it, so you can see where work
-            // is without opening anything.
-            if let statusCode {
-                Circle()
-                    .fill(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(GitStatusStyle.color(for: statusCode)))
-                    .frame(width: 6, height: 6)
+            // Everything the row's left mouse does — select, double-click to
+            // open, drag the file out — belongs to one AppKit view, because
+            // those three cannot be split between SwiftUI and AppKit on the
+            // same row (see RowClickCatcher). It covers the content rather than
+            // the whole row so the chevron beside it keeps its own press.
+            HStack(spacing: 4) {
+                Image(systemName: row.node.isDirectory ? "folder" : "doc")
+                    .font(.system(size: 11))
+                    .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                    .frame(width: 14)
+                Text(row.node.name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(nameStyle)
+                Spacer(minLength: 4)
+                // The roll-up dot: on a collapsed directory it stands for the
+                // most significant change anywhere beneath it, so you can see
+                // where work is without opening anything.
+                if let statusCode {
+                    Circle()
+                        .fill(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(GitStatusStyle.color(for: statusCode)))
+                        .frame(width: 6, height: 6)
+                }
             }
+            .contentShape(Rectangle())
+            .overlay(RowClickCatcher(onClick: select, onDoubleClick: open, url: row.node.url))
         }
         .padding(.leading, CGFloat(row.depth) * 12)
         .padding(.horizontal, 8)
@@ -363,13 +367,9 @@ private struct FileRow: View {
         }
         .padding(.horizontal, 4)
         .opacity(isIgnored && !isSelected ? 0.4 : 1)
-        .onTapGesture(perform: select)
-        // A file URL on the drag pasteboard is all the terminal needs: SurfaceView
-        // already registers `.fileURL` and inserts the shell-escaped path.
-        .onDrag { NSItemProvider(object: row.node.url as NSURL) }
-        // Both catchers are AppKit overlays that claim only their own event —
-        // see RightClickCatcher for why neither is a SwiftUI gesture.
-        .overlay(DoubleClickCatcher(onDoubleClick: open))
+        // Selection, double-click and drag all live in RowClickCatcher above:
+        // SwiftUI's .onDrag swallows the second click of a double, so they can't
+        // be split between the two worlds.
         .overlay(RightClickCatcher(onRightClick: select, makeMenu: makeMenu))
     }
 

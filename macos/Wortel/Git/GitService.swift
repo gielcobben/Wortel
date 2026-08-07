@@ -405,6 +405,16 @@ enum GitService {
         return Set(result.stdout.split(separator: "\0").map(String.init))
     }
 
+    /// Everything that has happened to one file since the last commit — staged
+    /// and unstaged together. This is the question the file tree and a ⌘-clicked
+    /// path are asking, where the Changes pane's staged/unstaged split has no
+    /// meaning: you pointed at a file, not at one side of its change.
+    static func diffAgainstHead(root: String, path: String) async -> String {
+        let result = await run(
+            ["-c", "core.quotePath=false", "diff", "HEAD", "--", path], in: root)
+        return result.ok ? result.stdout : ""
+    }
+
     /// Unified diff text for one file. Untracked files have no index entry, so
     /// their whole content is shown as additions via `--no-index`.
     static func diff(root: String, change: GitFileChange) async -> String {

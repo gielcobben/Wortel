@@ -206,6 +206,13 @@ private struct RepoView: View {
                         repo.select(change.id)
                         listFocused = true
                     },
+                    // Double-click opens the file in its own window, showing
+                    // *this* row's diff — the staged or unstaged side, as
+                    // clicked, because the pane separates them and a window that
+                    // showed the other one would contradict the list.
+                    open: {
+                        repo.openPreview(for: change)
+                    },
                     action: { rowAction(change) })
                 .id(change.id)
             }
@@ -344,6 +351,7 @@ private struct ChangeRow: View {
     let isSelected: Bool
     let actionIcon: String
     let select: () -> Void
+    let open: () -> Void
     let action: () -> Void
 
     @State private var hovering = false
@@ -395,7 +403,8 @@ private struct ChangeRow: View {
             }
         }
         .padding(.horizontal, 4)
-        .onTapGesture(perform: select)
+        .overlay(RowClickCatcher(onClick: select, onDoubleClick: open,
+                                 url: URL(fileURLWithPath: repo.root).appendingPathComponent(change.path)))
         .onHover { hovering = $0 }
         // Native right-click: an AppKit overlay that selects the row (so the
         // diff follows) and pops the menu. SwiftUI's own `.contextMenu` can't be

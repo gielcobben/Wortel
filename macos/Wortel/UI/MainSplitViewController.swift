@@ -21,26 +21,18 @@ import Observation
 /// that sits on top of the glass and blocks it.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
-    /// What currently owns the inspector column — which is *not* the same
-    /// question as `InspectorPane`, because the Markdown preview takes the whole
-    /// column and is a view of no pane at all.
-    ///
-    /// The distinction earns its keep because width is remembered per occupant:
-    /// the four things that share this column want visibly different widths, and
-    /// one width for all of them means every switch is followed by a divider
-    /// drag back to where you had it.
+    /// What currently owns the inspector column. One per pane, because width is
+    /// remembered per occupant: a tree of short names and a diff with a gutter
+    /// want visibly different widths, and one width for both means every switch
+    /// is followed by a drag back to where you had it.
     enum InspectorOccupant: String {
-        case changes, history, files, preview
+        case changes, history, files
 
-        @MainActor init(git: GitPanelModel, markdown: MarkdownPreviewModel) {
-            if markdown.isOpen {
-                self = .preview
-            } else {
-                switch git.pane {
-                case .changes: self = .changes
-                case .history: self = .history
-                case .files: self = .files
-                }
+        @MainActor init(git: GitPanelModel) {
+            switch git.pane {
+            case .changes: self = .changes
+            case .history: self = .history
+            case .files: self = .files
             }
         }
 
@@ -51,7 +43,6 @@ final class MainSplitViewController: NSSplitViewController {
             switch self {
             case .files: return 260
             case .changes, .history: return 420
-            case .preview: return 520
             }
         }
 
@@ -62,7 +53,6 @@ final class MainSplitViewController: NSSplitViewController {
             switch self {
             case .files: return 180
             case .changes, .history: return 260
-            case .preview: return 320
             }
         }
     }
@@ -91,18 +81,11 @@ final class MainSplitViewController: NSSplitViewController {
     private let runtime: GhosttyRuntime
     private let manager: SessionManager
     private let git: GitPanelModel
-    private let markdown: MarkdownPreviewModel
     private let files: FileTreeModel
 
     private var inspectorItem: NSSplitViewItem!
     /// Guards against the observer→collapse→observer feedback loop.
     private var syncingInspector = false
-    /// Whether the markdown preview was open at the last visibility apply, so we
-    /// can tell a preview-driven column change (animate) from a git one.
-    private var lastMarkdownOpen = false
-    /// Whether the git panel was visible at the last apply, so showing it can
-    /// reclaim the column from a preview (they're mutually exclusive views of it).
-    private var lastGitVisible = false
     /// What was in the column at the last apply, so a pane swap can be told from
     /// a mere visibility change and given its own width.
     private var lastOccupant: InspectorOccupant?
@@ -122,11 +105,10 @@ final class MainSplitViewController: NSSplitViewController {
     private var widthCaptureWork: DispatchWorkItem?
 
     init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
-         markdown: MarkdownPreviewModel, files: FileTreeModel) {
+         files: FileTreeModel) {
         self.runtime = runtime
         self.manager = manager
         self.git = git
-        self.markdown = markdown
         self.files = files
         super.init(nibName: nil, bundle: nil)
     }
@@ -165,8 +147,8 @@ final class MainSplitViewController: NSSplitViewController {
         // thickness, so min/max are overridden right after to make it draggable.
         // collapseBehavior keeps the *window* still when the panel opens/closes,
         // resizing the terminal instead.
-        let inspector = NSHostingController(rootView: InspectorContainer(git: git, markdown: markdown, files: files))
-        let occupant = InspectorOccupant(git: git, markdown: markdown)
+        let inspector = NSHostingController(rootView: InspectorContainer(git: git, files: files))
+        let occupant = InspectorOccupant(git: git)
         let width = InspectorWidthStore.width(for: occupant)
         inspector.view.setFrameSize(NSSize(width: width, height: inspector.view.frame.height))
         lastOccupant = occupant
@@ -177,7 +159,7 @@ final class MainSplitViewController: NSSplitViewController {
         item.canCollapse = true
         item.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
         item.holdingPriority = NSLayoutConstraint.Priority(260)
-        item.isCollapsed = !(git.isVisible || markdown.isOpen)
+        item.isCollapsed = !git.isVisible
         addSplitViewItem(item)
         inspectorItem = item
 
@@ -208,7 +190,7 @@ final class MainSplitViewController: NSSplitViewController {
         // the one that has to win. Doing it inline is a race with that restore.
         DispatchQueue.main.async { [weak self] in
             guard let self, let item = self.inspectorItem, !item.isCollapsed else { return }
-            self.applyInspectorWidth(for: InspectorOccupant(git: self.git, markdown: self.markdown))
+            self.applyInspectorWidth(for: InspectorOccupant(git: self.git))
         }
     }
 
@@ -221,7 +203,6 @@ final class MainSplitViewController: NSSplitViewController {
     private func observeInspector() {
         withObservationTracking {
             _ = git.isVisible
-            _ = markdown.isOpen
             // Which pane is showing decides how wide the column should be, so a
             // swap has to reach here too — including the one a session switch
             // makes, since the pane is per session.
@@ -241,19 +222,8 @@ final class MainSplitViewController: NSSplitViewController {
     /// switching sessions is meant to be instant and an animated collapse would
     /// reflow the terminal every frame.
     private func applyInspectorVisibility() {
-        // Showing the git panel (⌘⌥G, a pane click, a focus that reveals it)
-        // reclaims the column from a preview — the two never share it, and
-        // without this the git state would flip while the preview sat unmoved on
-        // top, making the next toggle feel inverted.
-        if git.isVisible && !lastGitVisible && markdown.isOpen {
-            markdown.close()
-        }
-        lastGitVisible = git.isVisible
-
-        let show = git.isVisible || markdown.isOpen
-        let markdownChanged = markdown.isOpen != lastMarkdownOpen
-        lastMarkdownOpen = markdown.isOpen
-        let occupant = InspectorOccupant(git: git, markdown: markdown)
+        let show = git.isVisible
+        let occupant = InspectorOccupant(git: git)
         defer { lastOccupant = occupant }
         guard let inspectorItem else { return }
 
@@ -271,7 +241,7 @@ final class MainSplitViewController: NSSplitViewController {
         // an instant open just reads as instant.
         let target = InspectorWidthStore.width(for: occupant)
         let widthChanges = show && abs(target - lastAppliedWidth) > 1
-        let animates = (markdownChanged || git.animatesVisibilityChange) && !widthChanges
+        let animates = git.animatesVisibilityChange && !widthChanges
 
         syncingInspector = true
         suspendWidthCapture = true
@@ -335,7 +305,7 @@ final class MainSplitViewController: NSSplitViewController {
               let inspectorItem, !inspectorItem.isCollapsed else { return }
         let width = inspectorItem.viewController.view.frame.width
         guard width > 1, abs(width - lastAppliedWidth) > 1 else { return }
-        let occupant = InspectorOccupant(git: git, markdown: markdown)
+        let occupant = InspectorOccupant(git: git)
         widthCaptureWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, let item = self.inspectorItem, !item.isCollapsed else { return }
@@ -360,19 +330,7 @@ final class MainSplitViewController: NSSplitViewController {
 
         guard !syncingInspector, let inspectorItem else { return }
         let visible = !inspectorItem.isCollapsed
-        guard visible != (git.isVisible || markdown.isOpen) else { return }
-        if visible {
-            // Dragged open — there's nothing to restore a preview to, so this
-            // means the git panel.
-            if !markdown.isOpen { git.isPresented = true }
-        } else if markdown.isOpen {
-            // Dragged shut while a preview covered the column — the user is
-            // dismissing the *preview*, not the git panel underneath. Close only
-            // the preview and leave the session's git state alone; if git was
-            // visible it simply re-takes the column.
-            markdown.close()
-        } else if git.isVisible {
-            git.isPresented = false
-        }
+        guard visible != git.isVisible else { return }
+        git.isPresented = visible
     }
 }

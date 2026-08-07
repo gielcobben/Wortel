@@ -233,6 +233,14 @@ It inherits the git panel's cost rule, and that is the whole design:
   directory by `GitService.checkIgnore` — `status --ignored` would walk
   `node_modules` on every refresh to answer a question about twenty rows. Only
   `.git` is hidden outright; `.gitignore` and `.env` are things you look for.
+- **One AppKit view owns a row's left mouse** (`RowClickCatcher`: select,
+  double-click to open a preview window, drag the file out). They cannot be
+  split: `.onDrag` starts tracking on the first click and **swallows the
+  second**, so a double-click reaches neither a tap gesture nor an overlay that
+  reads `NSApp.currentEvent.clickCount` while hit-testing. Measured, the click
+  counts a row saw went 1, 1, 1, 3, 4 — never 2, which is why four fast clicks
+  opened a file and two did nothing. The sidebar reached the same conclusion
+  with its native `doubleAction`.
 - **⌥ takes the subtree** (⌥-click a chevron, ⌥→/⌥←, or the row's context menu),
   and that gesture is where the cost rule has to be defended rather than stated:
   "expand everything under it" is a promise a tree can't keep. So the walk never

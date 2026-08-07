@@ -340,10 +340,17 @@ private struct CommitFileRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture { Task { await repo.toggleCommitFile(file) } }
-        // Right-click only — the catcher claims nothing else, so the tap above
-        // still toggles. No selection side effect: unlike the changes list, a
-        // file row here has no "selected" state to move.
+        // Click toggles the inline diff; double-click opens that commit's diff
+        // for this file in its own window, for when the accordion's slice isn't
+        // enough room to read it.
+        .overlay(RowClickCatcher(
+            onClick: { Task { await repo.toggleCommitFile(file) } },
+            onDoubleClick: {
+                if let sha = repo.selectedCommitID { repo.openPreview(for: file, in: sha) }
+            },
+            url: URL(fileURLWithPath: repo.root).appendingPathComponent(file.path)))
+        // Right-click keeps its own catcher: it claims nothing else, so the
+        // clicks above still land.
         .overlay(RightClickCatcher(onRightClick: {}, makeMenu: makeContextMenu))
     }
 

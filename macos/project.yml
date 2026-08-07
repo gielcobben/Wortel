@@ -243,6 +243,10 @@ targets:
       # is replaced silently stops reporting. The tree's refresh depends on the
       # watcher saying so, and the failure mode is a pane that looks calm.
       - path: Wortel/Files/DirectoryWatcher.swift
+      # Which view of a file a preview window opens on. Pure, and the one part
+      # of that feature that can be wrong without looking wrong: a sticky mode
+      # decided once means a bad rule is the wrong view every single time.
+      - path: Wortel/Preview/PreviewMode.swift
       # AppKit only, and the requirement it has to meet — surviving AppKit's own
       # copyWithZone: when the toolbar builds its `»` menu — is invisible at
       # every call site and crashed the app when it went unmet. A menu item copy

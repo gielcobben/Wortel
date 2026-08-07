@@ -1,24 +1,19 @@
 import SwiftUI
 
-/// What the right inspector column shows. Three things share it, and the order
-/// here is the precedence:
+/// What the right inspector column shows: the file tree on the Files pane,
+/// otherwise the source-control panel.
 ///
-/// 1. the Markdown preview, while a file is open in it — it takes the whole
-///    column rather than adding a second one, because a terminal with two right
-///    columns gets cramped fast;
-/// 2. the file tree, on the Files pane;
-/// 3. otherwise the source-control panel.
-///
-/// The split controller keeps the column open while any of them wants it.
+/// It used to be three, with the Markdown preview taking the whole column when a
+/// `.md` was opened — a compromise the doc admitted, because a terminal with two
+/// right columns gets cramped. Markdown opens in a preview window now, so the
+/// column belongs to its panes outright and the sharing apparatus that went with
+/// it is gone: no occupant to reclaim, no visibility to arbitrate.
 struct InspectorContainer: View {
     @Bindable var git: GitPanelModel
-    @Bindable var markdown: MarkdownPreviewModel
     @Bindable var files: FileTreeModel
 
     var body: some View {
-        if markdown.isOpen {
-            MarkdownPreviewPanel(model: markdown)
-        } else if git.pane == .files {
+        if git.pane == .files {
             FileTreePanel(model: files, focusRequest: git.listFocusRequest)
         } else {
             SourceControlPanel(panel: git)

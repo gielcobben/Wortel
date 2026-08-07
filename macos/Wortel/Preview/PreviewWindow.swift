@@ -37,12 +37,28 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // A glance, not state: relaunching shouldn't reopen yesterday's files,
         // and this app's launch time is a feature.
         window.isRestorable = false
-        window.setFrameAutosaveName("preview")
         super.init(window: window)
 
         window.delegate = self
+        // Content first, *then* the size — in that order, and not the other way
+        // round. Assigning a contentViewController resizes the window to fit its
+        // view, and a SwiftUI root with flexible frames has an ideal size of
+        // nothing: measured, a 720×640 window becomes 1×1 the moment the hosting
+        // controller lands. That is a window that opens perfectly and cannot be
+        // seen, which looks exactly like a double-click doing nothing.
         window.contentViewController = NSHostingController(
             rootView: PreviewContent(document: document))
+        window.contentMinSize = NSSize(width: 360, height: 240)
+        window.setContentSize(NSSize(width: 720, height: 640))
+        window.center()
+        window.setFrameAutosaveName("preview")
+        // The autosave restores whatever was last saved — including, once, a
+        // collapsed frame. A degenerate one is not a preference.
+        if window.frame.width < window.contentMinSize.width
+            || window.frame.height < window.contentMinSize.height {
+            window.setContentSize(NSSize(width: 720, height: 640))
+            window.center()
+        }
         applyIdentity()
         installToolbar()
     }

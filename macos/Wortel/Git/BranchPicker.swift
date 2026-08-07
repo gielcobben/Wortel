@@ -12,7 +12,7 @@ import SwiftUI
 /// off a control is the *list*, because that part is browsing.
 @MainActor
 final class BranchChooser: NSView {
-    private let button = NSPopUpButton(frame: .zero, pullsDown: true)
+    private let button = ChooserButton(frame: .zero, pullsDown: true)
     private let popover = NSPopover()
     private let model: BranchPickerModel
 
@@ -21,15 +21,18 @@ final class BranchChooser: NSView {
 
     init(branches: [String], withWorktree: Set<String>) {
         model = BranchPickerModel(branches: branches, withWorktree: withWorktree)
-        super.init(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
+        super.init(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
 
-        // A pull-down button, because this opens a chooser rather than cycling a
-        // value: its title is the current answer, not a menu item.
+        // A real pull-down button, for its shape and its metrics — the pill, the
+        // chevron at the trailing edge, the system's own materials. What it must
+        // *not* do is open a menu, which is why the click is intercepted rather
+        // than actioned: NSPopUpButton eats mouseDown to show its own menu, so a
+        // target/action never fires and the button looked dead.
         button.frame = bounds
+        button.controlSize = .large
         button.autoenablesItems = false
         button.addItem(withTitle: "Choose a branch\u{2026}")
-        button.target = self
-        button.action = #selector(choose)
+        button.onClick = { [weak self] in self?.toggle() }
         addSubview(button)
 
         popover.behavior = .transient
@@ -42,10 +45,7 @@ final class BranchChooser: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not from a nib") }
 
-    /// Open on click, and keep the button looking like a menu rather than
-    /// actually being one — an NSPopUpButton would otherwise show its own empty
-    /// menu on top of the popover.
-    @objc private func choose() {
+    private func toggle() {
         guard !popover.isShown else { return popover.performClose(nil) }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY)
     }
@@ -55,6 +55,22 @@ final class BranchChooser: NSView {
         button.item(at: 0)?.title = branch
         button.synchronizeTitleAndSelectedItem()
         popover.performClose(nil)
+    }
+}
+
+/// A pull-down button that opens something other than a menu.
+private final class ChooserButton: NSPopUpButton {
+    var onClick: (() -> Void)?
+
+    /// Deliberately no `super` call: that's what shows the menu, and the menu is
+    /// the one thing this button doesn't have.
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+
+    /// Space and Return should do what a click does, for the same reason.
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 49 { onClick?() } else { super.keyDown(with: event) }
     }
 }
 

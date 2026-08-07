@@ -406,10 +406,6 @@ private struct CommitFileRow: View {
         FileManager.default.fileExists(atPath: fileURL.path)
     }
 
-    private var openerApps: [URL] {
-        fileExists ? NSWorkspace.shared.urlsForApplications(toOpen: fileURL) : []
-    }
-
     /// Build the native right-click menu, freshly each time it opens — the same
     /// Open / Open With / Show in Finder / Copy Path set the Changes rows use,
     /// minus the working-tree actions (stage/discard/ignore) that a committed
@@ -418,29 +414,16 @@ private struct CommitFileRow: View {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        let open = ClosureMenuItem(title: "Open") { NSWorkspace.shared.open(fileURL) }
-        open.isEnabled = fileExists
-        menu.addItem(open)
-
-        let apps = openerApps
-        let openWith = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
-        openWith.isEnabled = !apps.isEmpty
-        if !apps.isEmpty {
-            let submenu = NSMenu()
-            for app in apps {
-                let icon = NSWorkspace.shared.icon(forFile: app.path)
-                icon.size = NSSize(width: 16, height: 16)
-                let item = ClosureMenuItem(title: FileManager.default.displayName(atPath: app.path)) {
-                    NSWorkspace.shared.open(
-                        [fileURL], withApplicationAt: app,
-                        configuration: NSWorkspace.OpenConfiguration())
-                }
-                item.image = icon
-                submenu.addItem(item)
-            }
-            openWith.submenu = submenu
+        // Open is that commit's diff for this file — the reason you're in
+        // History. Edit below works on the file as it is *now*, which for an old
+        // commit is a different file, so the two must not share a name.
+        let open = ClosureMenuItem(title: "Open") {
+            if let sha = repo.selectedCommitID { repo.openPreview(for: file, in: sha) }
         }
-        menu.addItem(openWith)
+        open.isEnabled = repo.selectedCommitID != nil
+        menu.addItem(open)
+        menu.addItem(.separator())
+        menu.addEditItems(for: fileURL, exists: fileExists)
 
         let reveal = ClosureMenuItem(title: "Show in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([fileURL])

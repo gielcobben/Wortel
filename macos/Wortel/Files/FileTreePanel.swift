@@ -253,12 +253,11 @@ struct FileTreePanel: View {
             menu.addItem(collapse)
             menu.addItem(.separator())
         } else {
-            menu.addItem(ClosureMenuItem(title: "Open in Preview") {
+            menu.addItem(ClosureMenuItem(title: "Open") {
                 model.onOpenPreview?(node.url)
             })
-            menu.addItem(ClosureMenuItem(title: "Open in Default App") {
-                NSWorkspace.shared.open(node.url)
-            })
+            menu.addItem(.separator())
+            menu.addEditItems(for: node.url, exists: true)
         }
         menu.addItem(ClosureMenuItem(title: "Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([node.url])

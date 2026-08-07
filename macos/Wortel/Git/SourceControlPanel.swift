@@ -438,11 +438,6 @@ private struct ChangeRow: View {
     }
 
     /// Applications the Launch Services database offers for this file.
-    private var openerApps: [URL] {
-        guard fileExists else { return [] }
-        return NSWorkspace.shared.urlsForApplications(toOpen: fileURL)
-    }
-
     /// Select the row when it's right-clicked, so the diff pane follows it.
     private func rightClickSelect() {
         if !isSelected { select() }
@@ -454,29 +449,14 @@ private struct ChangeRow: View {
         // Respect our explicit isEnabled flags rather than AppKit's validation.
         menu.autoenablesItems = false
 
-        let open = ClosureMenuItem(title: "Open") { NSWorkspace.shared.open(fileURL) }
+        // Open *is* the preview window: the same thing this row's double-click
+        // gives you, showing this row's side of the diff. Editing is a separate
+        // intent and gets its own group below.
+        let open = ClosureMenuItem(title: "Open") { repo.openPreview(for: change) }
         open.isEnabled = fileExists
         menu.addItem(open)
-
-        let apps = openerApps
-        let openWith = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
-        openWith.isEnabled = !apps.isEmpty
-        if !apps.isEmpty {
-            let submenu = NSMenu()
-            for app in apps {
-                let icon = NSWorkspace.shared.icon(forFile: app.path)
-                icon.size = NSSize(width: 16, height: 16)
-                let item = ClosureMenuItem(title: FileManager.default.displayName(atPath: app.path)) {
-                    NSWorkspace.shared.open(
-                        [fileURL], withApplicationAt: app,
-                        configuration: NSWorkspace.OpenConfiguration())
-                }
-                item.image = icon
-                submenu.addItem(item)
-            }
-            openWith.submenu = submenu
-        }
-        menu.addItem(openWith)
+        menu.addItem(.separator())
+        menu.addEditItems(for: fileURL, exists: fileExists)
 
         menu.addItem(ClosureMenuItem(title: "Show in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([fileURL])

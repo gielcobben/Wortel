@@ -35,6 +35,7 @@ src/
   pages/sitemap.xml.ts     /sitemap.xml
   layouts/Layout.astro     html shell + meta/OG/canonical/icons
   styles/global.css        all styling (terminal-flavored dark theme)
+  demo/                    the Svelte replica of the app window (see below)
 public/                    static assets (favicon, og.png, screenshots, robots.txt)
 ```
 
@@ -43,6 +44,61 @@ which `release.sh --publish` always mirrors to the newest signed build. The
 version line under it, and `softwareVersion`/`fileSize` in the structured data,
 are read from `updates.wortel.sh/appcast.xml` **at build time**. They refresh
 on redeploy, not on their own.
+
+## The app window, in two looks
+
+The window on the page is a pixel replica of the real app, and the real app is
+native, so it changed appearance when macOS did. Both looks ship:
+
+```
+demo/App.svelte            picks one; everything mounts THIS, never a look
+demo/look.svelte.js        which macOS the visitor is on
+demo/tokens.css            macOS 26 palette      demo/tokens27.css        macOS 27
+demo/WortelApp.svelte      macOS 26 window       demo/WortelApp27.svelte
+demo/Sidebar.svelte        macOS 26 sidebar      demo/Sidebar27.svelte
+demo/GitPanel.svelte       macOS 26 inspector    demo/GitPanel27.svelte
+demo/Terminal.svelte  demo/Diff.svelte  demo/data.js  demo/drawer.svelte.js
+                           shared by both: content and behaviour, not chrome
+```
+
+Both edge panels are draggable by a grip on their inner edge, like the three
+real split panes in the app: the sidebar clamps to 180…400 and the inspector to
+220…70%, the same thicknesses `MainSplitViewController.swift` sets. The width
+lives in `--w-sb-w` / `--git-w`, and the toggle, the window title and the
+terminal's padding all read it, so they travel with the edge instead of with a
+literal.
+
+macOS 27 is the default, and what the built HTML carries. Browsers do not
+volunteer the OS version, so `look.svelte.js` asks User-Agent Client Hints
+(Chromium, the only one that answers), falls back to Safari's own version as a
+proxy, and leaves everyone else on the new look. A visitor it places on macOS
+26 is swapped once, right after hydration.
+
+**Pixel work is measured, never eyeballed.** Put 2x screenshots of the real
+window in `public/refs/` as `m27-{light,dark}-{history,changes,files}.png`, then
+open `/compare?ref=history&theme=light&mode=onion` (also `diff`, `app`, `ref`,
+and `look=26`) to overlay the live window on one at 1:1. Both the refs and that
+page are gitignored: local tools, and 7MB of screenshots has no business on
+wortel.sh.
+
+Screenshots off a Mac are **Display P3**. Sampling one raw and pasting the
+number into CSS (which is sRGB) shifts every saturated colour: it is what first
+made macOS 27 look like it had muted the traffic lights. Convert first.
+
+```sh
+magick public/refs/m27-light-history.png \
+  -profile "/System/Library/ColorSync/Profiles/sRGB Profile.icc" out.png
+```
+
+Headless Chrome renders the harness at exactly the refs' size, which is what
+makes a numeric diff possible:
+
+```sh
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless=new --force-device-scale-factor=2 --window-size=1416,919 \
+  --virtual-time-budget=6000 --screenshot=out.png \
+  "http://localhost:4321/compare?ref=history&theme=light&mode=app"
+```
 
 ## Content & SEO
 

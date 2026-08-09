@@ -19,7 +19,7 @@
   // earlier version centred the target pane with getBoundingClientRect, and
   // `content-visibility: auto` below meant the off-screen frames reported
   // geometry from a layout that never ran.
-  import WortelApp from './WortelApp.svelte';
+  import WortelApp from './App.svelte';
   import { STORY, AGENT_BEAT } from './data.js';
 
   let { beat = 0, sidebar = false, pane = null, focus = 'terminal' } = $props();

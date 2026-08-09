@@ -1,0 +1,168 @@
+/* ==========================================================================
+   Wortel app demo — macOS 27 design tokens
+
+   The app is native, so it changed appearance when macOS did. This file is the
+   macOS 27 look; tokens.css stays exactly as it was and is what macOS 26 (and
+   older) visitors get. See look.svelte.js for how a visitor is sorted into one.
+
+   Every value below is MEASURED from the 2026-08-09 reference screenshots
+   (web/public/refs/m27-{light,dark}-{history,changes,files}.png, 2x retina) by
+   pixel-sampling — not eyeballed. The window in all six is the same box:
+   1304x807 logical, physical (112,76)-(2720,1690).
+
+   COLOUR SPACE: those screenshots are Display P3, because that is what a Mac
+   captures. Sampling them raw gives P3 numbers, and pasting a P3 number into
+   CSS (which is sRGB) shifts every saturated colour — it was what first made
+   macOS 27 look like it had muted the traffic lights. Every value here was
+   sampled AFTER converting the ref through the sRGB profile:
+
+     magick m27-light-history.png -profile \
+       "/System/Library/ColorSync/Profiles/sRGB Profile.icc" out.png
+
+   Loaded AFTER tokens.css and scoped one class tighter (.wortel-app.m27), so
+   anything not listed here deliberately keeps its macOS 26 value: the diff
+   palette and the type metrics are the app's own drawing, not system chrome,
+   and did not change with the OS.
+   ========================================================================== */
+
+/* Dark first, same as tokens.css, so the light block below can stay an
+   override rather than a second full palette. */
+.wortel-app.m27 {
+  /* ---- window ---- */
+  /* the corner arc fits a circle of R≈14.6 (rms 0.05px); macOS 26 drew the
+     same window at 26. 16px of CSS radius measures back as 14.6 — the arc is
+     a squircle, so the fitted radius is not the authored one. */
+  --w-radius: 16px;
+  --w-border: rgba(255, 255, 255, 0.13);
+
+  /* ---- surfaces ----
+     The sidebar and the inspector are now ONE material: the same translucent
+     panel, edge to edge, with the terminal as the only opaque surface. The
+     floating sidebar card of macOS 26 is gone. */
+  --w-titlebar-bg: #222b33;
+  --w-titlebar-panel-bg: #1e2c38;
+  --w-terminal-bg: #222b33;
+  --w-panel-bg: #1e2c38;
+  --w-sidebar-bg: #1d2c39;
+  /* the code/diff surface paints itself; it is NOT the panel material */
+  --w-code-bg: #212b33;
+  --w-session-dot: #00e5d5;
+  --w-hairline: #353c43;          /* titlebar underline, terminal side only */
+  --w-hairline-strong: #2b3843;   /* commit-box separator, expand bar edges */
+
+  /* ---- floating controls (toolbar pills + the sidebar toggle) ----
+     One material for all three: a light "glass" fill, a bright top rim and a
+     soft drop shadow. Measured off the chip at x1090: top 7.8, height 35.9. */
+  --w-pill-fill: #364a58;
+  --w-pill-rim: rgba(255, 255, 255, 0.14);
+  --w-pill-shadow: 0 2px 6px rgba(0, 0, 0, 0.34), 0 0 0 0.5px rgba(0, 0, 0, 0.3);
+  --w-pill-blur: none;
+  --w-pill-solid: #364a58;        /* opaque twin: the doc icon's front page */
+  --w-toggle-fill: #374a57;       /* the toggle floats on the sidebar material */
+  --w-btn-active: #474747;        /* filled circle behind the selected button */
+  --w-seg-divider: #354957;       /* between two UNSELECTED segments only */
+  --w-toggle-ink: #ffffff;        /* the sidebar glyph is full contrast now */
+
+  /* ---- terminal ink ---- */
+  --w-term-text: #e6edf3;
+  --w-user-block-bg: #373737;
+
+  /* ---- chrome ---- */
+  --w-chrome-text: #ffffff;
+  --w-chrome-sub: #b7c4d0;
+  --w-chrome-muted: #76838f;
+  /* unchanged by macOS 27 — they only looked different in P3 */
+  --w-light-red: #ff5c60;
+  --w-light-amber: #ffcc01;
+  --w-light-green: #35c759;
+
+  /* ---- selection ---- */
+  --w-accent: #007aff;
+  --w-accent-text: #ffffff;
+  --w-chip-on-sel: #4a95ff;
+
+  /* ---- history ----
+     macOS 27's app colours a ref chip by WHICH branch it names: the checked-out
+     one is filled, its remote is an outline in the same hue, the rest stay
+     blue. */
+  --w-chip-head-bg: #9b6b3a;
+  --w-chip-head-border: #b9884a;
+  --w-chip-head-text: #ffffff;
+  --w-chip-rem-bg: #3a3a39;
+  --w-chip-rem-border: #ffbe39;
+  --w-chip-rem-text: #ffbe39;
+  --w-chip-bg: #1f3a50;
+  --w-chip-border: #00c5ff;
+  --w-chip-text: #00c5ff;
+
+  --w-rail: #ff9230;
+  --w-rail-branch: #0091ff;
+  --w-status-m: #ffb32b;
+  --w-expand-bar-bg: #212b33;
+
+  /* ---- commit message box ---- */
+  --w-box-bg: #1e1e1e;
+  --w-box-border: #3c4954;
+  --w-box-placeholder: #7d7d7c;
+}
+
+/* ==========================================================================
+   Light. Sampled from m27-light-{history,changes,files}, same sRGB conversion.
+   .force-dark is the /compare dev hook, same as tokens.css.
+   ========================================================================== */
+@media (prefers-color-scheme: light) {
+  .wortel-app.m27:not(.force-dark) {
+    --w-border: rgba(0, 0, 0, 0.07);
+    --w-shadow: 0 36px 80px rgba(0, 0, 0, 0.22), 0 4px 16px rgba(0, 0, 0, 0.11);
+
+    --w-titlebar-bg: #ffffff;
+    --w-titlebar-panel-bg: #ecedee;
+    --w-terminal-bg: #ffffff;
+    --w-panel-bg: #ecedee;
+    --w-sidebar-bg: #ecedee;
+    --w-code-bg: #fbfbfb;
+    --w-session-dot: #00c4af;
+    --w-hairline: #f2f2f2;
+    --w-hairline-strong: #d7d8da;
+
+    --w-pill-fill: #f2f3f4;
+    --w-pill-rim: rgba(255, 255, 255, 0.9);
+    --w-pill-shadow: 0 2px 5px rgba(0, 0, 0, 0.1), 0 0 0 0.5px rgba(0, 0, 0, 0.14);
+    --w-pill-blur: none;
+    --w-pill-solid: #f2f3f4;
+    --w-toggle-fill: #f4f3f3;
+    --w-btn-active: #dddddd;
+    --w-seg-divider: #bfc0c1;
+    --w-toggle-ink: #000000;
+
+    --w-term-text: #1f2329;
+    --w-user-block-bg: #f0f0f0;
+
+    --w-chrome-text: #000000;
+    --w-chrome-sub: #616263;
+    --w-chrome-muted: #8f8f90;
+
+    --w-accent: #0070f5;
+    --w-accent-text: #ffffff;
+    --w-chip-on-sel: #4a95ff;
+
+    --w-chip-head-bg: #f2b687;
+    --w-chip-head-border: #e15e00;
+    --w-chip-head-text: #ffffff;
+    --w-chip-rem-bg: #ede1d8;
+    --w-chip-rem-border: #f87200;
+    --w-chip-rem-text: #f87200;
+    --w-chip-bg: #d4dfee;
+    --w-chip-border: #0070eb;
+    --w-chip-text: #0070eb;
+
+    --w-rail: #ff8d28;
+    --w-rail-branch: #0088ff;
+    --w-status-m: #fe7800;
+    --w-expand-bar-bg: #fbfbfb;
+
+    --w-box-bg: #ffffff;
+    --w-box-border: #d4d5d6;
+    --w-box-placeholder: #808080;
+  }
+}

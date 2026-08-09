@@ -191,6 +191,14 @@ final class GhosttyRuntime {
             envVars.append(ghostty_env_var_s(
                 key: dup("WORTEL_SESSION_ID"), value: dup(sessionID.uuidString)))
         }
+        // The `wortel` command, on the PATH of every shell we spawn — which is
+        // the whole installation story. There is nothing to install and no
+        // installer to write, which is what keeps a zero-config app zero-config,
+        // and it puts the command exactly where all of its use is: inside a
+        // Wortel session, where an agent or a hook can reach it.
+        if let path = Self.shellPath() {
+            envVars.append(ghostty_env_var_s(key: dup("PATH"), value: dup(path)))
+        }
         return envVars.withUnsafeMutableBufferPointer { buf in
             if let base = buf.baseAddress {
                 cfg.env_vars = base
@@ -198,6 +206,39 @@ final class GhosttyRuntime {
             }
             return ghostty_surface_new(app, &cfg)
         }
+    }
+
+    /// The `PATH` a spawned shell should get: the app's own, with the bundled
+    /// command line tool's directory in front. nil when there's nothing to add.
+    ///
+    /// Prepended rather than appended so it wins over an older copy someone
+    /// symlinked into `/usr/local/bin` by hand — the command that ships with
+    /// *this* app is the one that speaks this app's protocol. A login shell then
+    /// runs `path_helper`, which rebuilds `PATH` from `/etc/paths` and appends
+    /// what was already there, so the entry ends up last rather than first;
+    /// it survives, which is what matters, and every real shell startup was
+    /// checked for that before this was built on.
+    ///
+    /// Skipped when the directory is already on the path, which happens for
+    /// real: Wortel gets launched from a shell inside Wortel routinely (that's
+    /// how it's developed), and each generation would otherwise add another copy.
+    private static func shellPath() -> String? {
+        guard let directory = commandLineToolDirectory else { return nil }
+        let current = getenv("PATH").map { String(cString: $0) } ?? ""
+        guard !current.split(separator: ":").contains(where: { $0 == directory }) else {
+            return nil
+        }
+        return current.isEmpty ? directory : "\(directory):\(current)"
+    }
+
+    /// Where the bundled `wortel` binary lives — `Contents/Resources/bin`,
+    /// filled by the CLI target's copy phase. nil in a build without it, which
+    /// is why this checks for the binary rather than assuming the directory.
+    static var commandLineToolDirectory: String? {
+        guard let resources = Bundle.main.resourceURL else { return nil }
+        let directory = resources.appendingPathComponent("bin", isDirectory: true)
+        let tool = directory.appendingPathComponent("wortel")
+        return FileManager.default.isExecutableFile(atPath: tool.path) ? directory.path : nil
     }
 
     // MARK: - Action dispatch

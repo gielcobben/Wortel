@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// The preview windows. Accessories to the main window — they close with it,
     /// so quitting stays what it has always been.
     private lazy var previewWindows = PreviewWindows(highlighter: DiffHighlighter.shared)
+    /// The `wortel` command's way in. Started once the session manager exists,
+    /// since every command it serves is about a session.
+    private var cli: WortelCLIService?
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
     /// background update checks start at launch; the "Check for Updates…" menu
     /// item drives manual checks through it.
@@ -157,6 +160,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Last, because everything it can be asked to do has to exist first.
+        let cli = WortelCLIService(
+            manager: manager,
+            openPreview: { [weak self] url in self?.openPreview(url) },
+            orderFront: { [weak self] in self?.window?.makeKeyAndOrderFront(nil) })
+        cli.start()
+        self.cli = cli
 
         observeWindowTitle()
     }
@@ -313,6 +324,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationWillTerminate(_ notification: Notification) {
         manager?.saveNow()
+        // The socket's name is a file, and it outlives the process that made
+        // it. The server recovers from a stale one on the next launch, but only
+        // by proving it's stale — cheaper and less alarming to tidy up.
+        cli?.stop()
     }
 
     // MARK: - Close confirmation

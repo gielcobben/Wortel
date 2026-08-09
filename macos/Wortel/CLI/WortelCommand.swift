@@ -36,6 +36,77 @@ enum WortelCommand: Codable, Equatable {
     }
 }
 
+/// Where the two ends meet.
+enum WortelCLI {
+    /// The socket, beside `sessions.json` in Application Support — app state,
+    /// which is what it is, and a directory both ends can derive without being
+    /// told. A Unix socket path has to fit `sun_path` (104 bytes on Darwin), and
+    /// this one spends about half of that.
+    static var socketPath: String {
+        let base = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("Wortel/cli.sock").path
+    }
+
+    /// The maximum line either end will read before giving up.
+    ///
+    /// A guard, not a budget: the far end is a local socket carrying one JSON
+    /// object, and anything approaching this is a confused peer rather than a
+    /// long path. Without it, a peer that never sends a newline makes the reader
+    /// grow a buffer until something else breaks.
+    static let maximumLineBytes = 64 * 1024
+
+    /// Fill a `sockaddr_un` for `path`.
+    ///
+    /// Shared because getting it wrong is silent on one side only: a truncated
+    /// path binds a socket at a name the client will never find, and the app
+    /// looks like it simply isn't listening.
+    static func address(for path: String) throws -> sockaddr_un {
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8)
+        let capacity = MemoryLayout.size(ofValue: address.sun_path)
+        guard bytes.count < capacity else { throw SocketError.pathTooLong(path) }
+        withUnsafeMutableBytes(of: &address.sun_path) { raw in
+            raw.copyBytes(from: bytes)
+            raw[bytes.count] = 0
+        }
+        return address
+    }
+
+    /// Call `body` with `address` as a plain `sockaddr`, which is what bind and
+    /// connect take.
+    static func withSockaddr<T>(
+        _ address: inout sockaddr_un, _ body: (UnsafePointer<sockaddr>, socklen_t) -> T
+    ) -> T {
+        withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                body($0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+    }
+
+    enum SocketError: Error, CustomStringConvertible {
+        case pathTooLong(String)
+        case notRunning
+        case failed(String, errno: Int32)
+        case badResponse
+
+        var description: String {
+            switch self {
+            case .pathTooLong(let path):
+                return "socket path is too long: \(path)"
+            case .notRunning:
+                return "Wortel isn't running."
+            case .failed(let what, let code):
+                return "\(what): \(String(cString: strerror(code)))"
+            case .badResponse:
+                return "Wortel sent a reply this version doesn't understand."
+            }
+        }
+    }
+}
+
 /// What the app sends back. Always one line, always JSON, even for failures —
 /// a CLI that sometimes prints prose and sometimes JSON can't be scripted.
 struct WortelResponse: Codable, Equatable {
@@ -131,9 +202,17 @@ enum WortelCommandParser {
 
         var description: String {
             switch self {
-            case .noCommand: return "no command given"
-            case .unknown(let verb): return "unknown command \"\(verb)\""
-            case .missing(let what, let verb): return "\(verb) needs \(what)"
+            case .noCommand:
+                return "no command given"
+            // One case, two words for it: a mistyped `--brnach` is an option
+            // and a mistyped `noew` is a command, and being told the wrong one
+            // sends you looking in the wrong half of the usage.
+            case .unknown(let token):
+                return token.hasPrefix("-")
+                    ? "unknown option \"\(token)\""
+                    : "unknown command \"\(token)\""
+            case .missing(let what, let verb):
+                return "\(verb) needs \(what)"
             }
         }
     }

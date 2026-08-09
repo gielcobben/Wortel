@@ -64,6 +64,15 @@ final class WortelCommandTests: XCTestCase {
         }
     }
 
+    /// And it has to say which half of the usage to look in: a mistyped
+    /// `--brnach` is an option, a mistyped `noew` is a command.
+    func testAnUnknownThingIsNamedForWhatItIs() {
+        XCTAssertEqual("\(WortelCommandParser.ParseError.unknown("--directory"))",
+                       "unknown option \"--directory\"")
+        XCTAssertEqual("\(WortelCommandParser.ParseError.unknown("explode"))",
+                       "unknown command \"explode\"")
+    }
+
     func testFlagWithoutAValueIsRejected() {
         XCTAssertThrowsError(try parse(["new", "--cwd"])) { error in
             XCTAssertEqual(error as? WortelCommandParser.ParseError, .missing("a value", "--cwd"))

@@ -518,11 +518,46 @@ _ghostty_deferred_init() {
         fi
     "${functions[_ghostty_zle_line_init]}
 
-    # Add Ghostty binary to PATH if the path feature is enabled
-    if [[ "$GHOSTTY_SHELL_FEATURES" == *"path"* ]] && [[ -n "$GHOSTTY_BIN_DIR" ]]; then
-      if [[ ":$PATH:" != *":$GHOSTTY_BIN_DIR:"* ]]; then
-        builtin export PATH="$PATH:$GHOSTTY_BIN_DIR"
-      fi
+    # WORTEL: put the bundled `wortel` command on PATH.
+    #
+    # This replaces upstream's block, which appended $GHOSTTY_BIN_DIR —
+    # Contents/MacOS — so its own `ghostty` command would work. Wortel ships no
+    # binary there. The only thing that directory holds is the app's own
+    # executable, named `Wortel`, and the disk is case-insensitive: `wortel`
+    # matched it, so typing our command launched a SECOND COPY OF THE APP,
+    # which then failed to bind the CLI socket the first copy was holding.
+    #
+    # Turning it off in wortel.conf does not work, which is why the block is
+    # deleted rather than disabled: the guard is `== *"path"*`, and a feature
+    # list containing `no-path` matches that just as happily as one containing
+    # `path`. (So does `no-cursor` against `*"cursor"*`. Worth knowing before
+    # trusting any negation here.)
+    #
+    # Prepended, not appended: the command that ships with *this* app is the one
+    # that speaks this app's protocol, and it should win over an older copy
+    # someone symlinked onto their PATH. WORTEL_BIN_DIR is exported per surface
+    # by GhosttyRuntime — a variable of our own rather than an override of PATH,
+    # because libghostty's env_vars can only add.
+    if [[ -n "$WORTEL_BIN_DIR" ]] && [[ ":$PATH:" != *":$WORTEL_BIN_DIR:"* ]]; then
+      builtin export PATH="$WORTEL_BIN_DIR:$PATH"
+    fi
+
+    # And take Contents/MacOS back off, because the core puts it there whatever
+    # the `path` feature says — verified from inside a session: the feature list
+    # arrives as "ssh-env,ssh-terminfo,title" and the directory is on PATH
+    # anyway.
+    #
+    # Nothing in it is meant to be run by name. The only file is the app's own
+    # executable, `Wortel`, which a case-insensitive disk hands over for
+    # `wortel` — so leaving it means any accident of ordering launches a SECOND
+    # COPY OF THE APP rather than failing cleanly. Being first is not a strong
+    # enough guarantee for a failure that severe.
+    if [[ -n "$GHOSTTY_BIN_DIR" ]]; then
+      PATH=":$PATH:"
+      PATH="${PATH//:$GHOSTTY_BIN_DIR:/:}"
+      PATH="${PATH#:}"
+      PATH="${PATH%:}"
+      builtin export PATH
     fi
 
     # Sudo

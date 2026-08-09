@@ -141,6 +141,17 @@ targets:
       - path: Resources/wortel.conf
         buildPhase: resources
     dependencies:
+      # The `wortel` command, copied into Contents/Resources/bin. There is no
+      # install step: GhosttyRuntime puts that directory on the PATH of every
+      # shell it spawns, so the command exists inside a Wortel session and
+      # nowhere else — which is where all of its use is, and it keeps a
+      # zero-config app free of an installer.
+      - target: WortelCLI
+        embed: true
+        codeSign: true
+        copy:
+          destination: resources
+          subpath: bin
       - package: GhosttyKit
         product: GhosttyKit
       - package: Sparkle
@@ -205,6 +216,36 @@ targets:
         # EdDSA public key — private half lives in the login Keychain (shared
         # publisher key, same as Wakker/Opslan).
         SUPublicEDKey: +IarWSgiwu1pxk25kk/8Rcl9Mf/AXwH/Z2qFoOYXEGI=
+
+  # The `wortel` command line tool. A plain executable — no libghostty, no
+  # AppKit — that speaks the socket protocol in Wortel/CLI and nothing else.
+  # It's copied into the app bundle (see the app's dependencies above) rather
+  # than installed anywhere, so its whole distribution story is the app's.
+  #
+  # **Named `WortelCLI`, not `wortel`.** A target's name is its intermediates
+  # directory, and the filesystem is case-insensitive: a target called `wortel`
+  # shares `Wortel.build` with the app and the two silently overwrite each
+  # other's object files. What that looks like is an app bundle whose
+  # executable *is the CLI* — it launches, prints the usage and exits. The
+  # product is still named `wortel`, which is what anyone types.
+  WortelCLI:
+    type: tool
+    platform: macOS
+    sources:
+      - path: WortelCLI
+      # Shared with the app, and that sharing is the point: one definition of
+      # the commands and the framing, so the two ends cannot drift apart
+      # silently. They ship together, but a hand-installed symlink can outlive
+      # its app — which is why an unparseable command is answered rather than
+      # dropped.
+      - path: Wortel/CLI/WortelCommand.swift
+      - path: Wortel/CLI/WortelCLIClient.swift
+    settings:
+      base:
+        PRODUCT_NAME: wortel
+        # Ad-hoc like the app in Debug; scripts/release.sh re-signs the whole
+        # bundle, this binary included, with the Developer ID.
+        SKIP_INSTALL: true
 
   # Unit tests for the git panel's logic. Run with:
   #   xcodebuild -project Wortel.xcodeproj -scheme WortelTests test
@@ -305,6 +346,17 @@ targets:
       # max-not-latest rule whose failure mode is silence: a blocked agent
       # hidden behind a folder that reports something calmer.
       - path: Wortel/Sessions/AttentionKind.swift
+      # The CLI's wire protocol and argument parsing. Pure, and the layer where
+      # a command-line tool rots: an argument silently ignored, a relative path
+      # resolved against the wrong directory, an error a script can't detect.
+      - path: Wortel/CLI/WortelCommand.swift
+      # Both ends of the socket, so the round trip can be tested for real —
+      # over an actual socket, with an actual client. Everything that can go
+      # wrong in a transport is invisible from either side alone: a reply that
+      # never comes, a connection that blocks the next one, a socket file left
+      # behind by a crash that makes the app look permanently unreachable.
+      - path: Wortel/CLI/WortelCLIServer.swift
+      - path: Wortel/CLI/WortelCLIClient.swift
       # The markdown block parser: pure Foundation, and the fiddly line-based
       # structure (tables, task lists, fences, quote coalescing) is exactly the
       # kind of thing that fails silently. The renderer and tree-sitter code

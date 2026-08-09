@@ -172,9 +172,11 @@
     set edit:before-readline = (conj $edit:before-readline $beam~)
     set edit:after-readline  = (conj $edit:after-readline {|_| reset })
   }
-  if (and (has-value $features path) (has-env GHOSTTY_BIN_DIR)) {
-    if (not (has-value $paths $E:GHOSTTY_BIN_DIR)) {
-        set paths = [$@paths $E:GHOSTTY_BIN_DIR]
+  # WORTEL: the bundled `wortel` command, prepended. Replaces upstream's
+  # $GHOSTTY_BIN_DIR block — see the zsh copy for why that one had to go.
+  if (has-env WORTEL_BIN_DIR) {
+    if (not (has-value $paths $E:WORTEL_BIN_DIR)) {
+        set paths = [$E:WORTEL_BIN_DIR $@paths]
     }
   }
   if (and (has-value $features sudo) (not-eq "" $E:TERMINFO) (has-external sudo)) {

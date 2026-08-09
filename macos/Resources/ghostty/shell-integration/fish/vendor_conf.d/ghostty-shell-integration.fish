@@ -89,9 +89,13 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
         end
     end
 
-    # Add Ghostty binary to PATH if the path feature is enabled
-    if contains path $features; and test -n "$GHOSTTY_BIN_DIR"
-        fish_add_path --global --path --append "$GHOSTTY_BIN_DIR"
+    # WORTEL: put the bundled `wortel` command on PATH. See the zsh copy for why
+    # upstream's $GHOSTTY_BIN_DIR block is deleted rather than disabled —
+    # Contents/MacOS holds only the app's own executable, and `wortel` matched it
+    # on a case-insensitive disk. Prepended so this app's command beats an older
+    # symlink; fish_add_path won't add a duplicate.
+    if test -n "$WORTEL_BIN_DIR"
+        fish_add_path --global --path --prepend "$WORTEL_BIN_DIR"
     end
 
     # When using sudo shell integration feature, ensure $TERMINFO is set

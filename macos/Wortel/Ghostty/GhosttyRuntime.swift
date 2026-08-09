@@ -191,6 +191,21 @@ final class GhosttyRuntime {
             envVars.append(ghostty_env_var_s(
                 key: dup("WORTEL_SESSION_ID"), value: dup(sessionID.uuidString)))
         }
+        // Where the bundled `wortel` command lives. The shell integration reads
+        // this and prepends it to PATH (see the zsh copy) — which is the whole
+        // installation story: nothing to install, no installer to write, and the
+        // command sits exactly where all of its use is.
+        //
+        // **A variable of our own rather than an override of PATH**, and that is
+        // not a style choice. Setting `PATH` here does nothing: env_vars can only
+        // *add* to the environment libghostty hands the shell, so a key that
+        // already exists keeps its inherited value. The symptom was subtle —
+        // `wortel` still resolved, to the app's own executable in Contents/MacOS,
+        // because upstream's shell integration appends that directory and the
+        // disk is case-insensitive. Typing the command launched a second Wortel.
+        if let directory = Self.commandLineToolDirectory {
+            envVars.append(ghostty_env_var_s(key: dup("WORTEL_BIN_DIR"), value: dup(directory)))
+        }
         return envVars.withUnsafeMutableBufferPointer { buf in
             if let base = buf.baseAddress {
                 cfg.env_vars = base
@@ -198,6 +213,16 @@ final class GhosttyRuntime {
             }
             return ghostty_surface_new(app, &cfg)
         }
+    }
+
+    /// Where the bundled `wortel` binary lives — `Contents/Resources/bin`,
+    /// filled by the CLI target's copy phase. nil in a build without it, which
+    /// is why this checks for the binary rather than assuming the directory.
+    static var commandLineToolDirectory: String? {
+        guard let resources = Bundle.main.resourceURL else { return nil }
+        let directory = resources.appendingPathComponent("bin", isDirectory: true)
+        let tool = directory.appendingPathComponent("wortel")
+        return FileManager.default.isExecutableFile(atPath: tool.path) ? directory.path : nil
     }
 
     // MARK: - Action dispatch

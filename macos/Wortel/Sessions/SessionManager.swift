@@ -674,60 +674,84 @@ final class SessionManager {
         inFolder folder: String? = nil,
         onFailure: @escaping (String) -> Void
     ) {
-        let branch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !branch.isEmpty else { return }
-        guard let cwd = selected?.cwd else {
-            onFailure("No session to take a repository from.")
-            return
-        }
         Task { [weak self] in
-            guard let root = await GitService.repoRoot(for: cwd) else {
-                onFailure("\(cwd) isn't inside a git repository.")
-                return
-            }
-            let existing = await GitService.worktrees(root: root)
-            // **The repository, not this checkout.** `rev-parse --show-toplevel`
-            // inside a linked worktree answers with the *worktree's* path, so a
-            // session created from a worktree session would have grouped the new
-            // one under the old branch's directory —
-            // ~/.wortel/worktrees/feature-x/other rather than
-            // ~/.wortel/worktrees/repo/other. The primary worktree is always the
-            // first git lists.
-            let repoRoot = existing.first(where: \.isPrimary)?.path ?? root
-            let path: String
-            if let match = existing.first(where: { $0.branch == branch }) {
-                path = match.path
-            } else {
-                path = GitWorktree.path(forBranch: branch, repoRoot: repoRoot)
-                // A branch that exists gets checked out; one that doesn't is
-                // created from HEAD, which is what "new session on a new branch"
-                // means when you're standing on the branch you want to fork.
-                let known = await GitService.branches(root: root)
-                    .contains { !$0.isRemote && $0.name == branch }
-                // A repository with no commits has a HEAD that resolves to
-                // nothing, so it can't be a base — git infers an orphan branch
-                // instead, which is exactly right for a first branch in a fresh
-                // repo. Handing it `HEAD` regardless is what made "git init and
-                // then a session" fail with `invalid reference: HEAD`.
-                let source: GitService.WorktreeSource = known
-                    ? .existingBranch
-                    : .newBranch(from: await GitService.hasCommits(root: root) ? "HEAD" : nil)
-                if let error = await GitService.addWorktree(
-                    root: root, at: path, branch: branch, source: source) {
-                    onFailure(error)
-                    return
-                }
-            }
             guard let self else { return }
-            let session = self.newSession(cwd: path, inFolder: folder)
-            // Named for the branch rather than for the slug its directory got —
-            // and deliberately as a *user* name, which is what `rename` records.
-            // A worktree session's identity is its branch: it's what the
-            // directory is, what the diff is against, and what you'd call it out
-            // loud. Auto-naming renaming it to whatever the agent is currently
-            // doing would disconnect the row from the checkout it belongs to.
-            self.rename(session, to: session.folderPath.map { "\($0)/\(branch)" } ?? branch)
+            if case .failure(let failure) = await self.openSession(
+                onBranch: branch, inFolder: folder) {
+                onFailure(failure.message)
+            }
         }
+    }
+
+    /// The same thing as a value, for callers that need the session back or have
+    /// somewhere other than an alert to put the failure — the CLI is both.
+    ///
+    /// `from` is the directory to take the repository from, defaulting to the
+    /// selected session's. The CLI passes the caller's own working directory,
+    /// which is the whole point of running the command *somewhere*: a script in
+    /// one repo must not open a worktree of whichever repo the sidebar happens
+    /// to be pointing at.
+    /// Why a session couldn't be opened, in words meant to be shown as they are.
+    /// Usually git's own message — "already checked out at …" and "not a valid
+    /// object name" each tell you exactly what to do next, and a paraphrase
+    /// would drop the path.
+    struct Failure: Error {
+        let message: String
+    }
+
+    @discardableResult
+    func openSession(
+        onBranch branch: String, inFolder folder: String? = nil, from cwd: String? = nil
+    ) async -> Result<Session, Failure> {
+        let branch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty else { return .failure(Failure(message: "No branch given.")) }
+        guard let cwd = cwd ?? selected?.cwd else {
+            return .failure(Failure(message: "No session to take a repository from."))
+        }
+        guard let root = await GitService.repoRoot(for: cwd) else {
+            return .failure(Failure(message: "\(cwd) isn't inside a git repository."))
+        }
+        let existing = await GitService.worktrees(root: root)
+        // **The repository, not this checkout.** `rev-parse --show-toplevel`
+        // inside a linked worktree answers with the *worktree's* path, so a
+        // session created from a worktree session would have grouped the new
+        // one under the old branch's directory —
+        // ~/.wortel/worktrees/feature-x/other rather than
+        // ~/.wortel/worktrees/repo/other. The primary worktree is always the
+        // first git lists.
+        let repoRoot = existing.first(where: \.isPrimary)?.path ?? root
+        let path: String
+        if let match = existing.first(where: { $0.branch == branch }) {
+            path = match.path
+        } else {
+            path = GitWorktree.path(forBranch: branch, repoRoot: repoRoot)
+            // A branch that exists gets checked out; one that doesn't is
+            // created from HEAD, which is what "new session on a new branch"
+            // means when you're standing on the branch you want to fork.
+            let known = await GitService.branches(root: root)
+                .contains { !$0.isRemote && $0.name == branch }
+            // A repository with no commits has a HEAD that resolves to
+            // nothing, so it can't be a base — git infers an orphan branch
+            // instead, which is exactly right for a first branch in a fresh
+            // repo. Handing it `HEAD` regardless is what made "git init and
+            // then a session" fail with `invalid reference: HEAD`.
+            let source: GitService.WorktreeSource = known
+                ? .existingBranch
+                : .newBranch(from: await GitService.hasCommits(root: root) ? "HEAD" : nil)
+            if let error = await GitService.addWorktree(
+                root: root, at: path, branch: branch, source: source) {
+                return .failure(Failure(message: error))
+            }
+        }
+        let session = newSession(cwd: path, inFolder: folder)
+        // Named for the branch rather than for the slug its directory got —
+        // and deliberately as a *user* name, which is what `rename` records.
+        // A worktree session's identity is its branch: it's what the
+        // directory is, what the diff is against, and what you'd call it out
+        // loud. Auto-naming renaming it to whatever the agent is currently
+        // doing would disconnect the row from the checkout it belongs to.
+        rename(session, to: session.folderPath.map { "\($0)/\(branch)" } ?? branch)
+        return .success(session)
     }
 
     /// Local branches of the selected session's repository, most recently
@@ -1109,6 +1133,26 @@ final class SessionManager {
         session.attention = nil
         refreshDockBadge()
         onAttentionCleared?(session)
+    }
+
+    /// A session by id — what the CLI has, since a shell knows its session as
+    /// `$WORTEL_SESSION_ID` and nothing else.
+    func session(id: Session.ID) -> Session? {
+        sessions.first { $0.id == id }
+    }
+
+    /// Raise attention on a session from outside: `wortel notify`.
+    ///
+    /// Deliberately the *same* path as a program's own OSC 9/777 — same
+    /// classification of the text, same dot, same badge, same one-per-session
+    /// notification. A `make && wortel notify "Build done"` should be
+    /// indistinguishable from an agent that emits the escape sequence itself,
+    /// because to the person across the room it is the same event.
+    func notify(_ session: Session, title: String, body: String) {
+        raiseAttention(session,
+                       kind: AttentionKind.classify(notificationTitle: title, body: body),
+                       title: title.isEmpty ? session.name : title,
+                       body: body, source: "cli")
     }
 
     /// A session wants the user: raise the sidebar dot (which overrides the

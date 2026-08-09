@@ -275,6 +275,21 @@ are accessories** — they close with the main window and are not restored, so
 quitting stays what it was. They are also why the inspector no longer shares its
 column with anything.
 
+**The `wortel` command** (`Wortel/CLI/`, `WortelCLI/`) — a Unix socket the CLI
+speaks JSON at: `open`, `new`, `rename`, `notify`. `docs/wortel-command.md` is
+the user-facing guide, `docs/cli.md` the design record; the three
+decisions that shape the code are that **there is no installer** (the binary
+ships in the bundle and `GhosttyRuntime` puts its directory on the `PATH` of
+every shell it spawns, so it exists inside a session and nowhere else), that
+**it never steals focus** (windows are ordered front, the app is never
+activated, so a hook firing behind your back can't take your keyboard), and that
+**a command means the session it was run in** (`$WORTEL_SESSION_ID`, not an
+argument). The point of having it at all is that Wortel then ships no per-agent
+integrations: anything that can run a command can drive the app. The CLI target
+is named `WortelCLI` and not `wortel` — same-name targets collide in the
+intermediates directory on a case-insensitive filesystem, and the app ends up
+containing the CLI's executable.
+
 **Menus** (`Wortel/MainMenu.swift`) — built programmatically and kept small
 because AppKit scans key equivalents on every keypress. The menu is
 **authoritative** for key equivalents, and this interacts with `wortel.conf`

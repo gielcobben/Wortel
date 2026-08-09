@@ -206,6 +206,33 @@ final class GhosttyRuntime {
         if let directory = Self.commandLineToolDirectory {
             envVars.append(ghostty_env_var_s(key: dup("WORTEL_BIN_DIR"), value: dup(directory)))
         }
+
+        // The process-survival spike, opt-in via WORTEL_HOST_MANAGED=1. See
+        // PtyHost: we own the pty, libghostty is only the emulator. Everything
+        // above that describes a *process* — working_directory, initial_input,
+        // env_vars — has nothing to act on in this mode, which is exactly the
+        // cost the spike is here to measure.
+        // Process survival, and the default: ask the keeper for this session's
+        // pty. If it already has one the shell outlived the last quit and we are
+        // picking it back up; if not, the keeper forks a fresh one. Either way
+        // the process belongs to the keeper rather than to us, which is the
+        // whole point — quitting Wortel closes a window instead of killing
+        // whatever your agents were in the middle of.
+        //
+        // **No keeper means the exec backend, unchanged.** Not a local fork:
+        // when survival is unavailable the right thing is the path this app has
+        // always used, with libghostty doing its own spawning and its own shell
+        // integration. A missing helper should cost you survival and nothing
+        // else.
+        if let sessionID, let keeper = Self.keeper,
+           let attachment = keeper.attachOrOpen(
+               session: sessionID, plan: Self.shellPlan(sessionID: sessionID),
+               workingDirectory: workingDirectory, columns: 80, rows: 24) {
+            // A session that never died has nothing to resume; see below.
+            if attachment.resumed { cfg.initial_input = nil }
+            return hostManagedSurface(view: view, config: &cfg, attachment: attachment)
+        }
+
         return envVars.withUnsafeMutableBufferPointer { buf in
             if let base = buf.baseAddress {
                 cfg.env_vars = base
@@ -214,6 +241,128 @@ final class GhosttyRuntime {
             return ghostty_surface_new(app, &cfg)
         }
     }
+
+    /// Build a surface whose process **we** own (the spike; see `PtyHost`).
+    ///
+    /// The order matters and is the fiddly part: the two `receive_*` callbacks
+    /// have to be in the config *before* `ghostty_surface_new`, so the pty host
+    /// must exist first — but it can't start the shell until there's a surface to
+    /// push output into. So: make the host, hand it to the config, create the
+    /// surface, then start.
+    /// Build a surface around a pty the keeper owns.
+    ///
+    /// The order is the fiddly part: the two `receive_*` callbacks have to be in
+    /// the config *before* `ghostty_surface_new`, so the pty wrapper must exist
+    /// first — but nothing may be read until there is a surface to put it in,
+    /// and the replay has to land before anything newer. Hence: wrap, create,
+    /// wire, replay, and only then start reading.
+    private func hostManagedSurface(
+        view: SurfaceView, config cfg: inout ghostty_surface_config_s,
+        attachment: KeeperConnection.Attachment
+    ) -> ghostty_surface_t? {
+        let pty = PtyHost(adopting: attachment.descriptor)
+        view.ptyHost = pty // the view's lifetime is the session's
+        view.keeperSession = attachment.session
+
+        cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
+        cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
+        // The terminal has bytes for the program: the user typed, or it is
+        // answering a query (cursor position, device attributes) on its behalf.
+        cfg.receive_buffer = { userdata, bytes, length in
+            guard let userdata, let bytes else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
+                .write(bytes, count: length)
+        }
+        // The grid changed shape. Nobody sends SIGWINCH for us any more — and
+        // this is also what corrects the 80x24 the pty was opened at, since the
+        // surface had no size to give until now.
+        cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
+            guard let userdata else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
+                .resize(columns: columns, rows: rows, widthPx: widthPx, heightPx: heightPx)
+        }
+
+        guard let surface = ghostty_surface_new(app, &cfg) else {
+            NSLog("wortel: host-managed surface could not be created")
+            return nil
+        }
+
+        pty.onOutput = { bytes, count in
+            ghostty_surface_write_buffer(surface, bytes, UInt(count))
+        }
+        pty.onExit = { code, milliseconds in
+            DispatchQueue.main.async {
+                ghostty_surface_process_exit(surface, UInt32(bitPattern: code), milliseconds)
+            }
+        }
+
+        // Replay first, then read: the buffer holds what the shell wrote while
+        // nobody was attached, and it has to reach the terminal before anything
+        // newer or the screen ends up out of order.
+        if !attachment.replay.isEmpty {
+            attachment.replay.withUnsafeBytes { raw in
+                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+            }
+        }
+        pty.beginReading()
+        return surface
+    }
+
+    /// How to start this session's shell — the same shell, with the same
+    /// integration, that libghostty's exec backend would have started.
+    ///
+    /// Everything here is work the exec backend does for us and that owning the
+    /// pty takes away. It is not optional dressing: the integration is what
+    /// emits OSC 133 command marks, writes the agent marker files, reports the
+    /// cwd and puts `wortel` on PATH, so a session without it silently stops
+    /// driving busy detection, the attention system and agent resume.
+    private static func shellPlan(sessionID: UUID?) -> ShellSpawn.Plan {
+        let resources = Bundle.main.resourceURL
+        var extra: [String: String] = [:]
+        if let sessionID { extra["WORTEL_SESSION_ID"] = sessionID.uuidString }
+        if let directory = commandLineToolDirectory { extra["WORTEL_BIN_DIR"] = directory }
+
+        return ShellSpawn.plan(
+            shellPath: ShellSpawn.loginShell(),
+            resourcesDir: resources?.appendingPathComponent("ghostty").path ?? "",
+            terminfoDir: resources?.appendingPathComponent("terminfo").path ?? "",
+            // The app's own environment, already scrubbed of whatever launched
+            // us (see InheritedEnvironment) — the same baseline libghostty hands
+            // a surface, because it inherits from this process too.
+            environment: ProcessInfo.processInfo.environment,
+            extraEnvironment: extra,
+            shellFeatures: ShellSpawn.features(fromConfig: configuredShellFeatures),
+            binDir: Bundle.main.executableURL?.deletingLastPathComponent().path)
+    }
+
+    /// `shell-integration-features` as written in the bundled config, read from
+    /// the file rather than copied into Swift so the two cannot drift.
+    private static let configuredShellFeatures: String = {
+        guard let path = Bundle.main.path(forResource: "wortel", ofType: "conf"),
+              let text = try? String(contentsOfFile: path, encoding: .utf8)
+        else { return "" }
+        for line in text.split(separator: "\n") where line.hasPrefix("shell-integration-features") {
+            return line.split(separator: "=").last?.trimmingCharacters(in: .whitespaces) ?? ""
+        }
+        return ""
+    }()
+
+    /// The keeper, connected once per launch. nil when there is no keeper
+    /// binary or it could not be started — the app still runs, it just forks its
+    /// own shells and they die with it, exactly as before.
+    static let keeper: KeeperConnection? = {
+        guard !PtyHost.isDisabled else {
+            NSLog("wortel: keeper disabled; sessions will not survive a quit")
+            return nil
+        }
+        let connection = KeeperConnection()
+        guard connection.connect() else {
+            NSLog("wortel: no keeper; sessions will not survive a quit")
+            return nil
+        }
+        return connection
+    }()
 
     /// Where the bundled `wortel` binary lives — `Contents/Resources/bin`,
     /// filled by the CLI target's copy phase. nil in a build without it, which

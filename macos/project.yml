@@ -152,6 +152,14 @@ targets:
         copy:
           destination: resources
           subpath: bin
+      # The pty keeper, beside it. The app spawns this on demand; it is not on
+      # anyone's PATH and is never run by hand.
+      - target: WortelKeeper
+        embed: true
+        codeSign: true
+        copy:
+          destination: resources
+          subpath: bin
       - package: GhosttyKit
         product: GhosttyKit
       - package: Sparkle
@@ -245,6 +253,31 @@ targets:
         PRODUCT_NAME: wortel
         # Ad-hoc like the app in Debug; scripts/release.sh re-signs the whole
         # bundle, this binary included, with the Developer ID.
+        SKIP_INSTALL: true
+
+  # The process that holds the ptys, so shells stop being the app's children
+  # and survive it quitting. Named `WortelKeeper` for the same reason as
+  # `WortelCLI`: a target's name is its intermediates directory, and on a
+  # case-insensitive disk one called `wortel-keeper` is fine but anything that
+  # case-folds onto `Wortel` silently shares the app's object files.
+  WortelKeeper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: WortelKeeper
+      # Shared with the app: one definition of the wire, the descriptor passing
+      # and the pty, so the two ends cannot drift. The keeper outlives the app
+      # by design, so a mismatch here is not hypothetical.
+      - path: Wortel/Keeper/KeeperProtocol.swift
+      - path: Wortel/Keeper/KeeperServer.swift
+      - path: Wortel/Keeper/ReplayBuffer.swift
+      - path: Wortel/Keeper/FileDescriptorChannel.swift
+      - path: Wortel/Ghostty/PtyHost.swift
+      - path: Wortel/CLI/WortelCommand.swift
+      - path: Wortel/CLI/WortelCLIClient.swift
+    settings:
+      base:
+        PRODUCT_NAME: wortel-keeper
         SKIP_INSTALL: true
 
   # Unit tests for the git panel's logic. Run with:
@@ -346,6 +379,26 @@ targets:
       # max-not-latest rule whose failure mode is silence: a blocked agent
       # hidden behind a folder that reports something calmer.
       - path: Wortel/Sessions/AttentionKind.swift
+      # Process survival. The keeper is the one part of Wortel that has to
+      # outlive the app, so it is tested for real — a server on a temp socket,
+      # a client over a socket pair, actual ptys with actual shells on them.
+      # Every failure mode here is invisible from one side: two readers on one
+      # pty split the byte stream, a descriptor that arrives unnoticed is a
+      # leak, and a client that dies without detaching leaves a shell blocked on
+      # a pty nobody drains.
+      - path: Wortel/Keeper/KeeperProtocol.swift
+      - path: Wortel/Keeper/KeeperServer.swift
+      - path: Wortel/Keeper/KeeperClient.swift
+      - path: Wortel/Keeper/ReplayBuffer.swift
+      - path: Wortel/Keeper/FileDescriptorChannel.swift
+      - path: Wortel/Ghostty/PtyHost.swift
+      # How a shell is started when we own the pty rather than libghostty
+      # (process survival). Pure description-in, description-out, and every
+      # failure is silent: a shell that starts without the integration looks
+      # completely normal and simply never emits an OSC 133 mark, never writes
+      # an agent marker, never reports its cwd. Busy dots and agent resume stop
+      # working and nothing says so.
+      - path: Wortel/Ghostty/ShellSpawn.swift
       # The CLI's wire protocol and argument parsing. Pure, and the layer where
       # a command-line tool rots: an argument silently ignored, a relative path
       # resolved against the wrong directory, an error a script can't detect.

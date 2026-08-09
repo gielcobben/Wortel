@@ -151,6 +151,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // to reach sessions.json.
         gitPanel.onStateChanged = { [weak manager] in manager?.sessionStateChanged() }
 
+        // **Before any surface exists.** `GhosttyRuntime.keeper` is a lazy
+        // static, and touching it for the first time from inside surface
+        // creation means its initialiser runs while SwiftUI is mid-update — so
+        // anything in it that lets the run loop turn can re-enter surface
+        // creation and deadlock on its own `dispatch_once`. Doing it here makes
+        // that impossible rather than merely unlikely.
+        _ = GhosttyRuntime.keeper
+
         manager.restore()
         // Point the panel at the restored selection: it's what raises the panel
         // if that session had it up, and it seeds the cwd so the first toggle

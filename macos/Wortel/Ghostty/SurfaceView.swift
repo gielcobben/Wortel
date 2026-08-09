@@ -58,6 +58,18 @@ final class SurfaceView: NSView {
     /// animations the frame may lag the target size).
     private var contentSize: NSSize = .zero
 
+    /// The pty and shell, when this surface's process is ours rather than
+    /// libghostty's — the process-survival spike, off unless
+    /// `WORTEL_HOST_MANAGED=1`. Held here because the view's lifetime is the
+    /// session's, and nothing else outlives both the surface and the child.
+    var ptyHost: PtyHost?
+
+    /// The keeper's id for this session, when its shell belongs to the keeper
+    /// rather than to us. Closing the session has to tell the keeper so; the app
+    /// merely *quitting* must not, which is the difference the whole feature
+    /// turns on.
+    var keeperSession: UUID?
+
     // MARK: - Lifecycle
 
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
@@ -107,6 +119,17 @@ final class SurfaceView: NSView {
     /// Explicit teardown (deinit ordering with AppKit view hierarchies is
     /// unreliable; call this when the session closes).
     func close() {
+        // Closing a *session* is the user saying they are done with it, so the
+        // shell goes too — unlike quitting the app, which deliberately leaves it
+        // running and is handled by the connection simply dropping.
+        if let keeperSession {
+            GhosttyRuntime.keeper?.close(session: keeperSession)
+            ptyHost?.release() // the keeper owns the process; just let go
+        } else {
+            ptyHost?.stop()
+        }
+        keeperSession = nil
+        ptyHost = nil
         guard let surface else { return }
         ghostty_surface_free(surface)
         self.surface = nil

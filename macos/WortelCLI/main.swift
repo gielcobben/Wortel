@@ -27,7 +27,12 @@ private func fail(_ message: String, code: Int32) -> Never {
 /// install; they come apart when a `wortel` someone symlinked onto their `PATH`
 /// outlives the app it shipped with, which is the one way these two ends drift.
 private func reportVersion() -> Never {
-    let mine = WortelCLI.appBundle(containing: CommandLine.arguments[0])
+    // `executablePath`, never `arguments[0]`: a shell puts the name you *typed*
+    // in argv[0], so a command found on the PATH arrives as the bare word
+    // "wortel" — which is inside no bundle, and reported its own version as
+    // "unknown" for exactly as long as it took someone to run it the normal way.
+    let mine = (Bundle.main.executablePath)
+        .flatMap(WortelCLI.appBundle(containing:))
         .flatMap(Bundle.init(path:))
     let version = mine?.infoDictionary?["CFBundleShortVersionString"] as? String
     print("wortel \(version ?? "unknown")\(mine.map { " (\($0.bundlePath))" } ?? "")")

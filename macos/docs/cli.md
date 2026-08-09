@@ -53,6 +53,25 @@ appends what was already there — so the entry survives but ends up near the en
 rather than the front. That was checked against a real login shell before this
 was built on, not assumed.
 
+### `no-path`, and why typing `wortel` used to launch a second Wortel
+
+Upstream's shell integration has a `path` feature that appends
+`Contents/MacOS` to `PATH` so its own `ghostty` command works. Wortel ships no
+binary there — so all that directory contributes is **the app's own executable,
+named `Wortel`**. The filesystem is case-insensitive, so `wortel` matched it, and
+typing the command launched a second copy of the app, which then failed to bind
+the socket the first copy was already holding:
+
+```
+wortel: CLI socket unavailable: bind: Address already in use
+```
+
+`shell-integration-features = …,no-path` in `wortel.conf` removes the directory
+from `PATH` entirely, which is the fix: nothing in `Contents/MacOS` is meant to
+be run by name. Note that this is the *same* hazard as the build-time one below,
+from the same cause — a lowercase command and a capitalised app on a
+case-insensitive disk — and it bit in two completely different places.
+
 What it doesn't cover is driving Wortel from *outside* Wortel: Raycast, a script
 in Terminal.app, a launchd job. If that turns out to matter, the answer is the
 menu item above, added then — for the people who need it, rather than for

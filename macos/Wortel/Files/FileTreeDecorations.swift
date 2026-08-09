@@ -54,6 +54,24 @@ struct FileTreeDecorations: Equatable {
         directoryCodes[path] = code
     }
 
+    /// A filesystem path expressed relative to a work-tree root — the language
+    /// `git status` and `check-ignore` both speak — or nil when it isn't inside
+    /// that root. The root itself answers with the empty string, which is a real
+    /// path (the repo) and not a directory anyone can decorate.
+    ///
+    /// Here rather than in the tree model for the same reason `ancestors` is: it
+    /// is the same containment question, with the same trap. `…/wortel-old`
+    /// starts with `…/wortel` as a string and is a different project, and the
+    /// tempting answer for a non-match — hand back the absolute path — is worse
+    /// than nil, because git would then answer about whatever sits at that path
+    /// *inside* the repo.
+    static func relativePath(of path: String, in root: String) -> String? {
+        if path == root { return "" }
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        guard path.hasPrefix(prefix) else { return nil }
+        return String(path.dropFirst(prefix.count))
+    }
+
     /// Every directory containing `path`, repo-relative, innermost first.
     ///
     /// Built by splitting on `/` and re-joining rather than by prefix matching,

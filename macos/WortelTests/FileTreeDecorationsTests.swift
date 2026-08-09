@@ -48,6 +48,42 @@ final class FileTreeDecorationsTests: XCTestCase {
         XCTAssertEqual(FileTreeDecorations.ancestors(of: "a/b/c/d.txt"), ["a/b/c", "a/b", "a"])
     }
 
+    // MARK: - Repo-relative paths
+
+    /// The other half of containment, and the input to everything above: a row
+    /// in the tree knows its filesystem path, and every git question about it is
+    /// asked in repo-relative terms.
+    func testPathInsideTheRootIsRelativeToIt() {
+        XCTAssertEqual(
+            FileTreeDecorations.relativePath(of: "/Users/x/wortel/macos/Wortel", in: "/Users/x/wortel"),
+            "macos/Wortel")
+    }
+
+    /// The root is the project. It has a path — the empty one — and the panel
+    /// relies on that being distinguishable from "not in this repo", because the
+    /// first is a row it draws undecorated and the second is a row it can't
+    /// answer for at all.
+    func testTheRootItselfIsTheEmptyPath() {
+        XCTAssertEqual(FileTreeDecorations.relativePath(of: "/Users/x/wortel", in: "/Users/x/wortel"), "")
+    }
+
+    /// The same trap as `ancestors`, one level down. A sibling checkout is a
+    /// different project, and answering with *something* would send
+    /// `check-ignore` and the decoration lookup at whatever happens to sit at
+    /// that path inside this repo.
+    func testSiblingSharingAStringPrefixIsNotInsideTheRoot() {
+        XCTAssertNil(FileTreeDecorations.relativePath(of: "/Users/x/wortel-old/README.md",
+                                                      in: "/Users/x/wortel"))
+        XCTAssertNil(FileTreeDecorations.relativePath(of: "/Users/x/other", in: "/Users/x/wortel"))
+    }
+
+    /// A root with a trailing slash is what you get from a path built by
+    /// appending, and it must not eat the first character of every answer.
+    func testTrailingSlashOnTheRootIsTolerated() {
+        XCTAssertEqual(FileTreeDecorations.relativePath(of: "/Users/x/wortel/web", in: "/Users/x/wortel/"),
+                       "web")
+    }
+
     // MARK: - Significance
 
     /// A file can be in the changes list twice — staged one way, modified

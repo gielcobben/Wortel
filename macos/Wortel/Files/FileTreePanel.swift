@@ -152,7 +152,7 @@ struct FileTreePanel: View {
     // MARK: - Decoration
 
     private func statusCode(for node: FileNode) -> Character? {
-        guard let relative = node.relativePath, !relative.isEmpty else { return nil }
+        guard let relative = model.relativePath(of: node), !relative.isEmpty else { return nil }
         return model.decorations.code(forRelativePath: relative, isDirectory: node.isDirectory)
     }
 
@@ -277,7 +277,7 @@ struct FileTreePanel: View {
         menu.addItem(ClosureMenuItem(title: "Copy Path") {
             copy(node.url.path)
         })
-        if let relative = node.relativePath, !relative.isEmpty {
+        if let relative = model.relativePath(of: node), !relative.isEmpty {
             menu.addItem(ClosureMenuItem(title: "Copy Relative Path") {
                 copy(relative)
             })

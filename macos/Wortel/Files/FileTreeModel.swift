@@ -10,10 +10,6 @@ final class FileNode: Identifiable {
     let url: URL
     let name: String
     let isDirectory: Bool
-    /// Repo-relative path, or nil when the tree isn't rooted in a repo. Kept on
-    /// the node because both the git decoration and `check-ignore` speak that
-    /// language, and recomputing it per row per frame is pure waste.
-    let relativePath: String?
     /// Loaded on first expand and kept afterwards, so collapsing and reopening a
     /// directory is instant and costs no disk.
     var children: [FileNode]?
@@ -35,13 +31,12 @@ final class FileNode: Identifiable {
     /// one, right up until you wonder why your change didn't take.
     let isSymlink: Bool
 
-    init(url: URL, isDirectory: Bool, isSymlink: Bool = false, relativePath: String?) {
+    init(url: URL, isDirectory: Bool, isSymlink: Bool = false) {
         self.url = url
         self.id = url.path
         self.name = url.lastPathComponent
         self.isDirectory = isDirectory
         self.isSymlink = isSymlink
-        self.relativePath = relativePath
     }
 }
 
@@ -152,7 +147,8 @@ final class FileTreeModel {
     /// Rebuilds only when the answer moved; the repo root arrives a beat after
     /// a cwd (it's resolved asynchronously), so this runs again when it lands.
     func reroot() {
-        let path = git?.repo?.root ?? session?.cwd
+        syncRepoRoot()
+        let path = repoRoot ?? session?.cwd
         guard let path, !path.isEmpty else {
             root = nil
             rows = []
@@ -169,7 +165,7 @@ final class FileTreeModel {
         releaseWatchers()
 
         let url = URL(fileURLWithPath: path)
-        let node = FileNode(url: url, isDirectory: true, relativePath: repoRoot == nil ? nil : "")
+        let node = FileNode(url: url, isDirectory: true)
         root = node
         expanded = expansionCache[path] ?? ExpansionStore.load(root: path)
         // The root row is always open — a tree whose single row is its own root
@@ -183,7 +179,53 @@ final class FileTreeModel {
     }
 
     /// The work-tree root the tree currently sits in, or nil outside a repo.
-    private var repoRoot: String? { git?.repo?.root }
+    ///
+    /// Stored rather than read live off the git panel, because it's what every
+    /// repo-relative path in the tree is derived from: a row drawn now and an
+    /// ignore check answered a moment ago must be speaking about the same repo.
+    /// `syncRepoRoot` is its only writer.
+    private(set) var repoRoot: String?
+
+    /// Adopt the git panel's work-tree root, and re-answer everything that was
+    /// asked in terms of the old one.
+    ///
+    /// This is not a rare path: the root resolves asynchronously and lands a
+    /// beat *after* the cwd it belongs to, so the first listing of a tree
+    /// routinely happens with no repo at all. `reroot` can't handle that by
+    /// rebuilding, because in the usual case — a session sitting at the repo
+    /// root — the path doesn't change when the root arrives, and rebuilding a
+    /// tree the user is looking at on every prompt is exactly what its early
+    /// return exists to prevent.
+    private func syncRepoRoot() {
+        let resolved = git?.repo?.root
+        guard resolved != repoRoot else { return }
+        repoRoot = resolved
+        // Every ignore answer on the tree was given about the old repo, or
+        // about there not being one.
+        ignoreChecked = []
+        if resolved == nil, let root { clearIgnoreFlags(root) }
+        // The rows read `repoRoot` to place themselves in the repo, so they
+        // redraw off the assignment above on their own; this is for the ignore
+        // flags cleared just now, which live on the nodes.
+        rebuildRows()
+        Task { await recheckIgnored() }
+    }
+
+    /// The node's path relative to the work-tree root, or nil when the tree
+    /// isn't in a repo.
+    ///
+    /// Derived on demand rather than stamped onto the node when it was listed,
+    /// which is the bug this replaced: a node outlives every re-listing of its
+    /// parent (`apply` reuses it deliberately, so open subtrees don't move), so
+    /// a path frozen before the repo root resolved was never corrected. Every
+    /// directory listed in that first beat lost both its git colour and its
+    /// ignore check for the life of the tree — silently, because "no decoration"
+    /// is indistinguishable from "nothing changed in there". The cost of asking
+    /// instead is a string slice per drawn row.
+    func relativePath(of node: FileNode) -> String? {
+        guard let repoRoot else { return nil }
+        return FileTreeDecorations.relativePath(of: node.url.path, in: repoRoot)
+    }
 
     /// Rebuild the git decoration from the panel's live status. Cheap — one pass
     /// over the *changed* files, a list bounded by what you've touched.
@@ -289,7 +331,7 @@ final class FileTreeModel {
             // only if that's what the budget actually allows.
             let batch = Array(level.prefix(Self.recursiveExpandCap - opened))
             for directory in batch where directory.children == nil {
-                let listing = await Self.list(directory.url, cap: Self.listingCap, repoRoot: repoRoot)
+                let listing = await Self.list(directory.url, cap: Self.listingCap)
                 guard root === tree else { return } // re-rooted while we were away
                 apply(listing, to: directory)
             }
@@ -415,8 +457,7 @@ final class FileTreeModel {
     /// watching it — a directory is watched exactly while it's expanded.
     private func load(_ node: FileNode) async {
         let cap = Self.listingCap
-        let rootPath = repoRoot
-        let listing = await Self.list(node.url, cap: cap, repoRoot: rootPath)
+        let listing = await Self.list(node.url, cap: cap)
         // The tree may have re-rooted while we were off-actor.
         guard isExpanded(node) || node.url.path == root?.url.path else { return }
         apply(listing, to: node)
@@ -445,8 +486,7 @@ final class FileTreeModel {
                 return kept
             }
             return FileNode(url: entry.url, isDirectory: entry.isDirectory,
-                            isSymlink: entry.isSymlink,
-                            relativePath: entry.relativePath)
+                            isSymlink: entry.isSymlink)
         }
         node.hiddenChildCount = listing.hiddenCount
     }
@@ -457,12 +497,12 @@ final class FileTreeModel {
     private func checkIgnored(_ node: FileNode) async {
         guard let rootPath = repoRoot, let children = node.children else { return }
         guard !ignoreChecked.contains(node.url.path) else { return }
-        let relatives = children.compactMap(\.relativePath).filter { !$0.isEmpty }
+        let relatives = children.compactMap { relativePath(of: $0) }.filter { !$0.isEmpty }
         guard !relatives.isEmpty else { return }
         let ignored = await GitService.checkIgnore(root: rootPath, paths: relatives)
         ignoreChecked.insert(node.url.path)
         for child in children {
-            guard let relative = child.relativePath else { continue }
+            guard let relative = relativePath(of: child) else { continue }
             child.isIgnored = ignored.contains(relative)
         }
         rebuildRows()
@@ -477,15 +517,45 @@ final class FileTreeModel {
         guard let rootPath = repoRoot else { return }
         let pending = directories.filter { !ignoreChecked.contains($0.url.path) }
         let children = pending.flatMap { $0.children ?? [] }
-        let relatives = children.compactMap(\.relativePath).filter { !$0.isEmpty }
+        let relatives = children.compactMap { relativePath(of: $0) }.filter { !$0.isEmpty }
         guard !relatives.isEmpty else { return }
         let ignored = await GitService.checkIgnore(root: rootPath, paths: relatives)
         for directory in pending { ignoreChecked.insert(directory.url.path) }
         for child in children {
-            guard let relative = child.relativePath else { continue }
+            guard let relative = relativePath(of: child) else { continue }
             child.isIgnored = ignored.contains(relative)
         }
         rebuildRows()
+    }
+
+    /// Re-ask `check-ignore` for every directory already open, in one
+    /// invocation. The tree on screen was listed before the work-tree root
+    /// arrived — or under a different one — so the answers it has are about a
+    /// repo that isn't this one.
+    private func recheckIgnored() async {
+        guard repoRoot != nil, let root else { return }
+        var directories: [FileNode] = []
+        collectLoaded(root, into: &directories)
+        await checkIgnoredBatch(directories)
+    }
+
+    /// Every directory in the tree whose contents have been listed — which is
+    /// the open part of it, and nothing else.
+    private func collectLoaded(_ node: FileNode, into result: inout [FileNode]) {
+        guard let children = node.children else { return }
+        result.append(node)
+        for child in children where child.isDirectory {
+            collectLoaded(child, into: &result)
+        }
+    }
+
+    /// Forget what git said about a subtree. Only for leaving a repo: nil is
+    /// "not asked yet", which draws a row normally rather than flashing it grey.
+    private func clearIgnoreFlags(_ node: FileNode) {
+        for child in node.children ?? [] {
+            child.isIgnored = nil
+            clearIgnoreFlags(child)
+        }
     }
 
     // MARK: - Watching
@@ -611,7 +681,6 @@ final class FileTreeModel {
             let url: URL
             let isDirectory: Bool
             let isSymlink: Bool
-            let relativePath: String?
         }
         var entries: [Entry] = []
         var hiddenCount = 0
@@ -620,7 +689,7 @@ final class FileTreeModel {
     /// Read one directory. `nonisolated` and static: this is the one piece that
     /// touches the disk, and it must never run on the main actor — a directory
     /// on a slow volume would stall the terminal's frame.
-    nonisolated private static func list(_ url: URL, cap: Int, repoRoot: String?) async -> Listing {
+    nonisolated private static func list(_ url: URL, cap: Int) async -> Listing {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
         // **Resolve before listing.** `contentsOfDirectory(at:)` does not follow
         // a symlink: handed the link itself it fails with ENOTDIR (verified —
@@ -664,8 +733,7 @@ final class FileTreeModel {
             let entry = url.appendingPathComponent(child.lastPathComponent)
             entries.append(Listing.Entry(
                 url: entry, isDirectory: isDirectory,
-                isSymlink: isSymlink,
-                relativePath: repoRoot.map { relative(entry.path, to: $0) }))
+                isSymlink: isSymlink))
         }
 
         // Directories first, then case-insensitively by name — the order every
@@ -687,13 +755,6 @@ final class FileTreeModel {
         return listing
     }
 
-    /// A path expressed relative to the repo root, which is the language both
-    /// `git status` and `check-ignore` speak.
-    nonisolated private static func relative(_ path: String, to root: String) -> String {
-        guard path.hasPrefix(root) else { return path }
-        let cut = path.index(path.startIndex, offsetBy: root.count)
-        return String(path[cut...]).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    }
 }
 
 /// Which directories were open, per root, across relaunches.

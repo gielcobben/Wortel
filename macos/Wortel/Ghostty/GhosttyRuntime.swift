@@ -256,6 +256,18 @@ final class GhosttyRuntime {
                 session: sessionID, plan: Self.shellPlan(sessionID: sessionID),
                 workingDirectory: workingDirectory, columns: 80, rows: 24)
         }
+        // **A session that never died has nothing to resume.** `initial_input`
+        // is how a restored session re-runs `claude --continue` after a real
+        // restart, and in host-managed mode libghostty delivers it as if typed —
+        // straight through `receive_buffer` into the pty. Attached to a shell
+        // that is still running, with the agent still in it, that types the
+        // resume command at a live prompt: at best noise, at worst a second
+        // agent nested inside the first. The whole point of surviving is that
+        // there is nothing to bring back.
+        if attachment?.resumed == true {
+            cfg.initial_input = nil
+        }
+
         let pty = attachment.map { PtyHost(adopting: $0.descriptor) } ?? PtyHost()
         view.ptyHost = pty // the view's lifetime is the session's
         view.keeperSession = attachment != nil ? sessionID : nil
@@ -306,9 +318,10 @@ final class GhosttyRuntime {
                 }
             }
             pty.beginReading()
-            NSLog("wortel: %@ keeper session pid=%d at %dx%d",
+            NSLog("wortel: %@ keeper session pid=%d at %dx%d%@",
                   attachment.resumed ? "resumed" : "started", attachment.pid,
-                  size.columns, size.rows)
+                  size.columns, size.rows,
+                  attachment.resumed ? " (agent resume suppressed)" : "")
         } else {
             pty.start(
                 executable: plan.executable, arguments: plan.arguments,

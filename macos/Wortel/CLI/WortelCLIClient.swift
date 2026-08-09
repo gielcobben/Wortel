@@ -41,6 +41,14 @@ enum WortelCLIClient {
     static func connect(to path: String) throws -> Int32 {
         let socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
         guard socketFD >= 0 else { throw WortelCLI.SocketError.failed("socket", errno: errno) }
+        // **Close-on-exec, or the connection outlives the process that made it.**
+        // Wortel forks constantly — every `git` read, and every shell the keeper
+        // starts — and a descriptor without this is inherited by all of them and
+        // survives their exec. The far end then never sees the connection close,
+        // so the keeper cannot tell that the app has gone and leaves sessions
+        // marked attached with nobody reading them. It cost an hour to find,
+        // because the symptom is a session that is alive and unreachable.
+        _ = fcntl(socketFD, F_SETFD, FD_CLOEXEC)
         var address = try WortelCLI.address(for: path)
         guard WortelCLI.withSockaddr(&address, { Darwin.connect(socketFD, $0, $1) }) == 0 else {
             let failure = errno

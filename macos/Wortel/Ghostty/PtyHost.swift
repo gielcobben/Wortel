@@ -52,7 +52,31 @@ final class PtyHost: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "sh.wortel.pty", qos: .userInteractive)
     private var reader: DispatchSourceRead?
+    private var isReading = false
     private var startedAt = DispatchTime.now()
+    /// Set once the child has been reaped, so nothing signals a pid the system
+    /// is free to hand to someone else.
+    private var hasExited = false
+    /// Fires when the child exits. Held so it outlives `start`.
+    private var childSource: DispatchSourceProcess?
+
+    /// Whether this host forked the process on the other end. The keeper does;
+    /// the app, holding a descriptor passed to it, does not — and must never
+    /// signal or reap a child that isn't its own.
+    private(set) var ownsProcess = true
+
+    init() {}
+
+    /// Take over a pty someone else opened — the descriptor the keeper passed
+    /// us. There is no child here: the shell belongs to the keeper, and killing
+    /// it is the keeper's business.
+    init(adopting descriptor: Int32) {
+        master = descriptor
+        ownsProcess = false
+        _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL, 0) | O_NONBLOCK)
+        _ = fcntl(master, F_SETFD, FD_CLOEXEC)
+        startReading()
+    }
 
     deinit { stop() }
 
@@ -80,6 +104,25 @@ final class PtyHost: @unchecked Sendable {
         }
 
         if pid == 0 {
+            // **Give the child default signal handling.** An *ignored*
+            // disposition survives `execve` — handlers reset, SIG_IGN does not —
+            // and the keeper ignores SIGHUP on purpose, because its whole job is
+            // outliving the terminal that started it. Without this reset every
+            // shell it forks inherits that, and closing a session politely does
+            // nothing at all: the kill succeeds, and the process carries on.
+            // That is exactly how it presented — `kill(-pid, SIGHUP)` returning
+            // 0 with `sleep 60` still in state Ss+.
+            for ignored in [SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGPIPE, SIGTTIN, SIGTTOU] {
+                signal(ignored, SIG_DFL)
+            }
+            // And an unblocked mask: libdispatch blocks signals on its worker
+            // threads, and the child inherits the mask of whichever thread
+            // happened to fork it — which would otherwise make this
+            // nondeterministic rather than merely wrong.
+            var empty = sigset_t()
+            sigemptyset(&empty)
+            sigprocmask(SIG_SETMASK, &empty, nil)
+
             if let workingDirectory { _ = workingDirectory.withCString { chdir($0) } }
             var argv: [UnsafeMutablePointer<CChar>?] =
                 ([executable] + arguments).map { strdup($0) } + [nil]
@@ -131,22 +174,38 @@ final class PtyHost: @unchecked Sendable {
             self.master = -1
         }
         reader = source
+        isReading = true
         source.resume()
     }
 
-    /// Wait for the child on a thread of its own. `waitpid` is the only way to
-    /// learn the exit *code*, which the terminal wants to show and which
-    /// `ghostty_surface_process_exit` takes.
+    /// Notice the child exiting, and reap it.
+    ///
+    /// A `DispatchSource` rather than a thread parked in `waitpid`. The obvious
+    /// version — one blocking wait per child — costs a thread per session for as
+    /// long as the session lives, and the keeper's whole job is holding a lot of
+    /// sessions for a long time. It also starves: with enough of them the pool
+    /// stops handing out threads, exits go unnoticed and the children pile up as
+    /// zombies that `kill(pid, 0)` still answers for, which is exactly how this
+    /// showed up — a session that had been killed and would not die.
+    ///
+    /// `waitpid` still runs, because it is the only way to learn the exit *code*
+    /// — but only once, when there is genuinely something to collect.
     private func reapWhenItExits() {
         let pid = self.pid
         let started = self.startedAt
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        let source = DispatchSource.makeProcessSource(
+            identifier: pid, eventMask: .exit, queue: queue)
+        source.setEventHandler { [weak self] in
             var status: Int32 = 0
             while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
             let code: Int32 = (status & 0x7F) == 0 ? (status >> 8) & 0xFF : -1
             let ms = (DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
+            self?.hasExited = true
             self?.onExit?(code, ms)
+            source.cancel()
         }
+        childSource = source
+        source.resume()
     }
 
     // MARK: - The two directions
@@ -178,9 +237,71 @@ final class PtyHost: @unchecked Sendable {
         _ = ioctl(master, TIOCSWINSZ, &size)
     }
 
+    /// Stop reading without giving up the pty.
+    ///
+    /// **The load-bearing rule of the whole design**: exactly one process may
+    /// read a pty at a time. Two readers split the byte stream between them, and
+    /// the corruption is intermittent and unreproducible. So the keeper pauses
+    /// before handing the descriptor to the app, and resumes when the app lets
+    /// go. Anything that arrives in the gap stays in the kernel's buffer, which
+    /// is why nothing is lost between the two.
+    func pauseReading() {
+        guard let reader, isReading else { return }
+        isReading = false
+        reader.suspend()
+    }
+
+    func resumeReading() {
+        guard let reader, !isReading else { return }
+        isReading = true
+        reader.resume()
+    }
+
+    /// Close this end. Kills the child **only if it is ours** — the app adopting
+    /// a keeper's descriptor must let go without touching the shell, which is
+    /// precisely what survival means.
     func stop() {
+        // A suspended source cannot be cancelled: the cancel handler would never
+        // run and the descriptor would leak. Resume first, always.
+        if let reader, !isReading {
+            isReading = true
+            reader.resume()
+        }
         reader?.cancel()
         reader = nil
-        if pid > 0 { kill(pid, SIGHUP) }
+        guard ownsProcess, pid > 0 else { return }
+        // The **process group**, not just the shell. forkpty makes the child a
+        // session leader, so its own children share its group — signalling only
+        // the leader leaves a `sleep`, a build or an agent running with nobody
+        // to reap it. The negative pid is what says "the group".
+        if kill(-pid, SIGHUP) != 0 { kill(pid, SIGHUP) }
+
+        // Then insist. Closing a session is the user saying so, and plenty of
+        // things decline a SIGHUP — an agent with its own handler, a program
+        // that blocked it, a process group that outlived the shell that led it.
+        // A "closed" session with a live process in it is worse than either
+        // outcome, because nothing on screen says it is still running.
+        //
+        // Guarded on `hasExited` rather than a `kill(pid, 0)` probe: once the
+        // reaper has collected the child the number is free to be reused, and
+        // signalling a recycled pid would kill something that has nothing to do
+        // with us.
+        let target = pid
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, !self.hasExited else { return }
+            if kill(-target, SIGKILL) != 0 { kill(target, SIGKILL) }
+        }
+    }
+
+    /// Let go of the pty without ending the session — the app detaching. The
+    /// descriptor is closed (ours was a `dup`; the keeper still holds one) and
+    /// the shell carries on with nobody watching.
+    func release() {
+        if let reader, !isReading {
+            isReading = true
+            reader.resume()
+        }
+        reader?.cancel()
+        reader = nil
     }
 }

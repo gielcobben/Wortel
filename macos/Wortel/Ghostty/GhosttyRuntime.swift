@@ -274,9 +274,10 @@ final class GhosttyRuntime {
         }
 
         let size = ghostty_surface_size(surface)
+        let plan = Self.shellPlan(sessionID: sessionID)
         pty.start(
-            executable: "/bin/zsh", arguments: ["-l"],
-            environment: Self.spikeEnvironment(sessionID: sessionID),
+            executable: plan.executable, arguments: plan.arguments,
+            environment: plan.environment,
             workingDirectory: workingDirectory,
             columns: max(size.columns, 1), rows: max(size.rows, 1))
         // One line, only under the flag: the pid is what you check against `ps`
@@ -286,28 +287,44 @@ final class GhosttyRuntime {
         return surface
     }
 
-    /// The child's environment, hand-built — and deliberately minimal, because
-    /// how much is missing *is* the finding.
+    /// How to start this session's shell — the same shell, with the same
+    /// integration, that libghostty's exec backend would have started.
     ///
-    /// The exec backend gives a shell far more than this: TERM plus the bundled
-    /// terminfo, `GHOSTTY_RESOURCES_DIR`, `GHOSTTY_SHELL_FEATURES`, and the
-    /// shell-integration injection (`ZDOTDIR`) that everything downstream — busy
-    /// detection, agent markers, OSC 133 command timing, cwd reporting, the
-    /// `wortel` command's PATH — is built on. Running the spike is how we see
-    /// which of those libghostty still does when it isn't spawning anything.
-    private static func spikeEnvironment(sessionID: UUID?) -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
-        environment["TERM"] = "xterm-ghostty"
-        if let terminfo = Bundle.main.resourceURL?.appendingPathComponent("terminfo").path {
-            environment["TERMINFO"] = terminfo
-        }
-        if let sessionID { environment["WORTEL_SESSION_ID"] = sessionID.uuidString }
-        if let directory = commandLineToolDirectory {
-            environment["WORTEL_BIN_DIR"] = directory
-            environment["PATH"] = "\(directory):\(environment["PATH"] ?? "/usr/bin:/bin")"
-        }
-        return environment
+    /// Everything here is work the exec backend does for us and that owning the
+    /// pty takes away. It is not optional dressing: the integration is what
+    /// emits OSC 133 command marks, writes the agent marker files, reports the
+    /// cwd and puts `wortel` on PATH, so a session without it silently stops
+    /// driving busy detection, the attention system and agent resume.
+    private static func shellPlan(sessionID: UUID?) -> ShellSpawn.Plan {
+        let resources = Bundle.main.resourceURL
+        var extra: [String: String] = [:]
+        if let sessionID { extra["WORTEL_SESSION_ID"] = sessionID.uuidString }
+        if let directory = commandLineToolDirectory { extra["WORTEL_BIN_DIR"] = directory }
+
+        return ShellSpawn.plan(
+            shellPath: ShellSpawn.loginShell(),
+            resourcesDir: resources?.appendingPathComponent("ghostty").path ?? "",
+            terminfoDir: resources?.appendingPathComponent("terminfo").path ?? "",
+            // The app's own environment, already scrubbed of whatever launched
+            // us (see InheritedEnvironment) — the same baseline libghostty hands
+            // a surface, because it inherits from this process too.
+            environment: ProcessInfo.processInfo.environment,
+            extraEnvironment: extra,
+            shellFeatures: ShellSpawn.features(fromConfig: configuredShellFeatures),
+            binDir: Bundle.main.executableURL?.deletingLastPathComponent().path)
     }
+
+    /// `shell-integration-features` as written in the bundled config, read from
+    /// the file rather than copied into Swift so the two cannot drift.
+    private static let configuredShellFeatures: String = {
+        guard let path = Bundle.main.path(forResource: "wortel", ofType: "conf"),
+              let text = try? String(contentsOfFile: path, encoding: .utf8)
+        else { return "" }
+        for line in text.split(separator: "\n") where line.hasPrefix("shell-integration-features") {
+            return line.split(separator: "=").last?.trimmingCharacters(in: .whitespaces) ?? ""
+        }
+        return ""
+    }()
 
     /// Where the bundled `wortel` binary lives — `Contents/Resources/bin`,
     /// filled by the CLI target's copy phase. nil in a build without it, which

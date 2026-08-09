@@ -58,6 +58,12 @@ final class SurfaceView: NSView {
     /// animations the frame may lag the target size).
     private var contentSize: NSSize = .zero
 
+    /// The pty and shell, when this surface's process is ours rather than
+    /// libghostty's — the process-survival spike, off unless
+    /// `WORTEL_HOST_MANAGED=1`. Held here because the view's lifetime is the
+    /// session's, and nothing else outlives both the surface and the child.
+    var ptyHost: PtyHost?
+
     // MARK: - Lifecycle
 
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
@@ -107,6 +113,11 @@ final class SurfaceView: NSView {
     /// Explicit teardown (deinit ordering with AppKit view hierarchies is
     /// unreliable; call this when the session closes).
     func close() {
+        // The child first: freeing the surface drops the callbacks it writes
+        // through, and an orphaned shell holding a pty nobody reads is the one
+        // leak the spike could plausibly introduce.
+        ptyHost?.stop()
+        ptyHost = nil
         guard let surface else { return }
         ghostty_surface_free(surface)
         self.surface = nil

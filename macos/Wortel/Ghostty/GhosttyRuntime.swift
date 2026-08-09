@@ -206,6 +206,18 @@ final class GhosttyRuntime {
         if let directory = Self.commandLineToolDirectory {
             envVars.append(ghostty_env_var_s(key: dup("WORTEL_BIN_DIR"), value: dup(directory)))
         }
+
+        // The process-survival spike, opt-in via WORTEL_HOST_MANAGED=1. See
+        // PtyHost: we own the pty, libghostty is only the emulator. Everything
+        // above that describes a *process* — working_directory, initial_input,
+        // env_vars — has nothing to act on in this mode, which is exactly the
+        // cost the spike is here to measure.
+        if PtyHost.isEnabled {
+            return hostManagedSurface(
+                view: view, config: &cfg,
+                workingDirectory: workingDirectory, sessionID: sessionID)
+        }
+
         return envVars.withUnsafeMutableBufferPointer { buf in
             if let base = buf.baseAddress {
                 cfg.env_vars = base
@@ -213,6 +225,88 @@ final class GhosttyRuntime {
             }
             return ghostty_surface_new(app, &cfg)
         }
+    }
+
+    /// Build a surface whose process **we** own (the spike; see `PtyHost`).
+    ///
+    /// The order matters and is the fiddly part: the two `receive_*` callbacks
+    /// have to be in the config *before* `ghostty_surface_new`, so the pty host
+    /// must exist first — but it can't start the shell until there's a surface to
+    /// push output into. So: make the host, hand it to the config, create the
+    /// surface, then start.
+    private func hostManagedSurface(
+        view: SurfaceView, config cfg: inout ghostty_surface_config_s,
+        workingDirectory: String?, sessionID: UUID?
+    ) -> ghostty_surface_t? {
+        let pty = PtyHost()
+        view.ptyHost = pty // the view's lifetime is the session's
+
+        cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
+        cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
+        // The terminal has bytes for the program: the user typed, or it is
+        // answering a query (cursor position, device attributes) on its behalf.
+        cfg.receive_buffer = { userdata, bytes, length in
+            guard let userdata, let bytes else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
+                .write(bytes, count: length)
+        }
+        // The grid changed shape. Nobody sends SIGWINCH for us any more.
+        cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
+            guard let userdata else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
+                .resize(columns: columns, rows: rows, widthPx: widthPx, heightPx: heightPx)
+        }
+
+        guard let surface = ghostty_surface_new(app, &cfg) else {
+            NSLog("wortel: host-managed surface could not be created")
+            return nil
+        }
+
+        pty.onOutput = { bytes, count in
+            ghostty_surface_write_buffer(surface, bytes, UInt(count))
+        }
+        pty.onExit = { code, milliseconds in
+            // Tell the terminal, so the close confirmation sees a finished
+            // process rather than a live one.
+            DispatchQueue.main.async {
+                ghostty_surface_process_exit(surface, UInt32(bitPattern: code), milliseconds)
+            }
+        }
+
+        let size = ghostty_surface_size(surface)
+        pty.start(
+            executable: "/bin/zsh", arguments: ["-l"],
+            environment: Self.spikeEnvironment(sessionID: sessionID),
+            workingDirectory: workingDirectory,
+            columns: max(size.columns, 1), rows: max(size.rows, 1))
+        // One line, only under the flag: the pid is what you check against `ps`
+        // to see whether the shell outlived the app.
+        NSLog("wortel: host-managed session pid=%d on fd=%d at %dx%d",
+              pty.pid, pty.master, size.columns, size.rows)
+        return surface
+    }
+
+    /// The child's environment, hand-built — and deliberately minimal, because
+    /// how much is missing *is* the finding.
+    ///
+    /// The exec backend gives a shell far more than this: TERM plus the bundled
+    /// terminfo, `GHOSTTY_RESOURCES_DIR`, `GHOSTTY_SHELL_FEATURES`, and the
+    /// shell-integration injection (`ZDOTDIR`) that everything downstream — busy
+    /// detection, agent markers, OSC 133 command timing, cwd reporting, the
+    /// `wortel` command's PATH — is built on. Running the spike is how we see
+    /// which of those libghostty still does when it isn't spawning anything.
+    private static func spikeEnvironment(sessionID: UUID?) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        environment["TERM"] = "xterm-ghostty"
+        if let terminfo = Bundle.main.resourceURL?.appendingPathComponent("terminfo").path {
+            environment["TERMINFO"] = terminfo
+        }
+        if let sessionID { environment["WORTEL_SESSION_ID"] = sessionID.uuidString }
+        if let directory = commandLineToolDirectory {
+            environment["WORTEL_BIN_DIR"] = directory
+            environment["PATH"] = "\(directory):\(environment["PATH"] ?? "/usr/bin:/bin")"
+        }
+        return environment
     }
 
     /// Where the bundled `wortel` binary lives — `Contents/Resources/bin`,

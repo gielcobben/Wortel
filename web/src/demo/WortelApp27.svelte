@@ -238,7 +238,10 @@
     border-radius: var(--w-radius);
     border: 0.5px solid var(--w-border);
     box-shadow: var(--w-shadow);
-    background: var(--w-terminal-bg);
+    /* No base fill: the sidebar and the inspector are translucent, and a colour
+       painted under them would be the only thing they ever sampled. The
+       terminal paints its own, clipped to itself (see .termcol). */
+    background: transparent;
     color: var(--w-chrome-text);
     -webkit-font-smoothing: antialiased;
     font-family: var(--w-sans);
@@ -267,7 +270,10 @@
     padding-right: var(--git-shown-w);
     transition: padding-left 0.28s cubic-bezier(0.3, 0.9, 0.3, 1),
                 padding-right 0.28s cubic-bezier(0.3, 0.9, 0.3, 1);
+    /* content-box: the padding is the room the panels occupy, so the terminal's
+       colour must stop there rather than paint on under their glass */
     background: var(--w-terminal-bg);
+    background-clip: content-box;
   }
   .main.dragging .termcol { transition: none; }
   .sb-dragging .termcol,

@@ -83,7 +83,9 @@
     position: absolute;
     inset: 0;
     background:
-      linear-gradient(to top, color-mix(in srgb, #000 3%, var(--w-sidebar-bg)) 0, var(--w-sidebar-bg) 26px);
+      linear-gradient(to top, color-mix(in srgb, #000 3%, var(--w-glass-sidebar)) 0, var(--w-glass-sidebar) 26px);
+    -webkit-backdrop-filter: var(--w-glass-filter);
+    backdrop-filter: var(--w-glass-filter);
     overflow: hidden;
     padding-top: 56px;  /* headroom for the window-chrome lights + toggle */
   }

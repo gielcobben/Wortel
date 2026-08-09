@@ -46,6 +46,14 @@
   --w-sidebar-bg: #1d2c39;
   /* the code/diff surface paints itself; it is NOT the panel material */
   --w-code-bg: #212b33;
+  /* Both panels are a MATERIAL, not a fill: mostly opaque, but they sample and
+     blur what is behind the window, which on this page is the grid. The solid
+     tokens above stay the target — the alpha here is chosen so the material
+     composites back to them over the page's own background. */
+  --w-glass-alpha: 78%;   /* turn this one knob to make the panels see-through */
+  --w-glass-filter: saturate(200%) blur(40px);
+  --w-glass-panel: color-mix(in srgb, #1f313a var(--w-glass-alpha), transparent);
+  --w-glass-sidebar: color-mix(in srgb, #1d313b var(--w-glass-alpha), transparent);
   --w-session-dot: #00e5d5;
   --w-hairline: #353c43;          /* titlebar underline, terminal side only */
   --w-hairline-strong: #2b3843;   /* commit-box separator, expand bar edges */
@@ -121,6 +129,10 @@
     --w-panel-bg: #ecedee;
     --w-sidebar-bg: #ecedee;
     --w-code-bg: #fbfbfb;
+    /* tints, not colours: each is the fill that composites back to the measured
+       --w-panel-bg / --w-sidebar-bg over the page's own background */
+    --w-glass-panel: color-mix(in srgb, #e7e8e9 var(--w-glass-alpha), transparent);
+    --w-glass-sidebar: color-mix(in srgb, #e7e8e9 var(--w-glass-alpha), transparent);
     --w-session-dot: #00c4af;
     --w-hairline: #f2f2f2;
     --w-hairline-strong: #d7d8da;

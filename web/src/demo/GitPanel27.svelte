@@ -170,7 +170,9 @@
     height: 100%;
     /* the material darkens over the last ~25px, the same edge the sidebar has */
     background:
-      linear-gradient(to top, color-mix(in srgb, #000 3%, var(--w-panel-bg)) 0, var(--w-panel-bg) 26px);
+      linear-gradient(to top, color-mix(in srgb, #000 3%, var(--w-glass-panel)) 0, var(--w-glass-panel) 26px);
+    -webkit-backdrop-filter: var(--w-glass-filter);
+    backdrop-filter: var(--w-glass-filter);
     font-family: var(--w-sans);
     color: var(--w-chrome-text);
     overflow: hidden;

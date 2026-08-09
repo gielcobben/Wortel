@@ -276,7 +276,8 @@ quitting stays what it was. They are also why the inspector no longer shares its
 column with anything.
 
 **The `wortel` command** (`Wortel/CLI/`, `WortelCLI/`) — a Unix socket the CLI
-speaks JSON at: `open`, `new`, `rename`, `notify`. See `docs/cli.md`; the three
+speaks JSON at: `open`, `new`, `rename`, `notify`. `docs/wortel-command.md` is
+the user-facing guide, `docs/cli.md` the design record; the three
 decisions that shape the code are that **there is no installer** (the binary
 ships in the bundle and `GhosttyRuntime` puts its directory on the `PATH` of
 every shell it spawns, so it exists inside a session and nowhere else), that

@@ -1,4 +1,8 @@
-# The `wortel` command
+# The `wortel` command — design
+
+Why the command line tool is built the way it is. For how to *use* it — every
+verb, the scripting contract, hook recipes — see
+[wortel-command.md](wortel-command.md).
 
 A command line's way into the running app. Four verbs, one socket, no plugin
 system.

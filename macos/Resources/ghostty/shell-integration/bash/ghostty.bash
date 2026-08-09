@@ -79,11 +79,14 @@ if [ -n "$GHOSTTY_BASH_INJECT" ]; then
   builtin unset GHOSTTY_BASH_RCFILE
 fi
 
-# Add Ghostty binary to PATH if the path feature is enabled
-if [[ "$GHOSTTY_SHELL_FEATURES" == *"path"* && -n "$GHOSTTY_BIN_DIR" ]]; then
-  if [[ ":$PATH:" != *":$GHOSTTY_BIN_DIR:"* ]]; then
-    export PATH="$PATH:$GHOSTTY_BIN_DIR"
-  fi
+# WORTEL: put the bundled `wortel` command on PATH. See the zsh copy
+# (Resources/ghostty/shell-integration/zsh/ghostty-integration) for why
+# upstream's $GHOSTTY_BIN_DIR block is deleted rather than disabled — in short,
+# Contents/MacOS holds only the app's own executable, `wortel` matched it on a
+# case-insensitive disk, and `no-path` in the feature list still matches the
+# `*"path"*` guard. Prepended so this app's command beats an older symlink.
+if [[ -n "$WORTEL_BIN_DIR" && ":$PATH:" != *":$WORTEL_BIN_DIR:"* ]]; then
+  export PATH="$WORTEL_BIN_DIR:$PATH"
 fi
 
 # Sudo

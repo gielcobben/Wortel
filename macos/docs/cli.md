@@ -29,9 +29,20 @@ wanted rather than what we guessed.
 
 ## Installation: there isn't any
 
-The binary ships inside the app bundle, at `Contents/Resources/bin/wortel`, and
-`GhosttyRuntime` puts that directory on the `PATH` of every shell Wortel spawns.
-Inside a Wortel session the command is simply there.
+The binary ships inside the app bundle, at `Contents/Resources/bin/wortel`.
+`GhosttyRuntime` exports its directory as `WORTEL_BIN_DIR` per surface, and the
+bundled shell integration prepends that to `PATH`. Inside a Wortel session the
+command is simply there.
+
+**Why a variable of our own rather than just setting `PATH`.** libghostty's
+`env_vars` can only *add* to the environment it hands the shell — a key that
+already exists keeps its inherited value, so setting `PATH` there does nothing
+at all. That failed silently and in the worst possible way; see below.
+
+`InheritedEnvironment` strips `WORTEL_*` from the launching process's
+environment, which is what makes the add-only rule safe here: without it, a
+Wortel launched from a Wortel session would inherit the *old* bundle's
+`WORTEL_BIN_DIR` and be unable to replace it.
 
 This is the decision most worth defending, because two more conventional answers
 were on the table:
@@ -48,29 +59,45 @@ is *inside* a Wortel session — that's where agents run, where hooks fire, wher
 you type. Putting it on the session's `PATH` covers that completely and costs
 nothing.
 
-A login shell runs `path_helper`, which rebuilds `PATH` from `/etc/paths` and
-appends what was already there — so the entry survives but ends up near the end
-rather than the front. That was checked against a real login shell before this
-was built on, not assumed.
+The integration runs after `path_helper`, so prepending there actually puts the
+directory at the front — which is what we want: the command that ships with
+*this* app is the one that speaks this app's protocol, and it should beat an
+older copy someone symlinked into `/usr/local/bin`.
 
-### `no-path`, and why typing `wortel` used to launch a second Wortel
+### Why typing `wortel` used to launch a second Wortel
 
-Upstream's shell integration has a `path` feature that appends
-`Contents/MacOS` to `PATH` so its own `ghostty` command works. Wortel ships no
-binary there — so all that directory contributes is **the app's own executable,
-named `Wortel`**. The filesystem is case-insensitive, so `wortel` matched it, and
-typing the command launched a second copy of the app, which then failed to bind
-the socket the first copy was already holding:
+Three things had to line up, and each was invisible on its own.
+
+1. Setting `PATH` through libghostty's `env_vars` **did nothing**, because that
+   API only adds keys and `PATH` already existed. So the bundled command was on
+   no `PATH` at all.
+2. Upstream's shell integration has a `path` feature that appends
+   `$GHOSTTY_BIN_DIR` — `Contents/MacOS` — so its own `ghostty` command works.
+   Wortel ships no binary there, so the only thing that directory contributes is
+   **the app's own executable, named `Wortel`**.
+3. The disk is case-insensitive. `wortel` matched `Wortel`.
+
+So the command launched a second copy of the app, which then failed to bind the
+socket the first copy was holding:
 
 ```
 wortel: CLI socket unavailable: bind: Address already in use
 ```
 
-`shell-integration-features = …,no-path` in `wortel.conf` removes the directory
-from `PATH` entirely, which is the fix: nothing in `Contents/MacOS` is meant to
-be run by name. Note that this is the *same* hazard as the build-time one below,
-from the same cause — a lowercase command and a capitalised app on a
-case-insensitive disk — and it bit in two completely different places.
+**And the config could not turn it off.** The guard is
+`[[ "$GHOSTTY_SHELL_FEATURES" == *"path"* ]]`, and a feature list containing
+`no-path` matches that just as happily as one containing `path` — so
+`shell-integration-features = …,no-path` looks like a fix, changes nothing, and
+leaves you certain you've already ruled that out. (The same is true of
+`no-cursor` against `*"cursor"*`. Don't trust a negation here without checking
+the guard.) The block is therefore *deleted* from our copies of the scripts
+rather than disabled, and replaced with the `WORTEL_BIN_DIR` prepend. The
+`no-path` in `wortel.conf` stays only as cover for whatever the core does with
+the flag on its own.
+
+This is the *same* hazard as the build-time one below, from the same cause — a
+lowercase command and a capitalised app on a case-insensitive disk — and it bit
+in two completely unrelated places within an hour.
 
 What it doesn't cover is driving Wortel from *outside* Wortel: Raycast, a script
 in Terminal.app, a launchd job. If that turns out to matter, the answer is the

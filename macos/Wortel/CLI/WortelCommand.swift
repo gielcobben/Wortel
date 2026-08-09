@@ -24,6 +24,15 @@ enum WortelCommand: Codable, Equatable {
     case rename(session: String?, name: String)
     /// Raise attention on a session: the dot, the badge, the notification.
     case notify(session: String?, title: String, body: String?)
+    /// Which Wortel is actually listening.
+    ///
+    /// Asked over the socket rather than read off disk because the two are
+    /// different questions: the binary knows the bundle it *shipped in*, and
+    /// this is the one that answered. They differ exactly when a `wortel`
+    /// someone symlinked onto their PATH has outlived the app it came from —
+    /// the drift this protocol is otherwise only able to complain about after
+    /// it has already caused a failure.
+    case version
 
     /// A command's name on the command line, and in the JSON.
     var verb: String {
@@ -32,6 +41,7 @@ enum WortelCommand: Codable, Equatable {
         case .newSession: return "new"
         case .rename: return "rename"
         case .notify: return "notify"
+        case .version: return "--version"
         }
     }
 }
@@ -46,6 +56,26 @@ enum WortelCLI {
         let base = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("Wortel/cli.sock").path
+    }
+
+    /// The `.app` a binary at `executable` lives in, or nil if it doesn't live
+    /// in one.
+    ///
+    /// How the CLI finds its own version: it has no `Info.plist` of its own, so
+    /// it reads the bundle it was copied into —
+    /// `Wortel.app/Contents/Resources/bin/wortel` walking up to `Wortel.app`.
+    ///
+    /// Symlinks are resolved first, and that's the whole point rather than a
+    /// detail: the case this has to survive is someone linking the command onto
+    /// their `PATH`, and the path we were exec'd as is then the *link*, which
+    /// lives in `/usr/local/bin` and is inside no bundle at all.
+    static func appBundle(containing executable: String) -> String? {
+        var url = URL(fileURLWithPath: executable).resolvingSymlinksInPath()
+        while url.pathComponents.count > 1 {
+            url.deleteLastPathComponent()
+            if url.pathExtension == "app" { return url.path }
+        }
+        return nil
     }
 
     /// The maximum line either end will read before giving up.
@@ -144,6 +174,9 @@ enum WortelCommandParser {
                                    start a session; --branch gives it a worktree
           rename <name>            rename this session
           notify <title> [body]    raise attention on this session
+
+          --version                this command's version, and the running app's
+          --help                   this
 
         Commands act on the session they are run in, via $\(sessionVariable).
         """

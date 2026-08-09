@@ -104,6 +104,49 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertThrowsError(try parse(["rename", ""]))
     }
 
+    // MARK: - Finding its own bundle
+
+    /// How `--version` knows what it is: the tool has no Info.plist of its own,
+    /// so it reads the bundle it was copied into.
+    func testTheToolFindsTheBundleItShippedIn() {
+        XCTAssertEqual(
+            WortelCLI.appBundle(containing: "/Applications/Wortel.app/Contents/Resources/bin/wortel"),
+            "/Applications/Wortel.app")
+        // The same walk has to work wherever a nested binary is put.
+        XCTAssertEqual(
+            WortelCLI.appBundle(containing: "/Applications/Wortel.app/Contents/MacOS/wortel"),
+            "/Applications/Wortel.app")
+    }
+
+    /// Installed outside a bundle there is no version to read, and saying
+    /// "unknown" beats naming some directory that happens to be up the path.
+    func testABinaryOutsideABundleHasNoBundle() {
+        XCTAssertNil(WortelCLI.appBundle(containing: "/usr/local/bin/wortel"))
+        XCTAssertNil(WortelCLI.appBundle(containing: "wortel"))
+        XCTAssertNil(WortelCLI.appBundle(containing: "/"))
+    }
+
+    /// The case it exists for: a symlink on the PATH. What we were exec'd as is
+    /// the link, which is inside no bundle — the bundle is where it points.
+    func testASymlinkResolvesBackToTheBundle() throws {
+        let bundle = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("V\(UInt32.random(in: 0..<0xFFFF)).app/Contents/Resources/bin")
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        let real = bundle.appendingPathComponent("wortel")
+        FileManager.default.createFile(atPath: real.path, contents: Data())
+        let link = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("wortel-link-\(UInt32.random(in: 0..<0xFFFF))")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        defer {
+            try? FileManager.default.removeItem(at: link)
+            try? FileManager.default.removeItem(
+                at: bundle.deletingLastPathComponent().deletingLastPathComponent()
+                    .deletingLastPathComponent())
+        }
+
+        XCTAssertEqual(WortelCLI.appBundle(containing: link.path)?.hasSuffix(".app"), true)
+    }
+
     // MARK: - Shape
 
     func testNoCommandAndUnknownCommand() {
@@ -124,6 +167,7 @@ final class WortelCommandTests: XCTestCase {
             .newSession(cwd: nil, name: nil, branch: nil),
             .rename(session: session, name: "build"),
             .notify(session: nil, title: "Done", body: nil),
+            .version,
         ]
         for command in commands {
             let data = try JSONEncoder().encode(command)
@@ -145,10 +189,11 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertEqual(WortelCommand.newSession(cwd: nil, name: nil, branch: nil).verb, "new")
         XCTAssertEqual(WortelCommand.rename(session: nil, name: "a").verb, "rename")
         XCTAssertEqual(WortelCommand.notify(session: nil, title: "a", body: nil).verb, "notify")
+        XCTAssertEqual(WortelCommand.version.verb, "--version")
     }
 
     func testUsageListsEveryCommand() {
-        for verb in ["open", "new", "rename", "notify"] {
+        for verb in ["open", "new", "rename", "notify", "--version"] {
             XCTAssertTrue(WortelCommandParser.usage.contains(verb), "usage omits \(verb)")
         }
         XCTAssertTrue(WortelCommandParser.usage.contains(WortelCommandParser.sessionVariable))

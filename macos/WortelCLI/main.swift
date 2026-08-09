@@ -19,7 +19,37 @@ private func fail(_ message: String, code: Int32) -> Never {
     exit(code)
 }
 
+/// Two versions, because they can differ and the difference is the bug.
+///
+/// The first is the bundle this binary was copied into — read from its
+/// `Info.plist`, since a command line tool has none of its own. The second is
+/// whatever answered the socket. They are the same app in every ordinary
+/// install; they come apart when a `wortel` someone symlinked onto their `PATH`
+/// outlives the app it shipped with, which is the one way these two ends drift.
+private func reportVersion() -> Never {
+    let mine = WortelCLI.appBundle(containing: CommandLine.arguments[0])
+        .flatMap(Bundle.init(path:))
+    let version = mine?.infoDictionary?["CFBundleShortVersionString"] as? String
+    print("wortel \(version ?? "unknown")\(mine.map { " (\($0.bundlePath))" } ?? "")")
+
+    // Not an error when the app is down: you asked what version this is, and
+    // the answer above is the one you asked for.
+    guard let response = try? WortelCLIClient.send(.version), let running = response.message else {
+        print("Wortel isn't running.")
+        exit(0)
+    }
+    // The app's path is named only when it isn't the bundle this binary came
+    // from. In every ordinary install they're the same and repeating it is
+    // noise; when they differ, that *is* the answer, and it needs to be the
+    // thing that catches your eye rather than two long paths to compare.
+    let elsewhere = response.value.map { $0 != mine?.bundlePath } ?? false
+    print(running + (elsewhere ? " at \(response.value!)" : ""))
+    exit(0)
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
+
+if arguments.contains("--version") { reportVersion() }
 
 if arguments.isEmpty || arguments.contains(where: { $0 == "-h" || $0 == "--help" }) {
     print(WortelCommandParser.usage)

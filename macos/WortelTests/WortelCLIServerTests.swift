@@ -78,6 +78,7 @@ final class WortelCLIServerTests: XCTestCase {
             .newSession(cwd: nil, name: nil, branch: nil),
             .rename(session: UUID().uuidString, name: "build"),
             .notify(session: UUID().uuidString, title: "Done", body: nil),
+            .version,
         ]
         for command in commands {
             XCTAssertTrue(try send(command).ok)

@@ -78,6 +78,19 @@ final class WortelCLIService {
                 manager.notify(session, title: title, body: body ?? "")
                 return .success()
             })
+
+        case .version:
+            // Marketing version, because that's the one on the website and in
+            // the Sparkle appcast — the number someone would quote in a bug
+            // report. The build number rides along in the message for the case
+            // where two builds share a version, which every local build does.
+            let info = Bundle.main.infoDictionary
+            let version = info?["CFBundleShortVersionString"] as? String ?? "unknown"
+            let build = info?["CFBundleVersion"] as? String ?? "?"
+            // The path goes in `value` rather than the sentence so the CLI can
+            // compare it against its own bundle and only mention it when the
+            // two differ — which is the entire thing this command is for.
+            reply(.success("Wortel \(version) (\(build))", value: Bundle.main.bundlePath))
         }
     }
 

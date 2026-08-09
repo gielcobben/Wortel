@@ -85,6 +85,35 @@ id=$(wortel new --cwd ~/Developer/wortel)
 give you an id rather than an id and a sentence. Exit codes split the same way:
 `2` means you typed it wrong, `1` means the app said no, `0` means it happened.
 
+### `--version` answers two questions
+
+```
+$ wortel --version
+wortel 2026.32.1 (/Applications/Wortel.app)
+Wortel 2026.32.1 (412)
+```
+
+The first line is the bundle this binary shipped in — a command line tool has no
+`Info.plist` of its own, so it walks up from its own executable (through any
+symlink) to find the `.app` it lives in. The second is whatever actually
+answered the socket, asked over the wire rather than read off disk.
+
+They are the same app in every ordinary install, which is why the app's path is
+printed **only when it differs**:
+
+```
+Wortel 2026.31.0 (398) at /Users/x/Downloads/Wortel.app
+```
+
+That line is the drift this protocol otherwise can only complain about after it
+has caused a failure — a `wortel` symlinked onto someone's `PATH` that has
+outlived the app it came from. Repeating a matching path in the common case
+would bury it.
+
+A Sparkle update replaces the bundle in place, so the `PATH` entry an open
+session is carrying keeps pointing at the right directory and picks up the new
+command with no relaunch.
+
 ## Two rules that make it safe to leave wired up
 
 **It never steals focus.** Every window a command opens is ordered front; the app

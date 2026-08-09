@@ -89,6 +89,17 @@ if [[ -n "$WORTEL_BIN_DIR" && ":$PATH:" != *":$WORTEL_BIN_DIR:"* ]]; then
   export PATH="$WORTEL_BIN_DIR:$PATH"
 fi
 
+# And take Contents/MacOS back off — the core adds it whatever the `path`
+# feature says, and the only file in it is the app's own executable, which a
+# case-insensitive disk hands over for `wortel`. See the zsh copy.
+if [[ -n "$GHOSTTY_BIN_DIR" ]]; then
+  PATH=":$PATH:"
+  PATH="${PATH//:$GHOSTTY_BIN_DIR:/:}"
+  PATH="${PATH#:}"
+  PATH="${PATH%:}"
+  export PATH
+fi
+
 # Sudo
 if [[ "$GHOSTTY_SHELL_FEATURES" == *"sudo"* && -n "$TERMINFO" ]]; then
   # Wrap `sudo` command to ensure Ghostty terminfo is preserved.

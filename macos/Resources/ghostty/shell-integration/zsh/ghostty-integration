@@ -542,6 +542,24 @@ _ghostty_deferred_init() {
       builtin export PATH="$WORTEL_BIN_DIR:$PATH"
     fi
 
+    # And take Contents/MacOS back off, because the core puts it there whatever
+    # the `path` feature says — verified from inside a session: the feature list
+    # arrives as "ssh-env,ssh-terminfo,title" and the directory is on PATH
+    # anyway.
+    #
+    # Nothing in it is meant to be run by name. The only file is the app's own
+    # executable, `Wortel`, which a case-insensitive disk hands over for
+    # `wortel` — so leaving it means any accident of ordering launches a SECOND
+    # COPY OF THE APP rather than failing cleanly. Being first is not a strong
+    # enough guarantee for a failure that severe.
+    if [[ -n "$GHOSTTY_BIN_DIR" ]]; then
+      PATH=":$PATH:"
+      PATH="${PATH//:$GHOSTTY_BIN_DIR:/:}"
+      PATH="${PATH#:}"
+      PATH="${PATH%:}"
+      builtin export PATH
+    fi
+
     # Sudo
     if [[ "$GHOSTTY_SHELL_FEATURES" == *"sudo"* ]] && [[ -n "$TERMINFO" ]]; then
       # Wrap `sudo` command to ensure Ghostty terminfo is preserved

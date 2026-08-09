@@ -84,16 +84,30 @@ socket the first copy was holding:
 wortel: CLI socket unavailable: bind: Address already in use
 ```
 
-**And the config could not turn it off.** The guard is
-`[[ "$GHOSTTY_SHELL_FEATURES" == *"path"* ]]`, and a feature list containing
-`no-path` matches that just as happily as one containing `path` — so
-`shell-integration-features = …,no-path` looks like a fix, changes nothing, and
-leaves you certain you've already ruled that out. (The same is true of
-`no-cursor` against `*"cursor"*`. Don't trust a negation here without checking
-the guard.) The block is therefore *deleted* from our copies of the scripts
-rather than disabled, and replaced with the `WORTEL_BIN_DIR` prepend. The
-`no-path` in `wortel.conf` stays only as cover for whatever the core does with
-the flag on its own.
+**And `no-path` in the config does not remove the directory.** Measured from
+inside a session: with `shell-integration-features = …,no-path` the shell gets
+`GHOSTTY_SHELL_FEATURES=ssh-env,ssh-terminfo,title` — the feature really is off —
+and `Contents/MacOS` is on `PATH` anyway, because the core puts it there
+independently of the shell-side feature.
+
+So the fix is in our copies of the integration scripts, and it is two steps:
+prepend `$WORTEL_BIN_DIR`, then **remove `$GHOSTTY_BIN_DIR`**. Winning on
+ordering alone isn't good enough when the failure mode is "launches a second
+copy of the app" rather than "command not found" — anything that ever perturbs
+the order turns a typo into a second instance fighting for the socket. Nothing
+in `Contents/MacOS` is meant to be run by name, so it comes off entirely.
+
+Two smaller traps found on the way, both worth knowing before trusting anything
+here:
+
+- The upstream guards read `[[ "$GHOSTTY_SHELL_FEATURES" == *"path"* ]]`, which a
+  feature list containing **`no-path` matches just as happily** as one containing
+  `path`. Whatever the core exports today, a negation cannot be relied on to
+  disable a block written that way. The same goes for `no-cursor` against
+  `*"cursor"*`.
+- The removal is done in the zsh and bash copies, which can be checked here.
+  fish and elvish get the prepend only — the same rule the shell-integration
+  changes have followed before, since neither can be run on this machine.
 
 This is the *same* hazard as the build-time one below, from the same cause — a
 lowercase command and a capitalised app on a case-insensitive disk — and it bit

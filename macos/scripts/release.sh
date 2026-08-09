@@ -176,8 +176,32 @@ echo "==> Built $APP"
 RUNTIME=()
 [ "$NOTARIZE" = 1 ] && RUNTIME=(--options runtime)
 echo "==> Signing"
+# Nested command-line tools first, explicitly, and this is not optional:
+# `codesign --deep` treats a bare Mach-O in Contents/Resources as a *resource*
+# rather than as nested code, so `wortel` and `wortel-keeper` keep whatever Xcode
+# gave them — a development signature, with get-task-allow, no secure timestamp
+# and no hardened runtime. The app still passes `--verify --deep --strict`, which
+# is exactly what makes this so easy to believe is handled; notarization is the
+# thing that disagrees, and it rejects the whole app for it.
+#
+# Signed before the app, because changing anything inside a bundle invalidates
+# the enclosing signature. Inside-out is the rule.
+for tool in "$APP"/Contents/Resources/bin/*; do
+  [ -f "$tool" ] || continue
+  echo "    signing $(basename "$tool")"
+  codesign --force --timestamp ${RUNTIME[@]+"${RUNTIME[@]}"} --sign "$IDENTITY" "$tool"
+done
 codesign --force --deep --timestamp ${RUNTIME[@]+"${RUNTIME[@]}"} --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
+# Verify each one on its own terms. `--verify --deep` on the app does not check
+# these — it passed happily while both tools carried a development signature —
+# so the only honest check is per-tool, and the authority beyond it is the notary
+# service itself.
+for tool in "$APP"/Contents/Resources/bin/*; do
+  [ -f "$tool" ] || continue
+  codesign --verify --strict "$tool"
+  codesign -dvv "$tool" 2>&1 | grep -E "^(Authority=Developer ID|Timestamp=)" | sed 's/^/    /'
+done
 
 # --- Notarize (optional) ----------------------------------------------------
 if [ "$NOTARIZE" = 1 ]; then

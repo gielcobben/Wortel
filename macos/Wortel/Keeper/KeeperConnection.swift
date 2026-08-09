@@ -31,12 +31,61 @@ final class KeeperConnection {
     }
 
     /// Connect, starting the keeper if it isn't running.
+    ///
+    /// And check what answered. **This matters from the first release, not from
+    /// the first protocol change**: updating the app does not restart the
+    /// keeper, so a new Wortel routinely meets a keeper built from the version
+    /// you just replaced. Without this, the day the wire changes is the day
+    /// sessions break in a way nobody can reproduce on a clean machine.
+    ///
+    /// A mismatch is resolved by replacing it, which costs the shells it was
+    /// holding. That is the lesser evil: refusing to talk to it would leave
+    /// those shells alive and permanently unreachable, whereas an app update has
+    /// always meant losing your sessions anyway. It only ever happens on an
+    /// update, and only once.
     @discardableResult
     func connect() -> Bool {
-        (try? client.connect(startingWith: { try self.launch() })) ?? false
+        guard (try? client.connect(startingWith: { try self.launch() })) == true else {
+            return false
+        }
+        guard let (response, _) = try? client.send(.ping), response.ok,
+              response.version == Keeper.version
+        else {
+            NSLog("wortel: keeper speaks a different protocol; replacing it")
+            replaceMismatchedKeeper()
+            return (try? client.connect(startingWith: { try self.launch() })) == true
+                && (try? client.send(.ping))?.response.version == Keeper.version
+        }
+        return true
     }
 
-    var isConnected: Bool { client.isConnected }
+    /// Stop a keeper we cannot talk to, and clear its socket so a new one can
+    /// bind.
+    ///
+    /// The pid comes from the **socket itself** (`LOCAL_PEERPID`), not from
+    /// `pgrep`. That is not a micro-optimisation: this runs during surface
+    /// creation on the main thread, and `Process.waitUntilExit()` pumps the run
+    /// loop — which let SwiftUI re-enter, create another surface, and re-enter
+    /// this very lazy initialiser. libdispatch calls that "trying to lock
+    /// recursively" and traps. Asking the kernel who is on the other end of a
+    /// socket we already hold is a syscall that cannot run anyone else's code.
+    ///
+    /// SIGTERM, then SIGKILL: a keeper old enough to speak a different protocol
+    /// is also old enough to have bugs we have since fixed — one build ignored
+    /// SIGTERM outright. Politeness cannot be a precondition for recovering
+    /// from a bad old version, since that is the version least likely to
+    /// cooperate. Killing it closes its ptys, which hangs its shells up rather
+    /// than orphaning them.
+    private func replaceMismatchedKeeper() {
+        let pid = client.peerProcessID()
+        client.disconnect()
+        if let pid, pid > 1 {
+            kill(pid, SIGTERM)
+            for _ in 0..<50 where kill(pid, 0) == 0 { usleep(20_000) }
+            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+        }
+        try? FileManager.default.removeItem(atPath: Keeper.socketPath)
+    }
 
     /// Start the keeper as a process of its own.
     ///
@@ -63,6 +112,7 @@ final class KeeperConnection {
     /// What the app gets back for a session: a pty to read, and whatever
     /// happened while it wasn't watching.
     struct Attachment {
+        let session: UUID
         let descriptor: Int32
         let pid: Int32
         let replay: Data
@@ -90,7 +140,8 @@ final class KeeperConnection {
         // is worth knowing.
         if let (response, descriptor) = try? client.send(.attach(session: id)),
            response.ok, let descriptor {
-            return Attachment(descriptor: descriptor, pid: response.pid ?? -1,
+            return Attachment(session: session, descriptor: descriptor,
+                              pid: response.pid ?? -1,
                               replay: response.replay ?? Data(), resumed: true)
         }
 
@@ -101,7 +152,8 @@ final class KeeperConnection {
             .open(session: id, plan: keeperPlan, columns: columns, rows: rows)),
             response.ok, let descriptor
         else { return nil }
-        return Attachment(descriptor: descriptor, pid: response.pid ?? -1,
+        return Attachment(session: session, descriptor: descriptor,
+                          pid: response.pid ?? -1,
                           replay: response.replay ?? Data(), resumed: false)
     }
 

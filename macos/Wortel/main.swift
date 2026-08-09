@@ -1,8 +1,9 @@
 import AppKit
 
-// Read first, because the scrub below deletes it. WORTEL_HOST_MANAGED turns on
-// the process-survival spike (see PtyHost), and `WORTEL_` is exactly the prefix
-// InheritedEnvironment throws away — so a flag read any later is always unset.
+// Read first, because the scrub below deletes it. WORTEL_NO_KEEPER opts this
+// launch out of process survival (see PtyHost), and `WORTEL_` is exactly the
+// prefix InheritedEnvironment throws away — so a flag read any later is always
+// unset, and the escape hatch would silently do nothing.
 PtyHost.readEnableFlag()
 
 // Before anything can spawn a child process — a surface's shell, a `git` read —

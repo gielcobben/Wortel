@@ -212,10 +212,25 @@ final class GhosttyRuntime {
         // above that describes a *process* — working_directory, initial_input,
         // env_vars — has nothing to act on in this mode, which is exactly the
         // cost the spike is here to measure.
-        if PtyHost.isEnabled {
-            return hostManagedSurface(
-                view: view, config: &cfg,
-                workingDirectory: workingDirectory, sessionID: sessionID)
+        // Process survival, and the default: ask the keeper for this session's
+        // pty. If it already has one the shell outlived the last quit and we are
+        // picking it back up; if not, the keeper forks a fresh one. Either way
+        // the process belongs to the keeper rather than to us, which is the
+        // whole point — quitting Wortel closes a window instead of killing
+        // whatever your agents were in the middle of.
+        //
+        // **No keeper means the exec backend, unchanged.** Not a local fork:
+        // when survival is unavailable the right thing is the path this app has
+        // always used, with libghostty doing its own spawning and its own shell
+        // integration. A missing helper should cost you survival and nothing
+        // else.
+        if let sessionID, let keeper = Self.keeper,
+           let attachment = keeper.attachOrOpen(
+               session: sessionID, plan: Self.shellPlan(sessionID: sessionID),
+               workingDirectory: workingDirectory, columns: 80, rows: 24) {
+            // A session that never died has nothing to resume; see below.
+            if attachment.resumed { cfg.initial_input = nil }
+            return hostManagedSurface(view: view, config: &cfg, attachment: attachment)
         }
 
         return envVars.withUnsafeMutableBufferPointer { buf in
@@ -234,43 +249,20 @@ final class GhosttyRuntime {
     /// must exist first — but it can't start the shell until there's a surface to
     /// push output into. So: make the host, hand it to the config, create the
     /// surface, then start.
+    /// Build a surface around a pty the keeper owns.
+    ///
+    /// The order is the fiddly part: the two `receive_*` callbacks have to be in
+    /// the config *before* `ghostty_surface_new`, so the pty wrapper must exist
+    /// first — but nothing may be read until there is a surface to put it in,
+    /// and the replay has to land before anything newer. Hence: wrap, create,
+    /// wire, replay, and only then start reading.
     private func hostManagedSurface(
         view: SurfaceView, config cfg: inout ghostty_surface_config_s,
-        workingDirectory: String?, sessionID: UUID?
+        attachment: KeeperConnection.Attachment
     ) -> ghostty_surface_t? {
-        // Ask the keeper for this session's pty. If it already has one the shell
-        // survived the last quit and we are picking it back up; if not, it forks
-        // a fresh one. Either way the process belongs to the keeper, not to us,
-        // which is the entire point.
-        //
-        // Falling back to forking locally when there is no keeper is deliberate:
-        // a terminal that refuses to open a shell because a helper is missing
-        // would be a much worse app than one that quietly loses survival.
-        var attachment: KeeperConnection.Attachment?
-        if let keeper = Self.keeper, let sessionID {
-            // 80x24 because the surface does not exist yet and so has no size.
-            // It is corrected within the first frame: libghostty calls
-            // `receive_resize` as soon as the view is laid out, and that is a
-            // TIOCSWINSZ on this same pty.
-            attachment = keeper.attachOrOpen(
-                session: sessionID, plan: Self.shellPlan(sessionID: sessionID),
-                workingDirectory: workingDirectory, columns: 80, rows: 24)
-        }
-        // **A session that never died has nothing to resume.** `initial_input`
-        // is how a restored session re-runs `claude --continue` after a real
-        // restart, and in host-managed mode libghostty delivers it as if typed —
-        // straight through `receive_buffer` into the pty. Attached to a shell
-        // that is still running, with the agent still in it, that types the
-        // resume command at a live prompt: at best noise, at worst a second
-        // agent nested inside the first. The whole point of surviving is that
-        // there is nothing to bring back.
-        if attachment?.resumed == true {
-            cfg.initial_input = nil
-        }
-
-        let pty = attachment.map { PtyHost(adopting: $0.descriptor) } ?? PtyHost()
+        let pty = PtyHost(adopting: attachment.descriptor)
         view.ptyHost = pty // the view's lifetime is the session's
-        view.keeperSession = attachment != nil ? sessionID : nil
+        view.keeperSession = attachment.session
 
         cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
         cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
@@ -281,7 +273,9 @@ final class GhosttyRuntime {
             Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
                 .write(bytes, count: length)
         }
-        // The grid changed shape. Nobody sends SIGWINCH for us any more.
+        // The grid changed shape. Nobody sends SIGWINCH for us any more — and
+        // this is also what corrects the 80x24 the pty was opened at, since the
+        // surface had no size to give until now.
         cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
             guard let userdata else { return }
             Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
@@ -297,40 +291,21 @@ final class GhosttyRuntime {
             ghostty_surface_write_buffer(surface, bytes, UInt(count))
         }
         pty.onExit = { code, milliseconds in
-            // Tell the terminal, so the close confirmation sees a finished
-            // process rather than a live one.
             DispatchQueue.main.async {
                 ghostty_surface_process_exit(surface, UInt32(bitPattern: code), milliseconds)
             }
         }
 
-        let size = ghostty_surface_size(surface)
-        let plan = Self.shellPlan(sessionID: sessionID)
-
-        // Replay first, then start reading: the buffer holds what the shell
-        // wrote while nobody was attached, and it has to reach the terminal
-        // before anything newer does or the screen ends up out of order.
-        if let attachment {
-            if !attachment.replay.isEmpty {
-                attachment.replay.withUnsafeBytes { raw in
-                    guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
-                    ghostty_surface_write_buffer(surface, base, UInt(raw.count))
-                }
+        // Replay first, then read: the buffer holds what the shell wrote while
+        // nobody was attached, and it has to reach the terminal before anything
+        // newer or the screen ends up out of order.
+        if !attachment.replay.isEmpty {
+            attachment.replay.withUnsafeBytes { raw in
+                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                ghostty_surface_write_buffer(surface, base, UInt(raw.count))
             }
-            pty.beginReading()
-            NSLog("wortel: %@ keeper session pid=%d at %dx%d%@",
-                  attachment.resumed ? "resumed" : "started", attachment.pid,
-                  size.columns, size.rows,
-                  attachment.resumed ? " (agent resume suppressed)" : "")
-        } else {
-            pty.start(
-                executable: plan.executable, arguments: plan.arguments,
-                environment: plan.environment,
-                workingDirectory: workingDirectory,
-                columns: max(size.columns, 1), rows: max(size.rows, 1))
-            NSLog("wortel: host-managed session pid=%d at %dx%d (no keeper)",
-                  pty.pid, size.columns, size.rows)
         }
+        pty.beginReading()
         return surface
     }
 
@@ -377,7 +352,10 @@ final class GhosttyRuntime {
     /// binary or it could not be started — the app still runs, it just forks its
     /// own shells and they die with it, exactly as before.
     static let keeper: KeeperConnection? = {
-        guard PtyHost.isEnabled else { return nil }
+        guard !PtyHost.isDisabled else {
+            NSLog("wortel: keeper disabled; sessions will not survive a quit")
+            return nil
+        }
         let connection = KeeperConnection()
         guard connection.connect() else {
             NSLog("wortel: no keeper; sessions will not survive a quit")

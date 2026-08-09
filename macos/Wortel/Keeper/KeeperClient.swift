@@ -68,6 +68,22 @@ final class KeeperClient {
         setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &deadline, socklen_t(MemoryLayout<timeval>.size))
     }
 
+    /// Which process is on the other end of this connection.
+    ///
+    /// A syscall on a socket we already hold, which is the point: it runs no
+    /// other code, so it is safe from inside a lazy initialiser on the main
+    /// thread. The obvious alternative — shelling out to `pgrep` — pumps the
+    /// run loop and re-entered surface creation.
+    func peerProcessID() -> pid_t? {
+        guard socket >= 0 else { return nil }
+        var pid: pid_t = 0
+        var size = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(socket, SOL_LOCAL, LOCAL_PEERPID, &pid, &size) == 0, pid > 0 else {
+            return nil
+        }
+        return pid
+    }
+
     func disconnect() {
         guard socket >= 0 else { return }
         close(socket)

@@ -21,21 +21,26 @@ import Foundation
 /// it is free. Knowing exactly how much of it goes dead is the point of the
 /// spike: turn it on, look at what the session loses.
 ///
-/// Opt-in only, via `WORTEL_HOST_MANAGED=1` in the app's environment. Nothing on
-/// the normal path reaches this file.
+/// In the app this only ever *adopts* a descriptor the keeper passed; the keeper
+/// is the one that forks. `WORTEL_NO_KEEPER=1` opts a launch out entirely and
+/// puts it back on libghostty's exec backend.
 final class PtyHost: @unchecked Sendable {
-    /// Whether the spike is switched on for this launch.
-    private(set) static var isEnabled = false
+    /// An escape hatch, not a feature switch: survival is the default, and
+    /// `WORTEL_NO_KEEPER=1` puts a launch back on libghostty's exec backend.
+    /// Kept because "is this the keeper's fault?" is the first question anyone
+    /// will ask about a strange session, and answering it should not require a
+    /// build.
+    private(set) static var isDisabled = false
 
     /// Latch the flag from the environment.
     ///
     /// Must be called from `main.swift` **before** `InheritedEnvironment.apply()`,
     /// which deletes every `WORTEL_`-prefixed variable — including this one. Read
     /// any later and the answer is always false, which is a properly confusing
-    /// twenty minutes: the app launches, ignores the flag, and spawns exactly the
-    /// sessions it always did.
+    /// twenty minutes: the app launches, ignores the flag, and behaves exactly
+    /// as it would have anyway.
     static func readEnableFlag() {
-        isEnabled = ProcessInfo.processInfo.environment["WORTEL_HOST_MANAGED"] == "1"
+        isDisabled = ProcessInfo.processInfo.environment["WORTEL_NO_KEEPER"] == "1"
     }
 
     /// The pty master. Reading it gives what the program wrote; writing it is

@@ -104,11 +104,14 @@ in `Contents/MacOS` is meant to be run by name, so it comes off entirely.
 Two smaller traps found on the way, both worth knowing before trusting anything
 here:
 
-- The upstream guards read `[[ "$GHOSTTY_SHELL_FEATURES" == *"path"* ]]`, which a
-  feature list containing **`no-path` matches just as happily** as one containing
-  `path`. Whatever the core exports today, a negation cannot be relied on to
-  disable a block written that way. The same goes for `no-cursor` against
-  `*"cursor"*`.
+- The upstream guards read `[[ "$GHOSTTY_SHELL_FEATURES" == *"path"* ]]`, and the
+  string `no-path` would match that glob just as happily as `path` would. It
+  never gets the chance: measured from inside a session, the core exports only
+  the features that are **on** — `ssh-env,ssh-terminfo,title` — so a disabled
+  one is absent rather than negated. Config negation therefore does work, here
+  and for `no-cursor`; it just wasn't enough, because the directory arrives from
+  the core rather than from this block. Worth re-measuring rather than assuming
+  if upstream ever changes what it exports.
 - The removal is done in the zsh and bash copies, which can be checked here.
   fish and elvish get the prepend only — the same rule the shell-integration
   changes have followed before, since neither can be run on this machine.

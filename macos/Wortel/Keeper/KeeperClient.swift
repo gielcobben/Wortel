@@ -11,9 +11,11 @@ import Foundation
 final class KeeperClient {
     private(set) var socket: Int32 = -1
     private let path: String
+    private let replyTimeout: TimeInterval
 
-    init(path: String = Keeper.socketPath) {
+    init(path: String = Keeper.socketPath, replyTimeout: TimeInterval = 5) {
         self.path = path
+        self.replyTimeout = replyTimeout
     }
 
     deinit { disconnect() }
@@ -30,6 +32,7 @@ final class KeeperClient {
         if isConnected { return true }
         if let existing = try? WortelCLIClient.connect(to: path) {
             socket = existing
+            applyTimeout()
             return true
         }
         guard let launch else { return false }
@@ -41,11 +44,28 @@ final class KeeperClient {
         while Date() < deadline {
             if let started = try? WortelCLIClient.connect(to: path) {
                 socket = started
+                applyTimeout()
                 return true
             }
             usleep(20_000)
         }
         return false
+    }
+
+    /// Bound how long a reply may take.
+    ///
+    /// Not paranoia: the app asks for a session on the **main thread**, while a
+    /// surface is being created, so a keeper that wedged — a bug, a stopped
+    /// process, a full socket — would freeze the window rather than the
+    /// feature. A timeout turns that into a session that falls back to forking
+    /// locally, which is a bad day rather than a hung app.
+    private func applyTimeout() {
+        guard socket >= 0 else { return }
+        var deadline = timeval(
+            tv_sec: Int(replyTimeout),
+            tv_usec: Int32((replyTimeout - replyTimeout.rounded(.down)) * 1e6))
+        setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &deadline, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &deadline, socklen_t(MemoryLayout<timeval>.size))
     }
 
     func disconnect() {

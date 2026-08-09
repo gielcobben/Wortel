@@ -299,3 +299,68 @@ final class KeeperTests: XCTestCase {
         second.stop()
     }
 }
+
+extension KeeperTests {
+    /// **The case the feature is for.** An agent is not the shell — it is a
+    /// child of it, several processes deep by the time it is doing anything. So
+    /// surviving the app has to mean the whole tree survives, not just the login
+    /// shell that happens to be at the top of it.
+    func testAProcessTreeInsideTheShellSurvivesToo() throws {
+        try startServer()
+        let client = try connect()
+        // A shell, with a long-lived child inside it that announces its own pid
+        // — which is what `claude` or `pi` looks like from out here.
+        let (opened, fd) = try client.send(.open(
+            session: "agent",
+            plan: plan("sh -c 'echo CHILD-$$; exec sleep 120' & echo SHELL-$$; wait"),
+            columns: 80, rows: 24))
+        let descriptor = try XCTUnwrap(fd)
+        let shellPID = try XCTUnwrap(opened.pid)
+
+        let text = read(descriptor, until: "SHELL-")
+        let childPID = try XCTUnwrap(
+            text.split(whereSeparator: \.isNewline)
+                .first { $0.hasPrefix("CHILD-") }
+                .flatMap { pid_t($0.dropFirst("CHILD-".count).trimmingCharacters(in: .whitespaces)) },
+            "could not find the child's pid in \(text.debugDescription)")
+        XCTAssertNotEqual(childPID, shellPID, "the test did not actually nest anything")
+
+        // The app goes away without warning.
+        close(descriptor)
+        client.disconnect()
+        usleep(300_000)
+
+        XCTAssertEqual(kill(shellPID, 0), 0, "the shell died with its client")
+        XCTAssertEqual(kill(childPID, 0), 0, "the agent inside the shell died with the client")
+
+        // And it is still reachable afterwards.
+        let (attached, again) = try connect().send(.attach(session: "agent"))
+        XCTAssertTrue(attached.ok, attached.message ?? "")
+        if let again { descriptors.append(again) }
+    }
+
+    /// A shell that exits while nobody is attached is over, and the session has
+    /// to go with it. Keeping the entry means the next launch attaches to a pty
+    /// whose far end is closed — a terminal opening onto a dead process, saying
+    /// nothing about it.
+    func testASessionThatExitsWhileDetachedIsForgotten() throws {
+        try startServer()
+        let client = try connect()
+        let (_, fd) = try client.send(
+            .open(session: "brief", plan: plan("sleep 0.2; exit 0"), columns: 80, rows: 24))
+        close(try XCTUnwrap(fd))
+        _ = try client.send(.detach(session: "brief"))
+
+        var gone = false
+        for _ in 0..<40 where !gone {
+            usleep(100_000)
+            gone = server?.sessionCount == 0
+        }
+        XCTAssertTrue(gone, "an exited session was still being held")
+
+        // And attaching to it now says so, rather than handing over a dead pty.
+        let (response, again) = try client.send(.attach(session: "brief"))
+        if let again { close(again) }
+        XCTAssertFalse(response.ok)
+    }
+}

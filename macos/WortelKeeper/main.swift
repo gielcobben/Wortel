@@ -49,6 +49,14 @@ do {
 signal(SIGHUP, SIG_IGN)
 signal(SIGPIPE, SIG_IGN)
 // A terminating signal should still tidy the socket file up.
+//
+// **The array is load-bearing.** `signal(…, SIG_IGN)` is required before a
+// DispatchSource can observe a signal — but if the source is then released, the
+// ignore stays and nothing observes it, so the process becomes unkillable by
+// anything short of SIGKILL. `withExtendedLifetime` does not help: it ends at
+// the closing brace. Three orphaned keepers, each still holding shells and
+// deaf to `pkill`, is what that looked like.
+var signalSources: [DispatchSourceSignal] = []
 for terminating in [SIGTERM, SIGINT] {
     signal(terminating, SIG_IGN)
     let source = DispatchSource.makeSignalSource(signal: terminating, queue: .main)
@@ -57,8 +65,7 @@ for terminating in [SIGTERM, SIGINT] {
         exit(0)
     }
     source.resume()
-    // Held for the process's lifetime; there is nowhere for it to go.
-    withExtendedLifetime(source) {}
+    signalSources.append(source)
 }
 
 dispatchMain()

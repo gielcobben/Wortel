@@ -221,8 +221,21 @@ final class KeeperServer: @unchecked Sendable {
             guard let self, let session else { return }
             self.state.sync { session.buffer.append(bytes, count: count) }
         }
-        pty.onExit = { [weak session] _, _ in
-            session?.exited = true
+        pty.onExit = { [weak self, weak session] _, _ in
+            guard let self, let session else { return }
+            session.exited = true
+            // **Forget it.** A session whose shell has exited is over, and
+            // keeping the entry means the next `attach` hands back a pty whose
+            // far end is closed — a terminal that opens onto a dead process and
+            // says nothing about it. Dropping it makes the next launch fork a
+            // fresh shell, which is what the exec backend has always done when
+            // a shell exits. Any client still attached has its own descriptor
+            // and sees the EOF itself.
+            self.state.sync {
+                guard self.sessions[session.id] === session else { return }
+                self.sessions.removeValue(forKey: session.id)
+            }
+            session.pty.stop()
         }
 
         guard pty.start(

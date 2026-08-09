@@ -75,6 +75,17 @@ final class PtyHost: @unchecked Sendable {
         ownsProcess = false
         _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL, 0) | O_NONBLOCK)
         _ = fcntl(master, F_SETFD, FD_CLOEXEC)
+        // **Deliberately not reading yet.** The surface it feeds does not exist
+        // at this point, and the first thing a reattached session produces is
+        // whatever the shell wrote a moment ago — dropping it would show a blank
+        // terminal for work that is still running. The caller wires `onOutput`,
+        // writes the replay, and only then calls `beginReading`.
+    }
+
+    /// Start reading a descriptor adopted from the keeper. Separate from `init`
+    /// so nothing is read before there is somewhere to put it.
+    func beginReading() {
+        guard reader == nil, master >= 0 else { return }
         startReading()
     }
 

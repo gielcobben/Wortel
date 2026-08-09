@@ -64,6 +64,12 @@ final class SurfaceView: NSView {
     /// session's, and nothing else outlives both the surface and the child.
     var ptyHost: PtyHost?
 
+    /// The keeper's id for this session, when its shell belongs to the keeper
+    /// rather than to us. Closing the session has to tell the keeper so; the app
+    /// merely *quitting* must not, which is the difference the whole feature
+    /// turns on.
+    var keeperSession: UUID?
+
     // MARK: - Lifecycle
 
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
@@ -113,10 +119,16 @@ final class SurfaceView: NSView {
     /// Explicit teardown (deinit ordering with AppKit view hierarchies is
     /// unreliable; call this when the session closes).
     func close() {
-        // The child first: freeing the surface drops the callbacks it writes
-        // through, and an orphaned shell holding a pty nobody reads is the one
-        // leak the spike could plausibly introduce.
-        ptyHost?.stop()
+        // Closing a *session* is the user saying they are done with it, so the
+        // shell goes too — unlike quitting the app, which deliberately leaves it
+        // running and is handled by the connection simply dropping.
+        if let keeperSession {
+            GhosttyRuntime.keeper?.close(session: keeperSession)
+            ptyHost?.release() // the keeper owns the process; just let go
+        } else {
+            ptyHost?.stop()
+        }
+        keeperSession = nil
         ptyHost = nil
         guard let surface else { return }
         ghostty_surface_free(surface)

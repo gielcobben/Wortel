@@ -238,8 +238,27 @@ final class GhosttyRuntime {
         view: SurfaceView, config cfg: inout ghostty_surface_config_s,
         workingDirectory: String?, sessionID: UUID?
     ) -> ghostty_surface_t? {
-        let pty = PtyHost()
+        // Ask the keeper for this session's pty. If it already has one the shell
+        // survived the last quit and we are picking it back up; if not, it forks
+        // a fresh one. Either way the process belongs to the keeper, not to us,
+        // which is the entire point.
+        //
+        // Falling back to forking locally when there is no keeper is deliberate:
+        // a terminal that refuses to open a shell because a helper is missing
+        // would be a much worse app than one that quietly loses survival.
+        var attachment: KeeperConnection.Attachment?
+        if let keeper = Self.keeper, let sessionID {
+            // 80x24 because the surface does not exist yet and so has no size.
+            // It is corrected within the first frame: libghostty calls
+            // `receive_resize` as soon as the view is laid out, and that is a
+            // TIOCSWINSZ on this same pty.
+            attachment = keeper.attachOrOpen(
+                session: sessionID, plan: Self.shellPlan(sessionID: sessionID),
+                workingDirectory: workingDirectory, columns: 80, rows: 24)
+        }
+        let pty = attachment.map { PtyHost(adopting: $0.descriptor) } ?? PtyHost()
         view.ptyHost = pty // the view's lifetime is the session's
+        view.keeperSession = attachment != nil ? sessionID : nil
 
         cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
         cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
@@ -275,15 +294,30 @@ final class GhosttyRuntime {
 
         let size = ghostty_surface_size(surface)
         let plan = Self.shellPlan(sessionID: sessionID)
-        pty.start(
-            executable: plan.executable, arguments: plan.arguments,
-            environment: plan.environment,
-            workingDirectory: workingDirectory,
-            columns: max(size.columns, 1), rows: max(size.rows, 1))
-        // One line, only under the flag: the pid is what you check against `ps`
-        // to see whether the shell outlived the app.
-        NSLog("wortel: host-managed session pid=%d on fd=%d at %dx%d",
-              pty.pid, pty.master, size.columns, size.rows)
+
+        // Replay first, then start reading: the buffer holds what the shell
+        // wrote while nobody was attached, and it has to reach the terminal
+        // before anything newer does or the screen ends up out of order.
+        if let attachment {
+            if !attachment.replay.isEmpty {
+                attachment.replay.withUnsafeBytes { raw in
+                    guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                    ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+                }
+            }
+            pty.beginReading()
+            NSLog("wortel: %@ keeper session pid=%d at %dx%d",
+                  attachment.resumed ? "resumed" : "started", attachment.pid,
+                  size.columns, size.rows)
+        } else {
+            pty.start(
+                executable: plan.executable, arguments: plan.arguments,
+                environment: plan.environment,
+                workingDirectory: workingDirectory,
+                columns: max(size.columns, 1), rows: max(size.rows, 1))
+            NSLog("wortel: host-managed session pid=%d at %dx%d (no keeper)",
+                  pty.pid, size.columns, size.rows)
+        }
         return surface
     }
 
@@ -324,6 +358,19 @@ final class GhosttyRuntime {
             return line.split(separator: "=").last?.trimmingCharacters(in: .whitespaces) ?? ""
         }
         return ""
+    }()
+
+    /// The keeper, connected once per launch. nil when there is no keeper
+    /// binary or it could not be started — the app still runs, it just forks its
+    /// own shells and they die with it, exactly as before.
+    static let keeper: KeeperConnection? = {
+        guard PtyHost.isEnabled else { return nil }
+        let connection = KeeperConnection()
+        guard connection.connect() else {
+            NSLog("wortel: no keeper; sessions will not survive a quit")
+            return nil
+        }
+        return connection
     }()
 
     /// Where the bundled `wortel` binary lives — `Contents/Resources/bin`,

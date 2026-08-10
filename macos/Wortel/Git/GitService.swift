@@ -242,6 +242,35 @@ enum GitService {
         }
     }
 
+    /// The branch a new branch should fork from when nothing else is said —
+    /// trunk, not wherever you happen to be standing.
+    ///
+    /// `origin/HEAD` is the honest answer where it exists: it's a symref to the
+    /// remote's default branch, so it survives a repo whose trunk is `master`,
+    /// `develop`, or something else entirely. It's also *local* state, written at
+    /// clone time — a repo cloned before the default was renamed, or one created
+    /// by `git init` and pushed, may not have it at all. Hence the fallbacks, in
+    /// the order a person would guess: the conventional names, then whatever is
+    /// checked out, and finally nothing (a repo with no commits, where there is no
+    /// base to name and git infers an orphan branch instead).
+    static func defaultBranch(root: String) async -> String? {
+        let symref = await run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], in: root)
+        if symref.ok {
+            // "origin/main" -> "main". Split once from the left: a remote name has
+            // no slash, but a branch name may (`origin/release/2026`).
+            let name = symref.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let slash = name.firstIndex(of: "/") {
+                let branch = String(name[name.index(after: slash)...])
+                if !branch.isEmpty { return branch }
+            }
+        }
+        let locals = await branches(root: root).filter { !$0.isRemote }
+        for candidate in ["main", "master"] where locals.contains(where: { $0.name == candidate }) {
+            return candidate
+        }
+        return locals.first(where: \.isCurrent)?.name ?? locals.first?.name
+    }
+
     // MARK: - Worktrees
 
     /// Where this checkout keeps its git state, when that is somewhere other than

@@ -15,20 +15,66 @@ final class BranchChooser: NSView {
     private let button = ChooserButton(frame: .zero, pullsDown: true)
     private let popover = NSPopover()
     private let model: BranchPickerModel
+    /// Kept in front of the value in the button's title ("From: main"), so the
+    /// row says what it is without a label beside it — which the compact centred
+    /// alert has nowhere to put.
+    private let prefix: String
+    /// What the button reads before anything is chosen.
+    private let placeholder: String
 
     /// The branch to open: whatever was picked, or typed into the filter.
     var branch: String? { model.chosen ?? model.newBranch }
 
-    /// One width for the button and the popover — the whole point of the
-    /// alignment.
-    static let width: CGFloat = 240
     /// Field, divider, and eight rows: enough to browse without the popover
     /// becoming the tallest thing on screen.
     static let popoverHeight: CGFloat = 248
+    /// What a dialog falls back to if it has no buttons to measure against.
+    /// Nothing reaches it — an NSAlert always has at least one.
+    private static let defaultWidth: CGFloat = 240
 
-    init(branches: [String], withWorktree: Set<String>) {
+    /// The width an accessory has to be to line up with the dialog's buttons.
+    ///
+    /// The button row is the one part of an NSAlert that sizes *itself* — from
+    /// its titles, not from the alert — so it's the thing everything else has to
+    /// match rather than the other way round. A fixed 240 was 12pt wider than
+    /// `Cancel` + `Create` come to, which is why the chooser overhung them and
+    /// sat 6pt to their left.
+    ///
+    /// Call it once the buttons are added and before the accessory is set: the
+    /// row's width doesn't depend on the accessory, so measuring first and
+    /// building the chooser to fit converges immediately, where resizing
+    /// afterwards means laying the alert out twice.
+    static func alignedWidth(for alert: NSAlert) -> CGFloat {
+        alert.layout()
+        let frames = alert.buttons.map(\.frame)
+        guard let minX = frames.map(\.minX).min(),
+              let maxX = frames.map(\.maxX).max(), maxX > minX
+        else { return defaultWidth }
+        return maxX - minX
+    }
+
+    /// Whether what's chosen is a branch that already exists, which is the one
+    /// thing the dialog needs to know beyond the name: an existing branch is
+    /// checked out as it is, so it has no base to fork from.
+    var isExistingBranch: Bool {
+        guard let branch else { return false }
+        return model.branches.contains { $0.caseInsensitiveCompare(branch) == .orderedSame }
+    }
+
+    /// Called when the selection changes, so a dialog holding more than one of
+    /// these can react — the base row greys out once the branch is a real one.
+    var onChange: (() -> Void)?
+
+    init(
+        branches: [String], withWorktree: Set<String>, width: CGFloat,
+        placeholder: String = "Choose a branch\u{2026}", prefix: String = "",
+        initial: String? = nil
+    ) {
         model = BranchPickerModel(branches: branches, withWorktree: withWorktree)
-        super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: 28))
+        self.prefix = prefix
+        self.placeholder = placeholder
+        model.chosen = initial
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 28))
 
         // A real pull-down button, for its shape and its metrics — the pill, the
         // chevron at the trailing edge, the system's own materials. What it must
@@ -38,13 +84,14 @@ final class BranchChooser: NSView {
         button.frame = bounds
         button.controlSize = .large
         button.autoenablesItems = false
-        button.addItem(withTitle: "Choose a branch\u{2026}")
+        button.addItem(withTitle: "")
         button.onClick = { [weak self] in self?.toggle() }
         addSubview(button)
+        refreshTitle()
 
         popover.behavior = .transient
         let host = NSHostingController(
-            rootView: BranchPicker(model: model, width: Self.width) { [weak self] branch in
+            rootView: BranchPicker(model: model, width: width) { [weak self] branch in
                 self?.select(branch)
             })
         // **Sized explicitly, and to the button's width.** A SwiftUI ScrollView
@@ -53,9 +100,9 @@ final class BranchChooser: NSView {
         // half-screen of empty space under six branches came from. Matching the
         // button's width is what makes the two line up instead of the popover
         // overhanging it by ten points on each side.
-        host.preferredContentSize = NSSize(width: Self.width, height: Self.popoverHeight)
+        host.preferredContentSize = NSSize(width: width, height: Self.popoverHeight)
         popover.contentViewController = host
-        popover.contentSize = NSSize(width: Self.width, height: Self.popoverHeight)
+        popover.contentSize = NSSize(width: width, height: Self.popoverHeight)
     }
 
     @available(*, unavailable)
@@ -68,9 +115,175 @@ final class BranchChooser: NSView {
 
     private func select(_ branch: String) {
         model.chosen = branch
-        button.item(at: 0)?.title = branch
-        button.synchronizeTitleAndSelectedItem()
+        refreshTitle()
         popover.performClose(nil)
+        onChange?()
+    }
+
+    /// An NSPopUpButton shows the title of its selected item, so the one item is
+    /// the title — there is no separate label to set.
+    private func refreshTitle() {
+        button.item(at: 0)?.title = branch.map { prefix + $0 } ?? placeholder
+        button.synchronizeTitleAndSelectedItem()
+    }
+
+    /// Greyed when the dialog has nothing to ask here. Disabling the *button*
+    /// rather than removing the row keeps the dialog one height: a row that comes
+    /// and goes as you type would shift whatever sits under it, and the branch
+    /// field is what sits above.
+    var isEnabled: Bool {
+        get { button.isEnabled }
+        set { button.isEnabled = newValue }
+    }
+}
+
+/// The branch row: a combo box, so the field is ready to type into.
+///
+/// The name you want usually doesn't exist yet — that's what opening a session
+/// on a branch is *for* — and a pull-down makes the common case cost a click
+/// before the first character. `completes` gives the other half back: typing
+/// `up` fills in `update-website` with the completion selected, so an existing
+/// branch is a few keys rather than a hunt. Tower and Fork both land here.
+@MainActor
+final class BranchNameField: NSComboBox {
+    /// Trimmed, and nil when empty — "  " is not a branch name.
+    var branch: String? {
+        let name = stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
+
+    init(branches: [String], width: CGFloat) {
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 28))
+        addItems(withObjectValues: branches)
+        // Inline completion, which is the whole reason this is a combo box and
+        // not a text field beside a menu.
+        completes = true
+        isEditable = true
+        placeholderString = "Branch name"
+        // Matches the base row's pull-down: both controls come out at 28pt here
+        // and at different heights at every other control size, and two rows of
+        // visibly different height read as two unrelated things.
+        controlSize = .large
+        font = .systemFont(ofSize: NSFont.systemFontSize)
+        // The list is the repository's branches, so it's as long as it is —
+        // scrolling beats a menu tall enough to cover the dialog that owns it.
+        numberOfVisibleItems = 8
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
+}
+
+/// The dialog's accessory: which branch to open, what a new one forks from, and
+/// one line saying what's about to happen.
+///
+/// The branch comes first because it's the field you always fill and the one
+/// that takes focus; the base is the field you usually accept. Both rows are
+/// *always shown* — a row that appears as you type would shift whatever sits
+/// under it, and the status line is reserved rather than inserted for the same
+/// reason. Tower's dialog earns its explanation with a paragraph; this one is an
+/// alert, so it gets a line.
+@MainActor
+final class BranchDialogAccessory: NSView, NSComboBoxDelegate {
+    private let nameField: BranchNameField
+    private let baseChooser: BranchChooser
+    private let status = NSTextField(labelWithString: "")
+    private let existing: Set<String>
+    private let withWorktree: Set<String>
+
+    /// The branch to open — nil when nothing was typed or chosen.
+    var branch: String? { nameField.branch }
+    /// What a new branch forks from. nil for a branch that already exists, which
+    /// is checked out as it is, and nil when the repository named no default.
+    var base: String? { isExistingBranch ? nil : baseChooser.branch }
+
+    /// Whether there is anything to create. Tower greys its "Create Worktree"
+    /// until the revision names something; ours used to accept the click and
+    /// then quietly do nothing, which is the same answer delivered worse.
+    var isValid: Bool { branch != nil }
+    /// Fired whenever `isValid` might have changed, so the dialog's default
+    /// button can follow it.
+    var onValidityChange: ((Bool) -> Void)?
+
+    /// Focus belongs on the branch row: it's the answer the dialog is asking for.
+    var initialResponder: NSView { nameField }
+
+    private var isExistingBranch: Bool {
+        guard let branch else { return false }
+        return existing.contains { $0.caseInsensitiveCompare(branch) == .orderedSame }
+    }
+
+    /// Both rows' controls report exactly this at `.large`, so neither is
+    /// stretched or squashed into its slot.
+    static let rowHeight: CGFloat = 28
+    static let rowGap: CGFloat = 8
+    static let statusHeight: CGFloat = 16
+
+    init(branches: [String], withWorktree: Set<String>, defaultBase: String?, width: CGFloat) {
+        existing = Set(branches)
+        self.withWorktree = withWorktree
+        nameField = BranchNameField(branches: branches, width: width)
+        baseChooser = BranchChooser(
+            branches: branches, withWorktree: withWorktree, width: width,
+            placeholder: "From: current branch", prefix: "From: ", initial: defaultBase)
+        let height = Self.rowHeight * 2 + Self.rowGap * 2 + Self.statusHeight
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: height))
+
+        // AppKit's origin is bottom-left, so the topmost row has the largest y.
+        nameField.frame = NSRect(
+            x: 0, y: Self.rowHeight + Self.rowGap * 2 + Self.statusHeight,
+            width: width, height: Self.rowHeight)
+        baseChooser.frame = NSRect(
+            x: 0, y: Self.statusHeight + Self.rowGap, width: width, height: Self.rowHeight)
+        status.frame = NSRect(x: 0, y: 0, width: width, height: Self.statusHeight)
+        status.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        status.textColor = .secondaryLabelColor
+        status.lineBreakMode = .byTruncatingTail
+        addSubview(nameField)
+        addSubview(baseChooser)
+        addSubview(status)
+
+        nameField.delegate = self
+        baseChooser.onChange = { [weak self] in self?.sync() }
+        sync()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+    // Typing, and picking from the dropdown. The selection notification arrives
+    // *before* the field's string value is updated, so that one is read on the
+    // next turn of the run loop rather than immediately.
+    func controlTextDidChange(_ obj: Notification) { sync() }
+    func comboBoxSelectionDidChange(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in self?.sync() }
+    }
+
+    /// One place where every consequence of the branch name is worked out: what
+    /// the base row is for, what the status line says, and whether there is
+    /// anything to create at all.
+    private func sync() {
+        // An existing branch has its own history; there is nothing to fork it
+        // from, so the row greys rather than sitting there looking answerable.
+        baseChooser.isEnabled = !isExistingBranch
+        status.stringValue = statusText()
+        onValidityChange?(isValid)
+    }
+
+    /// What the click is about to do — the thing the popover's row labels used to
+    /// say, moved somewhere it can be read without opening anything.
+    private func statusText() -> String {
+        guard let branch else { return "" }
+        if withWorktree.contains(branch) {
+            return "\u{201c}\(branch)\u{201d} already has a worktree — this opens it."
+        }
+        if isExistingBranch {
+            return "Checks out \u{201c}\(branch)\u{201d} in a new worktree."
+        }
+        guard let base = baseChooser.branch else {
+            return "Creates \u{201c}\(branch)\u{201d} in a new worktree."
+        }
+        return "Creates \u{201c}\(branch)\u{201d} from \u{201c}\(base)\u{201d}."
     }
 }
 

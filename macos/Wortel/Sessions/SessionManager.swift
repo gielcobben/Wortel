@@ -671,13 +671,14 @@ final class SessionManager {
     /// exactly what to do next, and a paraphrase would drop the path.
     func newSession(
         onBranch branch: String,
+        base: String? = nil,
         inFolder folder: String? = nil,
         onFailure: @escaping (String) -> Void
     ) {
         Task { [weak self] in
             guard let self else { return }
             if case .failure(let failure) = await self.openSession(
-                onBranch: branch, inFolder: folder) {
+                onBranch: branch, base: base, inFolder: folder) {
                 onFailure(failure.message)
             }
         }
@@ -699,9 +700,13 @@ final class SessionManager {
         let message: String
     }
 
+    /// `base` is the ref a *new* branch forks from, and is ignored for one that
+    /// already exists — that branch has its own history, and there is nothing to
+    /// fork. nil means HEAD, which is the caller saying "wherever I am".
     @discardableResult
     func openSession(
-        onBranch branch: String, inFolder folder: String? = nil, from cwd: String? = nil
+        onBranch branch: String, base: String? = nil,
+        inFolder folder: String? = nil, from cwd: String? = nil
     ) async -> Result<Session, Failure> {
         let branch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !branch.isEmpty else { return .failure(Failure(message: "No branch given.")) }
@@ -725,19 +730,33 @@ final class SessionManager {
             path = match.path
         } else {
             path = GitWorktree.path(forBranch: branch, repoRoot: repoRoot)
-            // A branch that exists gets checked out; one that doesn't is
-            // created from HEAD, which is what "new session on a new branch"
-            // means when you're standing on the branch you want to fork.
+            // A branch that exists gets checked out; one that doesn't is created
+            // from `base` — or from HEAD when the caller named none, which is
+            // what "new session on a new branch" means when you're standing on
+            // the branch you want to fork.
+            //
+            // Naming a base also takes the *worktree you launched from* out of
+            // the answer. `repoRoot(for:)` resolves to the linked worktree when
+            // the selected session is in one, so `git worktree add -b … HEAD`
+            // runs there and forks that branch — which is why a "new" branch
+            // could silently inherit `update-website` instead of trunk. A ref
+            // resolves the same in every worktree of the repository.
             let known = await GitService.branches(root: root)
                 .contains { !$0.isRemote && $0.name == branch }
             // A repository with no commits has a HEAD that resolves to
             // nothing, so it can't be a base — git infers an orphan branch
             // instead, which is exactly right for a first branch in a fresh
             // repo. Handing it `HEAD` regardless is what made "git init and
-            // then a session" fail with `invalid reference: HEAD`.
-            let source: GitService.WorktreeSource = known
-                ? .existingBranch
-                : .newBranch(from: await GitService.hasCommits(root: root) ? "HEAD" : nil)
+            // then a session" fail with `invalid reference: HEAD`, and a named
+            // base is no better: there is no ref for it to be.
+            let source: GitService.WorktreeSource
+            if known {
+                source = .existingBranch
+            } else if await GitService.hasCommits(root: root) {
+                source = .newBranch(from: base ?? "HEAD")
+            } else {
+                source = .newBranch(from: nil)
+            }
             if let error = await GitService.addWorktree(
                 root: root, at: path, branch: branch, source: source) {
                 return .failure(Failure(message: error))
@@ -761,6 +780,14 @@ final class SessionManager {
         guard let cwd = selected?.cwd,
               let root = await GitService.repoRoot(for: cwd) else { return [] }
         return await GitService.branches(root: root).filter { !$0.isRemote }.map(\.name)
+    }
+
+    /// The repository's trunk, for the dialog's "From" default. nil outside a
+    /// repository, or in one with no branch to name yet.
+    func defaultBranch() async -> String? {
+        guard let cwd = selected?.cwd,
+              let root = await GitService.repoRoot(for: cwd) else { return nil }
+        return await GitService.defaultBranch(root: root)
     }
 
     /// Which of those already have a worktree — the picker says so on the row,

@@ -189,34 +189,53 @@ func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = ni
     Task { @MainActor in
         let branches = await manager.localBranches()
         let withWorktree = await manager.branchesWithWorktrees()
-        guard let branch = promptBranch(branches: branches, withWorktree: withWorktree) else {
-            return
-        }
-        openSessionOnBranch(manager, branch: branch, inFolder: folder)
+        let defaultBase = await manager.defaultBranch()
+        guard let choice = promptBranch(
+            branches: branches, withWorktree: withWorktree, defaultBase: defaultBase)
+        else { return }
+        openSessionOnBranch(manager, branch: choice.branch, base: choice.base, inFolder: folder)
     }
 }
 
-/// The dialog: the compact alert, with the branch chooser as its one control.
+/// The dialog: the compact alert, with the branch to open and the ref a new one
+/// forks from.
 @MainActor
-private func promptBranch(branches: [String], withWorktree: Set<String>) -> String? {
+private func promptBranch(
+    branches: [String], withWorktree: Set<String>, defaultBase: String?
+) -> (branch: String, base: String?)? {
     let alert = NSAlert()
     alert.messageText = "New Session on Branch"
     // No informative text, which is what keeps this the compact centred alert
     // rather than the wide left-aligned one — see promptFolderName.
     alert.addButton(withTitle: "Create")
     alert.addButton(withTitle: "Cancel")
-    let chooser = BranchChooser(branches: branches, withWorktree: withWorktree)
-    alert.accessoryView = chooser
-    alert.window.initialFirstResponder = chooser
-    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-    return chooser.branch
+    // Sized to the buttons, which is why this comes after they're added: the row
+    // is the only self-sizing thing in the dialog, so it's what the chooser has
+    // to match. See `BranchChooser.alignedWidth`.
+    let accessory = BranchDialogAccessory(
+        branches: branches, withWorktree: withWorktree, defaultBase: defaultBase,
+        width: BranchChooser.alignedWidth(for: alert))
+    alert.accessoryView = accessory
+    alert.window.initialFirstResponder = accessory.initialResponder
+    // Nothing to create until the field names something. Accepting the click and
+    // then silently doing nothing is the same answer delivered worse — Tower
+    // greys its "Create Worktree" for exactly this, and it's the one thing that
+    // tells you the dialog is waiting on you.
+    let create = alert.buttons.first
+    create?.isEnabled = accessory.isValid
+    accessory.onValidityChange = { create?.isEnabled = $0 }
+    guard alert.runModal() == .alertFirstButtonReturn, let branch = accessory.branch else {
+        return nil
+    }
+    return (branch, accessory.base)
 }
 
 @MainActor
 func openSessionOnBranch(
-    _ manager: SessionManager, branch: String, inFolder folder: String? = nil
+    _ manager: SessionManager, branch: String, base: String? = nil,
+    inFolder folder: String? = nil
 ) {
-    manager.newSession(onBranch: branch, inFolder: folder) { message in
+    manager.newSession(onBranch: branch, base: base, inFolder: folder) { message in
         let alert = NSAlert()
         alert.messageText = "Couldn't open a worktree for \u{201c}\(branch)\u{201d}"
         alert.informativeText = message

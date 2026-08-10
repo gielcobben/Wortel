@@ -129,6 +129,11 @@ const schema = [
               <Content />
             </PreviewWindow>
           ))}
+          <!-- The resize corner. It belongs to the frame, not to a window:
+               all 18 share one box, so dragging it resizes whichever is open
+               and every one behind it. Invisible until the pointer is over the
+               window, the way a real one is. -->
+          <span class="grip" aria-hidden="true"></span>
         </div>
       </div>
     </div>
@@ -147,6 +152,144 @@ const schema = [
       </nav>
     </footer>
   </main>
+
+  <!-- Drag by the titlebar, resize by the corner, both resting on whole grid
+       cells: the same behaviour, and the same reasons, as the app window on the
+       landing page. is:inline so it runs before first paint rather than after,
+       which is what keeps the window from painting once and then jumping.
+
+       All of it is enhancement. With no JavaScript the window keeps the size and
+       place the stylesheet gives it, every release is still readable, and every
+       link still works. -->
+  <script is:inline>
+    const CELL = 36;
+    const TITLEBAR = 52;              // the preview window's own strip
+    const DEFAULT = { w: 720, h: 540 };
+    const MIN = { w: 396, h: 288 };   // 11 x 8 cells, both whole ones
+
+    const rail = document.querySelector('.app-rail');
+    const frame = document.querySelector('.app-frame');
+    const grip = frame.querySelector('.grip');
+    const narrow = window.matchMedia('(max-width: 900px)');
+
+    let size = { ...DEFAULT };
+    let pos = { x: 0, y: 0 };
+    let touched = false;   // until it is moved or resized, it follows the default
+    let settleTimer;
+
+    // hi can fall below lo on a very short rail, so lo wins rather than
+    // producing a negative box.
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+    const down = (v) => Math.floor(v / CELL) * CELL;
+    const near = (v) => Math.round(v / CELL) * CELL;
+
+    function avail() {
+      const cs = getComputedStyle(rail);
+      return {
+        w: rail.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+        h: rail.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+      };
+    }
+
+    function apply() {
+      frame.style.width = size.w + 'px';
+      frame.style.height = size.h + 'px';
+      frame.style.transform = pos.x || pos.y ? `translate(${pos.x}px, ${pos.y}px)` : '';
+    }
+
+    // Size first, then position: how far the window may travel depends on how
+    // big it is, so clamping them the other way round lets a resize leave it
+    // hanging outside the rail.
+    function contain() {
+      const a = avail();
+      size.w = clamp(size.w, MIN.w, a.w);
+      size.h = clamp(size.h, MIN.h, a.h);
+      pos.x = clamp(pos.x, 0, a.w - size.w);
+      pos.y = clamp(pos.y, 0, a.h - size.h);
+    }
+
+    function layout() {
+      if (narrow.matches) {
+        frame.style.width = frame.style.height = frame.style.transform = '';
+        return;
+      }
+      if (!touched) { size = { ...DEFAULT }; pos = { x: 0, y: 0 }; }
+      contain();
+      apply();
+    }
+
+    // On release, snap all four edges onto grid lines. The rail's origin is
+    // (432, 36), both whole cells, so a snapped size AND a snapped offset put
+    // every edge on a line the page is already painting. Snapping only the size
+    // would leave the right edge floating wherever the left one landed.
+    function settle() {
+      const a = avail();
+      size.w = clamp(near(size.w), MIN.w, down(a.w));
+      size.h = clamp(near(size.h), MIN.h, down(a.h));
+      pos.x = clamp(near(pos.x), 0, down(a.w - size.w));
+      pos.y = clamp(near(pos.y), 0, down(a.h - size.h));
+      frame.classList.add('settling');
+      apply();
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => frame.classList.remove('settling'), 200);
+    }
+
+    function track(onMove, bodyClass) {
+      // A gesture interrupting a settle has to be instant from the first frame.
+      clearTimeout(settleTimer);
+      frame.classList.remove('settling');
+      touched = true;
+      frame.classList.add('gesturing');
+      document.body.classList.add(bodyClass);
+      const stop = () => {
+        settle();
+        frame.classList.remove('gesturing');
+        document.body.classList.remove(bodyClass);
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', stop);
+        window.removeEventListener('pointercancel', stop);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', stop);
+      window.addEventListener('pointercancel', stop);
+    }
+
+    frame.addEventListener('pointerdown', (e) => {
+      if (narrow.matches) return;
+      if (e.target.closest('.grip')) return;             // that gesture is the resize
+      if (e.target.closest('a, button, input')) return;  // a link inside a note
+      // Below the strip is the document: selecting a paragraph must not drag
+      // the window out from under the pointer.
+      if (e.clientY - frame.getBoundingClientRect().top >= TITLEBAR) return;
+      const grab = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+      const a = avail();
+      track((ev) => {
+        pos.x = clamp(ev.clientX - grab.x, 0, a.w - size.w);
+        pos.y = clamp(ev.clientY - grab.y, 0, a.h - size.h);
+        apply();
+      }, 'dragging-app');
+      e.preventDefault();   // no text selection while dragging
+    });
+
+    grip.addEventListener('pointerdown', (e) => {
+      if (narrow.matches) return;
+      const start = { x: e.clientX, y: e.clientY, w: size.w, h: size.h };
+      const a = avail();
+      track((ev) => {
+        // The corner grows the window right and down, so the room it has is
+        // whatever is left of the rail past where the window already starts.
+        size.w = clamp(start.w + (ev.clientX - start.x), MIN.w, a.w - pos.x);
+        size.h = clamp(start.h + (ev.clientY - start.y), MIN.h, a.h - pos.y);
+        apply();
+      }, 'resizing-win');
+      e.preventDefault();
+      e.stopPropagation();   // never also a drag
+    });
+
+    new ResizeObserver(layout).observe(rail);
+    narrow.addEventListener('change', layout);
+    layout();
+  </script>
 </Layout>
 
 <style>
@@ -212,6 +355,13 @@ const schema = [
     position: relative;
     width: min(100%, 720px);
     height: min(100%, 540px);
+    /* global.css eases .app-frame's width and height, which is right on the
+       landing page: there they only change when the viewport does. Here a
+       resize gesture changes them on every pointermove, so each frame
+       re-targets a 200ms ease and the corner trails the pointer by a fifth of
+       a second. The gesture has to be instant; the ease belongs to the settle,
+       and .settling below is the only place it comes back. */
+    transition: none;
   }
   .app-frame > :global(.win) {
     position: absolute;
@@ -221,6 +371,56 @@ const schema = [
   .app-frame > :global(.win:target) { display: flex; }
   /* Arriving with no hash: the newest release is open. */
   .app-frame:not(:has(:target)) > :global(.win[data-latest]) { display: flex; }
+
+  /* ---- drag and resize ----------------------------------------------------
+     Both are progressive enhancement: with no JavaScript the window keeps the
+     size and place the stylesheet gives it, which is a working page. */
+  .app-frame > :global(.win .tb) { cursor: grab; }
+  :global(body.dragging-app) .app-frame > :global(.win .tb) { cursor: grabbing; }
+
+  /* Only while settling, so a gesture tracks the pointer to the pixel and only
+     the last hop onto the grid is animated. */
+  .app-frame.settling {
+    transition:
+      width 0.18s cubic-bezier(0.3, 0.9, 0.3, 1),
+      height 0.18s cubic-bezier(0.3, 0.9, 0.3, 1),
+      transform 0.18s cubic-bezier(0.3, 0.9, 0.3, 1);
+  }
+  /* The open window carries a 80px-blur drop shadow, which is a real repaint to
+     move. Promoting the frame for the length of the gesture (and only that
+     long: a permanent will-change keeps the layer alive for nothing) is what
+     keeps a drag on one frame. */
+  .app-frame.gesturing { will-change: transform, width, height; }
+
+  .grip {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 22px;
+    height: 22px;
+    z-index: 6;
+    cursor: nwse-resize;
+    touch-action: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  /* Two short strokes in the corner, drawn only when the pointer is on the
+     window. macOS shows nothing at all, but this is a page, where nobody
+     expects a window to resize unless it says so. */
+  .grip::after {
+    content: "";
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    width: 9px;
+    height: 9px;
+    border-right: 1.5px solid var(--text-50);
+    border-bottom: 1.5px solid var(--text-50);
+    border-bottom-right-radius: 3px;
+  }
+  .app-frame:hover .grip, .grip:active { opacity: 0.75; }
+  :global(body.resizing-win) { cursor: nwse-resize; }
+  :global(body.resizing-win) * { cursor: nwse-resize !important; user-select: none; }
 
   /* Stacked. The window is a desktop conceit: on a phone it stops being a
      picture of an app and becomes 18 boxes to scroll past, so they flow as

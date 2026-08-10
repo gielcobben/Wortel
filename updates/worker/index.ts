@@ -63,7 +63,16 @@ export default {
       return Response.redirect('https://wortel.sh/updates', 302);
     }
 
-    const key = decodeURIComponent(url.pathname.slice(1));
+    // A malformed percent-escape (`/%zz`) makes decodeURIComponent throw, and
+    // an uncaught throw here is a 500 on the one hostname every installed copy
+    // checks unattended. It is a request for a key that cannot exist, so it
+    // gets the answer a key that does not exist gets.
+    let key: string;
+    try {
+      key = decodeURIComponent(url.pathname.slice(1));
+    } catch {
+      return new Response('Not Found', { status: 404 });
+    }
 
     if (request.method === 'HEAD') {
       const head = await env.BUCKET.head(key);

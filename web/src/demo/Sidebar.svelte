@@ -143,12 +143,19 @@
     place-items: center;
   }
 
+  /* Same control, same fix as the macOS 27 sidebar: the app used to pad this
+     button 10 horizontal / 6 vertical, which left the glyph nearer the bottom
+     edge than the left. ContentView.swift pads it 12 on all four sides now, so
+     the glyph's centre sits 24 off each of the CARD's edges here. padding: 0
+     because a button's UA padding would otherwise leave a 28px box 16px of
+     content and push the 20px glyph off centre. */
   .add {
     position: absolute;
-    left: 6px;
-    bottom: 4px;
+    left: 8.5px;
+    bottom: 8.5px;
     width: 28px; height: 28px;
     border: 0;
+    padding: 0;
     background: transparent;
     color: var(--w-chrome-sub);
     display: grid;

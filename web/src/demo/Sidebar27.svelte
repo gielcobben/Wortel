@@ -40,7 +40,7 @@
     {/each}
 
     <button class="add" type="button" aria-label="New session">
-      <Plus size={20} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />
+      <Plus size={15.5} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />
     </button>
   </div>
 
@@ -145,12 +145,24 @@
     place-items: center;
   }
 
+  /* DELIBERATELY NOT THE REFS. The app had this button on asymmetric padding
+     (10 horizontal, 6 vertical), which put the glyph nearer the bottom edge
+     than the left and read as crammed into the corner. Fixed in the app
+     (ContentView.swift: .padding(12) on all four sides), and mirrored here:
+     the glyph's centre sits 24 off the left and 24 off the bottom, so it rests
+     on the corner's diagonal. The 24px box is the hit area, centred on it.
+
+     Its padding is zeroed because a button's UA padding is 1px 6px, which
+     leaves a 24px box only 12px of content: the 15.5px glyph then overflows to
+     the content edge rather than centring. Only this button is small enough to
+     hit that; the toolbar's are wide enough to swallow it. */
   .add {
     position: absolute;
-    left: 8px;
-    bottom: 6px;
-    width: 28px; height: 28px;
+    left: 11.5px;
+    bottom: 11.5px;
+    width: 24px; height: 24px;
     border: 0;
+    padding: 0;
     background: transparent;
     color: var(--w-chrome-sub);
     display: grid;

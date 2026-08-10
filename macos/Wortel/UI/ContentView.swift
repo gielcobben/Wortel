@@ -60,8 +60,15 @@ struct SidebarPane: View {
                     .help("New Session or Folder")
                     Spacer()
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                // Equal on all four sides, so the 24pt hit box's centre sits on
+                // the window corner's diagonal rather than leaning into it —
+                // asymmetric padding (it was 10 / 6) puts the glyph nearer one
+                // edge than the other, which is the part that reads as crammed.
+                // 12 rather than the smallest value that lines the plus up with
+                // the session names: a source-list's bottom bar is a band of its
+                // own, and a control tucked into the rounded corner looks like it
+                // slid there. Puts the glyph's centre 24pt off each edge.
+                .padding(12)
             }
     }
 }

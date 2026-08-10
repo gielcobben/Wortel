@@ -82,8 +82,11 @@ proxy, and leaves everyone else on the new look. A visitor it places on macOS
 window in `public/refs/` as `m27-{light,dark}-{history,changes,files}.png`, then
 open `/compare?ref=history&theme=light&mode=onion` (also `diff`, `app`, `ref`,
 and `look=26`) to overlay the live window on one at 1:1. Both the refs and that
-page are gitignored: local tools, and 7MB of screenshots has no business on
-wortel.sh.
+page are gitignored, AND `npm run build` deletes them out of `dist/`: they are
+local tools, 7MB of screenshots has no business on wortel.sh, and a release is
+allowed to deploy the site by itself (`scripts/release.sh --publish` rebuilds
+it so the version number refreshes). Nothing about keeping them out may depend
+on whoever runs that remembering to.
 
 Screenshots off a Mac are **Display P3**. Sampling one raw and pasting the
 number into CSS (which is sRGB) shifts every saturated colour: it is what first
@@ -163,10 +166,14 @@ before anything is built or uploaded.
 
 Regenerating the images (needs ImageMagick + librsvg):
 
+The 2784x1824 masters live in `art/`, NOT in `public/`: they are build inputs,
+and while they sat in `public/` they were published too, which was 4.2MB of the
+5.2MB deploy for two files nothing ever referenced.
+
 ```sh
-# the app screenshot, from the 2784x1824 app shots. Not embedded in the page:
-# it is what SoftwareApplication.screenshot points at in the structured data.
-magick public/app-shot-dark.png -resize 1392x912 -strip public/screenshot.png
+# the app screenshot, from the masters in art/. Not embedded in the page: it is
+# what SoftwareApplication.screenshot points at in the structured data.
+magick art/app-shot-dark.png -resize 1392x912 -strip public/screenshot.png
 # icons
 rsvg-convert -w 180 -h 180 public/favicon.svg | magick - -background '#0e0f0d' -flatten public/apple-touch-icon.png
 rsvg-convert -w 96  -h 96  public/favicon.svg -o public/favicon-96.png

@@ -244,6 +244,47 @@ enum GitService {
 
     // MARK: - Worktrees
 
+    /// Where this checkout keeps its git state, when that is somewhere other than
+    /// `<root>/.git` — which is exactly the linked-worktree case.
+    ///
+    /// A linked worktree's `.git` is a *file* pointing at
+    /// `<primary>/.git/worktrees/<name>`, and that directory is where its HEAD,
+    /// its index and its reflog live. So nothing under the worktree's own root
+    /// moves when you stage, commit, or check out in it — which makes a watcher
+    /// rooted at the work tree blind to every git operation performed there, and
+    /// leaves the panel showing files that were committed minutes ago. The
+    /// primary checkout answers with `<root>/.git`, already inside the work tree,
+    /// so it gets nothing extra.
+    ///
+    /// Deliberately *not* the common dir (`<primary>/.git`): our own gitdir is
+    /// what carries this checkout's HEAD and index, while the common dir also
+    /// carries `objects/` and every *other* worktree's state — watching it would
+    /// make one agent's fetch scan the work tree of every open session.
+    static func externalGitDir(root: String) async -> String? {
+        let result = await run(["rev-parse", "--absolute-git-dir"], in: root)
+        guard result.ok else { return nil }
+        let dir = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !dir.isEmpty, !isPath(dir, within: root) else { return nil }
+        return dir
+    }
+
+    /// Whether `path` is `root` or sits under it.
+    ///
+    /// Two ways to get this wrong, and both answer "no" to a path that is
+    /// plainly inside: `hasPrefix` on its own calls `/a/repo-old` a child of
+    /// `/a/repo`, so the comparison is on whole components; and a repo under
+    /// `/tmp` or `/var` is reached by a symlink, so one side can say `/var/…`
+    /// while git answers with `/private/var/…`. Both sides are resolved — the
+    /// same trap the worktree-ownership check has to avoid.
+    private static func isPath(_ path: String, within root: String) -> Bool {
+        func resolved(_ path: String) -> String {
+            URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        }
+        let root = resolved(root)
+        let path = resolved(path)
+        return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
+    }
+
     /// Every checkout of this repository, primary first.
     static func worktrees(root: String) async -> [GitWorktree] {
         let result = await run(["worktree", "list", "--porcelain"], in: root)

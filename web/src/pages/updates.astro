@@ -180,7 +180,7 @@ const schema = [
   <script is:inline>
     const CELL = 36;
     const TITLEBAR = 52;              // the preview window's own strip
-    const DEFAULT = { w: 720, h: 540 };
+    const DEFAULT = { w: 576, h: 612 };   // 16 x 17 cells
     const MIN = { w: 396, h: 288 };   // 11 x 8 cells, both whole ones
 
     const rail = document.querySelector('.app-rail');
@@ -228,7 +228,17 @@ const schema = [
         frame.style.width = frame.style.height = frame.style.transform = '';
         return;
       }
-      if (!touched) { size = { ...DEFAULT }; pos = { x: 0, y: 0 }; }
+      if (!touched) {
+        // Centred in the rail, then floored to whole cells so it opens on a
+        // grid intersection rather than a half pixel off one. Floor and not
+        // round, so it can never be pushed past the far edge on an odd size.
+        const a = avail();
+        size = { w: Math.min(DEFAULT.w, a.w), h: Math.min(DEFAULT.h, a.h) };
+        pos = {
+          x: Math.max(0, down((a.w - size.w) / 2)),
+          y: Math.max(0, down((a.h - size.h) / 2)),
+        };
+      }
       contain();
       apply();
     }
@@ -479,8 +489,13 @@ const schema = [
     --bot-fade: 0px;
     min-height: 0;
     overflow-y: auto;
+    /* Explicit, and not just left to the default: setting overflow-y alone
+       computes the other axis to auto, so a row a pixel too wide would give the
+       list a horizontal scrollbar of its own. There is nothing to see sideways
+       in a list of filenames. */
+    overflow-x: hidden;
     overscroll-behavior: contain;
-    padding-top: 36px;
+    padding-top: 30px;
     scrollbar-width: thin;
     scrollbar-color: rgba(128, 128, 128, 0.4) transparent;
     /* Set to 0 by default, so with the script absent (or the list short enough)
@@ -498,15 +513,19 @@ const schema = [
   }
   .files .head { color: var(--text-50); margin-bottom: 10px; }
   .files ol { list-style: none; }
+  /* Tight enough that all eighteen fit a normal window without scrolling. The
+     list is an index, not reading matter: its job is to be scannable in one
+     look, and a row does not need the leading of a paragraph to manage that.
+     The scroll and its fades stay for the windows too short to hold them. */
   .files a {
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 12px;
     align-items: baseline;
-    padding: 4px 8px;
+    padding: 2px 8px;
     margin: 0 -8px;
-    border-radius: 6px;
-    line-height: 1.5;
+    border-radius: 5px;
+    line-height: 1.45;
   }
   .files a:hover { background: var(--grid); }
   /* A visible ring for the keyboard, and only for the keyboard: tabbing the
@@ -515,8 +534,8 @@ const schema = [
     outline: 2px solid var(--accent);
     outline-offset: 1px;
   }
-  .fname { font-family: var(--mono); font-size: 12.5px; color: var(--text-70); }
-  .fdate { font-size: 12px; color: var(--text-50); }
+  .fname { font-family: var(--mono); font-size: 12px; color: var(--text-70); }
+  .fdate { font-size: 11.5px; color: var(--text-50); }
   /* Hover is the only state that can be stated without knowing which file is
      open. The open row itself has two rules, for the two paths: the generated
      :target ones above when there is no script, and these when there is. */
@@ -530,16 +549,17 @@ const schema = [
      windows are stacked in it and :target picks one, which keeps every release
      in the HTML for anything that reads the page rather than looks at it.
      ========================================================================== */
-  /* A preview window, not the whole app, so it is nowhere near the app window's
-     size: 20 x 15 cells, anchored at the rail's (432, 36) like the landing
-     page's window is. Both dimensions are whole cells, so all four edges land
-     on grid lines and the graph paper carries the rest of the rail. This
-     overrides .app-frame's own round(min(100%, --app-max-w)) sizing, which is
-     the real app's dimensions and belongs to the page that draws the real app. */
+  /* A preview window, not the whole app: 16 x 17 cells, portrait, which is the
+     shape a document window actually has. Both are whole cells, so all four
+     edges land on grid lines. This overrides .app-frame's own
+     round(min(100%, --app-max-w)) sizing, which is the real app's dimensions
+     and belongs to the page that draws the real app.
+     The script centres it in the rail; without the script it stays here, at
+     the rail's top left. */
   .app-frame {
     position: relative;
-    width: min(100%, 720px);
-    height: min(100%, 540px);
+    width: min(100%, 576px);
+    height: min(100%, 612px);
     /* global.css eases .app-frame's width and height, which is right on the
        landing page: there they only change when the viewport does. Here a
        resize gesture changes them on every pointermove, so each frame

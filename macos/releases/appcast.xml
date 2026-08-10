@@ -3,6 +3,44 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.32.3</title>
+            <pubDate>Sun, 09 Aug 2026 23:19:30 -0400</pubDate>
+            <sparkle:version>2026.32.3</sparkle:version>
+            <sparkle:shortVersionString>2026.32.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>The git panel keeps up with a worktree</h1>
+<p class="date">Wortel 2026.32.3 &middot; 2026-08-09</p>
+<p>Two fixes to what the panels tell you, both in the case the app is most useful in: an agent working on its own worktree, unattended. If you run sessions that way, this is the release that stops them reporting stale work.</p>
+<ul>
+<li><strong>A worktree session’s git panel was blind to its own commits.</strong> A linked worktree keeps its HEAD and index under the primary checkout, so committing there moved nothing the panel was watching: the Changes list went on offering files that had been committed minutes ago. It watches that directory now. The primary checkout had the mirror of the same problem.</li>
+<li><strong>The file tree lost its colours.</strong> A changed file is supposed to colour every folder above it, so you can see where the work is without opening anything, and ignored entries like <code>node_modules</code> should stay grey. Neither happened when a session started at a repository root, because the root resolved a beat after the listing that needed it.</li>
+<li>Release notes now appear in the update dialog, and the whole changelog is at <a href="https://wortel.sh/updates">wortel.sh/updates</a>.</li>
+<li>The new-session button sits on the corner’s diagonal instead of leaning into it.</li>
+</ul>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.32.3.zip" length="18421843" type="application/octet-stream" sparkle:edSignature="D4gzEUGUwl77NutpSwISn/pja1My7mAFei9PFQW5i30+gd5XQx/OTLo7vAwlmrf53NgBjc8qmWfA7cPcP4v6Dw=="/>
+        </item>
+        <item>
             <title>2026.32.2</title>
             <pubDate>Sun, 09 Aug 2026 10:26:09 -0400</pubDate>
             <sparkle:version>2026.32.2</sparkle:version>
@@ -17,14 +55,6 @@
             <sparkle:shortVersionString>2026.32.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.32.1.zip" length="17466208" type="application/octet-stream" sparkle:edSignature="tJ25mDmAhwyLW5dKuBFYPcfWgThkB0wXepfzhJ5a70mbqqtYHl03OeaJOspqaXGr1BkDGOOYXhwqd/D0iln1BQ=="/>
-        </item>
-        <item>
-            <title>2026.31.5</title>
-            <pubDate>Fri, 31 Jul 2026 11:03:50 -0400</pubDate>
-            <sparkle:version>2026.31.5</sparkle:version>
-            <sparkle:shortVersionString>2026.31.5</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.31.5.zip" length="17392284" type="application/octet-stream" sparkle:edSignature="TEONAMatLDG3E6gc7SWtRQykQ2QTv9uOiy4k4/vea8UzJXqAHX+EPo+KQZQWiok26+0uBRr6cP+P0PSxNweNDQ=="/>
         </item>
     </channel>
 </rss>

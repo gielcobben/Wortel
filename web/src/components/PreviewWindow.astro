@@ -207,8 +207,9 @@ const { name, id, latest = false } = Astro.props;
      real one starts and stops.
      7px and fully rounded are the platform's proportions. The colour is mixed
      from --w-chrome-text so it inverts with the appearance for free, rather
-     than being a grey that happens to read on both. */
-  /* The box is the hit area, wider than the thumb it draws: a 7px target is a
+     than being a grey that happens to read on both.
+
+     The box is the hit area, wider than the thumb it draws: a 7px target is a
      target you miss, and the native one is generous for the same reason. The
      outermost few pixels still belong to the window's resize edge, which sits
      above this, so what is left is the part a pointer aims at anyway. */
@@ -228,17 +229,9 @@ const { name, id, latest = false } = Astro.props;
      eating clicks and text selection down the right edge of every note. */
   .win.scrollable.sb-on .sb { pointer-events: auto; }
 
-  /* The track appears under the thumb while the scrollbar is being used, the
-     way the platform's does. */
-  .sb::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: color-mix(in srgb, var(--w-chrome-text) 7%, transparent);
-    opacity: 0;
-    transition: opacity 0.15s ease;
-  }
-  .sb:hover::before, .win.sb-drag .sb::before { opacity: 1; }
+  /* No track. The box is a hit area and nothing else, so the thumb is the only
+     thing the scrollbar ever draws. */
+
   /* Two ways in, and both need .scrollable: a thumb the height of its own track
      is a scrollbar saying nothing. Scrolling shows it and a timer takes it away
      (see the script); hovering the window holds it, which macOS does not do but

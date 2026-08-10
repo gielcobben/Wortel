@@ -17,6 +17,7 @@ import PreviewWindow from '../components/PreviewWindow.astro';
 import { getCollection, render } from 'astro:content';
 import { compareVersions } from '../content.config';
 import { SITE } from '../data/site';
+import LegalNav from '../components/LegalNav.astro';
 
 const entries = await getCollection('releases');
 const releases = await Promise.all(
@@ -168,6 +169,7 @@ const schema = [
         <a href="/#faq">FAQ</a>
         <a href={SITE.appcast}>Update feed</a>
         <a href="/llms.txt">llms.txt</a>
+        <LegalNav />
       </nav>
     </footer>
   </main>

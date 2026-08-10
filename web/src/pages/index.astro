@@ -4,6 +4,7 @@ import Tour from '../demo/Tour.svelte';
 import SectionWindow from '../demo/SectionWindow.svelte';
 import { VIEWS, FIRST_SECTION } from '../demo/views.js';
 import { SITE, FEATURES, SECTIONS, FAQ, SPECS } from '../data/site';
+import LegalNav from '../components/LegalNav.astro';
 
 // The Sparkle feed lives at updates.wortel.sh; the newest signed zip is always
 // mirrored to Wortel-latest.zip, so a single stable download URL works forever.
@@ -299,6 +300,7 @@ const schema = [website, webpage, person, app];
         <a href="/compare">Compare</a>
         <a href="#faq">FAQ</a>
         <a href="/llms.txt">llms.txt</a>
+        <LegalNav />
       </nav>
     </footer>
   </main>

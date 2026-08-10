@@ -20,6 +20,7 @@
 import Layout from '../layouts/Layout.astro';
 import CompareGrid from '../components/CompareGrid.astro';
 import { SITE } from '../data/site';
+import LegalNav from '../components/LegalNav.astro';
 import { COMPARE, CATEGORIES } from '../data/compare';
 
 const abs = (p: string) => new URL(p, SITE.url).href;
@@ -94,6 +95,7 @@ const schema = [
         <a href="/updates">Changelog</a>
         <a href="/#faq">FAQ</a>
         <a href="/llms.txt">llms.txt</a>
+        <LegalNav />
       </nav>
     </footer>
   </main>

@@ -42,7 +42,42 @@ const releases = defineCollection({
   }),
 });
 
-export const collections = { releases };
+// ==========================================================================
+// The legal pages, in src/content/legal/.
+//
+// THE FILENAME IS THE ROUTE. `privacy.md` is /privacy. pages/[legal].astro
+// builds one page per file, so adding /security or /licences later is one
+// Markdown file and nothing else: no route, no template, and no footer edit,
+// because the footer reads this collection too.
+//
+// They are Markdown and not src/data/site.ts, unlike every other word on this
+// site, because these are the pages most likely to be edited by someone who is
+// not editing code, in a hurry, to correct something that has become untrue.
+// Prose in a .md file can be fixed without opening a template.
+//
+// HOUSE RULE, same as everywhere else: no em dashes anywhere in copy.
+// ==========================================================================
+const legal = defineCollection({
+  loader: glob({
+    pattern: '*.md',
+    base: './src/content/legal',
+    generateId: ({ entry }) => entry.replace(/\.md$/, ''),
+  }),
+  schema: z.object({
+    /** The <h1> and the <title>. */
+    title: z.string().min(1),
+    /** Meta description, and the standfirst under the heading. */
+    description: z.string().min(1),
+    /** Shown as "Last updated". Bump it whenever the text changes. */
+    updated: z.coerce.date(),
+    /** Label used in the site footer. */
+    nav: z.string().min(1),
+    /** Footer order. Lower sorts first. */
+    order: z.number().default(100),
+  }),
+});
+
+export const collections = { releases, legal };
 
 /**
  * Sort key for CalVer strings (`2026.32.2`). Compares component by component

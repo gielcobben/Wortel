@@ -1,0 +1,138 @@
+---
+// One page per file in src/content/legal/. privacy.md is /privacy.
+//
+// A route rather than two near-identical pages, so adding /security or
+// /licences later is one Markdown file and nothing else. The footer builds
+// itself from the same collection (see components/LegalNav.astro), so a new
+// file appears in the footer of every page without anyone editing a template.
+//
+// NO HERO AND NO WINDOW, for the same reason /compare has none: someone who
+// arrives here has a question, and showing them a terminal first answers a
+// question they did not ask. It reuses the .doc/.prose classes the landing
+// page's readable half already defines, so Markdown headings, lists and links
+// land on the site's existing typography with no styles of its own.
+import Layout from '../layouts/Layout.astro';
+import LegalNav from '../components/LegalNav.astro';
+import { getCollection, render } from 'astro:content';
+import { SITE } from '../data/site';
+
+export async function getStaticPaths() {
+  const pages = await getCollection('legal');
+  return pages.map((entry) => ({ params: { legal: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+
+const path = `/${entry.id}`;
+const abs = (p: string) => new URL(p, SITE.url).href;
+
+const updated = entry.data.updated.toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+
+// noindex would be wrong here: a privacy page a search engine cannot see is one
+// a person cannot find either, and being findable is most of the point.
+const schema = [
+  {
+    '@type': 'WebPage',
+    '@id': abs(`${path}#webpage`),
+    url: abs(path),
+    name: entry.data.title,
+    description: entry.data.description,
+    isPartOf: { '@id': abs('/#website') },
+    about: { '@id': abs('/#app') },
+    inLanguage: 'en',
+    dateModified: entry.data.updated.toISOString().slice(0, 10),
+  },
+];
+---
+
+<Layout
+  title={`${entry.data.title}: ${SITE.name}`}
+  description={entry.data.description}
+  path={path}
+  schema={schema}
+>
+  <main class="legal">
+    <article class="doc">
+      <div class="prose">
+        <p class="mark"><a href="/">{SITE.name}</a></p>
+        <h1>{entry.data.title}</h1>
+        <p class="lead">{entry.data.description}</p>
+        <p class="stamp">Last updated {updated}</p>
+        <Content />
+      </div>
+    </article>
+
+    <footer class="foot">
+      <p>
+        <strong>{SITE.name}</strong>: a native macOS terminal built on Ghostty.
+        Dutch for <em>root</em>.
+      </p>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href={SITE.download} data-ph="download_clicked" data-ph-location="legal-footer">Download</a>
+        <a href="/compare">Compare</a>
+        <a href="/updates">Changelog</a>
+        <LegalNav current={entry.id} />
+      </nav>
+    </footer>
+  </main>
+</Layout>
+
+<style>
+  /* The document sits where /compare's does: centred, no board, no window. */
+  .legal {
+    max-width: 1152px;
+    margin: 0 auto;
+    padding: 72px 36px 0;
+  }
+
+  .legal .doc { padding: 0; }
+
+  /* Wider than the landing page's 396px column, which is narrow because it is
+     read beside a window. There is no window here, and a paragraph of terms is
+     harder to read broken into six-word lines. */
+  .legal .prose { max-width: 640px; }
+
+  .mark {
+    margin-bottom: 28px;
+  }
+
+  h1 {
+    font-size: 28px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin: 0 0 10px;
+  }
+
+  .stamp {
+    font-size: 13px;
+    color: var(--text-45, var(--text-70));
+    margin: 6px 0 32px;
+  }
+
+  /* Headings inside the Markdown are h2, and .doc styles them already; this
+     only adds the breathing room a long document needs between sections.
+     No :first-of-type exception: every one of these pages opens with prose
+     rather than a heading, so zeroing the first h2's margin does not tighten
+     the top of the page, it welds the first section onto the introduction. */
+  .prose :global(h2) { margin-top: 40px; }
+
+  .prose :global(a) {
+    color: var(--text);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .foot { margin-top: 72px; }
+
+  @media (max-width: 720px) {
+    .legal { padding: 48px 24px 0; }
+  }
+</style>

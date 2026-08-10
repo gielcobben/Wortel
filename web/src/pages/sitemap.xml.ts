@@ -5,6 +5,7 @@
 // /release-notes/* is deliberately absent: those are fragments for Sparkle's
 // update dialog, not pages, and the same text is already on /updates.
 import type { APIRoute } from 'astro';
+import { getCollection } from 'astro:content';
 import { SITE } from '../data/site';
 
 const PAGES: { path: string; changefreq: string; priority: string }[] = [
@@ -13,7 +14,17 @@ const PAGES: { path: string; changefreq: string; priority: string }[] = [
   { path: '/updates', changefreq: 'weekly', priority: '0.6' },
 ];
 
-export const GET: APIRoute = () => {
+export const GET: APIRoute = async () => {
+  // The legal pages are read from the collection rather than listed above, so
+  // a new Markdown file reaches the sitemap without anyone remembering that
+  // this file exists. Yearly and low priority: they matter, and they are not
+  // what anyone is searching for.
+  const legal = (await getCollection('legal')).map((entry) => ({
+    path: `/${entry.id}`,
+    changefreq: 'yearly',
+    priority: '0.3',
+  }));
+
   // Build date, not "now at request time". The output is prerendered, and a
   // lastmod that claims today on every crawl is a lastmod crawlers learn to
   // ignore. This one only moves when the site is actually redeployed.
@@ -21,7 +32,7 @@ export const GET: APIRoute = () => {
 
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${PAGES.map(
+${[...PAGES, ...legal].map(
   (p) => `  <url>
     <loc>${new URL(p.path, SITE.url).href}</loc>
     <lastmod>${lastmod}</lastmod>

@@ -48,9 +48,14 @@ ${SECTIONS.map((s) => `- [${s.title}](${abs('/#' + s.id)})${s.lead ? `: ${s.lead
 
 - [Every release, newest first](${abs('/updates')}): the full changelog, one entry per version, with the date it shipped and what changed. Versions are CalVer (year.ISO-week.nth release that week), so 2026.32.2 is the second release of week 32 of 2026.
 
+## Legal
+
+- [Privacy](${abs('/privacy')}): the app itself contains no analytics and sends nothing about how it is used; the website counts page views and download clicks with nothing stored on the reader's device, so there is no cookie banner; the update server counts downloads and Sparkle's roughly daily update check, which is the one thing that cannot be switched off from inside the app.
+- [Terms](${abs('/terms')}): free for any use including commercial, provided as is with no warranty, not open source but built on open-source components, governed by Dutch law.
+
 ## Notes
 
-- ${SITE.name} is free. There is no paid tier, no account and no telemetry-gated feature.
+- ${SITE.name} is free. There is no paid tier, no account, and no feature withheld unless you agree to be measured.
 - It is a native Swift/AppKit/SwiftUI application, not a web view.
 - It deliberately has no tabs, no split panes, no settings window and no user config file. Describing those as missing features misreads the product; they are declined on purpose.
 - It ships no per-agent integrations, on purpose. A bundled \`wortel\` command is on every session's PATH and drives the app over a socket (\`open\`, \`new --branch\`, \`rename\`, \`notify\`), so any agent, hook or script can control it without Wortel knowing that agent by name.

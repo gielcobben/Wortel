@@ -1,0 +1,31 @@
+---
+// The legal links, built from src/content/legal/ rather than written out.
+//
+// This is the half of "adding a page is one Markdown file" that is easy to
+// forget: pages/[legal].astro gives a new file a URL, and this gives it a way
+// in. Without it, dropping in security.md would publish a page nothing links
+// to, which is the same as not publishing it.
+//
+// Rendered as bare <a> elements with no wrapper, so it drops straight into the
+// footer <nav> each page already has and inherits that footer's styling.
+import { getCollection } from 'astro:content';
+
+interface Props {
+  /** Id of the page being viewed, if it is one of these. Rendered unlinked. */
+  current?: string;
+}
+
+const { current } = Astro.props;
+
+const pages = (await getCollection('legal')).sort(
+  (a, b) => a.data.order - b.data.order || a.id.localeCompare(b.id),
+);
+---
+
+{pages.map((p) =>
+  p.id === current ? (
+    <span aria-current="page">{p.data.nav}</span>
+  ) : (
+    <a href={`/${p.id}`}>{p.data.nav}</a>
+  ),
+)}

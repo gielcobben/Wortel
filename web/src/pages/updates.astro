@@ -396,7 +396,21 @@ const schema = [
         thumb.style.height = h + 'px';
         thumb.style.transform = `translateY(${(track.clientHeight - h) * (scrollTop / room)}px)`;
       };
-      body.addEventListener('scroll', sync, { passive: true });
+      // Overlay behaviour: the thumb is shown by scrolling and taken away again
+      // a moment after it stops, unless the pointer is on the window, in which
+      // case it stays until the pointer leaves. The timer is what makes it feel
+      // like the platform's rather than like a bar that is simply always there.
+      let hide;
+      const show = (hold) => {
+        win.classList.add('sb-on');
+        clearTimeout(hide);
+        if (!hold) hide = setTimeout(() => win.classList.remove('sb-on'), 900);
+      };
+
+      body.addEventListener('scroll', () => { sync(); show(win.matches(':hover')); }, { passive: true });
+      win.addEventListener('pointerenter', () => show(true));
+      win.addEventListener('pointerleave', () => show(false));
+
       // Covers the two moments a scroll listener cannot: the window being
       // resized, and it going from display:none to open, which is a resize from
       // nothing and is why this needs no hook in openFile().

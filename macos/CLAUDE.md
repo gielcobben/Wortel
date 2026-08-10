@@ -314,7 +314,16 @@ keybind, check both files.
 ## Conventions & constraints
 
 - **Main-thread only** for everything Wortel owns; only libghostty callbacks
-  cross threads, and they marshal to main immediately.
+  cross threads, and they marshal to main immediately. `TelemetryClient` is the
+  one deliberate exception: it is an actor, because it is the only thing here
+  that touches the network and must never make the terminal wait.
+- **Nothing about the user's work leaves the machine.** Wortel reports anonymous
+  feature usage (`Wortel/Telemetry/`, opt-out, `docs/telemetry.md`) and that is
+  the whole of it. No case in `TelemetryEvent` takes a `String`, which is what
+  makes "could this leak a repo name" a question the compiler answers rather
+  than one you have to audit. Adding a `String` parameter to any event is the
+  change that breaks the promise on wortel.sh/privacy; if a question needs a
+  value that is not a small closed set, the answer is a bucket or no event.
 - Deliberately **feature-minimal**: no tabs, no splits, no inspector, no
   settings UI, no user-config loading. Returning `false`/doing nothing for those
   is intentional, not a gap to fill.

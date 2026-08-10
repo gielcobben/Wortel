@@ -46,11 +46,17 @@ final class PreviewWindows {
         // file lives somewhere else. It resolves for itself.
         if focus(url) { return }
 
+        let mode = PreviewMode.inferred(for: url.resolvingSymlinksInPath(),
+                                        hasChanges: hasChanges, hasDiffSource: diff.exists)
+        // The view it opened on, which is the only question here worth asking:
+        // Rendered Markdown, a diff and plain source are three different
+        // features sharing one window. The file this is about is never named.
+        Telemetry.capture(.previewOpened(mode: PreviewKind(mode)))
+
         let document = PreviewDocument(
             url: url,
             diffSource: diff,
-            mode: PreviewMode.inferred(for: url.resolvingSymlinksInPath(),
-                                       hasChanges: hasChanges, hasDiffSource: diff.exists),
+            mode: mode,
             highlighter: highlighter)
         let controller = PreviewWindowController(document: document, settings: settings)
         controller.onClose = { [weak self] closed in

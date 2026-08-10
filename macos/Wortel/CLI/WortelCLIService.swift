@@ -60,6 +60,13 @@ final class WortelCLIService {
     // MARK: - Commands
 
     private func handle(_ command: WortelCommand, reply: @escaping @Sendable (WortelResponse) -> Void) {
+        // Which verbs anyone actually uses. The whole argument for having a
+        // socket instead of per-agent integrations is that people wire it into
+        // their own hooks, and this is the only way to find out whether they
+        // do. The verb and nothing else: the path, the session name and the
+        // notification text are all arguments this line does not touch.
+        Telemetry.capture(.commandRun(verb: CommandVerb(command)))
+
         switch command {
         case .open(let path):
             reply(open(path))
@@ -123,7 +130,7 @@ final class WortelCLIService {
             }
         }
         guard let branch else {
-            let session = manager.newSession(cwd: cwd)
+            let session = manager.newSession(cwd: cwd, via: .cli)
             if let name { manager.rename(session, to: name) }
             orderFront()
             return reply(.success("Started \u{201c}\(session.name)\u{201d}.",

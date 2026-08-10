@@ -379,6 +379,17 @@ targets:
       # max-not-latest rule whose failure mode is silence: a blocked agent
       # hidden behind a folder that reports something calmer.
       - path: Wortel/Sessions/AttentionKind.swift
+      # What the app is allowed to report, and when it reports nothing. Every
+      # failure mode here is silent by construction: an event that carries one
+      # field too many, a bucket off by one, a DO_NOT_TRACK reading that fails
+      # open. None of them throws, none of them looks wrong in the app, and the
+      # first two would be a broken promise on wortel.sh/privacy rather than a
+      # bug. The client is here for its encoder only — the actor, the queue and
+      # the URLSession need a network and are not what is worth pinning.
+      - path: Wortel/Telemetry/TelemetryEvent.swift
+      - path: Wortel/Telemetry/TelemetrySettings.swift
+      - path: Wortel/Telemetry/TelemetryClient.swift
+      - path: Wortel/Telemetry/TelemetryBridging.swift
       # Process survival. The keeper is the one part of Wortel that has to
       # outlive the app, so it is tested for real — a server on a temp socket,
       # a client over a socket pair, actual ptys with actual shells on them.

@@ -65,6 +65,15 @@ enum MainMenu {
         // Routes through the responder chain to AppDelegate, which drives the
         // Sparkle updater and validates (disables) this item mid-check.
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates(_:)), keyEquivalent: "")
+        // The entire settings surface of a zero-config app, and one checkmark
+        // is the right size for it: there is no settings window to put this in,
+        // and that is the feature rather than the gap. AppDelegate carries the
+        // checkmark and HIDES the item outright on any build that cannot report
+        // anyway (Debug, a 0.0.0 dev build, DO_NOT_TRACK set), because a switch
+        // that controls nothing is worse than no switch at all.
+        appMenu.addItem(withTitle: "Share Anonymous Usage Data",
+                        action: #selector(AppDelegate.toggleTelemetry(_:)),
+                        keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Wortel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")

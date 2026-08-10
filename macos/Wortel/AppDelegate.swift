@@ -178,6 +178,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.cli = cli
 
         observeWindowTitle()
+
+        // Counted here and reported below, because both of these are consumed
+        // as the app comes up: a pending resume is cleared the moment its
+        // shell is ready to take it, so reading it a runloop turn later would
+        // report a number that shrinks with how fast the machine is.
+        let restored = manager.sessions.count
+        let resumed = manager.sessions.filter { $0.pendingResumeInput != nil }.count
+
+        // Deliberately after the first frame, and deliberately last. Cold
+        // launch is a benchmarked number (bench/measure.sh) and this feature is
+        // not allowed to move it, so nothing about reporting runs until the
+        // window is up: the client is not built, no preference is read and no
+        // request is made. Same one-runloop-turn trick as warmRemainingSurfaces.
+        DispatchQueue.main.async { [weak self] in
+            Telemetry.capture(.appLaunched(sessions: CountBucket(restored),
+                                           agentsResumed: CountBucket(resumed)))
+            self?.presentTelemetryNoticeIfNeeded()
+        }
+    }
+
+    /// When this launch started, for the uptime bucket on quit.
+    private let launchedAt = Date()
+
+    /// The one-time notice. Held only while it is on screen.
+    private var telemetryNotice: TelemetryNotice?
+
+    private func presentTelemetryNoticeIfNeeded() {
+        guard TelemetrySettings.needsNotice, let host = window?.contentView else { return }
+        let notice = TelemetryNotice()
+        telemetryNotice = notice
+        notice.present(in: host) { [weak self] in
+            // "No thanks" goes through the same funnel as the menu item, so
+            // there is one definition of what turning it off does, including
+            // the final event.
+            self?.toggleTelemetry(nil)
+        }
     }
 
     /// The toolbar is retained here because NSWindow doesn't own its delegate.
@@ -336,6 +372,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // it. The server recovers from a stale one on the next launch, but only
         // by proving it's stale — cheaper and less alarming to tidy up.
         cli?.stop()
+
+        // Last, and after the session state is safely on disk: this is the one
+        // place reporting is allowed to make anything wait, and it waits behind
+        // the things that actually matter. Bounded to well under two seconds
+        // whatever the network is doing (see Telemetry.drainOnQuit).
+        Telemetry.capture(.appQuit(uptime: DurationBucket(seconds: Date().timeIntervalSince(launchedAt))))
+        Telemetry.drainOnQuit()
     }
 
     // MARK: - Close confirmation
@@ -507,12 +550,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// returns you to History if that's where you were.
     @objc func toggleSourceControl(_ sender: Any?) {
         focusMainWindow()
-        gitPanel.activate(GitPanelModel.lastSourceControlPane)
+        gitPanel.activate(GitPanelModel.lastSourceControlPane, via: .shortcut)
     }
 
     /// ⌘⌥E — the same rule for the Files pane.
     @objc func toggleFileTree(_ sender: Any?) {
-        gitPanel.activate(.files)
+        gitPanel.activate(.files, via: .shortcut)
     }
 
     @objc func focusSourceControlList(_ sender: Any?) {
@@ -523,11 +566,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         updater.checkForUpdates()
     }
 
+    /// Turn anonymous reporting on or off. See `Wortel/Telemetry/` for what it
+    /// can send, which is a list short enough to read.
+    ///
+    /// Turning it OFF sends one last event and waits briefly for it, which is
+    /// the only time this feature makes anyone wait. It is worth the moment:
+    /// the opt-out rate is the single number that says whether opt-out was the
+    /// right default, and it is unknowable from any other source. Turning it
+    /// back ON says nothing, because an event announcing that someone opted in
+    /// would be the first event sent under a preference that was off when the
+    /// decision to send it was made.
+    @objc func toggleTelemetry(_ sender: Any?) {
+        if TelemetrySettings.isEnabledByUser {
+            Telemetry.captureOptOutThenStop()
+            TelemetrySettings.isEnabledByUser = false
+        } else {
+            TelemetrySettings.isEnabledByUser = true
+        }
+    }
+
     /// Grey out "Check for Updates…" while a check is already in flight (Sparkle
     /// drops `canCheckForUpdates` to false for the duration).
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(checkForUpdates(_:)) {
             return updater.canCheckForUpdates
+        }
+        if menuItem.action == #selector(toggleTelemetry(_:)) {
+            // Hidden entirely where it would be a lie: a Debug build, a 0.0.0
+            // dev build and a DO_NOT_TRACK environment all report nothing no
+            // matter what this says, so offering a switch would misrepresent
+            // what the app is doing.
+            let switchable = !TelemetrySettings.isDevelopmentBuild && !TelemetrySettings.doNotTrack
+            menuItem.isHidden = !switchable
+            menuItem.state = TelemetrySettings.isEnabled ? .on : .off
+            return switchable
         }
         // Each pane command reads "Hide" only when *its* pane is the one on
         // screen — with Files up, ⌘⌥G swaps rather than closes, so calling it

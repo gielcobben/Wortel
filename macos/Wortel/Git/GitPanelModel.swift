@@ -121,22 +121,30 @@ final class GitPanelModel {
     ///
     /// The single implementation behind both the toolbar and the menu, so ⌘⌥G,
     /// ⌘⌥E and the segments can't drift apart.
-    func activate(_ requested: InspectorPane) {
+    func activate(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
         if isVisible && pane == requested {
             setVisible(false)
             resolveCurrent()
         } else {
-            show(requested)
+            show(requested, via: origin)
         }
     }
 
     /// Show a pane without the toggle — for the paths where a click can only
     /// mean "give me this", never "close": reclaiming the column from the
     /// markdown preview, which is a view of neither pane.
-    func show(_ requested: InspectorPane) {
+    func show(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
+        let wasShowingThis = isVisible && pane == requested
         setPane(requested)
         if !isVisible { setVisible(true) }
         resolveCurrent()
+        // Only when this actually put a different pane in front of someone. A
+        // session switch that restores a panel already on that pane is not a
+        // use of the feature, and counting those would make whichever pane
+        // people leave open look like the one they keep choosing.
+        if !wasShowingThis {
+            Telemetry.capture(.inspectorShown(pane: InspectorPaneKind(requested), via: origin))
+        }
     }
 
     func toggle() {

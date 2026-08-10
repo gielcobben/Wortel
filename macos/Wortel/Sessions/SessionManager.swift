@@ -618,8 +618,14 @@ final class SessionManager {
 
     /// Create a session and select it; new sessions inherit the current
     /// working directory.
+    ///
+    /// `via` is reported and nothing else: it is the only way to learn whether
+    /// the `wortel` command is used by anyone, which is the whole premise of
+    /// shipping a socket instead of per-agent integrations. It defaults to the
+    /// menu because that is what an unannotated caller is.
     @discardableResult
-    func newSession(cwd: String? = nil, inFolder folder: String? = nil) -> Session {
+    func newSession(cwd: String? = nil, inFolder folder: String? = nil,
+                    via origin: SessionOrigin = .menu) -> Session {
         // New sessions land next to what you're looking at: the explicit folder
         // (header context menu) or the selected session's folder, else top level.
         let dir = folder ?? selected?.folderPath
@@ -639,6 +645,7 @@ final class SessionManager {
         if let dir { collapsedFolders.remove(dir) } // never select into a hidden row
         selectedID = session.id
         scheduleSave()
+        Telemetry.capture(.sessionCreated(via: origin))
         return session
     }
 
@@ -774,7 +781,7 @@ final class SessionManager {
                 return .failure(Failure(message: error))
             }
         }
-        let session = newSession(cwd: path, inFolder: folder)
+        let session = newSession(cwd: path, inFolder: folder, via: .worktree)
         // Named for the branch rather than for the slug its directory got —
         // and deliberately as a *user* name, which is what `rename` records.
         // A worktree session's identity is its branch: it's what the
@@ -937,6 +944,9 @@ final class SessionManager {
         normalizeOrder()
         if let folder = session.folderPath { collapsedFolders.remove(folder) }
         scheduleSave()
+        // Whether people name sessions themselves, which is the premise of the
+        // sidebar. `trimmed` is the name they chose and stays here.
+        Telemetry.capture(.sessionRenamed(automatic: false))
     }
 
     /// Begin inline-renaming the selected session (⌘R / menu).
@@ -974,6 +984,10 @@ final class SessionManager {
             let candidate = sessions[(start + offset) % sessions.count]
             if candidate.attention != nil {
                 selectedID = candidate.id
+                // Only when it actually lands. Counting the misses would report
+                // the shortcut as used by someone who pressed it and got
+                // nothing, which is the opposite of what the number is for.
+                Telemetry.capture(.agentJumpUsed)
                 return
             }
         }
@@ -1226,6 +1240,11 @@ final class SessionManager {
         }
         refreshDockBadge()
         onNeedsAttention?(session, kind, title, body, alert)
+        // Past every gate, so this counts episodes a person was actually shown
+        // rather than signals the detector saw. `title` and `body` are the
+        // agent's own words about the user's own work and go no further than
+        // this line: only the kind is reported.
+        Telemetry.capture(.agentAttention(kind: AttentionCause(kind)))
     }
 
     /// Start the "caught up" clock for a session: if it stays actively-viewed

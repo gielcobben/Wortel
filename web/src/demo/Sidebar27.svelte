@@ -145,18 +145,23 @@
     place-items: center;
   }
 
-  /* Measured identically on all three refs: the glyph's ink is 10.5 square and
-     its centre sits 19.75 from the left and 12.75 up from the window's bottom,
-     tucked into the corner rather than floating off it. The 22px box is the hit
-     area, centred on that ink. */
+  /* DELIBERATELY NOT THE REFS. The app had this button on asymmetric padding
+     (10 horizontal, 6 vertical), which put the glyph nearer the bottom edge
+     than the left and read as crammed into the corner. Fixed in the app
+     (ContentView.swift: .padding(12) on all four sides), and mirrored here:
+     the glyph's centre sits 24 off the left and 24 off the bottom, so it rests
+     on the corner's diagonal. The 24px box is the hit area, centred on it.
+
+     Its padding is zeroed because a button's UA padding is 1px 6px, which
+     leaves a 24px box only 12px of content: the 15.5px glyph then overflows to
+     the content edge rather than centring. Only this button is small enough to
+     hit that; the toolbar's are wide enough to swallow it. */
   .add {
     position: absolute;
-    left: 8.25px;
-    bottom: 1.25px;
-    width: 22px; height: 22px;
+    left: 11.5px;
+    bottom: 11.5px;
+    width: 24px; height: 24px;
     border: 0;
-    /* a button's UA padding is 1px 6px, which leaves a 22px box only 10px of
-       content: the 15.5px glyph then sits at the content edge, not centred */
     padding: 0;
     background: transparent;
     color: var(--w-chrome-sub);

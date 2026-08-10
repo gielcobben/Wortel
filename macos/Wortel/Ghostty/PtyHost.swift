@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import os
 
 /// A pty and the process on the other end of it, owned by **us** rather than by
 /// libghostty.
@@ -30,7 +31,13 @@ final class PtyHost: @unchecked Sendable {
     /// Kept because "is this the keeper's fault?" is the first question anyone
     /// will ask about a strange session, and answering it should not require a
     /// build.
-    private(set) static var isDisabled = false
+    ///
+    /// Behind a lock rather than a bare `static var`: it is written once in
+    /// `main.swift` and only read afterwards, but it is read from whichever
+    /// thread creates a surface, and "written once, honestly" is not something
+    /// the compiler can be told.
+    private static let disabled = OSAllocatedUnfairLock(initialState: false)
+    static var isDisabled: Bool { disabled.withLock { $0 } }
 
     /// Latch the flag from the environment.
     ///
@@ -40,12 +47,36 @@ final class PtyHost: @unchecked Sendable {
     /// twenty minutes: the app launches, ignores the flag, and behaves exactly
     /// as it would have anyway.
     static func readEnableFlag() {
-        isDisabled = ProcessInfo.processInfo.environment["WORTEL_NO_KEEPER"] == "1"
+        let off = ProcessInfo.processInfo.environment["WORTEL_NO_KEEPER"] == "1"
+        disabled.withLock { $0 = off }
     }
 
+    /// Everything here is touched from more than one thread, so it lives behind
+    /// one lock rather than in bare `var`s under an `@unchecked Sendable` that
+    /// asserted the problem away.
+    ///
+    /// Who touches what: the read source's handlers run on `queue`; `write` is
+    /// called from libghostty's IO thread; `resize` from the main thread;
+    /// `pauseReading` / `resumeReading` from the keeper's state queue; `stop`
+    /// and `release` from whichever thread closed the session. `pid`,
+    /// `startedAt` and `ownsProcess` stay outside because they are written once
+    /// before this object is published to anyone and never again.
+    private struct Shared {
+        var master: Int32 = -1
+        var isReading = false
+        /// Set once the child has been reaped, so nothing signals a pid the
+        /// system is free to hand to someone else.
+        var hasExited = false
+        var reader: DispatchSourceRead?
+    }
+    /// `uncheckedState` only because `DispatchSourceRead` is not Sendable; it
+    /// never leaves the lock except to be cancelled by the one caller that took
+    /// it out.
+    private let shared = OSAllocatedUnfairLock(uncheckedState: Shared())
+
     /// The pty master. Reading it gives what the program wrote; writing it is
-    /// what the user typed.
-    private(set) var master: Int32 = -1
+    /// what the user typed. -1 once the descriptor has been closed.
+    var master: Int32 { shared.withLock { $0.master } }
     private(set) var pid: pid_t = -1
 
     /// Output from the program. Called on `queue`, never on main — it's the hot
@@ -56,12 +87,7 @@ final class PtyHost: @unchecked Sendable {
     var onExit: ((Int32, UInt64) -> Void)?
 
     private let queue = DispatchQueue(label: "sh.wortel.pty", qos: .userInteractive)
-    private var reader: DispatchSourceRead?
-    private var isReading = false
     private var startedAt = DispatchTime.now()
-    /// Set once the child has been reaped, so nothing signals a pid the system
-    /// is free to hand to someone else.
-    private var hasExited = false
     /// Fires when the child exits. Held so it outlives `start`.
     private var childSource: DispatchSourceProcess?
 
@@ -76,10 +102,10 @@ final class PtyHost: @unchecked Sendable {
     /// us. There is no child here: the shell belongs to the keeper, and killing
     /// it is the keeper's business.
     init(adopting descriptor: Int32) {
-        master = descriptor
+        shared.withLock { $0.master = descriptor }
         ownsProcess = false
-        _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL, 0) | O_NONBLOCK)
-        _ = fcntl(master, F_SETFD, FD_CLOEXEC)
+        _ = fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL, 0) | O_NONBLOCK)
+        _ = fcntl(descriptor, F_SETFD, FD_CLOEXEC)
         // **Deliberately not reading yet.** The surface it feeds does not exist
         // at this point, and the first thing a reattached session produces is
         // whatever the shell wrote a moment ago — dropping it would show a blank
@@ -90,7 +116,8 @@ final class PtyHost: @unchecked Sendable {
     /// Start reading a descriptor adopted from the keeper. Separate from `init`
     /// so nothing is read before there is somewhere to put it.
     func beginReading() {
-        guard reader == nil, master >= 0 else { return }
+        let ready = shared.withLock { $0.reader == nil && $0.master >= 0 }
+        guard ready else { return }
         startReading()
     }
 
@@ -148,28 +175,39 @@ final class PtyHost: @unchecked Sendable {
             _exit(127) // exec failed; the parent sees the pty close
         }
 
-        self.master = master
+        // `forkpty` needed somewhere to write, so `master` above is a `var`;
+        // copy it before it reaches a closure.
+        let descriptor = master
+        self.shared.withLock { $0.master = descriptor }
         self.pid = pid
         self.startedAt = .now()
         // Non-blocking: the read source tells us when there's something, and a
         // blocking read on a pty whose child is idle would park the queue.
-        _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL, 0) | O_NONBLOCK)
-        _ = fcntl(master, F_SETFD, FD_CLOEXEC)
+        _ = fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL, 0) | O_NONBLOCK)
+        _ = fcntl(descriptor, F_SETFD, FD_CLOEXEC)
         startReading()
         reapWhenItExits()
         return true
     }
 
     private func startReading() {
-        let source = DispatchSource.makeReadSource(fileDescriptor: master, queue: queue)
+        let fd = shared.withLock { $0.master }
+        guard fd >= 0 else { return }
+        // Both handlers use the descriptor they were built for rather than
+        // re-reading it. libdispatch guarantees the cancel handler runs after
+        // the last event handler on this queue, so the close below cannot land
+        // under a read in progress, and a captured value cannot go stale the way
+        // a re-read field could.
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in
             guard let self else { return }
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
             while true {
-                let count = read(self.master, &buffer, buffer.count)
+                let count = read(fd, &buffer, buffer.count)
                 if count > 0 {
                     buffer.withUnsafeBufferPointer { raw in
-                        self.onOutput?(raw.baseAddress!, count)
+                        guard let base = raw.baseAddress else { return }
+                        self.onOutput?(base, count)
                     }
                     // A short read means the pty had nothing more; going round
                     // again would just return EAGAIN.
@@ -179,18 +217,29 @@ final class PtyHost: @unchecked Sendable {
                     // a pty once the last slave fd goes. Anything else that
                     // isn't "try later" is fatal for this descriptor.
                     if count < 0 && (errno == EAGAIN || errno == EINTR) { return }
-                    self.reader?.cancel()
+                    // Read back out of `shared` rather than capturing `source`,
+                    // which would make the handler retain the source that owns
+                    // it until something cancelled it.
+                    self.shared.withLock { $0.reader }?.cancel()
                     return
                 }
             }
         }
         source.setCancelHandler { [weak self] in
-            guard let self, self.master >= 0 else { return }
-            close(self.master)
-            self.master = -1
+            guard let self else {
+                close(fd)
+                return
+            }
+            self.shared.withLock { state in
+                guard state.master == fd else { return }
+                close(fd)
+                state.master = -1
+            }
         }
-        reader = source
-        isReading = true
+        shared.withLock {
+            $0.reader = source
+            $0.isReading = true
+        }
         source.resume()
     }
 
@@ -216,7 +265,7 @@ final class PtyHost: @unchecked Sendable {
             while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
             let code: Int32 = (status & 0x7F) == 0 ? (status >> 8) & 0xFF : -1
             let ms = (DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
-            self?.hasExited = true
+            self?.shared.withLock { $0.hasExited = true }
             self?.onExit?(code, ms)
             source.cancel()
         }
@@ -227,7 +276,19 @@ final class PtyHost: @unchecked Sendable {
     // MARK: - The two directions
 
     /// What the user typed.
+    ///
+    /// The descriptor is taken under the lock rather than read from a bare
+    /// field, which is what makes it a defined value here at all. What that
+    /// still does not buy is atomicity against the close: the cancel handler can
+    /// run between the read below and the syscall, so a write can land on a
+    /// descriptor that has just closed. That returns EBADF and this gives up,
+    /// which is the right outcome; the only genuinely bad case is the kernel
+    /// handing the number to something else in that same instant, and closing
+    /// *that* window needs the descriptor reference-counted rather than closed
+    /// outright. Deliberately not done: it would put a retain/release on the
+    /// keystroke path to fix a race no one has hit.
     func write(_ bytes: UnsafePointer<UInt8>, count: Int) {
+        let master = shared.withLock { $0.master }
         guard master >= 0 else { return }
         var offset = 0
         while offset < count {
@@ -245,6 +306,7 @@ final class PtyHost: @unchecked Sendable {
     /// The window changed shape. This is what sends SIGWINCH, which is how every
     /// full-screen program learns to redraw.
     func resize(columns: UInt16, rows: UInt16, widthPx: UInt32, heightPx: UInt32) {
+        let master = shared.withLock { $0.master }
         guard master >= 0 else { return }
         var size = winsize(
             ws_row: rows, ws_col: columns,
@@ -262,29 +324,42 @@ final class PtyHost: @unchecked Sendable {
     /// go. Anything that arrives in the gap stays in the kernel's buffer, which
     /// is why nothing is lost between the two.
     func pauseReading() {
-        guard let reader, isReading else { return }
-        isReading = false
-        reader.suspend()
+        shared.withLock { state in
+            guard let reader = state.reader, state.isReading else { return }
+            state.isReading = false
+            reader.suspend()
+        }
     }
 
     func resumeReading() {
-        guard let reader, !isReading else { return }
-        isReading = true
-        reader.resume()
+        shared.withLock { state in
+            guard let reader = state.reader, !state.isReading else { return }
+            state.isReading = true
+            reader.resume()
+        }
+    }
+
+    /// Take the read source out of `shared`, resuming it first if it is
+    /// suspended: a suspended source cannot be cancelled — the cancel handler
+    /// would never run and the descriptor would leak. Resume and removal happen
+    /// together under the lock so two callers cannot both resume it.
+    private func takeReader() -> DispatchSourceRead? {
+        shared.withLock { state -> DispatchSourceRead? in
+            guard let reader = state.reader else { return nil }
+            if !state.isReading {
+                state.isReading = true
+                reader.resume()
+            }
+            state.reader = nil
+            return reader
+        }
     }
 
     /// Close this end. Kills the child **only if it is ours** — the app adopting
     /// a keeper's descriptor must let go without touching the shell, which is
     /// precisely what survival means.
     func stop() {
-        // A suspended source cannot be cancelled: the cancel handler would never
-        // run and the descriptor would leak. Resume first, always.
-        if let reader, !isReading {
-            isReading = true
-            reader.resume()
-        }
-        reader?.cancel()
-        reader = nil
+        takeReader()?.cancel()
         guard ownsProcess, pid > 0 else { return }
         // The **process group**, not just the shell. forkpty makes the child a
         // session leader, so its own children share its group — signalling only
@@ -304,7 +379,7 @@ final class PtyHost: @unchecked Sendable {
         // with us.
         let target = pid
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self, !self.hasExited else { return }
+            guard let self, !self.shared.withLock({ $0.hasExited }) else { return }
             if kill(-target, SIGKILL) != 0 { kill(target, SIGKILL) }
         }
     }
@@ -313,11 +388,6 @@ final class PtyHost: @unchecked Sendable {
     /// descriptor is closed (ours was a `dup`; the keeper still holds one) and
     /// the shell carries on with nobody watching.
     func release() {
-        if let reader, !isReading {
-            isReading = true
-            reader.resume()
-        }
-        reader?.cancel()
-        reader = nil
+        takeReader()?.cancel()
     }
 }

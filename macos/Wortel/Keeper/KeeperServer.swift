@@ -23,7 +23,6 @@ final class KeeperServer: @unchecked Sendable {
         /// descriptor because that is what a connection *is* here, and because
         /// it makes "the app died" and "the app detached" the same code path.
         var attachedTo: Int32?
-        var exited = false
 
         init(id: String, pty: PtyHost, limit: Int) {
             self.id = id
@@ -223,7 +222,6 @@ final class KeeperServer: @unchecked Sendable {
         }
         pty.onExit = { [weak self, weak session] _, _ in
             guard let self, let session else { return }
-            session.exited = true
             // **Forget it.** A session whose shell has exited is over, and
             // keeping the entry means the next `attach` hands back a pty whose
             // far end is closed — a terminal that opens onto a dead process and

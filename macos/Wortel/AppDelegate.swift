@@ -353,19 +353,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         true
     }
 
+    /// Give the last events a moment to leave, without blocking the main thread
+    /// to do it.
+    ///
+    /// State goes to disk **first**, before anything is allowed to wait, so a
+    /// quit that is killed mid-drain still has the session list saved. Both
+    /// calls are idempotent and `applicationWillTerminate` runs them again for
+    /// the termination paths that never reach here.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        manager?.saveNow()
+        cli?.stop()
+        Telemetry.capture(
+            .appQuit(uptime: DurationBucket(seconds: Date().timeIntervalSince(launchedAt))))
+        guard Telemetry.hasWorkBeforeQuit else { return .terminateNow }
+        Telemetry.drainBeforeQuit { NSApp.reply(toApplicationShouldTerminate: true) }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         manager?.saveNow()
         // The socket's name is a file, and it outlives the process that made
         // it. The server recovers from a stale one on the next launch, but only
         // by proving it's stale — cheaper and less alarming to tidy up.
         cli?.stop()
-
-        // Last, and after the session state is safely on disk: this is the one
-        // place reporting is allowed to make anything wait, and it waits behind
-        // the things that actually matter. Bounded to well under two seconds
-        // whatever the network is doing (see Telemetry.drainOnQuit).
-        Telemetry.capture(.appQuit(uptime: DurationBucket(seconds: Date().timeIntervalSince(launchedAt))))
-        Telemetry.drainOnQuit()
     }
 
     // MARK: - Close confirmation
@@ -392,6 +402,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Preview windows
 
+    /// Repo root per directory. The answer never changes for a given directory
+    /// in a session, and asking git twice for the same one is a process we
+    /// don't need to spawn.
+    private var repoRootCache: [String: String?] = [:]
+
     /// Open a file in a preview window, working out what its diff should be.
     ///
     /// A file the repo already knows is changed opens on *its* row's diff, which
@@ -399,12 +414,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// everything since HEAD, because that's the question you're asking when you
     /// point at a file rather than at one side of its change. Outside a repo
     /// there's no diff to offer and the window says so by not having the mode.
-    /// Repo root per directory. The answer never changes for a given directory
-    /// in a session, and asking git twice for the same one is a process we
-    /// don't need to spawn.
-    private var repoRootCache: [String: String?] = [:]
-
-    /// Open a file in a preview window, working out what its diff should be.
     ///
     /// Deliberately **not** dependent on the git panel being open. The panel
     /// resolves its repo only while it's visible — a good rule for a panel that

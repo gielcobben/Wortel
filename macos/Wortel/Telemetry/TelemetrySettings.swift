@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Whether Wortel reports anything, and the one identifier it has.
 ///
@@ -79,10 +80,16 @@ enum TelemetrySettings {
     /// Any value except the ones that plainly mean "no" counts as set, matching
     /// how consolidated.dev describes the convention and how other tools read
     /// it: someone who exports `DO_NOT_TRACK` at all has expressed a preference.
-    private(set) static var doNotTrack = false
+    ///
+    /// Behind a lock rather than a bare `static var`: written once at launch,
+    /// read from wherever an event happens to be captured, and "written once,
+    /// honestly" is not a thing the compiler can be told.
+    private static let doNotTrackFlag = OSAllocatedUnfairLock(initialState: false)
+    static var doNotTrack: Bool { doNotTrackFlag.withLock { $0 } }
 
     static func readDoNotTrack(from environment: [String: String] = ProcessInfo.processInfo.environment) {
-        doNotTrack = interpretDoNotTrack(environment["DO_NOT_TRACK"])
+        let value = interpretDoNotTrack(environment["DO_NOT_TRACK"])
+        doNotTrackFlag.withLock { $0 = value }
     }
 
     /// Split out so it can be tested without touching the test runner's own

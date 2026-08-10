@@ -87,9 +87,17 @@ actor TelemetryClient {
 
     func flush() async {
         guard !isSending, !queue.isEmpty else { return }
-        let sending = Array(queue.prefix(Self.batchSize))
         isSending = true
         defer { isSending = false }
+
+        // Taken out of the queue up front rather than counted off the front
+        // afterwards. This is an actor, so it suspends at the `await` below and
+        // `enqueue` can run in the gap — and if that pushes the queue past its
+        // cap, the trim there removes from the front too, which made the old
+        // `removeFirst(sending.count)` eat newer events that had never been
+        // sent. Anything retryable goes back on at the front instead.
+        let sending = Array(queue.prefix(Self.batchSize))
+        queue.removeFirst(sending.count)
 
         let body: Data
         do {
@@ -97,7 +105,6 @@ actor TelemetryClient {
         } catch {
             // Unencodable means a bug in this file, not a transient failure.
             // Dropping is right: retrying forever would pin the queue.
-            queue.removeFirst(min(sending.count, queue.count))
             return
         }
 
@@ -109,14 +116,25 @@ actor TelemetryClient {
         do {
             let (_, response) = try await session.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            if (200..<300).contains(status) || (400..<500).contains(status) {
-                // 4xx is not retryable: a rejected batch will be rejected again.
-                queue.removeFirst(min(sending.count, queue.count))
-            }
-            // 5xx and anything else: leave them queued for the next flush. The
-            // cap is what stops that from being unbounded.
+            // 2xx is done; 4xx is not retryable, because a rejected batch will
+            // be rejected again. Either way they stay gone.
+            guard !((200..<300).contains(status) || (400..<500).contains(status)) else { return }
+            // 5xx and anything else: put them back for the next flush. The cap
+            // is what stops that from being unbounded.
+            requeue(sending)
         } catch {
             // Offline, or the request timed out. Same reasoning: keep, capped.
+            requeue(sending)
+        }
+    }
+
+    /// Return an unsent batch to the front of the queue, oldest first, and
+    /// re-apply the cap — which drops oldest, so a queue that filled while we
+    /// were away keeps the newest events rather than these.
+    private func requeue(_ sending: [Payload]) {
+        queue.insert(contentsOf: sending, at: 0)
+        if queue.count > Self.queueCap {
+            queue.removeFirst(queue.count - Self.queueCap)
         }
     }
 
@@ -141,13 +159,14 @@ actor TelemetryClient {
         let at: Date
     }
 
-    private static let timestampFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-
+    /// Built per call rather than held as a shared static: `ISO8601DateFormatter`
+    /// is a mutable class and not Sendable, and this runs at most once per flush
+    /// — twenty events an hour, against a network round trip. Sharing one to
+    /// save that is how a formatter ends up being configured on one thread while
+    /// another is mid-format.
     static func encode(_ payloads: [Payload], distinctID: String) throws -> Data {
+        let timestampFormatter = ISO8601DateFormatter()
+        timestampFormatter.formatOptions = [.withInternetDateTime]
         let device = deviceProperties()
         let batch: [[String: Any]] = payloads.map { payload in
             var properties = payload.event.properties
@@ -215,30 +234,68 @@ enum Telemetry {
         }
     }
 
-    /// The last thing that happens, and the one place this feature is allowed
-    /// to make anything wait. `NSSupportsSuddenTermination` is false for this
-    /// app, so there is a moment to use; the deadline is what keeps it a moment.
-    /// A second and a half is enough for one round trip on a working connection
-    /// and short enough not to be felt on a broken one.
-    static func drainOnQuit() {
-        guard TelemetrySettings.isEnabled else { return }
-        let semaphore = DispatchSemaphore(value: 0)
-        Task.detached(priority: .userInitiated) {
-            await TelemetryClient.shared.drain(deadline: Date().addingTimeInterval(1.5))
-            semaphore.signal()
-        }
-        _ = semaphore.wait(timeout: .now() + 1.6)
+    /// How long anything here may hold up a quit. Enough for one round trip on
+    /// a working connection, short enough not to be felt on a broken one.
+    private static let sendingGrace: TimeInterval = 1.5
+
+    /// True while a final event is still on its way out, so quit waits for it
+    /// even though the preference it announces has already been turned off.
+    @MainActor private static var isFinalising = false
+
+    /// Whether quitting has anything to wait for. Read by the app layer, which
+    /// only asks AppKit to defer termination when the answer is yes.
+    @MainActor static var hasWorkBeforeQuit: Bool {
+        TelemetrySettings.isEnabled || isFinalising
     }
 
-    /// Turning it off sends one final event and then nothing, ever. Called
-    /// before the preference flips, because `capture` checks it.
-    static func captureOptOutThenStop() {
-        let semaphore = DispatchSemaphore(value: 0)
-        Task.detached(priority: .userInitiated) {
-            await TelemetryClient.shared.enqueue(.reportingDisabled)
-            await TelemetryClient.shared.drain(deadline: Date().addingTimeInterval(1.5))
-            semaphore.signal()
+    /// Send what is queued, then call `completion` on the main actor.
+    ///
+    /// **Nothing blocks.** This used to park the calling thread on a semaphore,
+    /// which happened to work — the client is a plain actor with its own
+    /// executor — and was one refactor away from deadlocking the whole quit the
+    /// day anything here touched main-actor state. The caller defers
+    /// termination instead and replies from `completion`.
+    @MainActor static func drainBeforeQuit(then completion: @escaping @MainActor () -> Void) {
+        guard hasWorkBeforeQuit else {
+            completion()
+            return
         }
-        _ = semaphore.wait(timeout: .now() + 1.6)
+        Task { @MainActor in
+            await bounded { await TelemetryClient.shared.drain(
+                deadline: Date().addingTimeInterval(sendingGrace)) }
+            completion()
+        }
+    }
+
+    /// Turning it off sends one final event and then nothing, ever.
+    ///
+    /// Fire and forget: this is reached from a menu item, and the old version
+    /// froze the app for up to 1.6 seconds on the click. `isFinalising` is what
+    /// keeps the event from being abandoned by a quit that follows immediately.
+    @MainActor static func captureOptOutThenStop() {
+        isFinalising = true
+        Task { @MainActor in
+            await TelemetryClient.shared.enqueue(.reportingDisabled)
+            await bounded { await TelemetryClient.shared.drain(
+                deadline: Date().addingTimeInterval(sendingGrace)) }
+            isFinalising = false
+        }
+    }
+
+    /// Run `work`, giving up after `sendingGrace` whatever it is doing.
+    ///
+    /// `drain` checks its deadline between flushes, not during one, so a single
+    /// request that hangs could hold it for the session's 15s request timeout.
+    /// The semaphore this replaces bounded that with its own wait; racing a
+    /// sleep is how you keep the bound without blocking a thread to get it.
+    private static func bounded(_ work: @escaping @Sendable () async -> Void) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await work() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(sendingGrace * 1_000_000_000))
+            }
+            await group.next()
+            group.cancelAll()
+        }
     }
 }

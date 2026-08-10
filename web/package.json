@@ -8,8 +8,8 @@
     "dev": "astro dev",
     "build": "astro build && rm -rf dist/refs dist/compare && find dist -name .DS_Store -delete",
     "preview": "astro preview",
-    "deploy": "astro build && wrangler deploy",
-    "cf-preview": "astro build && wrangler dev"
+    "deploy": "npm run build && wrangler deploy",
+    "cf-preview": "npm run build && wrangler dev"
   },
   "devDependencies": {
     "@astrojs/svelte": "^7.2.5",

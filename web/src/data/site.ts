@@ -145,6 +145,7 @@ export const SECTIONS: Section[] = [
           rows: [
             ['wortel open <path>', 'Opens a preview window for a file'],
             ['wortel new --branch <name>', 'A session, in its own worktree'],
+            ['wortel new --branch <name> --from <ref>', 'Forks the new branch from something else'],
             ['wortel rename <name>', 'Renames the session it was run in'],
             ['wortel notify <text>', 'This session wants you'],
           ],
@@ -177,6 +178,12 @@ export const SECTIONS: Section[] = [
     blocks: [
       {
         p: 'Open a session on a branch and Wortel checks that branch out in its own directory, with its own files, sharing the repository’s history, objects and remotes. It costs a directory rather than a clone. The session takes the branch’s name, and a branch that already has a worktree opens the one it has instead of failing.',
+      },
+      {
+        p: 'Its row carries a small branch mark, because the name alone cannot tell you: a session named for its branch otherwise reads as an ordinary shell that happens to be called the same thing, and which one you are looking at decided where your last commit went.',
+      },
+      {
+        p: 'A new branch forks from the repository’s default branch, not from wherever you happen to be standing. Opening one from inside another agent’s worktree would otherwise fork that agent’s half-finished branch, which is a thing you find out about later. Both the dialog and the command let you pick something else to fork from.',
       },
       {
         p: 'So five agents work on five branches, none of them changing the ground under another mid-task, and each one’s inspector shows only its own work. The worktrees live outside the repository, where they cannot be committed by accident or confuse a build that walks the project.',
@@ -291,7 +298,7 @@ export const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Can I run several coding agents on one repository at once?',
-    a: 'Yes, and that is what git worktrees are for here. Opening a session on a branch checks that branch out in its own directory with its own files, sharing the repository’s history, objects and remotes, so it costs a directory rather than a clone. Each agent then edits its own files on its own branch, nothing changes the ground under a running agent, and each session’s git panel shows only that worktree’s work. A branch that already has a worktree opens the one it has.',
+    a: 'Yes, and that is what git worktrees are for here. Opening a session on a branch checks that branch out in its own directory with its own files, sharing the repository’s history, objects and remotes, so it costs a directory rather than a clone. Each agent then edits its own files on its own branch, nothing changes the ground under a running agent, and each session’s git panel shows only that worktree’s work. A branch that already has a worktree opens the one it has, a new one forks from the repository’s default branch rather than from whichever worktree you opened it in, and the sidebar marks which rows are worktrees.',
   },
   {
     q: 'Do my sessions keep running if I quit Wortel?',

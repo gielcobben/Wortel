@@ -313,6 +313,9 @@ keybind, check both files.
 
 ## Conventions & constraints
 
+- **No em-dashes in any string a user reads** — UI copy, notifications, the
+  model prompts and what they are told to generate. Comments and commit
+  messages are exempt. See the root `CLAUDE.md`.
 - **Main-thread only** for everything Wortel owns; only libghostty callbacks
   cross threads, and they marshal to main immediately. `TelemetryClient` is the
   one deliberate exception: it is an actor, because it is the only thing here

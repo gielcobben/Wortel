@@ -25,11 +25,11 @@ enum SessionNameGenerator {
     that session.
 
     Guidelines:
-    - 2 to 4 words, in the same language as the content, no quotes, no trailing \
-    punctuation.
-    - Name it after the concrete task or topic — what the developer is doing \
-    (e.g. "Fix quiesce race", "Postgres migration", "Reading Vite docs"). Never \
-    just a tool or shell name like "Claude", "zsh", or "npm".
+    - 2 to 4 words, in the same language as the content, no quotes, no dashes, \
+    no trailing punctuation.
+    - Name it after the concrete task or topic, meaning what the developer is \
+    doing (e.g. "Fix quiesce race", "Postgres migration", "Reading Vite docs"). \
+    Never just a tool or shell name like "Claude", "zsh", or "npm".
     - If a current title is given and it still fits what's on screen, reply with \
     that exact title unchanged.
     """
@@ -38,7 +38,7 @@ enum SessionNameGenerator {
     /// only light sanitising of the one field.
     @Generable
     struct Name {
-        @Guide(description: "A 2–4 word session title, no quotes, no trailing punctuation.")
+        @Guide(description: "A 2 to 4 word session title, no quotes, no dashes, no trailing punctuation.")
         var title: String
     }
 

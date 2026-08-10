@@ -25,14 +25,18 @@ enum CommitMessageGenerator {
     Guidelines:
     - Capture the SINGLE overall intent of the whole change. Do NOT enumerate \
     files, functions, or hunks. Never write "Add method for X. Add method for \
-    Y." — collapse related edits into one theme.
+    Y." Collapse related edits into one theme.
     - The summary is an imperative sentence under ~60 characters \
     (e.g. "Add push button to the git panel"), with no trailing period.
     - Match the style, voice, and any area-prefix convention of the repo's \
     recent commit subjects shown in the prompt (e.g. a "Git panel: …" prefix). \
-    Match their style, never their content.
+    Match their style, never their content, and never their dashes.
+    - Never use a dash of any kind as punctuation between clauses. Use a comma, \
+    a colon, or two sentences instead. This rule outranks the style matching \
+    above: the recent subjects are full of them, and the message you write must \
+    not be.
     - Only write a body when the change is large or its purpose isn't obvious \
-    from the summary — 1–2 short sentences on what changed and why. Otherwise \
+    from the summary: 1 or 2 short sentences on what changed and why. Otherwise \
     leave the body empty.
     """
 
@@ -42,7 +46,7 @@ enum CommitMessageGenerator {
     struct CommitDraft {
         @Guide(description: "Imperative summary of the whole change, under ~60 characters, no trailing period.")
         var summary: String
-        @Guide(description: "1–2 sentence body on what changed and why, only when the summary alone isn't enough. Empty string otherwise.")
+        @Guide(description: "1 or 2 sentence body on what changed and why, no dashes, only when the summary alone isn't enough. Empty string otherwise.")
         var body: String
     }
 

@@ -17,6 +17,12 @@
 #   ./scripts/release.sh --publish --no-install   publish, but leave the
 #                                         installed app alone
 #   ./scripts/release.sh --publish --no-notes     publish without a release note
+#   ./scripts/release.sh --publish 2026.33.1 --republish
+#                                       replace the version already published,
+#                                         same bytes-key, same appcast <item>.
+#                                         Strands anyone who already took it,
+#                                         so it is only for a release nobody
+#                                         has downloaded yet. Version required.
 #
 # Publishing requires a release note: web/src/content/releases/<version>.md, one
 # Markdown file whose name is the version. It is checked before anything is
@@ -67,6 +73,7 @@ NOTARIZE=0
 PUBLISH=0
 INSTALL=1
 NOTES=1
+REPUBLISH=0
 VERSION=""
 BUILD_FILE="$RELEASES_DIR/BUILD"        # tracked record: last published version string
 # Lift the flags out of the argument list before the positional parse below, so
@@ -76,6 +83,7 @@ for arg in "$@"; do
   case "$arg" in
     --no-install) INSTALL=0 ;;
     --no-notes) NOTES=0 ;;
+    --republish) REPUBLISH=1 ;;
     *) ARGS+=("$arg") ;;
   esac
 done
@@ -109,6 +117,10 @@ case "${1:-}" in
     if [ -n "$published" ] && [ "$published" != "$recorded" ]; then
       echo "==> Live feed is at $published; releases/BUILD says ${recorded:-none} — counting from $last"
     fi
+    # Remembered before the derivation below fills it in, because --republish
+    # is only ever an explicit act: a derived version is by definition the next
+    # one, which is the opposite of replacing this one.
+    EXPLICIT_VERSION=$([ -n "$VERSION" ] && echo 1 || echo 0)
     if [ -z "$VERSION" ]; then
       # CalVer, auto-derived (Framer-style): <ISO-week-year>.<ISO-week>.<Nth
       # release that week>. %G/%V are the ISO week-numbering year and week, so
@@ -128,7 +140,22 @@ case "${1:-}" in
     # orders dotted-numeric versions the same way Sparkle's comparator does.
     # Now that `last` includes the live feed, this also catches an explicit
     # --publish <version> that collides with a release cut somewhere else.
-    if [ -n "$last" ]; then
+    if [ "$REPUBLISH" = 1 ]; then
+      # Deliberately replacing what is already out there, bytes and all. The
+      # zip goes back to the same key, generate_appcast rewrites that version's
+      # <item> with the new length and signature, and BUILD does not move.
+      #
+      # THE COST IS PERMANENT AND ONLY ONE WAY: Sparkle offers a *strictly
+      # greater* version, so anyone who already downloaded the first build of
+      # this version is stranded on it and will never be offered the second.
+      # That is the 2026.31.2 incident described above, chosen on purpose
+      # instead of stumbled into — which is the only reason this flag exists,
+      # and why it will not derive a version for you.
+      [ "$EXPLICIT_VERSION" = 1 ] || { echo "✗ --republish needs the version spelled out: $0 --publish <version> --republish" >&2; exit 1; }
+      [ "$VERSION" = "$last" ] || { echo "✗ --republish is for replacing the last published version ($last), not $VERSION" >&2; exit 1; }
+      echo "!  Republishing $VERSION over the copy already in the bucket."
+      echo "   Anyone who has already taken $VERSION will never be offered this build."
+    elif [ -n "$last" ]; then
       newest=$(printf '%s\n%s\n' "$last" "$VERSION" | sort -V | tail -1)
       { [ "$VERSION" != "$last" ] && [ "$newest" = "$VERSION" ]; } || { echo "✗ Version $VERSION is not newer than the last published $last" >&2; exit 1; }
     fi

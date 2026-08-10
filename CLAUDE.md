@@ -53,6 +53,22 @@ cd updates && npm install && npm test      # pure classification tests, no netwo
 cd updates && npm run deploy               # wrangler deploy to updates.wortel.sh
 ```
 
+## Writing: no em-dashes in anything a user reads
+
+**Never use an em-dash (or an en-dash as punctuation) in copy a user reads.**
+Rewrite with a comma, a colon, brackets, or two sentences. This covers UI
+strings, release notes, the website, and the on-device model prompts in
+`SessionNameGenerator` / `CommitMessageGenerator`, which must also *forbid* the
+dash in what they generate: a commit message is copy too, and those prompts are
+told to match the style of recent subjects, which are full of them.
+
+An em-dash reads as machine-written, and the writing everywhere in this repo is
+deliberate enough that the tell stands out.
+
+**Source comments, design docs and commit messages are exempt** and are full of
+them. They are for whoever is reading the source, which is a different audience.
+Don't sweep those, and don't rewrite changelog entries that already shipped.
+
 ## Distribution & Cloudflare
 
 Both apps share one Cloudflare account and the `wortel.sh` zone:

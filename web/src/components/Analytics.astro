@@ -1,0 +1,110 @@
+---
+// ==========================================================================
+// PostHog, on our own origin.
+//
+// THREE THINGS MAKE THIS DIFFERENT FROM THE STOCK SNIPPET, and each one is
+// here for a reason worth keeping:
+//
+// 1. cookieless_mode: 'always'. No cookies, no localStorage, no consent
+//    banner. PostHog derives a visitor id server-side from a daily-rotating
+//    salt, so there is nothing stored on the reader's machine and nothing to
+//    ask permission for. A landing page that opens with a consent dialog is a
+//    landing page that argues with you before it has said what it is. The cost
+//    is real: unique counts run slightly high (a new hash every midnight, and
+//    occasional collisions), and there is no GeoIP, no replay, no surveys.
+//    Worth it here, and it would not be on an app behind a login.
+//
+// 2. api_host points at this origin. worker/index.ts forwards /ph to PostHog.
+//    Built from location.origin rather than hardcoded so a preview build, a
+//    wrangler dev run and production each talk to their own proxy instead of
+//    every one of them reporting into production's.
+//
+// 3. autocapture is off. Three routes and four interactions worth naming: a
+//    firehose of every click on the page would cost bandwidth on the reader's
+//    machine to produce data nobody is going to read. The events that matter
+//    are declared in the markup (see below) where you can see them.
+//
+// THE KEY IS IN THE FILE ON PURPOSE. A phc_ token is write-only: it can send
+// events and read nothing back, which is why PostHog ships it inside client
+// bundles. Putting it in .env instead would buy no secrecy and would cost a
+// silent failure, because release.sh redeploys this site at the end of every
+// publish and a machine missing the file would quietly ship a site that
+// reports nothing. The key that CAN read data is a personal API key, and that
+// one is not here and never should be.
+//
+// DEV IS SILENT, production is not, and the switch is the build rather than a
+// flag anyone has to remember. Note that `npm run cf-preview` is a production
+// build, so it does report: that is what makes it possible to check this works
+// before deploying, and it is worth knowing before you click around in it.
+//
+// ---- how the events below are declared -----------------------------------
+// One delegated listener for the whole site. An element opts in by carrying
+// data-ph="event_name", and any data-ph-* attribute beside it becomes a
+// property (data-ph-to-version arrives as to_version):
+//
+//     <a class="download" data-ph="download_clicked" data-ph-location="hero">
+//
+// Markup rather than per-page handlers, because the alternative is a script
+// block on every page repeating the same querySelector plumbing, and because
+// an attribute sits where you can see it while you are editing the markup it
+// belongs to. The listener runs in the capture phase so it still fires on an
+// anchor that is about to navigate away.
+//
+// data-ph-demo is the one exception, and it marks the app window on the
+// landing page: the first click inside it reports demo_engaged, once per page
+// load. The window is the most expensive thing on the site and nothing
+// currently says whether anyone touches it. It is an attribute rather than the
+// obvious `.app-frame` selector because the changelog page uses that class for
+// its preview window, and dragging a release note around is not engaging with
+// the demo.
+//
+// ---- and why the comments stop here --------------------------------------
+// Everything above is build-time only. The script below ships to every reader
+// on every page, so it carries the reasoning it needs and no more.
+// ==========================================================================
+
+const KEY = 'phc_s9AQUzSKYsbdi8aoCWkaedPK2Cbjr9KEmYJqjgWa89oa';
+const ENABLED = import.meta.env.PROD;
+---
+
+{ENABLED && (
+  <script is:inline define:vars={{ KEY }}>
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}p||((p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",p.onerror=function(){p=null},(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r));var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="an ln init xn Cn Br kn In capture Fn nn calculateEventProperties On register register_once register_for_session unregister unregister_for_session Ln getFeatureFlag getFeatureFlagPayload getFeatureFlagResult getAllFeatureFlags isFeatureEnabled reloadFeatureFlags updateFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey displaySurvey cancelPendingSurvey canRenderSurvey canRenderSurveyAsync Dn identify setPersonProperties unsetPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset shutdown setIdentity clearIdentity get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException addExceptionStep captureLog startExceptionAutocapture stopExceptionAutocapture loadToolbar get_property getSessionProperty An Rn createPersonProfile setInternalOrTestUser $n yn jn opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing get_explicit_consent_status is_capturing clear_opt_in_out_capturing Tn debug Ur Rt getPageViewId captureTraceFeedback captureTraceMetric pn".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+
+    posthog.init(KEY, {
+      // Same origin, proxied by worker/index.ts.
+      api_host: window.location.origin + '/ph',
+      ui_host: 'https://eu.posthog.com',
+      defaults: '2026-05-30',
+      person_profiles: 'identified_only',
+      cookieless_mode: 'always',
+      autocapture: false,
+      disable_session_recording: true,
+      disable_surveys: true,
+    });
+
+    // Declared events: see components/Analytics.astro for the convention.
+    document.addEventListener('click', (e) => {
+      const el = e.target instanceof Element ? e.target.closest('[data-ph]') : null;
+      if (!el) return;
+      const props = {};
+      for (const [k, v] of Object.entries(el.dataset)) {
+        // phLocation yes, photo no: the capital is the attribute boundary, and
+        // without checking it any data-ph* word would be read as a property.
+        if (k.length < 3 || !k.startsWith('ph') || k[2] !== k[2].toUpperCase()) continue;
+        // phToVersion -> to_version
+        props[k.slice(2).replace(/^./, (c) => c.toLowerCase())
+                       .replace(/[A-Z]/g, (c) => '_' + c.toLowerCase())] = v;
+      }
+      window.posthog?.capture(el.dataset.ph, props);
+    }, true);
+
+    // The app window, once per page load.
+    document.addEventListener('click', (e) => {
+      const frame = e.target instanceof Element ? e.target.closest('[data-ph-demo]') : null;
+      if (!frame || frame.dataset.phSeen) return;
+      frame.dataset.phSeen = '1';
+      window.posthog?.capture('demo_engaged');
+    }, true);
+  </script>
+)}

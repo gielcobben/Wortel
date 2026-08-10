@@ -147,7 +147,8 @@ const schema = [website, webpage, person, app];
             Quit the app and they keep working. Nothing to configure, ever.
           </p>
           <p class="links">
-            <a class="download" href={DOWNLOAD}>
+            <a class="download" href={DOWNLOAD}
+              data-ph="download_clicked" data-ph-location="hero" data-ph-version={LATEST?.version}>
               <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
                 <path d="M8 1v8.5M8 9.5 4.75 6.25M8 9.5l3.25-3.25M2.5 12.5h11"
                   fill="none" stroke="currentColor" stroke-width="1.4"
@@ -237,7 +238,7 @@ const schema = [website, webpage, person, app];
            shows from the reader's position, and stops driving the moment you
            take it over yourself (see Tour.svelte). -->
       <div class="app-rail">
-        <div class="app-frame">
+        <div class="app-frame" data-ph-demo>
           <Tour client:load sidebar={true} initialTab="history" />
         </div>
       </div>
@@ -272,7 +273,8 @@ const schema = [website, webpage, person, app];
           </table>
         </div>
         <p class="cta">
-          <a class="download" href={DOWNLOAD}>
+          <a class="download" href={DOWNLOAD}
+            data-ph="download_clicked" data-ph-location="cta" data-ph-version={LATEST?.version}>
             <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
               <path d="M8 1v8.5M8 9.5 4.75 6.25M8 9.5l3.25-3.25M2.5 12.5h11"
                 fill="none" stroke="currentColor" stroke-width="1.4"
@@ -292,7 +294,7 @@ const schema = [website, webpage, person, app];
       </p>
       <nav aria-label="Footer">
         <a href="/">Home</a>
-        <a href={DOWNLOAD}>Download</a>
+        <a href={DOWNLOAD} data-ph="download_clicked" data-ph-location="footer" data-ph-version={LATEST?.version}>Download</a>
         <a href="/updates">Changelog</a>
         <a href="/compare">Compare</a>
         <a href="#faq">FAQ</a>

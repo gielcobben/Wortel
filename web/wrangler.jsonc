@@ -1,14 +1,23 @@
 {
   // Cloudflare Worker that serves the static Astro build at wortel.sh.
-  // Assets-only Worker (no `main`): Cloudflare serves ./dist directly.
   // Deploy with `npm run deploy` (astro build && wrangler deploy).
+  //
+  // It was assets-only until PostHog arrived. `main` does NOT put a script in
+  // front of the site: Cloudflare matches a static asset first and only invokes
+  // the Worker when nothing matches, so every page and font is served exactly
+  // as before and worker/index.ts runs for /ph/* alone. See that file for why
+  // the analytics traffic is proxied rather than sent to posthog.com direct.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wortel-web",
   // Cobben account — the one that holds the wortel.sh zone.
   "account_id": "c91d5fdf38b8d28d8220c2a7d5b5610f",
   "compatibility_date": "2026-07-15",
+  "main": "./worker/index.ts",
   "assets": {
-    "directory": "./dist"
+    "directory": "./dist",
+    // Only meaningful alongside `main`: it is how the Worker hands a request
+    // back to the assets layer instead of inventing its own 404.
+    "binding": "ASSETS"
   },
   // Route the apex + www at wortel.sh. Requires the wortel.sh zone on this
   // Cloudflare account; adjust/remove if you deploy to a *.workers.dev URL first.

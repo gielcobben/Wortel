@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import Analytics from '../components/Analytics.astro';
 import { SITE } from '../data/site';
 
 interface Props {
@@ -85,6 +86,11 @@ const ogImage = new URL('/og.png', SITE.url).href;
         set:html={JSON.stringify({ '@context': 'https://schema.org', '@graph': schema })}
       />
     )}
+
+    <!-- Last in the head, and same-origin (see components/Analytics.astro): it
+         needs no preconnect of its own, and it renders to nothing at all in a
+         dev build. -->
+    <Analytics />
   </head>
   <body>
     <slot />

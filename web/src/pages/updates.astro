@@ -96,7 +96,8 @@ const schema = [
             one in. Pick a version to read it.
           </p>
           <p class="links">
-            <a class="download" href={SITE.download}>
+            <a class="download" href={SITE.download}
+              data-ph="download_clicked" data-ph-location="updates">
               <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
                 <path d="M8 1v8.5M8 9.5 4.75 6.25M8 9.5l3.25-3.25M2.5 12.5h11"
                   fill="none" stroke="currentColor" stroke-width="1.4"
@@ -120,6 +121,8 @@ const schema = [
                   href={`#${entry.id}`}
                   data-latest={i === 0 ? '' : undefined}
                   aria-current={i === 0 ? 'true' : undefined}
+                  data-ph="changelog_opened"
+                  data-ph-version={entry.id}
                 >
                   <span class="fname">{entry.id}.md</span>
                   <span class="fdate">{shortFmt(entry.data.date)}</span>
@@ -160,7 +163,7 @@ const schema = [
       </p>
       <nav aria-label="Footer">
         <a href="/">Home</a>
-        <a href={SITE.download}>Download</a>
+        <a href={SITE.download} data-ph="download_clicked" data-ph-location="updates-footer">Download</a>
         <a href="/compare">Compare</a>
         <a href="/#faq">FAQ</a>
         <a href={SITE.appcast}>Update feed</a>

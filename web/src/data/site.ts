@@ -13,6 +13,10 @@
 // page, and the structured data can't advertise a feature the copy dropped.
 // Add content HERE, not in the templates.
 //
+// The one exception is the changelog, which is per-release rather than standing
+// copy and lives in src/content/releases/ as one Markdown file per version. See
+// src/content.config.ts.
+//
 // HOUSE RULE: no em dashes anywhere in copy. Use a colon, a full stop, a
 // semicolon or parentheses instead. This applies to every string in this file,
 // to the templates, and to any HTML comment that ships in the build.

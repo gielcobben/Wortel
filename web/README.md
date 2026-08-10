@@ -28,8 +28,12 @@ feed at `updates.wortel.sh`. See the repo root `CLAUDE.md`.
 
 ```
 src/
-  data/site.ts             ALL page copy: the single source of truth
+  data/site.ts             ALL landing-page copy: the single source of truth
+  content/releases/*.md    the changelog, one Markdown file per release
+  content.config.ts        the release collection's schema + version sorting
   pages/index.astro        the landing page + JSON-LD
+  pages/updates.astro      /updates         the changelog
+  pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms.txt.ts        /llms.txt        short map for language models
   pages/llms-full.txt.ts   /llms-full.txt   the whole page as Markdown
   pages/sitemap.xml.ts     /sitemap.xml
@@ -64,6 +68,42 @@ npm run build && grep -rl '—' dist/ ; echo "exit 1 above = clean"
 JSON-LD (`SoftwareApplication` + `FAQPage`), `/llms.txt` and `/llms-full.txt`
 all render from that one module, so they cannot drift apart. An answer a model
 quotes out of `llms-full.txt` is the same sentence a visitor reads.
+
+## Adding a release to the changelog
+
+Write one Markdown file, named for the version:
+
+```sh
+$EDITOR src/content/releases/2026.33.1.md
+```
+
+```markdown
+---
+date: 2026-08-14
+title: What this release is about
+summary: One line. It leads the in-app update dialog.
+---
+
+A short paragraph if the release deserves one, then bullets.
+
+- What changed, in the same voice as the rest of the site.
+```
+
+That is the whole procedure. **The filename is the version** and the only place
+it is written down, so a note cannot disagree with itself; `date`, `title` and
+`summary` are schema-checked at build time, so a malformed entry fails the build
+rather than shipping. Two things render from the file:
+
+- **`/updates`**, the changelog, newest first, sorted by version rather than by
+  date (three releases shipped on 2026-07-30).
+- **`/release-notes/<version>.html`**, a standalone fragment.
+  `macos/scripts/release.sh --publish` copies it next to the archive as
+  `Wortel-<version>.html`, where `generate_appcast` embeds it as CDATA. That is
+  the text Sparkle shows in the **in-app update dialog**, and embedding means it
+  renders with no network fetch.
+
+Publishing without a note is refused (`--no-notes` overrides), and the check runs
+before anything is built or uploaded.
 
 Regenerating the images (needs ImageMagick + librsvg):
 

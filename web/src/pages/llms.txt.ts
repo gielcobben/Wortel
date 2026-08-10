@@ -36,6 +36,10 @@ ${SECTIONS.map((s) => `- [${s.title}](${abs('/#' + s.id)})${s.lead ? `: ${s.lead
 - [Latest signed build](${SITE.download}): a zip of Wortel.app; always the newest release.
 - [Sparkle appcast](${SITE.appcast}): the update feed, with version, release date and minimum macOS version.
 
+## Changelog
+
+- [Every release, newest first](${abs('/updates')}): the full changelog, one entry per version, with the date it shipped and what changed. Versions are CalVer (year.ISO-week.nth release that week), so 2026.32.2 is the second release of week 32 of 2026.
+
 ## Notes
 
 - ${SITE.name} is free. There is no paid tier, no account and no telemetry-gated feature.

@@ -1,11 +1,15 @@
-// Hand-rolled rather than @astrojs/sitemap: the site is one page, and a build
-// step that walks the route table to discover a single URL is more moving parts
-// than the thing it produces. Add routes to PAGES when there are more.
+// Hand-rolled rather than @astrojs/sitemap: the site is small enough that a
+// build step walking the route table is more moving parts than the thing it
+// produces. Add routes to PAGES when there are more.
+//
+// /release-notes/* is deliberately absent: those are fragments for Sparkle's
+// update dialog, not pages, and the same text is already on /updates.
 import type { APIRoute } from 'astro';
 import { SITE } from '../data/site';
 
 const PAGES: { path: string; changefreq: string; priority: string }[] = [
   { path: '/', changefreq: 'weekly', priority: '1.0' },
+  { path: '/updates', changefreq: 'weekly', priority: '0.6' },
 ];
 
 export const GET: APIRoute = () => {

@@ -1,0 +1,272 @@
+---
+// The changelog. Renders every file in src/content/releases/, newest first.
+// The notes themselves are Markdown; see src/content.config.ts for the rules
+// (filename is the version, and nothing else writes it down).
+import Layout from '../layouts/Layout.astro';
+import { getCollection, render } from 'astro:content';
+import { compareVersions } from '../content.config';
+import { SITE } from '../data/site';
+
+const entries = await getCollection('releases');
+const releases = await Promise.all(
+  entries
+    .sort((a, b) => compareVersions(b.id, a.id))
+    .map(async (entry) => ({ entry, Content: (await render(entry)).Content })),
+);
+
+const latest = releases[0];
+const oldest = releases[releases.length - 1];
+
+const fmt = (d: Date) =>
+  d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+
+const abs = (p: string) => new URL(p, SITE.url).href;
+
+const title = `Changelog: every ${SITE.name} release`;
+const description =
+  `Release notes for every version of ${SITE.name}, the native macOS terminal built on Ghostty. ` +
+  `${releases.length} releases since ${oldest ? fmt(oldest.entry.data.date) : ''}.`;
+
+// A minimal graph: this page, and the app it is the changelog for. The app node
+// itself is described on the home page, so this one references it by @id rather
+// than restating a second, driftable copy of it.
+const schema = [
+  {
+    '@type': 'WebPage',
+    '@id': abs('/updates#webpage'),
+    url: abs('/updates'),
+    name: title,
+    description,
+    isPartOf: { '@id': abs('/#website') },
+    about: { '@id': abs('/#app') },
+    inLanguage: 'en',
+    ...(latest && { dateModified: latest.entry.data.date.toISOString().slice(0, 10) }),
+  },
+];
+---
+
+<Layout title={title} description={description} path="/updates" schema={schema}>
+  <main>
+    <div class="wrap">
+      <article class="card doc changelog">
+        <header class="head">
+          <p class="crumb"><a href="/">Wortel</a></p>
+          <h1>Changelog</h1>
+          <p class="lead">
+            Every release, newest first. Wortel updates itself through Sparkle,
+            so the app checks on its own: Wortel ▸ Check for Updates… takes the
+            newest one immediately.
+          </p>
+          <p class="links">
+            <a class="download" href={SITE.download}>
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                <path d="M8 1v8.5M8 9.5 4.75 6.25M8 9.5l3.25-3.25M2.5 12.5h11"
+                  fill="none" stroke="currentColor" stroke-width="1.4"
+                  stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Download the latest
+            </a>
+          </p>
+          {latest && (
+            <p class="version">
+              {releases.length} releases · newest {latest.entry.id}, {fmt(latest.entry.data.date)}
+            </p>
+          )}
+        </header>
+
+        {releases.map(({ entry, Content }, i) => (
+          <section class="rel" id={entry.id}>
+            <div class="meta">
+              {/* The anchor is the version, so a link to one release is a link
+                  anyone can read and retype. */}
+              <a class="ver" href={`#${entry.id}`}>
+                {entry.id}
+                {i === 0 && <span class="tag">latest</span>}
+              </a>
+              <time datetime={entry.data.date.toISOString().slice(0, 10)}>
+                {fmt(entry.data.date)}
+              </time>
+            </div>
+            <div class="body">
+              <h2>{entry.data.title}</h2>
+              <Content />
+            </div>
+          </section>
+        ))}
+      </article>
+
+      <footer class="foot">
+        <p>
+          <strong>Wortel</strong>: a minimal, native macOS terminal built on Ghostty.
+          Dutch for <em>root</em>.
+        </p>
+        <nav aria-label="Footer">
+          <a href="/">Home</a>
+          <a href={SITE.download}>Download</a>
+          <a href="/#faq">FAQ</a>
+          <a href={SITE.appcast}>Update feed</a>
+          <a href="/llms.txt">llms.txt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</Layout>
+
+<style>
+  /* ==========================================================================
+     A sheet of paper on the graph paper.
+
+     Unlike the landing page, which anchors everything to one left edge at x=36,
+     this page is a centered card. Both still obey the same 36px grid: the card
+     is 24 cells wide with 3 cells of padding, so its edges and its text column
+     land on grid lines rather than near them.
+
+       864 card  =  108 pad + 648 content + 108 pad   (24 = 3 + 18 + 3 cells)
+       648       =  144 rail + 36 gutter + 468 notes  (18 = 4 + 1 + 13 cells)
+
+     468 is the same measure the landing page's prose uses.
+     ========================================================================== */
+  .wrap { --card-w: 864px; }
+
+  /* Centering it is the easy half. The hard half is that `margin: auto` centers
+     on a half-pixel wherever the viewport isn't an even multiple of 36, which
+     puts a white edge a few pixels off the grid line behind it and reads as a
+     mistake. So: floor the left offset to whole cells, which keeps the card
+     centered to within one cell and exactly on the grid.
+
+     The percentage resolves against the body's width rather than 100vw, which
+     would include the scrollbar and shift the card off the lines by its width.
+     Browsers without round() fall back to the flex centering below: centered,
+     one cell less precise, which is the right thing to lose. */
+  .wrap { display: flex; flex-direction: column; align-items: center; }
+  @supports (width: round(down, 50%, 36px)) {
+    .wrap {
+      align-items: flex-start;
+      padding-left: max(0px, round(down, calc((100% - var(--card-w)) / 2), 36px));
+    }
+  }
+
+  .card {
+    width: min(var(--card-w), 100%);
+    padding: 108px;
+    margin: 72px 0;
+    background: #ffffff;
+    /* The card is white in both appearances, so it carries the light palette
+       with it: every shared .doc rule paints from these, and inheriting dark
+       mode's white-on-white text would leave the page blank. Values copied from
+       the light theme in global.css, including the --text-50 that is 0.6 rather
+       than 0.42 so muted copy still clears AA on white. --bg comes along because
+       .download inverts the two (background: var(--text); color: var(--bg)). */
+    --bg: #ffffff;
+    --text: #16171b;
+    --text-70: rgba(22, 23, 27, 0.62);
+    --text-50: rgba(22, 23, 27, 0.6);
+    --grid: rgba(20, 22, 34, 0.08);
+    --accent: #0070f5;
+    color: var(--text);
+  }
+
+  .head { padding-bottom: 36px; }
+  .crumb { font-size: 13px; margin-bottom: 28px; }
+  .crumb a { color: var(--text-50); }
+  .crumb a:hover { color: var(--text); }
+
+  .changelog h1 {
+    font-family: var(--round);
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  .head .links { margin-top: 24px; }
+
+  /* Version and date in a left rail, notes beside them: 144 + 36, so the notes
+     start on a grid line and run the landing page's measure. */
+  .rel {
+    display: grid;
+    grid-template-columns: 144px minmax(0, 1fr);
+    gap: 36px;
+    padding: 36px 0;
+    border-top: 1px solid var(--grid);
+  }
+
+  .meta { padding-top: 2px; }
+  .ver {
+    display: block;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .ver:hover { text-decoration: underline; }
+  .meta time {
+    display: block;
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: var(--text-50);
+  }
+  .tag {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-family: var(--sans);
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    color: #ffffff;
+    background: var(--accent);
+    vertical-align: 1px;
+  }
+
+  .body :global(h2) {
+    font-size: 19px;
+    margin-bottom: 12px;
+  }
+  /* Markdown from the collection lands here, so the shared .doc rules for p, ul
+     and li already apply; only the first-child margin needs correcting. */
+  .body :global(> :first-child) { margin-top: 0; }
+  .body :global(code) {
+    font-family: var(--mono);
+    font-size: 0.9em;
+  }
+  /* Links inside a note's Markdown. The base rule strips underlines from every
+     anchor on the site, which is right for navigation and wrong for prose. */
+  .body :global(a) {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: var(--text-50);
+  }
+  .body :global(a:hover) { text-decoration-color: currentColor; }
+
+  /* Deep-linked releases shouldn't sit flush against the top of the viewport. */
+  .rel:target { scroll-margin-top: 36px; }
+
+  /* The footer stays on the dark grid, but starts at the card's left edge
+     rather than the page's, so the column has one edge top to bottom. */
+  .wrap .foot {
+    width: min(var(--card-w), 100%);
+    max-width: none;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* Once the card fills the viewport it stops being a card sitting on the grid,
+     so it drops the outer margin and the wide padding with it. */
+  @media (max-width: 960px) {
+    /* Later in the source than the @supports block, so this wins the offset
+       back without needing to out-specify it. */
+    .wrap { padding-left: 0; align-items: stretch; }
+    .card {
+      width: 100%;
+      padding: 48px 36px;
+      margin: 0 0 36px;
+    }
+    .changelog h1 { font-size: 27px; }
+    .rel {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+    }
+    .wrap .foot { padding-left: 36px; padding-right: 36px; }
+  }
+</style>

@@ -16,6 +16,12 @@
 #   ./scripts/release.sh --publish 2026.30.1   force a specific version
 #   ./scripts/release.sh --publish --no-install   publish, but leave the
 #                                         installed app alone
+#   ./scripts/release.sh --publish --no-notes     publish without a release note
+#
+# Publishing requires a release note: web/src/content/releases/<version>.md, one
+# Markdown file whose name is the version. It is checked before anything is
+# built, and it feeds two places at once — the changelog at wortel.sh/updates,
+# and the notes Sparkle shows in the in-app update dialog.
 #
 # --no-install exists for one specific hazard: the install step below quits
 # Wortel, and a release is often cut from a shell running *inside* Wortel. That
@@ -49,19 +55,27 @@ mkdir -p build
 BUCKET="wortel-updates"                 # R2 bucket served at updates.wortel.sh
 FEED_BASE="https://updates.wortel.sh"
 RELEASES_DIR="$ROOT/releases"           # canonical archive store; appcast regenerated from it
+WEB="$ROOT/../web"                      # the landing page; also holds the changelog
+# One Markdown file per release, named for the version. It is both what
+# wortel.sh/updates renders and, via web/src/pages/release-notes/, what Sparkle
+# shows in the update dialog — so publishing without one ships an update whose
+# dialog says nothing about what changed. See web/src/content.config.ts.
+NOTES_DIR="$WEB/src/content/releases"
 
 # --- Args -------------------------------------------------------------------
 NOTARIZE=0
 PUBLISH=0
 INSTALL=1
+NOTES=1
 VERSION=""
 BUILD_FILE="$RELEASES_DIR/BUILD"        # tracked record: last published version string
-# Lift --no-install out of the argument list before the positional parse below,
-# so it can be passed in any position — including after a forced version.
+# Lift the flags out of the argument list before the positional parse below, so
+# they can be passed in any position — including after a forced version.
 ARGS=()
 for arg in "$@"; do
   case "$arg" in
     --no-install) INSTALL=0 ;;
+    --no-notes) NOTES=0 ;;
     *) ARGS+=("$arg") ;;
   esac
 done
@@ -117,6 +131,17 @@ case "${1:-}" in
     if [ -n "$last" ]; then
       newest=$(printf '%s\n%s\n' "$last" "$VERSION" | sort -V | tail -1)
       { [ "$VERSION" != "$last" ] && [ "$newest" = "$VERSION" ]; } || { echo "✗ Version $VERSION is not newer than the last published $last" >&2; exit 1; }
+    fi
+    # The release note is checked here, before anything is built, signed or
+    # uploaded — a release that stops halfway is only cheap while it is still
+    # this early. Writing the note is also the last chance to notice that the
+    # thing you are shipping has no one-sentence description.
+    if [ "$NOTES" = 1 ] && [ ! -f "$NOTES_DIR/$VERSION.md" ]; then
+      echo "✗ No release note for $VERSION." >&2
+      echo "  Write web/src/content/releases/$VERSION.md (frontmatter: date, title, summary)," >&2
+      echo "  then re-run. It becomes both wortel.sh/updates and the in-app update dialog." >&2
+      echo "  To publish without one anyway: $0 --publish --no-notes" >&2
+      exit 1
     fi
     echo "==> Publishing $VERSION"
     ;;
@@ -250,6 +275,27 @@ if [ "$PUBLISH" = 1 ]; then
   rm -f "$ZIP"
   ditto -c -k --norsrc --keepParent "$APP" "$ZIP"
 
+  # Release notes for the update dialog. The site build renders every file in
+  # web/src/content/releases/ to a standalone HTML fragment; the one for this
+  # version goes next to the archive, named after it, which is how
+  # generate_appcast finds it (it embeds a same-named .html as CDATA, so the
+  # notes travel inside the feed and render with no network fetch).
+  #
+  # This is the site's *first* build of the run. It is not wasted work being
+  # done twice: the deploy at the end has to build again anyway, because only
+  # then does the appcast it reads its version line from mention $VERSION.
+  if [ "$NOTES" = 1 ] && [ -d "$WEB" ]; then
+    echo "==> Rendering release notes for the update dialog"
+    (
+      cd "$WEB"
+      [ -d node_modules ] || npm install --silent
+      npm run build --silent
+    ) || { echo "✗ Could not build the site to render release notes for $VERSION." >&2; exit 1; }
+    NOTE_HTML="$WEB/dist/release-notes/$VERSION.html"
+    [ -f "$NOTE_HTML" ] || { echo "✗ Expected $NOTE_HTML after the build; the note exists but rendered nothing." >&2; exit 1; }
+    cp "$NOTE_HTML" "$RELEASES_DIR/Wortel-${VERSION}.html"
+  fi
+
   # Regenerate the appcast — EdDSA-signs every archive in RELEASES_DIR using the
   # shared publisher private key in the login Keychain. --maximum-deltas 0
   # disables Sparkle's binary delta patches entirely: every version ships as a
@@ -288,7 +334,6 @@ if [ "$PUBLISH" = 1 ]; then
   # are already live and users are being offered the update. Exiting would skip
   # the install below and imply the publish came apart, which isn't true — so
   # say loudly what's wrong and carry on.
-  WEB="$ROOT/../web"
   if [ -d "$WEB" ]; then
     echo "==> Deploying the website (wortel.sh)"
     (

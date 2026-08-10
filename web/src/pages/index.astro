@@ -152,7 +152,7 @@ const schema = [website, webpage, person, app];
           </p>
           {LATEST && (
             <p class="version">
-              Version {LATEST.version}{LATEST.min && ` · macOS ${LATEST.min}+`}
+              <a href="/updates">Version {LATEST.version}</a>{LATEST.min && ` · macOS ${LATEST.min}+`}
             </p>
           )}
         </div>
@@ -286,6 +286,7 @@ const schema = [website, webpage, person, app];
       <nav aria-label="Footer">
         <a href="/">Home</a>
         <a href={DOWNLOAD}>Download</a>
+        <a href="/updates">Changelog</a>
         <a href="#faq">FAQ</a>
         <a href="/llms.txt">llms.txt</a>
       </nav>

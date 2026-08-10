@@ -129,10 +129,52 @@ final class GitRepoModel {
     init(root: String, highlighter: (any DiffHighlighting)? = nil) {
         self.root = root
         self.highlighter = highlighter
-        watcher = GitRepoWatcher(root: root) { [weak self] in
+        startWatching()
+    }
+
+    /// Watch the work tree immediately, then widen the watch once we know where
+    /// this checkout keeps its git state.
+    ///
+    /// Two shapes, and the second is why this isn't just `root`:
+    ///
+    /// - The **primary** checkout holds `.git` inside its work tree, so the root
+    ///   watch already sees commits and staging. What it *also* sees is
+    ///   `.git/worktrees/<name>/index` — rewritten by every `git add` and every
+    ///   index-refreshing `git status` an agent runs in *another* session — each
+    ///   one a full `git status` walk here, for a work tree that did not move.
+    ///   So that subtree is excluded. Not all of it goes away: a commit in a
+    ///   worktree also writes `refs/heads/<branch>` and objects in the shared
+    ///   `.git`, which this still sees. That's the rarer event and it is at
+    ///   least real news about the repository; the per-worktree index churn is
+    ///   the noise worth dropping.
+    /// - A **linked worktree**'s `.git` is a file; its HEAD, index and reflog
+    ///   live under the primary's `.git/worktrees/<name>`. Nothing under the work
+    ///   tree changes when you stage or commit there, so without watching that
+    ///   directory the panel keeps listing files that are already committed until
+    ///   the session is re-selected. That's the bug this exists for.
+    ///
+    /// Resolving it needs a `git` call, so the root watch goes up first and the
+    /// stream is replaced when the answer lands (the old one stops on release).
+    /// File edits — the common case — are covered for the whole of that gap.
+    private func startWatching() {
+        watcher = makeWatcher(paths: [root], excluding: [Self.worktreesDir(inside: root)])
+        Task { @MainActor [weak self] in
+            guard let self, let gitDir = await GitService.externalGitDir(root: self.root) else { return }
+            // A worktree's own gitdir is small and entirely ours: no exclusions,
+            // and nothing here belongs to another session.
+            self.watcher = self.makeWatcher(paths: [self.root, gitDir])
+        }
+    }
+
+    private func makeWatcher(paths: [String], excluding: [String] = []) -> GitRepoWatcher {
+        GitRepoWatcher(paths: paths, excluding: excluding) { [weak self] in
             // Callback is on a background queue — hop to the main actor.
             Task { @MainActor in self?.scheduleWatchRefresh() }
         }
+    }
+
+    private static func worktreesDir(inside root: String) -> String {
+        (root as NSString).appendingPathComponent(".git/worktrees")
     }
 
     /// A changed file, in its own window, showing that row's diff.

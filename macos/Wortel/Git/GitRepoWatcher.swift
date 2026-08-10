@@ -6,6 +6,14 @@ import Foundation
 /// checkouts, stashes, and edits made outside Wortel, and keep the changes list
 /// live without the user re-selecting the session.
 ///
+/// It takes a *list* of paths because a linked worktree's git state isn't under
+/// its work tree: the work tree gives us the file edits, and the checkout's own
+/// gitdir (`<primary>/.git/worktrees/<name>`) gives us its HEAD and index. See
+/// `GitService.externalGitDir`. `excluding` is the other half of the same split
+/// — the primary checkout's watch covers its whole `.git`, which holds every
+/// worktree's state under `worktrees/`, and being woken by another session's
+/// index is being woken for nothing.
+///
 /// The callback runs on a background queue; callers marshal to the main actor.
 /// FSEvents coalesces bursts (see the latency below), and callers debounce
 /// again, so a busy repo (a build, an agent editing files) collapses to a
@@ -18,14 +26,15 @@ final class GitRepoWatcher {
     /// writes, small enough that a commit feels immediate.
     private static let latency: CFTimeInterval = 0.25
 
-    init(root: String, onChange: @escaping () -> Void) {
+    init(paths: [String], excluding: [String] = [], onChange: @escaping () -> Void) {
         self.onChange = onChange
-        start(root: root)
+        start(paths: paths, excluding: excluding)
     }
 
     deinit { stop() }
 
-    private func start(root: String) {
+    private func start(paths: [String], excluding: [String]) {
+        guard !paths.isEmpty else { return }
         let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
             guard let info else { return }
             let watcher = Unmanaged<GitRepoWatcher>.fromOpaque(info).takeUnretainedValue()
@@ -40,7 +49,7 @@ final class GitRepoWatcher {
             kCFAllocatorDefault,
             callback,
             &context,
-            [root] as CFArray,
+            paths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             Self.latency,
             FSEventStreamCreateFlags(
@@ -48,6 +57,10 @@ final class GitRepoWatcher {
         else { return }
 
         self.stream = stream
+        // Capped at 8 by FSEvents, and it rejects the whole list if it's longer.
+        if !excluding.isEmpty {
+            FSEventStreamSetExclusionPaths(stream, Array(excluding.prefix(8)) as CFArray)
+        }
         FSEventStreamSetDispatchQueue(stream, DispatchQueue.global(qos: .utility))
         FSEventStreamStart(stream)
     }

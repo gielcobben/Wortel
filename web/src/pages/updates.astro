@@ -7,10 +7,11 @@
 // there it is the app, here it is the app's file-preview window with one
 // release note open in it. Picking a file on the left opens it on the right.
 //
-// The switch is :target and nothing else. No island, no state: every release is
-// in the HTML, every one has a shareable URL, and the page works with
-// JavaScript off. See the generated CSS below for the one thing :target can't
-// express on its own.
+// Every release is in the HTML, every one has a shareable URL, and the page
+// works with JavaScript off: :target alone opens the right window, and the
+// generated CSS below covers the one thing :target can't express. When the
+// script IS there it takes that over (html.js-open), because reaching :target
+// means a fragment navigation and a fragment navigation scrolls the page.
 import Layout from '../layouts/Layout.astro';
 import PreviewWindow from '../components/PreviewWindow.astro';
 import { getCollection, render } from 'astro:content';
@@ -140,11 +141,14 @@ const schema = [
               <Content />
             </PreviewWindow>
           ))}
-          <!-- The resize corner. It belongs to the frame, not to a window:
-               all 18 share one box, so dragging it resizes whichever is open
-               and every one behind it. Invisible until the pointer is over the
-               window, the way a real one is. -->
-          <span class="grip" aria-hidden="true"></span>
+          <!-- Eight resize handles, like a real window: four sides and four
+               corners. They belong to the frame, not to a window, because all
+               18 share one box. Pulling a top or left handle moves the window
+               as well as resizing it, since the opposite edge is what stays
+               put. Only the bottom-right one is ever drawn. -->
+          {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map((edge) => (
+            <span class={`rz rz-${edge}`} data-edge={edge} aria-hidden="true"></span>
+          ))}
         </div>
       </div>
     </div>
@@ -164,10 +168,11 @@ const schema = [
     </footer>
   </main>
 
-  <!-- Drag by the titlebar, resize by the corner, both resting on whole grid
-       cells: the same behaviour, and the same reasons, as the app window on the
-       landing page. is:inline so it runs before first paint rather than after,
-       which is what keeps the window from painting once and then jumping.
+  <!-- Drag by the titlebar, resize from any edge or corner, both resting on
+       whole grid cells: the same behaviour, and the same reasons, as the app
+       window on the landing page. is:inline so it runs before first paint
+       rather than after, which is what keeps the window from painting once and
+       then jumping.
 
        All of it is enhancement. With no JavaScript the window keeps the size and
        place the stylesheet gives it, every release is still readable, and every
@@ -180,7 +185,6 @@ const schema = [
 
     const rail = document.querySelector('.app-rail');
     const frame = document.querySelector('.app-frame');
-    const grip = frame.querySelector('.grip');
     const narrow = window.matchMedia('(max-width: 900px)');
 
     let size = { ...DEFAULT };
@@ -233,19 +237,29 @@ const schema = [
     // (432, 36), both whole cells, so a snapped size AND a snapped offset put
     // every edge on a line the page is already painting. Snapping only the size
     // would leave the right edge floating wherever the left one landed.
-    function settle() {
+    // `anchor` names the edges the gesture held still. Snapping the offset and
+    // the size independently would shift them by up to a cell, so the edge you
+    // were not touching would jump on release, which is exactly the edge you
+    // were lining something up against. Snap the anchored edge instead and let
+    // the offset fall out of it; both are whole cells, so the result still
+    // lands on the grid.
+    function settle(anchor) {
       const a = avail();
+      const right = pos.x + size.w;
+      const bottom = pos.y + size.h;
       size.w = clamp(near(size.w), MIN.w, down(a.w));
       size.h = clamp(near(size.h), MIN.h, down(a.h));
-      pos.x = clamp(near(pos.x), 0, down(a.w - size.w));
-      pos.y = clamp(near(pos.y), 0, down(a.h - size.h));
+      pos.x = anchor && anchor.right ? near(right) - size.w : near(pos.x);
+      pos.y = anchor && anchor.bottom ? near(bottom) - size.h : near(pos.y);
+      pos.x = clamp(pos.x, 0, down(a.w - size.w));
+      pos.y = clamp(pos.y, 0, down(a.h - size.h));
       frame.classList.add('settling');
       apply();
       clearTimeout(settleTimer);
       settleTimer = setTimeout(() => frame.classList.remove('settling'), 200);
     }
 
-    function track(onMove, bodyClass) {
+    function track(onMove, bodyClass, anchor) {
       // A gesture interrupting a settle has to be instant from the first frame.
       clearTimeout(settleTimer);
       frame.classList.remove('settling');
@@ -253,9 +267,10 @@ const schema = [
       frame.classList.add('gesturing');
       document.body.classList.add(bodyClass);
       const stop = () => {
-        settle();
+        settle(anchor);
         frame.classList.remove('gesturing');
         document.body.classList.remove(bodyClass);
+        document.body.style.removeProperty('--rz-cursor');
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', stop);
         window.removeEventListener('pointercancel', stop);
@@ -267,7 +282,7 @@ const schema = [
 
     frame.addEventListener('pointerdown', (e) => {
       if (narrow.matches) return;
-      if (e.target.closest('.grip')) return;             // that gesture is the resize
+      if (e.target.closest('.rz')) return;               // that gesture is a resize
       if (e.target.closest('a, button, input')) return;  // a link inside a note
       // Below the strip is the document: selecting a paragraph must not drag
       // the window out from under the pointer.
@@ -282,20 +297,56 @@ const schema = [
       e.preventDefault();   // no text selection while dragging
     });
 
-    grip.addEventListener('pointerdown', (e) => {
-      if (narrow.matches) return;
-      const start = { x: e.clientX, y: e.clientY, w: size.w, h: size.h };
-      const a = avail();
-      track((ev) => {
-        // The corner grows the window right and down, so the room it has is
-        // whatever is left of the rail past where the window already starts.
-        size.w = clamp(start.w + (ev.clientX - start.x), MIN.w, a.w - pos.x);
-        size.h = clamp(start.h + (ev.clientY - start.y), MIN.h, a.h - pos.y);
-        apply();
-      }, 'resizing-win');
-      e.preventDefault();
-      e.stopPropagation();   // never also a drag
-    });
+    // Eight handles off one routine. A handle names the edges it moves, and the
+    // edges it does NOT name are the ones that stay put: pull the left side and
+    // the right side is the anchor, so the window has to travel as it narrows.
+    // That is the whole difference between resizing north/west and south/east,
+    // and why the top-left corner cannot just be the bottom-right with signs
+    // flipped.
+    const CURSOR = {
+      n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
+      ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize',
+    };
+
+    for (const handle of frame.querySelectorAll('.rz')) {
+      handle.addEventListener('pointerdown', (e) => {
+        if (narrow.matches) return;
+        const edge = handle.dataset.edge;
+        const a = avail();
+        const start = { x: e.clientX, y: e.clientY, w: size.w, h: size.h, px: pos.x, py: pos.y };
+        // The anchored edges, in rail coordinates. They do not move all gesture.
+        const right = start.px + start.w;
+        const bottom = start.py + start.h;
+
+        document.body.style.setProperty('--rz-cursor', CURSOR[edge]);
+        track((ev) => {
+          const dx = ev.clientX - start.x;
+          const dy = ev.clientY - start.y;
+          if (edge.includes('e')) {
+            // Growing right: the room is whatever is left of the rail past the
+            // window's own left edge, which is not moving.
+            size.w = clamp(start.w + dx, MIN.w, a.w - start.px);
+          } else if (edge.includes('w')) {
+            // Growing left: it can reach the rail's edge and no further, which
+            // is the same as saying it can be at most as wide as `right`.
+            size.w = clamp(start.w - dx, MIN.w, right);
+            pos.x = right - size.w;
+          }
+          if (edge.includes('s')) {
+            size.h = clamp(start.h + dy, MIN.h, a.h - start.py);
+          } else if (edge.includes('n')) {
+            size.h = clamp(start.h - dy, MIN.h, bottom);
+            pos.y = bottom - size.h;
+          }
+          apply();
+        }, 'resizing-win', {
+          right: edge.includes('w'),
+          bottom: edge.includes('n'),
+        });
+        e.preventDefault();
+        e.stopPropagation();   // never also a drag
+      });
+    }
 
     new ResizeObserver(layout).observe(rail);
     narrow.addEventListener('change', layout);
@@ -542,35 +593,55 @@ const schema = [
     outline-offset: 2px;
   }
 
-  .grip {
+  /* The handles straddle the edge rather than sitting inside it, the way a real
+     window's do: a few pixels of grab room on the outside is what stops the
+     resize from being a game of hitting a 1px border. The frame does not clip,
+     so the overhang costs nothing. */
+  .rz {
     position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 22px;
-    height: 22px;
     z-index: 6;
-    cursor: nwse-resize;
     touch-action: none;
-    opacity: 0;
-    transition: opacity 0.15s ease;
   }
-  /* Two short strokes in the corner, drawn only when the pointer is on the
-     window. macOS shows nothing at all, but this is a page, where nobody
-     expects a window to resize unless it says so. */
-  .grip::after {
+  /* Sides stop short of the corners so the corner handles keep their own room. */
+  .rz-n, .rz-s { left: 16px; right: 16px; height: 9px; cursor: ns-resize; }
+  .rz-n { top: -4px; }
+  .rz-s { bottom: -4px; }
+  .rz-e, .rz-w { top: 16px; bottom: 16px; width: 9px; cursor: ew-resize; }
+  .rz-e { right: -4px; }
+  .rz-w { left: -4px; }
+  /* Above the sides, so the overlap at each corner resolves to the corner. */
+  .rz-ne, .rz-nw, .rz-se, .rz-sw { width: 20px; height: 20px; z-index: 7; }
+  .rz-ne { top: -4px; right: -4px; cursor: nesw-resize; }
+  .rz-nw { top: -4px; left: -4px; cursor: nwse-resize; }
+  .rz-se { bottom: -4px; right: -4px; cursor: nwse-resize; }
+  .rz-sw { bottom: -4px; left: -4px; cursor: nesw-resize; }
+
+  /* One of the eight is drawn, and only while the pointer is on the window.
+     macOS draws none of them, but this is a page, where nobody expects a window
+     to resize at all unless something says so. One mark is enough to say it;
+     eight would be a diagram. */
+  .rz-se::after {
     content: "";
     position: absolute;
-    right: 5px;
-    bottom: 5px;
+    right: 9px;
+    bottom: 9px;
     width: 9px;
     height: 9px;
     border-right: 1.5px solid var(--text-50);
     border-bottom: 1.5px solid var(--text-50);
     border-bottom-right-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
   }
-  .app-frame:hover .grip, .grip:active { opacity: 0.75; }
-  :global(body.resizing-win) { cursor: nwse-resize; }
-  :global(body.resizing-win) * { cursor: nwse-resize !important; user-select: none; }
+  .app-frame:hover .rz-se::after { opacity: 0.75; }
+
+  /* The cursor has to survive leaving the handle mid-drag, so it goes on the
+     body; which cursor depends on the edge, hence the variable. */
+  :global(body.resizing-win),
+  :global(body.resizing-win) * {
+    cursor: var(--rz-cursor, nwse-resize) !important;
+    user-select: none;
+  }
 
   /* Stacked. The window is a desktop conceit: on a phone it stops being a
      picture of an app and becomes 18 boxes to scroll past, so they flow as

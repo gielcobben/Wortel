@@ -1,15 +1,18 @@
 ---
-// The changelog. Renders every file in src/content/releases/, newest first.
-// The notes themselves are Markdown; see src/content.config.ts for the rules
-// (filename is the version, and nothing else writes it down).
+// The changelog, as the folder of Markdown files it actually is.
 //
-// The page deliberately borrows the landing page's shell: .shell, .hero-left,
-// .intro and .features are that page's global classes, not copies of them, so
-// the two share one geometry (text column at x=36, the panel beside it starting
-// on x=432) and can't drift apart. What changes is which side is pinned: the
-// landing page pins the app window on the right and scrolls the prose, this one
-// pins the text on the left and scrolls the releases.
+// Same shell as the landing page (.shell, .hero-left, .app-rail, .app-frame are
+// that page's own global classes, used rather than copied), so the window lands
+// on the same x=432 and the same snapped size. What sits in the frame differs:
+// there it is the app, here it is the app's file-preview window with one
+// release note open in it. Picking a file on the left opens it on the right.
+//
+// The switch is :target and nothing else. No island, no state: every release is
+// in the HTML, every one has a shareable URL, and the page works with
+// JavaScript off. See the generated CSS below for the one thing :target can't
+// express on its own.
 import Layout from '../layouts/Layout.astro';
+import PreviewWindow from '../components/PreviewWindow.astro';
 import { getCollection, render } from 'astro:content';
 import { compareVersions } from '../content.config';
 import { SITE } from '../data/site';
@@ -26,9 +29,8 @@ const oldest = releases[releases.length - 1];
 
 const fmt = (d: Date) =>
   d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
-// The index in the pinned column has 96px for the whole entry, so it drops the
-// year: every release so far is from the same one, and the full date is two
-// inches to the right on the release itself.
+// The file list has 96px for a date, so it drops the year: every release so far
+// is from the same one, and the full date is in the window two inches right.
 const shortFmt = (d: Date) =>
   d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
@@ -39,9 +41,26 @@ const description =
   `Release notes for every version of ${SITE.name}, the native macOS terminal built on Ghostty. ` +
   `${releases.length} releases since ${oldest ? fmt(oldest.entry.data.date) : ''}.`;
 
-// A minimal graph: this page, and the app it is the changelog for. The app node
-// itself is described on the home page, so this one references it by @id rather
-// than restating a second, driftable copy of it.
+// ---- the one rule :target can't state -------------------------------------
+// :target styles the element the URL names, and that is the window. The file
+// on the LEFT that should look open is a different element in a different
+// column, and CSS has no way to say "the link whose href matches whatever is
+// targeted". So it is written out, one pair of rules per release, from the same
+// array that renders them. is:inline because these are page-global selectors,
+// not scoped ones, and Astro would otherwise rewrite them out of matching.
+const openRow = 'background: rgba(128,128,128,0.14);';
+const openName = 'color: var(--text);';
+const open = (sel: string) => `${sel}{${openRow}}\n${sel} .fname{${openName}}`;
+const activeCss = [
+  ...releases.map(({ entry }) =>
+    open(`.shell:has([id="${entry.id}"]:target) .files a[href="#${entry.id}"]`),
+  ),
+  // Nothing targeted yet: the newest file is the one that is open. This has to
+  // be conditional on nothing being targeted, or the newest stays lit next to
+  // whichever file you actually opened, and two rows read as open at once.
+  open('.shell:not(:has(.win:target)) .files a[data-latest]'),
+].join('\n');
+
 const schema = [
   {
     '@type': 'WebPage',
@@ -58,19 +77,17 @@ const schema = [
 ---
 
 <Layout title={title} description={description} path="/updates" schema={schema}>
+  <style is:inline set:html={activeCss} />
+
   <main>
     <div class="shell">
-      <!-- The pinned column. Same box as the landing page's hero text: 100vh,
-           content on the (36,36) intersection, first thing at the top and last
-           thing at the bottom. -->
       <aside class="hero-left side">
         <div class="intro">
           <p class="mark"><a href="/">Wortel</a></p>
           <h1 class="page-title">Changelog</h1>
           <p class="desc">
-            Every release, newest first. Wortel updates itself through Sparkle,
-            so the app checks on its own: Wortel ▸ Check for Updates… takes the
-            newest one immediately.
+            Every release is a Markdown file, and this is the window Wortel opens
+            one in. Pick a version to read it.
           </p>
           <p class="links">
             <a class="download" href={SITE.download}>
@@ -82,50 +99,37 @@ const schema = [
               Download the latest
             </a>
           </p>
-          {latest && (
-            <p class="version">
-              {releases.length} releases · newest {latest.entry.id}
-            </p>
-          )}
         </div>
 
-        <!-- Where the landing page puts Features. Same markup and the same two
-             columns, so the pinned column reads as the same object on both. -->
-        <nav class="features index" aria-label="Releases">
-          <p class="head">Releases</p>
-          <dl>
-            {releases.map(({ entry }) => (
-              <div>
-                <dt><a href={`#${entry.id}`}>{entry.id}</a></dt>
-                <dd>{shortFmt(entry.data.date)}</dd>
-              </div>
+        <!-- Where the landing page puts Features. A list of files, because that
+             is what the folder holds. -->
+        <nav class="files" aria-label="Releases">
+          <p class="head">{releases.length} releases</p>
+          <ol>
+            {releases.map(({ entry }, i) => (
+              <li>
+                <a href={`#${entry.id}`} data-latest={i === 0 ? '' : undefined}>
+                  <span class="fname">{entry.id}.md</span>
+                  <span class="fdate">{shortFmt(entry.data.date)}</span>
+                </a>
+              </li>
             ))}
-          </dl>
+          </ol>
         </nav>
       </aside>
 
-      <div class="panel-rail">
-        <article class="panel doc changelog">
+      <div class="app-rail">
+        <div class="app-frame">
           {releases.map(({ entry, Content }, i) => (
-            <section class="rel" id={entry.id}>
-              <div class="meta">
-                {/* The anchor is the version, so a link to one release is a link
-                    anyone can read and retype. */}
-                <a class="ver" href={`#${entry.id}`}>
-                  {entry.id}
-                  {i === 0 && <span class="tag">latest</span>}
-                </a>
-                <time datetime={entry.data.date.toISOString().slice(0, 10)}>
-                  {fmt(entry.data.date)}
-                </time>
-              </div>
-              <div class="body">
-                <h2>{entry.data.title}</h2>
-                <Content />
-              </div>
-            </section>
+            <PreviewWindow id={entry.id} name={`${entry.id}.md`} latest={i === 0}>
+              <h1>{entry.data.title}</h1>
+              <p class="file-meta">
+                Version {entry.id} · {fmt(entry.data.date)}
+              </p>
+              <Content />
+            </PreviewWindow>
           ))}
-        </article>
+        </div>
       </div>
     </div>
 
@@ -146,20 +150,13 @@ const schema = [
 </Layout>
 
 <style>
-  /* ==========================================================================
-     The pinned column.
-
-     .hero-left already gives the 100vh box, the 36px padding and the top/bottom
-     split; this only pins it. The landing page pins the other side, so between
-     them exactly one column is always moving.
-     ========================================================================== */
+  /* The pinned column. .hero-left gives the 100vh box, the 36px padding and the
+     top/bottom split; this only pins it, the way .app-rail pins the other side
+     of the landing page. height rather than min-height because the part of a
+     pinned element below the fold cannot be reached. */
   .side {
     position: sticky;
     top: 0;
-    /* height, not min-height: .hero-left's min-height would let a tall index
-       grow the column past the viewport, and the part below the fold of a
-       pinned element is unreachable. Fixed height plus the scroll on .index
-       keeps everything in it reachable at any window size. */
     height: 100vh;
   }
 
@@ -173,139 +170,79 @@ const schema = [
   .mark a { color: var(--text-50); }
   .mark a:hover { color: var(--text); }
 
-  /* The index takes what the intro leaves and scrolls inside itself rather than
-     pushing the column past 100vh. min-height: 0 because a flex item's floor is
-     its content, which would defeat the overflow. */
-  .index {
+  /* The file list takes what the intro leaves and scrolls inside itself rather
+     than growing the column past the viewport. */
+  .files {
     min-height: 0;
     overflow-y: auto;
     padding-top: 36px;
   }
-  .index dt a { color: var(--text); font-family: var(--mono); font-size: 13px; }
-  .index dt a:hover { text-decoration: underline; }
-  .index dd { font-size: 13px; }
+  .files .head { color: var(--text-50); margin-bottom: 10px; }
+  .files ol { list-style: none; }
+  .files a {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: baseline;
+    padding: 4px 8px;
+    margin: 0 -8px;
+    border-radius: 6px;
+    line-height: 1.5;
+  }
+  .files a:hover { background: var(--grid); }
+  .fname { font-family: var(--mono); font-size: 12.5px; color: var(--text-70); }
+  .fdate { font-size: 12px; color: var(--text-50); }
+  /* Which row is OPEN is in the generated rules above: they are the only thing
+     that knows. Hover is the only state that can be stated here. */
+  .files a:hover .fname { color: var(--text); }
 
   /* ==========================================================================
-     The panel.
-
-     The rail's 36px padding puts its left edge on x=432, the same line the app
-     window starts on over on the landing page, and it caps at 30 cells the way
-     the window caps at the real thing's size: past that it would be a measure
-     nobody can read across, not a bigger panel.
-
-       panel     =  72 pad + content + 72 pad
-       content   =  144 rail + 36 gutter + notes
-
-     round() lands the right edge on a grid line at any viewport, the same
-     technique .app-frame uses.
+     The frame. .app-rail and .app-frame are the landing page's, so the window
+     is the same size, in the same place, snapped to the same cells. All 18
+     windows are stacked in it and :target picks one, which keeps every release
+     in the HTML for anything that reads the page rather than looks at it.
      ========================================================================== */
-  .panel-rail {
-    --panel: #22232e;
-    --panel-edge: rgba(255, 255, 255, 0.07);
-    --rule: rgba(255, 255, 255, 0.09);
-    padding: 36px;
+  /* A preview window, not the whole app, so it is nowhere near the app window's
+     size: 20 x 15 cells, anchored at the rail's (432, 36) like the landing
+     page's window is. Both dimensions are whole cells, so all four edges land
+     on grid lines and the graph paper carries the rest of the rail. This
+     overrides .app-frame's own round(min(100%, --app-max-w)) sizing, which is
+     the real app's dimensions and belongs to the page that draws the real app. */
+  .app-frame {
+    position: relative;
+    width: min(100%, 720px);
+    height: min(100%, 540px);
   }
-  @media (prefers-color-scheme: light) {
-    .panel-rail {
-      /* Same white as the page behind it. What separates them is that the grid
-         lines stop at the panel's edge, plus the hairline ring below. */
-      --panel: #ffffff;
-      --panel-edge: rgba(20, 22, 34, 0.10);
-      --rule: rgba(20, 22, 34, 0.09);
-    }
+  .app-frame > :global(.win) {
+    position: absolute;
+    inset: 0;
+    display: none;
   }
+  .app-frame > :global(.win:target) { display: flex; }
+  /* Arriving with no hash: the newest release is open. */
+  .app-frame:not(:has(:target)) > :global(.win[data-latest]) { display: flex; }
 
-  .panel {
-    width: round(down, min(100%, 1080px), 36px);
-    padding: 72px;
-    background: var(--panel);
-    /* A ring rather than a border: a border is 2px of box the grid math would
-       have to account for, and the edges landing on the lines is the point.
-       box-shadow does not take part in layout. */
-    box-shadow: 0 0 0 1px var(--panel-edge);
-  }
-
-  /* Version and date in a left rail, notes beside them: 144 + 36, so the notes
-     start on a grid line. */
-  .rel {
-    display: grid;
-    grid-template-columns: 144px minmax(0, 1fr);
-    gap: 36px;
-    padding: 36px 0;
-    border-top: 1px solid var(--rule);
-  }
-  .rel:first-child { border-top: 0; padding-top: 0; }
-  .rel:last-child { padding-bottom: 0; }
-
-  .meta { padding-top: 2px; }
-  .ver {
-    display: block;
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--text);
-    text-decoration: none;
-  }
-  .ver:hover { text-decoration: underline; }
-  .meta time {
-    display: block;
-    margin-top: 6px;
-    font-size: 12.5px;
-    color: var(--text-50);
-  }
-  .tag {
-    display: inline-block;
-    margin-left: 8px;
-    padding: 1px 6px;
-    border-radius: 999px;
-    font-family: var(--sans);
-    font-size: 10.5px;
-    letter-spacing: 0.02em;
-    color: var(--accent-text);
-    background: var(--accent);
-    vertical-align: 1px;
-  }
-
-  .body :global(h2) {
-    font-size: 19px;
-    margin-bottom: 12px;
-  }
-  /* Markdown from the collection lands here, so the shared .doc rules for p, ul
-     and li already apply; only the first-child margin needs correcting. */
-  .body :global(> :first-child) { margin-top: 0; }
-  .body :global(code) {
-    font-family: var(--mono);
-    font-size: 0.9em;
-  }
-  /* Links inside a note's Markdown. The base rule strips underlines from every
-     anchor on the site, which is right for navigation and wrong for prose. */
-  .body :global(a) {
-    color: inherit;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    text-decoration-color: var(--text-50);
-  }
-  .body :global(a:hover) { text-decoration-color: currentColor; }
-
-  /* Jumping to a release from the index lands it under the panel's top padding
-     rather than flush against the viewport. */
-  .rel:target { scroll-margin-top: 36px; }
-
-  /* Stacked. .shell and .hero-left already collapse at this width (global.css);
-     what is left is to stop pinning, and to let the index run at its natural
-     height now that it is part of the page rather than a fixed column. */
+  /* Stacked. The window is a desktop conceit: on a phone it stops being a
+     picture of an app and becomes 18 boxes to scroll past, so they flow as
+     ordinary cards and all of them are open at once. .app-rail's own narrow
+     rules are the landing page's (a 468px tall, pointer-inert window) and have
+     to be undone here. */
   @media (max-width: 900px) {
     .side { position: static; height: auto; }
-    .index { overflow-y: visible; padding-top: 0; }
-    .panel-rail { padding: 0 0 36px 36px; }
-    .panel {
-      /* Left edge stays on x=36 with the text above it; the right runs to the
-         viewport, where the body's overflow-x clips it. */
-      width: 100%;
-      padding: 36px;
+    .files { overflow-y: visible; padding-top: 0; }
+    .app-rail {
+      position: static;
+      height: auto;
+      padding: 0 0 0 36px;
+      pointer-events: auto;
     }
-    .rel {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 14px;
+    .app-frame { width: 100%; height: auto; }
+    .app-frame > :global(.win) {
+      position: static;
+      display: flex;
+      height: auto;
+      margin-bottom: 36px;
     }
+    .app-frame > :global(.win .doc-body) { overflow-y: visible; }
   }
 </style>

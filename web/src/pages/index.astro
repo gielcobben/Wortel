@@ -40,7 +40,10 @@ const LATEST = await latestRelease();
 const features = FEATURES;
 
 // ---- structured data ------------------------------------------------------
-// One @graph rather than several <script> tags: the nodes cross-reference by
+// One @graph rather than several script tags: the nodes cross-reference by
+// (NB: the literal tag spelled out here broke Vite's dependency scan, which
+// reads the frontmatter as JS and started parsing a script block mid-comment.
+// It failed the scan for the whole site and left pages serving stale CSS.)
 // @id (the app is the page's mainEntity, the person publishes both), and a
 // crawler can only resolve those references inside a single document.
 const abs = (p: string) => new URL(p, SITE.url).href;

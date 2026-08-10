@@ -109,39 +109,34 @@ npm run deploy
 npm run tail       # live logs, if something looks wrong
 ```
 
-### Taking over the domain
+### The domain handover, which has already happened
 
-`updates.wortel.sh` is still a **custom domain on the R2 bucket**, and a bucket
-custom domain and a Worker route cannot both hold one hostname. So the Worker
-currently lives on `wortel-updates.cobbens.workers.dev`, deployed and verified,
-serving the real archives out of the real bucket and taking no real traffic.
-`routes` is commented out in `wrangler.jsonc` to keep it that way.
+`updates.wortel.sh` was a **custom domain on the R2 bucket** until this Worker
+took it over. The two cannot both hold one hostname, which is what gave the
+handover an order:
 
-This is a handover rather than a swap, because the Worker reads the bucket
-through its **R2 binding and not over HTTP**. Once it is in front, the bucket
-does not need a public domain at all, and losing it closes a door that
-currently goes around the counting.
-
-The hostname itself cannot move. `SUFeedURL` is baked into `Info.plist`, so
-every copy of Wortel already installed will check `updates.wortel.sh` forever.
-A different domain would only ever see people who install from that day on.
-
-1. Point a scratch build's `SUFeedURL` at the workers.dev URL and run a real
-   Sparkle update end to end. Everything else here can be checked with curl,
-   and has been; this is the only step that exercises what the Worker is for.
-2. Remove the custom domain from the bucket: R2 → wortel-updates → Settings →
+1. Remove the custom domain from the bucket: R2 → wortel-updates → Settings →
    Public access → Custom domains.
-3. Uncomment `routes` in `wrangler.jsonc` and `npm run deploy`.
-4. Set `workers_dev` to `false` and deploy again, so the archives are not also
-   served from a second hostname nobody meant to publish.
+2. `npm run deploy`, with `routes` present in `wrangler.jsonc`.
+3. Deploy again with `workers_dev` false, so the archives are not also served
+   from a second hostname nobody meant to publish.
 
-Between 2 and 3 the hostname resolves to nothing. Sparkle treats a failed check
-as no update available and tries again later, so the cost of that window is a
-missed check, not a broken install.
+Between 1 and 2 the hostname serves nothing and returns 530. Sparkle reads a
+failed check as no update available and tries again later, so the cost of that
+window is a missed check, not a broken install. It lasted about a minute.
 
-**Rollback** is the same in reverse: delete the Worker route, put the custom
-domain back on the bucket, and the channel is exactly what it was before this
-directory existed.
+It was a handover rather than a swap, because the Worker reads the bucket
+through its **R2 binding and not over HTTP**. With it in front, the bucket needs
+no public domain at all, and losing that domain closed a door that went around
+the counting.
+
+The hostname itself can never move. `SUFeedURL` is baked into `Info.plist`, so
+every copy of Wortel already installed will check `updates.wortel.sh` forever. A
+different domain would only ever be seen by people who install from that day on,
+which is exactly the population `update_checked` is least interested in.
+
+**Rollback** is the reverse: delete the Worker route, put the custom domain back
+on the bucket, and the channel is what it was before this directory existed.
 
 ## Known tradeoff
 

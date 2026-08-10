@@ -39,14 +39,18 @@
     // be reproduced from an address list alone.
     "HASH_SALT": "nO6TsFOIz2vukdgkGCRmWuYij378eqhh"
   },
-  // STAGING STATE. The route below is what this Worker is for, but the
-  // hostname is still a custom domain on the R2 bucket and the two cannot both
-  // hold it. Until the handover (README.md, "The first deploy needs the domain
-  // moved") the Worker lives on its workers.dev URL and takes no real traffic.
-  // "routes": [
-  //   { "pattern": "updates.wortel.sh", "custom_domain": true }
-  // ],
-  "workers_dev": true,
+  // The hostname every installed copy of Wortel checks, because SUFeedURL is
+  // baked into Info.plist and cannot be changed retroactively. It was a custom
+  // domain on the R2 bucket until this Worker took it over; the two cannot both
+  // hold one hostname, which is why the handover in README.md has an order.
+  "routes": [
+    { "pattern": "updates.wortel.sh", "custom_domain": true }
+  ],
+  // Off: the signed archives get exactly one public address, the one baked into
+  // every installed copy. A workers.dev twin serving the same zips is a second
+  // way in that nobody meant to publish and that no counting distinguishes.
+  // Turn it back on temporarily if this Worker ever needs staging again.
+  "workers_dev": false,
   "observability": {
     "enabled": true
   }

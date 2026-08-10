@@ -1,9 +1,17 @@
-// /llms-full.txt, the whole page as Markdown, for a retrieval agent that would
+// /llms-full.txt, every page as Markdown, for a retrieval agent that would
 // otherwise have to strip an interactive Svelte island out of the HTML to find
-// four paragraphs of prose. Rendered from the same src/data/site.ts the page
-// renders from, so it cannot describe a different product.
+// four paragraphs of prose. Rendered from the same modules the pages render
+// from, so it cannot describe a different product.
+//
+// THE COMPARISON IS HERE TOO, not just linked from llms.txt. A model asked
+// "how does Wortel compare to Conductor" has one shot at a fetch, and a
+// full-text dump that answers everything EXCEPT the comparison is the one that
+// sends it to a third party's page instead. The grid is a table per group, with
+// the verdict spelled out as a word: "●" and "◐" mean nothing in plain text,
+// and "not published" has to read as itself rather than as a quiet no.
 import type { APIRoute } from 'astro';
 import { SITE, SECTIONS, FAQ, SPECS, type Block } from '../data/site';
+import { COMPARE, APPS, AXES, GROUPS, type Verdict } from '../data/compare';
 
 const renderBlock = (b: Block): string => {
   if ('p' in b) return b.p;
@@ -14,6 +22,34 @@ const renderBlock = (b: Block): string => {
     '| --- | --- |',
     ...rows.map(([k, v]) => `| ${k} | ${v} |`),
   ].join('\n');
+};
+
+/** The verdict as a word. `unknown` renders as the note alone, which already
+    says "not published": "unknown: Not published" reads like a bug. */
+const verdict = (v: Verdict, note: string) =>
+  v === 'unknown' ? note : `${v}: ${note}`;
+
+const compareTables = (): string[] => {
+  const byId = new Map(AXES.map((a) => [a.id, a]));
+  const head = `| Question | ${APPS.map((a) => a.name).join(' | ')} |`;
+  const rule = `| --- | ${APPS.map(() => '---').join(' | ')} |`;
+  const out: string[] = ['', `## ${COMPARE.tableHeading}`, '', COMPARE.tableLead, ''];
+
+  for (const group of GROUPS) {
+    out.push(`### ${group.title}`, '', group.blurb, '', head, rule);
+    for (const id of group.axes) {
+      const axis = byId.get(id)!;
+      const cells = APPS.map((app) => {
+        const cell = axis.cells[app.key];
+        return axis.descriptive ? cell.note : verdict(cell.v, cell.note);
+      });
+      out.push(`| ${axis.q} | ${cells.join(' | ')} |`);
+    }
+    out.push('');
+  }
+
+  out.push(COMPARE.caveat, '');
+  return out;
 };
 
 export const GET: APIRoute = () => {
@@ -38,6 +74,8 @@ export const GET: APIRoute = () => {
 
   parts.push('', '## Frequently asked questions', '');
   parts.push(FAQ.map((f) => `### ${f.q}\n\n${f.a}`).join('\n\n'));
+
+  parts.push(...compareTables());
 
   parts.push('', '## At a glance', '');
   parts.push('| | |', '| --- | --- |', ...SPECS.map(([k, v]) => `| ${k} | ${v} |`));

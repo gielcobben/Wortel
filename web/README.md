@@ -37,7 +37,7 @@ src/
   pages/compare.astro      /compare         Wortel against nine named apps
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms.txt.ts        /llms.txt        short map for language models
-  pages/llms-full.txt.ts   /llms-full.txt   the whole page as Markdown
+  pages/llms-full.txt.ts   /llms-full.txt   every page as Markdown, grid included
   pages/sitemap.xml.ts     /sitemap.xml
   components/PreviewWindow.astro  the app's file-preview window, for /updates
   components/CompareGrid.astro    the comparison grid, for /compare

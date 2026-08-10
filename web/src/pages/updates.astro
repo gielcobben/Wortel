@@ -145,7 +145,7 @@ const schema = [
                corners. They belong to the frame, not to a window, because all
                18 share one box. Pulling a top or left handle moves the window
                as well as resizing it, since the opposite edge is what stays
-               put. Only the bottom-right one is ever drawn. -->
+               put. None of them draws anything; the cursor says it. -->
           {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map((edge) => (
             <span class={`rz rz-${edge}`} data-edge={edge} aria-hidden="true"></span>
           ))}
@@ -636,24 +636,9 @@ const schema = [
   .rz-se { bottom: -4px; right: -4px; cursor: nwse-resize; }
   .rz-sw { bottom: -4px; left: -4px; cursor: nesw-resize; }
 
-  /* One of the eight is drawn, and only while the pointer is on the window.
-     macOS draws none of them, but this is a page, where nobody expects a window
-     to resize at all unless something says so. One mark is enough to say it;
-     eight would be a diagram. */
-  .rz-se::after {
-    content: "";
-    position: absolute;
-    right: 9px;
-    bottom: 9px;
-    width: 9px;
-    height: 9px;
-    border-right: 1.5px solid var(--text-50);
-    border-bottom: 1.5px solid var(--text-50);
-    border-bottom-right-radius: 3px;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-  }
-  .app-frame:hover .rz-se::after { opacity: 0.75; }
+  /* Nothing is drawn on any of them, the way macOS draws nothing. The cursor
+     changing as you cross an edge is the affordance, and it is the one every
+     window on the machine already uses. */
 
   /* The cursor has to survive leaving the handle mid-drag, so it goes on the
      body; which cursor depends on the edge, hence the variable. */

@@ -480,4 +480,46 @@ final class GitServiceTests: XCTestCase {
 
         _ = await GitService.removeWorktree(root: repo.path, at: linked)
     }
+
+    /// Where a checkout keeps its git state, which is what the FSEvents watcher
+    /// has to cover. A linked worktree's `.git` is a file, and its HEAD and index
+    /// live under the primary's `.git/worktrees/<name>` — so *nothing under its
+    /// own work tree moves when you stage or commit there*, and a watch rooted at
+    /// the work tree sees none of it. That's the whole reason this exists; the
+    /// commit below is the proof, asserted against the file that actually moved.
+    func testExternalGitDirCoversWhatAWorktreeCommitTouches() async {
+        repo = GitFixture.newRepo("gitdir")
+        GitFixture.commit("first", in: repo)
+
+        func resolved(_ path: String) -> String {
+            URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        }
+
+        // The primary holds its `.git` inside the work tree: nothing extra.
+        let primary = await GitService.externalGitDir(root: repo.path)
+        XCTAssertNil(primary, "the primary checkout's git dir is already watched")
+
+        let linked = repo.deletingLastPathComponent()
+            .appendingPathComponent("wt-\(UUID().uuidString)").path
+        let added = await GitService.addWorktree(
+            root: repo.path, at: linked, branch: "linked", source: .newBranch(from: "HEAD"))
+        XCTAssertNil(added)
+
+        guard let gitDir = await GitService.externalGitDir(root: linked) else {
+            return XCTFail("a linked worktree's git dir is outside its work tree")
+        }
+        XCTAssertFalse(resolved(gitDir).hasPrefix(resolved(linked) + "/"),
+                       "if it were inside the work tree the root watch would cover it")
+
+        // Commit in the worktree, and check the index it wrote is the one we
+        // just said we'd watch — not something under the work tree.
+        let tree = URL(fileURLWithPath: linked)
+        GitFixture.sh("printf 'work\\n' >> a.txt", in: tree)
+        GitFixture.sh("git add a.txt && git commit -q -m 'in the worktree'", in: tree)
+        let index = (gitDir as NSString).appendingPathComponent("index")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: index),
+                      "the worktree's index is what a commit there rewrites")
+
+        _ = await GitService.removeWorktree(root: repo.path, at: linked)
+    }
 }

@@ -169,6 +169,20 @@ FSEvents watcher fires on every write, and bursts used to stack scans), and
 watches `# branch.oid` so a commit made **in the terminal** — the normal way —
 reloads History.
 
+**What the watcher watches is not just the work tree**, and a session in a
+worktree is why. A linked worktree's `.git` is a *file*; its HEAD, index and
+reflog live under the primary's `.git/worktrees/<name>`, so nothing under its own
+root moves when you stage or commit there — a watch rooted at the work tree sees
+file edits and no git operation at all, and the panel goes on listing files that
+were committed minutes ago. So `GitRepoModel` widens the watch to that gitdir
+(`GitService.externalGitDir`), and the primary — whose `.git` holds *every*
+worktree's state under `worktrees/` — excludes that subtree in exchange, or every
+`git add` an agent runs next door walks this work tree. (Only that subtree: a
+worktree's commit also writes a ref and objects in the shared `.git`, which the
+primary still sees. Rarer, and real news.) The widened watch is the checkout's
+own gitdir and not the common dir, which also holds `objects/` — one fetch would
+scan the work tree of every open session.
+
 Whether the panel is up is **per session**, not app-wide: it's a property of what
 the session is for — a manager sitting in `~` never wants it, the one in a repo
 always does. So `GitPanelModel` holds no visibility state of its own. `isVisible`

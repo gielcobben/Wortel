@@ -379,6 +379,31 @@ const schema = [
     new ResizeObserver(fades).observe(files);
     fades();
 
+    // The window's scroller: the separator under the titlebar, which is drawn
+    // only once something has actually gone under it, and the thumb, which is
+    // drawn because the native one would run under the titlebar too.
+    for (const body of document.querySelectorAll('.win .doc-body')) {
+      const win = body.closest('.win');
+      const track = win.querySelector('.sb');
+      const thumb = win.querySelector('.sb-thumb');
+      const sync = () => {
+        const { scrollTop, scrollHeight, clientHeight } = body;
+        win.classList.toggle('scrolled', scrollTop > 0);
+        const room = scrollHeight - clientHeight;
+        win.classList.toggle('scrollable', room > 1);
+        if (room <= 1) return;
+        const h = Math.max(28, (track.clientHeight * clientHeight) / scrollHeight);
+        thumb.style.height = h + 'px';
+        thumb.style.transform = `translateY(${(track.clientHeight - h) * (scrollTop / room)}px)`;
+      };
+      body.addEventListener('scroll', sync, { passive: true });
+      // Covers the two moments a scroll listener cannot: the window being
+      // resized, and it going from display:none to open, which is a resize from
+      // nothing and is why this needs no hook in openFile().
+      new ResizeObserver(sync).observe(body);
+      sync();
+    }
+
     const linkFor = (hash) => links.find((a) => a.getAttribute('href') === hash);
     const wins = [...document.querySelectorAll('.app-frame > .win')];
     const idOf = (a) => decodeURIComponent(a.getAttribute('href').slice(1));
@@ -663,12 +688,21 @@ const schema = [
       pointer-events: auto;
     }
     .app-frame { width: 100%; height: auto; }
+    /* relative, not static: the titlebar is absolute now and needs this to be
+       its containing block. Relative is still in flow, so the stacking works. */
     .app-frame > :global(.win) {
-      position: static;
+      position: relative;
       display: flex;
       height: auto;
       margin-bottom: 36px;
     }
-    .app-frame > :global(.win .doc-body) { overflow-y: visible; }
+    /* Back into flow, so the document is what gives the window its height
+       instead of the window capping the document. */
+    .app-frame > :global(.win .doc-body) {
+      position: static;
+      overflow-y: visible;
+    }
+    /* Nothing scrolls inside a window here, so there is nothing to indicate. */
+    .app-frame > :global(.win .sb) { display: none; }
   }
 </style>

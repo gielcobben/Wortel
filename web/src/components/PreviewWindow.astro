@@ -72,6 +72,12 @@ const { name, id, latest = false } = Astro.props;
   <div class="doc-body">
     <div class="md"><slot /></div>
   </div>
+
+  <!-- The scroller's own indicator, drawn rather than native. The document has
+       to run the full height of the window so it can pass under the titlebar,
+       and a native scrollbar on a full-height scroller runs under the titlebar
+       with it. This one starts below the strip, where a real window's does. -->
+  <div class="sb" aria-hidden="true"><span class="sb-thumb"></span></div>
 </div>
 
 <style>
@@ -98,14 +104,35 @@ const { name, id, latest = false } = Astro.props;
     text-align: left;
   }
 
-  /* the 52px titlebar, the same strip the app window wears */
+  /* The 52px titlebar, the same strip the app window wears, but a material
+     rather than a fill: the document runs underneath it and blurs through, the
+     way every document window on the platform does. That is why it floats over
+     the body instead of sitting above it in the flex column, and why .md pads
+     its own height back in.
+     The glass is the app's own: --w-glass-alpha and --w-glass-filter, the same
+     two knobs the sidebar and inspector are mixed from, so the titlebar cannot
+     drift away from the panels it belongs to. */
   .tb {
-    position: relative;
-    flex-shrink: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     height: 52px;
-    background: var(--w-titlebar-bg);
-    border-bottom: 0.5px solid var(--w-hairline);
+    z-index: 5;
+    background: color-mix(in srgb, var(--w-titlebar-bg) var(--w-glass-alpha), transparent);
+    /* Not --w-glass-filter. That is 40px, tuned for panels sampling a page
+       behind the whole window; over a line of text a few pixels away it smears
+       the text into a wash. A titlebar is close to what it samples, so it takes
+       far less blur to read as glass. */
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    backdrop-filter: saturate(180%) blur(12px);
+    /* Drawn only once something has actually gone under it. Before that the
+       line is dividing the titlebar from nothing, which is the tell that a
+       window is a picture rather than a window. */
+    border-bottom: 0.5px solid transparent;
+    transition: border-color 0.18s ease;
   }
+  .win.scrolled .tb { border-bottom-color: var(--w-hairline); }
 
   /* measured in WortelApp27: 14px circles at 18.75, 9px apart */
   .lights {
@@ -160,12 +187,44 @@ const { name, id, latest = false } = Astro.props;
   /* ---- the document -------------------------------------------------------
      The window's own scroller, so a long release scrolls inside the window the
      way it does in the app rather than growing the page. */
+  /* Fills the whole window, titlebar included, because the titlebar floats over
+     it. The native scrollbar goes with it, so it is turned off and .sb below
+     draws one that knows where the titlebar ends. */
   .doc-body {
-    flex: 1;
-    min-height: 0;
+    position: absolute;
+    inset: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     overscroll-behavior: contain;
     background: var(--w-terminal-bg);
+    scrollbar-width: none;
+  }
+  .doc-body::-webkit-scrollbar { display: none; }
+
+  /* Thin, and the same grey as the file list's: one kind of scrollbar on the
+     page, not one per scroller. Starts under the titlebar and stops short of
+     the bottom corner, which is where a real one starts and stops. */
+  .sb {
+    position: absolute;
+    top: 52px;
+    right: 3px;
+    bottom: 6px;
+    width: 4px;
+    z-index: 4;            /* over the document, under the titlebar */
+    pointer-events: none;  /* a picture of a scrollbar, like the toolbar */
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  /* Only when there is something to scroll. A full-height thumb is a scrollbar
+     saying nothing. */
+  .win.scrollable .sb { opacity: 1; }
+  .sb-thumb {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    border-radius: 2px;
+    background: rgba(128, 128, 128, 0.45);
   }
   .md {
     /* A measure, then centred in whatever the window is. Left-anchored, a note
@@ -173,7 +232,10 @@ const { name, id, latest = false } = Astro.props;
        reads as the text having failed to fill rather than as a measure. */
     max-width: 820px;
     margin: 0 auto;
-    padding: 40px 44px 56px;
+    /* 52 of titlebar plus the 40 the text wants under it: the gap reads the
+       same as before, but the text now starts below a strip it can scroll
+       beneath rather than below a strip that ended. */
+    padding: 92px 44px 56px;
     color: var(--w-term-text, var(--w-chrome-text));
     font-size: 15px;
     line-height: 1.62;

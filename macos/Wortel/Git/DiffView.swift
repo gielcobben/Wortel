@@ -261,7 +261,13 @@ struct DiffView: NSViewRepresentable {
             font = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
             charWidth = ("0" as NSString).size(withAttributes: [.font: font]).width
             rowHeight = ceil(font.ascender - font.descender + font.leading) + 3
+            geometryIsStale = true
         }
+
+        /// Whether the gutter and column widths still describe what is on
+        /// screen. Set by a style change; cleared by `recomputeGeometry`. See
+        /// the note there for why this is not simply recomputed every time.
+        private var geometryIsStale = true
 
         /// Reports whether the table needs a reload, and whether it should scroll
         /// back to the top. A changed line set (a new file) means both. Highlights
@@ -287,10 +293,25 @@ struct DiffView: NSViewRepresentable {
         ) -> (reload: Bool, scrollToTop: Bool) {
             let linesChanged = lines.count != self.lines.count
                 || zip(lines, self.lines).contains { $0.id != $1.id || $0.text != $1.text }
+            // Count alone, deliberately: `highlights` only ever goes from empty
+            // to filled for a given line set (the model publishes the parsed
+            // diff first and the spans a beat later), so a changed count is the
+            // arrival. A deep compare would be O(lines) on every re-render,
+            // which is exactly the cost the guard below exists to avoid.
             let highlightsChanged = highlights.count != self.highlights.count
             self.lines = lines
             self.highlights = highlights
-            recomputeGeometry()
+            // Only when it can have moved. This walks every line's *characters*
+            // to find the widest row, and `updateNSView` runs on any observable
+            // change — in the History accordion that means every mounted diff
+            // re-renders whenever any sibling file finishes loading. The row
+            // reload is already gated for that reason; this has to be too, or
+            // Expand All on a large commit pays a full character walk of every
+            // open diff per file that lands.
+            if linesChanged || geometryIsStale {
+                recomputeGeometry()
+                geometryIsStale = false
+            }
             return (linesChanged || highlightsChanged, linesChanged)
         }
 

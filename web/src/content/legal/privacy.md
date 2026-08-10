@@ -1,6 +1,6 @@
 ---
 title: Privacy
-description: What Wortel and wortel.sh record, what they do not, and why the app itself sends nothing.
+description: What Wortel and wortel.sh record, what they never record, and how to turn the app's reporting off.
 updated: 2026-08-10
 nav: Privacy
 order: 10
@@ -28,7 +28,8 @@ supervisory authority, the Autoriteit Persoonsgegevens.
 
 Wortel reports which of its features are used, and nothing else. It is on by
 default, it says so the first time you open it, and it is one click to turn off:
-**Wortel menu, Share Anonymous Usage Data**.
+the **ⓘ** at the bottom of the sidebar, or **Wortel menu, Share Anonymous Usage
+Data**. Both are the same switch.
 
 ### What is never sent
 

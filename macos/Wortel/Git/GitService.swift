@@ -1,10 +1,18 @@
 import Foundation
+import os
 
 /// Stateless async wrapper around the `git` CLI. Every call runs the process on
 /// a background queue and resumes on the caller's async context, so nothing here
 /// ever blocks the main thread. Callers (the @MainActor models) marshal results
 /// back themselves — same discipline as the libghostty callbacks.
 enum GitService {
+    /// What the two pipe readers in `run` fill in. A named type rather than a
+    /// tuple so the lock's state is unambiguously Sendable.
+    private struct Drained: Sendable {
+        var out = Data()
+        var err = Data()
+    }
+
     struct CommandResult {
         let status: Int32
         let stdout: String
@@ -54,17 +62,25 @@ enum GitService {
 
                 // Drain both pipes off separate threads before waiting, so a
                 // full pipe buffer never wedges the child.
+                //
+                // Collected under a lock rather than into two captured `var`s.
+                // The group below already orders both writes before the read
+                // after it, so the old version produced the right answer every
+                // time — but two concurrent blocks mutating captured storage is
+                // a data race by the language's rules whatever the runtime
+                // ordering, and this runs on every git call the app makes.
+                let collected = OSAllocatedUnfairLock(initialState: Drained())
                 let group = DispatchGroup()
-                var outData = Data()
-                var errData = Data()
                 group.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
-                    outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    collected.withLock { $0.out = data }
                     group.leave()
                 }
                 group.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
-                    errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    let data = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    collected.withLock { $0.err = data }
                     group.leave()
                 }
                 if let inPipe, let input {
@@ -82,10 +98,11 @@ enum GitService {
                 process.waitUntilExit()
                 group.wait()
 
+                let drained = collected.withLock { $0 }
                 continuation.resume(returning: CommandResult(
                     status: process.terminationStatus,
-                    stdout: String(decoding: outData, as: UTF8.self),
-                    stderr: String(decoding: errData, as: UTF8.self)))
+                    stdout: String(decoding: drained.out, as: UTF8.self),
+                    stderr: String(decoding: drained.err, as: UTF8.self)))
             }
         }
     }

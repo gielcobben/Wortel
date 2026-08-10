@@ -34,7 +34,9 @@ final class CommitOrderTests: XCTestCase {
     /// that break naive graph code.
     func testMatchesGitOnOctopusCrissCrossAndOrphanRoot() async {
         repo = GitFixture.newRepo("tricky")
-        let g = { GitFixture.sh($0, in: self.repo) }
+        // Typed as returning Void: every call here is run for its effect on the
+        // fixture, and the inferred `-> String` made each one an unused result.
+        let g: (String) -> Void = { _ = GitFixture.sh($0, in: self.repo) }
         GitFixture.commit("base", in: repo)
         g("git branch b1; git branch b2; git branch b3")
         for b in ["b1", "b2", "b3"] {

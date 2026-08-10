@@ -114,8 +114,12 @@ final class PreviewDocument {
     /// Big enough for any file worth reading in a preview, small enough that a
     /// stray 100MB log can't hitch the app. Lines rather than bytes: lines are
     /// what the renderer actually pays for.
-    static let maxLines = 20_000
-    static let maxBytes = 8 * 1024 * 1024
+    ///
+    /// `nonisolated` because `read(_:ifNewerThan:parseMarkdown:)` is, and has to
+    /// be — it touches the disk and must never run on the main actor. Two
+    /// immutable numbers have nothing to isolate.
+    nonisolated static let maxLines = 20_000
+    nonisolated static let maxBytes = 8 * 1024 * 1024
 
     @ObservationIgnored private let highlighter: (any DiffHighlighting)?
     @ObservationIgnored private var fileWatcher: DirectoryWatcher?

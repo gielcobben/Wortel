@@ -2,6 +2,10 @@ import AppKit
 
 /// Programmatic main menu. Kept deliberately small: AppKit scans key
 /// equivalents on every keypress, so every item here is on the hot path.
+///
+/// `@MainActor` because all of it is: the items it retains, the `NSApp.keyWindow`
+/// it reads to decide who owns ⌘1, and the shortcuts it moves between them.
+@MainActor
 enum MainMenu {
     /// The "Select All" item, retained so a session rename can flip its shortcut
     /// between ⌘⇧A (terminal: whole scrollback) and ⌘A (native select-all in the
@@ -275,7 +279,7 @@ enum MainMenu {
         // preview to another resigns and becomes in an order we shouldn't bet on.
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
-                DispatchQueue.main.async { syncPreviewShortcuts() }
+                DispatchQueue.main.async { MainActor.assumeIsolated { syncPreviewShortcuts() } }
             }
         }
         syncPreviewShortcuts()

@@ -117,7 +117,7 @@ final class AgentActivityTrackerTests: XCTestCase {
 
 final class AgentScreenDigestTests: XCTestCase {
     private func digest(_ string: String) -> UInt64 {
-        var copy = Array(string.utf8)
+        let copy = Array(string.utf8)
         return copy.withUnsafeBytes { agentScreenDigest($0) }
     }
 

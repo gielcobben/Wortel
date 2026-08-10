@@ -114,19 +114,38 @@ const schema = [
 
 <style>
   /* ==========================================================================
-     A sheet of paper on the graph paper.
+     A panel on the graph paper.
 
      Unlike the landing page, which anchors everything to one left edge at x=36,
      this page is a centered card. Both still obey the same 36px grid: the card
-     is 24 cells wide with 3 cells of padding, so its edges and its text column
+     is 30 cells wide with 4 cells of padding, so its edges and its text column
      land on grid lines rather than near them.
 
-       864 card  =  108 pad + 648 content + 108 pad   (24 = 3 + 18 + 3 cells)
-       648       =  144 rail + 36 gutter + 468 notes  (18 = 4 + 1 + 13 cells)
+       1080 card =  144 pad + 792 content + 144 pad   (30 = 4 + 22 + 4 cells)
+       792       =  144 rail + 36 gutter + 612 notes  (22 = 4 + 1 + 17 cells)
 
-     468 is the same measure the landing page's prose uses.
+     The panel follows the appearance rather than being white in both: paper in
+     light, a surface lifted just off the page in dark. Which means it does NOT
+     override the palette, only its own background, so every shared .doc rule
+     keeps painting from the theme's tokens. --rule is its own token because the
+     page's --grid is tuned to be nearly invisible behind the app replica, and a
+     divider between releases has to actually divide.
      ========================================================================== */
-  .wrap { --card-w: 864px; }
+  .wrap {
+    --card-w: 1080px;
+    --panel: #22232e;
+    --panel-edge: rgba(255, 255, 255, 0.07);
+    --rule: rgba(255, 255, 255, 0.09);
+  }
+  @media (prefers-color-scheme: light) {
+    .wrap {
+      /* Same white as the page behind it. What separates them is that the grid
+         lines stop at the card's edge, plus the hairline ring below. */
+      --panel: #ffffff;
+      --panel-edge: rgba(20, 22, 34, 0.10);
+      --rule: rgba(20, 22, 34, 0.09);
+    }
+  }
 
   /* Centering it is the easy half. The hard half is that `margin: auto` centers
      on a half-pixel wherever the viewport isn't an even multiple of 36, which
@@ -148,22 +167,13 @@ const schema = [
 
   .card {
     width: min(var(--card-w), 100%);
-    padding: 108px;
+    padding: 144px;
     margin: 72px 0;
-    background: #ffffff;
-    /* The card is white in both appearances, so it carries the light palette
-       with it: every shared .doc rule paints from these, and inheriting dark
-       mode's white-on-white text would leave the page blank. Values copied from
-       the light theme in global.css, including the --text-50 that is 0.6 rather
-       than 0.42 so muted copy still clears AA on white. --bg comes along because
-       .download inverts the two (background: var(--text); color: var(--bg)). */
-    --bg: #ffffff;
-    --text: #16171b;
-    --text-70: rgba(22, 23, 27, 0.62);
-    --text-50: rgba(22, 23, 27, 0.6);
-    --grid: rgba(20, 22, 34, 0.08);
-    --accent: #0070f5;
-    color: var(--text);
+    background: var(--panel);
+    /* A ring rather than a border: a border is 2px of box the grid math would
+       have to account for, and the whole point is that the edges land on the
+       lines. box-shadow does not take part in layout. */
+    box-shadow: 0 0 0 1px var(--panel-edge);
   }
 
   .head { padding-bottom: 36px; }
@@ -187,7 +197,7 @@ const schema = [
     grid-template-columns: 144px minmax(0, 1fr);
     gap: 36px;
     padding: 36px 0;
-    border-top: 1px solid var(--grid);
+    border-top: 1px solid var(--rule);
   }
 
   .meta { padding-top: 2px; }
@@ -213,7 +223,7 @@ const schema = [
     font-family: var(--sans);
     font-size: 10.5px;
     letter-spacing: 0.02em;
-    color: #ffffff;
+    color: var(--accent-text);
     background: var(--accent);
     vertical-align: 1px;
   }
@@ -253,7 +263,7 @@ const schema = [
 
   /* Once the card fills the viewport it stops being a card sitting on the grid,
      so it drops the outer margin and the wide padding with it. */
-  @media (max-width: 960px) {
+  @media (max-width: 1152px) {
     /* Later in the source than the @supports block, so this wins the offset
        back without needing to out-specify it. */
     .wrap { padding-left: 0; align-items: stretch; }

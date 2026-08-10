@@ -80,10 +80,45 @@
     }
   }
 
-  // ---- inspector resize grip (replaces paneforge for the horizontal split so
-  //      the inspector can slide rather than flex-squeeze) ----
-  let dragging = $state(false); // suppress the slide transition while dragging
+  // ---- resize grips ----
+  // Both edge panels are draggable, as they are in the app: three real split
+  // panes, each with its own thickness range. The sidebar's 180…400 comes from
+  // MainSplitViewController.swift.
+  let dragging = $state(false);   // suppress the inspector's slide transition
+  let sbDragging = $state(false); // …and the sidebar's
   let mainEl = $state();
+  let appEl = $state();
+  let sbW = $state(null);
+
+  const SB_MIN = 180;
+  const SB_MAX = 400;
+
+  // One drag loop for both grips: `sign` is +1 when dragging right widens the
+  // panel (the sidebar) and -1 when it narrows it (the inspector).
+  function drag(e, { startW, sign, min, max, set, flag }) {
+    e.preventDefault();
+    flag(true);
+    const startX = e.clientX;
+    const move = (ev) => set(Math.max(min, Math.min(max, startW + sign * (ev.clientX - startX))));
+    const up = () => {
+      flag(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  function sbGrab(e) {
+    drag(e, {
+      startW: appEl?.querySelector('.overlay')?.getBoundingClientRect().width ?? 228,
+      sign: 1,
+      min: SB_MIN,
+      max: Math.min(SB_MAX, (appEl?.clientWidth ?? 1266) * 0.45),
+      set: (w) => (sbW = w),
+      flag: (v) => (sbDragging = v),
+    });
+  }
 
   // The inspector's width lives in CSS, not here. `--git-shown-w` already falls
   // back to 450px, measured off the reference screenshots, so leaving --git-w
@@ -95,22 +130,15 @@
   let userW = $state(null);
 
   function gripDown(e) {
-    e.preventDefault();
-    dragging = true;
-    const startX = e.clientX;
     // Start from what is actually on screen, which may have come from CSS.
-    const startW = mainEl?.querySelector('.inspector')?.getBoundingClientRect().width ?? 450;
-    const maxW = (mainEl?.clientWidth ?? 1266) * 0.7;
-    const move = (ev) => {
-      userW = Math.max(220, Math.min(maxW, startW + (startX - ev.clientX)));
-    };
-    const up = () => {
-      dragging = false;
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    drag(e, {
+      startW: mainEl?.querySelector('.inspector')?.getBoundingClientRect().width ?? 450,
+      sign: -1,
+      min: 220,
+      max: (mainEl?.clientWidth ?? 1266) * 0.7,
+      set: (w) => (userW = w),
+      flag: (v) => (dragging = v),
+    });
   }
 </script>
 
@@ -124,13 +152,15 @@
        scrolls beneath it (no titlebar hairline on the panel side — measured).
      · window chrome floats on top: static traffic lights; the toggle and the
        title are the only elements that slide (both +84px). -->
-<div class="wortel-app"
+<div class="wortel-app" bind:this={appEl}
   class:open={left.wanted} class:force-open={left.force}
-  class:git-closed={!right.wanted} class:git-force={right.force}>
+  class:sb-dragging={sbDragging}
+  class:git-closed={!right.wanted} class:git-force={right.force}
+  style={sbW == null ? null : `--w-sb-w: ${sbW}px`}>
   <!-- hidden probe: container queries stamp the width tier onto it -->
   <b class="cq-probe" bind:this={probeEl} aria-hidden="true"></b>
 
-  <Sidebar open={left.wanted} force={left.force} />
+  <Sidebar open={left.wanted} force={left.force} dragging={sbDragging} ongrab={sbGrab} />
 
   <div class="lights">
     <span class="light r"></span><span class="light y"></span><span class="light g"></span>
@@ -212,6 +242,10 @@
     /* query container so the sidebar can auto-hide by the app's OWN width
        (not the viewport) — works at any embed size, no JS */
     container: wortelapp / inline-size;
+    /* The sidebar's width, dragged by its grip. --sb-shown-w is what everything
+       that has to agree with it reads: the card, the terminal's padding, and
+       how far the toggle and the title travel. */
+    --sb-shown-w: clamp(180px, var(--w-sb-w, 228px), 45cqi);
     overflow: hidden;
     border-radius: var(--w-radius);
     border: 0.5px solid var(--w-border);
@@ -257,6 +291,9 @@
     background: var(--w-terminal-bg);
   }
   .main.dragging .termcol { transition: none; }
+  .sb-dragging .termcol,
+  .sb-dragging .toggle,
+  .sb-dragging .title { transition: none; }
 
   /* the inspector is an OVERLAY on the right that SLIDES (translateX), exactly
      like the sidebar on the left. Width clamped to 55% of the app (55cqi) so it
@@ -360,7 +397,7 @@
   .cbtn.on { background: var(--w-btn-active); --w-btn-fill: var(--w-btn-active); }
 
   /* terminal pads-left when the sidebar is open (its divider never moves) */
-  .open .termcol { padding-left: 228px; }
+  .open .termcol { padding-left: var(--sb-shown-w); }
   /* auto-hide: below 900 the app is too narrow for the sidebar. Drop the
      padding AND snap the toggle + title back to their closed positions —
      everything the sidebar moves must move back together, exactly like a
@@ -405,7 +442,7 @@
     transition: transform 0.28s cubic-bezier(0.3, 0.9, 0.3, 1);
   }
   .toggle:hover { background: color-mix(in srgb, var(--w-chrome-text) 7%, transparent); }
-  .open .toggle { transform: translateX(84px); }
+  .open .toggle { transform: translateX(calc(var(--sb-shown-w) - 144px)); }
 
   .title {
     position: absolute;
@@ -415,7 +452,7 @@
     z-index: 1;
     transition: transform 0.28s cubic-bezier(0.3, 0.9, 0.3, 1);
   }
-  .open .title { transform: translateX(84px); }
+  .open .title { transform: translateX(calc(var(--sb-shown-w) - 144px)); }
   /* auto-hide (must come AFTER the +84 rules to win on equal specificity):
      when the sidebar can't fit, snap the toggle + title back to closed */
   @container wortelapp (max-width: 899px) {

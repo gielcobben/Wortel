@@ -77,6 +77,11 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         /// constraint off to answer, so this is only remeasured when the name or
         /// the mode changes.
         var naturalWidth: CGFloat = 0
+        /// The full title's own width, measured alongside `naturalWidth`. The
+        /// difference between the two is the chrome the bezel adds — chevron,
+        /// insets — which is what lets a chosen chip width be turned back into
+        /// the text width `branchTitle` has to fit into.
+        var fullTextWidth: CGFloat = 0
         /// The width last written to the constraint, so a resize that doesn't
         /// move the chip doesn't touch layout at all. Negative until written,
         /// which is what makes a fresh button always get sized.
@@ -91,17 +96,33 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private weak var gitMenuItem: NSToolbarItem?
     /// The chip stops growing here and truncates the branch name instead — the
     /// inspector section is 260pt at its narrowest, and an unbounded chip was
-    /// what shoved the whole section into the `»` menu.
-    private static let maxBranchChipWidth: CGFloat = 180
-    /// Below this the chip stops being a name at all and becomes the branch glyph
-    /// alone. A name squeezed under this is two characters and an ellipsis —
-    /// it identifies nothing, and it's still wide enough to push the section into
-    /// the `»` menu, which is the worse outcome of the two: an icon that opens the
-    /// switcher is a control, and a `»` menu is a control you have to go looking
-    /// for.
+    /// what shoved the whole section into the `»` menu. High enough that ordinary
+    /// three-word branch names (`rename-to-terminaal` measures 190) show whole:
+    /// the cap is there for the pathological name, not the long one.
+    private static let maxBranchChipWidth: CGFloat = 200
+    /// Below this *the section* stops getting a name at all and the chip becomes
+    /// the branch glyph alone. A name squeezed under this is two characters and an
+    /// ellipsis — it identifies nothing, and it's still wide enough to push the
+    /// section into the `»` menu, which is the worse outcome of the two: an icon
+    /// that opens the switcher is a control, and a `»` menu is a control you have
+    /// to go looking for.
+    ///
+    /// This is a threshold on the room available, **not** a floor on the chip:
+    /// making it both is what padded `main` out to a chip half of which was empty.
     private static let minBranchChipWidth: CGFloat = 96
+    /// The floor on the chip's own width, which only a very short name reaches.
+    /// Low enough that `main` is still fit-content, high enough that the capsule
+    /// doesn't read as stubby beside the round `···` button.
+    private static let branchChipFloor: CGFloat = 72
     /// The glyph-only chip: one symbol in a toolbar bezel.
     private static let iconOnlyChipWidth: CGFloat = 34
+    /// Air added past the fitted size so the bezel centres the name with a little
+    /// room on each side. It's part of the chip's natural width, but the *name*
+    /// never pays for it: a chip that's already being squeezed should spend its
+    /// last points on letters, not on symmetry. Small because the toolbar bezel
+    /// brings ~32pt of its own inset and chevron — 28 on top of that was what made
+    /// a short branch look padded rather than fitted.
+    private static let chipPadding: CGFloat = 12
     /// The widest inspector section the chip has actually been seen to overflow
     /// at. Everything at or below it shows the glyph alone — see `verifyChipFits`,
     /// which is what turns the width estimate below from a promise into a guess
@@ -290,30 +311,54 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
                 button.image = Self.branchGlyphImage()
                 button.imagePosition = .imageOnly
             } else {
-                button.attributedTitle = Self.branchTitle(branch)
+                let title = Self.branchTitle(branch)
+                chip.fullTextWidth = title.size().width
+                button.attributedTitle = title
                 button.image = Self.chevronImage()
                 button.imagePosition = .imageTrailing
             }
             // Widen past the fitted size so the bezel centres the content with a
             // little air on each side. Deactivate the width first so
-            // `fittingSize` reports the content width, not the last padded one.
+            // `fittingSize` reports the content width, not the last padded one —
+            // and, since the button is unconstrained in that moment, a content
+            // width measured on one line.
             branchWidthConstraint?.isActive = false
-            chip.naturalWidth = button.fittingSize.width + 28
+            chip.naturalWidth = button.fittingSize.width + Self.chipPadding
             branchWidthConstraint?.isActive = true
+            // The name changed, so the fitted title below has to be rebuilt even
+            // if the width it's fitted to lands on the same number.
+            chip.width = -1
         }
-        button.toolTip = iconOnly ? "\(branch) — switch branch" : "Switch branch"
+        // The branch, always — not "Switch branch". The chip is the one place the
+        // full name can be *missing*: truncated to fit, or gone entirely when it's
+        // the glyph alone. A tooltip naming the control it's already attached to
+        // answers a question nobody had, where the name answers the one the
+        // truncation created. What it does is the chevron's job, and the glyph's
+        // accessibility description still says it for VoiceOver.
+        button.toolTip = branch
 
-        // The chip takes what the name needs, bounded by its own cap and by the
-        // room the inspector section actually has. Truncation (the title's
-        // paragraph style) takes it from there, so the name shortens as the
-        // column narrows rather than the whole section dropping into `»`.
+        // Fit-content, bounded twice: never below the floor, never past the cap,
+        // and never past the room the inspector section actually has. Truncation
+        // takes it from there, so the name shortens as the column narrows rather
+        // than the whole section dropping into `»`.
         let width = iconOnly
             ? Self.iconOnlyChipWidth
-            : max(Self.minBranchChipWidth,
-                  min(chip.naturalWidth, Self.maxBranchChipWidth, available))
+            : min(max(chip.naturalWidth, Self.branchChipFloor),
+                  Self.maxBranchChipWidth, available)
         guard abs(width - chip.width) > 0.5 else { return }
         chip.width = width
         branchWidthConstraint?.constant = width
+        if !iconOnly {
+            // Re-fit the name to the width just chosen. What the bezel itself
+            // costs — its insets and the chevron — is everything in the natural
+            // width that isn't the text or the padding, and it doesn't change
+            // with the chip's size; the rest of the width is the name's to use.
+            // Doing this *here* rather than in the re-title block above is the
+            // point: the title depends on the width, and the width isn't known
+            // until the clamping is done.
+            let bezel = chip.naturalWidth - Self.chipPadding - chip.fullTextWidth
+            button.attributedTitle = Self.branchTitle(branch, textWidth: max(0, width - bezel))
+        }
         Self.log.debug("""
             branch chip: section=\(section, privacy: .public) \
             available=\(available, privacy: .public) width=\(width, privacy: .public) \
@@ -432,7 +477,37 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
     }
 
-    private static func branchTitle(_ branch: String) -> NSAttributedString {
+    /// The chip's title, shortened with an ellipsis when it doesn't fit in
+    /// `textWidth`. Passing nil asks for it at full length, which is how the
+    /// natural width is measured.
+    ///
+    /// **The truncation is ours, and it has to be.** A `.toolbar` bezel on
+    /// macOS 26+ lays its own title out, and that layout honours none of the four
+    /// ways AppKit documents for asking a button to stay on one line — the
+    /// paragraph style's `.byTruncatingTail`, or the cell's `wraps`,
+    /// `usesSingleLineMode`, `lineBreakMode`. All four were measured in a real
+    /// toolbar and all four still broke `update-website` at the hyphen onto a
+    /// second line, growing the chip to 36pt while the buttons beside it stayed
+    /// 23. The toolbar gives the item more vertical room than its content needs,
+    /// so there is always a second line there to take; a string that already fits
+    /// is the one thing the bezel can't undo. (Outside a toolbar the same button
+    /// truncates correctly, which is why this only shows up in the app.)
+    private static func branchTitle(_ branch: String, textWidth: CGFloat? = nil) -> NSAttributedString {
+        let full = branchLabel(branch)
+        guard let textWidth, full.size().width > textWidth else { return full }
+        // Shortest-first would need a second measurement to know where to start;
+        // names are short enough that walking in from the tail is cheaper than
+        // being clever, and this only runs when the chip's width actually moves.
+        var name = branch
+        while !name.isEmpty {
+            name.removeLast()
+            let candidate = branchLabel(name + "\u{2026}")
+            if candidate.size().width <= textWidth { return candidate }
+        }
+        return branchLabel("\u{2026}")
+    }
+
+    private static func branchLabel(_ name: String) -> NSAttributedString {
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         let result = NSMutableAttributedString()
 
@@ -452,13 +527,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             result.append(NSAttributedString(attachment: attachment))
             result.append(NSAttributedString(string: " "))
         }
-        // Truncate rather than clip when the chip hits its width cap.
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
-        result.append(NSAttributedString(string: branch, attributes: [
+        result.append(NSAttributedString(string: name, attributes: [
             .font: font,
             .foregroundColor: NSColor.labelColor,
-            .paragraphStyle: paragraph,
         ]))
         return result
     }

@@ -7,7 +7,7 @@
   // macOS window, and the container queries inside auto-collapse panels exactly
   // as dragging the real app's edge would. That is why a view below can ask for
   // a panel the window has no room for and still get the right answer.
-  import WortelApp from './WortelApp.svelte';
+  import WortelApp from './App.svelte';
   import { STORY, AGENT_BEAT, windowSubtitle } from './data.js';
   import { VIEWS, FIRST_SECTION } from './views.js';
 

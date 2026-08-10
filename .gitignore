@@ -22,3 +22,10 @@ web/dist/
 
 # Claude Code transient worktrees
 .claude/worktrees/
+
+# Pixel-comparison harness for the app replica: 2x reference screenshots of the
+# real app (several MB each) and the /compare page that overlays the live window
+# on them. Local tools, not the site — and shipping them would put 7MB of
+# screenshots on wortel.sh. See web/README.md.
+web/public/refs/
+web/src/pages/compare.astro

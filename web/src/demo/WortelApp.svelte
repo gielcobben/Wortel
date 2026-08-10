@@ -160,7 +160,8 @@
   <!-- hidden probe: container queries stamp the width tier onto it -->
   <b class="cq-probe" bind:this={probeEl} aria-hidden="true"></b>
 
-  <Sidebar open={left.wanted} force={left.force} dragging={sbDragging} ongrab={sbGrab} />
+  <Sidebar open={left.wanted} force={left.force} dragging={sbDragging} ongrab={sbGrab}
+           agents={!!view?.agents} />
 
   <div class="lights">
     <span class="light r"></span><span class="light y"></span><span class="light g"></span>

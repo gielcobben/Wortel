@@ -123,10 +123,14 @@ quotes out of `llms-full.txt` is the same sentence a visitor reads.
 
 Regenerating the images (needs ImageMagick + librsvg):
 
+The 2784x1824 masters live in `art/`, NOT in `public/`: they are build inputs,
+and while they sat in `public/` they were published too, which was 4.2MB of the
+5.2MB deploy for two files nothing ever referenced.
+
 ```sh
-# the app screenshot, from the 2784x1824 app shots. Not embedded in the page:
-# it is what SoftwareApplication.screenshot points at in the structured data.
-magick public/app-shot-dark.png -resize 1392x912 -strip public/screenshot.png
+# the app screenshot, from the masters in art/. Not embedded in the page: it is
+# what SoftwareApplication.screenshot points at in the structured data.
+magick art/app-shot-dark.png -resize 1392x912 -strip public/screenshot.png
 # icons
 rsvg-convert -w 180 -h 180 public/favicon.svg | magick - -background '#0e0f0d' -flatten public/apple-touch-icon.png
 rsvg-convert -w 96  -h 96  public/favicon.svg -o public/favicon-96.png

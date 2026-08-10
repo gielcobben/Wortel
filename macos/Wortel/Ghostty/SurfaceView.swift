@@ -671,7 +671,12 @@ final class SurfaceView: NSView {
             isARepeat: event.isARepeat,
             keyCode: event.keyCode)
 
-        keyDown(with: finalEvent!)
+        // Failable, and a nil here used to be a crash on a keypress. The same
+        // construction in `keyDown` already falls back rather than forcing;
+        // returning false is the honest answer, and AppKit carries on down the
+        // responder chain.
+        guard let finalEvent else { return false }
+        keyDown(with: finalEvent)
         return true
     }
 

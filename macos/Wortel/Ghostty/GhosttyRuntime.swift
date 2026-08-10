@@ -78,7 +78,18 @@ final class GhosttyRuntime {
             return true
         }
         runtimeConfig.confirm_read_clipboard_cb = { userdata, string, state, _ in
-            // Personal machine: auto-approve paste-protection requests.
+            // Auto-approved, deliberately. libghostty raises this for a paste
+            // that looks unsafe — most often one carrying a newline, i.e. text
+            // that could execute on arrival. The prompt is the right default for
+            // a general terminal and the wrong one here: Wortel exists to sit
+            // beside an agent, pasting multi-line output into a prompt is the
+            // central gesture, and a confirmation on every one of them trains
+            // the reflex that makes the warning useless anyway.
+            //
+            // What makes that affordable is that the clipboard is only ever
+            // filled by something the user already ran. If Wortel ever grows a
+            // path that writes the clipboard from remote content, this decision
+            // has to be revisited rather than inherited.
             guard let view = GhosttyRuntime.surfaceView(fromUserdata: userdata),
                   let surface = view.surface, let string
             else { return }
@@ -242,13 +253,6 @@ final class GhosttyRuntime {
         }
     }
 
-    /// Build a surface whose process **we** own (the spike; see `PtyHost`).
-    ///
-    /// The order matters and is the fiddly part: the two `receive_*` callbacks
-    /// have to be in the config *before* `ghostty_surface_new`, so the pty host
-    /// must exist first — but it can't start the shell until there's a surface to
-    /// push output into. So: make the host, hand it to the config, create the
-    /// surface, then start.
     /// Build a surface around a pty the keeper owns.
     ///
     /// The order is the fiddly part: the two `receive_*` callbacks have to be in

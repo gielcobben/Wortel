@@ -40,7 +40,7 @@
     {/each}
 
     <button class="add" type="button" aria-label="New session">
-      <Plus size={20} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />
+      <Plus size={15.5} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />
     </button>
   </div>
 
@@ -145,12 +145,19 @@
     place-items: center;
   }
 
+  /* Measured identically on all three refs: the glyph's ink is 10.5 square and
+     its centre sits 19.75 from the left and 12.75 up from the window's bottom,
+     tucked into the corner rather than floating off it. The 22px box is the hit
+     area, centred on that ink. */
   .add {
     position: absolute;
-    left: 8px;
-    bottom: 6px;
-    width: 28px; height: 28px;
+    left: 8.25px;
+    bottom: 1.25px;
+    width: 22px; height: 22px;
     border: 0;
+    /* a button's UA padding is 1px 6px, which leaves a 22px box only 10px of
+       content: the 15.5px glyph then sits at the content edge, not centred */
+    padding: 0;
     background: transparent;
     color: var(--w-chrome-sub);
     display: grid;

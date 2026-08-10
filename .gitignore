@@ -9,6 +9,9 @@ build/
 # canonical store. releases/appcast.xml stays tracked as a record of the feed.
 macos/releases/*.zip
 macos/releases/*.delta
+# Release notes rendered from web/src/content/releases/ at publish time, dropped
+# here for generate_appcast to embed. The Markdown they come from is the source.
+macos/releases/*.html
 # generate_appcast retires archives past --maximum-versions into here.
 macos/releases/old_updates/
 

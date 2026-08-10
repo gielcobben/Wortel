@@ -200,6 +200,16 @@ body.dragging-app, body.dragging-app * {
 .download:hover { opacity: 0.88; }
 .download:active { transform: translateY(1px); }
 .version { margin-top: 8px; font-size: 13px; color: var(--text-50); }
+/* The version number is the way in to the changelog. Underlined rather than
+   coloured, so it reads as a quiet aside under the button and not as a second
+   call to action competing with it. */
+.version a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--text-50);
+}
+.version a:hover { color: var(--text); text-decoration-color: currentColor; }
 
 .features .head { color: var(--text-50); margin-bottom: 14px; }
 .features dl { display: flex; flex-direction: column; gap: 7px; }

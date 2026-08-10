@@ -48,3 +48,11 @@ Both apps share one Cloudflare account and the `wortel.sh` zone:
   signed app zips (published by `macos/scripts/release.sh --publish`).
 - **wortel.sh** — the `wortel-web` Worker serving `web/dist` (deployed by
   `web/` → `npm run deploy`).
+
+### The changelog
+
+One Markdown file per release in `web/src/content/releases/`, **named for the
+version** (`2026.32.2.md`). It is the only place release notes are written, and
+it feeds both the public changelog at `wortel.sh/updates` and the notes Sparkle
+embeds in the in-app update dialog. `release.sh --publish` refuses to publish a
+version with no note. See `web/README.md`.

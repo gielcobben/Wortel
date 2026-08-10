@@ -1,0 +1,330 @@
+---
+// A replica of Wortel's file-preview window, holding one Markdown file.
+//
+// The changelog is a folder of .md files (src/content/releases/), and the app
+// opens a .md in exactly this window. So the page is not dressing the notes up
+// as something they aren't: it shows the real files in the real window.
+//
+// Chrome is static markup rather than a Svelte island. There are 18 of these on
+// the page and none of them has behaviour: the window is a picture. What makes
+// it match the app is the palette, and that comes from the demo's own tokens by
+// wearing .wortel-app.m27, so this file never restates a colour.
+//
+// LOOK: macOS 27 only, which is what the built HTML carries for the landing
+// page too. A visitor on macOS 26 gets the 27 window here while the home page
+// swaps to 26 after hydration. See look.svelte.js; making this follow would
+// mean an island per window, which is a lot of runtime for a picture.
+import '../demo/tokens.css';
+import '../demo/tokens27.css';
+
+interface Props {
+  /** Filename in the titlebar, e.g. "2026.32.2.md". */
+  name: string;
+  /** Element id, used by the :target rule that shows one window at a time. */
+  id: string;
+  /** The newest release, shown when the URL carries no hash. */
+  latest?: boolean;
+}
+
+const { name, id, latest = false } = Astro.props;
+---
+
+<!-- tabindex="-1" so opening a file can move focus here. Activating a link that
+     silently swaps a region somewhere else leaves anyone not watching the
+     pointer with no idea it did anything; focus is what says so. Not reachable
+     by Tab, only programmatically. -->
+<div class="wortel-app m27 win" id={id} tabindex="-1" data-latest={latest ? '' : undefined}>
+  <div class="tb">
+    <div class="lights">
+      <span class="light r"></span><span class="light y"></span><span class="light g"></span>
+    </div>
+    <div class="t1">{name}</div>
+
+    <!-- Source and Rendered. Rendered is the selected one, because rendered is
+         what the page is showing.
+
+         The glyphs are the app's own, exported from SF Symbols rather than
+         redrawn from a screenshot: doc.plaintext and doc.richtext, at their
+         real 16.7871 x 20.9473 box. Drawing them by hand is how the last pair
+         ended up a rounded rectangle with a dog-ear that neither symbol has.
+         currentColor, so the button's own state colours them.
+
+         Inert: a picture of a control, not a control. aria-hidden rather than
+         given roles they would not honour. -->
+    <div class="toolbar" aria-hidden="true">
+      <div class="btns">
+        <span class="cbtn">
+          <svg viewBox="0 0 16.7871 20.9473" width="12" height="15" fill="currentColor">
+            <path d="M3.02734 20.9375L13.3984 20.9375C15.4199 20.9375 16.4258 19.9121 16.4258 17.8809L16.4258 9.01367C16.4258 7.75391 16.2793 7.20703 15.498 6.40625L10.1172 0.927734C9.375 0.166016 8.75977 0 7.66602 0L3.02734 0C1.01562 0 0 1.03516 0 3.06641L0 17.8809C0 19.9219 1.00586 20.9375 3.02734 20.9375ZM3.0957 19.3652C2.08984 19.3652 1.57227 18.8281 1.57227 17.8516L1.57227 3.0957C1.57227 2.12891 2.08984 1.57227 3.10547 1.57227L7.45117 1.57227L7.45117 7.24609C7.45117 8.47656 8.06641 9.08203 9.28711 9.08203L14.8535 9.08203L14.8535 17.8516C14.8535 18.8281 14.3359 19.3652 13.3203 19.3652ZM9.46289 7.60742C9.07227 7.60742 8.92578 7.45117 8.92578 7.06055L8.92578 1.875L14.5508 7.60742Z" />
+            <path d="M11.8066 11.7773L4.39453 11.7773C4.04297 11.7773 3.7793 12.041 3.7793 12.373C3.7793 12.7148 4.04297 12.9785 4.39453 12.9785L11.8066 12.9785C12.1484 12.9785 12.4023 12.7148 12.4023 12.373C12.4023 12.041 12.1484 11.7773 11.8066 11.7773Z" />
+            <path d="M11.8066 15.1855L4.39453 15.1855C4.04297 15.1855 3.7793 15.459 3.7793 15.8008C3.7793 16.1328 4.04297 16.3867 4.39453 16.3867L11.8066 16.3867C12.1484 16.3867 12.4023 16.1328 12.4023 15.8008C12.4023 15.459 12.1484 15.1855 11.8066 15.1855Z" />
+          </svg>
+        </span>
+        <span class="cbtn on">
+          <svg viewBox="0 0 16.7871 20.9473" width="12" height="15" fill="currentColor">
+            <path d="M3.80859 9.32617C4.07227 9.32617 4.23828 9.18945 4.32617 8.85742L4.6582 7.89062L6.49414 7.89062L6.8457 8.85742C6.93359 9.17969 7.09961 9.32617 7.35352 9.32617C7.68555 9.32617 7.87109 9.14062 7.87109 8.82812C7.87109 8.75977 7.85156 8.63281 7.8125 8.50586L6.37695 4.53125C6.23047 4.12109 5.98633 3.92578 5.56641 3.92578C5.17578 3.92578 4.94141 4.12109 4.79492 4.53125L3.35938 8.50586C3.31055 8.62305 3.29102 8.75977 3.29102 8.82812C3.29102 9.14062 3.48633 9.32617 3.80859 9.32617ZM4.88281 7.08008L5.54688 5.0293L5.60547 5.0293L6.2793 7.08008ZM9.57031 5.61523L12.5488 5.61523C12.8906 5.61523 13.1543 5.35156 13.1543 5.00977C13.1543 4.67773 12.8906 4.41406 12.5488 4.41406L9.57031 4.41406C9.20898 4.41406 8.95508 4.67773 8.95508 5.00977C8.95508 5.35156 9.20898 5.61523 9.57031 5.61523ZM9.57031 9.02344L12.5488 9.02344C12.8906 9.02344 13.1543 8.75977 13.1543 8.41797C13.1543 8.08594 12.8906 7.82227 12.5488 7.82227L9.57031 7.82227C9.20898 7.82227 8.95508 8.08594 8.95508 8.41797C8.95508 8.75977 9.20898 9.02344 9.57031 9.02344ZM3.24219 17.0996L3.92578 17.0996L5.21484 15.8008C5.40039 15.625 5.5957 15.5566 5.79102 15.5566C5.98633 15.5566 6.20117 15.6348 6.38672 15.8008L7.1875 16.5332L9.18945 14.7559C9.41406 14.5605 9.64844 14.4727 9.87305 14.4727C10.1172 14.4727 10.3711 14.5508 10.5469 14.7559L12.5 17.002L13.1836 17.002L13.1836 12.334C13.1836 11.4746 12.7344 11.0352 11.875 11.0352L4.56055 11.0352C3.73047 11.0352 3.24219 11.4746 3.24219 12.334ZM6.46484 14.7559C5.87891 14.7559 5.41016 14.2676 5.41016 13.7012C5.41016 13.1152 5.87891 12.627 6.46484 12.6465C7.04102 12.666 7.51953 13.1152 7.51953 13.7012C7.51953 14.2676 7.04102 14.7559 6.46484 14.7559ZM0 17.8809C0 19.9219 1.00586 20.9375 3.02734 20.9375L13.3984 20.9375C15.4199 20.9375 16.4258 19.9219 16.4258 17.8809L16.4258 3.06641C16.4258 1.03516 15.4199 0 13.3984 0L3.02734 0C1.00586 0 0 1.03516 0 3.06641ZM1.57227 17.8516L1.57227 3.0957C1.57227 2.11914 2.08984 1.57227 3.10547 1.57227L13.3203 1.57227C14.3359 1.57227 14.8535 2.11914 14.8535 3.0957L14.8535 17.8516C14.8535 18.8281 14.3359 19.3652 13.3203 19.3652L3.10547 19.3652C2.08984 19.3652 1.57227 18.8281 1.57227 17.8516Z" />
+          </svg>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-body">
+    <div class="md"><slot /></div>
+  </div>
+
+  <!-- The scroller's own indicator, drawn rather than native. The document has
+       to run the full height of the window so it can pass under the titlebar,
+       and a native scrollbar on a full-height scroller runs under the titlebar
+       with it. This one starts below the strip, where a real window's does. -->
+  <div class="sb" aria-hidden="true"><span class="sb-thumb"></span></div>
+</div>
+
+<style>
+  /* The shell, matching WortelApp27's: same radius, border, shadow and font,
+     all read off the tokens rather than restated. Unlike the app window this
+     one has an opaque fill, because there is no translucent sidebar over it to
+     sample the page behind. */
+  .win, .win :global(*) { box-sizing: border-box; }
+
+  .win {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--w-radius);
+    border: 0.5px solid var(--w-border);
+    box-shadow: var(--w-shadow);
+    background: var(--w-terminal-bg);
+    color: var(--w-chrome-text);
+    font-family: var(--w-sans);
+    -webkit-font-smoothing: antialiased;
+    text-align: left;
+  }
+
+  /* The 52px titlebar, the same strip the app window wears, but a material
+     rather than a fill: the document runs underneath it and blurs through, the
+     way every document window on the platform does. That is why it floats over
+     the body instead of sitting above it in the flex column, and why .md pads
+     its own height back in.
+     The glass is the app's own: --w-glass-alpha and --w-glass-filter, the same
+     two knobs the sidebar and inspector are mixed from, so the titlebar cannot
+     drift away from the panels it belongs to. */
+  .tb {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 52px;
+    z-index: 5;
+    background: color-mix(in srgb, var(--w-titlebar-bg) var(--w-glass-alpha), transparent);
+    /* Not --w-glass-filter. That is 40px, tuned for panels sampling a page
+       behind the whole window; over a line of text a few pixels away it smears
+       the text into a wash. A titlebar is close to what it samples, so it takes
+       far less blur to read as glass. */
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    backdrop-filter: saturate(180%) blur(12px);
+    /* Drawn only once something has actually gone under it. Before that the
+       line is dividing the titlebar from nothing, which is the tell that a
+       window is a picture rather than a window. */
+    border-bottom: 0.5px solid transparent;
+    transition: border-color 0.18s ease;
+  }
+  .win.scrolled .tb { border-bottom-color: var(--w-hairline); }
+
+  /* measured in WortelApp27: 14px circles at 18.75, 9px apart */
+  .lights {
+    position: absolute;
+    left: 18.75px;
+    top: 18.75px;
+    display: flex;
+    gap: 9px;
+  }
+  .light { width: 14px; height: 14px; border-radius: 50%; }
+  .light.r { background: var(--w-light-red); }
+  .light.y { background: var(--w-light-amber); }
+  .light.g { background: var(--w-light-green); }
+
+  /* A preview window has no sidebar to make room for, so the title sits where
+     the lights leave off rather than at the app window's 173px. */
+  .t1 {
+    position: absolute;
+    left: 108px;
+    top: 18px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 16px;
+  }
+
+  .toolbar {
+    position: absolute;
+    top: 7.5px;
+    right: 8.5px;
+    display: flex;
+    align-items: center;
+  }
+  .btns {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 4px;
+    gap: 2px;
+    border-radius: 18px;
+    background: var(--w-pill-fill);
+    box-shadow: var(--w-pill-shadow), inset 0 0.5px 0 0 var(--w-pill-rim);
+  }
+  .cbtn {
+    width: 32px; height: 28px;
+    display: grid; place-items: center;
+    border-radius: 14px;
+    color: var(--w-chrome-text);
+  }
+  .cbtn.on { background: var(--w-btn-active); }
+  .cbtn svg { display: block; }
+
+  /* ---- the document -------------------------------------------------------
+     The window's own scroller, so a long release scrolls inside the window the
+     way it does in the app rather than growing the page. */
+  /* Fills the whole window, titlebar included, because the titlebar floats over
+     it. The native scrollbar goes with it, so it is turned off and .sb below
+     draws one that knows where the titlebar ends. */
+  .doc-body {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    background: var(--w-terminal-bg);
+    scrollbar-width: none;
+  }
+  .doc-body::-webkit-scrollbar { display: none; }
+
+  /* An overlay scrollbar, which is what macOS actually draws: nothing at rest,
+     a thumb while you are scrolling, gone again a moment after you stop. It
+     starts under the titlebar and stops short of the bottom corner, where a
+     real one starts and stops.
+     7px and fully rounded are the platform's proportions. The colour is mixed
+     from --w-chrome-text so it inverts with the appearance for free, rather
+     than being a grey that happens to read on both.
+
+     The box is the hit area, wider than the thumb it draws: a 7px target is a
+     target you miss, and the native one is generous for the same reason. The
+     outermost few pixels still belong to the window's resize edge, which sits
+     above this, so what is left is the part a pointer aims at anyway. */
+  .sb {
+    position: absolute;
+    top: 52px;
+    right: 0;
+    bottom: 6px;
+    width: 15px;
+    z-index: 4;            /* over the document, under the titlebar */
+    pointer-events: none;
+    touch-action: none;
+    opacity: 0;
+    transition: opacity 0.32s ease;
+  }
+  /* Interactive only once it is visible, or an invisible 15px strip would be
+     eating clicks and text selection down the right edge of every note. */
+  .win.scrollable.sb-on .sb { pointer-events: auto; }
+
+  /* No track. The box is a hit area and nothing else, so the thumb is the only
+     thing the scrollbar ever draws. */
+
+  /* Two ways in, and both need .scrollable: a thumb the height of its own track
+     is a scrollbar saying nothing. Scrolling shows it and a timer takes it away
+     (see the script); hovering the window holds it, which macOS does not do but
+     a page should, since nothing else here advertises that the window scrolls.
+     Quick in, slow out, like the platform. */
+  .win.scrollable.sb-on .sb { opacity: 1; transition-duration: 0.1s; }
+
+  /* Inset inside the hit area: the thumb is what you see, the box is what you
+     hit. It thickens while in use, which is the platform's own tell that the
+     scrollbar has become a control rather than an indicator. */
+  .sb-thumb {
+    position: absolute;
+    top: 0;
+    right: 4px;
+    width: 7px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--w-chrome-text) 34%, transparent);
+    transition: width 0.12s ease, background-color 0.12s ease;
+  }
+  .sb:hover .sb-thumb, .win.sb-drag .sb-thumb {
+    width: 9px;
+    background: color-mix(in srgb, var(--w-chrome-text) 48%, transparent);
+  }
+  .md {
+    /* A measure, then centred in whatever the window is. Left-anchored, a note
+       runs its text against a few hundred px of nothing on a wide window, which
+       reads as the text having failed to fill rather than as a measure. */
+    max-width: 820px;
+    margin: 0 auto;
+    /* 52 of titlebar plus the 40 the text wants under it: the gap reads the
+       same as before, but the text now starts below a strip it can scroll
+       beneath rather than below a strip that ended. */
+    padding: 92px 44px 56px;
+    color: var(--w-term-text, var(--w-chrome-text));
+    font-size: 15px;
+    line-height: 1.62;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /* GitHub's type scale, which is what the app's renderer follows: a titled
+     first heading with a rule under it, and the same rule under every h2. */
+  .md :global(h1) {
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+    padding-bottom: 10px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--w-hairline-strong);
+  }
+  .md :global(h2) {
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    padding-bottom: 8px;
+    margin: 28px 0 14px;
+    border-bottom: 1px solid var(--w-hairline-strong);
+  }
+  .md :global(p) { margin-bottom: 14px; }
+  .md :global(strong) { font-weight: 600; }
+  .md :global(ul) { margin: 0 0 14px; padding-left: 26px; }
+  .md :global(li) { margin-bottom: 7px; }
+  .md :global(li::marker) { color: var(--w-chrome-muted); }
+  .md :global(a) { color: var(--w-accent); text-decoration: none; }
+  .md :global(a:hover) { text-decoration: underline; }
+  .md :global(blockquote) {
+    margin: 0 0 14px;
+    padding-left: 16px;
+    border-left: 3px solid var(--w-hairline-strong);
+    color: var(--w-chrome-sub);
+  }
+  .md :global(code) {
+    font-family: var(--w-mono);
+    font-size: 0.86em;
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: var(--w-code-bg);
+  }
+  .md :global(pre) {
+    margin: 0 0 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--w-hairline-strong);
+    border-radius: 8px;
+    background: var(--w-code-bg);
+    overflow-x: auto;
+  }
+  .md :global(pre code) { padding: 0; background: none; font-size: 12.5px; }
+
+  /* The version and date under the title: the file's own subtitle, not chrome. */
+  .md :global(.file-meta) {
+    margin: -8px 0 20px;
+    font-size: 13px;
+    color: var(--w-chrome-muted);
+  }
+</style>

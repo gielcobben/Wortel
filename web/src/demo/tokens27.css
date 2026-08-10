@@ -5,117 +5,92 @@
    macOS 27 look; tokens.css stays exactly as it was and is what macOS 26 (and
    older) visitors get. See look.svelte.js for how a visitor is sorted into one.
 
-   Every value below is MEASURED from the 2026-08-09 reference screenshots
+   Loaded AFTER tokens.css and scoped one class tighter (.wortel-app.m27), so
+   everything not listed here deliberately keeps its macOS 26 value.
+
+   DARK is almost entirely inherited. macOS 27's own dark surfaces are a blue
+   slate (#222b33, #1e2c38) and macOS 26's are a neutral charcoal (#21222f,
+   #1c1d27); it is one app, so it gets one dark palette, and the charcoal is
+   the one we keep. What stays below is only what macOS 27 ADDED: the glass,
+   the raised pills, the segmented divider, the code surface, the branch chips.
+   Those are pitched into the inherited family rather than sampled off the refs.
+   LIGHT is measured, because there the two really do differ.
+
+   Every measured value here comes from the 2026-08-09 reference screenshots
    (web/public/refs/m27-{light,dark}-{history,changes,files}.png, 2x retina) by
-   pixel-sampling — not eyeballed. The window in all six is the same box:
+   pixel-sampling, not by eye. The window in all six is the same box:
    1304x807 logical, physical (112,76)-(2720,1690).
 
    COLOUR SPACE: those screenshots are Display P3, because that is what a Mac
    captures. Sampling them raw gives P3 numbers, and pasting a P3 number into
-   CSS (which is sRGB) shifts every saturated colour — it was what first made
-   macOS 27 look like it had muted the traffic lights. Every value here was
-   sampled AFTER converting the ref through the sRGB profile:
+   CSS (which is sRGB) shifts every saturated colour: it is what first made
+   macOS 27 look like it had muted the traffic lights. Sample only AFTER:
 
      magick m27-light-history.png -profile \
        "/System/Library/ColorSync/Profiles/sRGB Profile.icc" out.png
-
-   Loaded AFTER tokens.css and scoped one class tighter (.wortel-app.m27), so
-   anything not listed here deliberately keeps its macOS 26 value: the diff
-   palette and the type metrics are the app's own drawing, not system chrome,
-   and did not change with the OS.
    ========================================================================== */
 
 /* Dark first, same as tokens.css, so the light block below can stay an
-   override rather than a second full palette. */
+   override rather than a second full palette.
+
+   CAREFUL: this selector and tokens.css's light one weigh the same, and this
+   file loads later. A token declared here but NOT in the light block below
+   would therefore keep its dark value in light mode. Everything here is either
+   appearance-independent (the radius, the alpha, the filter) or declared in
+   both blocks. */
 .wortel-app.m27 {
   /* ---- window ---- */
   /* the corner arc fits a circle of R≈14.6 (rms 0.05px); macOS 26 drew the
      same window at 26. 16px of CSS radius measures back as 14.6 — the arc is
      a squircle, so the fitted radius is not the authored one. */
   --w-radius: 16px;
-  --w-border: rgba(255, 255, 255, 0.13);
 
   /* ---- surfaces ----
-     The sidebar and the inspector are now ONE material: the same translucent
-     panel, edge to edge, with the terminal as the only opaque surface. The
-     floating sidebar card of macOS 26 is gone. */
-  --w-titlebar-bg: #222b33;
-  --w-titlebar-panel-bg: #1e2c38;
-  --w-terminal-bg: #222b33;
-  --w-panel-bg: #1e2c38;
-  --w-sidebar-bg: #1d2c39;
-  /* the code/diff surface paints itself; it is NOT the panel material */
-  --w-code-bg: #212b33;
+     The sidebar and the inspector are now ONE material: the same panel, edge
+     to edge, with the terminal as the only opaque surface. The floating
+     sidebar card of macOS 26 is gone, so the sidebar takes the panel's colour. */
+  --w-sidebar-bg: var(--w-panel-bg);
+  /* the code and diff surface paints itself; it is NOT the panel material.
+     macOS 27 puts it a step above the panel, where the terminal already sits. */
+  --w-code-bg: var(--w-terminal-bg);
+
   /* Both panels are a MATERIAL, not a fill: mostly opaque, but they sample and
      blur what is behind the window, which on this page is the grid. The solid
-     tokens above stay the target — the alpha here is chosen so the material
-     composites back to them over the page's own background. */
+     tokens stay the target; each tint below is the fill that composites back to
+     one over the page's own background. */
   --w-glass-alpha: 78%;   /* turn this one knob to make the panels see-through */
   --w-glass-filter: saturate(200%) blur(40px);
-  --w-glass-panel: color-mix(in srgb, #1f313a var(--w-glass-alpha), transparent);
-  --w-glass-sidebar: color-mix(in srgb, #1d313b var(--w-glass-alpha), transparent);
-  --w-session-dot: #00e5d5;
-  --w-hairline: #353c43;          /* titlebar underline, terminal side only */
-  --w-hairline-strong: #2b3843;   /* commit-box separator, expand bar edges */
+  --w-glass-panel: color-mix(in srgb, #1c1e24 var(--w-glass-alpha), transparent);
+  --w-glass-sidebar: color-mix(in srgb, #1c1e24 var(--w-glass-alpha), transparent);
 
   /* ---- floating controls (toolbar pills + the sidebar toggle) ----
-     One material for all three: a light "glass" fill, a bright top rim and a
-     soft drop shadow. Measured off the chip at x1090: top 7.8, height 35.9. */
-  --w-pill-fill: #364a58;
+     macOS 26 recessed these into a dark well; macOS 27 raises them as glass, so
+     they sit ABOVE the panel now rather than below it. Pitched off macOS 26's
+     own raised-control colour, not the blue slate the refs show. */
+  --w-pill-fill: #45464f;
   --w-pill-rim: rgba(255, 255, 255, 0.14);
   --w-pill-shadow: 0 2px 6px rgba(0, 0, 0, 0.34), 0 0 0 0.5px rgba(0, 0, 0, 0.3);
   --w-pill-blur: none;
-  --w-pill-solid: #364a58;        /* opaque twin: the doc icon's front page */
-  --w-toggle-fill: #374a57;       /* the toggle floats on the sidebar material */
-  --w-btn-active: #474747;        /* filled circle behind the selected button */
-  --w-seg-divider: #354957;       /* between two UNSELECTED segments only */
+  --w-pill-solid: #45464f;        /* opaque twin: the doc icon's front page */
+  --w-toggle-fill: #45464f;       /* the toggle floats on the sidebar material */
+  --w-btn-active: #5f606a;        /* the selected segment, a step above the pill */
+  --w-seg-divider: #5b5c63;       /* between two UNSELECTED segments only */
   --w-toggle-ink: #ffffff;        /* the sidebar glyph is full contrast now */
 
-  /* ---- terminal ink ---- */
-  --w-term-text: #e6edf3;
-  --w-user-block-bg: #373737;
-
-  /* ---- chrome ---- */
-  --w-chrome-text: #ffffff;
-  --w-chrome-sub: #b7c4d0;
-  --w-chrome-muted: #76838f;
-  /* unchanged by macOS 27 — they only looked different in P3 */
-  --w-light-red: #ff5c60;
-  --w-light-amber: #ffcc01;
-  --w-light-green: #35c759;
-
-  /* ---- selection ---- */
-  --w-accent: #007aff;
-  --w-accent-text: #ffffff;
-  --w-chip-on-sel: #4a95ff;
-
-  /* ---- history ----
-     macOS 27's app colours a ref chip by WHICH branch it names: the checked-out
-     one is filled, its remote is an outline in the same hue, the rest stay
-     blue. */
+  /* ---- history: ref chips ----
+     New in macOS 27: the app colours a chip by WHICH branch it names. The
+     checked-out one is filled, its remote is an outline in the same hue, and
+     everything else keeps the blue macOS 26 already had. */
   --w-chip-head-bg: #9b6b3a;
   --w-chip-head-border: #b9884a;
   --w-chip-head-text: #ffffff;
   --w-chip-rem-bg: #3a3a39;
   --w-chip-rem-border: #ffbe39;
   --w-chip-rem-text: #ffbe39;
-  --w-chip-bg: #1f3a50;
-  --w-chip-border: #00c5ff;
-  --w-chip-text: #00c5ff;
-
-  --w-rail: #ff9230;
-  --w-rail-branch: #0091ff;
-  --w-status-m: #ffb32b;
-  --w-expand-bar-bg: #212b33;
-
-  /* ---- commit message box ---- */
-  --w-box-bg: #1e1e1e;
-  --w-box-border: #3c4954;
-  --w-box-placeholder: #7d7d7c;
 }
 
 /* ==========================================================================
-   Light. Sampled from m27-light-{history,changes,files}, same sRGB conversion.
+   Light. Sampled from m27-light-{history,changes,files}, sRGB-converted first.
    .force-dark is the /compare dev hook, same as tokens.css.
    ========================================================================== */
 @media (prefers-color-scheme: light) {
@@ -129,13 +104,14 @@
     --w-panel-bg: #ecedee;
     --w-sidebar-bg: #ecedee;
     --w-code-bg: #fbfbfb;
-    /* tints, not colours: each is the fill that composites back to the measured
-       --w-panel-bg / --w-sidebar-bg over the page's own background */
-    --w-glass-panel: color-mix(in srgb, #e7e8e9 var(--w-glass-alpha), transparent);
-    --w-glass-sidebar: color-mix(in srgb, #e7e8e9 var(--w-glass-alpha), transparent);
     --w-session-dot: #00c4af;
     --w-hairline: #f2f2f2;
     --w-hairline-strong: #d7d8da;
+
+    /* tints, not colours: the fill that composites back to the measured
+       --w-panel-bg / --w-sidebar-bg over the page's own background */
+    --w-glass-panel: color-mix(in srgb, #e7e8e9 var(--w-glass-alpha), transparent);
+    --w-glass-sidebar: color-mix(in srgb, #e7e8e9 var(--w-glass-alpha), transparent);
 
     --w-pill-fill: #f2f3f4;
     --w-pill-rim: rgba(255, 255, 255, 0.9);
@@ -176,5 +152,11 @@
     --w-box-bg: #ffffff;
     --w-box-border: #d4d5d6;
     --w-box-placeholder: #808080;
+
+    /* the traffic lights: macOS 27 did not touch them, they only looked muted
+       while they were being read as P3 */
+    --w-light-red: #ff5c60;
+    --w-light-amber: #ffcc01;
+    --w-light-green: #35c759;
   }
 }

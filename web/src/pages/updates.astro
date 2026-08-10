@@ -2,6 +2,13 @@
 // The changelog. Renders every file in src/content/releases/, newest first.
 // The notes themselves are Markdown; see src/content.config.ts for the rules
 // (filename is the version, and nothing else writes it down).
+//
+// The page deliberately borrows the landing page's shell: .shell, .hero-left,
+// .intro and .features are that page's global classes, not copies of them, so
+// the two share one geometry (text column at x=36, the panel beside it starting
+// on x=432) and can't drift apart. What changes is which side is pinned: the
+// landing page pins the app window on the right and scrolls the prose, this one
+// pins the text on the left and scrolls the releases.
 import Layout from '../layouts/Layout.astro';
 import { getCollection, render } from 'astro:content';
 import { compareVersions } from '../content.config';
@@ -19,6 +26,11 @@ const oldest = releases[releases.length - 1];
 
 const fmt = (d: Date) =>
   d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+// The index in the pinned column has 96px for the whole entry, so it drops the
+// year: every release so far is from the same one, and the full date is two
+// inches to the right on the release itself.
+const shortFmt = (d: Date) =>
+  d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
 const abs = (p: string) => new URL(p, SITE.url).href;
 
@@ -47,12 +59,15 @@ const schema = [
 
 <Layout title={title} description={description} path="/updates" schema={schema}>
   <main>
-    <div class="wrap">
-      <article class="card doc changelog">
-        <header class="head">
-          <p class="crumb"><a href="/">Wortel</a></p>
-          <h1>Changelog</h1>
-          <p class="lead">
+    <div class="shell">
+      <!-- The pinned column. Same box as the landing page's hero text: 100vh,
+           content on the (36,36) intersection, first thing at the top and last
+           thing at the bottom. -->
+      <aside class="hero-left side">
+        <div class="intro">
+          <p class="mark"><a href="/">Wortel</a></p>
+          <h1 class="page-title">Changelog</h1>
+          <p class="desc">
             Every release, newest first. Wortel updates itself through Sparkle,
             so the app checks on its own: Wortel ▸ Check for Updates… takes the
             newest one immediately.
@@ -69,129 +84,149 @@ const schema = [
           </p>
           {latest && (
             <p class="version">
-              {releases.length} releases · newest {latest.entry.id}, {fmt(latest.entry.data.date)}
+              {releases.length} releases · newest {latest.entry.id}
             </p>
           )}
-        </header>
+        </div>
 
-        {releases.map(({ entry, Content }, i) => (
-          <section class="rel" id={entry.id}>
-            <div class="meta">
-              {/* The anchor is the version, so a link to one release is a link
-                  anyone can read and retype. */}
-              <a class="ver" href={`#${entry.id}`}>
-                {entry.id}
-                {i === 0 && <span class="tag">latest</span>}
-              </a>
-              <time datetime={entry.data.date.toISOString().slice(0, 10)}>
-                {fmt(entry.data.date)}
-              </time>
-            </div>
-            <div class="body">
-              <h2>{entry.data.title}</h2>
-              <Content />
-            </div>
-          </section>
-        ))}
-      </article>
-
-      <footer class="foot">
-        <p>
-          <strong>Wortel</strong>: a minimal, native macOS terminal built on Ghostty.
-          Dutch for <em>root</em>.
-        </p>
-        <nav aria-label="Footer">
-          <a href="/">Home</a>
-          <a href={SITE.download}>Download</a>
-          <a href="/#faq">FAQ</a>
-          <a href={SITE.appcast}>Update feed</a>
-          <a href="/llms.txt">llms.txt</a>
+        <!-- Where the landing page puts Features. Same markup and the same two
+             columns, so the pinned column reads as the same object on both. -->
+        <nav class="features index" aria-label="Releases">
+          <p class="head">Releases</p>
+          <dl>
+            {releases.map(({ entry }) => (
+              <div>
+                <dt><a href={`#${entry.id}`}>{entry.id}</a></dt>
+                <dd>{shortFmt(entry.data.date)}</dd>
+              </div>
+            ))}
+          </dl>
         </nav>
-      </footer>
+      </aside>
+
+      <div class="panel-rail">
+        <article class="panel doc changelog">
+          {releases.map(({ entry, Content }, i) => (
+            <section class="rel" id={entry.id}>
+              <div class="meta">
+                {/* The anchor is the version, so a link to one release is a link
+                    anyone can read and retype. */}
+                <a class="ver" href={`#${entry.id}`}>
+                  {entry.id}
+                  {i === 0 && <span class="tag">latest</span>}
+                </a>
+                <time datetime={entry.data.date.toISOString().slice(0, 10)}>
+                  {fmt(entry.data.date)}
+                </time>
+              </div>
+              <div class="body">
+                <h2>{entry.data.title}</h2>
+                <Content />
+              </div>
+            </section>
+          ))}
+        </article>
+      </div>
     </div>
+
+    <footer class="foot">
+      <p>
+        <strong>Wortel</strong>: a minimal, native macOS terminal built on Ghostty.
+        Dutch for <em>root</em>.
+      </p>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href={SITE.download}>Download</a>
+        <a href="/#faq">FAQ</a>
+        <a href={SITE.appcast}>Update feed</a>
+        <a href="/llms.txt">llms.txt</a>
+      </nav>
+    </footer>
   </main>
 </Layout>
 
 <style>
   /* ==========================================================================
-     A panel on the graph paper.
+     The pinned column.
 
-     Unlike the landing page, which anchors everything to one left edge at x=36,
-     this page is a centered card. Both still obey the same 36px grid: the card
-     is 30 cells wide with 4 cells of padding, so its edges and its text column
-     land on grid lines rather than near them.
-
-       1080 card =  144 pad + 792 content + 144 pad   (30 = 4 + 22 + 4 cells)
-       792       =  144 rail + 36 gutter + 612 notes  (22 = 4 + 1 + 17 cells)
-
-     The panel follows the appearance rather than being white in both: paper in
-     light, a surface lifted just off the page in dark. Which means it does NOT
-     override the palette, only its own background, so every shared .doc rule
-     keeps painting from the theme's tokens. --rule is its own token because the
-     page's --grid is tuned to be nearly invisible behind the app replica, and a
-     divider between releases has to actually divide.
+     .hero-left already gives the 100vh box, the 36px padding and the top/bottom
+     split; this only pins it. The landing page pins the other side, so between
+     them exactly one column is always moving.
      ========================================================================== */
-  .wrap {
-    --card-w: 1080px;
+  .side {
+    position: sticky;
+    top: 0;
+    /* height, not min-height: .hero-left's min-height would let a tall index
+       grow the column past the viewport, and the part below the fold of a
+       pinned element is unreachable. Fixed height plus the scroll on .index
+       keeps everything in it reachable at any window size. */
+    height: 100vh;
+  }
+
+  .page-title {
+    font-family: var(--round);
+    font-size: 27px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-top: 2px;
+  }
+  .mark a { color: var(--text-50); }
+  .mark a:hover { color: var(--text); }
+
+  /* The index takes what the intro leaves and scrolls inside itself rather than
+     pushing the column past 100vh. min-height: 0 because a flex item's floor is
+     its content, which would defeat the overflow. */
+  .index {
+    min-height: 0;
+    overflow-y: auto;
+    padding-top: 36px;
+  }
+  .index dt a { color: var(--text); font-family: var(--mono); font-size: 13px; }
+  .index dt a:hover { text-decoration: underline; }
+  .index dd { font-size: 13px; }
+
+  /* ==========================================================================
+     The panel.
+
+     The rail's 36px padding puts its left edge on x=432, the same line the app
+     window starts on over on the landing page, and it caps at 30 cells the way
+     the window caps at the real thing's size: past that it would be a measure
+     nobody can read across, not a bigger panel.
+
+       panel     =  72 pad + content + 72 pad
+       content   =  144 rail + 36 gutter + notes
+
+     round() lands the right edge on a grid line at any viewport, the same
+     technique .app-frame uses.
+     ========================================================================== */
+  .panel-rail {
     --panel: #22232e;
     --panel-edge: rgba(255, 255, 255, 0.07);
     --rule: rgba(255, 255, 255, 0.09);
+    padding: 36px;
   }
   @media (prefers-color-scheme: light) {
-    .wrap {
+    .panel-rail {
       /* Same white as the page behind it. What separates them is that the grid
-         lines stop at the card's edge, plus the hairline ring below. */
+         lines stop at the panel's edge, plus the hairline ring below. */
       --panel: #ffffff;
       --panel-edge: rgba(20, 22, 34, 0.10);
       --rule: rgba(20, 22, 34, 0.09);
     }
   }
 
-  /* Centering it is the easy half. The hard half is that `margin: auto` centers
-     on a half-pixel wherever the viewport isn't an even multiple of 36, which
-     puts a white edge a few pixels off the grid line behind it and reads as a
-     mistake. So: floor the left offset to whole cells, which keeps the card
-     centered to within one cell and exactly on the grid.
-
-     The percentage resolves against the body's width rather than 100vw, which
-     would include the scrollbar and shift the card off the lines by its width.
-     Browsers without round() fall back to the flex centering below: centered,
-     one cell less precise, which is the right thing to lose. */
-  .wrap { display: flex; flex-direction: column; align-items: center; }
-  @supports (width: round(down, 50%, 36px)) {
-    .wrap {
-      align-items: flex-start;
-      padding-left: max(0px, round(down, calc((100% - var(--card-w)) / 2), 36px));
-    }
-  }
-
-  .card {
-    width: min(var(--card-w), 100%);
-    padding: 144px;
-    margin: 72px 0;
+  .panel {
+    width: round(down, min(100%, 1080px), 36px);
+    padding: 72px;
     background: var(--panel);
     /* A ring rather than a border: a border is 2px of box the grid math would
-       have to account for, and the whole point is that the edges land on the
-       lines. box-shadow does not take part in layout. */
+       have to account for, and the edges landing on the lines is the point.
+       box-shadow does not take part in layout. */
     box-shadow: 0 0 0 1px var(--panel-edge);
   }
 
-  .head { padding-bottom: 36px; }
-  .crumb { font-size: 13px; margin-bottom: 28px; }
-  .crumb a { color: var(--text-50); }
-  .crumb a:hover { color: var(--text); }
-
-  .changelog h1 {
-    font-family: var(--round);
-    font-size: 34px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    margin-bottom: 12px;
-  }
-  .head .links { margin-top: 24px; }
-
   /* Version and date in a left rail, notes beside them: 144 + 36, so the notes
-     start on a grid line and run the landing page's measure. */
+     start on a grid line. */
   .rel {
     display: grid;
     grid-template-columns: 144px minmax(0, 1fr);
@@ -199,6 +234,8 @@ const schema = [
     padding: 36px 0;
     border-top: 1px solid var(--rule);
   }
+  .rel:first-child { border-top: 0; padding-top: 0; }
+  .rel:last-child { padding-bottom: 0; }
 
   .meta { padding-top: 2px; }
   .ver {
@@ -249,34 +286,26 @@ const schema = [
   }
   .body :global(a:hover) { text-decoration-color: currentColor; }
 
-  /* Deep-linked releases shouldn't sit flush against the top of the viewport. */
+  /* Jumping to a release from the index lands it under the panel's top padding
+     rather than flush against the viewport. */
   .rel:target { scroll-margin-top: 36px; }
 
-  /* The footer stays on the dark grid, but starts at the card's left edge
-     rather than the page's, so the column has one edge top to bottom. */
-  .wrap .foot {
-    width: min(var(--card-w), 100%);
-    max-width: none;
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  /* Once the card fills the viewport it stops being a card sitting on the grid,
-     so it drops the outer margin and the wide padding with it. */
-  @media (max-width: 1152px) {
-    /* Later in the source than the @supports block, so this wins the offset
-       back without needing to out-specify it. */
-    .wrap { padding-left: 0; align-items: stretch; }
-    .card {
+  /* Stacked. .shell and .hero-left already collapse at this width (global.css);
+     what is left is to stop pinning, and to let the index run at its natural
+     height now that it is part of the page rather than a fixed column. */
+  @media (max-width: 900px) {
+    .side { position: static; height: auto; }
+    .index { overflow-y: visible; padding-top: 0; }
+    .panel-rail { padding: 0 0 36px 36px; }
+    .panel {
+      /* Left edge stays on x=36 with the text above it; the right runs to the
+         viewport, where the body's overflow-x clips it. */
       width: 100%;
-      padding: 48px 36px;
-      margin: 0 0 36px;
+      padding: 36px;
     }
-    .changelog h1 { font-size: 27px; }
     .rel {
       grid-template-columns: minmax(0, 1fr);
       gap: 14px;
     }
-    .wrap .foot { padding-left: 36px; padding-right: 36px; }
   }
 </style>

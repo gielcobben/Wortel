@@ -79,5 +79,23 @@ echo
 echo "== Memory footprint =="
 open "$APP"; sleep 3
 pid=$(pgrep -x Wortel | head -1)
-echo "  1 session:  $(footprint "$pid" 2>/dev/null | grep -m1 phys_footprint || echo n/a)"
-echo "  (open more sessions with ⌘N, then re-run 'footprint $pid')"
+
+# How many sessions this actually measured. It used to say "1 session:" as a
+# fixed label while opening the real app, which restores whatever is in
+# sessions.json: every surface is a live Metal renderer and its own glyph
+# atlas, so the number moves a lot with the count. Reading 205 MB under a label
+# claiming one session sends you looking for a leak that is three terminals.
+SESSIONS=$(python3 -c "
+import json, os, sys
+p = os.path.expanduser('~/Library/Application Support/Wortel/sessions.json')
+try:
+    d = json.load(open(p))
+    s = d['sessions'] if isinstance(d, dict) and 'sessions' in d else d
+    print(len(s))
+except Exception:
+    print('?')
+" 2>/dev/null || echo '?')
+
+echo "  ${SESSIONS} session(s) restored:  $(footprint "$pid" 2>/dev/null | grep -m1 phys_footprint || echo n/a)"
+echo "  (this is your own sessions.json, so it is not comparable between machines;"
+echo "   open more with ⌘N, then re-run 'footprint $pid')"

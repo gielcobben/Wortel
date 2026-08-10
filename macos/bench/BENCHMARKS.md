@@ -12,9 +12,27 @@ The bar: **indistinguishable from Ghostty.app**, faster to launch, instant switc
 
 `./bench/measure.sh` — cold-launch time and memory footprint (Release build).
 
-Current (Apple Silicon, 1 session):
+Current (Apple Silicon, Release):
 - App bundle: **7.1 MB**
-- Memory: **~92 MB** (includes the Metal renderer + atlas; comparable to Ghostty)
+- Cold launch: **55-57 ms** to process-alive. The first run of a set reads
+  70-90 ms because the page cache is cold; the steady figure is the one to
+  watch.
+- Memory: **~92 MB** at 1 session (Metal renderer + atlas included; comparable
+  to Ghostty), **~205 MB** at 3.
+
+**Memory is per surface, and the script measures YOUR sessions.json.** Every
+restored session is a live renderer with its own glyph atlas, so the number
+tracks the session count and is not comparable between two machines, or between
+two runs on one machine if the count changed. `measure.sh` prints the count it
+measured for exactly this reason: 205 MB under a label claiming one session
+sends you hunting a leak that is three terminals.
+
+Telemetry (`Wortel/Telemetry/`, see `docs/telemetry.md`) was measured both ways
+on the same machine and the same day, because the promise it made was that it
+would not touch this: 55-56 ms with reporting compiled in but disabled (a 0.0.0
+dev build), 57 ms with it stamped to a real version and reporting for real.
+Memory 205 vs 206 MB. Both differences are inside the noise of a method that
+polls `pgrep` in a loop.
 
 ## Throughput (vs every terminal installed)
 

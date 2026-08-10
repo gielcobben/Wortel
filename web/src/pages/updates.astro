@@ -411,6 +411,44 @@ const schema = [
       win.addEventListener('pointerenter', () => show(true));
       win.addEventListener('pointerleave', () => show(false));
 
+      // Dragging the thumb, and clicking the track to go there. Both are the
+      // same gesture: the only difference is where the thumb is considered to
+      // have been grabbed. On the thumb it is where you actually took hold of
+      // it, so it does not jump under the pointer; on the track there is no
+      // such point, so it takes the middle and the thumb centres on the click.
+      // That is what macOS does with "jump to the spot that's clicked".
+      track.addEventListener('pointerdown', (e) => {
+        const room = body.scrollHeight - body.clientHeight;
+        const trackH = track.clientHeight;
+        const thumbH = thumb.getBoundingClientRect().height;
+        const span = trackH - thumbH;         // how far the thumb itself travels
+        if (room <= 1 || span <= 0) return;
+        const top = track.getBoundingClientRect().top;
+
+        const grab = e.target === thumb ? e.clientY - thumb.getBoundingClientRect().top : thumbH / 2;
+        const to = (clientY) =>
+          Math.min(1, Math.max(0, (clientY - top - grab) / span)) * room;
+        if (e.target !== thumb) body.scrollTop = to(e.clientY);
+
+        win.classList.add('sb-drag');
+        show(true);
+        const move = (ev) => { body.scrollTop = to(ev.clientY); };
+        const stop = () => {
+          win.classList.remove('sb-drag');
+          // Release it to the timer: the pointer may well have ended up off the
+          // window entirely, and hover cannot be relied on to take it away.
+          show(win.matches(':hover'));
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', stop);
+          window.removeEventListener('pointercancel', stop);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', stop);
+        window.addEventListener('pointercancel', stop);
+        e.preventDefault();    // no text selection while dragging
+        e.stopPropagation();   // never also a window drag
+      });
+
       // Covers the two moments a scroll listener cannot: the window being
       // resized, and it going from display:none to open, which is a resize from
       // nothing and is why this needs no hook in openFile().

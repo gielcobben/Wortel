@@ -208,17 +208,37 @@ const { name, id, latest = false } = Astro.props;
      7px and fully rounded are the platform's proportions. The colour is mixed
      from --w-chrome-text so it inverts with the appearance for free, rather
      than being a grey that happens to read on both. */
+  /* The box is the hit area, wider than the thumb it draws: a 7px target is a
+     target you miss, and the native one is generous for the same reason. The
+     outermost few pixels still belong to the window's resize edge, which sits
+     above this, so what is left is the part a pointer aims at anyway. */
   .sb {
     position: absolute;
     top: 52px;
-    right: 4px;
+    right: 0;
     bottom: 6px;
-    width: 7px;
+    width: 15px;
     z-index: 4;            /* over the document, under the titlebar */
-    pointer-events: none;  /* a picture of a scrollbar, like the toolbar */
+    pointer-events: none;
+    touch-action: none;
     opacity: 0;
     transition: opacity 0.32s ease;
   }
+  /* Interactive only once it is visible, or an invisible 15px strip would be
+     eating clicks and text selection down the right edge of every note. */
+  .win.scrollable.sb-on .sb { pointer-events: auto; }
+
+  /* The track appears under the thumb while the scrollbar is being used, the
+     way the platform's does. */
+  .sb::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: color-mix(in srgb, var(--w-chrome-text) 7%, transparent);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .sb:hover::before, .win.sb-drag .sb::before { opacity: 1; }
   /* Two ways in, and both need .scrollable: a thumb the height of its own track
      is a scrollbar saying nothing. Scrolling shows it and a timer takes it away
      (see the script); hovering the window holds it, which macOS does not do but
@@ -226,13 +246,21 @@ const { name, id, latest = false } = Astro.props;
      Quick in, slow out, like the platform. */
   .win.scrollable.sb-on .sb { opacity: 1; transition-duration: 0.1s; }
 
+  /* Inset inside the hit area: the thumb is what you see, the box is what you
+     hit. It thickens while in use, which is the platform's own tell that the
+     scrollbar has become a control rather than an indicator. */
   .sb-thumb {
     position: absolute;
-    left: 0;
-    right: 0;
     top: 0;
-    border-radius: 3.5px;
+    right: 4px;
+    width: 7px;
+    border-radius: 4px;
     background: color-mix(in srgb, var(--w-chrome-text) 34%, transparent);
+    transition: width 0.12s ease, background-color 0.12s ease;
+  }
+  .sb:hover .sb-thumb, .win.sb-drag .sb-thumb {
+    width: 9px;
+    background: color-mix(in srgb, var(--w-chrome-text) 48%, transparent);
   }
   .md {
     /* A measure, then centred in whatever the window is. Left-anchored, a note

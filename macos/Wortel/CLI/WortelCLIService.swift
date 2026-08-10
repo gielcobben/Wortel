@@ -64,8 +64,8 @@ final class WortelCLIService {
         case .open(let path):
             reply(open(path))
 
-        case .newSession(let cwd, let name, let branch):
-            newSession(cwd: cwd, name: name, branch: branch, reply: reply)
+        case .newSession(let cwd, let name, let branch, let base):
+            newSession(cwd: cwd, name: name, branch: branch, base: base, reply: reply)
 
         case .rename(let session, let name):
             reply(withSession(session) { session in
@@ -112,7 +112,7 @@ final class WortelCLIService {
     }
 
     private func newSession(
-        cwd: String?, name: String?, branch: String?,
+        cwd: String?, name: String?, branch: String?, base: String?,
         reply: @escaping @Sendable (WortelResponse) -> Void
     ) {
         if let cwd {
@@ -134,7 +134,7 @@ final class WortelCLIService {
         // a script in one repo must not open a worktree of whichever repo the
         // sidebar happens to be pointing at.
         Task { @MainActor in
-            switch await manager.openSession(onBranch: branch, from: cwd) {
+            switch await manager.openSession(onBranch: branch, base: base, from: cwd) {
             case .success(let session):
                 if let name { manager.rename(session, to: name) }
                 orderFront()

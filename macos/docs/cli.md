@@ -9,7 +9,7 @@ system.
 
 ```sh
 wortel open src/PreviewWindow.swift      # a preview window for a file
-wortel new --branch fix/1482             # a session, in its own worktree
+wortel new --branch fix/1482             # a session, in its own worktree off trunk
 wortel rename "1482 login redirect"      # this session
 wortel notify "Tests failed"             # this session wants you
 ```
@@ -201,6 +201,19 @@ same classification of the text, same dot, same badge, same one-per-session
 notification. To the person across the room, `make && wortel notify "Build done"`
 and an agent emitting the escape sequence itself are the same event, so they
 should look the same.
+
+**`new --branch` forks from trunk, not from where you are.** The other two rules
+say identity comes from where the command ran; this is the one place that would
+be wrong. The repository still comes from the caller's directory — a script in
+one repo must not open a worktree of whichever repo the sidebar points at — but
+the *base* of a new branch does not. `rev-parse --show-toplevel` answers with the
+linked worktree when the command is run inside one, so a base of `HEAD` meant a
+hook firing from a worktree on `update-website` forked `update-website`, silently
+and with nothing to see. A ref resolves identically in every worktree of a
+repository, so naming one takes the caller's location back out of the answer.
+`--from` overrides it, and `--from HEAD` is how you ask for the old behaviour on
+purpose. The sidebar's dialog resolves the same default into a visible field, so
+both ends of the app answer this the same way.
 
 ## Failure modes worth knowing
 

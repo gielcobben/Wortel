@@ -18,8 +18,10 @@ enum WortelCommand: Codable, Equatable {
     /// Open a file in a preview window.
     case open(path: String)
     /// Start a session. `cwd` defaults to the caller's directory, and `branch`
-    /// asks for a worktree the way the sidebar's picker does.
-    case newSession(cwd: String?, name: String?, branch: String?)
+    /// asks for a worktree the way the sidebar's picker does. `base` is what a
+    /// *new* branch forks from — nil means the repository's own default branch,
+    /// which is the answer a script almost always wants and never has to say.
+    case newSession(cwd: String?, name: String?, branch: String?, base: String?)
     /// Rename a session — by default the one the caller is running in.
     case rename(session: String?, name: String)
     /// Raise attention on a session: the dot, the badge, the notification.
@@ -170,8 +172,9 @@ enum WortelCommandParser {
         usage: wortel <command> [arguments]
 
           open <path>              open a file in a preview window
-          new [--cwd <path>] [--name <name>] [--branch <branch>]
-                                   start a session; --branch gives it a worktree
+          new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>]
+                                   start a session; --branch gives it a worktree,
+                                   --from picks what a new branch forks from
           rename <name>            rename this session
           notify <title> [body]    raise attention on this session
 
@@ -198,11 +201,12 @@ enum WortelCommandParser {
             return .open(path: absolute(path, from: currentDirectory))
 
         case "new":
-            let flags = try Flags(rest, allowed: ["--cwd", "--name", "--branch"])
+            let flags = try Flags(rest, allowed: ["--cwd", "--name", "--branch", "--from"])
             return .newSession(
                 cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
                 name: flags["--name"],
-                branch: flags["--branch"])
+                branch: flags["--branch"],
+                base: flags["--from"])
 
         case "rename":
             guard let name = rest.first, !name.isEmpty else {

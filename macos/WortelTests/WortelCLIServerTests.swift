@@ -74,8 +74,8 @@ final class WortelCLIServerTests: XCTestCase {
 
         let commands: [WortelCommand] = [
             .open(path: "/a/b.txt"),
-            .newSession(cwd: "/a", name: "build", branch: "fix/x"),
-            .newSession(cwd: nil, name: nil, branch: nil),
+            .newSession(cwd: "/a", name: "build", branch: "fix/x", base: "main"),
+            .newSession(cwd: nil, name: nil, branch: nil, base: nil),
             .rename(session: UUID().uuidString, name: "build"),
             .notify(session: UUID().uuidString, title: "Done", body: nil),
             .version,
@@ -103,7 +103,7 @@ final class WortelCLIServerTests: XCTestCase {
                 reply(.success(value: "late"))
             }
         }
-        XCTAssertEqual(try send(.newSession(cwd: "/a", name: nil, branch: "x")).value, "late")
+        XCTAssertEqual(try send(.newSession(cwd: "/a", name: nil, branch: "x", base: nil)).value, "late")
     }
 
     /// The one that would show up as "Wortel sometimes ignores my commands": a

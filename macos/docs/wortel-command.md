@@ -40,7 +40,7 @@ waits for you rather than yanking you out of what you were doing.
 
 Directories are refused rather than guessed at; use `wortel new --cwd` for those.
 
-### `wortel new [--cwd <path>] [--name <name>] [--branch <branch>]`
+### `wortel new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>]`
 
 Starts a session. With no arguments it opens one in your current directory.
 
@@ -48,12 +48,26 @@ Starts a session. With no arguments it opens one in your current directory.
 wortel new
 wortel new --cwd ~/Developer/lijn --name "css rules"
 wortel new --branch fix/1482 --name "1482 login redirect"
+wortel new --branch fix/1482 --from release/2026
 ```
 
 `--branch` gives the session **its own git worktree** — its own branch and its
 own files — so an agent working in it can't collide with anything else you have
-open. A branch that already has a worktree is reused rather than duplicated. The
-branch may be new; it's created from `HEAD`.
+open. A branch that already has a worktree is reused rather than duplicated.
+
+The branch may be new, in which case `--from` says what it forks from. Left out,
+that's **the repository's default branch** — `origin/HEAD` where it exists, then
+`main`, then `master`, then whatever is checked out. It is deliberately *not*
+`HEAD`: the command runs wherever you happen to be, and a script that fires from
+inside one worktree would otherwise fork that worktree's branch instead of
+trunk. To stack onto the current branch on purpose, say so:
+
+```sh
+wortel new --branch fix/1482-followup --from HEAD
+```
+
+`--from` takes anything git will resolve — a branch, a tag, a commit — and is
+ignored for a branch that already exists, which is checked out as it is.
 
 The repository comes from *where you ran the command*, not from whatever the
 sidebar is pointing at. The new session's id goes to stdout:

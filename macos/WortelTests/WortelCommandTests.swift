@@ -47,13 +47,26 @@ final class WortelCommandTests: XCTestCase {
 
     func testNewDefaultsToTheCallersDirectory() throws {
         XCTAssertEqual(try parse(["new"]),
-                       .newSession(cwd: "/Users/x/project", name: nil, branch: nil))
+                       .newSession(cwd: "/Users/x/project", name: nil, branch: nil, base: nil))
     }
 
     func testNewFlags() throws {
         let command = try parse(["new", "--cwd", "sub", "--name", "build", "--branch", "fix/x"])
         XCTAssertEqual(command, .newSession(cwd: "/Users/x/project/sub",
-                                            name: "build", branch: "fix/x"))
+                                            name: "build", branch: "fix/x", base: nil))
+    }
+
+    /// `--from` is what a script says when it does *not* want the repository's
+    /// default branch — including `HEAD`, which is how you stack onto the
+    /// current branch on purpose now that nil no longer means that.
+    func testNewFrom() throws {
+        XCTAssertEqual(
+            try parse(["new", "--branch", "fix/x", "--from", "release/2026"]),
+            .newSession(cwd: "/Users/x/project", name: nil,
+                        branch: "fix/x", base: "release/2026"))
+        XCTAssertEqual(
+            try parse(["new", "--branch", "fix/x", "--from", "HEAD"]),
+            .newSession(cwd: "/Users/x/project", name: nil, branch: "fix/x", base: "HEAD"))
     }
 
     /// Rejected, not ignored. A dropped flag gives you a session in the wrong
@@ -163,8 +176,8 @@ final class WortelCommandTests: XCTestCase {
     func testCommandsRoundTripThroughJSON() throws {
         let commands: [WortelCommand] = [
             .open(path: "/a/b.txt"),
-            .newSession(cwd: "/a", name: "x", branch: "fix/y"),
-            .newSession(cwd: nil, name: nil, branch: nil),
+            .newSession(cwd: "/a", name: "x", branch: "fix/y", base: "main"),
+            .newSession(cwd: nil, name: nil, branch: nil, base: nil),
             .rename(session: session, name: "build"),
             .notify(session: nil, title: "Done", body: nil),
             .version,
@@ -186,7 +199,7 @@ final class WortelCommandTests: XCTestCase {
     /// wire, so a log line and a shell history entry read alike.
     func testVerbsMatchTheCommandLine() {
         XCTAssertEqual(WortelCommand.open(path: "/a").verb, "open")
-        XCTAssertEqual(WortelCommand.newSession(cwd: nil, name: nil, branch: nil).verb, "new")
+        XCTAssertEqual(WortelCommand.newSession(cwd: nil, name: nil, branch: nil, base: nil).verb, "new")
         XCTAssertEqual(WortelCommand.rename(session: nil, name: "a").verb, "rename")
         XCTAssertEqual(WortelCommand.notify(session: nil, title: "a", body: nil).verb, "notify")
         XCTAssertEqual(WortelCommand.version.verb, "--version")

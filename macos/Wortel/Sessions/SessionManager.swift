@@ -702,7 +702,13 @@ final class SessionManager {
 
     /// `base` is the ref a *new* branch forks from, and is ignored for one that
     /// already exists — that branch has its own history, and there is nothing to
-    /// fork. nil means HEAD, which is the caller saying "wherever I am".
+    /// fork.
+    ///
+    /// nil means the repository's default branch, not HEAD. A caller that didn't
+    /// say means trunk far more often than it means "wherever this happens to be
+    /// standing", and HEAD is exactly the answer that made a new branch inherit
+    /// whichever worktree the request came from. Saying `HEAD` explicitly still
+    /// works and is how you stack onto the current branch on purpose.
     @discardableResult
     func openSession(
         onBranch branch: String, base: String? = nil,
@@ -753,7 +759,13 @@ final class SessionManager {
             if known {
                 source = .existingBranch
             } else if await GitService.hasCommits(root: root) {
-                source = .newBranch(from: base ?? "HEAD")
+                // Resolved in steps rather than with `??`, which can't carry an
+                // `await` on its right. The final `"HEAD"` is for a repository
+                // that has commits but no branch this can name — nothing to fork
+                // from but where we are.
+                var resolved = base
+                if resolved == nil { resolved = await GitService.defaultBranch(root: root) }
+                source = .newBranch(from: resolved ?? "HEAD")
             } else {
                 source = .newBranch(from: nil)
             }

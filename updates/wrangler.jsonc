@@ -1,0 +1,53 @@
+{
+  // The Worker in front of the wortel-updates R2 bucket, serving
+  // updates.wortel.sh: the Sparkle appcast and the signed zips.
+  //
+  // Deploy with `npm run deploy` from this directory. It is deliberately NOT
+  // deployed by web/ or by macos/scripts/release.sh: release.sh redeploys the
+  // landing page at the end of every publish, and the update channel must not
+  // be able to go down with a bad site build. This Worker changes almost never.
+  //
+  // FIRST DEPLOY NEEDS A DOMAIN MOVE. updates.wortel.sh is currently a custom
+  // domain on the R2 bucket itself, and a bucket custom domain and a Worker
+  // route cannot both hold one hostname. See README.md for the order.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wortel-updates",
+  // Cobben account, same as the wortel.sh zone and the bucket.
+  "account_id": "c91d5fdf38b8d28d8220c2a7d5b5610f",
+  "compatibility_date": "2026-07-15",
+  "main": "./worker/index.ts",
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      // Written by macos/scripts/release.sh --publish. This Worker only reads.
+      "bucket_name": "wortel-updates",
+      // Deliberately the same bucket. Wrangler wants a separate one for dev,
+      // and that advice is for Workers that write; this one has no code path
+      // that does. Pointing dev at an empty preview bucket would remove the
+      // only thing worth testing here, which is that the real signed archives
+      // come back byte for byte with their ranges and etags intact.
+      "preview_bucket_name": "wortel-updates"
+    }
+  ],
+  "vars": {
+    // Write-only PostHog project token. Public by design: it can send events
+    // and read nothing. The key that can read data is a personal API key and
+    // is not here.
+    "POSTHOG_KEY": "phc_s9AQUzSKYsbdi8aoCWkaedPK2Cbjr9KEmYJqjgWa89oa",
+    // Salts the daily visitor hash. Changing it is harmless (it resets who
+    // looks unique, for one day) but pointless; it exists so the hash cannot
+    // be reproduced from an address list alone.
+    "HASH_SALT": "nO6TsFOIz2vukdgkGCRmWuYij378eqhh"
+  },
+  // STAGING STATE. The route below is what this Worker is for, but the
+  // hostname is still a custom domain on the R2 bucket and the two cannot both
+  // hold it. Until the handover (README.md, "The first deploy needs the domain
+  // moved") the Worker lives on its workers.dev URL and takes no real traffic.
+  // "routes": [
+  //   { "pattern": "updates.wortel.sh", "custom_domain": true }
+  // ],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  }
+}

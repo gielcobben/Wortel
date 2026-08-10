@@ -14,11 +14,19 @@ native macOS terminal built on libghostty.
 > reworked around the root theme.
 
 ```
-macos/   The macOS app. Swift + XcodeGen. Ships to updates.wortel.sh via
-         Sparkle (R2). This is the product. See macos/CLAUDE.md.
-web/     The landing page → wortel.sh. Astro static site deployed to
-         Cloudflare Workers static assets. See web/README.md.
+macos/    The macOS app. Swift + XcodeGen. Ships to updates.wortel.sh via
+          Sparkle (R2). This is the product. See macos/CLAUDE.md.
+web/      The landing page → wortel.sh. Astro static site deployed to
+          Cloudflare Workers static assets. See web/README.md.
+updates/  The Worker serving updates.wortel.sh: the appcast and the signed
+          zips out of R2, and the only place downloads are counted. See
+          updates/README.md.
 ```
+
+`updates/` is its own deployable rather than part of `web/` on purpose. The
+update channel must not be able to go down with a bad landing-page build, and
+`release.sh --publish` redeploys the landing page at the end of every release.
+This one changes almost never.
 
 Each app is self-contained: its build tooling, scripts, and dependencies live
 under its own directory. There is no shared build system or workspace manager —
@@ -39,6 +47,10 @@ cd macos && xcodegen generate && \
 # landing page
 cd web && npm install && npm run dev      # local dev
 cd web && npm run deploy                   # build + wrangler deploy to wortel.sh
+
+# updates worker
+cd updates && npm install && npm test      # pure classification tests, no network
+cd updates && npm run deploy               # wrangler deploy to updates.wortel.sh
 ```
 
 ## Distribution & Cloudflare

@@ -1,0 +1,19 @@
+{
+  "name": "@wortel/updates",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Worker serving updates.wortel.sh: the Sparkle appcast and the signed zips",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "node --test worker/*.test.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "@types/node": "^26.2.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^3.90.0"
+  }
+}

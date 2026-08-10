@@ -86,6 +86,7 @@ struct SidebarRowContent: View {
             session: session,
             isSelected: manager.selectedID == session.id,
             isEditing: manager.editingID == session.id,
+            isInWorktree: isInOwnWorktree,
             commit: { newName in
                 manager.rename(session, to: newName)
                 manager.editingID = nil
@@ -316,6 +317,10 @@ struct SessionRow: View {
     let session: Session
     let isSelected: Bool
     let isEditing: Bool
+    /// Drawn as a leading branch glyph. A worktree session is renamed to its
+    /// branch, so without this it sits in the list looking exactly like a session
+    /// that's just a shell in a directory — same words, different kind of thing.
+    let isInWorktree: Bool
     let commit: (String) -> Void
     let cancel: () -> Void
 
@@ -331,6 +336,15 @@ struct SessionRow: View {
         // Content padded inside an inset accent pill (~6pt from the cell edges,
         // so it's not edge-to-edge).
         HStack(spacing: 8) {
+            // The same symbol the toolbar's branch chip carries, so the two
+            // places that mean "branch" look like the same fact. Not while
+            // editing: the rename field should start where every other one does.
+            if isInWorktree && !isEditing {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 11))
+                    .foregroundStyle(onAccent ? AnyShapeStyle(.white.opacity(0.85))
+                                              : AnyShapeStyle(.secondary))
+            }
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
                     TextField("Name", text: $draft)

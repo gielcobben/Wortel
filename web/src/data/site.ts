@@ -25,12 +25,12 @@
 export const SITE = {
   name: 'Wortel',
   url: 'https://wortel.sh',
-  /** ~56 chars, inside the ~60 Google renders before truncating. */
-  title: 'Wortel: a minimal, native macOS terminal built on Ghostty',
-  /** ~150 chars, inside the ~155-160 shown in a result snippet. */
+  /** ~48 chars, inside the ~60 Google renders before truncating. */
+  title: 'Wortel: a native macOS terminal for coding agents',
+  /** ~151 chars, inside the ~155-160 shown in a result snippet. */
   description:
-    'A zero-config macOS terminal on Ghostty’s real engine. Named sessions instead of tabs, instant launch and switching, with git, files and coding agents built in.',
-  tagline: 'A minimal, native macOS terminal.',
+    'A zero-config macOS terminal on Ghostty’s real engine. Named sessions instead of tabs, a worktree per agent, and shells that keep running when you quit.',
+  tagline: 'A native macOS terminal your agents can live in.',
   author: 'Giel Cobben',
   /** release.sh --publish always mirrors the newest signed zip here. */
   download: 'https://updates.wortel.sh/Wortel-latest.zip',
@@ -44,9 +44,9 @@ export const SITE = {
 // Short enough to sit in a 96px/1fr grid; these are the deck, not the article.
 export const FEATURES: [string, string][] = [
   ['Sessions', 'Named, not numbered'],
-  ['Launch', 'Cold start stays lean'],
-  ['Switching', 'One frame, no flash'],
-  ['No config', 'No tabs, splits, or settings'],
+  ['Agents', 'Told apart at a glance'],
+  ['Worktrees', 'One repo, no collisions'],
+  ['Survival', 'Quit, and they keep going'],
   ['Engine', 'Ghostty VT parser + Metal'],
 ];
 
@@ -77,10 +77,13 @@ export const SECTIONS: Section[] = [
   {
     id: 'what-is-wortel',
     title: 'A terminal you never have to arrange',
-    lead: 'One window. A sidebar of names. Nothing to set up, and nothing to tidy.',
+    lead: 'One window. A sidebar of names. Several agents, none of them in each other’s way.',
     blocks: [
       {
-        p: 'Wortel is a native macOS terminal built on Ghostty’s engine. Open it and the work is where you left it: every session still named, still in its own directory. No tabs to count, no panes to tile, no profiles to keep in step.',
+        p: 'Wortel is a fully native macOS terminal built on Ghostty’s engine: Swift and AppKit, no web view, nothing bolted underneath. Open it and the work is where you left it, every session still named and still in its own directory. No tabs to count, no panes to tile, no profiles to keep in step.',
+      },
+      {
+        p: 'Point it at a repository and it stops being only a terminal. Each agent gets its own branch and its own files, the diff of what they did sits beside them, and none of it stops when you quit.',
       },
       {
         p: 'Free, signed and notarized, for macOS ' +
@@ -132,6 +135,21 @@ export const SECTIONS: Section[] = [
       {
         p: 'The sidebar marks what is working and what is waiting. A notification arrives when a background agent goes quiet, never for the session in front of you. ⌘⌥] jumps to the next one waiting, and anything still running when you quit is picked back up on the next launch.',
       },
+      {
+        p: 'Wortel ships no per-agent integrations, and that is deliberate: a terminal that adapts to six agents by name is a terminal that is wrong about the seventh. Instead a bundled wortel command sits on every session’s PATH, so anything that can run a command can drive the app. An agent that just wrote a file opens a preview of it. A hook you wrote names the session after the ticket you are on. A build that finishes raises attention.',
+      },
+      {
+        table: {
+          head: ['Command', 'What it does'],
+          mono: 'first',
+          rows: [
+            ['wortel open <path>', 'Opens a preview window for a file'],
+            ['wortel new --branch <name>', 'A session, in its own worktree'],
+            ['wortel rename <name>', 'Renames the session it was run in'],
+            ['wortel notify <text>', 'This session wants you'],
+          ],
+        },
+      },
     ],
   },
 
@@ -141,10 +159,41 @@ export const SECTIONS: Section[] = [
     lead: 'An inspector beside the terminal, with three panes: Changes, History and Files.',
     blocks: [
       {
-        p: 'Changes is the worktree file by file, with syntax-highlighted diffs and somewhere to write the commit. History is the commit list with its branch graph. Files is the project as a tree: drag a row into the terminal and the escaped path lands at your prompt.',
+        p: 'Changes is the working tree file by file, with syntax-highlighted diffs and somewhere to write the commit. History is the commit list with its branch graph. Files is the project as a tree, colouring every folder that holds something changed: drag a row into the terminal and the escaped path lands at your prompt.',
+      },
+      {
+        p: 'Double-click a file in any of the three, or ⌘-click a path in the terminal, and it opens in a window of its own: source with syntax highlighting, the diff, Markdown on GitHub’s type scale, and Quick Look for everything that is not text.',
       },
       {
         p: 'It belongs to the session, because a shell in your home directory never wants it and one inside a repository always does. Cost tracks the window on screen, never the size of the repository: a collapsed node_modules is one row and no work at all.',
+      },
+    ],
+  },
+
+  {
+    id: 'worktrees',
+    title: 'Several agents, one repository',
+    lead: 'Two agents in one checkout is two agents editing the same files. A worktree each, and the problem stops existing.',
+    blocks: [
+      {
+        p: 'Open a session on a branch and Wortel checks that branch out in its own directory, with its own files, sharing the repository’s history, objects and remotes. It costs a directory rather than a clone. The session takes the branch’s name, and a branch that already has a worktree opens the one it has instead of failing.',
+      },
+      {
+        p: 'So five agents work on five branches, none of them changing the ground under another mid-task, and each one’s inspector shows only its own work. The worktrees live outside the repository, where they cannot be committed by accident or confuse a build that walks the project.',
+      },
+    ],
+  },
+
+  {
+    id: 'survival',
+    title: 'Quit the app, keep the work',
+    lead: 'Your shells are not the app’s children. They run under a small process beside it, so closing the window stops being a decision about the work.',
+    blocks: [
+      {
+        p: 'An agent that was thinking when you quit is still thinking when you come back, and the session reattaches to the shell it already had, scrollback included. A crash is the same story. This is on by default and there is nothing to switch on.',
+      },
+      {
+        p: 'The process holding them knows nothing about terminals, git or rendering. It forks what it is told to fork and keeps reading when nobody is attached, which is what makes it small enough to trust with outliving everything else.',
       },
     ],
   },
@@ -186,6 +235,7 @@ export const SECTIONS: Section[] = [
             ['Show files', '⌘⌥E'],
             ['Toggle sidebar', '⌘⌥S'],
             ['Focus the source-control list', '⌘⌥L'],
+            ['Find, in a preview window', '⌘F'],
             ['Increase / decrease / reset font size', '⌘+ / ⌘− / ⌘0'],
             ['Select all (⌘A clears the input line)', '⌘⇧A'],
           ],
@@ -201,7 +251,7 @@ export const SECTIONS: Section[] = [
 export const FAQ: { q: string; a: string }[] = [
   {
     q: 'What is Wortel?',
-    a: 'Wortel is a minimal, native macOS terminal emulator built on Ghostty’s engine. It replaces tabs and splits with a sidebar of named, persistent sessions, ships with no configuration to maintain, and includes a git panel, a file tree and activity detection for coding agents.',
+    a: 'Wortel is a fully native macOS terminal emulator built on Ghostty’s engine. It replaces tabs and splits with a sidebar of named, persistent sessions, gives each coding agent its own git worktree so several can work one repository at once, keeps those shells running after you quit the app, and ships with no configuration to maintain. A git panel, a file tree and agent activity detection are built in.',
   },
   {
     q: 'Is Wortel free?',
@@ -213,11 +263,19 @@ export const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How is Wortel different from Ghostty?',
-    a: 'Wortel runs Ghostty’s engine, so terminal behaviour, throughput and latency are the same. The difference is the app around it: Ghostty gives you tabs, splits and a large configuration file, while Wortel gives you one window, a sidebar of named sessions that persist across restarts, a built-in git and files inspector, coding-agent activity detection, and no configuration at all.',
+    a: 'Wortel runs Ghostty’s engine, so terminal behaviour, throughput and latency are the same. The difference is the app around it: Ghostty gives you tabs, splits and a large configuration file, while Wortel gives you one window, a sidebar of named sessions that persist across restarts, a git worktree per session, shells that keep running after the app quits, a built-in git and files inspector, coding-agent activity detection, and no configuration at all.',
   },
   {
     q: 'How is Wortel different from iTerm2, Warp, Kitty or Alacritty?',
-    a: 'Wortel is deliberately smaller than all of them. It has no settings UI, no plugin system, no AI chat box, no tabs and no splits. What it adds instead is session management (named shells that survive a restart and switch in one frame) plus knowing when a coding agent in a background session has stopped working and is waiting on you.',
+    a: 'Wortel has no settings UI, no plugin system, no AI chat box, no tabs and no splits. What it has instead is built around running coding agents: named shells that survive a restart and switch in one frame, a git worktree per session so several agents can work one repository at once, shells that keep running after you quit the app, a git and files inspector beside the terminal, and detection of which background agent has stopped and is waiting on you.',
+  },
+  {
+    q: 'How is Wortel different from Conductor, Emdash or Superset?',
+    a: 'Those are agent manager apps: a window holding worktrees, diffs and a review queue, with a terminal as a detail inside it. Wortel is the terminal, and the worktrees and diffs are in it. The practical difference is what happens when you quit. Wortel’s shells run under a separate process, so an agent mid-task keeps working whether or not the app is open, and everything you type is a real terminal on Ghostty’s engine rather than a box in a form.',
+  },
+  {
+    q: 'How is Wortel different from herdr, tmux or Zellij?',
+    a: 'Those are multiplexers: a background server plus a client that runs inside whatever terminal you already supply. Wortel is the terminal, and it holds sessions the same way, under a process outside the app, so quitting Wortel does not stop them. What it adds is the part a multiplexer has no window for: a git panel with diffs, history and a branch graph, a project file tree, preview windows, and a worktree per session, all beside the shell rather than in another tool.',
   },
   {
     q: 'Does Wortel have tabs or split panes?',
@@ -229,11 +287,23 @@ export const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How does Wortel know when a coding agent is waiting for me?',
-    a: 'By watching what the session draws. A screen that keeps changing means the agent is still working; a screen that has held still past a threshold means it is waiting on you. Precise signals (OSC 9;4 progress, OSC 133 command marks, a title spinner) are used where an agent emits them, but none are required, so the rule covers Claude Code, Codex, Aider and agents that do not exist yet. Detection only runs on sessions you are not currently looking at.',
+    a: 'By watching what the session draws. A screen that keeps changing means the agent is still working; a screen that has held still past a threshold means it is waiting on you. Precise signals (OSC 9;4 progress, OSC 133 command marks, a title spinner) are used where an agent emits them, but none are required, so the rule covers Claude Code, Codex, Aider and agents that do not exist yet. Nothing is written into any agent’s configuration to make this work, and detection only runs on sessions you are not currently looking at.',
+  },
+  {
+    q: 'Can I run several coding agents on one repository at once?',
+    a: 'Yes, and that is what git worktrees are for here. Opening a session on a branch checks that branch out in its own directory with its own files, sharing the repository’s history, objects and remotes, so it costs a directory rather than a clone. Each agent then edits its own files on its own branch, nothing changes the ground under a running agent, and each session’s git panel shows only that worktree’s work. A branch that already has a worktree opens the one it has.',
+  },
+  {
+    q: 'Do my sessions keep running if I quit Wortel?',
+    a: 'Yes. Shells run under a small keeper process outside the app rather than as its children, so quitting Wortel, or Wortel crashing, does not stop them. An agent that was working when you quit is still working when you launch again, and the session reattaches to the shell it already had, with the output from while you were gone. This is on by default and there is nothing to switch on.',
+  },
+  {
+    q: 'Can I control Wortel from the command line or from an agent?',
+    a: 'Yes. A wortel command ships inside the app bundle and is on the PATH of every session, with no installer and no admin prompt. It speaks to the running app over a socket: wortel open opens a preview window for a file, wortel new --branch opens a session in its own worktree, wortel rename renames the session it was run in, and wortel notify raises attention on it. That is how Wortel avoids shipping a separate integration per agent: anything that can run a command can drive it, including your own hooks and scripts.',
   },
   {
     q: 'Does Wortel work with Claude Code, Codex and Aider?',
-    a: 'Yes. They run as ordinary shell commands in any session. Beyond that, Wortel marks in the sidebar which agents are working and which are waiting, notifies you when a background agent goes quiet, jumps to the next waiting session with ⌘⌥], and resumes agents that were still running when you last quit.',
+    a: 'Yes. They run as ordinary shell commands in any session, with no per-agent setup and no changes to their configuration files. Beyond that, Wortel marks in the sidebar which agents are working and which are waiting, notifies you when a background agent goes quiet, jumps to the next waiting session with ⌘⌥], gives each one its own worktree so they can share a repository, keeps them running when the app is closed, and resumes agents that were still running when you last quit.',
   },
   {
     q: 'What are the system requirements?',
@@ -250,6 +320,9 @@ export const SPECS: [string, string][] = [
   ['Platform', 'macOS ' + SITE.minMacOS + ' ' + SITE.minMacOSName + ' or later'],
   ['Engine', 'libghostty: Ghostty’s VT parser, Metal renderer and glyph atlas'],
   ['Built with', 'Swift, AppKit and SwiftUI, fully native'],
+  ['Sessions', 'Held by a keeper process: they outlive the app'],
+  ['Repositories', 'A git worktree per session, on its own branch'],
+  ['Scripting', 'A bundled wortel command, no installer'],
   ['Price', 'Free'],
   ['Updates', 'Sparkle, signed and notarized'],
   ['Configuration', 'None: read-only and bundled'],

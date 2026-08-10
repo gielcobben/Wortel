@@ -266,10 +266,13 @@ final class FileTreeModel {
         guard isExpanded(node), node.url.path != root?.url.path else { return }
         expanded.remove(node.url.path)
         // Everything below stops being drawn, so it stops being watched too —
-        // this is what keeps a big collapsed subtree free.
-        for path in watchers.keys where path == node.url.path || path.hasPrefix(node.url.path + "/") {
-            watchers.removeValue(forKey: path)
-        }
+        // this is what keeps a big collapsed subtree free. Keys collected first:
+        // removing while iterating `watchers.keys` copies the whole dictionary
+        // per removal (the keys view holds the storage), which is quadratic on a
+        // deep subtree and reads like a bug even though it isn't one.
+        let prefix = node.url.path + "/"
+        let stale = watchers.keys.filter { $0 == node.url.path || $0.hasPrefix(prefix) }
+        for path in stale { watchers.removeValue(forKey: path) }
         persistExpansion()
         rebuildRows()
     }
@@ -287,9 +290,11 @@ final class FileTreeModel {
             if path == node.url.path { return isRoot }
             return !path.hasPrefix(prefix)
         }
-        for path in watchers.keys where path.hasPrefix(prefix) || (!isRoot && path == node.url.path) {
-            watchers.removeValue(forKey: path)
+        // Collected before removing; see `collapse` for why.
+        let stale = watchers.keys.filter {
+            $0.hasPrefix(prefix) || (!isRoot && $0 == node.url.path)
         }
+        for path in stale { watchers.removeValue(forKey: path) }
         persistExpansion()
         rebuildRows()
     }
@@ -394,14 +399,20 @@ final class FileTreeModel {
 
     /// Select the next visible row whose name starts with `prefix`, wrapping —
     /// the type-to-select behaviour every Mac list has.
+    ///
+    /// Walked as a rotated index rather than by building `rows[start...] +
+    /// rows[..<start]`, which copied the whole visible tree twice per keystroke,
+    /// and matched with `.anchored` rather than `lowercased().hasPrefix`, which
+    /// allocated a lowercased copy of every row's name to throw it away again.
     func selectMatching(prefix: String) {
         guard !prefix.isEmpty, !rows.isEmpty else { return }
         let start = (rows.firstIndex { $0.id == selectedID } ?? -1) + 1
-        let order = Array(rows[start...]) + Array(rows[..<start])
-        if let hit = order.first(where: {
-            $0.node.name.lowercased().hasPrefix(prefix.lowercased())
-        }) {
-            moveSelection(to: hit.node, reveal: true)
+        for offset in 0..<rows.count {
+            let row = rows[(start + offset) % rows.count]
+            if row.node.name.range(of: prefix, options: [.caseInsensitive, .anchored]) != nil {
+                moveSelection(to: row.node, reveal: true)
+                return
+            }
         }
     }
 

@@ -29,3 +29,13 @@ const pages = (await getCollection('legal')).sort(
     <a href={`/${p.id}`}>{p.data.nav}</a>
   ),
 )}
+
+<style>
+  /* The page you are on is a span rather than a link to itself, which means
+     `.foot nav a` in global.css does not reach it and it would sit in the
+     footer at a different weight to its neighbours. Same colour, no hover: it
+     reads as one of the row, just not clickable. */
+  span[aria-current] {
+    color: var(--text-50);
+  }
+</style>

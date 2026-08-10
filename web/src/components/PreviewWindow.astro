@@ -29,7 +29,11 @@ interface Props {
 const { name, id, latest = false } = Astro.props;
 ---
 
-<div class="wortel-app m27 win" id={id} data-latest={latest ? '' : undefined}>
+<!-- tabindex="-1" so opening a file can move focus here. Activating a link that
+     silently swaps a region somewhere else leaves anyone not watching the
+     pointer with no idea it did anything; focus is what says so. Not reachable
+     by Tab, only programmatically. -->
+<div class="wortel-app m27 win" id={id} tabindex="-1" data-latest={latest ? '' : undefined}>
   <div class="tb">
     <div class="lights">
       <span class="light r"></span><span class="light y"></span><span class="light g"></span>

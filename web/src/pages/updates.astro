@@ -108,7 +108,13 @@ const schema = [
           <ol>
             {releases.map(({ entry }, i) => (
               <li>
-                <a href={`#${entry.id}`} data-latest={i === 0 ? '' : undefined}>
+                {/* aria-current starts on the newest because that is what a
+                    visitor with no hash is looking at. The script moves it. */}
+                <a
+                  href={`#${entry.id}`}
+                  data-latest={i === 0 ? '' : undefined}
+                  aria-current={i === 0 ? 'true' : undefined}
+                >
                   <span class="fname">{entry.id}.md</span>
                   <span class="fdate">{shortFmt(entry.data.date)}</span>
                 </a>
@@ -289,6 +295,89 @@ const schema = [
     new ResizeObserver(layout).observe(rail);
     narrow.addEventListener('change', layout);
     layout();
+
+    // ---- the file list ----------------------------------------------------
+    const files = document.querySelector('.files');
+    const links = [...files.querySelectorAll('a')];
+    const FADE = 30;
+
+    // A fade at whichever end still has something behind it, and at neither end
+    // when the whole list fits. Two pixels of slack because a scroll that has
+    // reached the bottom can land a fraction short of it.
+    function fades() {
+      const room = files.scrollHeight - files.clientHeight;
+      files.style.setProperty('--top-fade', files.scrollTop > 2 ? FADE + 'px' : '0px');
+      files.style.setProperty('--bot-fade', files.scrollTop < room - 2 ? FADE + 'px' : '0px');
+    }
+    files.addEventListener('scroll', fades, { passive: true });
+    new ResizeObserver(fades).observe(files);
+    fades();
+
+    const linkFor = (hash) => links.find((a) => a.getAttribute('href') === hash);
+
+    // Which file is open is a CSS question (:target answers it), but CSS cannot
+    // put that into the accessibility tree. aria-current is the same fact said
+    // out loud.
+    function mark() {
+      const open = linkFor(location.hash) || links[0];
+      for (const a of links) {
+        if (a === open) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
+      }
+      return open;
+    }
+
+    // Keep the open row in view inside the list. Deep-linking an old release
+    // otherwise opens it on the right while its own row sits scrolled out of
+    // sight on the left.
+    function reveal(a) {
+      if (!a) return;
+      const r = a.getBoundingClientRect();
+      const f = files.getBoundingClientRect();
+      // Clear the fade as well as the edge, or the row it scrolls to is the one
+      // the mask is busy dissolving.
+      if (r.top < f.top + FADE) files.scrollTop -= f.top + FADE - r.top;
+      else if (r.bottom > f.bottom - FADE) files.scrollTop += r.bottom - (f.bottom - FADE);
+      // Directly, rather than waiting for the scroll event this just caused: a
+      // background tab throttles that event, and the fades would sit describing
+      // a scroll position the list has already left.
+      fades();
+    }
+
+    for (const a of links) {
+      a.addEventListener('click', (e) => {
+        // A modified click is a request for a new tab, not for this.
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+
+        // Following the link natively scrolls the page to where the window sits
+        // in the document, which is the top of it. The window is in a pinned
+        // rail and was already on screen, so that scroll is pure loss: it
+        // throws away the reader's place in the list to show them something
+        // they could already see. Set the fragment, put the scroll back.
+        //
+        // location.hash and not history.pushState, because :target has to
+        // update and only a real fragment navigation is guaranteed to do it.
+        // scroll-behavior is smooth on <html>, so both the jump and the undo
+        // would animate and fight each other: turn it off for the swap.
+        const root = document.documentElement;
+        const behavior = root.style.scrollBehavior;
+        root.style.scrollBehavior = 'auto';
+        const y = window.scrollY;
+        location.hash = a.getAttribute('href');
+        window.scrollTo(0, y);
+        root.style.scrollBehavior = behavior;
+
+        mark();
+        // preventScroll for the same reason: focus is here to say the region
+        // changed, not to move the page.
+        const win = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+        if (win) win.focus({ preventScroll: true });
+      });
+    }
+
+    window.addEventListener('hashchange', () => reveal(mark()));
+    reveal(mark());
   </script>
 </Layout>
 
@@ -314,11 +403,33 @@ const schema = [
   .mark a:hover { color: var(--text); }
 
   /* The file list takes what the intro leaves and scrolls inside itself rather
-     than growing the column past the viewport. */
+     than growing the column past the viewport.
+     Eighteen files do not fit a short window and will never fit, so the list
+     has to say so. It does it twice over: a thin scrollbar, and a fade at
+     whichever end still has more behind it. A list that simply stops at the
+     edge of its box reads as a list that ended. */
   .files {
+    --fade: 30px;
+    --top-fade: 0px;
+    --bot-fade: 0px;
     min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding-top: 36px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128, 128, 128, 0.4) transparent;
+    /* Set to 0 by default, so with the script absent (or the list short enough)
+       the mask is a hard edge at both ends: no fade, nothing clipped. */
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0, #000 var(--top-fade),
+      #000 calc(100% - var(--bot-fade)), transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0, #000 var(--top-fade),
+      #000 calc(100% - var(--bot-fade)), transparent 100%
+    );
   }
   .files .head { color: var(--text-50); margin-bottom: 10px; }
   .files ol { list-style: none; }
@@ -333,6 +444,12 @@ const schema = [
     line-height: 1.5;
   }
   .files a:hover { background: var(--grid); }
+  /* A visible ring for the keyboard, and only for the keyboard: tabbing the
+     list is the other way through it and it should not be invisible. */
+  .files a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
   .fname { font-family: var(--mono); font-size: 12.5px; color: var(--text-70); }
   .fdate { font-size: 12px; color: var(--text-50); }
   /* Which row is OPEN is in the generated rules above: they are the only thing
@@ -391,6 +508,22 @@ const schema = [
      long: a permanent will-change keeps the layer alive for nothing) is what
      keeps a drag on one frame. */
   .app-frame.gesturing { will-change: transform, width, height; }
+
+  /* global.css turns .app-frame's transitions off for reduced motion; .settling
+     above would put them back, so it has to opt out too. */
+  @media (prefers-reduced-motion: reduce) {
+    .app-frame.settling { transition: none; }
+  }
+
+  /* Opening a file focuses its window (see the script). That focus is
+     programmatic, so a ring on a pointer click would be noise; after Enter on
+     the link it is exactly what a keyboard user needs, and :focus-visible is
+     the one that can tell those apart. */
+  .app-frame > :global(.win:focus:not(:focus-visible)) { outline: none; }
+  .app-frame > :global(.win:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
   .grip {
     position: absolute;

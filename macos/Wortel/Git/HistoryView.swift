@@ -170,7 +170,7 @@ struct TruncatedDiffNotice: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: "scissors")
-            Text("Diff truncated — too large to display in full")
+            Text("Diff truncated, too large to display in full")
         }
         .font(.caption)
         .foregroundStyle(.secondary)

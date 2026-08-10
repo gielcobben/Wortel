@@ -1160,7 +1160,7 @@ final class SessionManager {
             // keeps from being downgraded here.
             self.raiseAttention(
                 session, kind: kind, title: session.name,
-                body: kind == .needsInput ? "Waiting on you" : "Finished — your move",
+                body: kind == .needsInput ? "Waiting on you" : "Finished, your move",
                 source: "\(source)-quiesce")
             // A finished turn is the best moment to (re)name the session from
             // what's now on screen — even when it's the one you're watching.

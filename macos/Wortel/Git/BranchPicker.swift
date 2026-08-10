@@ -275,7 +275,7 @@ final class BranchDialogAccessory: NSView, NSComboBoxDelegate {
     private func statusText() -> String {
         guard let branch else { return "" }
         if withWorktree.contains(branch) {
-            return "\u{201c}\(branch)\u{201d} already has a worktree — this opens it."
+            return "\u{201c}\(branch)\u{201d} already has a worktree. This opens it."
         }
         if isExistingBranch {
             return "Checks out \u{201c}\(branch)\u{201d} in a new worktree."

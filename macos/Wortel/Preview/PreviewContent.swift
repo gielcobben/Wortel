@@ -181,7 +181,7 @@ struct PreviewContent: View {
     private func noticeText(truncated: Bool) -> String {
         if document.isMissing { return "This file is no longer on disk" }
         if truncated { return "Showing the first \(PreviewDocument.maxLines) lines" }
-        return "Alias — the file is at "
+        return "Alias. The file is at "
             + document.url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
     }
 

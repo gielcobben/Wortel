@@ -133,7 +133,7 @@ struct FileTreePanel: View {
         Button {
             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: row.node.url.path)
         } label: {
-            Text("\(row.node.hiddenChildCount) more items — Reveal in Finder")
+            Text("\(row.node.hiddenChildCount) more items (Reveal in Finder)")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)

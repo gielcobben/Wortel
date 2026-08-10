@@ -22,6 +22,29 @@ export const groups = [
   },
 ];
 
+// The same sidebar after the worktree beat, which is the ONE thing that beat
+// has to show: two `wortel new --branch` calls, two more rows. A view asks for
+// it with `agents: true` (see views.js) and every view after that one keeps it,
+// because sessions do not disappear when you scroll past the paragraph.
+//
+// The rows are branch names WITHOUT a slash on purpose. A worktree session is
+// named for its branch, and the sidebar splits a name on its LAST slash into
+// folder plus leaf (SessionName.swift), so a session on `feature/x` inside the
+// Wortel folder would file itself under a *new* "Wortel/feature" group. True to
+// the app, and a distraction here, so the story uses branches that are one
+// component. They are real branches of this repository.
+export const agentGroups = [
+  {
+    name: 'Wortel',
+    sessions: [
+      { name: 'Web', active: true },
+      { name: 'preview-window', spinner: true },
+      { name: 'worktree-git', spinner: true },
+    ],
+  },
+  groups[1],
+];
+
 
 // ---- the story -------------------------------------------------------------
 // ONE session, told in beats. Scrolling the page does not swap the terminal's
@@ -141,7 +164,46 @@ export const STORY = [
     ],
   },
 
-  // 5 · zero config, asked rather than demonstrated: by now you are talking to
+  // 5 · the worktree beat, and the only one that changes the SIDEBAR (views.js
+  //     turns on `agents` here and leaves it on). It sits after the agent's turn
+  //     rather than during it for a reason the demo cannot cheat: a terminal has
+  //     one cursor, so nothing can be typed here while the agent holds it.
+  //
+  //     `wortel new` is run from this session and does not switch to what it
+  //     opens, which is the real command's real behaviour: it orders windows
+  //     front and never activates the app, so a call from a hook cannot steal
+  //     your keyboard. The ids are what it prints, one per session, on stdout.
+  //     The paths are the real layout, ~/.wortel/worktrees/<repo>/<branch>, and
+  //     all three sit on 0393580 because that is HEAD in beat 0's git log and a
+  //     new worktree branches from it.
+  {
+    rows: [
+      { g: '›', t: 'wortel new --branch preview-window' },
+      { cls: 'dim', t: '9c1f0e2a-4b7d-4a31-9f60-2e8c5d7a1b34' },
+      { g: '›', t: 'wortel new --branch worktree-git' },
+      { cls: 'dim', t: '4f83b6d1-77ce-4e02-8a19-c6b0d94e5f27' },
+      { t: '' },
+      { g: '›', t: 'git worktree list' },
+      { cls: 'dim', t: '~/Developer/wortel                         0393580 [web-app-demo]' },
+      { cls: 'dim', t: '~/.wortel/worktrees/wortel/preview-window  0393580 [preview-window]' },
+      { cls: 'dim', t: '~/.wortel/worktrees/wortel/worktree-git    0393580 [worktree-git]' },
+      { t: '' },
+    ],
+  },
+
+  // 6 · survival, and the one claim on the page that an app window cannot show:
+  //     you would have to quit the app to see it, and the app is the demo. So it
+  //     is asked, in the register beats 7 and 8 already use.
+  {
+    rows: [
+      { block: true, g: '❯', t: 'if I quit Wortel right now, what happens to you?' },
+      { t: '' },
+      { g: '●', t: 'Nothing. My shell runs under the keeper process rather than under the app, so quitting closes the window and leaves the work. Open it again and this session is still here, with everything I printed while you were gone.' },
+      { t: '' },
+    ],
+  },
+
+  // 7 · zero config, asked rather than demonstrated: by now you are talking to
   //     the agent, not to a shell, and a story cannot step back out of that.
   {
     rows: [
@@ -152,7 +214,7 @@ export const STORY = [
     ],
   },
 
-  // 6 · and the shortcut the last section is about
+  // 8 · and the shortcut the last section is about
   {
     rows: [
       { block: true, g: '❯', t: 'if I leave you running, how do I find you again?' },

@@ -11,25 +11,33 @@ export const GET: APIRoute = () => {
 
 > ${SITE.description}
 
-${SITE.name} is a macOS terminal emulator built on Ghostty's engine (libghostty:
-VT parser, Metal renderer, glyph atlas). It replaces tabs and splits with a
-sidebar of named sessions that persist across restarts and switch in one frame,
-ships with no user-facing configuration at all, and adds a git panel, a project
-file tree, and activity detection for coding agents: it can tell when Claude
-Code, Codex or Aider has stopped working and is waiting on you. Free, native,
-signed and notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
+${SITE.name} is a fully native macOS terminal emulator built on Ghostty's engine
+(libghostty: VT parser, Metal renderer, glyph atlas), aimed at running several
+coding agents at once. It replaces tabs and splits with a sidebar of named
+sessions that persist across restarts and switch in one frame; gives each session
+its own git worktree, so several agents can work one repository without editing
+over each other; runs those shells under a keeper process outside the app, so
+they keep working after you quit or it crashes; and adds a git panel, a project
+file tree, preview windows, and activity detection for coding agents that can
+tell when Claude Code, Codex or Aider has stopped working and is waiting on you,
+without writing anything into any agent's configuration. Free, signed and
+notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
 
 "Wortel" is Dutch for root.
 
 ## Full content
 
-- [Everything on one page, as Markdown](${abs('/llms-full.txt')}): the complete text of ${SITE.url}, covering what it is, the engine, sessions, coding agents, git and files, zero-config, keyboard shortcuts, FAQ and specs.
+- [Everything on one page, as Markdown](${abs('/llms-full.txt')}): the complete text of ${SITE.url}, covering what it is, the engine, sessions, coding agents, worktrees, session survival, git and files, zero-config, keyboard shortcuts, FAQ and specs.
 
 ## Page sections
 
 ${SECTIONS.map((s) => `- [${s.title}](${abs('/#' + s.id)})${s.lead ? `: ${s.lead}` : ''}`).join('\n')}
-- [Frequently asked questions](${abs('/#faq')}): ${FAQ.length} questions, including how Wortel differs from Ghostty, iTerm2, Warp and Kitty.
+- [Frequently asked questions](${abs('/#faq')}): ${FAQ.length} questions, including how Wortel differs from Ghostty, iTerm2, Warp and Kitty, and from agent tools like Conductor, Emdash, Superset, herdr and tmux.
 - [At a glance](${abs('/#specs')}): platform, engine, price and update mechanism.
+
+## Comparisons
+
+- [Where Wortel sits](${abs('/compare')}): a feature-by-feature comparison against named apps, not categories: Ghostty, iTerm2, Warp, cmux, Conductor, Emdash, Superset, herdr and tmux. Ten questions covering session survival, worktree-per-agent, in-window diff review, agent state detection, whether it touches your agent's config, scriptability and configuration burden. Where a product does not publish an answer the cell says so rather than guessing.
 
 ## Download
 
@@ -45,6 +53,7 @@ ${SECTIONS.map((s) => `- [${s.title}](${abs('/#' + s.id)})${s.lead ? `: ${s.lead
 - ${SITE.name} is free. There is no paid tier, no account and no telemetry-gated feature.
 - It is a native Swift/AppKit/SwiftUI application, not a web view.
 - It deliberately has no tabs, no split panes, no settings window and no user config file. Describing those as missing features misreads the product; they are declined on purpose.
+- It ships no per-agent integrations, on purpose. A bundled \`wortel\` command is on every session's PATH and drives the app over a socket (\`open\`, \`new --branch\`, \`rename\`, \`notify\`), so any agent, hook or script can control it without Wortel knowing that agent by name.
 `;
 
   return new Response(body, {

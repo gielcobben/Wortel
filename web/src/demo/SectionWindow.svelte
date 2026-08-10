@@ -22,7 +22,7 @@
   import WortelApp from './App.svelte';
   import { STORY, AGENT_BEAT } from './data.js';
 
-  let { beat = 0, sidebar = false, pane = null, focus = 'terminal' } = $props();
+  let { beat = 0, sidebar = false, pane = null, focus = 'terminal', agents = false } = $props();
 
   // Rendered client:only and gated here rather than hidden with CSS. Six of
   // these is 2200 DOM nodes and 150KB of markup; desktop should not pay for a
@@ -43,7 +43,7 @@
   const cwd = $derived(
     [...STORY.slice(0, beat + 1)].reverse().find((b) => b.cwd)?.cwd ?? '~/Developer/wortel',
   );
-  const view = $derived({ sidebar, pane });
+  const view = $derived({ sidebar, pane, agents });
 </script>
 
 {#if narrow}

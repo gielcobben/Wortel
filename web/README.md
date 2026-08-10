@@ -29,14 +29,18 @@ feed at `updates.wortel.sh`. See the repo root `CLAUDE.md`.
 ```
 src/
   data/site.ts             ALL landing-page copy: the single source of truth
+  data/compare.ts          ALL /compare copy: the apps, the ten questions, every cell
   content/releases/*.md    the changelog, one Markdown file per release
   content.config.ts        the release collection's schema + version sorting
   pages/index.astro        the landing page + JSON-LD
   pages/updates.astro      /updates         the changelog
+  pages/compare.astro      /compare         Wortel against nine named apps
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms.txt.ts        /llms.txt        short map for language models
   pages/llms-full.txt.ts   /llms-full.txt   the whole page as Markdown
   pages/sitemap.xml.ts     /sitemap.xml
+  components/PreviewWindow.astro  the app's file-preview window, for /updates
+  components/CompareGrid.astro    the comparison grid, for /compare
   layouts/Layout.astro     html shell + meta/OG/canonical/icons
   styles/global.css        all styling (terminal-flavored dark theme)
   demo/                    the Svelte replica of the app window (see below)
@@ -80,7 +84,7 @@ proxy, and leaves everyone else on the new look. A visitor it places on macOS
 
 **Pixel work is measured, never eyeballed.** Put 2x screenshots of the real
 window in `public/refs/` as `m27-{light,dark}-{history,changes,files}.png`, then
-open `/compare?ref=history&theme=light&mode=onion` (also `diff`, `app`, `ref`,
+open `/pixel?ref=history&theme=light&mode=onion` (also `diff`, `app`, `ref`,
 and `look=26`) to overlay the live window on one at 1:1. Both the refs and that
 page are gitignored, AND `npm run build` deletes them out of `dist/`: they are
 local tools, 7MB of screenshots has no business on wortel.sh, and a release is
@@ -104,7 +108,43 @@ makes a numeric diff possible:
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --headless=new --force-device-scale-factor=2 --window-size=1416,919 \
   --virtual-time-budget=6000 --screenshot=out.png \
-  "http://localhost:4321/compare?ref=history&theme=light&mode=app"
+  "http://localhost:4321/pixel?ref=history&theme=light&mode=app"
+```
+
+## /compare
+
+`src/data/compare.ts` holds the lot: the apps, the ten questions, and every
+cell. Two rules keep the page honest and are worth keeping.
+
+**Every claim is read off that product's own site, docs or repository**, never
+off a competitor's comparison page. The header of the module lists what each
+column was checked against.
+
+**`unknown` is a real answer.** Where a product does not publish something the
+cell renders as "?" and reads "not published". It is not a polite "no", and
+rounding it down to one is how you end up wrong in public about someone else's
+software.
+
+The grid shows as many columns as the width allows (two on a phone, three from
+1040px, four from 1280px) and every column is chosen from a menu, because there
+is no width that shows ten columns of sentences. Nothing inside the panels draws
+a rule: the page is graph paper, and a hairline on graph paper is just another
+grid line at the wrong offset.
+
+**Heads up when you switch to a branch that has this page.** `/compare` used to
+be the local pixel harness, so a checkout made before this page existed may
+still have an untracked `src/pages/compare.astro` sitting where the tracked one
+wants to go, and git will abort rather than clobber it.
+
+Only do this on a checkout that has the OLD harness. Run it inside a checkout
+that already has this page and you will rename the page itself into a gitignored
+file and lose the route. The guard checks which one you have, so it is safe
+either way:
+
+```sh
+# renames ONLY if the file is untracked, i.e. it is the old harness
+git ls-files --error-unmatch web/src/pages/compare.astro >/dev/null 2>&1 \
+  || mv web/src/pages/compare.astro web/src/pages/pixel.astro
 ```
 
 ## Content & SEO

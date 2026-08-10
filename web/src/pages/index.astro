@@ -86,12 +86,15 @@ const app = {
     'Named, persistent terminal sessions instead of tabs',
     'Instant session switching with no flash or rebuild',
     'Runs Ghostty’s VT parser, Metal renderer and glyph atlas via libghostty',
+    'A git worktree per session, so several coding agents can share one repository',
+    'Shells run outside the app and keep working after you quit or it crashes',
     'Activity detection for coding agents such as Claude Code, Codex and Aider',
     'Notifies you when a background agent stops working and waits on you',
     'Resumes agents that were still running at quit',
     'Built-in git panel: working-tree changes, commit history with a branch graph, and diffs',
     'Project file tree with drag-to-terminal path insertion',
-    'Rendered Markdown preview',
+    'Preview windows for source, diffs, rendered Markdown and Quick Look',
+    'A bundled wortel command that scripts the app over a socket, with no installer',
     'Zero configuration: no settings UI and no dotfile',
   ],
 };
@@ -137,11 +140,11 @@ const schema = [website, webpage, person, app];
         <div class="hero-left">
         <div class="intro">
           <h1 class="mark">Wortel</h1>
-          <p class="tagline">A minimal, native macOS terminal.</p>
+          <p class="tagline">A native macOS terminal your agents can live in.</p>
           <p class="desc">
-            Ghostty’s engine, in a window that needs no arranging. Sessions you
-            name and find again. Agents you can tell apart at a glance. Nothing to
-            configure, ever. It’s finished the moment you open it.
+            Ghostty’s engine, in a window that needs no arranging. Point five
+            agents at one repository, each on its own branch and its own files.
+            Quit the app and they keep working. Nothing to configure, ever.
           </p>
           <p class="links">
             <a class="download" href={DOWNLOAD}>
@@ -220,6 +223,7 @@ const schema = [website, webpage, person, app];
               sidebar={VIEWS[section.id].sidebar}
               pane={VIEWS[section.id].pane}
               focus={VIEWS[section.id].focus}
+              agents={VIEWS[section.id].agents}
             />
           )}
           </section>
@@ -283,13 +287,14 @@ const schema = [website, webpage, person, app];
 
     <footer class="foot">
       <p>
-        <strong>Wortel</strong>: a minimal, native macOS terminal built on Ghostty.
+        <strong>Wortel</strong>: a native macOS terminal built on Ghostty.
         Dutch for <em>root</em>.
       </p>
       <nav aria-label="Footer">
         <a href="/">Home</a>
         <a href={DOWNLOAD}>Download</a>
         <a href="/updates">Changelog</a>
+        <a href="/compare">Compare</a>
         <a href="#faq">FAQ</a>
         <a href="/llms.txt">llms.txt</a>
       </nav>

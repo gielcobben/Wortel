@@ -28,4 +28,4 @@ web/dist/
 # on them. Local tools, not the site — and shipping them would put 7MB of
 # screenshots on wortel.sh. See web/README.md.
 web/public/refs/
-web/src/pages/compare.astro
+web/src/pages/pixel.astro

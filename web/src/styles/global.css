@@ -20,6 +20,17 @@
      rather than repeating them, so the cap has exactly one definition — if the
      two ever disagreed, the app would visibly resize on load as the script
      corrected the stylesheet's first paint. */
+  /* A surface floating on the graph paper. The app window has always had this
+     (demo/tokens.css --w-shadow); it lives here too now that the compare page
+     puts its own panels on the grid, so the two can never drift apart. */
+  --panel-shadow: 0 36px 80px rgba(0, 0, 0, 0.42), 0 4px 16px rgba(0, 0, 0, 0.28);
+  /* A panel's own edge. NOT --grid: that is the graph paper, and at 4.5% it
+     reads as nothing when asked to outline something. */
+  --panel-border: rgba(255, 255, 255, 0.12);
+  /* Pinned bars: depth rather than a rule, because a 1px line on graph paper is
+     just another grid line at the wrong offset. */
+  --pinned-shadow: 0 8px 16px -10px rgba(0, 0, 0, 0.55);
+
   --app-max-w: 1266px;
   --app-max-h: 797px;
 }
@@ -37,6 +48,9 @@
        it's 4.68:1 and still clearly muted. Dark mode's --text-50 already passes. */
     --text-50: rgba(22, 23, 27, 0.6);
     --accent: #0070f5;
+    --panel-shadow: 0 36px 80px rgba(0, 0, 0, 0.22), 0 4px 16px rgba(0, 0, 0, 0.11);
+    --panel-border: rgba(20, 22, 34, 0.10);
+    --pinned-shadow: 0 8px 16px -10px rgba(0, 0, 0, 0.22);
   }
 }
 
@@ -79,11 +93,16 @@ body {
   position: relative;
 }
 
-/* full-screen graph-paper grid (45px cells, per Figma) — fills the viewport
-   and sits behind the app */
+/* graph-paper grid (36px cells, per Figma), behind everything.
+
+   ABSOLUTE, NOT FIXED: it scrolls with the document. Fixed, it stayed put while
+   the content moved over it, so the lines slid against the very thing they are
+   there to line up with. The body is position: relative with min-height rather
+   than a height, so inset: 0 covers the whole document and the grid ends where
+   the page does. */
 body::before {
   content: "";
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: -2;
   background-image:

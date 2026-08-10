@@ -9,6 +9,7 @@ import { SITE } from '../data/site';
 
 const PAGES: { path: string; changefreq: string; priority: string }[] = [
   { path: '/', changefreq: 'weekly', priority: '1.0' },
+  { path: '/compare', changefreq: 'monthly', priority: '0.7' },
   { path: '/updates', changefreq: 'weekly', priority: '0.6' },
 ];
 

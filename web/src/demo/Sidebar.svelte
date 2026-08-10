@@ -2,10 +2,13 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Loader from '@lucide/svelte/icons/loader';
   import Plus from '@lucide/svelte/icons/plus';
-  import { groups } from './data.js';
+  import { groups, agentGroups } from './data.js';
   // `ongrab` starts a width drag; the grip lives here so it slides in and out
   // with the card it sizes.
-  let { open = false, force = false, dragging = false, ongrab = undefined } = $props();
+  let { open = false, force = false, dragging = false, ongrab = undefined, agents = false } = $props();
+  // The worktree sessions, once the story has opened them. Same rows, same
+  // pitch, two more of them: nothing here is measured differently.
+  const list = $derived(agents ? agentGroups : groups);
 </script>
 
 <!-- Floating inset sidebar, measured from the refs: a rounded card at
@@ -16,7 +19,7 @@
      (card origin = window 8,8). -->
 <div class="overlay" class:open class:force class:dragging>
   <div class="card">
-    {#each groups as group, gi}
+    {#each list as group, gi}
       <div class="group" class:first={gi === 0}>
         <div class="ghead">
           <span class="chev"><ChevronDown size={13} strokeWidth={1.8} absoluteStrokeWidth aria-hidden="true" /></span>

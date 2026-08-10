@@ -50,15 +50,20 @@ const description =
 // not scoped ones, and Astro would otherwise rewrite them out of matching.
 const openRow = 'background: rgba(128,128,128,0.14);';
 const openName = 'color: var(--text);';
-const open = (sel: string) => `${sel}{${openRow}}\n${sel} .fname{${openName}}`;
+// html:not(.js-open) on every one of them: these are the no-script path. The
+// script adds that class to take over, because once it does the URL is changed
+// with pushState and :target goes deliberately stale (see the script for why).
+// Without the guard the stale :target would keep a second row lit.
+const openRule = (sel: string) =>
+  `html:not(.js-open) ${sel}{${openRow}}\nhtml:not(.js-open) ${sel} .fname{${openName}}`;
 const activeCss = [
   ...releases.map(({ entry }) =>
-    open(`.shell:has([id="${entry.id}"]:target) .files a[href="#${entry.id}"]`),
+    openRule(`.shell:has([id="${entry.id}"]:target) .files a[href="#${entry.id}"]`),
   ),
   // Nothing targeted yet: the newest file is the one that is open. This has to
   // be conditional on nothing being targeted, or the newest stays lit next to
   // whichever file you actually opened, and two rows read as open at once.
-  open('.shell:not(:has(.win:target)) .files a[data-latest]'),
+  openRule('.shell:not(:has(.win:target)) .files a[data-latest]'),
 ].join('\n');
 
 const schema = [
@@ -314,18 +319,12 @@ const schema = [
     fades();
 
     const linkFor = (hash) => links.find((a) => a.getAttribute('href') === hash);
+    const wins = [...document.querySelectorAll('.app-frame > .win')];
+    const idOf = (a) => decodeURIComponent(a.getAttribute('href').slice(1));
 
-    // Which file is open is a CSS question (:target answers it), but CSS cannot
-    // put that into the accessibility tree. aria-current is the same fact said
-    // out loud.
-    function mark() {
-      const open = linkFor(location.hash) || links[0];
-      for (const a of links) {
-        if (a === open) a.setAttribute('aria-current', 'true');
-        else a.removeAttribute('aria-current');
-      }
-      return open;
-    }
+    // From here the script owns which window is open, not :target. Saying so in
+    // the DOM is what switches the generated :target rules off.
+    document.documentElement.classList.add('js-open');
 
     // Keep the open row in view inside the list. Deep-linking an old release
     // otherwise opens it on the right while its own row sits scrolled out of
@@ -344,40 +343,55 @@ const schema = [
       fades();
     }
 
+    // Opening a file without navigating to it.
+    //
+    // :target is the switch with no script behind it, and it stays for that
+    // case, but reaching it needs a real fragment navigation and that scrolls:
+    // the browser aligns the window's top edge with the viewport, which is the
+    // snap to the titlebar. Restoring the scroll afterwards does not fix it.
+    // The browser may do its scroll on a later frame, after the undo has run,
+    // so the undo silently loses the race. (It appeared to work only in a
+    // background tab, where that frame never came.)
+    //
+    // So: never navigate. pushState changes the URL and never scrolls, which
+    // keeps the link shareable and the page still. It leaves :target pointing
+    // at whatever it pointed at before, which is why html.js-open switches the
+    // :target rules off and inline display decides instead.
+    function openFile(a, push) {
+      if (!a) return;
+      const id = idOf(a);
+      for (const w of wins) w.style.display = w.id === id ? 'flex' : 'none';
+      for (const l of links) {
+        const on = l === a;
+        l.classList.toggle('is-open', on);
+        if (on) l.setAttribute('aria-current', 'true');
+        else l.removeAttribute('aria-current');
+      }
+      if (push && location.hash !== a.getAttribute('href')) {
+        history.pushState(null, '', a.getAttribute('href'));
+      }
+      reveal(a);
+    }
+
     for (const a of links) {
       a.addEventListener('click', (e) => {
         // A modified click is a request for a new tab, not for this.
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
-
-        // Following the link natively scrolls the page to where the window sits
-        // in the document, which is the top of it. The window is in a pinned
-        // rail and was already on screen, so that scroll is pure loss: it
-        // throws away the reader's place in the list to show them something
-        // they could already see. Set the fragment, put the scroll back.
-        //
-        // location.hash and not history.pushState, because :target has to
-        // update and only a real fragment navigation is guaranteed to do it.
-        // scroll-behavior is smooth on <html>, so both the jump and the undo
-        // would animate and fight each other: turn it off for the swap.
-        const root = document.documentElement;
-        const behavior = root.style.scrollBehavior;
-        root.style.scrollBehavior = 'auto';
-        const y = window.scrollY;
-        location.hash = a.getAttribute('href');
-        window.scrollTo(0, y);
-        root.style.scrollBehavior = behavior;
-
-        mark();
-        // preventScroll for the same reason: focus is here to say the region
-        // changed, not to move the page.
-        const win = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+        openFile(a, true);
+        // Focus says the region changed, for anyone not watching the pointer.
+        // preventScroll, because moving the page is the whole thing being fixed.
+        const win = document.getElementById(idOf(a));
         if (win) win.focus({ preventScroll: true });
       });
     }
 
-    window.addEventListener('hashchange', () => reveal(mark()));
-    reveal(mark());
+    // Back, forward, and a hash typed into the bar. popstate covers our own
+    // pushState history; hashchange covers a fragment edited by hand.
+    const sync = () => openFile(linkFor(location.hash) || links[0], false);
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    sync();
   </script>
 </Layout>
 
@@ -452,9 +466,12 @@ const schema = [
   }
   .fname { font-family: var(--mono); font-size: 12.5px; color: var(--text-70); }
   .fdate { font-size: 12px; color: var(--text-50); }
-  /* Which row is OPEN is in the generated rules above: they are the only thing
-     that knows. Hover is the only state that can be stated here. */
+  /* Hover is the only state that can be stated without knowing which file is
+     open. The open row itself has two rules, for the two paths: the generated
+     :target ones above when there is no script, and these when there is. */
   .files a:hover .fname { color: var(--text); }
+  .files a.is-open { background: rgba(128, 128, 128, 0.14); }
+  .files a.is-open .fname { color: var(--text); }
 
   /* ==========================================================================
      The frame. .app-rail and .app-frame are the landing page's, so the window

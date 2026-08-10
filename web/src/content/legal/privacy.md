@@ -12,7 +12,8 @@ it on trust.
 
 The short version: the website counts pages and download clicks without storing
 anything on your machine, the update server counts downloads and update checks,
-and the app itself sends nothing at all.
+and the app reports which of its features get used, in a form that cannot
+describe you or your work. That last one you can switch off in one click.
 
 ## Who is responsible
 
@@ -23,29 +24,81 @@ here. Questions, objections and requests go to
 If you think this processing breaches the GDPR you can complain to the Dutch
 supervisory authority, the Autoriteit Persoonsgegevens.
 
-## The app sends nothing
+## The app
 
-Wortel.app contains no analytics. It does not phone home, has no account, no
-login and no identifier, and it does not report which commands you run, which
-directories you open, which repositories you have, what your sessions are named
-or anything drawn on your screen. None of that leaves your Mac.
+Wortel reports which of its features are used, and nothing else. It is on by
+default, it says so the first time you open it, and it is one click to turn off:
+**Wortel menu, Share Anonymous Usage Data**.
+
+### What is never sent
+
+None of this leaves your Mac, ever, whether reporting is on or off:
+
+- what you type, and anything drawn on your screen
+- the commands you run, and their output
+- session names, window titles, directories or file paths
+- repository names, branch names, or anything from your git history
+- your user name, your computer's name, or your files
+
+That is not a policy, it is the shape of the code. The list of things the app
+can report is a single file with no free-form text in it: every value is chosen
+from a fixed set, so there is no field a directory or a session name could be
+put into even by mistake. A terminal sees everything you do, which is exactly
+why the reporting was built this way.
+
+### What is sent
+
+One short message when something happens, saying what happened and nothing
+about the thing it happened to:
+
+- the app started, roughly how many sessions came back (as a range like "4-7",
+  never an exact count), and roughly how many agents resumed
+- the app quit, and roughly how long it ran
+- a session was created, and whether that was from the menu, the `wortel`
+  command, or a worktree
+- a session was renamed
+- the git panel was opened, on which of the three panes, and whether from the
+  toolbar or the keyboard
+- a preview window was opened, and whether it showed source, a diff or Markdown
+- a background session asked for attention, and which kind of signal raised it
+- the jump-to-next-waiting shortcut was used
+- a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`)
+- one last message when you turn reporting off, and then silence
+
+Each carries the app version, your macOS version to one decimal place, and
+whether the Mac is Apple Silicon or Intel. That is the whole list.
+
+### Who it says you are
+
+A random identifier, made once on your machine and stored with your other
+preferences. It is not derived from your hardware, your serial number or your
+name, so it identifies nothing and nobody can recompute it. Deleting Wortel's
+preferences loses it, and that is correct behaviour rather than a bug.
+
+The events are marked anonymous at PostHog, which means no profile is built
+from them: they are counted, not accumulated into a record of what one install
+did.
+
+### When it reports nothing at all
+
+- you turned it off
+- `DO_NOT_TRACK` is set in your environment, which Wortel honours like any other
+  command line tool
+- the build is a development build rather than a release
 
 Your session list, window layout and preferences are stored in
-`~/Library/Application Support/Wortel/` and stay there. Your shell
-configuration is yours and is never read by Wortel for any purpose beyond
-running your shell.
+`~/Library/Application Support/Wortel/` and in your preferences file, and stay
+there. Your shell configuration is yours and is never read by Wortel for any
+purpose beyond running your shell.
 
-The one thing the app does talk to is the update server, described next.
-
-If in-app analytics is ever added, it will be opt-out, it will be announced in
-the release notes, and this page will describe every event before it ships.
+The other thing the app talks to is the update server, described next, and that
+one the switch above does not cover.
 
 ## The update server
 
 Wortel checks for updates through Sparkle, which asks
 `updates.wortel.sh/appcast.xml` roughly once a day and downloads an archive from
-the same place when there is a new version. That is how the app stays current,
-and it is the one thing it does over the network.
+the same place when there is a new version. That is how the app stays current.
 
 Those requests are counted. For each one, the following is recorded:
 
@@ -57,12 +110,12 @@ Those requests are counted. For each one, the following is recorded:
 Nothing is stored that identifies your machine, and none of it is linked to
 anything else.
 
-**This is the one part you cannot switch off from inside the app.** An update
-check is how the app learns a security fix exists, so it happens regardless of
-any other preference. The only way to stop it is to turn off automatic update
-checks, which also means updates stop arriving. Should the app ever gain its own
-analytics with an opt-out, that opt-out will not cover this: turning it off will
-not stop update checks, and saying otherwise would be a lie.
+**This is the one part you cannot switch off from inside the app, and "Share
+Anonymous Usage Data" does not cover it.** An update check is how the app learns
+that a security fix exists, so it happens regardless of any other preference.
+Turning reporting off stops everything in the section above and does not stop
+this, and saying otherwise would be a lie. The only way to stop it is to turn
+off automatic update checks, which also means updates stop arriving.
 
 ## The website
 
@@ -100,17 +153,32 @@ building an advertising profile. There is no such profile to share.
 
 The lawful basis is legitimate interest under Article 6(1)(f) GDPR: knowing
 roughly how many people use a free tool, and which parts they use, in the least
-identifying way that answers the question. No device storage is used, so no
-consent is required for it.
+identifying way that answers the question.
+
+The website stores nothing on your device, so there is nothing there for a
+consent banner to ask about. The app is different and it is worth being straight
+about it: it does keep one random identifier in its own preferences, and that is
+storage on your machine. It is on by default, the app tells you so the first
+time you open it, and it stops the moment you turn it off. If you would rather
+it never started, `DO_NOT_TRACK` is honoured from the first launch.
 
 You have the rights the GDPR gives you, including access, erasure and objection.
-There is an honest catch worth stating plainly: because none of this data
+For the website and the update server there is an honest catch: nothing there
 identifies you, and the update server's identifier is rebuilt daily from
-information that is never stored, there is generally no way to find "your" data
-in order to show or delete it. That is a consequence of collecting so little,
-not a way of avoiding the question. Write to
-[privacy@wortel.sh](mailto:privacy@wortel.sh) and you will get a straight answer
-about what exists.
+information that is never stored, so there is generally no way to find "your"
+data in order to show or delete it. That is a consequence of collecting so
+little, not a way of dodging the question.
+
+The app is the one place a request can actually be acted on, because its
+identifier is stable. You can read it yourself:
+
+```
+defaults read com.gielcobben.Wortel TelemetryInstallID
+```
+
+Send that to [privacy@wortel.sh](mailto:privacy@wortel.sh) and the events under
+it can be shown to you or deleted. Deleting it locally, or turning reporting
+off, stops anything further being recorded under it.
 
 Events are kept while they are useful for understanding how Wortel is used, and
 are aggregate from the moment they arrive.

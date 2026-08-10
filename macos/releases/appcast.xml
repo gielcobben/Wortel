@@ -37,7 +37,7 @@
 <li><strong>A worktree session is marked in the sidebar.</strong> A session opened on a branch is renamed to that branch, so it read as an ordinary shell in a directory. It carries the branch glyph now, the same one the toolbar chip uses, because which kind it is decides where your last commit went.</li>
 <li><strong>The branch chip fits its name</strong> instead of breaking it in half at a hyphen and standing taller than everything beside it. Long branch names truncate from the tail, and short ones no longer sit in a chip half full of nothing.</li>
 </ul>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.33.1.zip" length="18558504" type="application/octet-stream" sparkle:edSignature="qFCNEqkn0vQ9X04njj9dcRJ7UqPm/r40s6cc2xkhBj3y221bJ6/y8X5HcwVrrpCsddndVu8OZ2PuutthL7tQAw=="/>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.33.1.zip" length="18558681" type="application/octet-stream" sparkle:edSignature="6m+0JB1UxRW8n7sQGmAzul9JJgVJ5tUmLZIM8PrRFZFi/0/lljMQ381+zO60FeFi03QHk5DUDXpgLLRjNsUQAw=="/>
         </item>
         <item>
             <title>2026.32.3</title>

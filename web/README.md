@@ -78,8 +78,11 @@ proxy, and leaves everyone else on the new look. A visitor it places on macOS
 window in `public/refs/` as `m27-{light,dark}-{history,changes,files}.png`, then
 open `/compare?ref=history&theme=light&mode=onion` (also `diff`, `app`, `ref`,
 and `look=26`) to overlay the live window on one at 1:1. Both the refs and that
-page are gitignored: local tools, and 7MB of screenshots has no business on
-wortel.sh.
+page are gitignored, AND `npm run build` deletes them out of `dist/`: they are
+local tools, 7MB of screenshots has no business on wortel.sh, and a release is
+allowed to deploy the site by itself (`scripts/release.sh --publish` rebuilds
+it so the version number refreshes). Nothing about keeping them out may depend
+on whoever runs that remembering to.
 
 Screenshots off a Mac are **Display P3**. Sampling one raw and pasting the
 number into CSS (which is sRGB) shifts every saturated colour: it is what first

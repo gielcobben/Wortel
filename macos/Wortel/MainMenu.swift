@@ -65,15 +65,22 @@ enum MainMenu {
         // Routes through the responder chain to AppDelegate, which drives the
         // Sparkle updater and validates (disables) this item mid-check.
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates(_:)), keyEquivalent: "")
-        // The entire settings surface of a zero-config app, and one checkmark
-        // is the right size for it: there is no settings window to put this in,
-        // and that is the feature rather than the gap. AppDelegate carries the
-        // checkmark and HIDES the item outright on any build that cannot report
-        // anyway (Debug, a 0.0.0 dev build, DO_NOT_TRACK set), because a switch
-        // that controls nothing is worse than no switch at all.
-        appMenu.addItem(withTitle: "Share Anonymous Usage Data",
-                        action: #selector(AppDelegate.toggleTelemetry(_:)),
-                        keyEquivalent: "")
+        // The same preference as the switch in the sidebar's ⓘ popover, in the
+        // place a Mac user looks for a setting in an app that has no settings
+        // window. AppDelegate carries the checkmark.
+        //
+        // Not added at all on a build that cannot report anyway (Debug, a 0.0.0
+        // dev build, DO_NOT_TRACK set), because a switch that controls nothing
+        // is worse than no switch. Decided here rather than hidden during
+        // validation because none of those three can change while the app runs,
+        // and `isHidden` set from `validateMenuItem` does not reliably take.
+        // The ⓘ stays on those builds and says so instead: "what does this app
+        // report" is worth an answer even when the answer is "nothing here".
+        if TelemetrySettings.isSwitchable {
+            appMenu.addItem(withTitle: "Share Anonymous Usage Data",
+                            action: #selector(AppDelegate.toggleTelemetry(_:)),
+                            keyEquivalent: "")
+        }
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Wortel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")

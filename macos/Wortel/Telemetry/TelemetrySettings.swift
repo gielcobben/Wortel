@@ -48,6 +48,20 @@ enum TelemetrySettings {
         #endif
     }
 
+    /// Whether a switch over this preference would mean anything. It cannot
+    /// change while the app runs — all three conditions are fixed by the build
+    /// and the environment — which is why the menu item is *added* on this
+    /// rather than hidden by `validateMenuItem`: `isHidden` set during
+    /// validation is not reliably applied, and the first thing that showed was
+    /// a live-looking, permanently unchecked switch on a dev build.
+    static var isSwitchable: Bool {
+        #if DEBUG
+        return false
+        #else
+        return !isDevelopmentBuild && !doNotTrack
+        #endif
+    }
+
     /// True when this build carries `project.yml`'s placeholder version, i.e.
     /// it was built by hand rather than by `scripts/release.sh --publish`.
     static var isDevelopmentBuild: Bool {

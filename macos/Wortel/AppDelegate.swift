@@ -191,30 +191,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // not allowed to move it, so nothing about reporting runs until the
         // window is up: the client is not built, no preference is read and no
         // request is made. Same one-runloop-turn trick as warmRemainingSurfaces.
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.async {
             Telemetry.capture(.appLaunched(sessions: CountBucket(restored),
                                            agentsResumed: CountBucket(resumed)))
-            self?.presentTelemetryNoticeIfNeeded()
+            // Hangs off the ⓘ in the sidebar, which is also where it lives
+            // afterwards: shown once, reachable forever.
+            TelemetryNotice.shared.presentFirstRunIfNeeded()
         }
     }
 
     /// When this launch started, for the uptime bucket on quit.
     private let launchedAt = Date()
-
-    /// The one-time notice. Held only while it is on screen.
-    private var telemetryNotice: TelemetryNotice?
-
-    private func presentTelemetryNoticeIfNeeded() {
-        guard TelemetrySettings.needsNotice, let host = window?.contentView else { return }
-        let notice = TelemetryNotice()
-        telemetryNotice = notice
-        notice.present(in: host) { [weak self] in
-            // "No thanks" goes through the same funnel as the menu item, so
-            // there is one definition of what turning it off does, including
-            // the final event.
-            self?.toggleTelemetry(nil)
-        }
-    }
 
     /// The toolbar is retained here because NSWindow doesn't own its delegate.
     private var toolbarDelegate: MainToolbarDelegate?
@@ -592,14 +579,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return updater.canCheckForUpdates
         }
         if menuItem.action == #selector(toggleTelemetry(_:)) {
-            // Hidden entirely where it would be a lie: a Debug build, a 0.0.0
-            // dev build and a DO_NOT_TRACK environment all report nothing no
-            // matter what this says, so offering a switch would misrepresent
-            // what the app is doing.
-            let switchable = !TelemetrySettings.isDevelopmentBuild && !TelemetrySettings.doNotTrack
-            menuItem.isHidden = !switchable
+            // Only the checkmark: on a build that cannot report, the item was
+            // never added (see MainMenu), because a switch that controls
+            // nothing is worse than no switch at all.
             menuItem.state = TelemetrySettings.isEnabled ? .on : .off
-            return switchable
+            return true
         }
         // Each pane command reads "Hide" only when *its* pane is the one on
         // screen — with Files up, ⌘⌥G swaps rather than closes, so calling it

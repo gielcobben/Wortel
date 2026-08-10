@@ -38,7 +38,7 @@ struct SidebarPane: View {
                 SidebarSnapshotGroup(folder: $0.folder, sessionIDs: $0.sessions.map(\.id))
             })
             .safeAreaInset(edge: .bottom) {
-                HStack {
+                HStack(spacing: 2) {
                     Menu {
                         Button("New Session") { manager.newSession() }
                         // Its own branch and its own files: what makes running
@@ -58,6 +58,8 @@ struct SidebarPane: View {
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .help("New Session or Folder")
+                    TelemetryInfoButton()
+                        .frame(width: 24, height: 24)
                     Spacer()
                 }
                 // Equal on all four sides, so the 24pt hit box's centre sits on
@@ -71,6 +73,31 @@ struct SidebarPane: View {
                 .padding(12)
             }
     }
+}
+
+/// The ⓘ beside the +, and the anchor the usage-data popover hangs off.
+///
+/// AppKit rather than a SwiftUI `Button` with `.popover`, for the one thing this
+/// popover has to do that SwiftUI's cannot: appear without taking the keyboard
+/// away from the terminal (see `TelemetryNotice`). That needs the real `NSView`
+/// to anchor to and the real `NSPopover` to configure, so the button is the
+/// AppKit one and the presenter owns the rest.
+struct TelemetryInfoButton: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(title: "", target: TelemetryNotice.shared,
+                              action: #selector(TelemetryNotice.toggleVisible(_:)))
+        button.image = NSImage(systemSymbolName: "info.circle",
+                               accessibilityDescription: "Anonymous usage data")
+        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        button.imagePosition = .imageOnly
+        button.isBordered = false
+        button.contentTintColor = .secondaryLabelColor
+        button.toolTip = "Anonymous usage data"
+        TelemetryNotice.shared.register(anchor: button)
+        return button
+    }
+
+    func updateNSView(_ nsView: NSButton, context: Context) {}
 }
 
 /// One outline row's SwiftUI content: the session row on its always-accent

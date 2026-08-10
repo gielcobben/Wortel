@@ -15,7 +15,7 @@ Four files in `Wortel/Telemetry/`:
 | `TelemetryBridging.swift` | App enums to reportable values, exhaustively. |
 | `TelemetrySettings.swift` | Whether it reports at all, and the install id. |
 | `TelemetryClient.swift` | The actor that batches and sends. |
-| `TelemetryNotice.swift` | The one-time first-run panel. |
+| `TelemetryNotice.swift` | The disclosure popover, and the switch in it. |
 
 Call sites are one line and never conditional:
 
@@ -49,11 +49,20 @@ Opt-in analytics on a developer tool is answered by a small and unrepresentative
 slice, and a number you cannot trust is worse than no number. The bargain that
 makes opt-out defensible is everything else here: the event list is readable in
 one screen, none of it describes you or your work, the app says so on first
-launch without blocking the terminal, and turning it off is one menu item.
+launch without blocking the terminal, and turning it off is one switch.
+
+The disclosure is an `NSPopover` off the ⓘ beside the + in the sidebar's bottom
+bar — the same popover on first launch and every time after, so the notice comes
+from a control you can point at again rather than appearing out of the middle of
+the window. It holds the switch itself; the App menu item is the same preference
+through the same funnel (`AppDelegate.toggleTelemetry`). It never takes the
+keyboard: key goes straight back to the terminal, and typing or clicking away
+dismisses it.
 
 It reports nothing at all in four cases:
 
-- the user turned it off (App menu, "Share Anonymous Usage Data")
+- the user turned it off (the sidebar's ⓘ, or App menu → "Share Anonymous Usage
+  Data")
 - `DO_NOT_TRACK` is set in the environment
 - `#if DEBUG`
 - the marketing version is `0.0.0`, `project.yml`'s dev-build placeholder

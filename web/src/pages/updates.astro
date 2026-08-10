@@ -732,11 +732,22 @@ const schema = [
      to be undone here. */
   @media (max-width: 900px) {
     .side { position: static; height: auto; }
-    .files { overflow-y: visible; padding-top: 0; }
+    /* overflow, not overflow-y. Both of these carry overflow-x: hidden from
+       their base rules, and a `visible` on one axis paired with anything else
+       on the other computes to `auto`: they would stay scroll containers, still
+       carrying overscroll-behavior: contain, and swallow the page's scroll
+       instead of passing it on. Nothing here scrolls but the page. */
+    .files {
+      overflow: visible;
+      overscroll-behavior: auto;
+      padding-top: 0;
+    }
     .app-rail {
       position: static;
       height: auto;
-      padding: 0 0 0 36px;
+      /* A cell either side, so the window is inset from both edges rather than
+         bleeding off the right. */
+      padding: 0 36px 0 36px;
       pointer-events: auto;
     }
     .app-frame { width: 100%; height: auto; }
@@ -749,10 +760,13 @@ const schema = [
       margin-bottom: 36px;
     }
     /* Back into flow, so the document is what gives the window its height
-       instead of the window capping the document. */
+       instead of the window capping the document, and with no scrolling of its
+       own at all: see the note on .files above for why overflow-y alone would
+       leave it a scroll container. */
     .app-frame > :global(.win .doc-body) {
       position: static;
-      overflow-y: visible;
+      overflow: visible;
+      overscroll-behavior: auto;
     }
     /* Nothing scrolls inside a window here, so there is nothing to indicate. */
     .app-frame > :global(.win .sb) { display: none; }

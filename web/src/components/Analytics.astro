@@ -5,14 +5,31 @@
 // THREE THINGS MAKE THIS DIFFERENT FROM THE STOCK SNIPPET, and each one is
 // here for a reason worth keeping:
 //
-// 1. cookieless_mode: 'always'. No cookies, no localStorage, no consent
-//    banner. PostHog derives a visitor id server-side from a daily-rotating
-//    salt, so there is nothing stored on the reader's machine and nothing to
-//    ask permission for. A landing page that opens with a consent dialog is a
-//    landing page that argues with you before it has said what it is. The cost
-//    is real: unique counts run slightly high (a new hash every midnight, and
-//    occasional collisions), and there is no GeoIP, no replay, no surveys.
-//    Worth it here, and it would not be on an app behind a login.
+// 1. persistence: 'memory'. Nothing is written to the reader's machine: no
+//    cookie, no localStorage, no sessionStorage. That is what makes a consent
+//    banner unnecessary rather than merely unfashionable, because what
+//    ePrivacy asks permission for is the storage, not the counting. A landing
+//    page that opens with a consent dialog is one that argues with you before
+//    it has said what it is.
+//
+//    **This was cookieless_mode: 'always' first, and that silently sent
+//    nothing at all.** It is the documented way to do this and it looks right
+//    in every check short of watching the network: the library loads, remote
+//    config loads, posthog.config reads back exactly what you set. But
+//    has_opted_out_capturing() is true and consent status is stuck at
+//    'pending' forever, because the SDK records consent IN the storage that
+//    cookieless mode disables, and 'pending' suppresses every capture.
+//    opt_in_capturing() cannot fix it: it writes to the same disabled store.
+//    Verified against posthog-js 1.415.1 on the live site, and confirmed by
+//    running a second instance side by side with cookieless_mode removed,
+//    which captured immediately. If you ever put it back, watch for a POST to
+//    /ph/i/v0/e/ and do not settle for the config reading correctly.
+//
+//    What memory persistence costs is honest to state: the id lives for one
+//    page load, so a reader who visits three pages is three "users" and
+//    session length means nothing. Pageviews and download clicks stay exact,
+//    and so does the funnel that matters, because landing on a page and
+//    clicking its download button happen inside the same page load.
 //
 // 2. api_host points at this origin. worker/index.ts forwards /ph to PostHog.
 //    Built from location.origin rather than hardcoded so a preview build, a
@@ -77,7 +94,9 @@ const ENABLED = import.meta.env.PROD;
       ui_host: 'https://eu.posthog.com',
       defaults: '2026-05-30',
       person_profiles: 'identified_only',
-      cookieless_mode: 'always',
+      // Nothing on the reader's machine, so nothing to consent to. NOT
+      // cookieless_mode: see the note above, it sends nothing.
+      persistence: 'memory',
       autocapture: false,
       disable_session_recording: true,
       disable_surveys: true,

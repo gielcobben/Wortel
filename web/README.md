@@ -45,6 +45,7 @@ src/
   styles/global.css        all styling (terminal-flavored dark theme)
   demo/                    the Svelte replica of the app window (see below)
 public/                    static assets (favicon, og.png, screenshots, robots.txt)
+  _headers                 response headers: immutable caching, HSTS, noindex
 ```
 
 The download button points at `https://updates.wortel.sh/Wortel-latest.zip`,
@@ -211,9 +212,24 @@ and while they sat in `public/` they were published too, which was 4.2MB of the
 5.2MB deploy for two files nothing ever referenced.
 
 ```sh
-# the app screenshot, from the masters in art/. Not embedded in the page: it is
-# what SoftwareApplication.screenshot points at in the structured data.
-magick art/app-shot-dark.png -resize 1392x912 -strip public/screenshot.png
+# The app screenshot, from the masters in art/. It IS on the page now, at the
+# top of "At a glance", and it is still what SoftwareApplication.screenshot
+# points at, so the structured data names something a visitor can see.
+#
+# -profile BEFORE -strip, and that order is the whole trick. The masters carry
+# an Apple "Color LCD" display profile, so stripping first threw the profile
+# away without converting anything and left every saturated pixel to be read as
+# sRGB: the same Display P3 mistake the refs section above warns about, which
+# had been baked into the shipped screenshot.png.
+SRGB="/System/Library/ColorSync/Profiles/sRGB Profile.icc"
+magick art/app-shot-dark.png  -profile "$SRGB" -resize 1392x912 -strip public/screenshot.png
+
+# Two webp variants, one per appearance, because the page follows the OS and a
+# dark screenshot on a light page reads as a bug. <picture> picks one; the png
+# above stays the fallback and the thing crawlers and social scrapers fetch.
+# 100KB each against the png's 427KB.
+magick art/app-shot-dark.png  -profile "$SRGB" -resize 1392x912 -strip -quality 82 -define webp:method=6 public/screenshot.webp
+magick art/app-shot-light.png -profile "$SRGB" -resize 1392x912 -strip -quality 82 -define webp:method=6 public/screenshot-light.webp
 # icons
 rsvg-convert -w 180 -h 180 public/favicon.svg | magick - -background '#0e0f0d' -flatten public/apple-touch-icon.png
 rsvg-convert -w 96  -h 96  public/favicon.svg -o public/favicon-96.png
@@ -225,3 +241,28 @@ window and a text layer. See the git history for the exact commands.
 `public/robots.txt` is ours and **replaces Cloudflare's managed one**, which was
 the Content Signals boilerplate with no directives. It allows everything,
 carries a permissive `Content-Signal:` line, and points at the sitemap.
+
+### One URL per page, without a slash
+
+Canonical tags and sitemap entries are both built from a path like `/compare`,
+with no trailing slash. Astro builds `/compare/index.html`, and Cloudflare's
+default (`auto-trailing-slash`) serves that at `/compare/` while redirecting
+`/compare` to it, so **every subpage was canonicalising itself to a redirect**
+and the sitemap was a list of 307s. `html_handling: "drop-trailing-slash"` in
+`wrangler.jsonc` serves the no-slash form instead. The three have to agree;
+changing any one of them alone reintroduces the mismatch.
+
+```sh
+npm run cf-preview   # then: /compare is 200, /compare/ is a 307 back to it
+```
+
+### lastmod is a date, not a build stamp
+
+`sitemap.xml.ts` asks git when each page's **content sources** last changed, not
+when the site was last built. `/updates` uses the newest release's frontmatter
+date and the legal pages use their own `updated` field, so neither needs git at
+all. This matters because `release.sh --publish` redeploys the whole site: a
+build-stamped `lastmod` told crawlers all five URLs changed every time one
+Markdown file shipped, which is how a site teaches Google to ignore the field.
+Uncommitted edits do not count, deliberately. No git in the environment falls
+back to the build date rather than failing the build.

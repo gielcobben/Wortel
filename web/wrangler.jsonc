@@ -17,7 +17,16 @@
     "directory": "./dist",
     // Only meaningful alongside `main`: it is how the Worker hands a request
     // back to the assets layer instead of inventing its own 404.
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Astro builds /compare/index.html, and the default ("auto-trailing-slash")
+    // serves that at /compare/ while redirecting /compare to it. But every
+    // canonical tag and every sitemap entry on this site is written WITHOUT the
+    // slash (Layout.astro builds them from a `path` prop like "/compare"), so
+    // the default made every subpage canonical point at a redirect and filled
+    // the sitemap with URLs that 307. Serving the no-slash form is the half of
+    // that pair worth keeping: it matches what the site already claims about
+    // itself, and it is what the internal links use.
+    "html_handling": "drop-trailing-slash"
   },
   // Route the apex + www at wortel.sh. Requires the wortel.sh zone on this
   // Cloudflare account; adjust/remove if you deploy to a *.workers.dev URL first.

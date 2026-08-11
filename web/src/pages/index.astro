@@ -40,6 +40,15 @@ const LATEST = await latestRelease();
 
 const features = FEATURES;
 
+// The wordmark IS the h1, which left the strongest heading on the page reading
+// "Wortel" and nothing else: no indication of what it is, on the one element a
+// search engine weighs hardest. The rest of the title finishes the sentence for
+// a crawler and a screen reader and occupies no pixel, because .vh is clipped
+// and out of flow, so the 36px grid the hero is snapped to cannot move.
+// Derived rather than written out again, and empty if the title ever stops
+// leading with the name, so it can't end up saying "Wortel Wortel: ...".
+const h1Tail = SITE.title.startsWith(SITE.name) ? SITE.title.slice(SITE.name.length) : '';
+
 // ---- structured data ------------------------------------------------------
 // One @graph rather than several script tags: the nodes cross-reference by
 // (NB: the literal tag spelled out here broke Vite's dependency scan, which
@@ -140,7 +149,7 @@ const schema = [website, webpage, person, app];
       <div class="col">
         <div class="hero-left">
         <div class="intro">
-          <h1 class="mark">Wortel</h1>
+          <h1 class="mark">{SITE.name}<span class="vh">{h1Tail}</span></h1>
           <p class="tagline">A native macOS terminal your agents can live in.</p>
           <p class="desc">
             Ghostty’s engine, in a window that needs no arranging. Point five
@@ -261,6 +270,29 @@ const schema = [website, webpage, person, app];
 
       <section id="specs" class="sect">
         <h2>At a glance</h2>
+        <!-- The only raster image on the page, and the reason it exists is that
+             there wasn't one. The window above is a Svelte replica: a DOM tree,
+             perfect for a reader and invisible to image search, which for a
+             desktop app is a real place people look. This is the same shot
+             `SoftwareApplication.screenshot` already pointed at, so the
+             structured data now names something the page actually shows.
+             Below the fold and lazy, so it costs the hero nothing; width and
+             height are set so it reserves its box and shifts no layout. -->
+        <figure class="shot">
+          <picture>
+            <source srcset="/screenshot-light.webp" media="(prefers-color-scheme: light)" type="image/webp" />
+            <source srcset="/screenshot.webp" type="image/webp" />
+            <img
+              src="/screenshot.png"
+              width="1392"
+              height="912"
+              loading="lazy"
+              decoding="async"
+              alt="Wortel on macOS: a sidebar of named sessions on the left, a terminal running a coding agent in the middle, and the git inspector on the right showing a syntax-highlighted diff."
+            />
+          </picture>
+          <figcaption>One window: named sessions, the terminal, and the repository beside it.</figcaption>
+        </figure>
         <div class="scroller">
           <table class="mono-first">
             <tbody>

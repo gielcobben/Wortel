@@ -326,7 +326,12 @@ export const DOCS_SECTIONS: Section[] = [
 // ---- FAQ ------------------------------------------------------------------
 // Also the source for the FAQPage JSON-LD. Answers are written to stand alone:
 // each one has to make sense as a snippet quoted with no page around it.
-export const FAQ: { q: string; a: string }[] = [
+//
+// AUTHORED IN THEMATIC ORDER, SHIPPED IN LENGTH ORDER. Keep writing them in
+// groups down here, where "how is it different from X" sitting next to the
+// other two of its kind is what stops the set drifting into three answers to
+// the same question. What the page renders is the sorted view below.
+const FAQ_AUTHORED: { q: string; a: string }[] = [
   {
     q: 'What is Wortel?',
     a: 'Wortel is a fully native macOS terminal emulator built on Ghostty’s engine. It replaces tabs and splits with a sidebar of named, persistent sessions, gives each coding agent its own git worktree so several can work one repository at once, keeps those shells running after you quit the app, and ships with no configuration to maintain. A git panel, a file tree and agent activity detection are built in.',
@@ -392,6 +397,20 @@ export const FAQ: { q: string; a: string }[] = [
     a: 'Your shell configuration (.zshrc, .bashrc, fish config) is yours and runs normally. It is only Wortel’s own terminal configuration that is fixed and bundled; the user-level Ghostty config file is deliberately not loaded.',
   },
 ];
+
+/**
+ * The FAQ as it ships: shortest question first.
+ *
+ * Sorted HERE and not in the template, because three things render this array
+ * (the page, the FAQPage node in the JSON-LD, and llms-full.txt) and sorting in
+ * one of them would leave the other two in a different order. A model reading
+ * the flattened text and a person reading the page should meet these in the
+ * same sequence.
+ *
+ * Sorting is stable in every engine this builds on, so the two 15-character
+ * questions keep the order they were authored in.
+ */
+export const FAQ = [...FAQ_AUTHORED].sort((a, b) => a.q.length - b.q.length);
 
 // ---- specs ----------------------------------------------------------------
 export const SPECS: [string, string][] = [

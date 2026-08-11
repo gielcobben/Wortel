@@ -140,35 +140,12 @@ body.dragging-app, body.dragging-app * {
    makes it exactly 1044x792 sitting at y=72. Same numbers the absolutely
    positioned version produced, now from a grid that can keep going.
    ========================================================================== */
-/* ---- snapping the story --------------------------------------------------
-   The page is a sequence of beats: a 100vh board, then one section per pane of
-   the window pinned beside it. Snapping is what makes the window's changes land
-   on a rest position instead of halfway through one.
-
-   `proximity`, NOT `mandatory`, and this is the whole decision. Mandatory takes
-   every scroll gesture away from the reader and, on a document with sections of
-   different heights, can park one taller than the viewport where its bottom is
-   unreachable. Proximity only pulls when you have already come to rest near a
-   snap point, so a flick still travels and a deliberate stop still lands.
-
-   The prose sections snap to CENTER rather than start, because Tour.svelte
-   decides which section is lit, and which pane the window shows, from whichever
-   crosses the middle band of the viewport. Snapping to start would rest a short
-   section at the top with the band already inside the NEXT one, so the window
-   would show one section while you read another. Centre is the same line the
-   observer is watching, so the snap and the highlight agree by construction.
-
-   Desktop only. Below 900px the layout stacks, every section grows its own
-   window, and the sections are far taller than the viewport, which is exactly
-   where snapping stops helping. */
-@media (min-width: 901px) and (prefers-reduced-motion: no-preference) {
-  html { scroll-snap-type: y proximity; }
-  /* The hero is a 100vh board and the only thing that wants its top edge. */
-  .hero-left { scroll-snap-align: start; }
-  .doc-tour .sect { scroll-snap-align: center; }
-  /* The tail is left out on purpose: the FAQ opens and closes, so its snap
-     points would move under the reader mid-gesture. */
-}
+/* NO SCROLL SNAPPING. It was tried (`scroll-snap-type: y proximity` on the
+   root, the hero to start and the prose sections to centre) and taken out
+   again: even at proximity, which only pulls once you have come to rest, the
+   page decides where your scroll ends rather than you. On a document this long
+   that reads as the page arguing with the gesture. The window still changes
+   pane as you read; it just does it wherever you stopped. */
 
 .shell {
   position: relative;

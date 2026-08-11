@@ -140,6 +140,36 @@ body.dragging-app, body.dragging-app * {
    makes it exactly 1044x792 sitting at y=72. Same numbers the absolutely
    positioned version produced, now from a grid that can keep going.
    ========================================================================== */
+/* ---- snapping the story --------------------------------------------------
+   The page is a sequence of beats: a 100vh board, then one section per pane of
+   the window pinned beside it. Snapping is what makes the window's changes land
+   on a rest position instead of halfway through one.
+
+   `proximity`, NOT `mandatory`, and this is the whole decision. Mandatory takes
+   every scroll gesture away from the reader and, on a document with sections of
+   different heights, can park one taller than the viewport where its bottom is
+   unreachable. Proximity only pulls when you have already come to rest near a
+   snap point, so a flick still travels and a deliberate stop still lands.
+
+   The prose sections snap to CENTER rather than start, because Tour.svelte
+   decides which section is lit, and which pane the window shows, from whichever
+   crosses the middle band of the viewport. Snapping to start would rest a short
+   section at the top with the band already inside the NEXT one, so the window
+   would show one section while you read another. Centre is the same line the
+   observer is watching, so the snap and the highlight agree by construction.
+
+   Desktop only. Below 900px the layout stacks, every section grows its own
+   window, and the sections are far taller than the viewport, which is exactly
+   where snapping stops helping. */
+@media (min-width: 901px) and (prefers-reduced-motion: no-preference) {
+  html { scroll-snap-type: y proximity; }
+  /* The hero is a 100vh board and the only thing that wants its top edge. */
+  .hero-left { scroll-snap-align: start; }
+  .doc-tour .sect { scroll-snap-align: center; }
+  /* The tail is left out on purpose: the FAQ opens and closes, so its snap
+     points would move under the reader mid-gesture. */
+}
+
 .shell {
   position: relative;
   z-index: 2;
@@ -518,16 +548,41 @@ body.dragging-app, body.dragging-app * {
 }
 .doc .more a:hover { color: var(--text); text-decoration-color: currentColor; }
 
-/* The one screenshot on the page, in the spec sheet.
-   The measure here is 468px, which would draw a whole app window three inches
-   across and legible to nobody. The page's own rule is that the left edge never
-   moves and only the ragged right edge does, so this keeps x=36 and runs right
-   out of the measure instead of being centred in it: 25 cells, or whatever the
-   viewport has, whichever is less. Same shadow and same edge as the app window
-   above it, because it is a picture of that window. */
+/* ---- the tail: the FAQ, the spec sheet and the footer --------------------
+   Everything below the shell. The prose column above keeps its left edge on
+   x=36 because it is read BESIDE the window and the two have to line up. There
+   is no window down here, so that rule has nothing to hold, and these are
+   centred instead, like /compare, /docs and the legal pages.
+
+   Centred TO THE NEAREST GRID LINE, not to the exact half, which is the same
+   rule .page follows on /compare and the same one the app window's drag script
+   follows: a plain `margin: 0 auto` lands the left edge on (100% - measure)/2,
+   almost never a multiple of 36, and on a page that draws graph paper an edge
+   between two lines is the thing you notice. round() is CSS Values 4; where it
+   is missing the margin-inline above just centres it exactly. */
+.doc.tail,
+.foot {
+  --tail: 756px;                 /* 21 cells, the width the footer already had */
+  width: min(var(--tail), 100%);
+  margin-inline: auto;
+  margin-left: round(down, max(0px, (100% - var(--tail)) / 2), 36px);
+  margin-right: auto;
+}
+/* The text inside sits centred in that block rather than against its left
+   edge, so the FAQ and the footer share one centre line down the page. */
+.doc.tail .prose { margin-inline: auto; }
+
+/* The one screenshot on the page, in the spec sheet. The measure here is 468px,
+   which would draw a whole app window three inches across and legible to
+   nobody, so it breaks out of the prose. Centred on the prose's centre, which
+   is the page's centre, rather than running right from a left edge that no
+   longer stays put. Same shadow and same edge as the app window above it,
+   because it is a picture of that window. */
 .doc .shot {
   margin: 0 0 32px;
   width: min(900px, calc(100vw - 72px));
+  margin-left: 50%;
+  transform: translateX(-50%);
 }
 .doc .shot img {
   display: block;

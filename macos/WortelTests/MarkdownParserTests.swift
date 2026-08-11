@@ -302,4 +302,90 @@ final class MarkdownParserTests: XCTestCase {
     func testFirstBlockIsNotMarkedAfterBlank() {
         XCTAssertEqual(MarkdownParser.parse("intro\n\n- one").map(\.afterBlank), [false, true])
     }
+
+    // MARK: - Images
+
+    /// A screenshot on its own line is a picture, not a paragraph that happens
+    /// to mention one. Everything the renderer needs to draw it — and to decide
+    /// it *can't* — is in the block.
+    func testImageOnItsOwnLineIsAnImageBlock() {
+        let blocks = MarkdownParser.parse("![The window](web/public/screenshot.png)")
+        XCTAssertEqual(blocks.map(\.kind),
+                       [.images([MarkdownImage(source: "web/public/screenshot.png",
+                                               alt: "The window", link: nil)])])
+    }
+
+    /// A badge is an image inside a link, and a row of them is one paragraph.
+    func testBadgeRowIsOneImageBlock() {
+        let blocks = MarkdownParser.parse(
+            "[![CI](https://img.shields.io/ci.svg)](https://ci.example) ![v](v.png)")
+        XCTAssertEqual(blocks.map(\.kind), [
+            .images([
+                MarkdownImage(source: "https://img.shields.io/ci.svg", alt: "CI",
+                              link: "https://ci.example"),
+                MarkdownImage(source: "v.png", alt: "v", link: nil),
+            ]),
+        ])
+    }
+
+    func testImageTitleIsNotPartOfTheSource() {
+        let blocks = MarkdownParser.parse(#"![alt](shot.png "A title")"#)
+        XCTAssertEqual(blocks.map(\.kind),
+                       [.images([MarkdownImage(source: "shot.png", alt: "alt", link: nil)])])
+    }
+
+    /// A picture *inside* a sentence stays where it is: breaking a paragraph
+    /// into three views to seat a 16px badge mid-line is worse than the alt
+    /// text the author already wrote.
+    func testImageInASentenceIsStillAParagraph() {
+        let blocks = MarkdownParser.parse("Built with ![love](love.png) by hand.")
+        XCTAssertEqual(blocks.map(\.kind), [.paragraph])
+    }
+
+    func testLinkThatIsNotAnImageIsStillAParagraph() {
+        XCTAssertEqual(MarkdownParser.parse("[download](https://wortel.sh)").map(\.kind),
+                       [.paragraph])
+    }
+
+    // MARK: - Images written as HTML
+
+    /// A README's screenshot is as often HTML as Markdown, and `<picture>` is
+    /// the only way to give a light one and a dark one. To a parser that only
+    /// reads Markdown it is a paragraph of angle brackets, which renders as
+    /// nothing anybody wants to look at.
+    func testPictureElementIsAnImageBlock() {
+        let blocks = MarkdownParser.parse("""
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset=".github/assets/hero-dark.png">
+          <img alt="The Wortel window" src=".github/assets/hero-light.png">
+        </picture>
+        """)
+        XCTAssertEqual(blocks.map(\.kind), [
+            .images([MarkdownImage(source: ".github/assets/hero-light.png",
+                                   alt: "The Wortel window",
+                                   link: nil,
+                                   darkSource: ".github/assets/hero-dark.png")]),
+        ])
+    }
+
+    /// The wrappers people put around a picture — centring, a link, a line break
+    /// — are not text, so they don't stop the block being a picture.
+    func testWrappedImageIsStillAnImageBlock() {
+        let blocks = MarkdownParser.parse(
+            #"<p align="center"><a href="https://wortel.sh"><img src="logo.png" width=64 /></a></p>"#)
+        XCTAssertEqual(blocks.map(\.kind), [
+            .images([MarkdownImage(source: "logo.png", alt: "", link: "https://wortel.sh")]),
+        ])
+    }
+
+    /// But an `<img>` in a sentence is a sentence.
+    func testHTMLImageWithProseIsStillAParagraph() {
+        XCTAssertEqual(MarkdownParser.parse(#"<img src="a.png"> a caption"#).map(\.kind),
+                       [.paragraph])
+    }
+
+    func testHTMLWithoutAnImageIsNotAnImageBlock() {
+        XCTAssertEqual(MarkdownParser.parse(#"<div align="center"></div>"#).map(\.kind),
+                       [.paragraph])
+    }
 }

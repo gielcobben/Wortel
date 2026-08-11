@@ -111,6 +111,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
             self?.previewWindows.open(url, diff: diff, hasChanges: hasChanges)
         }
+        // A link in a rendered README is a fifth way to open a file, and it goes
+        // through the same opener as the other four.
+        previewWindows.onOpenFile = { [weak self] url in
+            self?.openPreview(url)
+        }
         manager.onAttentionCleared = { session in
             // The user answered (or the session closed) — pull the banner out
             // of Notification Center instead of leaving it stale.

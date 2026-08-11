@@ -13,6 +13,9 @@ struct PreviewContent: View {
     @Bindable var document: PreviewDocument
     @Bindable var find: PreviewFind
     @Bindable var settings: PreviewSettings
+    /// Opens a file this document points at — a link in rendered Markdown — in a
+    /// window of its own, through the app's one opener.
+    var onOpenFile: ((URL) -> Void)?
     @FocusState private var findFocused: Bool
 
     var body: some View {
@@ -144,7 +147,11 @@ struct PreviewContent: View {
                          scale: settings.fontSize / PreviewSettings.defaultFontSize,
                          isSelected: document.selectsAll,
                          anchorLine: document.anchorLine,
-                         onTopLine: { document.visibleLine = $0 })
+                         onTopLine: { document.visibleLine = $0 },
+                         // A document's links and images are relative to where
+                         // the file *is*, and this is the only view that knows.
+                         baseURL: document.url,
+                         onOpenFile: onOpenFile)
                 .onExitCommand { document.selectsAll = false }
         }
     }

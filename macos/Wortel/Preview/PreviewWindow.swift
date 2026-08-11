@@ -35,7 +35,9 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         return NSSize(width: width, height: height)
     }
 
-    init(document: PreviewDocument, settings: PreviewSettings) {
+    init(document: PreviewDocument,
+         settings: PreviewSettings,
+         openFile: ((URL) -> Void)? = nil) {
         self.file = document
         self.settings = settings
 
@@ -83,7 +85,8 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // seen, which looks exactly like a double-click doing nothing. Same
         // idiom the sidebar's hosted rows already use.
         let hosting = NSHostingController(
-            rootView: PreviewContent(document: document, find: find, settings: settings))
+            rootView: PreviewContent(document: document, find: find, settings: settings,
+                                     onOpenFile: openFile))
         hosting.sizingOptions = []
         window.contentViewController = hosting
         window.contentMinSize = NSSize(width: 360, height: 240)

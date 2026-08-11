@@ -23,6 +23,15 @@ struct MarkdownView: View {
     /// Reports the source line of the block at the top of the view, so the mode
     /// you switch to can open there.
     var onTopLine: ((Int) -> Void)?
+    /// The file being rendered. A document's links are mostly relative to the
+    /// directory it sits in, so without this there is nothing for `../CLAUDE.md`
+    /// to be relative *to* and those links go nowhere (see `MarkdownLinkTarget`).
+    var baseURL: URL?
+    /// Opens a file this document links to, in a preview window of its own.
+    /// Routed out rather than done here: which view a file opens on, and which
+    /// diff it gets, is one decision made in one place for every opener in the
+    /// app.
+    var onOpenFile: ((URL) -> Void)?
 
     /// Where each visible block sits, keyed by block id. Only the realized ones
     /// report — the stack is lazy — so this is a handful of values per frame
@@ -39,10 +48,55 @@ struct MarkdownView: View {
     var body: some View {
         ScrollViewReader { proxy in
             scroller
+                // Every link in the document comes through here. Without it the
+                // system gets them, and a relative one — which is most of what a
+                // README links to — arrives with no scheme and comes back as an
+                // error dialog. See `MarkdownLinkTarget`.
+                .environment(\.openURL, OpenURLAction { follow($0, with: proxy) })
                 .onAppear { scroll(to: anchorLine, with: proxy) }
                 // The document arrives after the view does, so the anchor has to
                 // be applied again once there is something to scroll.
                 .onChange(of: blocks.count) { _, _ in scroll(to: anchorLine, with: proxy) }
+        }
+    }
+
+    /// Follow a clicked link: out to the browser, into a preview window of its
+    /// own, to Finder, or to a heading in this document.
+    private func follow(_ link: URL, with proxy: ScrollViewProxy) -> OpenURLAction.Result {
+        let target = MarkdownLinkTarget.resolve(link, in: baseURL)
+        // The one destination that never leaves this document, and the only one
+        // that needs the scroller.
+        if case .heading(let anchor) = target {
+            guard let id = MarkdownAnchor.blockID(for: anchor, in: blocks) else { return .discarded }
+            proxy.scrollTo(id, anchor: .top)
+            return .handled
+        }
+        // A web link goes through the system action rather than through
+        // `NSWorkspace` here, so SwiftUI's own handling (and anything a host
+        // installs above this view) still gets its say.
+        if case .web(let url) = target { return .systemAction(url) }
+        // Otherwise: opened, or dropped on purpose. A link to a file that isn't
+        // there and a scheme we don't launch both do nothing, which is honest —
+        // an error dialog about a file the reader never asked for is not.
+        return open(target) ? .handled : .discarded
+    }
+
+    /// Act on a resolved target that isn't an anchor. Returns whether it did.
+    @discardableResult
+    private func open(_ target: MarkdownLinkTarget) -> Bool {
+        switch target {
+        case .file(let url):
+            onOpenFile?(url)
+            return true
+        case .folder(let url), .web(let url):
+            // A folder is the one destination this app has no view for, and
+            // Finder is what "open this folder" means everywhere else on the
+            // Mac. The alternative — a click that does nothing — is the failure
+            // this whole type exists to avoid.
+            NSWorkspace.shared.open(url)
+            return true
+        case .heading, .none:
+            return false
         }
     }
 
@@ -277,7 +331,28 @@ struct MarkdownView: View {
             CodeBlockView(code: block.text, language: language, scale: scale)
         case .table(let header, let rows):
             tableView(header: header, rows: rows)
+        case .images(let images):
+            imageRow(images)
         }
+    }
+
+    /// The pictures on their own line: one screenshot, or a row of badges that
+    /// wraps like the text around it.
+    private func imageRow(_ images: [MarkdownImage]) -> some View {
+        // Baseline-aligned so a row of badges of slightly different heights sits
+        // on one line rather than on a ragged edge.
+        ImageRowLayout(spacing: (bodySize * 0.4).rounded()) {
+            ForEach(Array(images.enumerated()), id: \.offset) { _, image in
+                MarkdownImageView(image: image,
+                                  baseURL: baseURL,
+                                  maxWidth: measure,
+                                  size: bodySize) { destination in
+                    guard let url = URL(string: destination) else { return }
+                    open(MarkdownLinkTarget.resolve(url, in: baseURL))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func listRow(marker: String, text: String, indent: Int) -> some View {

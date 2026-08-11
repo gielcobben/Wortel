@@ -429,6 +429,11 @@ targets:
       # Inline markdown: the intents that make a code span a chip and a bare URL
       # a link. Pure Foundation, and both fail by looking like ordinary text.
       - path: Wortel/Markdown/MarkdownInline.swift
+      # Where a link in a rendered document goes. Pure, and the reason it is a
+      # type at all is a failure that was neither silent nor ours to explain: a
+      # relative link handed to the system comes back as a LaunchServices error
+      # dialog, so the classification has to be right *before* anything opens.
+      - path: Wortel/Markdown/MarkdownLinkTarget.swift
       # Agent activity inference: a state machine over screen digests plus the
       # blocked-prompt reading. It decides when the app makes a sound at you,
       # and its failure modes are all timing-shaped — a transition emitted twice

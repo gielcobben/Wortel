@@ -33,6 +33,11 @@ struct MarkdownBlock: Identifiable, Equatable {
         case code(language: String?)
         /// A GitHub-style table, already split into header + body cells.
         case table(header: [String], rows: [[String]])
+        /// A paragraph that is *nothing but* images — a screenshot on its own
+        /// line, or a row of badges. Its own kind because an image is a picture
+        /// rather than a run of text, and the two can't share a `Text`: inline
+        /// images stay alt text (see `MarkdownImage`).
+        case images([MarkdownImage])
     }
 
     let id: Int
@@ -51,6 +56,235 @@ struct MarkdownBlock: Identifiable, Equatable {
     /// line number is the only coordinate both of them share. Without it, ⌘2 to
     /// copy a paragraph means finding it again from the top.
     var line: Int = 1
+}
+
+/// One image in a document: where it comes from, what it says it is, and where
+/// clicking it goes (a badge is an image inside a link).
+///
+/// `source` and `link` are kept as written — resolving them needs the file the
+/// document was loaded from, which the parser deliberately doesn't know (see
+/// `MarkdownLinkTarget`, which does the resolving for both links and images).
+struct MarkdownImage: Equatable {
+    let source: String
+    let alt: String
+    let link: String?
+    /// The `<picture>` alternative for a dark appearance, if the document
+    /// offered one. GitHub's idiom for a screenshot that has to work on both
+    /// backgrounds, and a rendered document knows which one it is being read on
+    /// — so this is one of the few places where a native renderer can be *more*
+    /// right than the browser the file was written for.
+    var darkSource: String?
+
+    /// The images in a paragraph that is only images, or nil if it is prose.
+    ///
+    /// A paragraph of running text with a picture in the middle of it is *not*
+    /// this: it stays a paragraph and the image stays its alt text, because the
+    /// alternative is breaking a sentence into three views to put a 16px badge
+    /// in the gap. What this catches is what documents actually do — a
+    /// screenshot on its own line, and a row of badges under the title.
+    static func row(from text: String) -> [MarkdownImage]? {
+        // A README's screenshot is as likely to be written in HTML as in
+        // Markdown: `<picture>` is the only way to give a light and a dark one,
+        // and `<img width=…>` the only way to size one. Both are ordinary text
+        // to a Markdown parser, which is why the block renders as nothing at all
+        // if this doesn't look.
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") {
+            return html(from: text)
+        }
+        var rest = Substring(text)
+        var images: [MarkdownImage] = []
+        while true {
+            rest = rest.drop { $0.isWhitespace }
+            if rest.isEmpty { break }
+            guard let scanned = scan(rest) else { return nil }
+            images.append(scanned.image)
+            rest = scanned.rest
+        }
+        return images.isEmpty ? nil : images
+    }
+
+    // MARK: - The HTML spellings
+
+    /// The images in a run of HTML that contains *nothing but* images.
+    ///
+    /// Deliberately a tag scanner rather than an HTML parser, and it answers one
+    /// question: is there anything here except pictures and the tags people wrap
+    /// pictures in? Any text of its own and the answer is no, and the block stays
+    /// the text it is — so a paragraph with an inline `<img>` in it is untouched,
+    /// while `<p align="center"><a href><img></a></p>` and `<picture>` are read
+    /// the way they look.
+    private static func html(from text: String) -> [MarkdownImage]? {
+        var images: [MarkdownImage] = []
+        var link: String?
+        var dark: String?
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+            if character == "<" {
+                guard let close = closingBracket(in: text, from: index) else { return nil }
+                let tag = Tag(text[text.index(after: index)..<close])
+                switch tag.name {
+                case "img":
+                    guard let source = tag["src"] else { return nil }
+                    images.append(MarkdownImage(source: source,
+                                                alt: tag["alt"] ?? "",
+                                                link: link,
+                                                darkSource: dark))
+                    dark = nil
+                case "source":
+                    // Only the dark alternative is worth keeping: the light one
+                    // is what `<img>` already carries as its fallback, which is
+                    // exactly the role it plays in a browser.
+                    if tag["media"]?.replacingOccurrences(of: " ", with: "")
+                        .contains("prefers-color-scheme:dark") == true {
+                        dark = tag["srcset"].map(firstCandidate)
+                    }
+                case "a":
+                    link = tag["href"]
+                case "/a":
+                    link = nil
+                case "/picture", "picture":
+                    dark = nil
+                default:
+                    // Layout around a picture (`p`, `div`, `br`, `align`...) is
+                    // not text and doesn't disqualify the block. A tag that
+                    // *contains* text will be caught by the text below.
+                    break
+                }
+                index = text.index(after: close)
+                continue
+            }
+            // Anything that isn't inside a tag has to be nothing at all.
+            guard character.isWhitespace else { return nil }
+            index = text.index(after: index)
+        }
+        return images.isEmpty ? nil : images
+    }
+
+    /// The `>` that closes the tag opening at `start`, skipping quoted values —
+    /// an `alt` is allowed to contain one.
+    private static func closingBracket(in text: String, from start: String.Index) -> String.Index? {
+        var index = text.index(after: start)
+        var quote: Character?
+        while index < text.endIndex {
+            let character = text[index]
+            if let open = quote {
+                if character == open { quote = nil }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character == ">" {
+                return index
+            }
+            index = text.index(after: index)
+        }
+        return nil
+    }
+
+    /// One HTML tag, reduced to its name and attributes.
+    private struct Tag {
+        let name: String
+        private let attributes: [String: String]
+
+        subscript(attribute: String) -> String? { attributes[attribute] }
+
+        init(_ body: Substring) {
+            var rest = body.drop { $0.isWhitespace }
+            // A self-closing `<img ... />` ends in a slash that is not an
+            // attribute.
+            if rest.hasSuffix("/") { rest = rest.dropLast() }
+            let name = rest.prefix { !$0.isWhitespace }
+            self.name = name.lowercased()
+            rest = rest.dropFirst(name.count)
+
+            var attributes: [String: String] = [:]
+            while true {
+                rest = rest.drop { $0.isWhitespace }
+                let key = rest.prefix { !$0.isWhitespace && $0 != "=" }
+                if key.isEmpty { break }
+                rest = rest.dropFirst(key.count).drop { $0.isWhitespace }
+                guard rest.first == "=" else {
+                    // A valueless attribute (`hidden`), which is still an
+                    // attribute and must not stop the scan.
+                    attributes[key.lowercased()] = ""
+                    continue
+                }
+                rest = rest.dropFirst().drop { $0.isWhitespace }
+                let value: Substring
+                if let quote = rest.first, quote == "\"" || quote == "'" {
+                    rest = rest.dropFirst()
+                    value = rest.prefix { $0 != quote }
+                    rest = rest.dropFirst(value.count)
+                    if !rest.isEmpty { rest = rest.dropFirst() }
+                } else {
+                    value = rest.prefix { !$0.isWhitespace }
+                    rest = rest.dropFirst(value.count)
+                }
+                attributes[key.lowercased()] = String(value)
+            }
+            self.attributes = attributes
+        }
+    }
+
+    /// The first URL in a `srcset`, which may list several with density
+    /// descriptors after them.
+    private static func firstCandidate(_ srcset: String) -> String {
+        let first = srcset.split(separator: ",").first ?? Substring(srcset)
+        return String(first.drop { $0.isWhitespace }.prefix { !$0.isWhitespace })
+    }
+
+    /// One `![alt](src)`, optionally wrapped in a `[...](href)` link.
+    private static func scan(_ input: Substring) -> (image: MarkdownImage, rest: Substring)? {
+        var rest = input
+        let linked = rest.hasPrefix("[") && rest.dropFirst().hasPrefix("!")
+        if linked { rest = rest.dropFirst() }
+        guard rest.hasPrefix("!") else { return nil }
+        rest = rest.dropFirst()
+        guard let alt = balanced(rest, open: "[", close: "]"),
+              let target = balanced(alt.rest, open: "(", close: ")") else { return nil }
+        rest = target.rest
+        var link: String?
+        if linked {
+            guard rest.hasPrefix("]"),
+                  let href = balanced(rest.dropFirst(), open: "(", close: ")") else { return nil }
+            rest = href.rest
+            link = destination(href.inner)
+        }
+        return (MarkdownImage(source: destination(target.inner),
+                              alt: String(alt.inner),
+                              link: link), rest)
+    }
+
+    /// The contents of a `(...)`/`[...]` pair at the head of `input`, nesting
+    /// counted — a URL is allowed to contain brackets, and a title after it is
+    /// allowed to contain anything.
+    private static func balanced(
+        _ input: Substring, open: Character, close: Character
+    ) -> (inner: Substring, rest: Substring)? {
+        guard input.first == open else { return nil }
+        var depth = 0
+        var index = input.startIndex
+        while index < input.endIndex {
+            let character = input[index]
+            if character == open { depth += 1 }
+            if character == close {
+                depth -= 1
+                if depth == 0 {
+                    return (input[input.index(after: input.startIndex)..<index],
+                            input[input.index(after: index)...])
+                }
+            }
+            index = input.index(after: index)
+        }
+        return nil
+    }
+
+    /// The URL out of a link target: the part before the optional title, with
+    /// the `<...>` spelling unwrapped.
+    private static func destination(_ target: Substring) -> String {
+        var url = target.drop { $0.isWhitespace }.prefix { !$0.isWhitespace }
+        if url.hasPrefix("<"), url.hasSuffix(">") { url = url.dropFirst().dropLast() }
+        return String(url)
+    }
 }
 
 /// Parses a Markdown string into `[MarkdownBlock]`. Pure and synchronous.
@@ -154,7 +388,10 @@ enum MarkdownParser {
             let joined = joinSoftWrapped(paragraph).trimmingCharacters(in: .whitespacesAndNewlines)
             paragraph = []
             guard !joined.isEmpty else { return }
-            blocks.append((.paragraph, joined, afterBlank, paragraphStart))
+            // A paragraph that is only pictures is a picture, not a paragraph.
+            let kind: MarkdownBlock.Kind = MarkdownImage.row(from: joined)
+                .map(MarkdownBlock.Kind.images) ?? .paragraph
+            blocks.append((kind, joined, afterBlank, paragraphStart))
             afterBlank = false
         }
         func flushQuote() {

@@ -21,6 +21,11 @@ final class PreviewWindows {
     private var nextTopLeft: NSPoint?
     /// One reading size for every preview; ⌘+ in any window moves all of them.
     private let settings = PreviewSettings()
+    /// How a file reached *from* a preview is opened — a link in a rendered
+    /// README to the file next to it. Routed back out to the app's one opener
+    /// rather than calling `open` here, so a linked file gets the same diff
+    /// treatment as one double-clicked in the tree.
+    var onOpenFile: ((URL) -> Void)?
 
     init(highlighter: (any DiffHighlighting)? = nil) {
         self.highlighter = highlighter
@@ -58,7 +63,8 @@ final class PreviewWindows {
             diffSource: diff,
             mode: mode,
             highlighter: highlighter)
-        let controller = PreviewWindowController(document: document, settings: settings)
+        let controller = PreviewWindowController(document: document, settings: settings,
+                                                 openFile: onOpenFile)
         controller.onClose = { [weak self] closed in
             self?.windows.removeAll { $0 === closed }
         }

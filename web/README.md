@@ -234,9 +234,16 @@ and while they sat in `public/` they were published too, which was 4.2MB of the
 5.2MB deploy for two files nothing ever referenced.
 
 ```sh
-# The app screenshot, from the masters in art/. It IS on the page now, at the
-# top of "At a glance", and it is still what SoftwareApplication.screenshot
-# points at, so the structured data names something a visitor can see.
+# The app screenshot, from the masters in art/. NOT embedded in the page: it is
+# what SoftwareApplication.screenshot points at in the structured data.
+#
+# It was put on the page once, at the top of "At a glance", to give the site a
+# raster image (the window up top is a Svelte replica, so image search has
+# nothing to find). It came back off: the masters catch the app mid-
+# conversation, and at 900px from a 1392px source the text stops being readable
+# and turns into texture. A shot composed for the purpose would be worth
+# another go, and light/dark webp variants beside it, but a bad one is worse
+# than none.
 #
 # -profile BEFORE -strip, and that order is the whole trick. The masters carry
 # an Apple "Color LCD" display profile, so stripping first threw the profile
@@ -244,14 +251,7 @@ and while they sat in `public/` they were published too, which was 4.2MB of the
 # sRGB: the same Display P3 mistake the refs section above warns about, which
 # had been baked into the shipped screenshot.png.
 SRGB="/System/Library/ColorSync/Profiles/sRGB Profile.icc"
-magick art/app-shot-dark.png  -profile "$SRGB" -resize 1392x912 -strip public/screenshot.png
-
-# Two webp variants, one per appearance, because the page follows the OS and a
-# dark screenshot on a light page reads as a bug. <picture> picks one; the png
-# above stays the fallback and the thing crawlers and social scrapers fetch.
-# 100KB each against the png's 427KB.
-magick art/app-shot-dark.png  -profile "$SRGB" -resize 1392x912 -strip -quality 82 -define webp:method=6 public/screenshot.webp
-magick art/app-shot-light.png -profile "$SRGB" -resize 1392x912 -strip -quality 82 -define webp:method=6 public/screenshot-light.webp
+magick art/app-shot-dark.png -profile "$SRGB" -resize 1392x912 -strip public/screenshot.png
 # icons
 rsvg-convert -w 180 -h 180 public/favicon.svg | magick - -background '#0e0f0d' -flatten public/apple-touch-icon.png
 rsvg-convert -w 96  -h 96  public/favicon.svg -o public/favicon-96.png

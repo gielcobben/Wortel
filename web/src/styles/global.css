@@ -549,32 +549,6 @@ body.dragging-app, body.dragging-app * {
    edge, so the FAQ and the footer share one centre line down the page. */
 .doc.tail .prose { margin-inline: auto; }
 
-/* The one screenshot on the page, in the spec sheet. The measure here is 468px,
-   which would draw a whole app window three inches across and legible to
-   nobody, so it breaks out of the prose. Centred on the prose's centre, which
-   is the page's centre, rather than running right from a left edge that no
-   longer stays put. Same shadow and same edge as the app window above it,
-   because it is a picture of that window. */
-.doc .shot {
-  margin: 0 0 32px;
-  width: min(900px, calc(100vw - 72px));
-  margin-left: 50%;
-  transform: translateX(-50%);
-}
-.doc .shot img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 10px;
-  border: 1px solid var(--panel-border);
-  box-shadow: var(--panel-shadow);
-}
-.doc .shot figcaption {
-  margin-top: 12px;
-  font-size: 13px;
-  color: var(--text-50);
-}
-
 .doc .cta { margin-top: 28px; }
 
 .foot {

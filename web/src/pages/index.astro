@@ -275,29 +275,16 @@ const schema = [website, webpage, person, app];
 
       <section id="specs" class="sect">
         <h2>At a glance</h2>
-        <!-- The only raster image on the page, and the reason it exists is that
-             there wasn't one. The window above is a Svelte replica: a DOM tree,
-             perfect for a reader and invisible to image search, which for a
-             desktop app is a real place people look. This is the same shot
-             `SoftwareApplication.screenshot` already pointed at, so the
-             structured data now names something the page actually shows.
-             Below the fold and lazy, so it costs the hero nothing; width and
-             height are set so it reserves its box and shifts no layout. -->
-        <figure class="shot">
-          <picture>
-            <source srcset="/screenshot-light.webp" media="(prefers-color-scheme: light)" type="image/webp" />
-            <source srcset="/screenshot.webp" type="image/webp" />
-            <img
-              src="/screenshot.png"
-              width="1392"
-              height="912"
-              loading="lazy"
-              decoding="async"
-              alt="Wortel on macOS: a sidebar of named sessions on the left, a terminal running a coding agent in the middle, and the git inspector on the right showing a syntax-highlighted diff."
-            />
-          </picture>
-          <figcaption>One window: named sessions, the terminal, and the repository beside it.</figcaption>
-        </figure>
+        <!-- NO SCREENSHOT HERE. One was tried, for a real reason: the window
+             above is a Svelte replica, so this page has no raster image at all
+             and nothing to show image search, which for a desktop app is
+             somewhere people do look. It came out badly. The masters in art/
+             catch the app mid-conversation, and scaled from 1392px to 900px
+             the text stops being readable and becomes texture, which makes a
+             product look busy rather than fast.
+             `SoftwareApplication.screenshot` still points at /screenshot.png,
+             which is what it did before any of this. If a better master ever
+             lands in art/, the figure is worth another try. -->
         <div class="scroller">
           <table class="mono-first">
             <tbody>

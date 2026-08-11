@@ -1,0 +1,158 @@
+---
+// /docs, the reference the landing page stopped being.
+//
+// The homepage was 2,456 words and thirteen screens, and roughly half of that
+// was material nobody reads while deciding whether to download something: the
+// command list, the shortcut table, the third paragraph explaining how the
+// keeper process works. None of it was cut. It is here, where the person who
+// wants it can find it and a search for "wortel keyboard shortcuts" can land on
+// it, which the homepage's #keyboard anchor never really let it do.
+//
+// SAME SHAPE AS /privacy AND /compare: no hero, no window. Someone who arrives
+// here has a question, and showing them a terminal first answers a question
+// they did not ask. It reuses .doc/.prose from global.css rather than styling
+// prose again, so a paragraph here is the same paragraph it is anywhere else.
+import Layout from '../layouts/Layout.astro';
+import Blocks from '../components/Blocks.astro';
+import LegalNav from '../components/LegalNav.astro';
+import { SITE, DOCS, DOCS_SECTIONS } from '../data/site';
+
+const abs = (p: string) => new URL(p, SITE.url).href;
+
+// TechArticle rather than WebPage: this is documentation about the app, and
+// saying so is the difference between a page that is about something and a page
+// that merely mentions it. No FAQPage here; the questions live on the homepage
+// and marking the same content up twice on two URLs is how you earn a manual
+// action rather than a rich result.
+const schema = [
+  {
+    '@type': 'TechArticle',
+    '@id': abs('/docs#article'),
+    url: abs('/docs'),
+    name: DOCS.title,
+    headline: DOCS.heading,
+    description: DOCS.description,
+    about: { '@id': abs('/#app') },
+    isPartOf: { '@id': abs('/#website') },
+    author: { '@id': abs('/#author') },
+    publisher: { '@id': abs('/#author') },
+    inLanguage: 'en',
+    articleSection: DOCS_SECTIONS.map((s) => s.title),
+  },
+];
+---
+
+<Layout title={`${DOCS.title}`} description={DOCS.description} path="/docs" schema={schema}>
+  <main class="docs">
+    <article class="doc">
+      <div class="prose">
+        <p class="mark"><a href="/">{SITE.name}</a></p>
+        <h1>{DOCS.heading}</h1>
+        <p class="lead">{DOCS.lead}</p>
+
+        <!-- An index, because this is the one page on the site people arrive at
+             partway down. Plain links to the same ids the sections carry, so
+             they work with no script and are what a search result deep-links
+             to. -->
+        <nav class="toc" aria-label="On this page">
+          <ul>
+            {DOCS_SECTIONS.map((s) => (
+              <li><a href={`#${s.id}`}>{s.title}</a></li>
+            ))}
+          </ul>
+        </nav>
+
+        {DOCS_SECTIONS.map((section) => (
+          <section id={section.id} class="sect">
+            <h2>{section.title}</h2>
+            {section.lead && <p class="lead">{section.lead}</p>}
+            <Blocks blocks={section.blocks} />
+          </section>
+        ))}
+
+        <p class="cta">
+          <a class="download" href={SITE.download}
+            data-ph="download_clicked" data-ph-location="docs">
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+              <path d="M8 1v8.5M8 9.5 4.75 6.25M8 9.5l3.25-3.25M2.5 12.5h11"
+                fill="none" stroke="currentColor" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Download for macOS
+          </a>
+        </p>
+      </div>
+    </article>
+
+    <footer class="foot">
+      <p>
+        <strong>{SITE.name}</strong>: a native macOS terminal built on Ghostty.
+        Dutch for <em>root</em>.
+      </p>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href={SITE.download} data-ph="download_clicked" data-ph-location="docs-footer">Download</a>
+        <a href="/compare">Compare</a>
+        <a href="/updates">Changelog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="/llms.txt">llms.txt</a>
+        <LegalNav />
+      </nav>
+    </footer>
+  </main>
+</Layout>
+
+<style>
+  /* Same centred document as /privacy, on the same 36px rhythm. */
+  .docs {
+    max-width: 1152px;
+    margin: 0 auto;
+    padding: 72px 36px 0;
+  }
+
+  .docs .doc { padding: 0; }
+
+  /* 640 minus the .prose padding is 568px of text: wider than the landing
+     page's 324px column, which is narrow only because it is read beside a
+     window, and wide enough that the commands table's 334px mono column leaves
+     its descriptions somewhere to sit. That table is the reason this measure is
+     not 540: at the landing page's width it has to stack. */
+  .docs .prose { max-width: 640px; }
+
+  .mark { margin-bottom: 28px; }
+
+  h1 {
+    font-size: 28px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin: 0 0 10px;
+  }
+
+  /* Tighter than the landing page's 60px, which paces a page you scroll through
+     once. This one is looked things up in, so the sections sit closer. */
+  .docs .sect { padding: 36px 0 0; }
+
+  .toc {
+    margin: 28px 0 8px;
+    padding: 18px 0 0;
+    border-top: 1px solid var(--grid);
+  }
+  .toc ul { margin: 0; padding: 0; list-style: none; }
+  .toc li { margin: 0 0 7px; padding: 0; }
+  /* The landing page draws its own bullet with a ::before; this list is
+     navigation rather than prose and wants none of it. */
+  .toc li::before { content: none; }
+  .toc a {
+    font-size: 14px;
+    color: var(--text-70);
+    text-decoration: none;
+  }
+  .toc a:hover { color: var(--text); }
+
+  .foot { margin-top: 72px; }
+
+  @media (max-width: 720px) {
+    .docs { padding: 48px 24px 0; }
+  }
+</style>

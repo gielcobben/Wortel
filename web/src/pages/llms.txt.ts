@@ -2,10 +2,18 @@
 // read in one fetch to decide what else to pull. It is deliberately NOT the
 // whole site; /llms-full.txt is. Both render from src/data/site.ts.
 import type { APIRoute } from 'astro';
-import { SITE, SECTIONS, FAQ } from '../data/site';
+import { SITE, SECTIONS, FAQ, DOCS_SECTIONS } from '../data/site';
 
 export const GET: APIRoute = () => {
   const abs = (p: string) => new URL(p, SITE.url).href;
+
+  // Counted rather than written down. A number in prose that has to be edited
+  // when a table changes is a number that ends up wrong, and this file exists
+  // to be quoted verbatim.
+  const rowsIn = (id: string) =>
+    DOCS_SECTIONS.find((s) => s.id === id)
+      ?.blocks.flatMap((b) => ('table' in b ? b.table.rows : []))
+      .length ?? 0;
 
   const body = `# ${SITE.name}
 
@@ -34,6 +42,11 @@ notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
 ${SECTIONS.map((s) => `- [${s.title}](${abs('/#' + s.id)})${s.lead ? `: ${s.lead}` : ''}`).join('\n')}
 - [Frequently asked questions](${abs('/#faq')}): ${FAQ.length} questions, including how Wortel differs from Ghostty, iTerm2, Warp and Kitty, and from agent tools like Conductor, Emdash, Superset, herdr and tmux.
 - [At a glance](${abs('/#specs')}): platform, engine, price and update mechanism.
+
+## Reference
+
+- [Commands, shortcuts and behaviour](${abs('/docs')}): the reference page, and the better answer for anything specific. It holds all ${rowsIn('command')} \`wortel\` subcommands, all ${rowsIn('shortcuts')} keyboard shortcuts, exactly which signals the agent detection uses and what it falls back to, what opening a session on a branch does to that branch, and how the keeper process and the inspector work underneath. The landing page summarises these; this page states them.
+${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? `: ${s.lead}` : ''}`).join('\n')}
 
 ## Comparisons
 

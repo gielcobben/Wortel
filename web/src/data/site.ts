@@ -73,6 +73,12 @@ export type Section = {
   blocks: Block[];
 };
 
+// THE HOMEPAGE IS THE PITCH, NOT THE MANUAL. Each section makes its point once
+// and stops. Reference material (the command list, the shortcut table) and the
+// second and third pass at a mechanism live on /docs, in DOCS_SECTIONS below,
+// which is a page rather than a footnote: it is linked, indexed, and in
+// llms-full.txt like everything else. When a paragraph here starts explaining
+// HOW something works rather than what it does for you, it belongs over there.
 export const SECTIONS: Section[] = [
   {
     id: 'what-is-wortel',
@@ -80,10 +86,10 @@ export const SECTIONS: Section[] = [
     lead: 'One window. A sidebar of names. Several agents, none of them in each other’s way.',
     blocks: [
       {
-        p: 'Wortel is a fully native macOS terminal built on Ghostty’s engine: Swift and AppKit, no web view, nothing bolted underneath. Open it and the work is where you left it, every session still named and still in its own directory. No tabs to count, no panes to tile, no profiles to keep in step.',
+        p: 'Wortel is a fully native macOS terminal built on Ghostty’s engine: Swift and AppKit, no web view. Open it and the work is where you left it, every session still named and still in its own directory. No tabs to count, no panes to tile.',
       },
       {
-        p: 'Point it at a repository and it stops being only a terminal. Each agent gets its own branch and its own files, the diff of what they did sits beside them, and none of it stops when you quit.',
+        p: 'Point it at a repository and each agent gets its own branch and its own files, with the diff of what they did beside them. None of it stops when you quit.',
       },
       {
         p: 'Free, signed and notarized, for macOS ' +
@@ -104,7 +110,7 @@ export const SECTIONS: Section[] = [
         p: 'Wortel embeds libghostty, so the VT parser, the Metal renderer and the glyph atlas are upstream’s, unmodified. Its own code is only the shell around them.',
       },
       {
-        p: 'Which is why there is no plugin API and no theme gallery. Fonts, colours and keybinds live in a read-only file inside the app; your ~/.config/ghostty is never read.',
+        p: 'Which is why there is no plugin API and no theme gallery. Fonts, colours and keybinds live in a read-only file inside the app, and your ~/.config/ghostty is never read.',
       },
     ],
   },
@@ -118,7 +124,7 @@ export const SECTIONS: Section[] = [
         p: 'Name a session and it keeps the name. Put a slash in it and everything before the slash becomes a section, so twelve shells across four projects read as four groups. Names, directories and selection come back on launch.',
       },
       {
-        p: 'Switching costs a single frame, because every surface stays alive inside the window. Only the one you had selected starts before the first frame; the rest warm up behind it.',
+        p: 'Switching costs a single frame, because every surface stays alive inside the window.',
       },
     ],
   },
@@ -130,26 +136,13 @@ export const SECTIONS: Section[] = [
       'Hand one repository to Claude Code, another to Codex, a third to Aider, and the terminal stops being the hard part. Knowing which one needs you becomes the hard part.',
     blocks: [
       {
-        p: 'Wortel reads that off the screen. Output that keeps moving is an agent working; a screen gone still is one waiting on you. Where an agent announces itself, with OSC 9;4 progress or a spinner in the title, Wortel takes its word for it. Where it says nothing, which is most of them, Wortel still knows.',
+        p: 'Wortel reads that off the screen. Output that keeps moving is an agent working; a screen gone still is one waiting on you. Where an agent announces itself Wortel takes its word for it, and where it says nothing, which is most of them, Wortel still knows.',
       },
       {
-        p: 'The sidebar marks what is working and what is waiting. A notification arrives when a background agent goes quiet, never for the session in front of you. ⌘⌥] jumps to the next one waiting, and anything still running when you quit is picked back up on the next launch.',
+        p: 'The sidebar marks what is working and what is waiting, a notification arrives when a background agent goes quiet, and ⌘⌥] jumps to the next one waiting. Anything still running when you quit is picked back up on the next launch.',
       },
       {
-        p: 'Wortel ships no per-agent integrations, and that is deliberate: a terminal that adapts to six agents by name is a terminal that is wrong about the seventh. Instead a bundled wortel command sits on every session’s PATH, so anything that can run a command can drive the app. An agent that just wrote a file opens a preview of it. A hook you wrote names the session after the ticket you are on. A build that finishes raises attention.',
-      },
-      {
-        table: {
-          head: ['Command', 'What it does'],
-          mono: 'first',
-          rows: [
-            ['wortel open <path>', 'Opens a preview window for a file'],
-            ['wortel new --branch <name>', 'A session, in its own worktree'],
-            ['wortel new --branch <name> --from <ref>', 'Forks the new branch from something else'],
-            ['wortel rename <name>', 'Renames the session it was run in'],
-            ['wortel notify <text>', 'This session wants you'],
-          ],
-        },
+        p: 'It ships no per-agent integrations on purpose: a terminal that adapts to six agents by name is a terminal that is wrong about the seventh. A bundled wortel command sits on every session’s PATH instead, so anything that can run a command can drive the app.',
       },
     ],
   },
@@ -160,13 +153,10 @@ export const SECTIONS: Section[] = [
     lead: 'An inspector beside the terminal, with three panes: Changes, History and Files.',
     blocks: [
       {
-        p: 'Changes is the working tree file by file, with syntax-highlighted diffs and somewhere to write the commit. History is the commit list with its branch graph. Files is the project as a tree, colouring every folder that holds something changed: drag a row into the terminal and the escaped path lands at your prompt.',
+        p: 'Changes is the working tree file by file, with syntax-highlighted diffs and somewhere to write the commit. History is the commit list with its branch graph. Files is the project as a tree: drag a row into the terminal and the escaped path lands at your prompt.',
       },
       {
-        p: 'Double-click a file in any of the three, or ⌘-click a path in the terminal, and it opens in a window of its own: source with syntax highlighting, the diff, Markdown on GitHub’s type scale, and Quick Look for everything that is not text.',
-      },
-      {
-        p: 'It belongs to the session, because a shell in your home directory never wants it and one inside a repository always does. Cost tracks the window on screen, never the size of the repository: a collapsed node_modules is one row and no work at all.',
+        p: 'Double-click a file in any of the three, or ⌘-click a path in the terminal, and it opens in a window of its own: source, the diff, rendered Markdown, and Quick Look for everything that is not text.',
       },
     ],
   },
@@ -177,16 +167,10 @@ export const SECTIONS: Section[] = [
     lead: 'Two agents in one checkout is two agents editing the same files. A worktree each, and the problem stops existing.',
     blocks: [
       {
-        p: 'Open a session on a branch and Wortel checks that branch out in its own directory, with its own files, sharing the repository’s history, objects and remotes. It costs a directory rather than a clone. The session takes the branch’s name, and a branch that already has a worktree opens the one it has instead of failing.',
+        p: 'Open a session on a branch and Wortel checks it out in its own directory, with its own files, sharing the repository’s history, objects and remotes. It costs a directory rather than a clone.',
       },
       {
-        p: 'Its row carries a small branch mark, because the name alone cannot tell you: a session named for its branch otherwise reads as an ordinary shell that happens to be called the same thing, and which one you are looking at decided where your last commit went.',
-      },
-      {
-        p: 'A new branch forks from the repository’s default branch, not from wherever you happen to be standing. Opening one from inside another agent’s worktree would otherwise fork that agent’s half-finished branch, which is a thing you find out about later. Both the dialog and the command let you pick something else to fork from.',
-      },
-      {
-        p: 'So five agents work on five branches, none of them changing the ground under another mid-task, and each one’s inspector shows only its own work. The worktrees live outside the repository, where they cannot be committed by accident or confuse a build that walks the project.',
+        p: 'So five agents work on five branches, none of them changing the ground under another mid-task, and each one’s inspector shows only its own work. The worktrees live outside the repository, where they cannot be committed by accident.',
       },
     ],
   },
@@ -198,9 +182,6 @@ export const SECTIONS: Section[] = [
     blocks: [
       {
         p: 'An agent that was thinking when you quit is still thinking when you come back, and the session reattaches to the shell it already had, scrollback included. A crash is the same story. This is on by default and there is nothing to switch on.',
-      },
-      {
-        p: 'The process holding them knows nothing about terminals, git or rendering. It forks what it is told to fork and keeps reading when nobody is attached, which is what makes it small enough to trust with outliving everything else.',
       },
     ],
   },
@@ -216,9 +197,54 @@ export const SECTIONS: Section[] = [
       },
     ],
   },
+];
+
+// ==========================================================================
+// /docs: the reference the homepage stopped being.
+//
+// Everything here was on the landing page and made it 13 screens long. None of
+// it is cut: a shortcut table nobody can find is worse than a long homepage,
+// and these are the pages a search actually lands on ("wortel keyboard
+// shortcuts", "wortel worktree branch"). Same Section type as above, so
+// pages/docs.astro and llms-full.txt render it with the same code.
+// ==========================================================================
+export const DOCS = {
+  /** ~52 chars. */
+  title: 'Wortel reference: commands, shortcuts and behaviour',
+  description:
+    'The wortel command, every keyboard shortcut, and how sessions, worktrees and the git panel behave. Reference for the native macOS terminal built on Ghostty.',
+  heading: 'Reference',
+  lead: 'The command, the shortcuts, and the parts that are worth knowing exactly.',
+} as const;
+
+export const DOCS_SECTIONS: Section[] = [
+  {
+    id: 'command',
+    title: 'The wortel command',
+    lead:
+      'Bundled inside the app and on every session’s PATH, with no installer and no admin prompt. It speaks to the running app over a socket.',
+    blocks: [
+      {
+        table: {
+          head: ['Command', 'What it does'],
+          mono: 'first',
+          rows: [
+            ['wortel open <path>', 'Opens a preview window for a file'],
+            ['wortel new --branch <name>', 'A session, in its own worktree'],
+            ['wortel new --branch <name> --from <ref>', 'Forks the new branch from something else'],
+            ['wortel rename <name>', 'Renames the session it was run in'],
+            ['wortel notify <text>', 'This session wants you'],
+          ],
+        },
+      },
+      {
+        p: 'This is how Wortel avoids shipping an integration per agent. An agent that just wrote a file opens a preview of it. A hook you wrote names the session after the ticket you are on. A build that finishes raises attention.',
+      },
+    ],
+  },
 
   {
-    id: 'keyboard',
+    id: 'shortcuts',
     title: 'Keyboard shortcuts',
     blocks: [
       {
@@ -247,6 +273,51 @@ export const SECTIONS: Section[] = [
             ['Select all (⌘A clears the input line)', '⌘⇧A'],
           ],
         },
+      },
+    ],
+  },
+
+  {
+    id: 'agent-detection',
+    title: 'How the agent detection works',
+    blocks: [
+      {
+        p: 'Where an agent announces itself, with OSC 9;4 progress, OSC 133 command marks or a spinner in the title, Wortel uses that. None of it is required: the fallback is the screen itself, so an agent that emits nothing is still read correctly, including one that does not exist yet.',
+      },
+      {
+        p: 'Nothing is written into any agent’s configuration to make this work, and detection only runs on sessions you are not currently looking at. A notification never arrives for the session in front of you.',
+      },
+    ],
+  },
+
+  {
+    id: 'worktree-behaviour',
+    title: 'What a worktree session does',
+    blocks: [
+      {
+        p: 'The session takes the branch’s name, and a branch that already has a worktree opens the one it has instead of failing.',
+      },
+      {
+        p: 'Its row carries a small branch mark, because the name alone cannot tell you: a session named for its branch otherwise reads as an ordinary shell that happens to be called the same thing, and which one you are looking at decided where your last commit went.',
+      },
+      {
+        p: 'A new branch forks from the repository’s default branch, not from wherever you happen to be standing. Opening one from inside another agent’s worktree would otherwise fork that agent’s half-finished branch, which is a thing you find out about later. Both the dialog and the command let you pick something else to fork from.',
+      },
+    ],
+  },
+
+  {
+    id: 'internals',
+    title: 'The parts underneath',
+    blocks: [
+      {
+        p: 'The process holding your shells knows nothing about terminals, git or rendering. It forks what it is told to fork and keeps reading when nobody is attached, which is what makes it small enough to trust with outliving everything else.',
+      },
+      {
+        p: 'Switching sessions costs a single frame because every surface stays alive inside the window. Only the one you had selected starts before the first frame; the rest warm up behind it.',
+      },
+      {
+        p: 'The inspector belongs to the session, because a shell in your home directory never wants it and one inside a repository always does. Cost tracks the window on screen, never the size of the repository: a collapsed node_modules is one row and no work at all.',
       },
     ],
   },

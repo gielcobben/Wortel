@@ -24,7 +24,12 @@ export const VIEWS = {
   'worktrees':      { sidebar: true,  pane: null,      beat: 5, focus: 'sidebar',  agents: true },
   'survival':       { sidebar: true,  pane: null,      beat: 6, focus: 'terminal', agents: true },
   'zero-config':    { sidebar: false, pane: null,      beat: 7, focus: 'terminal', agents: true },
-  'keyboard':       { sidebar: true,  pane: 'history', beat: 8, focus: 'inspector', agents: true },
 };
+
+// NO 'keyboard' ENTRY, and STORY's beat 8 is therefore unreached. The shortcut
+// table moved to /docs when the landing page was cut back, and that section was
+// the only thing beat 8 was written to sit beside. It is left in data.js rather
+// than deleted: it is the ending of a story someone wrote, and the moment a
+// ninth section wants a window it is already there. Nothing renders it today.
 
 export const FIRST_SECTION = Object.keys(VIEWS)[0];

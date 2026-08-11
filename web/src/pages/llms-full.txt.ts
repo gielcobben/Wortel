@@ -10,7 +10,7 @@
 // the verdict spelled out as a word: "●" and "◐" mean nothing in plain text,
 // and "not published" has to read as itself rather than as a quiet no.
 import type { APIRoute } from 'astro';
-import { SITE, SECTIONS, FAQ, SPECS, type Block } from '../data/site';
+import { SITE, SECTIONS, FAQ, SPECS, DOCS, DOCS_SECTIONS, type Block } from '../data/site';
 import { COMPARE, APPS, AXES, GROUPS, type Verdict } from '../data/compare';
 
 const renderBlock = (b: Block): string => {
@@ -68,6 +68,17 @@ export const GET: APIRoute = () => {
 
   for (const section of SECTIONS) {
     parts.push('', `## ${section.title}`, '');
+    if (section.lead) parts.push(section.lead, '');
+    parts.push(section.blocks.map(renderBlock).join('\n\n'));
+  }
+
+  // THE REFERENCE IS HERE TOO, for the same reason the comparison is. These
+  // sections stopped being on the landing page when it was cut back, and a
+  // full-text dump that answers everything except "what are the shortcuts" is
+  // the one that sends a model to go guess. Flattened in, not linked out.
+  parts.push('', `## ${DOCS.heading}: ${DOCS.lead}`, '', `Source: ${SITE.url}/docs`, '');
+  for (const section of DOCS_SECTIONS) {
+    parts.push('', `### ${section.title}`, '');
     if (section.lead) parts.push(section.lead, '');
     parts.push(section.blocks.map(renderBlock).join('\n\n'));
   }

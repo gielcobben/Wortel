@@ -28,19 +28,21 @@ feed at `updates.wortel.sh`. See the repo root `CLAUDE.md`.
 
 ```
 src/
-  data/site.ts             ALL landing-page copy: the single source of truth
+  data/site.ts             ALL landing-page AND /docs copy: the single source
   data/compare.ts          ALL /compare copy: the apps, the ten questions, every cell
   content/releases/*.md    the changelog, one Markdown file per release
   content.config.ts        the release collection's schema + version sorting
   pages/index.astro        the landing page + JSON-LD
   pages/updates.astro      /updates         the changelog
   pages/compare.astro      /compare         Wortel against nine named apps
+  pages/docs.astro         /docs            the reference: commands, shortcuts
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms.txt.ts        /llms.txt        short map for language models
   pages/llms-full.txt.ts   /llms-full.txt   every page as Markdown, grid included
   pages/sitemap.xml.ts     /sitemap.xml
   components/PreviewWindow.astro  the app's file-preview window, for /updates
   components/CompareGrid.astro    the comparison grid, for /compare
+  components/Blocks.astro         one Block[] as HTML, for the page and /docs
   layouts/Layout.astro     html shell + meta/OG/canonical/icons
   styles/global.css        all styling (terminal-flavored dark theme)
   demo/                    the Svelte replica of the app window (see below)
@@ -164,10 +166,30 @@ and any HTML comment that ships in the build (`is:inline` script comments and
 npm run build && grep -rl '—' dist/ ; echo "exit 1 above = clean"
 ```
 
-**Edit copy in `src/data/site.ts`, never in the templates.** The page, the
-JSON-LD (`SoftwareApplication` + `FAQPage`), `/llms.txt` and `/llms-full.txt`
-all render from that one module, so they cannot drift apart. An answer a model
-quotes out of `llms-full.txt` is the same sentence a visitor reads.
+**Edit copy in `src/data/site.ts`, never in the templates.** The page, `/docs`,
+the JSON-LD (`SoftwareApplication` + `FAQPage` + `TechArticle`), `/llms.txt` and
+`/llms-full.txt` all render from that one module, so they cannot drift apart. An
+answer a model quotes out of `llms-full.txt` is the same sentence a visitor
+reads.
+
+### The homepage is the pitch; /docs is the manual
+
+`SECTIONS` is what someone deciding whether to download this needs, and nothing
+else. `DOCS_SECTIONS` is the reference: the `wortel` command table, the
+shortcuts, and the second and third pass at how a mechanism works. **When a
+paragraph starts explaining HOW rather than what it does for you, move it.**
+
+The landing page was 2,456 words and thirteen screens, and about half of that
+was reference material sitting below everything else. Nothing was deleted; it
+moved to a page that is linked, in the sitemap, in `llms.txt`, flattened into
+`llms-full.txt`, and can be landed on directly by a search for "wortel keyboard
+shortcuts", which a `#keyboard` anchor never really allowed.
+
+The FAQ stayed, as `<details>` rows. Sixteen answers written to stand alone are
+the most quotable thing here and the source of the `FAQPage` node, so collapsing
+beats cutting: the text is in the HTML whether or not a row is open, so crawlers
+and screen readers still get every word, and it needs no JavaScript. They carry
+no `name` attribute on purpose, so more than one can be open at a time.
 
 ## Adding a release to the changelog
 

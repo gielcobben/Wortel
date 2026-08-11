@@ -394,6 +394,11 @@ body.dragging-app, body.dragging-app * {
 /* Tables (the shortcut list, the spec sheet) scroll inside themselves rather
    than widening the page — the body must never scroll sideways. */
 .doc .scroller { overflow-x: auto; margin-top: 4px; }
+/* Same rule as `ul + p` below, for the same reason: a paragraph that follows a
+   table is a new thought, and without this it starts one line under the last
+   row and reads as another cell. Only visible on /docs, where a table is
+   followed by prose rather than by the end of a section. */
+.doc .scroller + p { margin-top: 20px; }
 .doc table {
   width: 100%;
   border-collapse: collapse;
@@ -461,7 +466,57 @@ body.dragging-app, body.dragging-app * {
   white-space: nowrap;
 }
 
-.faq { display: flex; flex-direction: column; gap: 24px; }
+/* The FAQ, as sixteen rows that open. Expanded it was 1,145 words and just
+   under half the page; the answers are all still in the HTML (see index.astro),
+   they are just not all on screen at once.
+   No `name` on the <details>, so more than one can be open: these are answers
+   people compare against each other, and an accordion that shuts the previous
+   one every time is answering a different question to the one being asked. */
+.faq { display: flex; flex-direction: column; }
+.doc .qa { border-top: 1px solid var(--grid); }
+.doc .qa:last-child { border-bottom: 1px solid var(--grid); }
+
+.doc .qa summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+  cursor: pointer;
+  /* Both spellings: the marker is a ::marker in Firefox and a shadow pseudo in
+     older WebKit, and the chevron below replaces it. */
+  list-style: none;
+}
+.doc .qa summary::-webkit-details-marker { display: none; }
+.doc .qa summary::marker { content: ''; }
+/* The h3 is inside the summary so the outline is what it was before these
+   collapsed. Its own bottom margin would push the chevron off the baseline. */
+.doc .qa summary h3 { margin: 0; }
+.doc .qa summary:hover h3 { color: var(--text); }
+
+.doc .qa .chev {
+  flex: none;
+  color: var(--text-50);
+  transform: translateY(1px);
+  transition: transform 160ms ease;
+}
+.doc .qa[open] .chev { transform: translateY(1px) rotate(180deg); }
+@media (prefers-reduced-motion: reduce) {
+  .doc .qa .chev { transition: none; }
+}
+
+.doc .qa p { margin: 0 0 15px; }
+
+/* The one link off the story, under the last section. */
+.doc .more { margin-top: 8px; }
+.doc .more a {
+  font-size: 14px;
+  color: var(--text-70);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--grid);
+}
+.doc .more a:hover { color: var(--text); text-decoration-color: currentColor; }
 
 /* The one screenshot on the page, in the spec sheet.
    The measure here is 468px, which would draw a whole app window three inches

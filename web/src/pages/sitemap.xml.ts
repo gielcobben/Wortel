@@ -66,6 +66,14 @@ const PAGES: { path: string; changefreq: string; priority: string; sources: stri
     priority: '0.7',
     sources: ['src/data/compare.ts', 'src/pages/compare.astro'],
   },
+  {
+    // Shares src/data/site.ts with the homepage, so the two move together: the
+    // reference is written in the same module as the copy it was cut out of.
+    path: '/docs',
+    changefreq: 'monthly',
+    priority: '0.7',
+    sources: ['src/data/site.ts', 'src/pages/docs.astro'],
+  },
 ];
 
 export const GET: APIRoute = async () => {

@@ -104,6 +104,43 @@ final class AgentActivityTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.sample(digest: 5, now: after(10.5)), .wentQuiet)
     }
 
+    /// A re-baseline invalidates the screen, not the verdict. This tracker used
+    /// to be thrown away on every window resize, and a replacement starts at
+    /// not-working — so the `.wentQuiet` the old one owed was never paid and the
+    /// sidebar spinner turned until the session was closed.
+    func testRebaselineKeepsTheWorkingVerdict() {
+        var tracker = AgentActivityTracker(now: t0, grace: 0)
+        _ = tracker.sample(digest: 1, now: t0)
+        XCTAssertNil(tracker.sample(digest: 2, now: after(1)))
+        XCTAssertEqual(tracker.sample(digest: 3, now: after(2)), .startedWorking)
+
+        // The inspector opens: every session re-wraps, this one included.
+        tracker.rebaseline(now: after(3))
+        // The frame after is the new baseline, never evidence...
+        XCTAssertNil(tracker.sample(digest: 99, now: after(4)))
+        // ...and the agent, which had in fact stopped, still gets to go quiet.
+        XCTAssertNil(tracker.sample(digest: 99, now: after(6)))
+        XCTAssertEqual(tracker.sample(digest: 99, now: after(7.5)), .wentQuiet)
+    }
+
+    /// The other half: what a re-baseline *does* forget. Banked changes and the
+    /// grace window both start over, so the resize frame cannot combine with a
+    /// pre-resize repaint to invent a turn.
+    func testRebaselineDropsBankedEvidenceAndReopensGrace() {
+        var tracker = AgentActivityTracker(now: t0, grace: 2)
+        _ = tracker.sample(digest: 1, now: t0)
+        XCTAssertNil(tracker.sample(digest: 2, now: after(3))) // one change banked
+        tracker.rebaseline(now: after(4))
+
+        XCTAssertNil(tracker.sample(digest: 3, now: after(4.5))) // baseline
+        XCTAssertNil(tracker.sample(digest: 4, now: after(5)))   // inside fresh grace
+        XCTAssertNil(tracker.sample(digest: 5, now: after(5.5))) // still inside it
+        // Past the grace window, and the pre-resize change is gone: this is the
+        // first of the two frames work needs, not the second.
+        XCTAssertNil(tracker.sample(digest: 6, now: after(6.5)))
+        XCTAssertEqual(tracker.sample(digest: 7, now: after(7)), .startedWorking)
+    }
+
     func testStillScreenNeverSeenWorkingStaysSilent() {
         // Switching away from an agent that was already idle must not announce
         // a turn that ended while you were watching it.

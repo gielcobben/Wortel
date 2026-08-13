@@ -70,7 +70,10 @@ struct AgentActivityTracker: Equatable {
     private var lastChange: Date
     private var working = false
     /// Samples before this are baseline only.
-    private let graceUntil: Date
+    private var graceUntil: Date
+    /// The grace window this tracker was built with, so a re-baseline can serve
+    /// a fresh one on the same terms.
+    private let grace: TimeInterval
     /// Changes counted toward the current evidence window, and when that window
     /// opened. A lone repaint expires instead of accumulating.
     private var changes = 0
@@ -78,7 +81,28 @@ struct AgentActivityTracker: Equatable {
 
     init(now: Date, grace: TimeInterval = AgentActivity.graceWindow) {
         lastChange = now
+        self.grace = grace
         graceUntil = now.addingTimeInterval(grace)
+    }
+
+    /// Forget the screen, remember the verdict. A window resize re-wraps every
+    /// session at once and a focus report redraws every TUI, so the frame either
+    /// produces must not count as evidence — but it is no evidence *against* an
+    /// agent that was already working, and throwing the tracker away to get the
+    /// fresh baseline used to say it was. That left `working` behind at false in
+    /// a replacement tracker, so the `.wentQuiet` the old one owed was never
+    /// paid and the sidebar spinner turned until the session was closed.
+    ///
+    /// So: drop the digest (the next sample re-baselines), reopen the grace
+    /// window and the evidence window, and keep `working`. An agent that has in
+    /// fact stopped now goes quiet `quietAfter` from here, which is the same
+    /// answer a second later.
+    mutating func rebaseline(now: Date) {
+        digest = nil
+        lastChange = now
+        graceUntil = now.addingTimeInterval(grace)
+        changes = 0
+        changesSince = nil
     }
 
     /// Feed one screen digest. Returns an event only on a transition.

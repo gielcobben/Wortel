@@ -439,6 +439,11 @@ final class SessionManager {
     /// spinner). Those agents speak for themselves and are left alone — see
     /// `speaksForItself`.
     @ObservationIgnored private var explicitSignalAt: [Session.ID: Date] = [:]
+    /// Sessions whose busy state this tier *guessed* from a moving screen,
+    /// rather than being told. Only these may be cleared when the tier lets go
+    /// of a session (`releaseAgentScreenTracker`), which is the whole reason
+    /// the distinction is recorded.
+    @ObservationIgnored private var screenInferredBusy: Set<Session.ID> = []
     /// Nil whenever no agent is running anywhere — the common case, and the
     /// reason this costs nothing in an ordinary terminal session.
     @ObservationIgnored private var agentScreenTimer: Timer?
@@ -484,12 +489,55 @@ final class SessionManager {
     /// Every terminal just repainted for a reason that has nothing to do with
     /// its agent — the window or inspector resized (which re-wraps every
     /// session, visible or not), or focus moved and each TUI answered the focus
-    /// report by redrawing. Drop every tracker so that frame is re-baselined
-    /// rather than counted, and the next sample serves a fresh grace window.
+    /// report by redrawing. Re-baseline every tracker so that frame is not
+    /// counted, and the next sample serves a fresh grace window.
+    ///
+    /// `rebaseline` rather than dropping the trackers: what a resize invalidates
+    /// is the screen, not the verdict. See `AgentActivityTracker.rebaseline`.
     private func rebaselineAgentScreens() {
         guard !agentScreenTrackers.isEmpty else { return }
         AgentStatusLog.log.debug("screen: re-baselining \(self.agentScreenTrackers.count) tracker(s)")
+        let now = Date()
+        for id in agentScreenTrackers.keys {
+            agentScreenTrackers[id]?.rebaseline(now: now)
+        }
+    }
+
+    /// Let go of a session's tracker, settling what it owes first.
+    ///
+    /// The tracker holds the `working` flag, and so the `.wentQuiet` that clears
+    /// the sidebar spinner. Dropping it while the session is busy is how a
+    /// spinner ends up turning forever: the replacement starts at not-working
+    /// and can never pay a debt it doesn't know about, and nothing else in the
+    /// app ever re-checks a stuck busy. Worse, the stall is self-sealing —
+    /// selecting the session, which is the first thing you do when you notice
+    /// it, is itself one of the reasons the tracker gets dropped.
+    ///
+    /// Clears silently: this is the tier losing sight of the session, not an
+    /// agent finishing, so it must not raise the attention a real quiesce does.
+    /// And only a busy this tier inferred — a program's own OSC 9;4 belongs to
+    /// the program, and our giving up on watching its screen says nothing at
+    /// all about whether it is still working.
+    private func releaseAgentScreenTracker(_ session: Session) {
+        agentScreenTrackers.removeValue(forKey: session.id)
+        guard screenInferredBusy.contains(session.id) else { return }
+        AgentStatusLog.log.debug("""
+            screen: released a busy tracker for \(session.name, privacy: .private) — clearing
+            """)
+        clearBusy(session)
+    }
+
+    /// The whole tier is shutting down (the last agent marker went away). Same
+    /// settle-then-drop as `releaseAgentScreenTracker`, for every session at once.
+    private func releaseAllAgentScreenTrackers() {
+        for session in sessions where screenInferredBusy.contains(session.id) {
+            clearBusy(session)
+        }
         agentScreenTrackers.removeAll()
+        // Sessions closed while busy never reach the loop above; nothing else
+        // prunes this, and a stale id would clear a *future* session's OSC busy
+        // if the tier ever let go of it.
+        screenInferredBusy.removeAll()
     }
 
     /// Drop markers whose agent is provably gone, which stops the sampler and
@@ -544,7 +592,7 @@ final class SessionManager {
         } else if !wanted, agentScreenTimer != nil {
             agentScreenTimer?.invalidate()
             agentScreenTimer = nil
-            agentScreenTrackers.removeAll()
+            releaseAllAgentScreenTrackers()
             if let assertion = agentActivityAssertion {
                 ProcessInfo.processInfo.endActivity(assertion)
                 agentActivityAssertion = nil
@@ -582,7 +630,7 @@ final class SessionManager {
                   let view = session.surfaceView,
                   !speaksForItself(session)
             else {
-                agentScreenTrackers.removeValue(forKey: session.id)
+                releaseAgentScreenTracker(session)
                 continue
             }
             guard let digest = view.activeScreenDigest() else { continue }
@@ -597,6 +645,7 @@ final class SessionManager {
                     screen: working (\(session.runningAgent ?? "?", privacy: .public)) \
                     in \(session.name, privacy: .private)
                     """)
+                screenInferredBusy.insert(session.id)
                 markBusy(session)
             case .wentQuiet:
                 // The one moment the content itself is worth reading: is the
@@ -872,6 +921,7 @@ final class SessionManager {
         lastBusyInterval.removeValue(forKey: session.id)
         titleShowsWorking.remove(session.id)
         agentScreenTrackers.removeValue(forKey: session.id)
+        screenInferredBusy.remove(session.id)
         explicitSignalAt.removeValue(forKey: session.id)
         autoNameState.removeValue(forKey: session.id)
         // The killed shell never reaches its prompt to clear its own agent
@@ -1067,6 +1117,7 @@ final class SessionManager {
     /// and drop busy immediately.
     private func clearBusy(_ session: Session) {
         busyTimers.removeValue(forKey: session.id)?.cancel()
+        screenInferredBusy.remove(session.id)
         if let start = busyStartedAt.removeValue(forKey: session.id) {
             lastBusyInterval[session.id] = (start: start, cleared: Date())
         }
@@ -1125,12 +1176,25 @@ final class SessionManager {
     /// and its status dot never got a chance to show. So: skip leading blanks
     /// (spaces and U+2800 alike) and judge the first character that actually
     /// draws ink.
+    ///
+    /// The half-circle frames (U+25D0…U+25D3, "◐◑◒◓") are Claude Code's, and
+    /// they are the reason this list is a liability rather than a lookup: it
+    /// used to say braille on the authority of a version that has since
+    /// restyled, and a marker set that silently stops matching does not fail
+    /// loudly — it just quietly hands every Claude session to the screen-
+    /// guessing tier, which is exactly the tier this signal exists to spare
+    /// them from. Claude's resting title is "✳ <summary>" and it animates the
+    /// leading glyph only while working, so the two states are a clean edge;
+    /// keep ✳ *out* of this list, since a title that never stops matching is
+    /// the U+2800 bug again.
     private static func hasWorkingMarker(_ title: String) -> Bool {
         let inked = title.unicodeScalars.drop {
             $0 == "\u{2800}" || CharacterSet.whitespaces.contains($0)
         }
         guard let first = inked.first else { return false }
-        return first == "✦" || first == "⏲" || (0x2801...0x28FF).contains(first.value)
+        return first == "✦" || first == "⏲"
+            || (0x2801...0x28FF).contains(first.value)
+            || (0x25D0...0x25D3).contains(first.value)
     }
 
     /// A progress-emitting program reported it stopped working (OSC 9;4;0).

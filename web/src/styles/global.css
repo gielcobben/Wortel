@@ -140,6 +140,13 @@ body.dragging-app, body.dragging-app * {
    makes it exactly 1044x792 sitting at y=72. Same numbers the absolutely
    positioned version produced, now from a grid that can keep going.
    ========================================================================== */
+/* NO SCROLL SNAPPING. It was tried (`scroll-snap-type: y proximity` on the
+   root, the hero to start and the prose sections to centre) and taken out
+   again: even at proximity, which only pulls once you have come to rest, the
+   page decides where your scroll ends rather than you. On a document this long
+   that reads as the page arguing with the gesture. The window still changes
+   pane as you read; it just does it wherever you stopped. */
+
 .shell {
   position: relative;
   z-index: 2;
@@ -184,6 +191,26 @@ body.dragging-app, body.dragging-app * {
      divider, would slice the window's drop-shadow, so keep overflow visible and
      let the shadow fade out over the text column's gutter. */
   overflow: visible;
+}
+
+/* Visually hidden, still read: clipped to nothing and taken out of flow, so it
+   cannot lengthen anything. The hero is snapped to a 36px grid and nothing in
+   it may change length, which rules out the usual tricks (opacity, font-size:0,
+   an offscreen block that still occupies a line box). Used by the h1, whose
+   visible half is the wordmark and whose other half is the sentence that says
+   what the wordmark is. NOT display:none or visibility:hidden: both remove the
+   text from the accessibility tree and from what a crawler counts as content,
+   which is the entire point of it being there. */
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .mark {
@@ -374,6 +401,11 @@ body.dragging-app, body.dragging-app * {
 /* Tables (the shortcut list, the spec sheet) scroll inside themselves rather
    than widening the page — the body must never scroll sideways. */
 .doc .scroller { overflow-x: auto; margin-top: 4px; }
+/* Same rule as `ul + p` below, for the same reason: a paragraph that follows a
+   table is a new thought, and without this it starts one line under the last
+   row and reads as another cell. Only visible on /docs, where a table is
+   followed by prose rather than by the end of a section. */
+.doc .scroller + p { margin-top: 20px; }
 .doc table {
   width: 100%;
   border-collapse: collapse;
@@ -411,7 +443,111 @@ body.dragging-app, body.dragging-app * {
 .doc .mono-last td { text-align: right; }
 .doc .mono-last thead th:last-child { text-align: right; }
 
-.faq { display: flex; flex-direction: column; gap: 24px; }
+/* The commands table, and only it: two columns do not fit beside the window.
+   `wortel new --branch <name> --from <ref>` is 334px of unwrappable mono on a
+   324px measure, so the description was left 77px, wrapped to four lines, and
+   sat off the right edge of the scroller. Every row became a tall band with one
+   visible line in it, which is the "weird spacing": the height was real, the
+   text explaining it was just out of view.
+
+   Stacked, the pair reads as what it is, and nothing scrolls sideways. Scoped
+   to .doc-tour, because the other two tables measure fine and must not change:
+   the spec sheet's mono-first has the wide 468px measure and short keys, and
+   the keyboard table is mono-last and already fits in 324px at 35px a row. */
+.doc-tour .mono-first tr { display: block; }
+.doc-tour .mono-first tbody tr + tr { margin-top: 18px; }
+.doc-tour .mono-first tbody th,
+.doc-tour .mono-first td { display: block; padding: 0; }
+.doc-tour .mono-first tbody th { white-space: normal; }
+.doc-tour .mono-first td { margin-top: 3px; }
+/* The header stops being a header once the columns are gone: "Command" above a
+   command is the label the pair no longer needs, and "What it does" would land
+   in the middle of the list. Clipped rather than display:none, so it is still
+   there for anyone reading the document rather than looking at it. */
+.doc-tour .mono-first thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The FAQ, as sixteen rows that open. Expanded it was 1,145 words and just
+   under half the page; the answers are all still in the HTML (see index.astro),
+   they are just not all on screen at once.
+   No `name` on the <details>, so more than one can be open: these are answers
+   people compare against each other, and an accordion that shuts the previous
+   one every time is answering a different question to the one being asked. */
+.faq { display: flex; flex-direction: column; }
+.doc .qa { border-top: 1px solid var(--grid); }
+.doc .qa:last-child { border-bottom: 1px solid var(--grid); }
+
+.doc .qa summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+  cursor: pointer;
+  /* Both spellings: the marker is a ::marker in Firefox and a shadow pseudo in
+     older WebKit, and the chevron below replaces it. */
+  list-style: none;
+}
+.doc .qa summary::-webkit-details-marker { display: none; }
+.doc .qa summary::marker { content: ''; }
+/* The h3 is inside the summary so the outline is what it was before these
+   collapsed. Its own bottom margin would push the chevron off the baseline. */
+.doc .qa summary h3 { margin: 0; }
+.doc .qa summary:hover h3 { color: var(--text); }
+
+.doc .qa .chev {
+  flex: none;
+  color: var(--text-50);
+  transform: translateY(1px);
+  transition: transform 160ms ease;
+}
+.doc .qa[open] .chev { transform: translateY(1px) rotate(180deg); }
+@media (prefers-reduced-motion: reduce) {
+  .doc .qa .chev { transition: none; }
+}
+
+.doc .qa p { margin: 0 0 15px; }
+
+/* The one link off the story, under the last section. */
+.doc .more { margin-top: 8px; }
+.doc .more a {
+  font-size: 14px;
+  color: var(--text-70);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--grid);
+}
+.doc .more a:hover { color: var(--text); text-decoration-color: currentColor; }
+
+/* ---- the tail: the FAQ, the spec sheet and the footer --------------------
+   Everything below the shell. The prose column above keeps its left edge on
+   x=36 because it is read BESIDE the window and the two have to line up. There
+   is no window down here, so that rule has nothing to hold, and these are
+   centred instead, like /compare, /docs and the legal pages.
+
+   Centred TO THE NEAREST GRID LINE, not to the exact half, which is the same
+   rule .page follows on /compare and the same one the app window's drag script
+   follows: a plain `margin: 0 auto` lands the left edge on (100% - measure)/2,
+   almost never a multiple of 36, and on a page that draws graph paper an edge
+   between two lines is the thing you notice. round() is CSS Values 4; where it
+   is missing the margin-inline above just centres it exactly. */
+.doc.tail,
+.foot {
+  --tail: 756px;                 /* 21 cells, the width the footer already had */
+  width: min(var(--tail), 100%);
+  margin-inline: auto;
+  margin-left: round(down, max(0px, (100% - var(--tail)) / 2), 36px);
+  margin-right: auto;
+}
+/* The text inside sits centred in that block rather than against its left
+   edge, so the FAQ and the footer share one centre line down the page. */
+.doc.tail .prose { margin-inline: auto; }
 
 .doc .cta { margin-top: 28px; }
 

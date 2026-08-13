@@ -4,6 +4,7 @@ import Tour from '../demo/Tour.svelte';
 import SectionWindow from '../demo/SectionWindow.svelte';
 import { VIEWS, FIRST_SECTION } from '../demo/views.js';
 import { SITE, FEATURES, SECTIONS, FAQ, SPECS } from '../data/site';
+import Blocks from '../components/Blocks.astro';
 import LegalNav from '../components/LegalNav.astro';
 
 // The Sparkle feed lives at updates.wortel.sh; the newest signed zip is always
@@ -39,6 +40,15 @@ async function latestRelease() {
 const LATEST = await latestRelease();
 
 const features = FEATURES;
+
+// The wordmark IS the h1, which left the strongest heading on the page reading
+// "Wortel" and nothing else: no indication of what it is, on the one element a
+// search engine weighs hardest. The rest of the title finishes the sentence for
+// a crawler and a screen reader and occupies no pixel, because .vh is clipped
+// and out of flow, so the 36px grid the hero is snapped to cannot move.
+// Derived rather than written out again, and empty if the title ever stops
+// leading with the name, so it can't end up saying "Wortel Wortel: ...".
+const h1Tail = SITE.title.startsWith(SITE.name) ? SITE.title.slice(SITE.name.length) : '';
 
 // ---- structured data ------------------------------------------------------
 // One @graph rather than several script tags: the nodes cross-reference by
@@ -140,7 +150,7 @@ const schema = [website, webpage, person, app];
       <div class="col">
         <div class="hero-left">
         <div class="intro">
-          <h1 class="mark">Wortel</h1>
+          <h1 class="mark">{SITE.name}<span class="vh">{h1Tail}</span></h1>
           <p class="tagline">A native macOS terminal your agents can live in.</p>
           <p class="desc">
             Ghostty’s engine, in a window that needs no arranging. Point five
@@ -189,31 +199,7 @@ const schema = [website, webpage, person, app];
           <section id={section.id} class="sect" data-view={section.id}>
           <h2>{section.title}</h2>
           {section.lead && <p class="lead">{section.lead}</p>}
-          {section.blocks.map((block) => (
-            <>
-              {'p' in block && <p>{block.p}</p>}
-              {'list' in block && (
-                <ul>{block.list.map((li) => <li>{li}</li>)}</ul>
-              )}
-              {'table' in block && (
-                <div class="scroller">
-                  <table class={block.table.mono === 'last' ? 'mono-last' : 'mono-first'}>
-                    <thead>
-                      <tr>
-                        <th scope="col">{block.table.head[0]}</th>
-                        <th scope="col">{block.table.head[1]}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {block.table.rows.map(([k, v]) => (
-                        <tr><th scope="row">{k}</th><td>{v}</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          ))}
+          <Blocks blocks={section.blocks} />
           {/* Mobile only, and client:only so the HTML everyone downloads carries
               none of it: seven of these is 2800 nodes and 180KB. The first
               section is skipped because the hero's own window sits directly
@@ -230,6 +216,14 @@ const schema = [website, webpage, person, app];
           )}
           </section>
         ))}
+
+        <!-- The one link out of the story, at the end of it. Everything the
+             sections stopped short of is on the other side, and a reader who
+             wanted the shortcut table has just finished the reason they would
+             want it. -->
+        <p class="more">
+          <a href="/docs">Reference: the wortel command, every shortcut, and the parts underneath</a>
+        </p>
         </div>
       </article>
       </div>
@@ -245,22 +239,52 @@ const schema = [website, webpage, person, app];
       </div>
     </div>
 
-    <article class="doc">
+    <!-- `tail`: below the shell, so there is no window beside this and the
+         "one left edge" rule the prose column follows has nothing left to line
+         up with. Centred, like /compare, /docs and the legal pages already are. -->
+    <article class="doc tail">
       <div class="prose">
       <section id="faq" class="sect">
         <h2>Frequently asked questions</h2>
+        <!-- Collapsed, not cut. Sixteen answers written to stand alone are the
+             most quotable thing on this site and the source of the FAQPage
+             graph node, so removing any of them would cost real ground with the
+             assistants that read this page. Expanded they were 1,145 words,
+             just under half the document, all of it below everything else.
+
+             <details> is the whole mechanism: no script, works with JavaScript
+             off, and the answer is in the HTML whether or not it is open, so a
+             crawler and a screen reader both still get every word. The heading
+             stays an h3 inside the summary so the document outline is what it
+             was. -->
         <div class="faq">
           {FAQ.map((item) => (
-            <div class="qa">
-              <h3>{item.q}</h3>
+            <details class="qa">
+              <summary>
+                <h3>{item.q}</h3>
+                <svg class="chev" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                  <path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor"
+                    stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </summary>
               <p>{item.a}</p>
-            </div>
+            </details>
           ))}
         </div>
       </section>
 
       <section id="specs" class="sect">
         <h2>At a glance</h2>
+        <!-- NO SCREENSHOT HERE. One was tried, for a real reason: the window
+             above is a Svelte replica, so this page has no raster image at all
+             and nothing to show image search, which for a desktop app is
+             somewhere people do look. It came out badly. The masters in art/
+             catch the app mid-conversation, and scaled from 1392px to 900px
+             the text stops being readable and becomes texture, which makes a
+             product look busy rather than fast.
+             `SoftwareApplication.screenshot` still points at /screenshot.png,
+             which is what it did before any of this. If a better master ever
+             lands in art/, the figure is worth another try. -->
         <div class="scroller">
           <table class="mono-first">
             <tbody>
@@ -298,6 +322,7 @@ const schema = [website, webpage, person, app];
         <a href={DOWNLOAD} data-ph="download_clicked" data-ph-location="footer" data-ph-version={LATEST?.version}>Download</a>
         <a href="/updates">Changelog</a>
         <a href="/compare">Compare</a>
+        <a href="/docs">Reference</a>
         <a href="#faq">FAQ</a>
         <a href="/llms.txt">llms.txt</a>
         <LegalNav />

@@ -1,0 +1,60 @@
+# Response headers for wortel.sh.
+#
+# Cloudflare Workers static assets reads this file out of the deploy (Astro
+# copies public/ into dist/ verbatim) and applies every rule whose pattern
+# matches, so the /* block below stacks with the specific ones rather than
+# losing to them. No rule sets Cache-Control twice, which is the one thing that
+# would make the stacking ambiguous.
+#
+# NOTE: this file ships inside dist/, so the repo's no-em-dash check greps it
+# like any other build output. Keep the punctuation plain.
+
+# Content-hashed by Astro: the filename changes whenever the bytes do, which is
+# exactly the precondition `immutable` asks for. Without this they were served
+# `max-age=0, must-revalidate`, so every repeat visit spent a conditional
+# request per file before it could paint.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# NOT content-hashed, so this is a promise about the filename: replacing a face
+# means shipping it under a new name, never overwriting one of these in place.
+# Both are preloaded in the document head and paint in the first screen, so a
+# year in cache is the difference between a cold and a warm second visit.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Stable but occasionally regenerated (see web/README.md for the ImageMagick
+# commands). A day is long enough to matter for social scrapers re-fetching the
+# card and short enough that a regenerated one is not stuck for a year.
+/*.png
+  Cache-Control: public, max-age=86400
+/*.svg
+  Cache-Control: public, max-age=86400
+
+# The Sparkle fragments. They exist so release.sh can copy them out of dist/ and
+# hand them to generate_appcast; they are not pages. Each one is a bare fragment
+# with no <head>, so it has no title, no canonical and nowhere to put a robots
+# meta, and its text is already on /updates. Nothing links to them, but a
+# noindex header costs nothing and closes the case properly.
+#
+# A robots.txt Disallow would NOT do this job: a disallowed URL can still be
+# indexed as a bare link, and a crawler forbidden from fetching the file can
+# never read the noindex. Allowing the crawl and answering it is the pair that
+# actually works.
+/release-notes/*
+  X-Robots-Tag: noindex
+
+# The whole site is HTTPS and always has been; this is what stops a browser
+# from trying port 80 first ever again. Six months, no includeSubDomains and no
+# preload on purpose: subdomains covers updates.wortel.sh, whose availability is
+# the update channel and is not this file's business to bet on.
+#
+# This file is the ONLY place HSTS is set. Cloudflare's zone-level HSTS toggle
+# does the same job and is deliberately left off, because two sources would emit
+# the header twice and the version in the repo is the one you can read, revert
+# and review. Note this is the header, not the redirect: sending a browser from
+# http to https in the first place is the zone's "Always Use HTTPS" setting, and
+# no file in this deploy can do it, because a plain-http request is answered at
+# the edge before anything here is consulted.
+/*
+  Strict-Transport-Security: max-age=15552000

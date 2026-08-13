@@ -28,23 +28,26 @@ feed at `updates.wortel.sh`. See the repo root `CLAUDE.md`.
 
 ```
 src/
-  data/site.ts             ALL landing-page copy: the single source of truth
+  data/site.ts             ALL landing-page AND /docs copy: the single source
   data/compare.ts          ALL /compare copy: the apps, the ten questions, every cell
   content/releases/*.md    the changelog, one Markdown file per release
   content.config.ts        the release collection's schema + version sorting
   pages/index.astro        the landing page + JSON-LD
   pages/updates.astro      /updates         the changelog
   pages/compare.astro      /compare         Wortel against nine named apps
+  pages/docs.astro         /docs            the reference: commands, shortcuts
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms.txt.ts        /llms.txt        short map for language models
   pages/llms-full.txt.ts   /llms-full.txt   every page as Markdown, grid included
   pages/sitemap.xml.ts     /sitemap.xml
   components/PreviewWindow.astro  the app's file-preview window, for /updates
   components/CompareGrid.astro    the comparison grid, for /compare
+  components/Blocks.astro         one Block[] as HTML, for the page and /docs
   layouts/Layout.astro     html shell + meta/OG/canonical/icons
   styles/global.css        all styling (terminal-flavored dark theme)
   demo/                    the Svelte replica of the app window (see below)
 public/                    static assets (favicon, og.png, screenshots, robots.txt)
+  _headers                 response headers: immutable caching, HSTS, noindex
 ```
 
 The download button points at `https://updates.wortel.sh/Wortel-latest.zip`,
@@ -163,10 +166,30 @@ and any HTML comment that ships in the build (`is:inline` script comments and
 npm run build && grep -rl '—' dist/ ; echo "exit 1 above = clean"
 ```
 
-**Edit copy in `src/data/site.ts`, never in the templates.** The page, the
-JSON-LD (`SoftwareApplication` + `FAQPage`), `/llms.txt` and `/llms-full.txt`
-all render from that one module, so they cannot drift apart. An answer a model
-quotes out of `llms-full.txt` is the same sentence a visitor reads.
+**Edit copy in `src/data/site.ts`, never in the templates.** The page, `/docs`,
+the JSON-LD (`SoftwareApplication` + `FAQPage` + `TechArticle`), `/llms.txt` and
+`/llms-full.txt` all render from that one module, so they cannot drift apart. An
+answer a model quotes out of `llms-full.txt` is the same sentence a visitor
+reads.
+
+### The homepage is the pitch; /docs is the manual
+
+`SECTIONS` is what someone deciding whether to download this needs, and nothing
+else. `DOCS_SECTIONS` is the reference: the `wortel` command table, the
+shortcuts, and the second and third pass at how a mechanism works. **When a
+paragraph starts explaining HOW rather than what it does for you, move it.**
+
+The landing page was 2,456 words and thirteen screens, and about half of that
+was reference material sitting below everything else. Nothing was deleted; it
+moved to a page that is linked, in the sitemap, in `llms.txt`, flattened into
+`llms-full.txt`, and can be landed on directly by a search for "wortel keyboard
+shortcuts", which a `#keyboard` anchor never really allowed.
+
+The FAQ stayed, as `<details>` rows. Sixteen answers written to stand alone are
+the most quotable thing here and the source of the `FAQPage` node, so collapsing
+beats cutting: the text is in the HTML whether or not a row is open, so crawlers
+and screen readers still get every word, and it needs no JavaScript. They carry
+no `name` attribute on purpose, so more than one can be open at a time.
 
 ## Adding a release to the changelog
 
@@ -211,9 +234,24 @@ and while they sat in `public/` they were published too, which was 4.2MB of the
 5.2MB deploy for two files nothing ever referenced.
 
 ```sh
-# the app screenshot, from the masters in art/. Not embedded in the page: it is
+# The app screenshot, from the masters in art/. NOT embedded in the page: it is
 # what SoftwareApplication.screenshot points at in the structured data.
-magick art/app-shot-dark.png -resize 1392x912 -strip public/screenshot.png
+#
+# It was put on the page once, at the top of "At a glance", to give the site a
+# raster image (the window up top is a Svelte replica, so image search has
+# nothing to find). It came back off: the masters catch the app mid-
+# conversation, and at 900px from a 1392px source the text stops being readable
+# and turns into texture. A shot composed for the purpose would be worth
+# another go, and light/dark webp variants beside it, but a bad one is worse
+# than none.
+#
+# -profile BEFORE -strip, and that order is the whole trick. The masters carry
+# an Apple "Color LCD" display profile, so stripping first threw the profile
+# away without converting anything and left every saturated pixel to be read as
+# sRGB: the same Display P3 mistake the refs section above warns about, which
+# had been baked into the shipped screenshot.png.
+SRGB="/System/Library/ColorSync/Profiles/sRGB Profile.icc"
+magick art/app-shot-dark.png -profile "$SRGB" -resize 1392x912 -strip public/screenshot.png
 # icons
 rsvg-convert -w 180 -h 180 public/favicon.svg | magick - -background '#0e0f0d' -flatten public/apple-touch-icon.png
 rsvg-convert -w 96  -h 96  public/favicon.svg -o public/favicon-96.png
@@ -225,3 +263,28 @@ window and a text layer. See the git history for the exact commands.
 `public/robots.txt` is ours and **replaces Cloudflare's managed one**, which was
 the Content Signals boilerplate with no directives. It allows everything,
 carries a permissive `Content-Signal:` line, and points at the sitemap.
+
+### One URL per page, without a slash
+
+Canonical tags and sitemap entries are both built from a path like `/compare`,
+with no trailing slash. Astro builds `/compare/index.html`, and Cloudflare's
+default (`auto-trailing-slash`) serves that at `/compare/` while redirecting
+`/compare` to it, so **every subpage was canonicalising itself to a redirect**
+and the sitemap was a list of 307s. `html_handling: "drop-trailing-slash"` in
+`wrangler.jsonc` serves the no-slash form instead. The three have to agree;
+changing any one of them alone reintroduces the mismatch.
+
+```sh
+npm run cf-preview   # then: /compare is 200, /compare/ is a 307 back to it
+```
+
+### lastmod is a date, not a build stamp
+
+`sitemap.xml.ts` asks git when each page's **content sources** last changed, not
+when the site was last built. `/updates` uses the newest release's frontmatter
+date and the legal pages use their own `updated` field, so neither needs git at
+all. This matters because `release.sh --publish` redeploys the whole site: a
+build-stamped `lastmod` told crawlers all five URLs changed every time one
+Markdown file shipped, which is how a site teaches Google to ignore the field.
+Uncommitted edits do not count, deliberately. No git in the environment falls
+back to the build date rather than failing the build.

@@ -463,6 +463,17 @@ final class SessionManager {
     private func noteExplicitSignal(_ session: Session) {
         let wasUnproven = explicitSignalAt[session.id] == nil
         explicitSignalAt[session.id] = Date()
+        // The tier's claim on this session's busy state lapses here, and it has
+        // to lapse *now* rather than at the next `markBusy`: that one returns
+        // early when the session is already busy, which is exactly the case —
+        // the screen tier guessed busy a moment ago and the agent is only now
+        // announcing the same turn. Left in the set, the session would be
+        // released on the next tick (it speaks for itself, so the sampler drops
+        // it) and the release would clear a busy the program owns, mid-turn,
+        // right after it said so. It would also take `busyStartedAt` with it, so
+        // the 9;4;0 at the end of the turn would read as too short to be worth a
+        // notification and the finished turn would go unannounced.
+        screenInferredBusy.remove(session.id)
         // An agent that just proved it announces itself may have been the only
         // reason the sampler was running. Ask again rather than waiting for the
         // next marker change, which for a long-lived agent is when it exits.

@@ -215,47 +215,68 @@ struct SidebarRowContent: View {
 @MainActor
 func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = nil) {
     Task { @MainActor in
+        // Started before the dialog and collected after it, so the network time
+        // overlaps the typing rather than following it. Nothing on screen is
+        // waiting for this and nothing on screen changes when it lands: a fetch
+        // moves `refs/remotes/*`, and both lists in the dialog are built from
+        // `refs/heads`. What it changes is where the branch is about to start —
+        // see GitService.defaultBase.
+        let fetch = Task { await manager.fetchFromOrigin() }
         let branches = await manager.localBranches()
         let withWorktree = await manager.branchesWithWorktrees()
-        let defaultBase = await manager.defaultBranch()
-        guard let choice = promptBranch(
-            branches: branches, withWorktree: withWorktree, defaultBase: defaultBase)
+        let defaultBase = await manager.defaultBase()
+        let catalog = BranchCatalog(local: branches, withWorktree: withWorktree)
+        guard let window = AppDelegate.mainWindow else { return }
+        // The remote branches are loaded *while the sheet is up*, never before
+        // it. They are the one list whose length tracks the repository rather
+        // than the person (140ms at 4000 refs), and none of them is needed to
+        // put the sheet on screen: what you usually want is local, and what you
+        // came here to do is usually type a name that doesn't exist yet. So the
+        // sheet opens on the local half and the rest arrives underneath it. The
+        // fetch above is the same bargain, one step earlier.
+        guard let choice = await BranchSheet.present(
+            over: window, catalog: catalog, defaultBase: defaultBase,
+            whileOpen: { sheet in
+                catalog.beginLoadingRemote()
+                Task { @MainActor in
+                    // Twice, and on purpose. First with the refs already on
+                    // disk, which is a local read and arrives in milliseconds;
+                    // then again once the fetch lands, which is a network round
+                    // trip and may have added or pruned branches. Waiting for
+                    // the fetch before showing anything would put the network
+                    // between you and a list that was sitting there already.
+                    catalog.finishLoadingRemote(await manager.remoteBranches())
+                    sheet.catalogChanged()
+                    await fetch.value
+                    catalog.finishLoadingRemote(await manager.remoteBranches())
+                    sheet.catalogChanged()
+                }
+            })
         else { return }
+        // The fork point has to be current *before* `worktree add` resolves it,
+        // which is the whole point of running the fetch at all. By here it has
+        // usually had the life of the dialog to finish, so this nearly always
+        // returns immediately.
+        //
+        // **But the wait is bounded, because the dialog is not a wait.** The
+        // name is prefilled and Return accepts it, so the sheet can be answered
+        // in well under a second, which leaves the whole network round trip on
+        // this line. Off the VPN that hosts the remote, or on a host that is
+        // simply not answering, `git fetch` sits in a TCP connect for over a
+        // minute; `GIT_TERMINAL_PROMPT=0` keeps it from asking for credentials
+        // but nothing keeps it from hanging. You pressed Create, the sheet
+        // vanished, and nothing happens at all: no session, no progress, no
+        // reason given.
+        //
+        // Giving up on the fetch is the cheap failure. It costs exactly what
+        // being offline already costs (see `fetchFromOrigin`, which swallows a
+        // failed fetch for the same reason): the branch forks from the last
+        // refs we managed to pull, which is where it would have forked from a
+        // moment ago anyway. The fetch is not cancelled, only stopped waiting
+        // for, so it still lands for next time.
+        await fetch.finishing(within: .seconds(3))
         openSessionOnBranch(manager, branch: choice.branch, base: choice.base, inFolder: folder)
     }
-}
-
-/// The dialog: the compact alert, with the branch to open and the ref a new one
-/// forks from.
-@MainActor
-private func promptBranch(
-    branches: [String], withWorktree: Set<String>, defaultBase: String?
-) -> (branch: String, base: String?)? {
-    let alert = NSAlert()
-    alert.messageText = "New Session on Branch"
-    // No informative text, which is what keeps this the compact centred alert
-    // rather than the wide left-aligned one — see promptFolderName.
-    alert.addButton(withTitle: "Create")
-    alert.addButton(withTitle: "Cancel")
-    // Sized to the buttons, which is why this comes after they're added: the row
-    // is the only self-sizing thing in the dialog, so it's what the chooser has
-    // to match. See `BranchChooser.alignedWidth`.
-    let accessory = BranchDialogAccessory(
-        branches: branches, withWorktree: withWorktree, defaultBase: defaultBase,
-        width: BranchChooser.alignedWidth(for: alert))
-    alert.accessoryView = accessory
-    alert.window.initialFirstResponder = accessory.initialResponder
-    // Nothing to create until the field names something. Accepting the click and
-    // then silently doing nothing is the same answer delivered worse — Tower
-    // greys its "Create Worktree" for exactly this, and it's the one thing that
-    // tells you the dialog is waiting on you.
-    let create = alert.buttons.first
-    create?.isEnabled = accessory.isValid
-    accessory.onValidityChange = { create?.isEnabled = $0 }
-    guard alert.runModal() == .alertFirstButtonReturn, let branch = accessory.branch else {
-        return nil
-    }
-    return (branch, accessory.base)
 }
 
 @MainActor
@@ -271,12 +292,6 @@ func openSessionOnBranch(
         alert.runModal()
     }
 }
-
-/// A branch prompt: type a new name, or pick one that exists with type-ahead.
-///
-/// A combo box rather than a plain field because both answers are legitimate
-/// here — an existing branch or a new one — and a bare text field quietly turns
-/// a typo into a *third* branch called `mian`.
 
 /// A folder header row's SwiftUI content: the section title styled like a
 /// native sidebar header, plus the folder context menu. Expansion, the

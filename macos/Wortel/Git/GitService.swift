@@ -229,10 +229,33 @@ enum GitService {
     /// into `refresh`, because a monorepo can carry thousands of remote refs and
     /// nothing on screen needs them until you ask.
     static func branches(root: String) async -> [GitBranch] {
+        await branches(root: root, refs: ["refs/heads", "refs/remotes"])
+    }
+
+    /// Just the local branches, for the callers that only ever wanted those.
+    ///
+    /// The namespace is narrowed in *git* rather than filtered afterwards, and
+    /// on a monorepo that is the whole cost of the call. `--sort=-committerdate`
+    /// has to load the commit each ref points at to read its date, so asking for
+    /// `refs/remotes` and then dropping it walks tens of thousands of objects to
+    /// produce a list of nine. Local branches stay few even in repositories
+    /// where remote refs do not.
+    static func localBranches(root: String) async -> [GitBranch] {
+        await branches(root: root, refs: ["refs/heads"])
+    }
+
+    /// Just the remote-tracking branches. The expensive half, and the reason
+    /// everything that can be answered without it is: this is the call that
+    /// costs 140ms on a repository with 4000 remote refs, so it is loaded after
+    /// whatever needed it is already on screen, never before.
+    static func remoteBranches(root: String) async -> [GitBranch] {
+        await branches(root: root, refs: ["refs/remotes"])
+    }
+
+    private static func branches(root: String, refs: [String]) async -> [GitBranch] {
         let format = "%(refname)\u{1f}%(objectname)\u{1f}%(upstream:short)\u{1f}%(HEAD)"
         let result = await run(
-            ["for-each-ref", "--sort=-committerdate", "--format=\(format)",
-             "refs/heads", "refs/remotes"],
+            ["for-each-ref", "--sort=-committerdate", "--format=\(format)"] + refs,
             in: root)
         guard result.ok else { return [] }
         return result.stdout.split(separator: "\n").compactMap { line in
@@ -281,11 +304,50 @@ enum GitService {
                 if !branch.isEmpty { return branch }
             }
         }
-        let locals = await branches(root: root).filter { !$0.isRemote }
+        let locals = await localBranches(root: root)
         for candidate in ["main", "master"] where locals.contains(where: { $0.name == candidate }) {
             return candidate
         }
         return locals.first(where: \.isCurrent)?.name ?? locals.first?.name
+    }
+
+    /// The ref a new branch should *fork from* — trunk as origin last reported
+    /// it, rather than trunk as of whenever you last pulled.
+    ///
+    /// `defaultBranch` names the local branch, and that is the wrong thing to
+    /// hand `worktree add`. A fetch only ever moves `refs/remotes/*`: it does
+    /// not fast-forward a local `main`, and nothing else here does either, so a
+    /// repository you have been working in for a week forks its "new" branch
+    /// from a week-old commit. The remote-tracking ref is the same trunk,
+    /// current as of the last fetch, which is why `newSessionOnBranch` runs one
+    /// while the dialog is open.
+    ///
+    /// Falls back to the local branch where there is no remote copy to prefer:
+    /// a repository with no remote, or a trunk that has never been pushed.
+    ///
+    /// **The remote is trunk's own upstream, not `origin`.** Asking for
+    /// `origin/<trunk>` by name is right for almost every repository and wrong
+    /// for exactly the ones that most need this: a fork checkout, where trunk
+    /// tracks `upstream/main` and `refs/remotes/origin/main` is either absent or
+    /// is *your* fork's stale copy. The first case silently returns the local
+    /// branch, so the fetch is paid for and the fork point is stale anyway; the
+    /// second is worse, because it looks like it worked. Trunk's upstream is
+    /// what "the remote copy of trunk" means, and git already tracks it.
+    static func defaultBase(root: String) async -> String? {
+        guard let local = await defaultBranch(root: root) else { return nil }
+        let upstream = await run(
+            ["rev-parse", "--abbrev-ref", "--verify", "--quiet", local + "@{upstream}"], in: root)
+        let tracked = upstream.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if upstream.ok, !tracked.isEmpty { return tracked }
+        // No upstream configured, which a trunk you have never pushed will not
+        // have. `origin/<trunk>` is still the good guess: the ref can exist
+        // without the local branch tracking it (a fresh clone that has never
+        // pulled, a branch recreated locally), and where it does it is the same
+        // trunk, fresher.
+        let guess = "origin/" + local
+        let exists = await run(
+            ["rev-parse", "--verify", "--quiet", "refs/remotes/" + guess], in: root)
+        return exists.ok ? guess : local
     }
 
     // MARK: - Worktrees
@@ -373,7 +435,16 @@ enum GitService {
         case .existingBranch:
             args += [path, branch]
         case .newBranch(let base):
-            args += ["-b", branch, path]
+            args += ["-b", branch]
+            // Forking from `origin/main` would otherwise make `origin/main` the
+            // new branch's upstream, and `push.default=simple` refuses to push a
+            // branch whose upstream is named something else — so the first push
+            // from the session would fail on a repository that had done nothing
+            // wrong. A branch forked from a *local* one gets no upstream anyway,
+            // so this only ever removes surprise. `push(setUpstream:)` sets the
+            // right one the first time it is asked.
+            if base != nil { args.append("--no-track") }
+            args.append(path)
             if let base { args.append(base) }
         }
         let result = await run(args, in: root)
@@ -396,6 +467,44 @@ enum GitService {
         guard !result.ok else { return nil }
         let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         return message.isEmpty ? "git worktree remove failed" : message
+    }
+
+    /// Which remotes carry a branch of this name.
+    ///
+    /// Asked one O(1) ref lookup per remote rather than by listing
+    /// `refs/remotes` and searching it. The listing is the expensive thing on a
+    /// repository with many remote refs (140ms at 4000 of them), and a
+    /// repository has one or two remotes, so this costs two `rev-parse`s where
+    /// the obvious version costs a walk of every ref in the repository.
+    static func remotesWithBranch(root: String, branch: String) async -> [String] {
+        let listed = await run(["remote"], in: root)
+        guard listed.ok else { return [] }
+        var found: [String] = []
+        for line in listed.stdout.split(separator: "\n") {
+            let remote = line.trimmingCharacters(in: .whitespaces)
+            guard !remote.isEmpty else { continue }
+            let ref = "refs/remotes/\(remote)/\(branch)"
+            if await run(["rev-parse", "--verify", "--quiet", ref], in: root).ok {
+                found.append(remote)
+            }
+        }
+        return found
+    }
+
+    /// The remote git itself would pick when a branch name is on more than one.
+    ///
+    /// `checkout.defaultRemote` is git's own answer to that ambiguity, and it is
+    /// set by exactly the people who hit it: anyone working against a fork, with
+    /// `origin` and `upstream` carrying the same branch names. Without it
+    /// `worktree add <path> <name>` refuses (`invalid reference`); with it, git
+    /// resolves the name and sets up tracking as if there had never been a
+    /// question. So the ambiguity is only real when git has no answer, and
+    /// asking is one `config` read.
+    static func defaultRemote(root: String) async -> String? {
+        let result = await run(["config", "--get", "checkout.defaultRemote"], in: root)
+        guard result.ok else { return nil }
+        let name = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
     }
 
     /// Whether the repo has any remote configured — decides whether "unpushed"

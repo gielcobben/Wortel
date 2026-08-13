@@ -10,6 +10,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private(set) var runtime: GhosttyRuntime!
     private var manager: SessionManager!
     private var window: NSWindow!
+    /// The one window the app has, for the things that need something to sheet
+    /// onto and aren't held by the delegate — `newSessionOnBranch` is invoked
+    /// from a menu and from a sidebar row, neither of which has a window in
+    /// hand. Deliberately not `NSApp.keyWindow`: a preview window can be key,
+    /// and a sheet about a session belongs on the window the session is in.
+    /// Weak, so this doesn't outlive the window it names.
+    static private(set) weak var mainWindow: NSWindow?
     /// The three-pane shell. Held so the toolbar's tracking separators can bind to
     /// its split view, and so ⌘⌥S/⌘⌥G reach the right controller.
     private var splitController: MainSplitViewController!
@@ -76,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             window.center()
         }
         self.window = window
+        Self.mainWindow = window
 
         manager.onAllClosed = { [weak self] in self?.window?.close() }
         // Previews are accessories: without this, closing the last session would

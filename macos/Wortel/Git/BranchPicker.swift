@@ -1,440 +1,286 @@
 import AppKit
 import SwiftUI
 
-/// The branch control inside the "New Session on Branch" dialog: a button that
-/// shows the chosen branch and opens a popover to choose another — Xcode's
-/// scheme picker, which is the same problem (one value, a filterable list of
-/// candidates, and the option of a new one).
+/// Every branch the picker can offer, and the one place that knows the remote
+/// half arrives late.
 ///
-/// The dialog stays a dialog: it's a decision you came to make, so it belongs in
-/// front of you rather than pinned to whichever button opened it — which is how
-/// the picker ended up in the bottom-left corner over the terminal. What hangs
-/// off a control is the *list*, because that part is browsing.
-@MainActor
-final class BranchChooser: NSView {
-    private let button = ChooserButton(frame: .zero, pullsDown: true)
-    private let popover = NSPopover()
-    private let model: BranchPickerModel
-    /// Kept in front of the value in the button's title ("From: main"), so the
-    /// row says what it is without a label beside it — which the compact centred
-    /// alert has nowhere to put.
-    private let prefix: String
-    /// What the button reads before anything is chosen.
-    private let placeholder: String
-
-    /// The branch to open: whatever was picked, or typed into the filter.
-    var branch: String? { model.chosen ?? model.newBranch }
-
-    /// Field, divider, and eight rows: enough to browse without the popover
-    /// becoming the tallest thing on screen.
-    static let popoverHeight: CGFloat = 248
-    /// What a dialog falls back to if it has no buttons to measure against.
-    /// Nothing reaches it — an NSAlert always has at least one.
-    private static let defaultWidth: CGFloat = 240
-
-    /// The width an accessory has to be to line up with the dialog's buttons.
-    ///
-    /// The button row is the one part of an NSAlert that sizes *itself* — from
-    /// its titles, not from the alert — so it's the thing everything else has to
-    /// match rather than the other way round. A fixed 240 was 12pt wider than
-    /// `Cancel` + `Create` come to, which is why the chooser overhung them and
-    /// sat 6pt to their left.
-    ///
-    /// Call it once the buttons are added and before the accessory is set: the
-    /// row's width doesn't depend on the accessory, so measuring first and
-    /// building the chooser to fit converges immediately, where resizing
-    /// afterwards means laying the alert out twice.
-    static func alignedWidth(for alert: NSAlert) -> CGFloat {
-        alert.layout()
-        let frames = alert.buttons.map(\.frame)
-        guard let minX = frames.map(\.minX).min(),
-              let maxX = frames.map(\.maxX).max(), maxX > minX
-        else { return defaultWidth }
-        return maxX - minX
-    }
-
-    /// Whether what's chosen is a branch that already exists, which is the one
-    /// thing the dialog needs to know beyond the name: an existing branch is
-    /// checked out as it is, so it has no base to fork from.
-    var isExistingBranch: Bool {
-        guard let branch else { return false }
-        return model.branches.contains { $0.caseInsensitiveCompare(branch) == .orderedSame }
-    }
-
-    /// Called when the selection changes, so a dialog holding more than one of
-    /// these can react — the base row greys out once the branch is a real one.
-    var onChange: (() -> Void)?
-
-    init(
-        branches: [String], withWorktree: Set<String>, width: CGFloat,
-        placeholder: String = "Choose a branch\u{2026}", prefix: String = "",
-        initial: String? = nil
-    ) {
-        model = BranchPickerModel(branches: branches, withWorktree: withWorktree)
-        self.prefix = prefix
-        self.placeholder = placeholder
-        model.chosen = initial
-        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 28))
-
-        // A real pull-down button, for its shape and its metrics — the pill, the
-        // chevron at the trailing edge, the system's own materials. What it must
-        // *not* do is open a menu, which is why the click is intercepted rather
-        // than actioned: NSPopUpButton eats mouseDown to show its own menu, so a
-        // target/action never fires and the button looked dead.
-        button.frame = bounds
-        button.controlSize = .large
-        button.autoenablesItems = false
-        button.addItem(withTitle: "")
-        button.onClick = { [weak self] in self?.toggle() }
-        addSubview(button)
-        refreshTitle()
-
-        popover.behavior = .transient
-        let host = NSHostingController(
-            rootView: BranchPicker(model: model, width: width) { [weak self] branch in
-                self?.select(branch)
-            })
-        // **Sized explicitly, and to the button's width.** A SwiftUI ScrollView
-        // reports no height of its own, so an unsized hosting controller
-        // stretches to whatever the popover will give it — which is where the
-        // half-screen of empty space under six branches came from. Matching the
-        // button's width is what makes the two line up instead of the popover
-        // overhanging it by ten points on each side.
-        host.preferredContentSize = NSSize(width: width, height: Self.popoverHeight)
-        popover.contentViewController = host
-        popover.contentSize = NSSize(width: width, height: Self.popoverHeight)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not from a nib") }
-
-    private func toggle() {
-        guard !popover.isShown else { return popover.performClose(nil) }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY)
-    }
-
-    private func select(_ branch: String) {
-        model.chosen = branch
-        refreshTitle()
-        popover.performClose(nil)
-        onChange?()
-    }
-
-    /// An NSPopUpButton shows the title of its selected item, so the one item is
-    /// the title — there is no separate label to set.
-    private func refreshTitle() {
-        button.item(at: 0)?.title = branch.map { prefix + $0 } ?? placeholder
-        button.synchronizeTitleAndSelectedItem()
-    }
-
-    /// Greyed when the dialog has nothing to ask here. Disabling the *button*
-    /// rather than removing the row keeps the dialog one height: a row that comes
-    /// and goes as you type would shift whatever sits under it, and the branch
-    /// field is what sits above.
-    var isEnabled: Bool {
-        get { button.isEnabled }
-        set { button.isEnabled = newValue }
-    }
-}
-
-/// The branch row: a combo box, so the field is ready to type into.
-///
-/// The name you want usually doesn't exist yet — that's what opening a session
-/// on a branch is *for* — and a pull-down makes the common case cost a click
-/// before the first character. `completes` gives the other half back: typing
-/// `up` fills in `update-website` with the completion selected, so an existing
-/// branch is a few keys rather than a hunt. Tower and Fork both land here.
-@MainActor
-final class BranchNameField: NSComboBox {
-    /// Trimmed, and nil when empty — "  " is not a branch name.
-    var branch: String? {
-        let name = stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? nil : name
-    }
-
-    init(branches: [String], width: CGFloat) {
-        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 28))
-        addItems(withObjectValues: branches)
-        // Inline completion, which is the whole reason this is a combo box and
-        // not a text field beside a menu.
-        completes = true
-        isEditable = true
-        placeholderString = "Branch name"
-        // Matches the base row's pull-down: both controls come out at 28pt here
-        // and at different heights at every other control size, and two rows of
-        // visibly different height read as two unrelated things.
-        controlSize = .large
-        font = .systemFont(ofSize: NSFont.systemFontSize)
-        // The list is the repository's branches, so it's as long as it is —
-        // scrolling beats a menu tall enough to cover the dialog that owns it.
-        numberOfVisibleItems = 8
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not from a nib") }
-}
-
-/// The dialog's accessory: which branch to open, what a new one forks from, and
-/// one line saying what's about to happen.
-///
-/// The branch comes first because it's the field you always fill and the one
-/// that takes focus; the base is the field you usually accept. Both rows are
-/// *always shown* — a row that appears as you type would shift whatever sits
-/// under it, and the status line is reserved rather than inserted for the same
-/// reason. Tower's dialog earns its explanation with a paragraph; this one is an
-/// alert, so it gets a line.
-@MainActor
-final class BranchDialogAccessory: NSView, NSComboBoxDelegate {
-    private let nameField: BranchNameField
-    private let baseChooser: BranchChooser
-    private let status = NSTextField(labelWithString: "")
-    private let existing: Set<String>
-    private let withWorktree: Set<String>
-
-    /// The branch to open — nil when nothing was typed or chosen.
-    var branch: String? { nameField.branch }
-    /// What a new branch forks from. nil for a branch that already exists, which
-    /// is checked out as it is, and nil when the repository named no default.
-    var base: String? { isExistingBranch ? nil : baseChooser.branch }
-
-    /// Whether there is anything to create. Tower greys its "Create Worktree"
-    /// until the revision names something; ours used to accept the click and
-    /// then quietly do nothing, which is the same answer delivered worse.
-    var isValid: Bool { branch != nil }
-    /// Fired whenever `isValid` might have changed, so the dialog's default
-    /// button can follow it.
-    var onValidityChange: ((Bool) -> Void)?
-
-    /// Focus belongs on the branch row: it's the answer the dialog is asking for.
-    var initialResponder: NSView { nameField }
-
-    private var isExistingBranch: Bool {
-        guard let branch else { return false }
-        return existing.contains { $0.caseInsensitiveCompare(branch) == .orderedSame }
-    }
-
-    /// Both rows' controls report exactly this at `.large`, so neither is
-    /// stretched or squashed into its slot.
-    static let rowHeight: CGFloat = 28
-    static let rowGap: CGFloat = 8
-    static let statusHeight: CGFloat = 16
-
-    init(branches: [String], withWorktree: Set<String>, defaultBase: String?, width: CGFloat) {
-        existing = Set(branches)
-        self.withWorktree = withWorktree
-        nameField = BranchNameField(branches: branches, width: width)
-        baseChooser = BranchChooser(
-            branches: branches, withWorktree: withWorktree, width: width,
-            placeholder: "From: current branch", prefix: "From: ", initial: defaultBase)
-        let height = Self.rowHeight * 2 + Self.rowGap * 2 + Self.statusHeight
-        super.init(frame: NSRect(x: 0, y: 0, width: width, height: height))
-
-        // AppKit's origin is bottom-left, so the topmost row has the largest y.
-        nameField.frame = NSRect(
-            x: 0, y: Self.rowHeight + Self.rowGap * 2 + Self.statusHeight,
-            width: width, height: Self.rowHeight)
-        baseChooser.frame = NSRect(
-            x: 0, y: Self.statusHeight + Self.rowGap, width: width, height: Self.rowHeight)
-        status.frame = NSRect(x: 0, y: 0, width: width, height: Self.statusHeight)
-        status.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        status.textColor = .secondaryLabelColor
-        status.lineBreakMode = .byTruncatingTail
-        addSubview(nameField)
-        addSubview(baseChooser)
-        addSubview(status)
-
-        nameField.delegate = self
-        baseChooser.onChange = { [weak self] in self?.sync() }
-        sync()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not from a nib") }
-
-    // Typing, and picking from the dropdown. The selection notification arrives
-    // *before* the field's string value is updated, so that one is read on the
-    // next turn of the run loop rather than immediately.
-    func controlTextDidChange(_ obj: Notification) { sync() }
-    func comboBoxSelectionDidChange(_ notification: Notification) {
-        DispatchQueue.main.async { [weak self] in self?.sync() }
-    }
-
-    /// One place where every consequence of the branch name is worked out: what
-    /// the base row is for, what the status line says, and whether there is
-    /// anything to create at all.
-    private func sync() {
-        // An existing branch has its own history; there is nothing to fork it
-        // from, so the row greys rather than sitting there looking answerable.
-        baseChooser.isEnabled = !isExistingBranch
-        status.stringValue = statusText()
-        onValidityChange?(isValid)
-    }
-
-    /// What the click is about to do — the thing the popover's row labels used to
-    /// say, moved somewhere it can be read without opening anything.
-    private func statusText() -> String {
-        guard let branch else { return "" }
-        if withWorktree.contains(branch) {
-            return "\u{201c}\(branch)\u{201d} already has a worktree. This opens it."
-        }
-        if isExistingBranch {
-            return "Checks out \u{201c}\(branch)\u{201d} in a new worktree."
-        }
-        guard let base = baseChooser.branch else {
-            return "Creates \u{201c}\(branch)\u{201d} in a new worktree."
-        }
-        return "Creates \u{201c}\(branch)\u{201d} from \u{201c}\(base)\u{201d}."
-    }
-}
-
-/// A pull-down button that opens something other than a menu.
-private final class ChooserButton: NSPopUpButton {
-    var onClick: (() -> Void)?
-
-    /// Deliberately no `super` call: that's what shows the menu, and the menu is
-    /// the one thing this button doesn't have.
-    override func mouseDown(with event: NSEvent) {
-        onClick?()
-    }
-
-    /// Space and Return should do what a click does, for the same reason.
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 49 { onClick?() } else { super.keyDown(with: event) }
-    }
-}
-
-/// What the popover shows, and what the dialog reads back.
+/// The split is not tidiness. Local branches cost ~0.05ms each to list and are
+/// as many as you have personally checked out; remote-tracking branches are as
+/// many as the repository has ever had, and listing 4000 of them costs 140ms.
+/// So the sheet opens on the local half and this fills in the rest behind it.
+/// Everything reading the catalogue therefore has to be correct while the
+/// remote half is still empty, which is why `remotes(carrying:)` answering
+/// "none yet" is a transient and not a verdict: the creation path re-asks git
+/// (see SessionManager.openSession) rather than trusting this.
 @Observable
 @MainActor
-final class BranchPickerModel {
-    let branches: [String]
+final class BranchCatalog {
+    private(set) var local: [GitBranch]
+    private(set) var remote: [GitBranch] = []
+    private(set) var isLoadingRemote = false
     /// Branches that already have a worktree. Choosing one *goes* to it rather
     /// than making a second, which is worth saying before the click.
     let withWorktree: Set<String>
-    var query = ""
-    var chosen: String?
 
-    init(branches: [String], withWorktree: Set<String>) {
-        self.branches = branches
+    /// Case folded once, for the same reason matches are stored: a
+    /// locale-aware scan per branch per keystroke came to 9.5ms over 5000.
+    private var foldedLocal: [String]
+    private var foldedRemote: [String] = []
+    /// Folded local names, for an O(1) `hasLocal`.
+    private var localFolded: Set<String>
+    /// Short branch name -> the remotes carrying it, built once when the remote
+    /// half lands, because the alternative is walking every remote ref per ask.
+    private var remotesByShort: [String: [String]] = [:]
+
+    /// `origin/release/2026` -> `release/2026`. Split at the *first* slash: a
+    /// remote's name cannot contain one, and a branch's very much can.
+    static func shortName(_ full: String) -> String {
+        guard let slash = full.firstIndex(of: "/") else { return full }
+        return String(full[full.index(after: slash)...])
+    }
+
+    init(local: [GitBranch], withWorktree: Set<String>) {
+        self.local = local
         self.withWorktree = withWorktree
+        foldedLocal = local.map { $0.name.lowercased() }
+        localFolded = Set(local.map { $0.name.lowercased() })
     }
 
-    var matches: [String] {
-        let query = query.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return branches }
-        return branches.filter { $0.localizedCaseInsensitiveContains(query) }
+    func beginLoadingRemote() { isLoadingRemote = true }
+
+    func finishLoadingRemote(_ branches: [GitBranch]) {
+        remote = branches
+        foldedRemote = branches.map { $0.name.lowercased() }
+        remotesByShort = branches.reduce(into: [:]) { table, branch in
+            let short = Self.shortName(branch.name).lowercased()
+            let remote = String(branch.name.prefix(while: { $0 != "/" }))
+            table[short, default: []].append(remote)
+        }
+        isLoadingRemote = false
     }
 
-    /// What's been typed, when it isn't already a branch — the "or make a new
-    /// one" half, which is why one field can serve both answers.
-    var newBranch: String? {
-        let query = query.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty,
-              !branches.contains(where: { $0.caseInsensitiveCompare(query) == .orderedSame })
-        else { return nil }
-        return query
+    var hasAnyBranch: Bool { !local.isEmpty || !remote.isEmpty }
+
+    func hasLocal(_ name: String) -> Bool { localFolded.contains(name.lowercased()) }
+
+    /// Which remotes carry a branch of this short name.
+    func remotes(carrying name: String) -> [String] {
+        remotesByShort[name.lowercased()] ?? []
+    }
+
+    /// One pass per keystroke over each half, against the folded copies.
+    func filtered(_ needle: String) -> (local: [GitBranch], remote: [GitBranch]) {
+        guard !needle.isEmpty else { return (local, remote) }
+        return (zip(local, foldedLocal).filter { $0.1.contains(needle) }.map(\.0),
+                zip(remote, foldedRemote).filter { $0.1.contains(needle) }.map(\.0))
     }
 }
 
-/// The popover: a filter over the branches, and a "Create" row for a name that
-/// isn't one yet. Deliberately the same shape and row metrics as `BranchList`,
-/// the toolbar's branch switcher — they answer the same question, and a
-/// difference here would read as a different feature.
-struct BranchPicker: View {
+/// What the filter list is showing: the query, what it matched, and which row
+/// is selected.
+///
+/// Matches are stored rather than computed, which is the same code costing
+/// three times less: one SwiftUI body evaluation reads them three times (the
+/// `isEmpty` test, its negation, and the `ForEach`), and each read used to be a
+/// fresh scan of every branch.
+@Observable
+@MainActor
+final class BranchPickerModel {
+    let catalog: BranchCatalog
+    var query = "" { didSet { refilter() } }
+
+    private(set) var localMatches: [GitBranch] = []
+    private(set) var remoteMatches: [GitBranch] = []
+    var selection = 0
+
+    init(catalog: BranchCatalog) {
+        self.catalog = catalog
+        refilter()
+    }
+
+    var rowCount: Int { localMatches.count + remoteMatches.count }
+
+    var selectedBranch: GitBranch? {
+        let rows = localMatches + remoteMatches
+        guard rows.indices.contains(selection) else { return rows.first }
+        return rows[selection]
+    }
+
+    func move(by delta: Int) {
+        guard rowCount > 0 else { return }
+        selection = (selection + delta + rowCount) % rowCount
+    }
+
+    /// Also the hook for the remote half landing: the catalogue changed under
+    /// the filter, so the filter runs again.
+    func refilter() {
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let (local, remote) = catalog.filtered(needle)
+        localMatches = local
+        remoteMatches = remote
+        selection = min(selection, max(0, rowCount - 1))
+    }
+}
+
+/// The "From" control: the ref a new branch forks from, and a click that opens
+/// the filter list right under it.
+///
+/// **One click, one surface.** It was an `NSPopUpButton` whose menu listed the
+/// local branches and carried a `Filter…` item that opened a popover on top of
+/// the sheet: a menu to get to a filter to get to the branches. A control whose
+/// job is "choose from a list you may have to search" should show that list,
+/// once, where you clicked.
+///
+/// A plain button rather than a pop-up button, because it does not open a menu
+/// and the shape of a control is a promise: a pop-up that opens something else
+/// has no arrow keys, no type-select, and describes itself wrongly to
+/// VoiceOver.
+@MainActor
+final class BranchChooser: NSButton, NSPopoverDelegate {
+    private let popover = NSPopover()
+    private let model: BranchPickerModel
+    private var keys: Any?
+
+    /// The ref to fork from.
+    private(set) var branch: String? {
+        didSet { updateTitle() }
+    }
+
+    /// Called when the selection changes, so the sheet can restate what the
+    /// Create button is about to do.
+    var onChange: (() -> Void)?
+
+    /// A floor, not the width: the popover matches the button it hangs off when
+    /// that is wider. At 300 against a 362pt button, `copy-and-docs` rendered as
+    /// `c…cs` and `attention-rollup` as `atte…rollup`, which is a list you
+    /// cannot read holding the space of one you can. The other half of that fix
+    /// was giving the name priority over the upstream note, so this no longer
+    /// has to be generous to be readable.
+    private static let minPopoverWidth: CGFloat = 360
+
+    init(catalog: BranchCatalog, initial: String?) {
+        model = BranchPickerModel(catalog: catalog)
+        super.init(frame: .zero)
+        branch = initial
+
+        bezelStyle = .rounded
+        controlSize = .large
+        // Left, to sit under the branch field's text rather than floating in
+        // the middle of the row. The chevron stays pinned to the trailing edge:
+        // the alignment moves the title within the space the image leaves, it
+        // does not drag the image along with it.
+        alignment = .left
+        imagePosition = .imageTrailing
+        image = NSImage(systemSymbolName: "chevron.up.chevron.down",
+                        accessibilityDescription: nil)
+        target = self
+        action = #selector(showList)
+        updateTitle()
+
+        // Transient: clicking anywhere else closes it. A picker that can leave
+        // you with nothing to click is the bug this whole control came from.
+        popover.behavior = .transient
+        // Every close comes through here, which is the only way to be sure the
+        // key monitor goes with it: a transient click-away and a second click on
+        // the button both close the popover without passing through `take` or
+        // the Escape case, and each would otherwise leave an application-wide
+        // keyDown monitor installed for the rest of this control's life. It
+        // passes events through while the popover is down, so the damage was
+        // latent rather than visible — but "an arrow-key interceptor nobody
+        // asked for, kept honest by one guard" is not a thing to leave running.
+        popover.delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+    private func updateTitle() {
+        title = branch ?? "Choose a branch\u{2026}"
+    }
+
+    @objc private func showList() {
+        guard !popover.isShown else { return popover.performClose(nil) }
+        // A fresh filter each time. Reopening onto whatever you typed a week
+        // ago hides most of the list and looks like a list with things missing.
+        model.query = ""
+        model.selection = 0
+        // Built here rather than in init because the width is the button's, and
+        // the button has no width until it has been laid out. A SwiftUI view
+        // with no definite width leaves the hosting controller nothing to
+        // report, so this is also what gives the popover a size at all.
+        let width = max(bounds.width, Self.minPopoverWidth)
+        let host = NSHostingController(rootView: BranchChooserList(model: model, width: width) {
+            [weak self] branch in self?.take(branch)
+        })
+        host.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = host
+        // Anchored to this button, which is the whole point: the thing you
+        // clicked is where the list comes from.
+        popover.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
+        watchKeys()
+    }
+
+    private func take(_ chosen: GitBranch) {
+        branch = chosen.name
+        popover.performClose(nil)
+        stopWatchingKeys()
+        onChange?()
+    }
+
+    /// The remote half landing changes what the list can offer.
+    func catalogChanged() { model.refilter() }
+
+    /// Arrows and Return, taken before the filter field sees them, because a
+    /// focused `TextField` is exactly what swallows those. Guarded on the
+    /// popover being shown, and torn down when it closes: an application-wide
+    /// monitor that outlives its reason swallows arrow keys everywhere.
+    private func watchKeys() {
+        stopWatchingKeys()
+        keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.popover.isShown else { return event }
+            switch event.keyCode {
+            case 126: self.model.move(by: -1); return nil          // up
+            case 125: self.model.move(by: 1); return nil           // down
+            case 36, 76:                                           // return, enter
+                if let branch = self.model.selectedBranch { self.take(branch) }
+                return nil
+            case 53:                                               // escape
+                self.popover.performClose(nil)
+                self.stopWatchingKeys()
+                return nil
+            default: return event
+            }
+        }
+    }
+
+    private func stopWatchingKeys() {
+        if let keys { NSEvent.removeMonitor(keys) }
+        keys = nil
+    }
+
+    nonisolated func popoverDidClose(_ notification: Notification) {
+        MainActor.assumeIsolated { stopWatchingKeys() }
+    }
+
+    deinit { if let keys { NSEvent.removeMonitor(keys) } }
+}
+
+/// What the chooser's popover hosts: the shared list, no create row. You fork
+/// from a ref that exists and from nothing else.
+private struct BranchChooserList: View {
     @Bindable var model: BranchPickerModel
     let width: CGFloat
-    let choose: (String) -> Void
-    @FocusState private var filterFocused: Bool
+    let choose: (GitBranch) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TextField("Filter or new branch", text: $model.query)
-                .textFieldStyle(.roundedBorder)
-                .focused($filterFocused)
-                .onSubmit {
-                    if let new = model.newBranch { choose(new) }
-                    else if model.matches.count == 1, let only = model.matches.first {
-                        choose(only)
-                    }
-                }
-                .padding(8)
-
-            Divider()
-
-            if let new = model.newBranch {
-                BranchPickerRow(name: new, systemImage: "plus",
-                                label: "Create branch", action: { choose(new) })
-                if !model.matches.isEmpty { Divider().padding(.vertical, 2) }
-            }
-
-            if model.matches.isEmpty && model.newBranch == nil {
-                Text(model.branches.isEmpty ? "No branches" : "No matches")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-            } else if !model.matches.isEmpty {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.matches, id: \.self) { branch in
-                            BranchPickerRow(
-                                name: branch, systemImage: "arrow.triangle.branch",
-                                label: model.withWorktree.contains(branch)
-                                    ? "Has a worktree" : nil,
-                                action: { choose(branch) })
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .frame(maxHeight: .infinity)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .frame(width: width)
-        .onAppear { filterFocused = true }
-    }
-}
-
-private struct BranchPickerRow: View {
-    let name: String
-    let systemImage: String
-    let label: String?
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 12)
-                Text(name)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 4)
-                if let label {
-                    Text(label)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
-            }
-            .font(.callout)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background {
-                if hovering {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.primary.opacity(0.08))
-                        .padding(.horizontal, 4)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        BranchOptionList(
+            query: $model.query,
+            local: model.localMatches,
+            remote: model.remoteMatches,
+            selection: $model.selection,
+            isLoadingRemote: model.catalog.isLoadingRemote,
+            hasAnyBranch: model.catalog.hasAnyBranch,
+            activate: choose)
+            .frame(width: width)
     }
 }

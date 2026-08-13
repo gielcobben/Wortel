@@ -819,8 +819,40 @@ final class SessionManager {
             // runs there and forks that branch — which is why a "new" branch
             // could silently inherit `update-website` instead of trunk. A ref
             // resolves the same in every worktree of the repository.
-            let known = await GitService.branches(root: root)
-                .contains { !$0.isRemote && $0.name == branch }
+            let known = await GitService.localBranches(root: root)
+                .contains { $0.name == branch }
+            // **A branch that exists only on a remote is an existing branch.**
+            // Treating it as a new one is the bug this guards: typing a
+            // colleague's branch name produced a *new* branch forked from trunk
+            // wearing their name, with none of their commits and no upstream,
+            // and nothing on screen said so. `worktree add <path> <name>` with
+            // no `-b` is git's own answer — it creates the local branch at the
+            // remote one and sets it to track, which is what checking out
+            // someone's branch has always meant.
+            let onRemotes = known
+                ? []
+                : await GitService.remotesWithBranch(root: root, branch: branch)
+            // Two remotes carrying the name is the one case git handles badly:
+            // it refuses, with "invalid reference", which is also what it says
+            // for a branch that doesn't exist anywhere. Answering it here costs
+            // one message and keeps that distinction.
+            //
+            // **Unless git has been told which remote wins.** Someone working
+            // against a fork sets `checkout.defaultRemote` precisely because
+            // `origin` and `upstream` carry the same names, and with it set git
+            // resolves the branch and sets up tracking without complaint. So the
+            // ambiguity is only ambiguous when git has no answer either;
+            // refusing regardless would break a case that works and, worse,
+            // answer it with advice ("check out the one you want first") aimed
+            // at a problem that person does not have.
+            if onRemotes.count > 1,
+               await GitService.defaultRemote(root: root).map({ !onRemotes.contains($0) }) ?? true {
+                return .failure(Failure(message: """
+                    \u{201c}\(branch)\u{201d} exists on more than one remote \
+                    (\(onRemotes.joined(separator: ", "))). Check out the one \
+                    you want first, then open a session on it.
+                    """))
+            }
             // A repository with no commits has a HEAD that resolves to
             // nothing, so it can't be a base — git infers an orphan branch
             // instead, which is exactly right for a first branch in a fresh
@@ -828,7 +860,7 @@ final class SessionManager {
             // then a session" fail with `invalid reference: HEAD`, and a named
             // base is no better: there is no ref for it to be.
             let source: GitService.WorktreeSource
-            if known {
+            if known || onRemotes.count == 1 {
                 source = .existingBranch
             } else if await GitService.hasCommits(root: root) {
                 // Resolved in steps rather than with `??`, which can't carry an
@@ -836,7 +868,7 @@ final class SessionManager {
                 // that has commits but no branch this can name — nothing to fork
                 // from but where we are.
                 var resolved = base
-                if resolved == nil { resolved = await GitService.defaultBranch(root: root) }
+                if resolved == nil { resolved = await GitService.defaultBase(root: root) }
                 source = .newBranch(from: resolved ?? "HEAD")
             } else {
                 source = .newBranch(from: nil)
@@ -860,18 +892,48 @@ final class SessionManager {
     /// Local branches of the selected session's repository, most recently
     /// committed first — the order a picker wants, since the branch you mean is
     /// nearly always one you touched recently. Empty outside a repository.
-    func localBranches() async -> [String] {
+    func localBranches() async -> [GitBranch] {
         guard let cwd = selected?.cwd,
               let root = await GitService.repoRoot(for: cwd) else { return [] }
-        return await GitService.branches(root: root).filter { !$0.isRemote }.map(\.name)
+        return await GitService.localBranches(root: root)
     }
 
-    /// The repository's trunk, for the dialog's "From" default. nil outside a
-    /// repository, or in one with no branch to name yet.
-    func defaultBranch() async -> String? {
+    /// The remote-tracking branches, for the picker to fill in once it is up.
+    ///
+    /// Separate from `localBranches` because it is separately expensive: it is
+    /// the one list whose size tracks the repository rather than the person
+    /// using it, so it is asked for after the sheet is on screen and never on
+    /// the way to putting it there.
+    func remoteBranches() async -> [GitBranch] {
+        guard let cwd = selected?.cwd,
+              let root = await GitService.repoRoot(for: cwd) else { return [] }
+        return await GitService.remoteBranches(root: root)
+    }
+
+    /// The repository's trunk, for the dialog's "From" default — the remote-
+    /// tracking copy where there is one, so a new branch starts level with
+    /// origin. nil outside a repository, or in one with no branch to name yet.
+    func defaultBase() async -> String? {
         guard let cwd = selected?.cwd,
               let root = await GitService.repoRoot(for: cwd) else { return nil }
-        return await GitService.defaultBranch(root: root)
+        return await GitService.defaultBase(root: root)
+    }
+
+    /// Bring `refs/remotes/*` up to date, so a branch forked from `origin/main`
+    /// forks from today's `origin/main` rather than the one from the last time
+    /// anybody thought to fetch.
+    ///
+    /// Failure is deliberately silent and deliberately not fatal: being offline,
+    /// or on a repository whose remote needs credentials nobody is here to
+    /// type, is not a reason to refuse to make a session. It only means the fork
+    /// point is as fresh as the last successful fetch, which is where it was
+    /// before. Skipped entirely without a remote, where it is a guaranteed error
+    /// message about nothing.
+    func fetchFromOrigin() async {
+        guard let cwd = selected?.cwd,
+              let root = await GitService.repoRoot(for: cwd),
+              await GitService.hasRemotes(root: root) else { return }
+        _ = await GitService.fetch(root: root)
     }
 
     /// Which of those already have a worktree — the picker says so on the row,

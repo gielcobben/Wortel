@@ -213,14 +213,49 @@ enum AgentResumeStore {
         return result
     }
 
-    /// Read the previous run's markers, then clear the directory: every still-live
-    /// agent re-registers on its next preexec, and markers for sessions that no
-    /// longer exist shouldn't linger.
+    /// Read the previous run's markers, and clear out the ones whose agent died
+    /// with the last launch. Markers for sessions that no longer exist shouldn't
+    /// linger, and an agent that is genuinely gone re-registers at its next
+    /// preexec anyway.
+    ///
+    /// **An agent that is still running keeps its marker**, and that exception is
+    /// the whole of this function. Clearing the directory wholesale was right
+    /// when a shell died with the app; now the keeper owns the pty and the shell
+    /// outlives us, so a long-lived agent's marker was being deleted out from
+    /// under a process still sitting in the same turn it was in at quit. Nothing
+    /// rewrites it: the next preexec is the one after the agent exits, which for
+    /// something you leave open for days is never. The session then spends the
+    /// rest of the launch with `runningAgent` nil, which costs it the sidebar's
+    /// agent line *and* the whole screen-activity tier, since that tier is gated
+    /// on a live marker. A terminal that quietly stops noticing the agents it
+    /// was built to notice, the longer they run.
+    ///
+    /// Deliberately the strict test rather than `isRunning`'s fail-open one: a
+    /// marker survives only on proof its shell is still there. The asymmetry
+    /// runs the other way here than it does for resume — an unprovable marker
+    /// kept is a phantom agent badge and a sampler watching a dead screen, an
+    /// unprovable marker dropped is at worst a duplicate resume, which is the
+    /// behaviour this had all along. (`sweepDeadAgentMarkers` is the backstop
+    /// either way, but it reaches only what `isRunning` calls dead, so a marker
+    /// with no recorded pid would sit here forever.)
     static func consumeSnapshot() -> [UUID: AgentMarker] {
         let fm = FileManager.default
         let markers = currentMarkers()
+        for (id, marker) in markers {
+            guard case .running = AgentLiveness.locate(agent: marker.agent,
+                                                       shellPID: marker.shellPID)
+            else {
+                try? fm.removeItem(at: markerURL(for: id))
+                continue
+            }
+        }
+        // Anything the directory holds that isn't a marker we could read is not
+        // going to become one; it would only be re-read every launch.
         if let entries = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
-            for url in entries { try? fm.removeItem(at: url) }
+            for url in entries where UUID(uuidString: url.lastPathComponent)
+                .map({ markers[$0] == nil }) ?? true {
+                try? fm.removeItem(at: url)
+            }
         }
         return markers
     }

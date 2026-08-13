@@ -380,6 +380,11 @@ final class SessionManager {
             appendRestored(session)
         }
         syncFolderOrder() // seed/prune the persisted folder order for the restored set
+        // Mirror the markers that outlived the last launch onto the sessions that
+        // just came back. The directory watcher can't do it: it was armed before
+        // there were any sessions to mirror onto, and a marker whose agent is
+        // still running is one nobody is about to write to.
+        refreshAgentActivity()
         selectedID = (persisted.first(where: \.selected) ?? persisted[0]).id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.warmRemainingSurfaces()

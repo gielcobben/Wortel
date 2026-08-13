@@ -179,4 +179,41 @@ final class AgentResumeStoreTests: XCTestCase {
         XCTAssertFalse(AgentLiveness.isRunning(agent: "claude", shellPID: 0),
                        "the shell is gone, so nothing can be running under it")
     }
+
+    /// `locate` keeps the distinction `isRunning` collapses, and `consumeSnapshot`
+    /// is the caller that needs it: at restore, a marker is kept only on *proof*
+    /// its agent is alive, so "couldn't tell" has to be its own answer rather
+    /// than being folded into "running" the way the resume path wants it.
+    func testLocateSeparatesUnknownFromGone() {
+        switch AgentLiveness.locate(agent: "claude", shellPID: nil) {
+        case .unknown: break
+        default: XCTFail("no recorded pid is uncertainty, not a claim either way")
+        }
+        let me = ProcessInfo.processInfo.processIdentifier
+        switch AgentLiveness.locate(agent: "definitely-not-a-real-agent", shellPID: me) {
+        case .gone: break
+        default: XCTFail("a live shell with no such descendant is a definite no")
+        }
+    }
+
+    /// And the case the restore path now hangs on: a real live descendant.
+    func testLocateFindsALiveDescendant() throws {
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        child.arguments = ["30"]
+        try child.run()
+        defer { child.terminate() }
+        // Spawning is not instant from the process table's point of view.
+        let me = ProcessInfo.processInfo.processIdentifier
+        var located = AgentLiveness.locate(agent: "sleep", shellPID: me)
+        for _ in 0..<20 {
+            if case .running = located { break }
+            Thread.sleep(forTimeInterval: 0.05)
+            located = AgentLiveness.locate(agent: "sleep", shellPID: me)
+        }
+        guard case .running(let pid) = located else {
+            return XCTFail("a live child of this process must be located")
+        }
+        XCTAssertEqual(pid, child.processIdentifier)
+    }
 }

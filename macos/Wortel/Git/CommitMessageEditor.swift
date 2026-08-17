@@ -77,6 +77,28 @@ struct CommitMessageEditor: NSViewRepresentable {
         var parent: CommitMessageEditor
         weak var textView: CommitTextView?
         var lastFocusRequest: Int
+        /// This editor's own undo stack, and the reason it exists is a crash.
+        ///
+        /// `NSResponder.undoManager` walks to the *window's* manager, so with
+        /// `allowsUndo` every keystroke here used to register an undo action on a
+        /// manager that outlives this view by the life of the app. `NSUndoManager`
+        /// does not retain its targets, and nothing unregisters when SwiftUI tears
+        /// the editor down (panel hidden, session switched, pane swapped), so the
+        /// stack kept entries pointing at a freed text view. Then ⌘Z with the
+        /// *terminal* focused reached the Edit menu's `undo:`, found the window's
+        /// non-empty manager, and `-[_NSUndoStack popAndInvoke]` messaged freed
+        /// memory. Reported from the field: a five-day-old window, SIGSEGV.
+        ///
+        /// Owning the manager here fixes both halves. It dies with the coordinator,
+        /// so there is no stack to go stale; and the window's manager stays empty,
+        /// which is what the Edit menu already assumed (see `MainMenu`) — Undo
+        /// stays disabled with the terminal focused, so ⌘Z falls through to
+        /// ghostty's `cmd+z` keybind again instead of being eaten here.
+        let undo = UndoManager()
+
+        /// `NSTextView` asks its delegate before falling back to the responder
+        /// chain, so this is the whole redirection.
+        func undoManager(for view: NSTextView) -> UndoManager? { undo }
 
         init(_ parent: CommitMessageEditor) {
             self.parent = parent

@@ -104,6 +104,13 @@ enum MainMenu {
         // them, so with the terminal focused the items are disabled and the
         // keypress falls through — ⌘Z reaches ghostty's cmd+z keybind (undo the
         // input line), ⌘X and ⌘⇧Z are simply no-ops.
+        //
+        // "Disabled" rests on the *window's* undo manager being empty, which is an
+        // invariant something else has to keep: `undo:` resolves through the
+        // responder chain to that manager, not to the first responder, so anything
+        // registering there enables this item no matter what is focused. The commit
+        // box got that wrong and it crashed the app (see `CommitMessageEditor`).
+        // A view with `allowsUndo` owns its own manager, or this breaks again.
         editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
         let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]

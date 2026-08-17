@@ -59,6 +59,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false)
+        // NSWindow's own initializers leave this `true` — only NSWindowController
+        // turns it off, and this window has none. Under ARC that is an unbalanced
+        // release: `close()` frees the window while the strong `window` property
+        // below still points at it, and the next thing to read that property
+        // retains freed memory. It crashed exactly there: closing the last session
+        // changes `manager.selected`, which schedules the title observer's
+        // `Task { @MainActor }`, and `onAllClosed` closes the window before that
+        // task gets its turn — so `applyWindowTitle` segfaulted in `objc_retain`.
+        // `.terminateLater` (telemetry drain) keeps the process alive long enough
+        // to make it likely rather than rare.
+        window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         // Drop the hairline the system draws under the titlebar/toolbar so the
         // terminal and sidebar run edge-to-edge with no border bottom.

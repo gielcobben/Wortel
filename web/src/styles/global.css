@@ -31,6 +31,16 @@
      just another grid line at the wrong offset. */
   --pinned-shadow: 0 8px 16px -10px rgba(0, 0, 0, 0.55);
 
+  /* The ground under everything below the tour (see .tail-band).
+     NOT picked by eye: this is what a grid line already composites to.
+     28 + 0.045 × (255 − 28) = 38.2, and the same for the other two channels,
+     so --grid over --bg is rgb(38, 39, 49) exactly. The floor is the graph
+     paper's own line colour filled in solid, which is why it reads as the mat
+     closing over rather than as a second surface sliding in under it. Re-derive
+     it if --bg or --grid ever move. */
+  --band: #262731;
+  --band-0: rgba(38, 39, 49, 0);   /* its alpha-0 twin, for the ramp; see --bg-0 */
+
   --app-max-w: 1266px;
   --app-max-h: 797px;
 }
@@ -51,6 +61,15 @@
     --panel-shadow: 0 36px 80px rgba(0, 0, 0, 0.22), 0 4px 16px rgba(0, 0, 0, 0.11);
     --panel-border: rgba(20, 22, 34, 0.10);
     --pinned-shadow: 0 8px 16px -10px rgba(0, 0, 0, 0.22);
+    /* Neutral, and cool by the same 6 degrees --text is: a warm gray next to a
+       blue-black body text reads as a stain rather than a surface. Light
+       enough that the body copy keeps its contrast against it. */
+    --band: #f2f2f5;
+    /* THE SAME RGB at alpha 0, not `transparent`. `transparent` is
+       rgba(0,0,0,0), and a ramp to it interpolates through black: the fade
+       would pick up a gray cast on the way down. This is why --bg-0 is spelled
+       out the same way rather than written as a keyword. */
+    --band-0: rgba(242, 242, 245, 0);
   }
 }
 
@@ -160,6 +179,15 @@ body.dragging-app, body.dragging-app * {
      sticky still pins under it. */
   overflow-x: clip;
   overflow-y: visible;
+  /* Two cells of graph paper between the last line of the tour and the floor
+     below it (.tail-band). The band's own top padding cannot buy this: it is
+     inside the gray, so it moves the FAQ down and leaves the seam exactly
+     where it was, hard against the "Reference:" link. Container padding rather
+     than a margin on .doc-tour, which would collapse through .col and land
+     somewhere harder to reason about. The sticky window holds 72px longer as a
+     side effect, which is the right way round: it leaves when the floor
+     arrives. */
+  padding-bottom: 72px;
 }
 .col { min-width: 0; }
 
@@ -213,10 +241,20 @@ body.dragging-app, body.dragging-app * {
   border: 0;
 }
 
+/* The same 22px/500 as .doc h2, the section titles the tour scrolls through:
+   the wordmark is the first heading on the page and was sitting a size below
+   every heading under it.
+
+   line-height in px, not a ratio. The hero is a 100vh board snapped to the
+   36px grid and nothing in it may change length (see .links, which lands the
+   download button on y=252). 27px is what 22px/1.25 rounds to, so the leading
+   matches h2's, and the box grew by exactly 6px, which .links gives back. Any
+   change to this pair has to keep mark + .links margin-top summing to 59. */
 .mark {
   font-weight: 500;
-  font-size: 15px;
-  line-height: 1.4;
+  font-size: 22px;
+  line-height: 27px;
+  letter-spacing: -0.02em;   /* h2's, so the two read as one typographic size */
   color: var(--text);
 }
 .tagline { font-size: 15px; color: var(--text-50); }
@@ -226,7 +264,9 @@ body.dragging-app, body.dragging-app * {
   color: var(--text-70);
   text-wrap: pretty;
 }
-.links { margin-top: 38px; display: flex; gap: 12px; } /* snaps the button's top edge to the y=252 line */
+/* 32, not the 38 it was: .mark grew 6px when it went up to h2's size, and this
+   hands the 6px back so the button's top edge stays on the y=252 line. */
+.links { margin-top: 32px; display: flex; gap: 12px; }
 /* Unscoped so the repeat call-to-action at the foot of the prose is the same
    button, not a copy of its rules. */
 .download {
@@ -443,6 +483,61 @@ body.dragging-app, body.dragging-app * {
 .doc .mono-last td { text-align: right; }
 .doc .mono-last thead th:last-child { text-align: right; }
 
+/* ---- the spec sheet ------------------------------------------------------
+   ONE COLUMN OF ROWS, label beside value. A two-column grid of stacked pairs
+   was tried and is the wrong shape for this content: the values run from
+   "Free" to a full clause, so in a 216px column some are one line and some are
+   three, and the four cells of any given row all start at different heights.
+   Nothing lines up with anything and the block reads as debris. The lengths
+   here only fit each other along one axis, so there is only one column.
+
+   Given the whole 468px measure, all but the longest value sit on one line,
+   and the one that doesn't wraps once.
+
+   Ruled. The rules are what make this minimal rather than sparse: ten pairs
+   floating in whitespace had nothing saying where a row ended, and the FAQ
+   directly above already separates its items with this exact hairline, so the
+   two blocks now read as one section instead of two unrelated ones. */
+.doc .specs { margin-top: 12px; }
+.doc .specs > div {
+  display: grid;
+  /* 112px holds "Configuration" and "Latest version", the two longest labels,
+     at 12px mono with a little room. minmax(0, 1fr) and not 1fr so a long
+     unbroken value can't push the column open. */
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 16px;
+  /* The label is 12px and the value 15px: aligned on their baselines they read
+     as one line, aligned on their boxes they read as two things that failed to
+     line up. */
+  align-items: baseline;
+  padding: 11px 0;
+  border-top: 1px solid var(--grid);
+}
+.doc .specs > div:last-child { border-bottom: 1px solid var(--grid); }
+.doc .specs dt {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-50);
+  /* Same reason .mono-first does it: the label column is sized to the longest
+     label, so a wrap there is never the measure running out, it is the column
+     being wrong. Better to notice it. */
+  white-space: nowrap;
+}
+.doc .specs dd {
+  color: var(--text);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+/* Below this the value column is too narrow to be worth keeping beside a
+   112px label, so the pair stacks. Not the 900px breakpoint: at 900px the
+   prose is still 540px and side-by-side is fine. */
+@media (max-width: 560px) {
+  .doc .specs > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+}
+
 /* The commands table, and only it: two columns do not fit beside the window.
    `wortel new --branch <name> --from <ref>` is 334px of unwrappable mono on a
    324px measure, so the description was left 77px, wrapped to four lines, and
@@ -451,9 +546,10 @@ body.dragging-app, body.dragging-app * {
    text explaining it was just out of view.
 
    Stacked, the pair reads as what it is, and nothing scrolls sideways. Scoped
-   to .doc-tour, because the other two tables measure fine and must not change:
-   the spec sheet's mono-first has the wide 468px measure and short keys, and
-   the keyboard table is mono-last and already fits in 324px at 35px a row. */
+   to .doc-tour, because the keyboard table below it measures fine and must not
+   change: it is mono-last and already fits in 324px at 35px a row. (The spec
+   sheet used to be the third table here. It is a .specs dl now, and arrived at
+   the same stacked shape from the other direction.) */
 .doc-tour .mono-first tr { display: block; }
 .doc-tour .mono-first tbody tr + tr { margin-top: 18px; }
 .doc-tour .mono-first tbody th,
@@ -531,7 +627,46 @@ body.dragging-app, body.dragging-app * {
    is no window down here, so that rule has nothing to hold, and these are
    centred instead, like /compare, /docs and the legal pages.
 
-   Centred TO THE NEAREST GRID LINE, not to the exact half, which is the same
+   THE BAND. Everything below the tour steps off the graph paper. The grid is
+   the hero's and the tour's: it exists so the window and the prose beside it
+   can line up with each other, and once the window is gone it is ruling a
+   plain document for no reason. The band paints a solid ground over it, which
+   also gives the page an ending rather than letting the paper run out
+   mid-scroll. Full-bleed on purpose: a 756px slab would read as a card, and
+   this is meant to read as the floor.
+
+   Both themes, one mechanism, different derivations: light steps down off
+   white (#f2f2f5), dark steps UP to the tone its own grid lines already
+   composite to (see --band). The direction differs because the move is away
+   from the page colour toward the middle, and the two pages start on opposite
+   sides of it.
+
+   Nothing inside the band may be re-parented by this wrapper: .doc.tail's
+   centring measures 100% of its containing block, so the band takes no padding
+   and no width of its own.
+   ========================================================================== */
+.tail-band {
+  position: relative;
+  /* The seam, softened. A hard edge cut the mat off mid-cell, and where it
+     landed was arbitrary: the grid does not stop at anything, it just stops.
+     Ramping the floor in over three cells instead means the lines fade out
+     under it and there is no edge to place. Same idiom the app replica uses
+     where content slides under the window chrome, and /updates where the file
+     list runs out (both linear-gradient fades) — this one paints the fade
+     rather than masking it, because there is a surface underneath to reveal.
+     Ends at 108px, a grid line, and 24px clear of the FAQ heading (which sits
+     at 72 + the section's own 60), so the heading is on solid ground. */
+  background: linear-gradient(to bottom, var(--band-0) 0, var(--band) 108px);
+  /* Whole cells, and BLOCK ONLY. Horizontal padding here would narrow the
+     containing block and quietly move .doc.tail's centring off the grid; the
+     vertical axis has nothing measuring against it. Top is the deeper of the
+     two because it is the seam: it is the distance that makes the band read as
+     a new surface rather than as the same page with the paper switched off.
+     The footer's own 60px bottom padding carries most of the lower edge. */
+  padding-block: 72px 36px;
+}
+
+/* Centred TO THE NEAREST GRID LINE, not to the exact half, which is the same
    rule .page follows on /compare and the same one the app window's drag script
    follows: a plain `margin: 0 auto` lands the left edge on (100% - measure)/2,
    almost never a multiple of 36, and on a page that draws graph paper an edge
@@ -551,6 +686,12 @@ body.dragging-app, body.dragging-app * {
 
 .doc .cta { margin-top: 28px; }
 
+/* THE SHARED FOOTER. /compare, /updates, /docs and the legal pages all use
+   this, with the flat markup (one <p>, one wrapping <nav>). Leave it alone
+   unless you are changing all five: compare.astro in particular resets
+   max-width, padding and the border by name, so removing any of them here
+   turns its override into a rule about nothing. The homepage's grouped variant
+   is opted into with .foot-cols below. */
 .foot {
   position: relative;
   z-index: 2;
@@ -564,6 +705,74 @@ body.dragging-app, body.dragging-app * {
 .foot nav { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 18px; }
 .foot nav a { color: var(--text-50); }
 .foot nav a:hover { color: var(--text); text-decoration: underline; }
+
+/* ---- the homepage footer: named groups, links stacked --------------------
+   Nine links in one wrapping row broke wherever the measure ran out, which put
+   the boundary between the product and the legal pages at whatever column the
+   browser picked that day.
+
+   Two columns and not three: at 468px of measure a third column is 156px, and
+   "Changelog" in a 156px column beside two others is a list of orphans.
+
+   The blurb spans both rather than taking the left column the way the
+   reference layout does. That layout is a full-bleed footer with room for it;
+   beside two columns of 234px this sentence is a ribbon three or four lines
+   deep. Across the top it is one line, and it reads as what it is: what the
+   thing is, before the links say where to go.
+
+   The rule goes on .cols, not on .foot or .prose. Both of those draw it across
+   their own border box (756px and 540px), and the length that matches the
+   FAQ's .qa separators is the 468px inside .prose's gutters. */
+.foot-cols {
+  padding: 0 0 60px;
+  border-top: 0;               /* .cols carries it, at the right length */
+}
+/* The footer used to fill the whole 756px block while the FAQ and the spec
+   sheet sat in a 540px column centred inside it, so its text started 108px
+   further left than everything above it and ran 216px wider. Same box as
+   `.doc .prose` now. It can't just inherit that rule: the footer is not a .doc
+   and shouldn't become one, since it isn't part of the document outline. */
+.foot-cols .prose {
+  max-width: 540px;
+  padding: 0 36px;
+  margin-inline: auto;
+}
+.foot-cols .cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px 36px;
+  border-top: 1px solid var(--grid);
+  padding-top: 28px;
+}
+.foot-cols .blurb { grid-column: 1 / -1; }
+/* Full --text at 500. --text-70 was tried first and was too close to the
+   --text-50 links to separate a heading from its list at 13px: the column read
+   as one soft gray block. Medium rather than 600, which at this size stops
+   looking like emphasis and starts looking like a different font. */
+.foot-cols .head {
+  color: var(--text);
+  font-weight: 500;
+  margin-bottom: 9px;
+}
+/* align-items: start so a hover underline is the width of the word rather than
+   of the column. */
+.foot-cols nav {
+  margin-top: 0;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: start;
+  gap: 7px;
+}
+/* The fine print, on its own row under both columns: a horizontal pair at 12px
+   with no heading over it. See the note in index.astro. */
+.foot-cols .legal {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 16px;
+  font-size: 12px;
+}
 
 /* ==========================================================================
    Stack on narrow screens. The grid collapses, the window stops being sticky
@@ -614,5 +823,10 @@ body.dragging-app, body.dragging-app * {
 
   .sect { padding: 44px 0; }
   .doc h2 { font-size: 20px; }
+  /* Follows h2 down, so the wordmark is the same size as the section titles at
+     both breakpoints. Safe to let this one change length: .hero-left drops its
+     min-height here, so the hero is no longer a fixed board and nothing below
+     is snapped to a line. */
+  .mark { font-size: 20px; line-height: 25px; }
   .doc .lead { font-size: 16px; }
 }

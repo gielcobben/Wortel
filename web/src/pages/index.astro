@@ -239,6 +239,11 @@ const schema = [website, webpage, person, app];
       </div>
     </div>
 
+    <!-- `tail-band`: the floor. The tour is over, so the graph paper has
+         nothing left to line up and light mode paints over it (see
+         .tail-band). Purely a background: it must not constrain its children,
+         because .doc.tail centres itself against 100% of its parent. -->
+    <div class="tail-band">
     <!-- `tail`: below the shell, so there is no window beside this and the
          "one left edge" rule the prose column follows has nothing left to line
          up with. Centred, like /compare, /docs and the legal pages already are. -->
@@ -285,18 +290,27 @@ const schema = [website, webpage, person, app];
              `SoftwareApplication.screenshot` still points at /screenshot.png,
              which is what it did before any of this. If a better master ever
              lands in art/, the figure is worth another try. -->
-        <div class="scroller">
-          <table class="mono-first">
-            <tbody>
-              {SPECS.map(([k, v]) => (
-                <tr><th scope="row">{k}</th><td>{v}</td></tr>
-              ))}
-              {LATEST?.version && (
-                <tr><th scope="row">Latest version</th><td>{LATEST.version}{LATEST.date && ` · released ${LATEST.date}`}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <!-- A dl, not the mono-first table this used to be. As a table it was
+             a 13px mono key and its value at opposite ends of 468px with
+             nothing in between, so pairing the two was an eye-track across
+             empty space, and the key (the label) was the loud half while the
+             value (the content) was the muted one. Stacked, the pair is one
+             object and the reading order is the useful one.
+             The same shape the hero's feature list already uses. -->
+        <dl class="specs">
+          {SPECS.map(([k, v]) => (
+            <div>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+          {LATEST?.version && (
+            <div>
+              <dt>Latest version</dt>
+              <dd>{LATEST.version}{LATEST.date && ` · released ${LATEST.date}`}</dd>
+            </div>
+          )}
+        </dl>
         <p class="cta">
           <a class="download" href={DOWNLOAD}
             data-ph="download_clicked" data-ph-location="cta" data-ph-version={LATEST?.version}>
@@ -312,22 +326,57 @@ const schema = [website, webpage, person, app];
       </div>
     </article>
 
-    <footer class="foot">
-      <p>
-        <strong>Wortel</strong>: a native macOS terminal built on Ghostty.
-        Dutch for <em>root</em>.
-      </p>
-      <nav aria-label="Footer">
-        <a href="/">Home</a>
-        <a href={DOWNLOAD} data-ph="download_clicked" data-ph-location="footer" data-ph-version={LATEST?.version}>Download</a>
-        <a href="/updates">Changelog</a>
-        <a href="/compare">Compare</a>
-        <a href="/docs">Reference</a>
-        <a href="#faq">FAQ</a>
-        <a href="/llms.txt">llms.txt</a>
-        <LegalNav />
-      </nav>
+    <!-- Same `.prose` wrapper the tail articles use, so the footer sits in the
+         one text column the FAQ and the spec sheet already share rather than
+         in the full 756px block around it. -->
+    <footer class="foot foot-cols">
+      <div class="prose">
+      <!-- Grouped and stacked rather than one wrapping row. Nine links in a
+           single line wrapped wherever the measure ran out, which put the
+           boundary between "the product" and "the legal pages" at whatever
+           column the browser happened to break on. A named group is also the
+           only thing that tells a reader what llms.txt is doing next to
+           Privacy. One <nav> per group, each labelled: a screen reader lists
+           landmarks by name, and four navs called "Footer" would be four
+           identical entries. -->
+      <div class="cols">
+        <p class="blurb">
+          <strong>Wortel</strong> is a native macOS terminal built on Ghostty’s
+          engine, for keeping a handful of coding agents running at once.
+          The name is Dutch for <em>root</em>, as in the root shell.
+        </p>
+
+        <div class="group">
+          <p class="head">Product</p>
+          <nav aria-label="Product">
+            <a href="/">Home</a>
+            <a href={DOWNLOAD} data-ph="download_clicked" data-ph-location="footer" data-ph-version={LATEST?.version}>Download</a>
+            <a href="/updates">Changelog</a>
+            <a href="/compare">Compare</a>
+          </nav>
+        </div>
+
+        <div class="group">
+          <p class="head">Reference</p>
+          <nav aria-label="Reference">
+            <a href="/docs">Docs</a>
+            <a href="#faq">FAQ</a>
+            <a href="/llms.txt">llms.txt</a>
+          </nav>
+        </div>
+
+        <!-- No heading and a row rather than a column: two links that everyone
+             already knows the shape of do not need to be told apart from each
+             other, and a "Legal" label over them was a third column heading
+             competing with the two that carry real navigation. Smaller for the
+             same reason. -->
+        <nav class="legal" aria-label="Legal">
+          <LegalNav />
+        </nav>
+      </div>
+      </div>
     </footer>
+    </div>
   </main>
 
   <!-- is:inline so it runs synchronously before first paint: it sets the window's

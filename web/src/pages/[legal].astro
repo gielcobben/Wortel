@@ -12,7 +12,7 @@
 // page's readable half already defines, so Markdown headings, lists and links
 // land on the site's existing typography with no styles of its own.
 import Layout from '../layouts/Layout.astro';
-import LegalNav from '../components/LegalNav.astro';
+import SiteFooter from '../components/SiteFooter.astro';
 import { getCollection, render } from 'astro:content';
 import { SITE } from '../data/site';
 
@@ -57,7 +57,8 @@ const schema = [
   path={path}
   schema={schema}
 >
-  <main class="legal">
+  <main>
+    <div class="legal">
     <article class="doc">
       <div class="prose">
         <p class="mark"><a href="/">{SITE.name}</a></p>
@@ -68,19 +69,17 @@ const schema = [
       </div>
     </article>
 
-    <footer class="foot">
-      <p>
-        <strong>{SITE.name}</strong>: a native macOS terminal built on Ghostty.
-        Dutch for <em>root</em>.
-      </p>
-      <nav aria-label="Footer">
-        <a href="/">Home</a>
-        <a href={SITE.download} data-ph="download_clicked" data-ph-location="legal-footer">Download</a>
-        <a href="/compare">Compare</a>
-        <a href="/updates">Changelog</a>
-        <LegalNav current={entry.id} />
-      </nav>
-    </footer>
+    </div>
+
+    <!-- The floor, the same one every other page ends on (.tail-band in
+         global.css). It has to sit OUTSIDE the centred container above:
+         .legal is 1152px wide with 36px gutters, and a full-bleed band cannot
+         be painted from inside a box that narrow. That is also why the footer
+         moved out with it, and why the .foot resets this page used to carry
+         are gone: it is no longer inside a container that owns the gutters. -->
+    <div class="tail-band">
+      <SiteFooter location="legal-footer" current={entry.id} />
+    </div>
   </main>
 </Layout>
 
@@ -89,7 +88,9 @@ const schema = [
   .legal {
     max-width: 1152px;
     margin: 0 auto;
-    padding: 72px 36px 0;
+    /* The bottom 72px is the gap between the last line and the band's
+       seam, matching the 72px .shell leaves on the other pages. */
+    padding: 72px 36px;
   }
 
   .legal .doc { padding: 0; }
@@ -130,7 +131,6 @@ const schema = [
     text-underline-offset: 2px;
   }
 
-  .foot { margin-top: 72px; }
 
   @media (max-width: 720px) {
     .legal { padding: 48px 24px 0; }

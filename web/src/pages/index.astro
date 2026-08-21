@@ -5,7 +5,7 @@ import SectionWindow from '../demo/SectionWindow.svelte';
 import { VIEWS, FIRST_SECTION } from '../demo/views.js';
 import { SITE, FEATURES, SECTIONS, FAQ, SPECS } from '../data/site';
 import Blocks from '../components/Blocks.astro';
-import LegalNav from '../components/LegalNav.astro';
+import SiteFooter from '../components/SiteFooter.astro';
 
 // The Sparkle feed lives at updates.wortel.sh; the newest signed zip is always
 // mirrored to Wortel-latest.zip, so a single stable download URL works forever.
@@ -326,56 +326,7 @@ const schema = [website, webpage, person, app];
       </div>
     </article>
 
-    <!-- Same `.prose` wrapper the tail articles use, so the footer sits in the
-         one text column the FAQ and the spec sheet already share rather than
-         in the full 756px block around it. -->
-    <footer class="foot foot-cols">
-      <div class="prose">
-      <!-- Grouped and stacked rather than one wrapping row. Nine links in a
-           single line wrapped wherever the measure ran out, which put the
-           boundary between "the product" and "the legal pages" at whatever
-           column the browser happened to break on. A named group is also the
-           only thing that tells a reader what llms.txt is doing next to
-           Privacy. One <nav> per group, each labelled: a screen reader lists
-           landmarks by name, and four navs called "Footer" would be four
-           identical entries. -->
-      <div class="cols">
-        <p class="blurb">
-          <strong>Wortel</strong> is a native macOS terminal built on Ghostty’s
-          engine, for keeping a handful of coding agents running at once.
-          The name is Dutch for <em>root</em>, as in the root shell.
-        </p>
-
-        <div class="group">
-          <p class="head">Product</p>
-          <nav aria-label="Product">
-            <a href="/">Home</a>
-            <a href={DOWNLOAD} data-ph="download_clicked" data-ph-location="footer" data-ph-version={LATEST?.version}>Download</a>
-            <a href="/updates">Changelog</a>
-            <a href="/compare">Compare</a>
-          </nav>
-        </div>
-
-        <div class="group">
-          <p class="head">Reference</p>
-          <nav aria-label="Reference">
-            <a href="/docs">Docs</a>
-            <a href="#faq">FAQ</a>
-            <a href="/llms.txt">llms.txt</a>
-          </nav>
-        </div>
-
-        <!-- No heading and a row rather than a column: two links that everyone
-             already knows the shape of do not need to be told apart from each
-             other, and a "Legal" label over them was a third column heading
-             competing with the two that carry real navigation. Smaller for the
-             same reason. -->
-        <nav class="legal" aria-label="Legal">
-          <LegalNav />
-        </nav>
-      </div>
-      </div>
-    </footer>
+    <SiteFooter location="footer" version={LATEST?.version} />
     </div>
   </main>
 

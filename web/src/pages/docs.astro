@@ -14,7 +14,7 @@
 // prose again, so a paragraph here is the same paragraph it is anywhere else.
 import Layout from '../layouts/Layout.astro';
 import Blocks from '../components/Blocks.astro';
-import LegalNav from '../components/LegalNav.astro';
+import SiteFooter from '../components/SiteFooter.astro';
 import { SITE, DOCS, DOCS_SECTIONS } from '../data/site';
 
 const abs = (p: string) => new URL(p, SITE.url).href;
@@ -43,7 +43,8 @@ const schema = [
 ---
 
 <Layout title={`${DOCS.title}`} description={DOCS.description} path="/docs" schema={schema}>
-  <main class="docs">
+  <main>
+    <div class="docs">
     <article class="doc">
       <div class="prose">
         <p class="mark"><a href="/">{SITE.name}</a></p>
@@ -84,21 +85,17 @@ const schema = [
       </div>
     </article>
 
-    <footer class="foot">
-      <p>
-        <strong>{SITE.name}</strong>: a native macOS terminal built on Ghostty.
-        Dutch for <em>root</em>.
-      </p>
-      <nav aria-label="Footer">
-        <a href="/">Home</a>
-        <a href={SITE.download} data-ph="download_clicked" data-ph-location="docs-footer">Download</a>
-        <a href="/compare">Compare</a>
-        <a href="/updates">Changelog</a>
-        <a href="/#faq">FAQ</a>
-        <a href="/llms.txt">llms.txt</a>
-        <LegalNav />
-      </nav>
-    </footer>
+    </div>
+
+    <!-- The floor, the same one every other page ends on (.tail-band in
+         global.css). It has to sit OUTSIDE the centred container above:
+         .docs is 1152px wide with 36px gutters, and a full-bleed band cannot
+         be painted from inside a box that narrow. That is also why the footer
+         moved out with it, and why the .foot resets this page used to carry
+         are gone: it is no longer inside a container that owns the gutters. -->
+    <div class="tail-band">
+      <SiteFooter location="docs-footer" />
+    </div>
   </main>
 </Layout>
 
@@ -107,7 +104,9 @@ const schema = [
   .docs {
     max-width: 1152px;
     margin: 0 auto;
-    padding: 72px 36px 0;
+    /* The bottom 72px is the gap between the last line and the band's
+       seam, matching the 72px .shell leaves on the other pages. */
+    padding: 72px 36px;
   }
 
   .docs .doc { padding: 0; }
@@ -150,7 +149,6 @@ const schema = [
   }
   .toc a:hover { color: var(--text); }
 
-  .foot { margin-top: 72px; }
 
   @media (max-width: 720px) {
     .docs { padding: 48px 24px 0; }

@@ -20,7 +20,7 @@
 import Layout from '../layouts/Layout.astro';
 import CompareGrid from '../components/CompareGrid.astro';
 import { SITE } from '../data/site';
-import LegalNav from '../components/LegalNav.astro';
+import SiteFooter from '../components/SiteFooter.astro';
 import { COMPARE, CATEGORIES } from '../data/compare';
 
 const abs = (p: string) => new URL(p, SITE.url).href;
@@ -43,7 +43,8 @@ const schema = [
 ---
 
 <Layout title={COMPARE.title} description={COMPARE.description} path="/compare" schema={schema}>
-  <main class="page">
+  <main>
+    <div class="page">
     <header class="top">
       <p class="mark"><a href="/">{SITE.name}</a></p>
       <h1>{COMPARE.heading}</h1>
@@ -84,20 +85,17 @@ const schema = [
       <p class="caveat">{COMPARE.caveat}</p>
     </section>
 
-    <footer class="foot">
-      <p>
-        <strong>Wortel</strong>: a native macOS terminal built on Ghostty.
-        Dutch for <em>root</em>.
-      </p>
-      <nav aria-label="Footer">
-        <a href="/">Home</a>
-        <a href={SITE.download} data-ph="download_clicked" data-ph-location="compare-footer">Download</a>
-        <a href="/updates">Changelog</a>
-        <a href="/#faq">FAQ</a>
-        <a href="/llms.txt">llms.txt</a>
-        <LegalNav />
-      </nav>
-    </footer>
+    </div>
+
+    <!-- The floor, the same one every other page ends on (.tail-band in
+         global.css). It has to sit OUTSIDE the centred container above:
+         .page is 1152px wide with 36px gutters, and a full-bleed band cannot
+         be painted from inside a box that narrow. That is also why the footer
+         moved out with it, and why the .foot resets this page used to carry
+         are gone: it is no longer inside a container that owns the gutters. -->
+    <div class="tail-band">
+      <SiteFooter location="compare-footer" />
+    </div>
   </main>
 </Layout>
 
@@ -112,7 +110,7 @@ const schema = [
        BOTH their edges land on a grid line. */
     --measure: 1224px;
     width: min(var(--measure), 100%);
-    padding: 72px 36px 36px;    /* 2 cells top, 1 cell sides */
+    padding: 72px 36px;         /* 2 cells top and bottom, 1 cell sides */
 
     /* Centred TO THE NEAREST GRID LINE rather than to the exact half. A plain
        `margin: 0 auto` puts the left edge at (100% - 1224)/2, which is almost
@@ -208,23 +206,12 @@ const schema = [
     color: var(--text-50);
   }
 
-  /* The global .foot is written for a page whose content is NOT already inside
-     a padded container: it carries max-width: 756px, padding: 28px 36px 60px
-     and a border-top. Here that meant a second 36px indent (so the footer sat
-     further right than every panel above it) and a rule that landed between two
-     grid lines. All three are reset rather than worked around. */
-  .foot {
-    max-width: none;
-    margin-top: 72px;          /* 2 cells */
-    padding: 36px 0 0;         /* the page already owns the side gutters */
-    border-top: 0;
-    font-size: 13px;
-    color: var(--text-50);
-  }
-  .foot strong { color: var(--text-70); font-weight: 500; }
-  .foot nav { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 18px; }
-  .foot nav a { color: var(--text-50); }
-  .foot nav a:hover { color: var(--text); text-decoration: underline; }
+  /* NO .foot rules here any more. They existed because the footer used to sit
+     inside .page, which owns the side gutters, so the global 756px block and
+     its padding had to be reset back out. The footer is a sibling of .page now,
+     in the band below it, and takes the same global .foot treatment as every
+     other page. Do not reintroduce a scoped `.foot nav` here: it would beat
+     the global one on specificity and silently unstack the link columns. */
 
   @media (max-width: 1040px) {
     .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -241,21 +241,30 @@ body.dragging-app, body.dragging-app * {
   border: 0;
 }
 
-/* The same 22px/500 as .doc h2, the section titles the tour scrolls through:
-   the wordmark is the first heading on the page and was sitting a size below
-   every heading under it.
+/* .mark is two different things. On /updates, /docs and the legal pages it is
+   the small breadcrumb back to the homepage, above a page title of its own. On
+   the homepage it IS the h1, the wordmark, and there is no title above it. So
+   the size hangs off the element, not the class: only the homepage writes
+   <h1 class="mark">, everyone else writes <p class="mark">. Sizing the class
+   itself put a 22px "Wortel" over the 27px "Changelog" on /updates. */
+.mark {
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text);
+}
+/* The homepage wordmark, at .doc h2's size: it is the first heading on the
+   page and was sitting a size below every heading under it.
 
    line-height in px, not a ratio. The hero is a 100vh board snapped to the
    36px grid and nothing in it may change length (see .links, which lands the
    download button on y=252). 27px is what 22px/1.25 rounds to, so the leading
    matches h2's, and the box grew by exactly 6px, which .links gives back. Any
-   change to this pair has to keep mark + .links margin-top summing to 59. */
-.mark {
-  font-weight: 500;
+   change to this pair has to keep the two summing to 59. */
+h1.mark {
   font-size: 22px;
   line-height: 27px;
   letter-spacing: -0.02em;   /* h2's, so the two read as one typographic size */
-  color: var(--text);
 }
 .tagline { font-size: 15px; color: var(--text-50); }
 .desc {
@@ -264,9 +273,12 @@ body.dragging-app, body.dragging-app * {
   color: var(--text-70);
   text-wrap: pretty;
 }
-/* 32, not the 38 it was: .mark grew 6px when it went up to h2's size, and this
-   hands the 6px back so the button's top edge stays on the y=252 line. */
-.links { margin-top: 32px; display: flex; gap: 12px; }
+.links { margin-top: 38px; display: flex; gap: 12px; }
+/* 32 on the homepage only: h1.mark is 6px taller than the .mark every other
+   page uses, and this hands those 6px back so the download button's top edge
+   stays on the y=252 line. Hung off the h1 for the same reason the size is, so
+   /updates keeps the 38 its own hero was built with. */
+.intro:has(h1.mark) .links { margin-top: 32px; }
 /* Unscoped so the repeat call-to-action at the foot of the prose is the same
    button, not a copy of its rules. */
 .download {
@@ -686,86 +698,75 @@ body.dragging-app, body.dragging-app * {
 
 .doc .cta { margin-top: 28px; }
 
-/* THE SHARED FOOTER. /compare, /updates, /docs and the legal pages all use
-   this, with the flat markup (one <p>, one wrapping <nav>). Leave it alone
-   unless you are changing all five: compare.astro in particular resets
-   max-width, padding and the border by name, so removing any of them here
-   turns its override into a rule about nothing. The homepage's grouped variant
-   is opted into with .foot-cols below. */
-.foot {
-  position: relative;
-  z-index: 2;
-  max-width: 756px;
-  padding: 28px 36px 60px;
-  border-top: 1px solid var(--grid);
-  font-size: 13px;
-  color: var(--text-50);
-}
-.foot strong { color: var(--text-70); font-weight: 500; }
-.foot nav { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 18px; }
-.foot nav a { color: var(--text-50); }
-.foot nav a:hover { color: var(--text); text-decoration: underline; }
+/* THE SHARED FOOTER, and there is only one now: components/SiteFooter.astro
+   renders it on every page. It used to be two, a flat wrapping row plus a
+   .foot-cols opt-in, while the pages were converted one at a time. The flat
+   half is gone rather than left lying around: a dead `.foot nav { flex-wrap:
+   wrap }` is not inert, it is a rule waiting to be re-applied by accident, and
+   an earlier scoped copy of exactly that on /compare would have silently
+   unstacked the columns.
 
-/* ---- the homepage footer: named groups, links stacked --------------------
-   Nine links in one wrapping row broke wherever the measure ran out, which put
-   the boundary between the product and the legal pages at whatever column the
-   browser picked that day.
+   Two columns, each group's links stacked down it. Two and not three: at 468px
+   of measure a third column is 156px, and "Changelog" in a 156px column beside
+   two others is a list of orphans.
 
-   Two columns and not three: at 468px of measure a third column is 156px, and
-   "Changelog" in a 156px column beside two others is a list of orphans.
-
-   The blurb spans both rather than taking the left column the way the
-   reference layout does. That layout is a full-bleed footer with room for it;
-   beside two columns of 234px this sentence is a ribbon three or four lines
-   deep. Across the top it is one line, and it reads as what it is: what the
-   thing is, before the links say where to go.
+   The blurb spans both rather than taking the left column the way the layout
+   this came from does. That one is a full-bleed footer with room for it;
+   beside two columns of 234px this sentence is a ribbon four lines deep.
+   Across the top it is one line, and it reads as what it is: what the thing
+   is, before the links say where to go.
 
    The rule goes on .cols, not on .foot or .prose. Both of those draw it across
    their own border box (756px and 540px), and the length that matches the
    FAQ's .qa separators is the 468px inside .prose's gutters. */
-.foot-cols {
+.foot {
+  position: relative;
+  z-index: 2;
   padding: 0 0 60px;
-  border-top: 0;               /* .cols carries it, at the right length */
+  font-size: 13px;
+  color: var(--text-50);
 }
 /* The footer used to fill the whole 756px block while the FAQ and the spec
    sheet sat in a 540px column centred inside it, so its text started 108px
    further left than everything above it and ran 216px wider. Same box as
    `.doc .prose` now. It can't just inherit that rule: the footer is not a .doc
    and shouldn't become one, since it isn't part of the document outline. */
-.foot-cols .prose {
+.foot .prose {
   max-width: 540px;
   padding: 0 36px;
   margin-inline: auto;
 }
-.foot-cols .cols {
+.foot .cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 30px 36px;
   border-top: 1px solid var(--grid);
   padding-top: 28px;
 }
-.foot-cols .blurb { grid-column: 1 / -1; }
+.foot .blurb { grid-column: 1 / -1; }
+.foot strong { color: var(--text-70); font-weight: 500; }
 /* Full --text at 500. --text-70 was tried first and was too close to the
    --text-50 links to separate a heading from its list at 13px: the column read
    as one soft gray block. Medium rather than 600, which at this size stops
    looking like emphasis and starts looking like a different font. */
-.foot-cols .head {
+.foot .head {
   color: var(--text);
   font-weight: 500;
   margin-bottom: 9px;
 }
 /* align-items: start so a hover underline is the width of the word rather than
    of the column. */
-.foot-cols nav {
-  margin-top: 0;
+.foot nav {
+  display: flex;
   flex-direction: column;
-  flex-wrap: nowrap;
   align-items: start;
   gap: 7px;
 }
+.foot nav a { color: var(--text-50); }
+.foot nav a:hover { color: var(--text); text-decoration: underline; }
 /* The fine print, on its own row under both columns: a horizontal pair at 12px
-   with no heading over it. See the note in index.astro. */
-.foot-cols .legal {
+   with no heading over it. See the note in SiteFooter.astro. */
+.foot .legal {
   grid-column: 1 / -1;
   flex-direction: row;
   flex-wrap: wrap;
@@ -827,6 +828,6 @@ body.dragging-app, body.dragging-app * {
      both breakpoints. Safe to let this one change length: .hero-left drops its
      min-height here, so the hero is no longer a fixed board and nothing below
      is snapped to a line. */
-  .mark { font-size: 20px; line-height: 25px; }
+  h1.mark { font-size: 20px; line-height: 25px; }
   .doc .lead { font-size: 16px; }
 }

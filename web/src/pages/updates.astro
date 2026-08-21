@@ -17,7 +17,7 @@ import PreviewWindow from '../components/PreviewWindow.astro';
 import { getCollection, render } from 'astro:content';
 import { compareVersions } from '../content.config';
 import { SITE } from '../data/site';
-import LegalNav from '../components/LegalNav.astro';
+import SiteFooter from '../components/SiteFooter.astro';
 
 const entries = await getCollection('releases');
 const releases = await Promise.all(
@@ -157,21 +157,16 @@ const schema = [
       </div>
     </div>
 
-    <footer class="foot">
-      <p>
-        <strong>Wortel</strong>: a native macOS terminal built on Ghostty.
-        Dutch for <em>root</em>.
-      </p>
-      <nav aria-label="Footer">
-        <a href="/">Home</a>
-        <a href={SITE.download} data-ph="download_clicked" data-ph-location="updates-footer">Download</a>
-        <a href="/compare">Compare</a>
-        <a href="/#faq">FAQ</a>
-        <a href={SITE.appcast}>Update feed</a>
-        <a href="/llms.txt">llms.txt</a>
-        <LegalNav />
-      </nav>
-    </footer>
+    <!-- The floor, the same one the homepage ends on (.tail-band in
+         global.css). Without it this page was one 100vh board and then a bare
+         footer sitting on graph paper: the only thing scrolling down revealed
+         was the footer itself, on a surface that had no reason to still be
+         ruled. The grid belongs to the shell above, where the file list and
+         the window line up against it. Below that it is ruling nothing, so it
+         ramps out and the page has an ending. -->
+    <div class="tail-band">
+      <SiteFooter location="updates-footer" feed />
+    </div>
   </main>
 
   <!-- Drag by the titlebar, resize from any edge or corner, both resting on

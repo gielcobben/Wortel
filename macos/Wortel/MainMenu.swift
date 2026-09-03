@@ -104,6 +104,12 @@ enum MainMenu {
         main.addItem(sessionItem)
         let sessionMenu = NSMenu(title: "Session")
         sessionItem.submenu = sessionMenu
+
+        // -- Start a session ---------------------------------------------------
+        // Two rows, and they're a deliberate pair: the same command with the two
+        // answers to "where". ⌘N keeps you where you are, ⌥⌘N gets you out. They
+        // sit together so the second reads as the exception to the first rather
+        // than as a second, unexplained "New Session".
         sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "n")
         // ⌘T is every terminal's "new tab". Wortel has no tabs — a session is
         // the thing that shortcut reaches for — so it's an alias of ⌘N above
@@ -119,14 +125,31 @@ enum MainMenu {
         // on the same day. Free of a wortel.conf keybind (alt+n isn't bound).
         let newHome = sessionMenu.addItem(withTitle: "New Session at Home", action: #selector(AppDelegate.newHomeSession(_:)), keyEquivalent: "n")
         newHome.keyEquivalentModifierMask = [.command, .option]
+
+        // -- Folders -----------------------------------------------------------
+        // The two folder verbs, adjacent because that's how they read: open a
+        // directory that exists, or make an empty one to file sessions into.
+        sessionMenu.addItem(.separator())
         // ⌘O is every Mac app's "open", and a directory is the only thing
         // Wortel opens. Files are opened by the tree and by ⌘-clicking a path,
         // which are both already in front of the file you mean.
         sessionMenu.addItem(withTitle: "Open Folder\u{2026}", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
-        let newSection = sessionMenu.addItem(withTitle: "New Section", action: #selector(AppDelegate.newSection(_:)), keyEquivalent: "n")
-        newSection.keyEquivalentModifierMask = [.command, .shift]
+        // **"Folder", not "Section".** This item was the last place in the app
+        // that called a folder a section — the sidebar's + menu, both header
+        // context menus and every type and method say folder — and one letter
+        // from "New Session" is a bad place to keep a synonym. Ellipsis because
+        // it asks for a name.
+        let newFolder = sessionMenu.addItem(withTitle: "New Folder\u{2026}", action: #selector(AppDelegate.newFolder(_:)), keyEquivalent: "n")
+        newFolder.keyEquivalentModifierMask = [.command, .shift]
+
+        // -- This session ------------------------------------------------------
+        // Acting on the selected session, as opposed to making one. No ellipsis
+        // on Rename: it starts an inline edit in the sidebar, not a dialog.
+        sessionMenu.addItem(.separator())
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
         sessionMenu.addItem(withTitle: "Close Session", action: #selector(AppDelegate.closeSession(_:)), keyEquivalent: "w")
+
+        // -- Move between sessions ---------------------------------------------
         sessionMenu.addItem(.separator())
         // ⌘⇧[ / ⌘⇧] walk the sidebar. They're the system-wide convention for
         // "previous/next thing in this window" — Safari, Chrome, Finder,

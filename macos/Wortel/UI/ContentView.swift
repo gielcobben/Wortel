@@ -62,11 +62,21 @@ struct SidebarPane: View {
             })
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 2) {
+                    // Grouped like the Session menu, and in the same order, so
+                    // the two places you reach for this agree with each other:
+                    // ways to start a session, then the two folder verbs.
                     Menu {
                         Button("New Session") { manager.newSession() }
+                        // "New Session" here looks global but isn't — it lands
+                        // in whichever folder the selection is in. This is the
+                        // way out of that, and it belongs next to the thing it
+                        // is the exception to rather than only on a shortcut
+                        // nobody has met yet.
+                        Button("New Session at Home") { manager.newHomeSession() }
                         // Its own branch and its own files: what makes running
                         // two agents in one repository safe.
                         Button("New Session on Branch…") { newSessionOnBranch(manager) }
+                        Divider()
                         // The way to reach a project no session is standing in
                         // without typing `cd` — and the way a folder usually
                         // gets its directory, since opening one creates the

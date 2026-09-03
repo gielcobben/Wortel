@@ -534,9 +534,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         openFolderSession(manager)
     }
 
-    @objc func newSection(_ sender: Any?) {
+    @objc func newFolder(_ sender: Any?) {
         focusMainWindow()
-        if let name = promptFolderName(title: "New Section", confirm: "Create") {
+        if let name = promptFolderName(title: "New Folder", confirm: "Create") {
             manager.addFolder(named: name)
         }
     }

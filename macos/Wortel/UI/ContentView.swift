@@ -77,16 +77,16 @@ struct SidebarPane: View {
                         // two agents in one repository safe.
                         Button("New Session on Branch…") { newSessionOnBranch(manager) }
                         Divider()
-                        // The way to reach a project no session is standing in
-                        // without typing `cd` — and the way a folder usually
-                        // gets its directory, since opening one creates the
-                        // folder for it.
-                        Button("Open Folder…") { openFolderSession(manager) }
                         Button("New Folder…") {
                             if let name = promptFolderName(title: "New Folder", confirm: "Create") {
                                 manager.addFolder(named: name)
                             }
                         }
+                        // The way to reach a project no session is standing in
+                        // without typing `cd` — and the way a folder usually
+                        // gets its directory, since opening one creates the
+                        // folder for it.
+                        Button("Open Folder…") { openFolderSession(manager) }
                     } label: {
                         Image(systemName: "plus")
                             .frame(width: 24, height: 24)

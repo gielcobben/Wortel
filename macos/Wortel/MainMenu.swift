@@ -127,13 +127,10 @@ enum MainMenu {
         newHome.keyEquivalentModifierMask = [.command, .option]
 
         // -- Folders -----------------------------------------------------------
-        // The two folder verbs, adjacent because that's how they read: open a
-        // directory that exists, or make an empty one to file sessions into.
+        // The two folder verbs, adjacent because that's how they read: make an
+        // empty one to file sessions into, or open a directory that already
+        // exists. New before Open, which is the order every Mac File menu uses.
         sessionMenu.addItem(.separator())
-        // ⌘O is every Mac app's "open", and a directory is the only thing
-        // Wortel opens. Files are opened by the tree and by ⌘-clicking a path,
-        // which are both already in front of the file you mean.
-        sessionMenu.addItem(withTitle: "Open Folder\u{2026}", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
         // **"Folder", not "Section".** This item was the last place in the app
         // that called a folder a section — the sidebar's + menu, both header
         // context menus and every type and method say folder — and one letter
@@ -141,6 +138,10 @@ enum MainMenu {
         // it asks for a name.
         let newFolder = sessionMenu.addItem(withTitle: "New Folder\u{2026}", action: #selector(AppDelegate.newFolder(_:)), keyEquivalent: "n")
         newFolder.keyEquivalentModifierMask = [.command, .shift]
+        // ⌘O is every Mac app's "open", and a directory is the only thing
+        // Wortel opens. Files are opened by the tree and by ⌘-clicking a path,
+        // which are both already in front of the file you mean.
+        sessionMenu.addItem(withTitle: "Open Folder\u{2026}", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
 
         // -- This session ------------------------------------------------------
         // Acting on the selected session, as opposed to making one. No ellipsis

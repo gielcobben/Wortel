@@ -19,6 +19,29 @@ func promptFolderName(title: String, confirm: String, initial: String = "") -> S
     return field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
 }
 
+/// Pick a directory. The whole of ⌘O and of a folder's "Set Directory…", and
+/// the only part of Wortel that ever opens a file panel.
+///
+/// Directories only, and no "New Folder" button: this points at a project that
+/// already exists. Modal rather than a sheet for the same reason the name
+/// prompt above is — one question, one answer, and no state to thread through
+/// the sidebar. Returns nil on Cancel.
+@MainActor
+func chooseDirectory(title: String, startingAt current: String? = nil) -> String? {
+    let panel = NSOpenPanel()
+    panel.message = title
+    panel.prompt = "Open"
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.allowsMultipleSelection = false
+    panel.canCreateDirectories = false
+    // Start where the folder already points, so "Set Directory…" opens on the
+    // thing it is about to change rather than on wherever the panel was last.
+    if let current { panel.directoryURL = URL(fileURLWithPath: current) }
+    guard panel.runModal() == .OK, let url = panel.url else { return nil }
+    return url.path
+}
+
 /// The sidebar pane's content, hosted by MainSplitViewController's `.sidebar`
 /// split item. Draws no background of its own: the split item behavior supplies
 /// the system material, and painting over it would block the glass.
@@ -44,6 +67,11 @@ struct SidebarPane: View {
                         // Its own branch and its own files: what makes running
                         // two agents in one repository safe.
                         Button("New Session on Branch…") { newSessionOnBranch(manager) }
+                        // The way to reach a project no session is standing in
+                        // without typing `cd` — and the way a folder usually
+                        // gets its directory, since opening one creates the
+                        // folder for it.
+                        Button("Open Folder…") { openFolderSession(manager) }
                         Button("New Folder…") {
                             if let name = promptFolderName(title: "New Folder", confirm: "Create") {
                                 manager.addFolder(named: name)
@@ -209,6 +237,15 @@ struct SidebarRowContent: View {
     }
 }
 
+/// ⌘O: pick a directory and open a session in it. One funnel for the menu bar,
+/// the sidebar's + menu and anything else that grows one, so the panel and what
+/// happens to the chosen path are described in exactly one place.
+@MainActor
+func openFolderSession(_ manager: SessionManager) {
+    guard let path = chooseDirectory(title: "Open a folder as a session") else { return }
+    manager.openFolder(path)
+}
+
 /// Open a session on a branch, in its own worktree. Failures are shown as git
 /// wrote them — "already checked out at …" names the directory you want, and
 /// rewriting it would take that away.
@@ -301,6 +338,13 @@ struct SidebarHeaderContent: View {
     let manager: SessionManager
     let folder: String
 
+    /// Tilde-abbreviated, like a session row's path: `~/Developer/wortel` is
+    /// the way anyone would write it, and the home prefix is the same on every
+    /// row so it earns none of this width.
+    private var root: String? {
+        manager.root(ofFolder: folder).map { ($0 as NSString).abbreviatingWithTildeInPath }
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             Text(folder)
@@ -315,7 +359,22 @@ struct SidebarHeaderContent: View {
                 AttentionDot(color: SessionStatusIndicator.attentionColor(kind),
                              pulses: kind == .needsInput)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
+            // The directory the folder stands for, and the point of showing it
+            // is that it's the difference between a project and a label: a
+            // folder with a path here is one where a new session starts
+            // somewhere you can predict. Truncated from the head, so what
+            // survives is the end of the path — the part that names the
+            // project — and the full one is on the tooltip.
+            if let root {
+                Text(root)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .layoutPriority(-1)
+                    .help(root)
+            }
         }
             .padding(.leading, 12)
             .padding(.trailing, 8)
@@ -340,6 +399,23 @@ struct SidebarHeaderContent: View {
                 manager.renameFolder(folder, to: name)
             }
         })
+        menu.addItem(.separator())
+        // What makes the first item above mean this folder. Worded as "Set"
+        // rather than "Choose" because it is a property of the folder, not a
+        // one-off open — ⌘O is the one-off.
+        menu.addItem(ClosureMenuItem(title: "Set Directory\u{2026}") {
+            guard let path = chooseDirectory(
+                title: "Set the directory for \u{201c}\(folder)\u{201d}",
+                startingAt: manager.root(ofFolder: folder)) else { return }
+            manager.setRoot(path, ofFolder: folder)
+        })
+        // Only offered when there is one, and it turns the folder back into a
+        // plain label rather than deleting anything.
+        if manager.root(ofFolder: folder) != nil {
+            menu.addItem(ClosureMenuItem(title: "Clear Directory") {
+                manager.setRoot(nil, ofFolder: folder)
+            })
+        }
         menu.addItem(.separator())
         // Non-destructive: the sessions drop to the top level, they're not closed.
         menu.addItem(ClosureMenuItem(title: "Delete Folder") { manager.deleteFolder(folder) })

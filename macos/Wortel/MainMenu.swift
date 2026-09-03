@@ -151,6 +151,16 @@ enum MainMenu {
         let newSessionTab = sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "t")
         newSessionTab.isHidden = true
         newSessionTab.allowsKeyEquivalentWhenHidden = true
+        // ⌘N inherits the directory you're in, which is right until the moment
+        // you want out of it. This is the way out, and it's a command rather
+        // than a preference because both answers are wanted by the same person
+        // on the same day. Free of a wortel.conf keybind (alt+n isn't bound).
+        let newHome = sessionMenu.addItem(withTitle: "New Session at Home", action: #selector(AppDelegate.newHomeSession(_:)), keyEquivalent: "n")
+        newHome.keyEquivalentModifierMask = [.command, .option]
+        // ⌘O is every Mac app's "open", and a directory is the only thing
+        // Wortel opens. Files are opened by the tree and by ⌘-clicking a path,
+        // which are both already in front of the file you mean.
+        sessionMenu.addItem(withTitle: "Open Folder\u{2026}", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
         let newSection = sessionMenu.addItem(withTitle: "New Section", action: #selector(AppDelegate.newSection(_:)), keyEquivalent: "n")
         newSection.keyEquivalentModifierMask = [.command, .shift]
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")

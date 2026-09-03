@@ -5,6 +5,17 @@ struct PersistedSession: Codable {
     let name: String
     let title: String
     let cwd: String?
+    /// Where the session was created, as opposed to where its shell had wandered
+    /// by the time this was written. What a session opened beside this one
+    /// inherits. See `Session.originCwd`.
+    ///
+    /// Absent in every file written before sessions had one, and there is no
+    /// recovering it: the origin was never recorded, so the last known `cwd` is
+    /// the only candidate and `SessionManager.restore` uses it. That is exactly
+    /// what the old behaviour would have inherited anyway, so the migration
+    /// changes nothing on the launch that reads an old file, and the drift stops
+    /// from the next session on.
+    let originCwd: String?
     let selected: Bool
     /// Whether the user explicitly named this session; auto-naming skips these.
     let nameIsUserSet: Bool
@@ -55,14 +66,16 @@ struct PersistedSession: Codable {
 
     // Tolerate older files without a `name` / `nameIsUserSet` field.
     enum CodingKeys: String, CodingKey {
-        case id, name, title, cwd, selected, nameIsUserSet, gitPanelVisible, inspectorPane
+        case id, name, title, cwd, originCwd, selected, nameIsUserSet
+        case gitPanelVisible, inspectorPane
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
-    init(id: UUID, name: String, title: String, cwd: String?, selected: Bool,
-         nameIsUserSet: Bool, gitPanelVisible: Bool?, inspectorPane: String? = nil,
+    init(id: UUID, name: String, title: String, cwd: String?, originCwd: String? = nil,
+         selected: Bool, nameIsUserSet: Bool, gitPanelVisible: Bool?, inspectorPane: String? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
+        self.originCwd = originCwd
         self.selected = selected; self.nameIsUserSet = nameIsUserSet
         self.gitPanelVisible = gitPanelVisible
         self.inspectorPane = inspectorPane
@@ -76,6 +89,10 @@ struct PersistedSession: Codable {
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? "shell"
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Session"
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
+        // Left nil for older files, like the two below: what a session with no
+        // recorded origin should fall back to is `restore`'s decision, not this
+        // type's. (It falls back to `cwd`, the only evidence there is.)
+        originCwd = try c.decodeIfPresent(String.self, forKey: .originCwd)
         selected = try c.decodeIfPresent(Bool.self, forKey: .selected) ?? false
         // Older sessions (named before auto-naming existed) are treated as
         // user-set, so the feature never surprises anyone by relabelling them.

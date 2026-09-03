@@ -45,6 +45,19 @@ final class Session: Identifiable {
     /// program). Kept for reference; not currently shown.
     var title: String
     var cwd: String?
+
+    /// Where this session was **born**, as opposed to where its shell has since
+    /// wandered. Fixed at creation and never updated by the pwd reports that
+    /// keep `cwd` live.
+    ///
+    /// This is the directory a new session next to this one should inherit. Not
+    /// `cwd`: that follows every `cd`, so opening a session beside one you'd
+    /// taken three levels deep started the new shell three levels deep too, and
+    /// every session after it inherited the drift. The birth directory is the
+    /// deliberate answer — it's the folder's root, or the worktree, or the path
+    /// `wortel new --cwd` was handed — and it's stable for as long as the
+    /// session lives. Persisted, so it survives a relaunch.
+    let originCwd: String?
     /// A background session wants your eyes *now*, and *why*: it's blocked on
     /// you, something failed, or a long command finished while unselected. `nil`
     /// once you select it (you've seen the ping). Drives the loud sidebar dot
@@ -108,11 +121,15 @@ final class Session: Identifiable {
     /// lazy). The SessionManager wires the view's callbacks here.
     @ObservationIgnored var onSurfaceCreated: ((SurfaceView) -> Void)?
 
-    init(id: UUID = UUID(), name: String = "Session", title: String = "shell", cwd: String? = nil) {
+    init(id: UUID = UUID(), name: String = "Session", title: String = "shell",
+         cwd: String? = nil, originCwd: String? = nil) {
         self.id = id
         self.name = name
         self.title = title
         self.cwd = cwd
+        // A new session starts where it starts: only `restore` has an origin to
+        // pass that differs from the current directory.
+        self.originCwd = originCwd ?? cwd
     }
 
     /// Sidebar grouping derived from the name: "giel/hello" lives in folder

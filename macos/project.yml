@@ -363,6 +363,13 @@ targets:
       # and it's plain string handling (Foundation only) that `Session` — which
       # does drag in AppKit — only delegates to.
       - path: Wortel/Sessions/SessionName.swift
+      # And once more: a folder's *directory* is path-string handling with the
+      # same silent failure mode as the name split above. A `hasPrefix` that
+      # forgets the separator hands one project's directory to the sibling whose
+      # name it prefixes; a common ancestor derived one component too far moves
+      # where every new session in that folder starts. Nothing throws either way,
+      # and neither needs a window, a shell or a repository to check.
+      - path: Wortel/Sessions/FolderRoot.swift
       # The agent marker format is a contract between two languages — the shell
       # integration writes it, Swift parses it — so nothing catches a drift on
       # either side at compile time. Same for the agent→resume-command table: a

@@ -96,6 +96,48 @@ final class PersistedSessionTests: XCTestCase {
         }
     }
 
+    // MARK: - Origin directory
+
+    /// Where a session was *born*, which is what a session opened beside it
+    /// inherits. It has to be distinguishable from where the shell has since
+    /// wandered, because telling them apart is the entire point of recording it:
+    /// `cwd` follows every `cd`, and inheriting that is what made a session
+    /// opened next to one you'd taken three levels deep start three levels deep
+    /// too, with the next one inheriting the drift again.
+    func testOriginIsSeparateFromTheDriftedDirectory() throws {
+        let session = try decode(#"""
+        {"id":"\#(UUID())","cwd":"/Users/giel/Developer/wortel/macos/Wortel/Sessions",
+         "originCwd":"/Users/giel/Developer/wortel"}
+        """#)
+        XCTAssertEqual(session.cwd, "/Users/giel/Developer/wortel/macos/Wortel/Sessions")
+        XCTAssertEqual(session.originCwd, "/Users/giel/Developer/wortel")
+    }
+
+    /// A file written before origins existed left it out, and there is nothing
+    /// to recover: the origin was never recorded. It stays nil here — what an
+    /// absent one falls back to is `SessionManager.restore`'s decision, and it
+    /// falls back to `cwd`, the only evidence there is. That is also exactly
+    /// what the old behaviour inherited, so the launch that reads an old file
+    /// behaves as it always did and the drift stops from the next session on.
+    func testAbsentOriginIsLeftForRestoreToResolve() throws {
+        let session = try decode(#"{"id":"\#(UUID())","cwd":"/Users/giel/Developer/wortel"}"#)
+        XCTAssertNil(session.originCwd, "an older file recorded no origin")
+    }
+
+    /// It has to survive a round trip, or every save would quietly downgrade
+    /// every session to "no origin recorded" and the drift would come back.
+    func testOriginRoundTrips() throws {
+        let original = PersistedSession(
+            id: UUID(), name: "Wortel/macos", title: "shell",
+            cwd: "/Users/giel/Developer/wortel/macos",
+            originCwd: "/Users/giel/Developer/wortel",
+            selected: true, nameIsUserSet: false, gitPanelVisible: nil)
+        let data = try JSONEncoder().encode([original])
+        let decoded = try JSONDecoder().decode([PersistedSession].self, from: data)
+        XCTAssertEqual(decoded.first?.originCwd, "/Users/giel/Developer/wortel")
+        XCTAssertEqual(decoded.first?.cwd, "/Users/giel/Developer/wortel/macos")
+    }
+
     // MARK: - Older files
 
     /// A real pre-per-session file: every session decodes, and says nothing about
@@ -125,6 +167,7 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertEqual(session.title, "shell")
         XCTAssertEqual(session.name, "Session")
         XCTAssertNil(session.cwd)
+        XCTAssertNil(session.originCwd)
         XCTAssertFalse(session.selected)
         XCTAssertTrue(session.nameIsUserSet, "pre-auto-naming sessions are treated as user-named")
     }

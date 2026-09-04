@@ -196,6 +196,36 @@ FSEvents watcher fires on every write, and bursts used to stack scans), and
 watches `# branch.oid` so a commit made **in the terminal** — the normal way —
 reloads History.
 
+**The changes list holds a selection, not a selected row.** ⌘ toggles a row, ⇧
+takes the run from the anchor, ⇧↑/⇧↓ do the same from the keyboard, ⌘A takes the
+lot (free to bind because the menu bar keeps Select All on ⌘⇧A so plain ⌘A
+reaches whoever has focus). The range runs over the list *as drawn*, so it can
+span Staged Changes and Changes in one sweep; what each row means stays per row,
+which is why the context menu offers Stage and Unstage separately, each acting on
+its own half. Three rules keep it honest:
+
+- **The lead is always in the selection**, and it's the row the diff pane shows,
+  drawn at full accent where the rest of the selection sits back at 0.55. Blanking
+  the diff on a multi-selection would take it away at exactly the moment you're
+  deciding what to discard, and five identical pills with one diff under them
+  don't say which. `ChangeSelection` (pure, in `WortelTests`) exists for this: a
+  range one row wide, an anchor that moves when it shouldn't, a lead left on a
+  deselected row — none of them throw, the list highlights exactly what was
+  selected, the dialog counts exactly what was highlighted, and the first news is
+  a file you never pointed at being gone.
+- **Right-click inside the selection keeps it; outside collapses onto that row**
+  (the Finder's rule). It's what lets a destructive menu item be trusted: what
+  the menu acts on is always what's highlighted behind it. The row's hover +/-
+  button is the exception and acts on its row alone, because it's attached to one.
+- **A bulk action is one `git` per kind and one status**, never one per file
+  (`GitService.discardCommands`, `chunked`). Each mutation ends in a full worktree
+  walk, so forty rows a file at a time is forty of them next to a terminal that
+  has to stay smooth, and the three kinds of discard are not interchangeable:
+  `clean` on a tracked path leaves the edit in place, `restore` on an untracked
+  file fails outright, and both look like a discard that worked. Paths are split
+  by byte budget because an argv past `ARG_MAX` fails to spawn rather than
+  returning a git error.
+
 **What the watcher watches is not just the work tree**, and a session in a
 worktree is why. A linked worktree's `.git` is a *file*; its HEAD, index and
 reflog live under the primary's `.git/worktrees/<name>`, so nothing under its own

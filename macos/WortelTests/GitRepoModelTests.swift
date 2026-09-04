@@ -243,6 +243,84 @@ final class GitRepoModelTests: XCTestCase {
         XCTAssertNil(model.selectedCommitID)
     }
 
+
+    // MARK: - Multi-selection
+
+    /// The panel's whole reason for having a selection rather than a selected
+    /// row: pick several, discard them once. The model has to end with those rows
+    /// gone from both the list and the selection, because a stale id is a file
+    /// the next bulk action would take without it ever being highlighted again.
+    func testDiscardingASelectionTakesEveryRowAndLeavesNoneSelected() async {
+        repo = GitFixture.newRepo("multi-discard")
+        GitFixture.sh("printf 'one\\n' > a.txt && printf 'two\\n' > b.txt", in: repo)
+        GitFixture.sh("printf 'three\\n' > c.txt", in: repo)
+        GitFixture.sh("git add -A && git commit -q -m first", in: repo)
+        GitFixture.sh("printf 'edit\\n' >> a.txt", in: repo)
+        GitFixture.sh("printf 'edit\\n' >> b.txt", in: repo)
+        GitFixture.sh("printf 'edit\\n' >> c.txt", in: repo)
+
+        let model = GitRepoModel(root: repo.path)
+        await model.refresh()
+        XCTAssertEqual(model.orderedChanges.count, 3)
+
+        // Click the first row, then ⇧-click the second: two of the three.
+        model.select(model.orderedChanges[0].id)
+        model.extendSelection(to: model.orderedChanges[1].id)
+        XCTAssertEqual(model.selectedChanges.map(\.path), ["a.txt", "b.txt"])
+
+        await model.discard(model.selectedChanges)
+
+        XCTAssertEqual(model.orderedChanges.map(\.path), ["c.txt"],
+                       "both selected files went back to HEAD; the third was never asked about")
+        XCTAssertFalse(model.selection.contains("W:a.txt"))
+        XCTAssertFalse(model.selection.contains("W:b.txt"))
+    }
+
+    /// The diff pane follows the lead, and the lead has to stay inside the
+    /// selection. ⌘-clicking the row it is on is the case that breaks it: the
+    /// pane would go on showing a patch for a file no longer in what the next
+    /// action takes.
+    func testTheDiffAlwaysFollowsARowThatIsStillSelected() async {
+        repo = GitFixture.newRepo("multi-lead")
+        GitFixture.sh("printf 'one\\n' > a.txt && printf 'two\\n' > b.txt", in: repo)
+        GitFixture.sh("git add -A && git commit -q -m first", in: repo)
+        GitFixture.sh("printf 'edit\\n' >> a.txt && printf 'edit\\n' >> b.txt", in: repo)
+
+        let model = GitRepoModel(root: repo.path)
+        await model.refresh()
+
+        model.select(model.orderedChanges[0].id)
+        model.toggleSelection(model.orderedChanges[1].id)
+        XCTAssertEqual(model.selectedChangeID, model.orderedChanges[1].id)
+
+        model.toggleSelection(model.orderedChanges[1].id)
+        XCTAssertEqual(model.selectedChangeID, model.orderedChanges[0].id,
+                       "the lead moved to the row that is still selected")
+        XCTAssertTrue(model.selection.contains(model.selectedChangeID!))
+    }
+
+    /// Staging a selection is one `git add`, and one status after it. Per file it
+    /// would be a full worktree walk each, which is the cost rule this whole pane
+    /// is built around.
+    func testStagingASelectionRunsOneStatusScan() async {
+        repo = GitFixture.newRepo("multi-stage")
+        GitFixture.sh("printf 'x\\n' > a.txt && printf 'x\\n' > b.txt", in: repo)
+        GitFixture.sh("printf 'x\\n' > c.txt && git add -A && git commit -q -m first", in: repo)
+        GitFixture.sh("printf 'edit\\n' >> a.txt", in: repo)
+        GitFixture.sh("printf 'edit\\n' >> b.txt && printf 'edit\\n' >> c.txt", in: repo)
+
+        let model = GitRepoModel(root: repo.path)
+        await model.refresh()
+        model.selectAllChanges()
+        XCTAssertEqual(model.selectedChanges.count, 3)
+
+        let before = model.statusScans
+        await model.stage(model.selectedChanges)
+        XCTAssertEqual(model.statusScans - before, 1, "three files, one scan")
+        XCTAssertEqual(model.status.stagedChanges.count, 3)
+        XCTAssertTrue(model.status.unstagedChanges.isEmpty)
+    }
+
     /// selectAdjacentCommit kicks off an async selection; give it a turn.
     private func settle() async {
         try? await Task.sleep(for: .milliseconds(30))

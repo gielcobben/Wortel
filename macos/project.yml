@@ -370,6 +370,12 @@ targets:
       # where every new session in that folder starts. Nothing throws either way,
       # and neither needs a window, a shell or a repository to check.
       - path: Wortel/Sessions/FolderRoot.swift
+      # A list selection is the third of these: pure index arithmetic over row
+      # ids, and the thing that decides what a *bulk* discard takes. A range that
+      # is one row wide, an anchor that moves when it shouldn't, a lead left
+      # pointing at a row that is no longer selected — none of them throw, and
+      # the first time you find out is when a file you never highlighted is gone.
+      - path: Wortel/Git/ChangeSelection.swift
       # The agent marker format is a contract between two languages — the shell
       # integration writes it, Swift parses it — so nothing catches a drift on
       # either side at compile time. Same for the agent→resume-command table: a

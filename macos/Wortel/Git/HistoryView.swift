@@ -356,14 +356,14 @@ private struct CommitFileRow: View {
         // for this file in its own window, for when the accordion's slice isn't
         // enough room to read it.
         .overlay(RowClickCatcher(
-            onClick: {
+            onClick: { _ in
                 onInteract()
                 Task { await repo.toggleCommitFile(file) }
             },
             onDoubleClick: {
                 if let sha = repo.selectedCommitID { repo.openPreview(for: file, in: sha) }
             },
-            url: URL(fileURLWithPath: repo.root).appendingPathComponent(file.path)))
+            urls: { [URL(fileURLWithPath: repo.root).appendingPathComponent(file.path)] }))
         // Right-click keeps its own catcher: it claims nothing else, so the
         // clicks above still land.
         .overlay(RightClickCatcher(onRightClick: {}, makeMenu: makeContextMenu))

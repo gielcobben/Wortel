@@ -86,6 +86,20 @@ enum MainMenu {
                             keyEquivalent: "")
         }
         appMenu.addItem(.separator())
+        // The only shortcut in this menu bar that works when Wortel is not the
+        // app you are in: ⌃⌥⌘. summons it from anywhere and puts it away again.
+        // Directly above Hide because that is the pair it belongs to — Hide is
+        // the same verb with half the range, reachable only from inside.
+        //
+        // The key equivalent is very nearly decoration. A registered Carbon hot
+        // key is consumed before AppKit ever scans this menu, so the item shows
+        // the chord and never fires on it; it becomes the real binding only if
+        // registration failed, which is exactly when an in-app fallback earns
+        // its place. See GlobalHotkey.
+        let showHide = appMenu.addItem(withTitle: "Show/Hide Wortel",
+                                       action: #selector(AppDelegate.toggleAppVisibility(_:)),
+                                       keyEquivalent: ".")
+        showHide.keyEquivalentModifierMask = [.command, .option, .control]
         appMenu.addItem(withTitle: "Hide Wortel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]

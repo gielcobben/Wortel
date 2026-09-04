@@ -338,6 +338,25 @@ keybinds: e.g. "Select All" is bound to ⌘⇧A precisely so that ⌘A is freed 
 the `wortel.conf` keybind that clears the input line. When adding/moving a
 keybind, check both files.
 
+**The global hotkey** (`Wortel/GlobalHotkey.swift`) — ⌃⌥⌘. shows and hides the
+app from any app on the machine, and it is the one binding the menu does *not*
+own. It is a Carbon `RegisterEventHotKey` rather than an
+`NSEvent` global monitor for two reasons: a monitor needs the Accessibility
+permission, which a zero-config terminal should never have to ask for, and it
+only observes the chord instead of claiming it, so the keypress would also land
+in whatever app you were in. Registration is hardcoded and unconditional —
+there is no settings UI to put a switch in, and the chord is chosen to be one
+nothing else wants.
+
+The App menu carries a matching "Show/Hide Wortel" item, which is not a
+conflicting second binding: a registered hot key is consumed before AppKit scans
+the menu, so that item displays the chord and never fires on it. It becomes the
+real (in-app only) binding exactly when registration failed because another app
+owns ⌃⌥⌘., which is the only case where a fallback is worth anything.
+`AppDelegate.toggleAppVisibility` is the shared action, and it undoes hidden,
+buried and miniaturized on the way up, because someone pressing this key means
+the same thing by all three.
+
 ## Conventions & constraints
 
 - **No em-dashes in any string a user reads** — UI copy, notifications, the

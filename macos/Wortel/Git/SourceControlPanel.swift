@@ -65,6 +65,10 @@ private struct RepoView: View {
     @State private var messageHeight: CGFloat = 52
     @State private var focusMessageRequest = 0
     @State private var lastHandledFocusRequest = 0
+    /// What a confirmed Discard would throw away. One dialog for the pane rather
+    /// than one per row: a bulk discard is asked about once, and the question has
+    /// to be able to count the files it is asking about.
+    @State private var discardCandidates: [GitFileChange] = []
 
     /// Persisted height of the changes list; the diff fills the rest. Replaces
     /// VSplitView (whose divider position SwiftUI never exposes) so the split
@@ -105,6 +109,56 @@ private struct RepoView: View {
         // view didn't exist when the token changed).
         .onChange(of: focusRequest) { _, req in applyFocusRequest(req) }
         .onAppear { applyFocusRequest(focusRequest) }
+        .confirmationDialog(
+            discardTitle,
+            isPresented: Binding(
+                get: { !discardCandidates.isEmpty },
+                set: { if !$0 { discardCandidates = [] } }),
+            titleVisibility: .visible
+        ) {
+            Button("Discard Changes", role: .destructive) {
+                let changes = discardCandidates
+                discardCandidates = []
+                Task { await repo.discard(changes) }
+            }
+            Button("Cancel", role: .cancel) { discardCandidates = [] }
+        } message: {
+            Text(discardMessage)
+        }
+    }
+
+    // MARK: Discard confirmation
+
+    private var discardTitle: String {
+        if discardCandidates.count == 1, let only = discardCandidates.first {
+            return "Discard changes to “\(only.fileName)”?"
+        }
+        return "Discard changes to \(discardCandidates.count) files?"
+    }
+
+    /// The message has to say when files will be *deleted* rather than reverted,
+    /// and a selection can be both at once: untracked files have no earlier
+    /// version to go back to, so discarding one removes it. Counting them
+    /// separately is the difference between "you'll lose today's edits" and
+    /// "that new file will be gone".
+    private var discardMessage: String {
+        let untracked = discardCandidates.filter(\.untracked).count
+        let tracked = discardCandidates.count - untracked
+        switch (tracked, untracked) {
+        case (0, 1):
+            return "This deletes the untracked file. This cannot be undone."
+        case (0, let new):
+            return "This deletes \(new) untracked files. This cannot be undone."
+        case (1, 0):
+            return "Your changes to this file will be permanently lost."
+        case (let edited, 0):
+            return "Your changes to \(edited) files will be permanently lost."
+        case (let edited, let new):
+            let files = edited == 1 ? "file" : "files"
+            let newFiles = new == 1 ? "untracked file" : "untracked files"
+            return "Your changes to \(edited) \(files) will be permanently lost, "
+                + "and \(new) \(newFiles) will be deleted."
+        }
     }
 
     /// Move keyboard focus into the changes list for an unseen focus request.
@@ -144,14 +198,14 @@ private struct RepoView: View {
                         actionIcon: "minus",
                         sectionAction: repo.status.stagedChanges.isEmpty ? nil : { Task { await repo.unstageAll() } },
                         sectionActionHelp: "Unstage All",
-                        rowAction: { change in Task { await repo.unstage(change) } })
+                        rowAction: { change in Task { await repo.unstage([change]) } })
                     changeSection(
                         title: "Changes",
                         changes: repo.status.unstagedChanges,
                         actionIcon: "plus",
                         sectionAction: repo.status.unstagedChanges.isEmpty ? nil : { Task { await repo.stageAll() } },
                         sectionActionHelp: "Stage All",
-                        rowAction: { change in Task { await repo.stage(change) } })
+                        rowAction: { change in Task { await repo.stage([change]) } })
                 }
                 .padding(.vertical, 4)
             }
@@ -163,8 +217,13 @@ private struct RepoView: View {
                 withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
             }
         }
-        // While focused, ↑/↓ walk the changes and load each diff.
-        .keyboardNavigableList(focused: $listFocused) { repo.selectAdjacent($0) }
+        // While focused, ↑/↓ walk the changes and load each diff, ⇧↑/⇧↓ drag the
+        // selection along with them, and ⌘A takes the lot.
+        .keyboardNavigableList(
+            focused: $listFocused,
+            move: { repo.selectAdjacent($0) },
+            extendMove: { repo.selectAdjacent($0, extending: true) },
+            selectAll: { repo.selectAllChanges() })
     }
 
     @ViewBuilder
@@ -198,12 +257,22 @@ private struct RepoView: View {
                 ChangeRow(
                     change: change,
                     repo: repo,
-                    isSelected: repo.selectedChangeID == change.id,
+                    isSelected: repo.selection.contains(change.id),
+                    isLead: repo.selectedChangeID == change.id,
                     actionIcon: actionIcon,
                     // Clicking a file both selects it and gives the list keyboard
-                    // focus, so ↑/↓ work immediately afterward.
-                    select: {
-                        repo.select(change.id)
+                    // focus, so ↑/↓ work immediately afterward. Which *kind* of
+                    // selection it is comes from the modifiers, the way a list
+                    // behaves everywhere else on the platform: ⌘ toggles one row,
+                    // ⇧ takes the run from the anchor, neither replaces.
+                    select: { modifiers in
+                        if modifiers.contains(.command) {
+                            repo.toggleSelection(change.id)
+                        } else if modifiers.contains(.shift) {
+                            repo.extendSelection(to: change.id)
+                        } else {
+                            repo.select(change.id)
+                        }
                         listFocused = true
                     },
                     // Double-click opens the file in its own window, showing
@@ -213,7 +282,8 @@ private struct RepoView: View {
                     open: {
                         repo.openPreview(for: change)
                     },
-                    action: { rowAction(change) })
+                    action: { rowAction(change) },
+                    requestDiscard: { discardCandidates = $0 })
                 .id(change.id)
             }
         }
@@ -349,13 +419,17 @@ private struct ChangeRow: View {
     let change: GitFileChange
     let repo: GitRepoModel
     let isSelected: Bool
+    /// The one selected row the diff pane is showing. With a single selection
+    /// this is the same thing as `isSelected`.
+    let isLead: Bool
     let actionIcon: String
-    let select: () -> Void
+    let select: (NSEvent.ModifierFlags) -> Void
     let open: () -> Void
     let action: () -> Void
+    /// Hand a set of changes to the pane's one confirmation dialog.
+    let requestDiscard: ([GitFileChange]) -> Void
 
     @State private var hovering = false
-    @State private var confirmingDiscard = false
 
     /// Selected rows are drawn on the accent, so everything on them has to come
     /// off it — same rule as the History pane's rows.
@@ -397,34 +471,28 @@ private struct ChangeRow: View {
             // A solid accent pill, matching History. The faint tint this replaces
             // read as a hover state rather than a selection, and running it edge
             // to edge made it a band across the pane instead of a row.
+            //
+            // Every selected row gets the pill, and the lead gets it at full
+            // strength: the diff below is showing exactly one of these files, and
+            // with five identical pills there is nothing on screen that says
+            // which. The gap is small on purpose — this is a lead marker, not a
+            // second kind of selection, and a bulk action takes all of them.
             if isSelected {
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.accentColor)
+                    .fill(Color.accentColor.opacity(isLead ? 1 : 0.55))
             }
         }
         .padding(.horizontal, 4)
-        .overlay(RowClickCatcher(onClick: select, onDoubleClick: open,
-                                 url: URL(fileURLWithPath: repo.root).appendingPathComponent(change.path)))
+        // Dragging a selected row drags the whole selection into the terminal
+        // (it joins the paths with spaces); dragging an unselected one is just
+        // that file, because the drag never claimed to be about the selection.
+        .overlay(RowClickCatcher(onClick: select, onDoubleClick: open, urls: dragURLs))
         .onHover { hovering = $0 }
         // Native right-click: an AppKit overlay that selects the row (so the
         // diff follows) and pops the menu. SwiftUI's own `.contextMenu` can't be
         // used to also select — its content closure is rebuilt on every render,
         // so any selection side effect there fires for every row and thrashes.
         .overlay(RightClickCatcher(onRightClick: rightClickSelect, makeMenu: makeContextMenu))
-        .confirmationDialog(
-            "Discard changes to “\(change.fileName)”?",
-            isPresented: $confirmingDiscard,
-            titleVisibility: .visible
-        ) {
-            Button("Discard Changes", role: .destructive) {
-                Task { await repo.discard(change) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(change.untracked
-                ? "This deletes the untracked file. This cannot be undone."
-                : "Your changes to this file will be permanently lost.")
-        }
     }
 
     // MARK: Context menu
@@ -437,41 +505,96 @@ private struct ChangeRow: View {
         FileManager.default.fileExists(atPath: fileURL.path)
     }
 
-    /// Applications the Launch Services database offers for this file.
     /// Select the row when it's right-clicked, so the diff pane follows it.
+    ///
+    /// A right-click **inside** an existing selection leaves it alone, so the
+    /// menu that follows can act on all of it; one outside collapses the
+    /// selection onto this row first. That is the Finder's rule, and it's the
+    /// only one that keeps a destructive menu item honest: what the menu is
+    /// about is always what is highlighted behind it.
     private func rightClickSelect() {
-        if !isSelected { select() }
+        if !isSelected { select([]) }
+    }
+
+    /// What the menu acts on: the whole selection when this row is part of it
+    /// (which `rightClickSelect` has just guaranteed), otherwise this row.
+    private var targets: [GitFileChange] {
+        let selected = repo.selectedChanges
+        return selected.contains(where: { $0.id == change.id }) ? selected : [change]
+    }
+
+    /// The files a drag carries out of this row. Same rule as the menu.
+    private func dragURLs() -> [URL] {
+        targets.map(repo.absoluteURL(for:))
     }
 
     /// Build the native right-click menu, freshly each time it opens.
+    ///
+    /// Bulk items say how many files they will touch. A count in the title is
+    /// the last thing standing between a ⇧-click that ran further than the
+    /// reader meant and an irreversible discard, and it is the reason these
+    /// titles are built rather than constant.
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
         // Respect our explicit isEnabled flags rather than AppKit's validation.
         menu.autoenablesItems = false
 
-        // Open *is* the preview window: the same thing this row's double-click
-        // gives you, showing this row's side of the diff. Editing is a separate
-        // intent and gets its own group below.
-        let open = ClosureMenuItem(title: "Open") { repo.openPreview(for: change) }
-        open.isEnabled = fileExists
-        menu.addItem(open)
-        menu.addItem(.separator())
-        menu.addEditItems(for: fileURL, exists: fileExists)
+        let targets = self.targets
+        let many = targets.count > 1
+        let suffix = many ? " \(targets.count) Files" : ""
 
+        // Open and Edit are about *a* file, so a multi-row selection doesn't get
+        // them: twelve preview windows is not what anyone means by opening a
+        // selection. Show in Finder does generalise (it reveals them all), so it
+        // stays either way.
+        if !many {
+            // Open *is* the preview window: the same thing this row's
+            // double-click gives you, showing this row's side of the diff.
+            // Editing is a separate intent and gets its own group below.
+            let open = ClosureMenuItem(title: "Open") { repo.openPreview(for: change) }
+            open.isEnabled = fileExists
+            menu.addItem(open)
+            menu.addItem(.separator())
+            menu.addEditItems(for: fileURL, exists: fileExists)
+        }
+
+        let urls = targets.map(repo.absoluteURL(for:))
         menu.addItem(ClosureMenuItem(title: "Show in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+            NSWorkspace.shared.activateFileViewerSelecting(urls)
         })
 
         menu.addItem(.separator())
 
-        menu.addItem(ClosureMenuItem(title: "Discard Changes…") { confirmingDiscard = true })
+        // Staging is per row, and a selection spanning both sections has rows
+        // that want opposite things — so offer whichever halves are actually
+        // there, each acting only on its own half. One item that did "the right
+        // thing per row" would be a single click with two meanings.
+        let unstaged = targets.filter { !$0.staged }
+        let staged = targets.filter(\.staged)
+        if !unstaged.isEmpty {
+            let title = unstaged.count > 1 ? "Stage \(unstaged.count) Files" : "Stage"
+            menu.addItem(ClosureMenuItem(title: title) { Task { await repo.stage(unstaged) } })
+        }
+        if !staged.isEmpty {
+            let title = staged.count > 1 ? "Unstage \(staged.count) Files" : "Unstage"
+            menu.addItem(ClosureMenuItem(title: title) { Task { await repo.unstage(staged) } })
+        }
 
         menu.addItem(.separator())
 
-        menu.addItem(ClosureMenuItem(title: "Ignore") { Task { await repo.ignore(change) } })
-        menu.addItem(ClosureMenuItem(title: "Copy Path") {
+        menu.addItem(ClosureMenuItem(title: "Discard Changes\(suffix)…") {
+            requestDiscard(targets)
+        })
+
+        menu.addItem(.separator())
+
+        menu.addItem(ClosureMenuItem(title: "Ignore\(suffix)") {
+            Task { await repo.ignore(targets) }
+        })
+        menu.addItem(ClosureMenuItem(title: many ? "Copy Paths" : "Copy Path") {
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(fileURL.path, forType: .string)
+            NSPasteboard.general.setString(
+                urls.map(\.path).joined(separator: "\n"), forType: .string)
         })
 
         return menu

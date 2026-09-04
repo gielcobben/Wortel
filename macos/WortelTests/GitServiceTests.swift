@@ -522,4 +522,113 @@ final class GitServiceTests: XCTestCase {
 
         _ = await GitService.removeWorktree(root: repo.path, at: linked)
     }
+
+    // MARK: - Bulk mutations
+
+    private func change(_ path: String, staged: Bool, untracked: Bool = false) -> GitFileChange {
+        GitFileChange(path: path, originalPath: nil,
+                      statusCode: untracked ? "?" : "M", staged: staged, untracked: untracked)
+    }
+
+    /// The three kinds of discard are not interchangeable, and mixing them up is
+    /// quiet in both directions: `clean` on a tracked path does nothing and
+    /// leaves the edit sitting there, `restore` on an untracked file fails with
+    /// "pathspec did not match" while the row disappears from the list anyway on
+    /// the next status. Both look exactly like a discard that worked.
+    func testDiscardGroupsEachKindIntoItsOwnCommand() {
+        let commands = GitService.discardCommands(for: [
+            change("staged.txt", staged: true),
+            change("edited.txt", staged: false),
+            change("new.txt", staged: false, untracked: true),
+            change("also-staged.txt", staged: true),
+        ])
+
+        XCTAssertEqual(commands.count, 3, "one git per kind, not one per file")
+        XCTAssertEqual(commands[0].arguments,
+                       ["restore", "--staged", "--worktree", "--source=HEAD", "--"])
+        XCTAssertEqual(commands[0].paths, ["staged.txt", "also-staged.txt"])
+        XCTAssertEqual(commands[1].arguments, ["restore", "--"])
+        XCTAssertEqual(commands[1].paths, ["edited.txt"])
+        XCTAssertEqual(commands[2].arguments, ["clean", "-f", "--"])
+        XCTAssertEqual(commands[2].paths, ["new.txt"])
+    }
+
+    /// An untracked file is untracked whichever section it was clicked in, and
+    /// `restore` has nothing to restore it from.
+    func testAnUntrackedFileIsNeverRestored() {
+        let commands = GitService.discardCommands(for: [
+            change("new.txt", staged: true, untracked: true),
+        ])
+        XCTAssertEqual(commands.count, 1)
+        XCTAssertEqual(commands[0].arguments, ["clean", "-f", "--"])
+    }
+
+    func testDiscardingNothingRunsNothing() {
+        XCTAssertTrue(GitService.discardCommands(for: []).isEmpty)
+    }
+
+    /// Select All on a repo with an unignored build directory is thousands of
+    /// rows. An argv past ARG_MAX doesn't come back as a git error, it comes back
+    /// as a spawn failure with nothing done, so the split is by bytes.
+    func testPathsAreChunkedToFitAnArgumentList() {
+        let paths = (0..<500).map { "src/some/deep/directory/file-\($0).swift" }
+        let chunks = GitService.chunked(paths, budget: 1024)
+
+        XCTAssertGreaterThan(chunks.count, 1)
+        XCTAssertEqual(chunks.flatMap { $0 }, paths, "every path survives, in order")
+        for chunk in chunks {
+            let size = chunk.reduce(0) { $0 + $1.utf8.count + 1 }
+            XCTAssertLessThanOrEqual(size - (chunk.last!.utf8.count + 1), 1024)
+        }
+    }
+
+    /// A single path over the whole budget still has to be run rather than
+    /// silently dropped, which is the one thing a chunker must not do.
+    func testAnOversizedPathStillGetsItsOwnChunk() {
+        let long = String(repeating: "x", count: 4096)
+        let chunks = GitService.chunked(["a.txt", long, "b.txt"], budget: 64)
+        XCTAssertEqual(chunks.flatMap { $0 }, ["a.txt", long, "b.txt"])
+    }
+
+    func testChunkingNothingProducesNoCommands() {
+        XCTAssertTrue(GitService.chunked([]).isEmpty)
+    }
+
+    /// The end-to-end shape: one confirmation, a mixed selection, and every kind
+    /// actually gone afterwards.
+    func testDiscardingAMixedSelectionRevertsAndDeletesInOneGo() async {
+        repo = GitFixture.newRepo("bulk-discard")
+        GitFixture.sh("printf 'one\\n' > a.txt && printf 'two\\n' > b.txt", in: repo)
+        GitFixture.sh("git add -A && git commit -q -m first", in: repo)
+        GitFixture.sh("printf 'edit\\n' >> a.txt", in: repo)
+        GitFixture.sh("printf 'edit\\n' >> b.txt && git add b.txt", in: repo)
+        GitFixture.sh("printf 'new\\n' > c.txt", in: repo)
+
+        let status = await GitService.status(root: repo.path)
+        XCTAssertEqual(status.changes.count, 3)
+
+        let result = await GitService.discard(root: repo.path, changes: status.changes)
+        XCTAssertTrue(result.ok, result.stderr)
+
+        let after = await GitService.status(root: repo.path)
+        XCTAssertTrue(after.isClean, "every kind of change was discarded: \(after.changes)")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: repo.appendingPathComponent("c.txt").path),
+            "an untracked file has no earlier version, so discarding it deletes it")
+        XCTAssertEqual(GitFixture.sh("cat b.txt", in: repo), "two",
+                       "a staged edit goes back to HEAD, index and worktree both")
+    }
+
+    /// One `.gitignore` write for the whole selection. A write per entry would
+    /// race itself: each one reads the file, appends its line and writes the
+    /// whole thing back, so the last one to land is the only entry that survives.
+    func testIgnoringASelectionAppendsEveryEntry() async {
+        repo = GitFixture.newRepo("bulk-ignore")
+        GitFixture.sh("printf 'existing\\n' > .gitignore", in: repo)
+
+        await GitService.addToGitignore(root: repo.path, paths: ["build", "dist/out.js"])
+
+        let contents = GitFixture.sh("cat .gitignore", in: repo)
+        XCTAssertEqual(contents, "existing\n/build\n/dist/out.js")
+    }
 }

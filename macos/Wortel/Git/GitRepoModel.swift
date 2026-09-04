@@ -27,9 +27,15 @@ final class GitRepoModel {
     /// stderr from the last failed action (commit conflicts, hook rejects…).
     private(set) var lastError: String?
 
-    /// The change whose diff is shown. Setting it is done via `select(_:)` so
-    /// the diff load can be awaited.
-    private(set) var selectedChangeID: String?
+    /// Which rows are selected, and which one the diff follows. See
+    /// `ChangeSelection` — the panel talks to it through the methods below so a
+    /// changed lead always gets its diff loaded.
+    private(set) var selection = ChangeSelection()
+
+    /// The change whose diff is shown: the selection's lead. Still the name the
+    /// panel and the tests use, because for a single selection nothing about it
+    /// changed.
+    var selectedChangeID: String? { selection.lead }
     private(set) var diff: DiffResult?
     /// Non-nil when the selected change is an image; `diff` is nil in that case.
     private(set) var imageDiff: ImageDiff?
@@ -293,6 +299,10 @@ final class GitRepoModel {
             if hasRemotes == nil { hasRemotes = await GitService.hasRemotes(root: root) }
             lastStatusDuration = Date().timeIntervalSince(started)
 
+            // Rows the last action consumed are gone from the new status; drop
+            // them before anything reads the selection, so a bulk action can't
+            // inherit an id that is no longer on screen.
+            selection.prune(to: orderedChanges.map(\.id))
             if let id = selectedChangeID, let change = status.changes.first(where: { $0.id == id }) {
                 await loadDiff(for: change)
             } else {
@@ -622,22 +632,20 @@ final class GitRepoModel {
         status.stagedChanges + status.unstagedChanges
     }
 
+    /// The selected changes, in the order the panel lists them — what every bulk
+    /// action applies to, and the order it reports them in.
+    var selectedChanges: [GitFileChange] {
+        orderedChanges.filter { selection.contains($0.id) }
+    }
+
     /// Move the selection by `delta` rows within `orderedChanges` (clamped at the
-    /// ends). With nothing selected yet, selects the first change.
-    func selectAdjacent(_ delta: Int) {
-        let ordered = orderedChanges
-        guard !ordered.isEmpty else { return }
-        guard let id = selectedChangeID,
-              let index = ordered.firstIndex(where: { $0.id == id }) else {
-            select(ordered.first?.id)
-            revealRequest += 1
-            return
-        }
-        let next = max(0, min(ordered.count - 1, index + delta))
-        if next != index {
-            select(ordered[next].id)
-            revealRequest += 1
-        }
+    /// ends). With nothing selected yet, selects the first change. `extending` is
+    /// ⇧↑/⇧↓: the lead moves and the range from the anchor comes with it.
+    func selectAdjacent(_ delta: Int, extending: Bool = false) {
+        let ids = orderedChanges.map(\.id)
+        guard selection.move(by: delta, in: ids, extending: extending) else { return }
+        revealRequest += 1
+        loadLeadDiff()
     }
 
     /// Bumped only by keyboard navigation — see `FileTreeModel.revealRequest`.
@@ -645,9 +653,44 @@ final class GitRepoModel {
     /// under the pointer between the two halves of a double-click.
     private(set) var revealRequest = 0
 
+    /// A plain click, or any programmatic selection: this row and nothing else.
     func select(_ id: String?) {
-        selectedChangeID = id
-        guard let id, let change = status.changes.first(where: { $0.id == id }) else {
+        selection.select(id)
+        loadLeadDiff()
+    }
+
+    /// ⌘-click: add or remove one row without disturbing the rest.
+    func toggleSelection(_ id: String) {
+        selection.toggle(id, in: orderedChanges.map(\.id))
+        loadLeadDiff()
+    }
+
+    /// ⇧-click: everything between the anchor and this row.
+    ///
+    /// The range runs over the list as drawn, which puts the two sections on one
+    /// continuous run: a ⇧-click that starts in Staged Changes and ends in
+    /// Changes takes the rows between them, because that is what the reader
+    /// dragged across. What each of those rows *means* stays per row — Discard
+    /// resets a staged file to HEAD and a working-tree file to the index, exactly
+    /// as it does one at a time.
+    func extendSelection(to id: String) {
+        selection.extend(to: id, in: orderedChanges.map(\.id))
+        loadLeadDiff()
+    }
+
+    /// ⌘A while the list has focus.
+    func selectAllChanges() {
+        selection.selectAll(in: orderedChanges.map(\.id))
+        loadLeadDiff()
+    }
+
+    /// Show the lead's diff, or clear the pane when the selection is empty. The
+    /// pane follows one row even when many are selected: it's the row you last
+    /// touched, and the alternative — blanking it whenever a second row joins —
+    /// takes the diff away at exactly the moment you're deciding what to discard.
+    private func loadLeadDiff() {
+        guard let id = selection.lead,
+              let change = status.changes.first(where: { $0.id == id }) else {
             diff = nil
             imageDiff = nil
             return
@@ -686,13 +729,15 @@ final class GitRepoModel {
 
     // MARK: - Staging
 
-    func stage(_ change: GitFileChange) async {
-        _ = await GitService.stage(root: root, change: change)
+    func stage(_ changes: [GitFileChange]) async {
+        guard !changes.isEmpty else { return }
+        _ = await GitService.stage(root: root, changes: changes)
         await refresh()
     }
 
-    func unstage(_ change: GitFileChange) async {
-        _ = await GitService.unstage(root: root, change: change)
+    func unstage(_ changes: [GitFileChange]) async {
+        guard !changes.isEmpty else { return }
+        _ = await GitService.unstage(root: root, changes: changes)
         await refresh()
     }
 
@@ -708,17 +753,21 @@ final class GitRepoModel {
 
     // MARK: - File actions
 
-    /// Discard a file's changes (destructive — the caller confirms first).
-    func discard(_ change: GitFileChange) async {
-        _ = await GitService.discard(root: root, change: change)
-        // Its diff no longer applies; drop the selection if it was this row.
-        if selectedChangeID == change.id { select(nil) }
+    /// Discard changes (destructive — the caller confirms first).
+    func discard(_ changes: [GitFileChange]) async {
+        guard !changes.isEmpty else { return }
+        _ = await GitService.discard(root: root, changes: changes)
+        // Their diffs no longer apply. Clear the pane if the lead was one of
+        // them rather than waiting for the refresh, so it can't show a patch
+        // against a file that has already been reverted.
+        if let lead = selectedChangeID, changes.contains(where: { $0.id == lead }) { select(nil) }
         await refresh()
     }
 
-    /// Add the file to the repo's `.gitignore`.
-    func ignore(_ change: GitFileChange) async {
-        await GitService.addToGitignore(root: root, path: change.path)
+    /// Add the files to the repo's `.gitignore`.
+    func ignore(_ changes: [GitFileChange]) async {
+        guard !changes.isEmpty else { return }
+        await GitService.addToGitignore(root: root, paths: changes.map(\.path))
         await refresh()
     }
 

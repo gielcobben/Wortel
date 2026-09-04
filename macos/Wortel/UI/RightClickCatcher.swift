@@ -106,11 +106,15 @@ struct PressCatcher: NSViewRepresentable {
 /// The same conclusion the sidebar reached for its own rows, where a native
 /// `doubleAction` replaced `.onTapGesture(count: 2)`.
 struct RowClickCatcher: NSViewRepresentable {
-    let onClick: () -> Void
+    /// Called with the click's modifiers, because a list selection is a different
+    /// gesture with ⌘ or ⇧ held and only the view that owns the click can tell.
+    let onClick: (NSEvent.ModifierFlags) -> Void
     let onDoubleClick: () -> Void
-    /// Dragged out when the row is dragged — the terminal accepts a `.fileURL`
-    /// and inserts the shell-escaped path.
-    let url: URL
+    /// Dragged out when the row is dragged — the terminal accepts `.fileURL`s and
+    /// inserts the shell-escaped paths, space-separated. A closure rather than a
+    /// value because a multi-row selection drags all of it, and what that is has
+    /// to be read when the drag starts rather than when the row was last drawn.
+    let urls: () -> [URL]
 
     func makeNSView(context: Context) -> CatcherView {
         let view = CatcherView()
@@ -123,13 +127,13 @@ struct RowClickCatcher: NSViewRepresentable {
     private func configure(_ view: CatcherView) {
         view.onClick = onClick
         view.onDoubleClick = onDoubleClick
-        view.url = url
+        view.urls = urls
     }
 
     final class CatcherView: NSView, NSDraggingSource {
-        var onClick: () -> Void = {}
+        var onClick: (NSEvent.ModifierFlags) -> Void = { _ in }
         var onDoubleClick: () -> Void = {}
-        var url = URL(fileURLWithPath: "/")
+        var urls: () -> [URL] = { [] }
         private var mouseDownEvent: NSEvent?
 
         /// Claims the left button and nothing else: right-clicks and hover fall
@@ -147,7 +151,7 @@ struct RowClickCatcher: NSViewRepresentable {
             // Act on the way down, like every outline view on the platform. The
             // select fires for both clicks of a double, which is what makes the
             // row highlight before the window appears.
-            onClick()
+            onClick(event.modifierFlags.intersection(.deviceIndependentFlagsMask))
             if event.clickCount == 2 { onDoubleClick() }
         }
 
@@ -159,18 +163,23 @@ struct RowClickCatcher: NSViewRepresentable {
             guard dx * dx + dy * dy > 9 else { return }
             mouseDownEvent = nil
 
+            let dragged = urls()
+            guard !dragged.isEmpty else { return }
+
             // A small icon under the pointer, not the row's whole width — a
             // 32pt icon stretched across a 300pt frame is what you get for
-            // passing `bounds` here.
-            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            // passing `bounds` here. Several files stack on that same spot,
+            // which is what the Finder does with a multi-file drag.
             let size = NSSize(width: 32, height: 32)
             let origin = convert(down.locationInWindow, from: nil)
-            let item = NSDraggingItem(pasteboardWriter: url as NSURL)
-            item.setDraggingFrame(
-                NSRect(x: origin.x - size.width / 2, y: origin.y - size.height / 2,
-                       width: size.width, height: size.height),
-                contents: icon)
-            beginDraggingSession(with: [item], event: down, source: self)
+            let frame = NSRect(x: origin.x - size.width / 2, y: origin.y - size.height / 2,
+                               width: size.width, height: size.height)
+            let items = dragged.map { url -> NSDraggingItem in
+                let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+                item.setDraggingFrame(frame, contents: NSWorkspace.shared.icon(forFile: url.path))
+                return item
+            }
+            beginDraggingSession(with: items, event: down, source: self)
         }
 
         override func mouseUp(with event: NSEvent) { mouseDownEvent = nil }

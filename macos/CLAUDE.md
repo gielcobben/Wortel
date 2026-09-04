@@ -120,11 +120,38 @@ frame, then `warmRemainingSurfaces()` warms the rest one-per-runloop-turn so
 launch stays lean. `wire()` connects each surface's callbacks (title/pwd/bell/
 close) back to session state.
 
+**Where a new session starts** is `SessionManager.newSession`, and it is the one
+piece of session handling with a rule worth stating. A sidebar **folder carries a
+directory** (`folderRoots`, UserDefaults beside the other three folder keys) —
+before that it was purely the part of a name before the last slash, so "New
+Session in “GFPC”" filed a session under GFPC and started it wherever the
+*selected* session was standing, which looked exactly like it had worked. The
+resolution order is: an explicit `cwd` (the CLI, a worktree, ⌘O), then the named
+folder's directory, then the selected session's **`originCwd`**, then that
+session's folder's directory, then nil so `wortel.conf`'s `working-directory =
+home` answers. Two things about it are load-bearing:
+
+- **`originCwd`, not `cwd`.** `cwd` tracks the shell's pwd reports, so
+  inheriting it meant a session opened beside one you had taken three levels
+  deep started three levels deep too, and the next one inherited the drift
+  again. The birth directory is the deliberate answer and never moves.
+- **Each remembered path is `stat`ed before it is used** (`existingDirectory`),
+  because `chdir` is best-effort: a project that moved on disk would otherwise
+  silently start the shell somewhere else instead of falling through to the next
+  answer. The stored root is *not* cleared when that happens — an unmounted
+  volume must not look like lost configuration.
+
+`FolderRoot` (pure, in `WortelTests`) holds the path handling: containment that
+respects component boundaries, the deepest-root match ⌘O files into, and the
+one-time derivation that gives folders predating the feature a directory from
+where their sessions already are.
+
 **`SessionStore`** (`Wortel/Sessions/SessionStore.swift`) — debounced JSON
-persistence of the session list (order, names, cwds, selection, git-panel
-visibility) to `~/Library/Application Support/Wortel/sessions.json`. This is
-*app state*, not user config — Wortel stays zero-config. Decoder tolerates older
-files missing fields. `saveNow` runs synchronously on termination.
+persistence of the session list (order, names, cwds and origin cwds, selection,
+git-panel visibility) to `~/Library/Application Support/Wortel/sessions.json`.
+This is *app state*, not user config — Wortel stays zero-config. Decoder
+tolerates older files missing fields. `saveNow` runs synchronously on
+termination.
 
 **UI shell** (`Wortel/UI/`) — `ContentView` is a SwiftUI `NavigationSplitView`
 (sidebar list + terminal detail) hosted inside an AppKit window

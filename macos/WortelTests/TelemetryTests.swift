@@ -201,7 +201,7 @@ final class TelemetryTests: XCTestCase {
         for uptime in DurationBucket.allCases {
             events.append(.appQuit(uptime: uptime))
         }
-        let origins: [SessionOrigin] = [.menu, .cli, .worktree, .restore]
+        let origins: [SessionOrigin] = [.menu, .cli, .worktree, .restore, .openFolder, .home]
         for origin in origins {
             events.append(.sessionCreated(via: origin))
         }

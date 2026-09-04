@@ -520,9 +520,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.newSession()
     }
 
-    @objc func newSection(_ sender: Any?) {
+    @objc func newHomeSession(_ sender: Any?) {
         focusMainWindow()
-        if let name = promptFolderName(title: "New Section", confirm: "Create") {
+        manager.newHomeSession()
+    }
+
+    /// Bring the window forward *before* the panel, not after: the open panel is
+    /// modal, so ordering the window front once it's up does nothing until it
+    /// closes, and the sidebar the new session appears in would be behind
+    /// whatever you were looking at.
+    @objc func openFolder(_ sender: Any?) {
+        focusMainWindow()
+        openFolderSession(manager)
+    }
+
+    @objc func newFolder(_ sender: Any?) {
+        focusMainWindow()
+        if let name = promptFolderName(title: "New Folder", confirm: "Create") {
             manager.addFolder(named: name)
         }
     }

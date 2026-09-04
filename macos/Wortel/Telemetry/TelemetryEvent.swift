@@ -168,6 +168,14 @@ enum SessionOrigin: String {
     case cli
     case worktree
     case restore
+    /// ⌘O: a directory picked from the panel, which also created the folder
+    /// pointing at it when none did yet.
+    case openFolder = "open_folder"
+    /// ⌥⌘N: deliberately out of every folder and back to the home directory.
+    /// Its whole reason to exist is the question of whether inheriting the
+    /// current directory is the right default, so it has to be countable
+    /// separately from the ⌘N it sits next to.
+    case home
 }
 
 /// What opened the inspector. The toolbar and the shortcut are different

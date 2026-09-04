@@ -56,7 +56,8 @@ about the thing it happened to:
   never an exact count), and roughly how many agents resumed
 - the app quit, and roughly how long it ran
 - a session was created, and whether that was from the menu, the `wortel`
-  command, or a worktree
+  command, a worktree, opening a folder, or the shortcut that starts one in
+  your home directory (never which folder, or where it was opened)
 - a session was renamed
 - the git panel was opened, on which of the three panes, and whether from the
   toolbar or the keyboard

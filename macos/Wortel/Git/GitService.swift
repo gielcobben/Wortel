@@ -779,13 +779,13 @@ enum GitService {
 
     // MARK: - Mutations
 
-    static func stage(root: String, change: GitFileChange) async -> CommandResult {
-        await run(["add", "--", change.path], in: root)
+    static func stage(root: String, changes: [GitFileChange]) async -> CommandResult {
+        await runBatched(["add", "--"], paths: changes.map(\.path), in: root)
     }
 
-    static func unstage(root: String, change: GitFileChange) async -> CommandResult {
+    static func unstage(root: String, changes: [GitFileChange]) async -> CommandResult {
         // restore --staged is git 2.23+; universal on supported macOS.
-        await run(["restore", "--staged", "--", change.path], in: root)
+        await runBatched(["restore", "--staged", "--"], paths: changes.map(\.path), in: root)
     }
 
     static func stageAll(root: String) async -> CommandResult {
@@ -800,34 +800,107 @@ enum GitService {
         await run(["commit", "-m", message], in: root)
     }
 
-    /// Throw away a file's changes. Untracked → delete the file; staged → reset
-    /// both index and worktree to HEAD; unstaged tracked → restore the worktree
-    /// from the index. Destructive; callers gate it behind a confirmation.
-    static func discard(root: String, change: GitFileChange) async -> CommandResult {
-        if change.untracked {
-            return await run(["clean", "-f", "--", change.path], in: root)
+    /// Throw away changes. Untracked → delete the file; staged → reset both index
+    /// and worktree to HEAD; unstaged tracked → restore the worktree from the
+    /// index. Destructive; callers gate it behind a confirmation.
+    ///
+    /// Runs at most one `git` per kind rather than one per file, because the
+    /// panel's cost rule applies hardest here: each mutation is followed by a
+    /// `git status`, which is a full worktree walk, so discarding a forty-file
+    /// selection a file at a time is forty of them next to a terminal that has to
+    /// stay smooth.
+    static func discard(root: String, changes: [GitFileChange]) async -> CommandResult {
+        var last = CommandResult(status: 0, stdout: "", stderr: "")
+        for command in discardCommands(for: changes) {
+            let result = await runBatched(command.arguments, paths: command.paths, in: root)
+            // Report the first failure, but keep going: the groups are
+            // independent, and stopping would leave a partial discard that the
+            // list can't explain (half the rows you confirmed are still there).
+            if !result.ok, last.ok { last = result }
         }
-        if change.staged {
-            return await run(
-                ["restore", "--staged", "--worktree", "--source=HEAD", "--", change.path],
-                in: root)
-        }
-        return await run(["restore", "--", change.path], in: root)
+        return last
     }
 
-    /// Append a root-anchored pattern for `path` to the repo's `.gitignore`,
+    /// One `git` invocation per kind of discard, in the order they must run.
+    ///
+    /// Pure, and pinned by tests, because the three kinds are not
+    /// interchangeable and nothing complains when they're mixed up: `clean` on a
+    /// tracked path is a no-op that leaves the edit in place, and `restore` on an
+    /// untracked file fails with "pathspec did not match" while the row it came
+    /// from disappears from the list on the next status either way. Both look
+    /// exactly like a discard that worked.
+    ///
+    /// Staged goes first so a file selected on *both* sides ends at HEAD rather
+    /// than at whatever the index held.
+    static func discardCommands(for changes: [GitFileChange]) -> [(arguments: [String], paths: [String])] {
+        let untracked = changes.filter(\.untracked).map(\.path)
+        let staged = changes.filter { $0.staged && !$0.untracked }.map(\.path)
+        let unstaged = changes.filter { !$0.staged && !$0.untracked }.map(\.path)
+
+        var commands: [(arguments: [String], paths: [String])] = []
+        if !staged.isEmpty {
+            commands.append((["restore", "--staged", "--worktree", "--source=HEAD", "--"], staged))
+        }
+        if !unstaged.isEmpty { commands.append((["restore", "--"], unstaged)) }
+        if !untracked.isEmpty { commands.append((["clean", "-f", "--"], untracked)) }
+        return commands
+    }
+
+    /// Run `git <arguments> <paths…>`, split into as many invocations as the
+    /// argument list needs.
+    ///
+    /// A selection is bounded by what a person highlights, but Select All on a
+    /// repo mid-rebase (or with an unignored build directory) is thousands of
+    /// rows, and an argv over the kernel's `ARG_MAX` doesn't come back as a git
+    /// error, it comes back as a spawn failure with nothing done. Chunking by
+    /// bytes rather than by count is the honest bound: paths here are as long as
+    /// the repo makes them.
+    private static func runBatched(
+        _ arguments: [String], paths: [String], in root: String
+    ) async -> CommandResult {
+        var last = CommandResult(status: 0, stdout: "", stderr: "")
+        for chunk in chunked(paths) {
+            let result = await run(arguments + chunk, in: root)
+            if !result.ok, last.ok { last = result }
+        }
+        return last
+    }
+
+    /// Split `paths` into groups whose combined length stays well under the
+    /// system's argument limit (256KB on macOS, and the environment shares it).
+    static func chunked(_ paths: [String], budget: Int = 96 * 1024) -> [[String]] {
+        var chunks: [[String]] = []
+        var current: [String] = []
+        var size = 0
+        for path in paths {
+            let cost = path.utf8.count + 1
+            // A single path over budget still has to go somewhere: on its own,
+            // where it's the kernel's problem rather than a silently dropped row.
+            if !current.isEmpty, size + cost > budget {
+                chunks.append(current)
+                current = []
+                size = 0
+            }
+            current.append(path)
+            size += cost
+        }
+        if !current.isEmpty { chunks.append(current) }
+        return chunks
+    }
+
+    /// Append root-anchored patterns for `paths` to the repo's `.gitignore`,
     /// creating the file if needed and keeping one entry per line. IO runs off
-    /// the main thread.
-    static func addToGitignore(root: String, path: String) async {
+    /// the main thread, and the whole selection is one read-modify-write: a file
+    /// per entry would race itself and lose all but the last.
+    static func addToGitignore(root: String, paths: [String]) async {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let url = URL(fileURLWithPath: root).appendingPathComponent(".gitignore")
-                let entry = "/" + path + "\n"
                 let existing = (try? Data(contentsOf: url)) ?? Data()
                 var data = existing
                 // Separate from any prior last line that lacks a trailing newline.
                 if let last = existing.last, last != 0x0A { data.append(0x0A) }
-                data.append(Data(entry.utf8))
+                for path in paths { data.append(Data(("/" + path + "\n").utf8)) }
                 try? data.write(to: url)
                 continuation.resume()
             }

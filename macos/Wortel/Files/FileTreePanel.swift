@@ -391,7 +391,8 @@ private struct FileRow: View {
                 }
             }
             .contentShape(Rectangle())
-            .overlay(RowClickCatcher(onClick: select, onDoubleClick: open, url: row.node.url))
+            .overlay(RowClickCatcher(onClick: { _ in select() }, onDoubleClick: open,
+                                     urls: { [row.node.url] }))
         }
         .padding(.leading, CGFloat(row.depth) * 12)
         .padding(.horizontal, 8)

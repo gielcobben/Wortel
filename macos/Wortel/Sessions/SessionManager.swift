@@ -161,11 +161,27 @@ final class SessionManager {
     }
     @ObservationIgnored private static let folderOrderKey = "WortelFolderOrder"
 
+    /// The directory each folder stands for, keyed by folder name. A folder
+    /// without one is what every folder used to be: a label.
+    ///
+    /// This is what makes "New Session in “GFPC”" mean GFPC. Before it, a
+    /// folder was purely the part of a session's name before the last slash, so
+    /// that command filed a session under GFPC and started it wherever the
+    /// *selected* session happened to be standing — which looked like it had
+    /// worked. Same shelf as the other three: view state about the sidebar, not
+    /// session data, so UserDefaults rather than `sessions.json`.
+    private(set) var folderRoots: [String: String] = [:] {
+        didSet { UserDefaults.standard.set(folderRoots, forKey: Self.folderRootsKey) }
+    }
+    @ObservationIgnored private static let folderRootsKey = "WortelFolderRoots"
+
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
         collapsedFolders = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedFoldersKey) ?? [])
         declaredFolders = UserDefaults.standard.stringArray(forKey: Self.declaredFoldersKey) ?? []
         folderOrder = UserDefaults.standard.stringArray(forKey: Self.folderOrderKey) ?? []
+        folderRoots = UserDefaults.standard.dictionary(forKey: Self.folderRootsKey)
+            as? [String: String] ?? [:]
     }
 
     // MARK: - Sidebar folders (derived from session names)
@@ -209,6 +225,63 @@ final class SessionManager {
     /// Drives the "Move To" menu and name-collision checks.
     var folderNames: [String] { sidebarGroups.compactMap(\.folder) }
 
+    // MARK: - Folder directories
+
+    /// The directory `folder` stands for, or nil for a folder that is still
+    /// just a label. nil folder (the top level) never has one: the top level
+    /// isn't a project, it's everything that isn't in one.
+    func root(ofFolder folder: String?) -> String? {
+        folder.flatMap { folderRoots[$0] }
+    }
+
+    /// Point a folder at a directory, or clear it with nil. Normalized on the
+    /// way in so two spellings of one path can't become two different folders.
+    func setRoot(_ path: String?, ofFolder folder: String) {
+        folderRoots[folder] = path.flatMap(FolderRoot.normalize)
+    }
+
+    /// `path`, if there is still a directory there.
+    ///
+    /// Every remembered directory in this file is a path recorded at some point
+    /// in the past, and the disk moves underneath it: a project gets renamed, a
+    /// worktree gets removed, a volume gets unmounted. Handing a dead path to a
+    /// new session doesn't fail loudly — `chdir` is best-effort and the shell
+    /// just starts somewhere else — so it has to be checked here, where there's
+    /// still another answer to fall through to.
+    ///
+    /// What it deliberately does *not* do is forget the root. A folder pointed
+    /// at an unmounted volume still shows its directory in the sidebar and can
+    /// be repointed; silently clearing it would make a mounting problem look
+    /// like lost configuration.
+    private func existingDirectory(_ path: String?) -> String? {
+        guard let path else { return nil }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return nil }
+        return path
+    }
+
+    /// Adopt a directory for every folder that has never had one, from where its
+    /// sessions already are. Runs once per launch, after restore, and is a no-op
+    /// from the second launch on (a derived root is stored like any other).
+    ///
+    /// Without this, the feature ships switched off for everyone who already has
+    /// folders: each one would be a label until pointed at a directory by hand,
+    /// and "New Session in “GFPC”" would go on doing the wrong thing until then.
+    /// The rules that keep the guess quiet live in `FolderRoot.derived`.
+    private func adoptFolderRoots() {
+        let home = NSHomeDirectory()
+        let worktrees = [GitWorktree.root.path]
+        for folder in folderNames where folderRoots[folder] == nil {
+            let cwds = sessions
+                .filter { $0.folderPath == folder }
+                .compactMap { $0.originCwd }
+            guard let root = FolderRoot.derived(
+                from: cwds, excludingUnder: worktrees, home: home) else { continue }
+            folderRoots[folder] = root
+        }
+    }
+
     /// Create a new, empty folder (the "+ → New Folder" menu). Name is made
     /// unique; the folder is left expanded and its name returned.
     @discardableResult
@@ -237,6 +310,13 @@ final class SessionManager {
             else { declaredFolders[i] = trimmed }
         }
         if collapsedFolders.remove(folder) != nil { collapsedFolders.insert(trimmed) }
+        // The directory belongs to the folder, not to its name. Losing it on a
+        // rename would quietly turn a project back into a label. Renaming *onto*
+        // an existing folder is a merge, and there the destination keeps its own
+        // directory — the sessions are moving into it, not redefining it.
+        if let root = folderRoots.removeValue(forKey: folder), folderRoots[trimmed] == nil {
+            folderRoots[trimmed] = root
+        }
         // Rename in place so the folder keeps its position instead of jumping to
         // the end when syncFolderOrder drops the old name and appends the new.
         if let i = folderOrder.firstIndex(of: folder) { folderOrder[i] = trimmed }
@@ -252,6 +332,7 @@ final class SessionManager {
         }
         declaredFolders.removeAll { $0 == folder }
         collapsedFolders.remove(folder)
+        folderRoots.removeValue(forKey: folder)
         normalizeOrder()
         scheduleSave()
     }
@@ -348,7 +429,12 @@ final class SessionManager {
         // Markers left by agents that were still running at quit — resume them.
         let resume = AgentResumeStore.consumeSnapshot()
         for entry in persisted {
-            let session = Session(id: entry.id, name: entry.name, title: entry.title, cwd: entry.cwd)
+            // A file written before sessions recorded an origin has only the
+            // last known cwd to offer, which is exactly what the old behaviour
+            // would have inherited — so the migration changes nothing on the
+            // launch that reads it, and the drift stops from the next one on.
+            let session = Session(id: entry.id, name: entry.name, title: entry.title,
+                                  cwd: entry.cwd, originCwd: entry.originCwd ?? entry.cwd)
             // An unrecognised source (a file from a newer build) is treated as the
             // user's: the one reading that can never relabel work by surprise.
             session.nameSource = Session.NameSource(rawValue: entry.nameSource) ?? .user
@@ -383,6 +469,7 @@ final class SessionManager {
             appendRestored(session)
         }
         syncFolderOrder() // seed/prune the persisted folder order for the restored set
+        adoptFolderRoots() // give folders that predate directories one, from where they already are
         // Mirror the markers that outlived the last launch onto the sessions that
         // just came back. The directory watcher can't do it: it was armed before
         // there were any sessions to mirror onto, and a marker whose agent is
@@ -685,8 +772,29 @@ final class SessionManager {
 
     // MARK: - Operations
 
-    /// Create a session and select it; new sessions inherit the current
-    /// working directory.
+    /// Create a session and select it, in the directory the request implies.
+    ///
+    /// Four answers, in order, and the order is the whole design:
+    ///
+    /// 1. **An explicit `cwd`.** The CLI's `--cwd`, a worktree checkout, the
+    ///    directory ⌘O just picked. Somebody named a path; nothing outranks that.
+    /// 2. **The named folder's directory.** `folder` is only ever passed when
+    ///    the request was *about* that folder ("New Session in “GFPC”"), and
+    ///    what it means is GFPC. This is the case that used to be silently
+    ///    wrong: the session was filed under GFPC and started wherever the
+    ///    selection was standing, which looked exactly like it had worked.
+    /// 3. **Where the selected session was born**, not where it is now. `cwd`
+    ///    follows every `cd`, so inheriting it meant a session opened beside one
+    ///    you'd taken three levels deep started three levels deep too, and the
+    ///    next one inherited that. `originCwd` is the deliberate answer and
+    ///    doesn't drift. This is the "same folder as the one I'm in" case, which
+    ///    is why a plain ⌘N still stays next to what you're looking at.
+    /// 4. **The selected session's folder's directory**, for a session restored
+    ///    from a file old enough to have no recorded origin.
+    ///
+    /// Falling off the end is `nil`, which lets `wortel.conf`'s
+    /// `working-directory = home` answer — a first launch has no session to
+    /// inherit from and starts at home, as it always has.
     ///
     /// `via` is reported and nothing else: it is the only way to learn whether
     /// the `wortel` command is used by anyone, which is the whole premise of
@@ -698,7 +806,36 @@ final class SessionManager {
         // New sessions land next to what you're looking at: the explicit folder
         // (header context menu) or the selected session's folder, else top level.
         let dir = folder ?? selected?.folderPath
-        let directory = cwd ?? selected?.cwd
+        // Each remembered answer is checked before it's used, so a project that
+        // moved on disk falls through to the next one rather than starting a
+        // shell in a directory that isn't there. An explicit `cwd` isn't: the
+        // caller named it, the CLI already validates it, and a worktree path is
+        // one git just wrote.
+        let directory = cwd
+            ?? existingDirectory(root(ofFolder: folder))
+            ?? existingDirectory(selected?.originCwd)
+            ?? existingDirectory(root(ofFolder: selected?.folderPath))
+        return makeSession(cwd: directory, inFolder: dir, via: origin)
+    }
+
+    /// A session in the home directory, deliberately outside every folder.
+    ///
+    /// Home is not a project, so filing it under whichever folder you happened
+    /// to be looking at would put a `~` row inside "Wortel". This is the escape
+    /// hatch from inheritance: one keystroke back to the top, from anywhere,
+    /// without a `cd` and without a folder to point at first.
+    @discardableResult
+    func newHomeSession(via origin: SessionOrigin = .home) -> Session {
+        makeSession(cwd: NSHomeDirectory(), inFolder: nil, via: origin)
+    }
+
+    /// The shared tail of the two above, taking a directory and a folder that
+    /// have both already been decided. Split out so "which folder" can't quietly
+    /// pick up `newSession`'s inherit-from-the-selection rule on the one path
+    /// that exists to escape it.
+    private func makeSession(
+        cwd directory: String?, inFolder dir: String?, via origin: SessionOrigin
+    ) -> Session {
         // Named for where it is, not for what number it is. "Session 3" tells you
         // nothing, and it's what a session is stuck with until an agent turn ends
         // and the model gets a look — on a machine without Apple Intelligence,
@@ -716,6 +853,38 @@ final class SessionManager {
         scheduleSave()
         Telemetry.capture(.sessionCreated(via: origin))
         return session
+    }
+
+    /// Open `path` as a session: ⌘O, and the only way to reach a directory that
+    /// no session is standing in without typing `cd`.
+    ///
+    /// The session is filed into the folder that already covers `path` —
+    /// deepest root wins, so opening `wortel/web` lands in "Web" rather than
+    /// "Wortel" when both exist. Only when nothing covers it does this create a
+    /// folder, named for the directory and pointed at it, which is how a folder
+    /// comes to have a directory without anyone visiting a menu.
+    @discardableResult
+    func openFolder(_ path: String, via origin: SessionOrigin = .openFolder) -> Session {
+        let path = FolderRoot.normalize(path) ?? path
+        if let existing = FolderRoot.folder(containing: path, in: folderRoots) {
+            return newSession(cwd: path, inFolder: existing, via: origin)
+        }
+        // A directory's name is always a usable folder name — it cannot contain
+        // the separator sidebar names are split on — with exactly one
+        // exception: the filesystem root, whose last component *is* that
+        // separator. Opening `/` isn't opening a project, so it gets a session
+        // and no folder rather than a folder named "/" that `SessionName` would
+        // then have to make sense of.
+        let leaf = (path as NSString).lastPathComponent
+        guard leaf != "/", !leaf.isEmpty else {
+            return makeSession(cwd: path, inFolder: nil, via: origin)
+        }
+        // `addFolder` makes the name unique, so opening a second `web` from
+        // another project gets "web 2" rather than joining the first one — two
+        // directories are two projects however they're spelled.
+        let folder = addFolder(named: leaf)
+        setRoot(path, ofFolder: folder)
+        return newSession(cwd: path, inFolder: folder, via: origin)
     }
 
     /// `base`, or `base 2`, `base 3`… — the first that no session in `folder`
@@ -1614,6 +1783,7 @@ final class SessionManager {
             }()
             return PersistedSession(
                 id: session.id, name: session.name, title: session.title, cwd: session.cwd,
+                originCwd: session.originCwd,
                 selected: session.id == selectedID, nameSource: session.nameSource.rawValue,
                 worktreeBranch: session.worktreeBranch,
                 gitPanelVisible: session.gitPanelVisible,

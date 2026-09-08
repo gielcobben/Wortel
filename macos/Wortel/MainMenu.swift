@@ -86,62 +86,44 @@ enum MainMenu {
                             keyEquivalent: "")
         }
         appMenu.addItem(.separator())
+        // The only shortcut in this menu bar that works when Wortel is not the
+        // app you are in: ⌃⌥⌘. summons it from anywhere and puts it away again.
+        // Directly above Hide because that is the pair it belongs to — Hide is
+        // the same verb with half the range, reachable only from inside.
+        //
+        // The key equivalent is very nearly decoration. A registered Carbon hot
+        // key is consumed before AppKit ever scans this menu, so the item shows
+        // the chord and never fires on it; it becomes the real binding only if
+        // registration failed, which is exactly when an in-app fallback earns
+        // its place. See GlobalHotkey.
+        let showHide = appMenu.addItem(withTitle: "Show/Hide Wortel",
+                                       action: #selector(AppDelegate.toggleAppVisibility(_:)),
+                                       keyEquivalent: ".")
+        showHide.keyEquivalentModifierMask = [.command, .option, .control]
         appMenu.addItem(withTitle: "Hide Wortel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Wortel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
-        // Edit menu (copy/paste route to the focused SurfaceView via the
-        // responder chain; SurfaceView implements these selectors).
-        let editItem = NSMenuItem()
-        main.addItem(editItem)
-        let editMenu = NSMenu(title: "Edit")
-        editItem.submenu = editMenu
-        // Undo/Redo/Cut carry the standard first-responder selectors, so they
-        // reach the field editor of whatever text field is being edited (e.g. a
-        // session rename) and feel native there. SurfaceView implements none of
-        // them, so with the terminal focused the items are disabled and the
-        // keypress falls through — ⌘Z reaches ghostty's cmd+z keybind (undo the
-        // input line), ⌘X and ⌘⇧Z are simply no-ops.
-        //
-        // "Disabled" rests on the *window's* undo manager being empty, which is an
-        // invariant something else has to keep: `undo:` resolves through the
-        // responder chain to that manager, not to the first responder, so anything
-        // registering there enables this item no matter what is focused. The commit
-        // box got that wrong and it crashed the app (see `CommitMessageEditor`).
-        // A view with `allowsUndo` owns its own manager, or this breaks again.
-        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
-        redo.keyEquivalentModifierMask = [.command, .shift]
-        editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(SurfaceView.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(SurfaceView.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(.separator())
-        // Cmd+Shift+A, not Cmd+A: Cmd+A is a keybind in wortel.conf that clears
-        // the input line (a terminal can't select just the typed command). The
-        // menu is authoritative for key equivalents, so freeing Cmd+A here is
-        // what lets that keybind reach the surface. While a session is being
-        // renamed, `setTextEditing(_:)` flips this to ⌘A so select-all works in
-        // the field, then flips it back.
-        let selectAll = editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
-        selectAll.keyEquivalentModifierMask = [.command, .shift]
-        editMenu.addItem(.separator())
-        // Only ever enabled while a preview window is key: it resolves through
-        // the responder chain to PreviewWindowController, and nothing in the
-        // main window implements it. That's what lets ⌘F live in the menu
-        // without taking it away from the shell, where ⌘F is the terminal's.
-        editMenu.addItem(withTitle: "Find",
-                         action: #selector(PreviewWindowController.showPreviewFind(_:)),
-                         keyEquivalent: "f")
-        selectAllItem = selectAll
-
         // Session menu — the heart of the app, all keyboard-driven.
+        //
+        // **First after the app menu, before Edit**, which is where every Mac
+        // app puts the menu named for the thing it works on: Terminal.app and
+        // iTerm2 both put "Shell" there, and neither has a File menu at all. It
+        // sat after Edit for a while and read subtly wrong for exactly that
+        // reason. Menu order here is construction order, so this block staying
+        // above Edit's *is* the fix — keep the file in menu-bar order.
         let sessionItem = NSMenuItem()
         main.addItem(sessionItem)
         let sessionMenu = NSMenu(title: "Session")
         sessionItem.submenu = sessionMenu
+
+        // -- Start a session ---------------------------------------------------
+        // Two rows, and they're a deliberate pair: the same command with the two
+        // answers to "where". ⌘N keeps you where you are, ⌥⌘N gets you out. They
+        // sit together so the second reads as the exception to the first rather
+        // than as a second, unexplained "New Session".
         sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "n")
         // ⌘T is every terminal's "new tab". Wortel has no tabs — a session is
         // the thing that shortcut reaches for — so it's an alias of ⌘N above
@@ -151,10 +133,38 @@ enum MainMenu {
         let newSessionTab = sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "t")
         newSessionTab.isHidden = true
         newSessionTab.allowsKeyEquivalentWhenHidden = true
-        let newSection = sessionMenu.addItem(withTitle: "New Section", action: #selector(AppDelegate.newSection(_:)), keyEquivalent: "n")
-        newSection.keyEquivalentModifierMask = [.command, .shift]
+        // ⌘N inherits the directory you're in, which is right until the moment
+        // you want out of it. This is the way out, and it's a command rather
+        // than a preference because both answers are wanted by the same person
+        // on the same day. Free of a wortel.conf keybind (alt+n isn't bound).
+        let newHome = sessionMenu.addItem(withTitle: "New Session at Home", action: #selector(AppDelegate.newHomeSession(_:)), keyEquivalent: "n")
+        newHome.keyEquivalentModifierMask = [.command, .option]
+
+        // -- Folders -----------------------------------------------------------
+        // The two folder verbs, adjacent because that's how they read: make an
+        // empty one to file sessions into, or open a directory that already
+        // exists. New before Open, which is the order every Mac File menu uses.
+        sessionMenu.addItem(.separator())
+        // **"Folder", not "Section".** This item was the last place in the app
+        // that called a folder a section — the sidebar's + menu, both header
+        // context menus and every type and method say folder — and one letter
+        // from "New Session" is a bad place to keep a synonym. Ellipsis because
+        // it asks for a name.
+        let newFolder = sessionMenu.addItem(withTitle: "New Folder\u{2026}", action: #selector(AppDelegate.newFolder(_:)), keyEquivalent: "n")
+        newFolder.keyEquivalentModifierMask = [.command, .shift]
+        // ⌘O is every Mac app's "open", and a directory is the only thing
+        // Wortel opens. Files are opened by the tree and by ⌘-clicking a path,
+        // which are both already in front of the file you mean.
+        sessionMenu.addItem(withTitle: "Open Folder\u{2026}", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
+
+        // -- This session ------------------------------------------------------
+        // Acting on the selected session, as opposed to making one. No ellipsis
+        // on Rename: it starts an inline edit in the sidebar, not a dialog.
+        sessionMenu.addItem(.separator())
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
         sessionMenu.addItem(withTitle: "Close Session", action: #selector(AppDelegate.closeSession(_:)), keyEquivalent: "w")
+
+        // -- Move between sessions ---------------------------------------------
         sessionMenu.addItem(.separator())
         // ⌘⇧[ / ⌘⇧] walk the sidebar. They're the system-wide convention for
         // "previous/next thing in this window" — Safari, Chrome, Finder,
@@ -220,6 +230,51 @@ enum MainMenu {
             item.tag = i - 1
             if i <= 3 { sessionDigitItems.append(item) }
         }
+
+        // Edit menu (copy/paste route to the focused SurfaceView via the
+        // responder chain; SurfaceView implements these selectors).
+        let editItem = NSMenuItem()
+        main.addItem(editItem)
+        let editMenu = NSMenu(title: "Edit")
+        editItem.submenu = editMenu
+        // Undo/Redo/Cut carry the standard first-responder selectors, so they
+        // reach the field editor of whatever text field is being edited (e.g. a
+        // session rename) and feel native there. SurfaceView implements none of
+        // them, so with the terminal focused the items are disabled and the
+        // keypress falls through — ⌘Z reaches ghostty's cmd+z keybind (undo the
+        // input line), ⌘X and ⌘⇧Z are simply no-ops.
+        //
+        // "Disabled" rests on the *window's* undo manager being empty, which is an
+        // invariant something else has to keep: `undo:` resolves through the
+        // responder chain to that manager, not to the first responder, so anything
+        // registering there enables this item no matter what is focused. The commit
+        // box got that wrong and it crashed the app (see `CommitMessageEditor`).
+        // A view with `allowsUndo` owns its own manager, or this breaks again.
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(SurfaceView.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(SurfaceView.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(.separator())
+        // Cmd+Shift+A, not Cmd+A: Cmd+A is a keybind in wortel.conf that clears
+        // the input line (a terminal can't select just the typed command). The
+        // menu is authoritative for key equivalents, so freeing Cmd+A here is
+        // what lets that keybind reach the surface. While a session is being
+        // renamed, `setTextEditing(_:)` flips this to ⌘A so select-all works in
+        // the field, then flips it back.
+        let selectAll = editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
+        selectAll.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        // Only ever enabled while a preview window is key: it resolves through
+        // the responder chain to PreviewWindowController, and nothing in the
+        // main window implements it. That's what lets ⌘F live in the menu
+        // without taking it away from the shell, where ⌘F is the terminal's.
+        editMenu.addItem(withTitle: "Find",
+                         action: #selector(PreviewWindowController.showPreviewFind(_:)),
+                         keyEquivalent: "f")
+        selectAllItem = selectAll
 
         // View menu (font size; session-local)
         let viewItem = NSMenuItem()

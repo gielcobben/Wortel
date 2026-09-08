@@ -65,6 +65,12 @@ enum TelemetryEvent: Equatable {
     /// looks used simply because it fires; this says whether anyone acts on it.
     case agentJumpUsed
 
+    /// The global hotkey was used. The same question `agentJumpUsed` asks, and
+    /// the only place it can be asked from: this one fires from outside the
+    /// app, where no other signal in this file is watching. A system-wide chord
+    /// nobody presses is a chord that should be given back to the system.
+    case globalHotkeyUsed
+
     /// A `wortel` command was served over the socket.
     case commandRun(verb: CommandVerb)
 
@@ -88,6 +94,7 @@ enum TelemetryEvent: Equatable {
         case .previewOpened: return "preview_opened"
         case .agentAttention: return "agent_attention"
         case .agentJumpUsed: return "agent_jump_used"
+        case .globalHotkeyUsed: return "global_hotkey_used"
         case .commandRun: return "command_run"
         case .reportingDisabled: return "reporting_disabled"
         }
@@ -111,7 +118,7 @@ enum TelemetryEvent: Equatable {
             return ["mode": mode.rawValue]
         case let .agentAttention(kind):
             return ["kind": kind.rawValue]
-        case .agentJumpUsed, .reportingDisabled:
+        case .agentJumpUsed, .globalHotkeyUsed, .reportingDisabled:
             return [:]
         case let .commandRun(verb):
             return ["verb": verb.rawValue]
@@ -168,6 +175,14 @@ enum SessionOrigin: String {
     case cli
     case worktree
     case restore
+    /// ⌘O: a directory picked from the panel, which also created the folder
+    /// pointing at it when none did yet.
+    case openFolder = "open_folder"
+    /// ⌥⌘N: deliberately out of every folder and back to the home directory.
+    /// Its whole reason to exist is the question of whether inheriting the
+    /// current directory is the right default, so it has to be countable
+    /// separately from the ⌘N it sits next to.
+    case home
 }
 
 /// What opened the inspector. The toolbar and the shortcut are different

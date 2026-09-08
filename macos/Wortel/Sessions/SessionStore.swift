@@ -5,6 +5,17 @@ struct PersistedSession: Codable {
     let name: String
     let title: String
     let cwd: String?
+    /// Where the session was created, as opposed to where its shell had wandered
+    /// by the time this was written. What a session opened beside this one
+    /// inherits. See `Session.originCwd`.
+    ///
+    /// Absent in every file written before sessions had one, and there is no
+    /// recovering it: the origin was never recorded, so the last known `cwd` is
+    /// the only candidate and `SessionManager.restore` uses it. That is exactly
+    /// what the old behaviour would have inherited anyway, so the migration
+    /// changes nothing on the launch that reads an old file, and the drift stops
+    /// from the next session on.
+    let originCwd: String?
     let selected: Bool
     /// Where the name came from, as `Session.NameSource`'s raw value: "user",
     /// "agent", "model" or "placeholder". Decides who may replace it; see
@@ -62,7 +73,8 @@ struct PersistedSession: Codable {
 
     // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
-        case id, name, title, cwd, selected, nameSource, worktreeBranch, gitPanelVisible, inspectorPane
+        case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch
+        case gitPanelVisible, inspectorPane
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
@@ -70,12 +82,13 @@ struct PersistedSession: Codable {
     private enum LegacyKeys: String, CodingKey {
         case nameIsUserSet
     }
-    init(id: UUID, name: String, title: String, cwd: String?, selected: Bool,
-         nameSource: String, worktreeBranch: String? = nil, gitPanelVisible: Bool?,
-         inspectorPane: String? = nil,
+    init(id: UUID, name: String, title: String, cwd: String?, originCwd: String? = nil,
+         selected: Bool, nameSource: String, worktreeBranch: String? = nil,
+         gitPanelVisible: Bool?, inspectorPane: String? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
+        self.originCwd = originCwd
         self.selected = selected; self.nameSource = nameSource
         self.worktreeBranch = worktreeBranch
         self.gitPanelVisible = gitPanelVisible
@@ -90,6 +103,10 @@ struct PersistedSession: Codable {
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? "shell"
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Session"
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
+        // Left nil for older files, like the two below: what a session with no
+        // recorded origin should fall back to is `restore`'s decision, not this
+        // type's. (It falls back to `cwd`, the only evidence there is.)
+        originCwd = try c.decodeIfPresent(String.self, forKey: .originCwd)
         selected = try c.decodeIfPresent(Bool.self, forKey: .selected) ?? false
         // Files written before sources existed said only whether the user had
         // named the session. A `true` is exactly `user`; a `false` was a default

@@ -193,6 +193,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
+        // The window has to exist before the chord that raises it can be
+        // claimed, and nothing after this point is something the hot key needs.
+        GlobalHotkey.shared.start { [weak self] in self?.toggleAppVisibility(nil) }
+
         // Last, because everything it can be asked to do has to exist first.
         let cli = WortelCLIService(
             manager: manager,
@@ -265,6 +269,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func applyWindowTitle() {
         window?.title = manager.selected?.name ?? "Wortel"
         window?.subtitle = manager.selected?.abbreviatedPath ?? ""
+    }
+
+    // MARK: - Show/hide from anywhere (⌃⌥⌘., see GlobalHotkey)
+
+    /// One key, two meanings, and which one you get is decided by whether you
+    /// can already see the app: frontmost with a window up means put it away,
+    /// and everything else means bring it back.
+    ///
+    /// "Everything else" is doing the work here. Hidden, buried under another
+    /// app, and miniaturized in the Dock are three unrelated AppKit states, but
+    /// someone pressing this key means the same thing by all three, so all three
+    /// are undone on the way up. `NSApp.hide` is what makes the return trip
+    /// cheap: AppKit remembers what was on screen when it hid, so `unhide`
+    /// restores the preview windows that were open beside the terminal without
+    /// this having to track them.
+    ///
+    /// It runs from the menu item too, where only the hide half is ever
+    /// reachable — you cannot pick a menu from an app you are not in.
+    @objc func toggleAppVisibility(_ sender: Any?) {
+        Telemetry.capture(.globalHotkeyUsed)
+
+        let onScreen = window.map { $0.isVisible && !$0.isMiniaturized } ?? false
+        if NSApp.isActive, !NSApp.isHidden, onScreen {
+            NSApp.hide(nil)
+            return
+        }
+
+        if NSApp.isHidden { NSApp.unhide(nil) }
+        if let window {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+        }
+        // The one place in the app that activates over whatever you were doing.
+        // The `wortel` command deliberately never does this (a hook firing
+        // behind your back must not take your keyboard); a chord you pressed
+        // yourself is the opposite case.
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Focus tracking (drives "actively viewing" → no attention shout)
@@ -520,9 +561,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.newSession()
     }
 
-    @objc func newSection(_ sender: Any?) {
+    @objc func newHomeSession(_ sender: Any?) {
         focusMainWindow()
-        if let name = promptFolderName(title: "New Section", confirm: "Create") {
+        manager.newHomeSession()
+    }
+
+    /// Bring the window forward *before* the panel, not after: the open panel is
+    /// modal, so ordering the window front once it's up does nothing until it
+    /// closes, and the sidebar the new session appears in would be behind
+    /// whatever you were looking at.
+    @objc func openFolder(_ sender: Any?) {
+        focusMainWindow()
+        openFolderSession(manager)
+    }
+
+    @objc func newFolder(_ sender: Any?) {
+        focusMainWindow()
+        if let name = promptFolderName(title: "New Folder", confirm: "Create") {
             manager.addFolder(named: name)
         }
     }

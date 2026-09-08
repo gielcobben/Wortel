@@ -120,11 +120,38 @@ frame, then `warmRemainingSurfaces()` warms the rest one-per-runloop-turn so
 launch stays lean. `wire()` connects each surface's callbacks (title/pwd/bell/
 close) back to session state.
 
+**Where a new session starts** is `SessionManager.newSession`, and it is the one
+piece of session handling with a rule worth stating. A sidebar **folder carries a
+directory** (`folderRoots`, UserDefaults beside the other three folder keys) —
+before that it was purely the part of a name before the last slash, so "New
+Session in “GFPC”" filed a session under GFPC and started it wherever the
+*selected* session was standing, which looked exactly like it had worked. The
+resolution order is: an explicit `cwd` (the CLI, a worktree, ⌘O), then the named
+folder's directory, then the selected session's **`originCwd`**, then that
+session's folder's directory, then nil so `wortel.conf`'s `working-directory =
+home` answers. Two things about it are load-bearing:
+
+- **`originCwd`, not `cwd`.** `cwd` tracks the shell's pwd reports, so
+  inheriting it meant a session opened beside one you had taken three levels
+  deep started three levels deep too, and the next one inherited the drift
+  again. The birth directory is the deliberate answer and never moves.
+- **Each remembered path is `stat`ed before it is used** (`existingDirectory`),
+  because `chdir` is best-effort: a project that moved on disk would otherwise
+  silently start the shell somewhere else instead of falling through to the next
+  answer. The stored root is *not* cleared when that happens — an unmounted
+  volume must not look like lost configuration.
+
+`FolderRoot` (pure, in `WortelTests`) holds the path handling: containment that
+respects component boundaries, the deepest-root match ⌘O files into, and the
+one-time derivation that gives folders predating the feature a directory from
+where their sessions already are.
+
 **`SessionStore`** (`Wortel/Sessions/SessionStore.swift`) — debounced JSON
-persistence of the session list (order, names, cwds, selection, git-panel
-visibility) to `~/Library/Application Support/Wortel/sessions.json`. This is
-*app state*, not user config — Wortel stays zero-config. Decoder tolerates older
-files missing fields. `saveNow` runs synchronously on termination.
+persistence of the session list (order, names, cwds and origin cwds, selection,
+git-panel visibility) to `~/Library/Application Support/Wortel/sessions.json`.
+This is *app state*, not user config — Wortel stays zero-config. Decoder
+tolerates older files missing fields. `saveNow` runs synchronously on
+termination.
 
 **Session naming** (`Session.NameSource`, `Wortel/Sessions/AgentTitle.swift`,
 `SessionNameGenerator`) — a row's name comes from the best source that has
@@ -178,6 +205,36 @@ synthetic; `WortelTests` pins all of them):
 FSEvents watcher fires on every write, and bursts used to stack scans), and
 watches `# branch.oid` so a commit made **in the terminal** — the normal way —
 reloads History.
+
+**The changes list holds a selection, not a selected row.** ⌘ toggles a row, ⇧
+takes the run from the anchor, ⇧↑/⇧↓ do the same from the keyboard, ⌘A takes the
+lot (free to bind because the menu bar keeps Select All on ⌘⇧A so plain ⌘A
+reaches whoever has focus). The range runs over the list *as drawn*, so it can
+span Staged Changes and Changes in one sweep; what each row means stays per row,
+which is why the context menu offers Stage and Unstage separately, each acting on
+its own half. Three rules keep it honest:
+
+- **The lead is always in the selection**, and it's the row the diff pane shows,
+  drawn at full accent where the rest of the selection sits back at 0.55. Blanking
+  the diff on a multi-selection would take it away at exactly the moment you're
+  deciding what to discard, and five identical pills with one diff under them
+  don't say which. `ChangeSelection` (pure, in `WortelTests`) exists for this: a
+  range one row wide, an anchor that moves when it shouldn't, a lead left on a
+  deselected row — none of them throw, the list highlights exactly what was
+  selected, the dialog counts exactly what was highlighted, and the first news is
+  a file you never pointed at being gone.
+- **Right-click inside the selection keeps it; outside collapses onto that row**
+  (the Finder's rule). It's what lets a destructive menu item be trusted: what
+  the menu acts on is always what's highlighted behind it. The row's hover +/-
+  button is the exception and acts on its row alone, because it's attached to one.
+- **A bulk action is one `git` per kind and one status**, never one per file
+  (`GitService.discardCommands`, `chunked`). Each mutation ends in a full worktree
+  walk, so forty rows a file at a time is forty of them next to a terminal that
+  has to stay smooth, and the three kinds of discard are not interchangeable:
+  `clean` on a tracked path leaves the edit in place, `restore` on an untracked
+  file fails outright, and both look like a discard that worked. Paths are split
+  by byte budget because an argv past `ARG_MAX` fails to spawn rather than
+  returning a git error.
 
 **What the watcher watches is not just the work tree**, and a session in a
 worktree is why. A linked worktree's `.git` is a *file*; its HEAD, index and
@@ -320,6 +377,25 @@ because AppKit scans key equivalents on every keypress. The menu is
 keybinds: e.g. "Select All" is bound to ⌘⇧A precisely so that ⌘A is freed for
 the `wortel.conf` keybind that clears the input line. When adding/moving a
 keybind, check both files.
+
+**The global hotkey** (`Wortel/GlobalHotkey.swift`) — ⌃⌥⌘. shows and hides the
+app from any app on the machine, and it is the one binding the menu does *not*
+own. It is a Carbon `RegisterEventHotKey` rather than an
+`NSEvent` global monitor for two reasons: a monitor needs the Accessibility
+permission, which a zero-config terminal should never have to ask for, and it
+only observes the chord instead of claiming it, so the keypress would also land
+in whatever app you were in. Registration is hardcoded and unconditional —
+there is no settings UI to put a switch in, and the chord is chosen to be one
+nothing else wants.
+
+The App menu carries a matching "Show/Hide Wortel" item, which is not a
+conflicting second binding: a registered hot key is consumed before AppKit scans
+the menu, so that item displays the chord and never fires on it. It becomes the
+real (in-app only) binding exactly when registration failed because another app
+owns ⌃⌥⌘., which is the only case where a fallback is worth anything.
+`AppDelegate.toggleAppVisibility` is the shared action, and it undoes hidden,
+buried and miniaturized on the way up, because someone pressing this key means
+the same thing by all three.
 
 ## Conventions & constraints
 

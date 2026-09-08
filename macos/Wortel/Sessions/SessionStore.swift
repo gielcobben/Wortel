@@ -6,8 +6,15 @@ struct PersistedSession: Codable {
     let title: String
     let cwd: String?
     let selected: Bool
-    /// Whether the user explicitly named this session; auto-naming skips these.
-    let nameIsUserSet: Bool
+    /// Where the name came from, as `Session.NameSource`'s raw value: "user",
+    /// "agent", "model" or "placeholder". Decides who may replace it; see
+    /// `docs/session-naming.md`. A raw string for the same reason
+    /// `inspectorPane` is: what an unrecognised value should mean is
+    /// `SessionManager.restore`'s call.
+    let nameSource: String
+    /// The branch a worktree session was opened on, for the row's second line.
+    /// nil for a session outside one of Wortel's worktrees.
+    let worktreeBranch: String?
     /// Whether the source-control panel is open for this session. Per-session
     /// because whether you want it depends on the session: a manager sitting in
     /// your home directory never needs it, the one in a repo always does.
@@ -53,17 +60,24 @@ struct PersistedSession: Codable {
     /// conversation. nil when it couldn't be observed; the guess still applies.
     let runningConversationID: String?
 
-    // Tolerate older files without a `name` / `nameIsUserSet` field.
+    // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
-        case id, name, title, cwd, selected, nameIsUserSet, gitPanelVisible, inspectorPane
+        case id, name, title, cwd, selected, nameSource, worktreeBranch, gitPanelVisible, inspectorPane
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
+    /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
+    /// so the synthesised encoder never writes it again.
+    private enum LegacyKeys: String, CodingKey {
+        case nameIsUserSet
+    }
     init(id: UUID, name: String, title: String, cwd: String?, selected: Bool,
-         nameIsUserSet: Bool, gitPanelVisible: Bool?, inspectorPane: String? = nil,
+         nameSource: String, worktreeBranch: String? = nil, gitPanelVisible: Bool?,
+         inspectorPane: String? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
-        self.selected = selected; self.nameIsUserSet = nameIsUserSet
+        self.selected = selected; self.nameSource = nameSource
+        self.worktreeBranch = worktreeBranch
         self.gitPanelVisible = gitPanelVisible
         self.inspectorPane = inspectorPane
         self.runningAgent = runningAgent; self.runningModel = runningModel
@@ -77,9 +91,23 @@ struct PersistedSession: Codable {
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Session"
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
         selected = try c.decodeIfPresent(Bool.self, forKey: .selected) ?? false
-        // Older sessions (named before auto-naming existed) are treated as
-        // user-set, so the feature never surprises anyone by relabelling them.
-        nameIsUserSet = try c.decodeIfPresent(Bool.self, forKey: .nameIsUserSet) ?? true
+        // Files written before sources existed said only whether the user had
+        // named the session. A `true` is exactly `user`; a `false` was a default
+        // or a model guess, and both are things anything may now replace, so
+        // `placeholder`. Older still (no flag at all) is treated as user-set, so
+        // the feature never surprises anyone by relabelling a session they had
+        // long since settled on.
+        if let source = try c.decodeIfPresent(String.self, forKey: .nameSource) {
+            nameSource = source
+        } else {
+            let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+            let userSet = try legacy.decodeIfPresent(Bool.self, forKey: .nameIsUserSet) ?? true
+            nameSource = userSet ? "user" : "placeholder"
+        }
+        // Absent for every session written before worktree sessions carried
+        // their branch, and for any session outside a worktree; both mean "no
+        // branch to show", and `restore` asks git for the ones that are in one.
+        worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
         // Left nil for older files rather than defaulted here: what an absent
         // field should fall back to is a migration decision, and this type stays
         // a plain reading of the file. `SessionManager.restore` resolves it.

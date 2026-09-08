@@ -374,6 +374,11 @@ targets:
       # while you read it, too shy and a session keeps a name that stopped being
       # true an hour ago. A fake clock is the only way to pin that.
       - path: Wortel/Sessions/AutoNameThrottle.swift
+      # An agent's terminal title read as a session name. Pure string handling
+      # whose failures are silent: a marker glyph it misses leaves a session on
+      # its placeholder forever, and a state word it lets through names one
+      # "Working". Foundation only.
+      - path: Wortel/Sessions/AgentTitle.swift
       # Why a session is asking for attention, and the rollup rule a collapsed
       # folder shows on behalf of what it hides. Pure, and the rollup is a
       # max-not-latest rule whose failure mode is silence: a blocked agent

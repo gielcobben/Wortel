@@ -22,11 +22,32 @@ final class Session: Identifiable {
     /// User-facing name shown as the sidebar row's primary line and the
     /// window title. Defaults to "Session N"; renamable later.
     var name: String
-    /// The user explicitly named this session (an inline rename), so auto-naming
-    /// must never overwrite it. Default "Session N" names and auto-generated
-    /// ones leave this false and stay eligible for (re)naming as work shifts.
-    /// Persisted. See SessionNameGenerator.
-    var nameIsUserSet: Bool = false
+    /// Where `name` came from, which decides who may replace it. Persisted.
+    ///
+    /// The order is the precedence: the user's word is final; an agent's own
+    /// title for its conversation beats anything guessed; the on-device model
+    /// only fills in where no agent has spoken; and a placeholder (the
+    /// directory, a branch) is what anything may replace. See
+    /// `docs/session-naming.md`.
+    enum NameSource: String, Codable, Comparable {
+        case placeholder, model, agent, user
+
+        private var rank: Int {
+            switch self {
+            case .placeholder: return 0
+            case .model: return 1
+            case .agent: return 2
+            case .user: return 3
+            }
+        }
+        static func < (lhs: NameSource, rhs: NameSource) -> Bool { lhs.rank < rhs.rank }
+    }
+    var nameSource: NameSource = .placeholder
+    /// The branch this session's worktree was opened on, when Wortel opened it.
+    /// Shown under the name: a worktree session is named for its task and this
+    /// is where the task lives. Persisted; nil for a session that isn't in one
+    /// of Wortel's worktrees.
+    var worktreeBranch: String?
     /// Whether the source-control panel is open while this session is selected.
     /// Per-session, and persisted: whether the panel earns its width depends on
     /// what the session is for — a manager in your home directory never needs
@@ -133,9 +154,30 @@ final class Session: Identifiable {
         return base.isEmpty ? "/" : base
     }
 
-    /// Tilde-abbreviated working directory, shown under the session name in
-    /// the sidebar. Empty only when the cwd is unknown (before the shell's
-    /// first prompt reports it).
+    /// Whether this session lives in a worktree Wortel made. Cheap, a path
+    /// prefix and no git call: the authoritative check happens in the manager
+    /// before anything is removed.
+    var isInOwnWorktree: Bool {
+        cwd?.hasPrefix(GitWorktree.root.path + "/") == true
+    }
+
+    /// What the row's second line says for a worktree session: the branch, or
+    /// until that's known, the checkout's directory. nil outside a worktree.
+    var worktreeLabel: String? {
+        guard isInOwnWorktree else { return nil }
+        return worktreeBranch ?? displayName
+    }
+
+    /// A worktree session shows its branch under the name, unless the name
+    /// *is* the branch, which is what a fresh one is called until an agent or
+    /// the model says what it's for. Drives the row's two-line layout.
+    var showsBranchLine: Bool {
+        guard let label = worktreeLabel else { return false }
+        return label != leafName
+    }
+
+    /// Tilde-abbreviated working directory. Empty only when the cwd is unknown
+    /// (before the shell's first prompt reports it).
     var abbreviatedPath: String {
         guard let cwd, !cwd.isEmpty else { return "" }
         return (cwd as NSString).abbreviatingWithTildeInPath

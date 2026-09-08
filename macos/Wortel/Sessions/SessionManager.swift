@@ -349,7 +349,10 @@ final class SessionManager {
         let resume = AgentResumeStore.consumeSnapshot()
         for entry in persisted {
             let session = Session(id: entry.id, name: entry.name, title: entry.title, cwd: entry.cwd)
-            session.nameIsUserSet = entry.nameIsUserSet
+            // An unrecognised source (a file from a newer build) is treated as the
+            // user's: the one reading that can never relabel work by surprise.
+            session.nameSource = Session.NameSource(rawValue: entry.nameSource) ?? .user
+            session.worktreeBranch = entry.worktreeBranch
             // nil means the file predates per-session visibility — inherit the
             // old app-wide flag just this once.
             session.gitPanelVisible = entry.gitPanelVisible ?? SessionStore.legacyGitPanelVisible
@@ -385,6 +388,7 @@ final class SessionManager {
         // there were any sessions to mirror onto, and a marker whose agent is
         // still running is one nobody is about to write to.
         refreshAgentActivity()
+        resolveWorktreeBranches()
         selectedID = (persisted.first(where: \.selected) ?? persisted[0]).id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.warmRemainingSurfaces()
@@ -879,13 +883,15 @@ final class SessionManager {
             }
         }
         let session = newSession(cwd: path, inFolder: folder, via: .worktree)
-        // Named for the branch rather than for the slug its directory got —
-        // and deliberately as a *user* name, which is what `rename` records.
-        // A worktree session's identity is its branch: it's what the
-        // directory is, what the diff is against, and what you'd call it out
-        // loud. Auto-naming renaming it to whatever the agent is currently
-        // doing would disconnect the row from the checkout it belongs to.
-        rename(session, to: session.folderPath.map { "\($0)/\(branch)" } ?? branch)
+        // Named for the branch rather than for the slug its directory got, but
+        // only as a placeholder: a worktree session is about a *task*, and the
+        // agent you start in it will say what that is. The branch doesn't get
+        // lost when that happens; it moves to the row's second line
+        // (`worktreeBranch`), which is where "which checkout is this" belongs
+        // once the name is busy saying what the work is.
+        session.worktreeBranch = branch
+        session.name = session.folderPath.map { "\($0)/\(branch)" } ?? branch
+        scheduleSave()
         return .success(session)
     }
 
@@ -1063,9 +1069,9 @@ final class SessionManager {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != session.name else { return }
         session.name = trimmed
-        // An explicit rename is the user's word — auto-naming must never touch
-        // this session again.
-        session.nameIsUserSet = true
+        // An explicit rename is the user's word — neither an agent's title nor
+        // the model may touch this session again.
+        session.nameSource = .user
         // A rename can re-folder the session ("hello" -> "giel/hello"): keep the
         // flat order matching the render order, and make sure the row it moved
         // to is actually visible.
@@ -1229,6 +1235,9 @@ final class SessionManager {
                 working=\(Self.hasWorkingMarker(trimmed), privacy: .public) — \(trimmed, privacy: .private)
                 """)
         }
+        // Before the state reading: the same title carries the agent's name for
+        // the conversation, whether or not it is currently working.
+        adoptAgentTitle(session, title: trimmed)
         if trimmed.hasPrefix("✋") || trimmed.contains("Action Required") {
             titleShowsWorking.remove(session.id)
             noteExplicitSignal(session)
@@ -1482,7 +1491,9 @@ final class SessionManager {
     /// actor; a no-op everywhere Apple Intelligence is unavailable.
     private func considerAutoName(_ session: Session) {
         guard #available(macOS 26.0, *), SessionNameGenerator.isAvailable else { return }
-        guard !session.nameIsUserSet else { return }
+        // The model fills in only where nobody better has spoken: a session
+        // the user named, or that its agent has titled, keeps that name.
+        guard session.nameSource < .agent else { return }
         guard let raw = session.surfaceView?.readScreenText() else { return }
         let distilled = SessionNameGenerator.distill(raw)
 
@@ -1514,19 +1525,57 @@ final class SessionManager {
             self.autoNameState[id] = state
 
             guard let session, self.sessions.contains(where: { $0.id == id }),
-                  !session.nameIsUserSet, // may have been renamed while we waited
+                  session.nameSource < .agent, // renamed or agent-titled while we waited
                   let name, !name.isEmpty, name != session.leafName else { return }
-            self.applyAutoName(session, to: name)
+            self.applyAutoName(session, to: name, source: .model)
         }
     }
 
-    /// Set a session's auto-generated name, preserving any folder prefix (the
-    /// name *is* the folder membership, so only the leaf changes). Does not set
-    /// `nameIsUserSet` — an auto-name stays eligible for later refinement.
-    private func applyAutoName(_ session: Session, to leaf: String) {
+    /// Set a session's automatic name, preserving any folder prefix (the name
+    /// *is* the folder membership, so only the leaf changes), and record where
+    /// it came from so the precedence in `Session.NameSource` holds from here on.
+    private func applyAutoName(_ session: Session, to leaf: String, source: Session.NameSource) {
         session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
+        session.nameSource = source
         normalizeOrder()
         scheduleSave()
+        // Whether automatic naming earns its keep is visible in the ratio of
+        // these to hand renames, and nowhere else. `leaf` stays here.
+        Telemetry.capture(.sessionRenamed(automatic: true))
+    }
+
+    /// An agent's terminal title, taken as the session's name. Claude Code
+    /// titles its conversation from the first prompt and pushes that title
+    /// into the terminal, so this is where a session gets its real name, a
+    /// few seconds in, from the conversation itself. See `AgentTitle` for what
+    /// counts as one and `docs/session-naming.md` for why it outranks the model.
+    ///
+    /// Titles are bursty (a working agent retitles several times a second to
+    /// animate its glyph), so this is a parse and a string compare per title,
+    /// and only an actual change reaches the sidebar or the store.
+    private func adoptAgentTitle(_ session: Session, title: String) {
+        guard session.nameSource != .user else { return }
+        guard let name = AgentTitle.sessionName(
+            fromTitle: title, placeholder: Self.defaultTitle(forCwd: session.cwd))
+        else { return }
+        guard name != session.leafName else { return }
+        applyAutoName(session, to: name, source: .agent)
+    }
+
+    /// Ask git which branch each worktree session is on, for the ones that
+    /// don't know. Sessions written before the branch was persisted, and any
+    /// whose checkout was switched by hand, otherwise show the directory's slug
+    /// where the branch should be.
+    private func resolveWorktreeBranches() {
+        for session in sessions where session.isInOwnWorktree && session.worktreeBranch == nil {
+            guard let cwd = session.cwd else { continue }
+            Task { [weak session] in
+                let result = await GitService.run(["rev-parse", "--abbrev-ref", "HEAD"], in: cwd)
+                let branch = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard result.ok, !branch.isEmpty, branch != "HEAD", let session else { return }
+                session.worktreeBranch = branch
+            }
+        }
     }
 
     // MARK: - Persistence
@@ -1565,7 +1614,8 @@ final class SessionManager {
             }()
             return PersistedSession(
                 id: session.id, name: session.name, title: session.title, cwd: session.cwd,
-                selected: session.id == selectedID, nameIsUserSet: session.nameIsUserSet,
+                selected: session.id == selectedID, nameSource: session.nameSource.rawValue,
+                worktreeBranch: session.worktreeBranch,
                 gitPanelVisible: session.gitPanelVisible,
                 inspectorPane: session.inspectorPane?.rawValue,
                 runningAgent: agent?.agent, runningModel: agent?.model,

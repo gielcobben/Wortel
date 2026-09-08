@@ -46,7 +46,7 @@ final class PersistedSessionTests: XCTestCase {
         for visible in [true, false] {
             let original = PersistedSession(
                 id: UUID(), name: "Wakker/Manager", title: "shell", cwd: "/tmp",
-                selected: true, nameIsUserSet: true, gitPanelVisible: visible)
+                selected: true, nameSource: "user", gitPanelVisible: visible)
             let data = try JSONEncoder().encode([original])
             let decoded = try JSONDecoder().decode([PersistedSession].self, from: data)
             XCTAssertEqual(decoded.first?.gitPanelVisible, visible)
@@ -88,7 +88,7 @@ final class PersistedSessionTests: XCTestCase {
         for pane in ["files", nil] {
             let original = PersistedSession(
                 id: UUID(), name: "Wortel/App", title: "shell", cwd: "/tmp",
-                selected: true, nameIsUserSet: true, gitPanelVisible: true,
+                selected: true, nameSource: "user", gitPanelVisible: true,
                 inspectorPane: pane)
             let data = try JSONEncoder().encode([original])
             let decoded = try JSONDecoder().decode([PersistedSession].self, from: data)
@@ -126,7 +126,36 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertEqual(session.name, "Session")
         XCTAssertNil(session.cwd)
         XCTAssertFalse(session.selected)
-        XCTAssertTrue(session.nameIsUserSet, "pre-auto-naming sessions are treated as user-named")
+        XCTAssertEqual(session.nameSource, "user", "pre-auto-naming sessions are treated as user-named")
+        XCTAssertNil(session.worktreeBranch)
+    }
+
+    // MARK: - Name source
+
+    /// The flag `nameSource` replaced. A `true` was the user's rename and is
+    /// exactly `user`; a `false` was a default or a model's guess, and both are
+    /// things anything may now replace. Mapping `false` to `model` instead
+    /// would let a stale guess outrank nothing and block nothing, but it would
+    /// also claim the model had spoken where it never did.
+    func testLegacyUserSetFlagMigratesToASource() throws {
+        let named = try decode(#"{"id":"\#(UUID())","nameIsUserSet":true}"#)
+        XCTAssertEqual(named.nameSource, "user")
+        let guessed = try decode(#"{"id":"\#(UUID())","nameIsUserSet":false}"#)
+        XCTAssertEqual(guessed.nameSource, "placeholder")
+    }
+
+    /// A source present in the file wins over the legacy flag, and the encoder
+    /// no longer writes the flag at all.
+    func testNameSourceRoundTripsWithoutTheLegacyFlag() throws {
+        let original = PersistedSession(
+            id: UUID(), name: "Wortel/Fix quiesce race", title: "shell", cwd: "/tmp",
+            selected: false, nameSource: "agent", worktreeBranch: "fix/quiesce",
+            gitPanelVisible: nil)
+        let data = try JSONEncoder().encode([original])
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("nameIsUserSet"))
+        let decoded = try JSONDecoder().decode([PersistedSession].self, from: data)
+        XCTAssertEqual(decoded.first?.nameSource, "agent")
+        XCTAssertEqual(decoded.first?.worktreeBranch, "fix/quiesce")
     }
 
     /// `id` is the one field with no sensible default — a record without it is

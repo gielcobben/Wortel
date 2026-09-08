@@ -35,7 +35,9 @@ struct SidebarPane: View {
         SidebarOutlineView(
             manager: manager,
             snapshot: manager.sidebarGroups.map {
-                SidebarSnapshotGroup(folder: $0.folder, sessionIDs: $0.sessions.map(\.id))
+                SidebarSnapshotGroup(
+                    folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
+                    tallIDs: Set($0.sessions.filter(\.showsBranchLine).map(\.id)))
             })
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 2) {
@@ -113,7 +115,7 @@ struct SidebarRowContent: View {
             session: session,
             isSelected: manager.selectedID == session.id,
             isEditing: manager.editingID == session.id,
-            isInWorktree: isInOwnWorktree,
+            isInWorktree: session.isInOwnWorktree,
             commit: { newName in
                 manager.rename(session, to: newName)
                 manager.editingID = nil
@@ -154,22 +156,17 @@ struct SidebarRowContent: View {
         // the directory is what the session *is*. git refuses while there are
         // uncommitted changes, and that refusal is shown rather than overridden:
         // a worktree is where work lives.
-        if isInOwnWorktree {
+        if session.isInOwnWorktree {
             menu.addItem(ClosureMenuItem(title: "Remove Worktree\u{2026}") { removeWorktree() })
         }
         menu.addItem(ClosureMenuItem(title: "Close Session") { manager.requestClose(session) })
         return menu
     }
 
-    /// Cheap enough to ask while building a menu: a path prefix, no git call.
-    /// The authoritative check happens in the manager before anything is removed.
-    private var isInOwnWorktree: Bool {
-        session.cwd?.hasPrefix(GitWorktree.root.path + "/") == true
-    }
-
     private func removeWorktree() {
         let confirm = NSAlert()
-        confirm.messageText = "Remove the worktree for \u{201c}\(session.leafName)\u{201d}?"
+        confirm.messageText =
+            "Remove the worktree for \u{201c}\(session.worktreeLabel ?? session.leafName)\u{201d}?"
         confirm.informativeText = "The directory is deleted and the session closes. "
             + "The branch and its commits are untouched, and nothing is removed if there "
             + "are uncommitted changes."
@@ -359,9 +356,10 @@ struct SessionRow: View {
     let session: Session
     let isSelected: Bool
     let isEditing: Bool
-    /// Drawn as a leading branch glyph. A worktree session is renamed to its
-    /// branch, so without this it sits in the list looking exactly like a session
-    /// that's just a shell in a directory — same words, different kind of thing.
+    /// A worktree session shows its branch: as a second line under the name
+    /// once the session is named for its task, and until then, when the name
+    /// still *is* the branch, as a leading glyph — without which it sits in the
+    /// list looking exactly like a session that's just a shell in a directory.
     let isInWorktree: Bool
     let commit: (String) -> Void
     let cancel: () -> Void
@@ -381,7 +379,8 @@ struct SessionRow: View {
             // The same symbol the toolbar's branch chip carries, so the two
             // places that mean "branch" look like the same fact. Not while
             // editing: the rename field should start where every other one does.
-            if isInWorktree && !isEditing {
+            // And not once the branch has its own line below the name.
+            if isInWorktree && !isEditing && !session.showsBranchLine {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 11))
                     .foregroundStyle(onAccent ? AnyShapeStyle(.white.opacity(0.85))
@@ -428,6 +427,20 @@ struct SessionRow: View {
                     // it opens with only the leaf selected (`selectLeafName`).
                     Text(session.leafName)
                         .foregroundStyle(onAccent ? .white : .primary)
+                }
+                // Where the work lives, under what the work is. Only for a
+                // worktree session whose name has moved on from the branch;
+                // the row height follows `showsBranchLine` (SidebarOutlineView).
+                if session.showsBranchLine, let branch = session.worktreeLabel {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 9))
+                        Text(branch)
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(onAccent ? AnyShapeStyle(.white.opacity(0.85))
+                                              : AnyShapeStyle(.secondary))
                 }
             }
             Spacer(minLength: 4)

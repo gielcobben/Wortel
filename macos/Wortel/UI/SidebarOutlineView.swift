@@ -393,13 +393,19 @@ final class SidebarOutline: NSOutlineView {
 }
 
 /// Identity snapshot of the sidebar's structure — which groups exist, in what
-/// order, holding which sessions. The outline reloads only when this changes;
-/// everything visual (names, selection pill, attention dots, inline rename)
-/// lives in the hosted SwiftUI row views and updates live via Observation
-/// without touching the outline.
+/// order, holding which sessions, and which of those are two lines tall. The
+/// outline reloads only when this changes; everything visual (names, selection
+/// pill, attention dots, inline rename) lives in the hosted SwiftUI row views
+/// and updates live via Observation without touching the outline.
+///
+/// Height is the one visual fact that *can't* stay in the hosted view: the
+/// outline asks for it per row and only re-asks on a reload. So the set of tall
+/// rows is part of identity, and a session growing its branch line is a
+/// structural change as far as the outline is concerned.
 struct SidebarSnapshotGroup: Equatable {
     let folder: String?
     let sessionIDs: [UUID]
+    let tallIDs: Set<UUID>
 }
 
 /// The sidebar's session list as a native `NSOutlineView` — the same machinery
@@ -638,8 +644,12 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
             // Header height includes the section's breathing room above the
-            // title (content bottom-aligns, see SidebarHeaderContent).
-            item is FolderItem ? 32 : 30
+            // title (content bottom-aligns, see SidebarHeaderContent). A
+            // worktree session named for its task carries its branch on a
+            // second line (see `Session.showsBranchLine`).
+            if item is FolderItem { return 32 }
+            if let session = (item as? SessionItem)?.session, session.showsBranchLine { return 42 }
+            return 30
         }
 
         /// Row views draw the selection pill (full row width, across the

@@ -126,6 +126,16 @@ visibility) to `~/Library/Application Support/Wortel/sessions.json`. This is
 *app state*, not user config — Wortel stays zero-config. Decoder tolerates older
 files missing fields. `saveNow` runs synchronously on termination.
 
+**Session naming** (`Session.NameSource`, `Wortel/Sessions/AgentTitle.swift`,
+`SessionNameGenerator`) — a row's name comes from the best source that has
+spoken, in this order: a user rename, the agent's own terminal title (Claude
+Code titles its conversation from the first prompt and pushes `✳ <title>` as
+the terminal title, which `AgentTitle` parses), the on-device model's screen
+summary, and the placeholder (the directory, or the branch for a worktree
+session). Worktree sessions are named for their task and carry the branch on a
+second row line. See `docs/session-naming.md` for the reasoning and what the
+other tools do.
+
 **UI shell** (`Wortel/UI/`) — `ContentView` is a SwiftUI `NavigationSplitView`
 (sidebar list + terminal detail) hosted inside an AppKit window
 (`AppDelegate`). Selection is drawn as a custom accent "pill" rather than

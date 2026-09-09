@@ -40,6 +40,41 @@ final class SessionNameTests: XCTestCase {
         XCTAssertEqual(SessionName.leaf(of: "Wakker/"), "Wakker/", "no leaf to show, so show the name")
     }
 
+    // MARK: - Automatic names
+
+    /// The bug this exists for: an agent titled a session "Debug web/src build"
+    /// and the sidebar grew a folder called "Debug web". A generated name must
+    /// come out of `asLeaf` with no folder half at all.
+    func testAutomaticNameNeverReadsAsAFolder() {
+        for raw in ["Debug web/src build", "Fix macos/Wortel/Sessions", "/etc/hosts", "a/b/c", "trailing/"] {
+            let leaf = SessionName.asLeaf(raw)
+            XCTAssertNil(SessionName.folder(of: leaf), "\(raw) became \(leaf)")
+            XCTAssertEqual(SessionName.leaf(of: leaf), leaf, "\(raw) became \(leaf)")
+        }
+    }
+
+    /// The path stays legible: the slash is swapped for a look-alike, not
+    /// dropped or turned into a space, so "web/src" still reads as a path.
+    func testAutomaticNameKeepsThePathLegible() {
+        XCTAssertEqual(SessionName.asLeaf("Debug web/src build"), "Debug web\u{2215}src build")
+        XCTAssertEqual(SessionName.asLeaf("Rename  a/b   now"), "Rename a\u{2215}b now", "runs of spaces collapse")
+    }
+
+    /// A name without a slash is untouched, so the callers' "is this already
+    /// the name?" compare stays honest for the common case.
+    func testAutomaticNameWithoutASlashIsUnchanged() {
+        XCTAssertEqual(SessionName.asLeaf("Manager"), "Manager")
+        XCTAssertEqual(SessionName.asLeaf("Fix the git panel"), "Fix the git panel")
+    }
+
+    /// Prefixing the safe leaf with a folder, as `applyAutoName` does, must land
+    /// the session in exactly that folder and nowhere deeper.
+    func testAutomaticNameUnderAFolderStaysInThatFolder() {
+        let name = "Wakker/" + SessionName.asLeaf("Debug web/src build")
+        XCTAssertEqual(SessionName.folder(of: name), "Wakker")
+        XCTAssertEqual(SessionName.leaf(of: name), "Debug web\u{2215}src build")
+    }
+
     // MARK: - Rename selection
 
     /// The bug this exists for: the rename field holds the *full* name, so

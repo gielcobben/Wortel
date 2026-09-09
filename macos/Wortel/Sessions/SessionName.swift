@@ -26,6 +26,19 @@ enum SessionName {
         return leaf.isEmpty ? name : leaf
     }
 
+    /// A generated name, made safe to store as a leaf. Automatic names come
+    /// from an agent's title, the on-device model, or the user's first prompt,
+    /// and all three are full of paths: "Debug web/src build" stored as-is
+    /// would be read back by `folder(of:)` as a session called "src build" in
+    /// a folder called "Debug web". The slash becomes the division slash
+    /// (U+2215), which reads the same but is not the folder separator, so a
+    /// path in a name stays legible as a path. Only automatic names go
+    /// through this: a slash the user types is how a session is moved.
+    static func asLeaf(_ name: String) -> String {
+        let flat = name.replacingOccurrences(of: "/", with: "\u{2215}")
+        return flat.split(whereSeparator: { $0 == " " || $0 == "\t" }).joined(separator: " ")
+    }
+
     /// Where `leaf(of:)` sits inside the full name, for selecting it in the
     /// rename field. UTF-16 because that's what AppKit's text system counts in —
     /// a folder named with an emoji would otherwise offset the selection.

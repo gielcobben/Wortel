@@ -107,7 +107,9 @@ final class SessionManager {
     /// shortly after clearing, it's a continuation of the same run of work —
     /// e.g. Pi's OSC 133 zone marks make the core synthesize a command-finished
     /// mid-turn, then its 1s progress keepalive re-marks busy — so the original
-    /// start is restored to keep the duration gate honest.
+    /// start is restored to keep the duration gate honest. `onCommandFinished`
+    /// now ignores those events while an agent marker is live, so this is the
+    /// belt to that brace: it still covers a clear from any other source.
     @ObservationIgnored private var lastBusyInterval: [Session.ID: (start: Date, cleared: Date)] = [:]
     /// Re-arming busy within this window of the last clear counts as a
     /// continuation (see `lastBusyInterval`).
@@ -541,6 +543,15 @@ final class SessionManager {
                 beginPromptCapture(session, marker: marker)
             } else if marker == nil, wasRunning != nil {
                 endPromptCapture(session)
+                // The marker is cleared at the shell's next prompt, so this
+                // *is* the shell back in charge and idle — the backstop that
+                // `onCommandFinished` no longer provides while an agent runs
+                // (its 133;D goes out before the marker is removed, so that
+                // event still arrives with the agent apparently live). The
+                // agent's own turn-end quiesce, if one is pending, is not
+                // cancelled: an agent that finished a turn and then exited
+                // still finished a turn.
+                clearBusy(session)
             }
         }
         // Markers appearing/vanishing is exactly when the screen sampler has
@@ -640,9 +651,9 @@ final class SessionManager {
     /// the sidebar spinner. Dropping it while the session is busy is how a
     /// spinner ends up turning forever: the replacement starts at not-working
     /// and can never pay a debt it doesn't know about, and nothing else in the
-    /// app ever re-checks a stuck busy. Worse, the stall is self-sealing —
-    /// selecting the session, which is the first thing you do when you notice
-    /// it, is itself one of the reasons the tracker gets dropped.
+    /// app ever re-checks a stuck busy. (Selecting the session used to be one
+    /// of the reasons a tracker was dropped, which made the stall self-sealing:
+    /// the first thing you do when you notice a stuck spinner is click it.)
     ///
     /// Clears silently: this is the tier losing sight of the session, not an
     /// agent finishing, so it must not raise the attention a real quiesce does.
@@ -690,9 +701,8 @@ final class SessionManager {
         if removedAny { refreshAgentActivity() }
     }
 
-    /// Whether any session actually needs its screen read. Deliberately the same
-    /// question the sampler asks, minus "are you looking at it" — which changes
-    /// with every click and is no reason to tear a timer down.
+    /// Whether any session actually needs its screen read: the same question
+    /// the sampler asks per session.
     ///
     /// The distinction matters more than it looks: an agent that announces its
     /// own turns never needs this tier, so with only such agents running (Claude
@@ -732,9 +742,19 @@ final class SessionManager {
     }
 
     /// One pass over the sessions worth watching. A session qualifies only
-    /// while an agent is running in it, you are not looking at it, it has a
-    /// live surface, and it hasn't recently spoken for itself — anything else
-    /// drops its tracker, so the next qualifying moment re-baselines.
+    /// while an agent is running in it, it has a live surface, and it hasn't
+    /// recently spoken for itself — anything else drops its tracker, so the
+    /// next qualifying moment re-baselines.
+    ///
+    /// The session you are looking at is watched like any other. It used to be
+    /// skipped, on the grounds that it needs no notification and that your own
+    /// typing changes its screen — but the sidebar spinner is not a
+    /// notification, and a silent agent (Pi, with its progress reporting off by
+    /// default) had no busy state at all in the one session you were watching
+    /// it work in. `raiseAttention` already refuses the viewed session; the
+    /// typing is handled by `SurfaceView.onUserInput` re-baselining the tracker
+    /// on every key, paste, click and scroll, so what you do to the screen is
+    /// never counted and only what the program does after you stop is.
     private func sampleAgentScreens() {
         Signposts.interval("agent-screen-sample") { sampleAgentScreensPass() }
     }
@@ -757,7 +777,6 @@ final class SessionManager {
         }
         for session in sessions {
             guard session.runningAgent != nil,
-                  !isActivelyViewing(session),
                   let view = session.surfaceView,
                   !speaksForItself(session)
             else {
@@ -1740,7 +1759,15 @@ final class SessionManager {
     /// Set a session's automatic name, preserving any folder prefix (the name
     /// *is* the folder membership, so only the leaf changes), and record where
     /// it came from so the precedence in `Session.NameSource` holds from here on.
-    private func applyAutoName(_ session: Session, to leaf: String, source: Session.NameSource) {
+    ///
+    /// The leaf is made slash-free first (`SessionName.asLeaf`): every automatic
+    /// name passes through here, and a slash in one would otherwise be read back
+    /// as a folder. Callers compare the raw name against `leafName` to skip
+    /// no-ops, which a title with a path in it defeats, so the check is repeated
+    /// on the safe leaf: an agent retitles several times a second.
+    private func applyAutoName(_ session: Session, to rawLeaf: String, source: Session.NameSource) {
+        let leaf = SessionName.asLeaf(rawLeaf)
+        guard leaf != session.leafName || session.nameSource != source else { return }
         session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
         session.nameSource = source
         normalizeOrder()
@@ -1971,8 +1998,35 @@ final class SessionManager {
             view.onSizeChange = { [weak self] in
                 self?.rebaselineAgentScreens()
             }
+            // Your own input is the other repaint the agent had no part in.
+            // Re-baselining on every key is what lets the sampler watch the
+            // session you are typing into (see `sampleAgentScreens`).
+            view.onUserInput = { [weak self, weak session] in
+                guard let self, let session else { return }
+                self.agentScreenTrackers[session.id]?.rebaseline(now: Date())
+            }
             view.onCommandFinished = { [weak self, weak session] exitCode, durationNs in
                 guard let self, let session else { return }
+                // While an agent is running here, this is not the shell coming
+                // back to its prompt: nothing has, the agent still has the
+                // terminal. It is the core closing a command it saw an agent's
+                // OSC 133 zone marks open — Pi wraps every message it renders
+                // in 133;A/B/C — and so it says nothing about whether the agent
+                // is done. The busy state belongs to whichever tier owns it
+                // (the agent's progress, its title, the screen sampler), and
+                // clearing it here dropped Pi's spinner mid-turn and, with it,
+                // the `busyStartedAt` that the turn-end attention is gated on:
+                // the screen going quiet later found no busy to have lasted
+                // long enough, and the finished turn went unannounced. The
+                // shell returning for real is seen as the marker vanishing
+                // (`refreshAgentActivity`), which clears busy itself.
+                //
+                // The git nudge stays: the agent has very likely just written
+                // files, which is the one thing this event is still right about.
+                if session.runningAgent != nil {
+                    self.onCommandFinished?(session)
+                    return
+                }
                 // Note: deliberately does NOT cancel a pending quiesce raise.
                 // Some shells' OSC 133 zone marks synthesize finished events
                 // mid-turn; cancelling here would eat the legit "agent is done"

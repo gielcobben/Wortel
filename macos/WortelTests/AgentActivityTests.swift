@@ -141,6 +141,29 @@ final class AgentActivityTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.sample(digest: 7, now: after(7)), .startedWorking)
     }
 
+    /// The session you are typing into is watched too, and every key
+    /// re-baselines its tracker: the screen changing under your own hands is
+    /// never evidence, however long you type. Only what the program draws
+    /// after your last key, past a fresh grace window, is.
+    func testYourOwnTypingIsNotWork() {
+        var tracker = AgentActivityTracker(now: t0, grace: 2)
+        _ = tracker.sample(digest: 1, now: t0)
+        // Ten seconds of typing a prompt: a key, the echo, a key, the echo…
+        var digest: UInt64 = 1
+        for tick in stride(from: 3.0, through: 12.0, by: 1.0) {
+            tracker.rebaseline(now: after(tick))          // the key
+            digest += 1
+            XCTAssertNil(tracker.sample(digest: digest, now: after(tick + 0.5)), "at \(tick)s")
+        }
+        // Enter. The agent starts streaming: baseline inside the grace window…
+        tracker.rebaseline(now: after(13))
+        XCTAssertNil(tracker.sample(digest: 100, now: after(13.5)))
+        XCTAssertNil(tracker.sample(digest: 101, now: after(14.5)))
+        // …and evidence once it is past. Two changes make the agent working.
+        XCTAssertNil(tracker.sample(digest: 102, now: after(15.5)))
+        XCTAssertEqual(tracker.sample(digest: 103, now: after(16.5)), .startedWorking)
+    }
+
     func testStillScreenNeverSeenWorkingStaysSilent() {
         // Switching away from an agent that was already idle must not announce
         // a turn that ended while you were watching it.

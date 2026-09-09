@@ -21,10 +21,13 @@ import Foundation
 /// Two decisions keep the false-positive rate down, and both matter more than
 /// the detection itself, because a terminal that cries wolf gets muted:
 ///
-/// - It only runs on sessions you are **not** looking at, and only on ones whose
-///   agent has never announced itself. The one you're watching needs no
-///   notification, and your own typing changes the screen — which would
-///   otherwise read as the agent working.
+/// - It only runs on sessions whose agent has never announced itself. That
+///   includes the one you are looking at: its spinner is the one you see most,
+///   and the notification it would earn is refused downstream anyway. Your own
+///   typing changes that screen, which would otherwise read as the agent
+///   working — so every key, paste, click and scroll re-baselines its tracker
+///   (`SurfaceView.onUserInput`), and only what the program draws after you
+///   stop counts.
 /// - A change is only evidence *after* a grace window, so an agent's noisy
 ///   startup, and the repaint that happens the moment you switch away, are not
 ///   mistaken for work.

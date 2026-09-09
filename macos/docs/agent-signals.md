@@ -24,7 +24,7 @@ re-verify before relying on details.
 4. **Bell** and **command-finished ≥10s while unselected** — classic paths for
    non-agent commands.
 5. **Screen activity** (`AgentActivity`) — the fallback for agents that emit
-   none of the above (opencode, goose, aider). A watched session's active screen
+   none of the above (opencode, goose, aider, Pi by default). A watched session's active screen
    is hashed once a second; a screen that keeps changing is an agent working, one
    that then holds still for 3s is a turn ending. It is the only *guessing* tier,
    so it is fenced in hard:
@@ -32,7 +32,11 @@ re-verify before relying on details.
      (`SessionManager.speaksForItself`) — proof lasts for that whole agent run,
      not for a timeout. An idle Claude Code session has no signals to show for
      the last hour and must not therefore look like a silent agent.
-   - It never watches the session you're looking at, or one with no agent marker.
+   - It never watches a session with no agent marker. It *does* watch the one
+     you're looking at (it didn't, once, and a silent agent had no spinner in
+     the session you were watching it work in); your own keys, pastes, clicks
+     and scrolls re-baseline that tracker (`SurfaceView.onUserInput`) so typing
+     a prompt is never read as the agent working.
    - **Two changed samples within 5s** make a working agent; one does not. A
      terminal repaints for reasons that aren't the agent — a window/inspector
      resize re-wraps every session at once, and a focus report makes every agent
@@ -59,7 +63,7 @@ never return to the prompt; the agent's own signals take over.
 | Agent | Busy | Attention (needs you) |
 |---|---|---|
 | Claude Code | ✅ OSC 9;4 + braille title | ✅ quiesce on 9;4;0 (permission prompt + turn end) |
-| Pi | ⚠️ off by default — enable `showTerminalProgress` (`/settings` → Terminal progress, or `~/.pi/agent/settings.json`) | ⚠️ same switch → quiesce at turn end; official `notify.ts` example extension adds OSC 777 |
+| Pi | ⚠️ screen-activity fallback by default — for OSC 9;4 enable `terminal.showTerminalProgress` (`/settings` → Terminal progress, or `~/.pi/agent/settings.json`; off by default since pi 0.7x, [#3588](https://github.com/badlogic/pi-mono/issues/3588)) | ⚠️ same switch → quiesce at turn end; official `notify.ts` example extension adds OSC 777 |
 | Codex | ✅ braille title spinner | ✅ OSC 9 notification (turn end + approvals, unfocused only) + "Action Required" title |
 | Gemini CLI | ✅ `✦`/`⏲` title | ✅ `✋ Action Required` / `◇ Ready` title edges; opt-in `general.enableNotifications` adds OSC 777 |
 | crush | ✅ OSC 9;4 (gated on ghostty XTVERSION) | ✅ OSC 99/777 (permission + turn end, unfocused only) |
@@ -75,9 +79,13 @@ never return to the prompt; the agent's own signals take over.
   bell and no OSC 9/777** under Ghostty; the 9;4;0 edge is the only signal.
 - Pi emits OSC 133;A/B/C zone marks around every message. The libghostty core
   synthesizes a `COMMAND_FINISHED` (small duration) from a mid-session `133;A`,
-  which clears busy. Pi's 1s progress keepalive re-arms it; SessionManager
-  treats a re-arm within 3s as a continuation of the same run so the ≥2s
-  attention gate stays honest, and `COMMAND_FINISHED` deliberately does *not*
+  which used to clear busy: with progress on, Pi's 1s keepalive re-armed it
+  (SessionManager treats a re-arm within 3s as a continuation of the same run
+  so the ≥2s attention gate stays honest); with progress off, nothing did, so
+  the screen-inferred spinner vanished mid-turn and the turn-end went
+  unannounced. `onCommandFinished` now ignores the event entirely while an
+  agent marker is live (the shell hasn't come back; the marker vanishing at
+  its next prompt is what clears busy instead), and deliberately does *not*
   cancel a pending quiesce raise.
 - Ghostty's GTK apprt drops progress not refreshed within 15s ("bad actor"
   protection). Wortel must NOT copy that: Claude Code emits a single `9;4;3`

@@ -36,6 +36,11 @@ final class SurfaceView: NSView {
     /// session, not just the visible one — they all autoresize with the window.
     /// The agent-activity sampler listens so a reflow isn't read as work.
     var onSizeChange: (() -> Void)?
+    /// The user sent something to this surface — a key, pasted or dropped
+    /// text, a mouse press, a scroll. Whatever the screen does next is their
+    /// doing, not the program's. The agent-activity sampler listens so that
+    /// typing a prompt into a TUI is never read as the agent working.
+    var onUserInput: (() -> Void)?
 
     private(set) var pwd: String?
     private(set) var focused: Bool = false
@@ -338,6 +343,7 @@ final class SurfaceView: NSView {
         guard let surface else { return }
         let len = string.utf8CString.count
         guard len > 1 else { return }
+        onUserInput?()
         string.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(len - 1))
         }
@@ -362,6 +368,7 @@ final class SurfaceView: NSView {
     @discardableResult
     private func performBinding(_ action: String) -> Bool {
         guard let surface else { return false }
+        onUserInput?()
         return action.withCString { ptr in
             ghostty_surface_binding_action(surface, ptr, UInt(action.utf8.count))
         }
@@ -380,6 +387,7 @@ final class SurfaceView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let surface else { return }
+        onUserInput?()
         let mods = GhosttyInput.mods(event.modifierFlags)
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
     }
@@ -455,6 +463,7 @@ final class SurfaceView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
+        onUserInput?()
 
         var x = event.scrollingDeltaX
         var y = event.scrollingDeltaY
@@ -688,6 +697,7 @@ final class SurfaceView: NSView {
         composing: Bool = false
     ) -> Bool {
         guard let surface else { return false }
+        onUserInput?()
 
         var keyEvent = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
         keyEvent.composing = composing
@@ -810,6 +820,7 @@ extension SurfaceView: NSTextInputClient {
 
         let len = chars.utf8CString.count
         guard len > 1 else { return }
+        onUserInput?()
         chars.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(len - 1))
         }

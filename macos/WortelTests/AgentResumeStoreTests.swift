@@ -216,4 +216,51 @@ final class AgentResumeStoreTests: XCTestCase {
         }
         XCTAssertEqual(pid, child.processIdentifier)
     }
+
+    /// The bug this exists for: Pi runs as `node`, so a process named `pi` never
+    /// exists and its marker was swept as stale a minute after launch — taking
+    /// the badge, the resume and the busy spinner with it. The agent has to be
+    /// found in a descendant's arguments when no descendant carries its name.
+    /// `sh -c` with a trailing `true` so the shell stays as the parent rather
+    /// than exec-ing straight into `sleep`; the probe word lands in `$0`.
+    func testLocateFindsAScriptAgentByItsArguments() throws {
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/sh")
+        child.arguments = ["-c", "sleep 30; true", "wortel-liveness-probe"]
+        try child.run()
+        defer { child.terminate() }
+        let me = ProcessInfo.processInfo.processIdentifier
+        var located = AgentLiveness.locate(agent: "wortel-liveness-probe", shellPID: me)
+        for _ in 0..<20 {
+            if case .running = located { break }
+            Thread.sleep(forTimeInterval: 0.05)
+            located = AgentLiveness.locate(agent: "wortel-liveness-probe", shellPID: me)
+        }
+        guard case .running(let pid) = located else {
+            return XCTFail("an agent visible only in a descendant's arguments must be located")
+        }
+        XCTAssertEqual(pid, child.processIdentifier)
+    }
+
+    /// What counts as the agent inside an argument: a path component that is the
+    /// name, or a package/file named after it. Never a substring — `pi` inside
+    /// `pipx` or `api` is not Pi.
+    func testArgumentNamingIsComponentWise() {
+        XCTAssertTrue(AgentLiveness.argumentNames("pi", "/x/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"))
+        XCTAssertTrue(AgentLiveness.argumentNames("gemini", "/x/@google/gemini-cli/dist/index.js"))
+        XCTAssertTrue(AgentLiveness.argumentNames("aider", "/usr/local/bin/aider"))
+        XCTAssertTrue(AgentLiveness.argumentNames("aider", "aider.py"))
+        XCTAssertTrue(AgentLiveness.argumentNames("cursor-agent", "/opt/cursor-agent"))
+        XCTAssertFalse(AgentLiveness.argumentNames("pi", "/usr/bin/pipx"))
+        XCTAssertFalse(AgentLiveness.argumentNames("pi", "/Users/giel/api/server.js"))
+        XCTAssertFalse(AgentLiveness.argumentNames("pi", "--print"))
+    }
+
+    /// Reading our own arguments proves the `KERN_PROCARGS2` parse: the first
+    /// entry is the executable, and the rest is what we were launched with.
+    func testReadsOwnArguments() {
+        let args = AgentLiveness.arguments(of: ProcessInfo.processInfo.processIdentifier)
+        XCTAssertFalse(args.isEmpty)
+        XCTAssertEqual(args.first, Bundle.main.executablePath ?? args.first)
+    }
 }

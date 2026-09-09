@@ -41,6 +41,10 @@ struct AgentMarker {
 /// So anything uncertain — no recorded pid, an unreadable process table — counts
 /// as running, and only a definitive "that shell has no such descendant" is
 /// allowed to say no.
+///
+/// "Such descendant" is judged by process name first and by arguments second,
+/// because a script-based agent's process is named after its interpreter (see
+/// `locate`).
 enum AgentLiveness {
     /// `p_comm` is truncated to `MAXCOMLEN`, so compare on that basis.
     private static let maxCommandNameLength = 16
@@ -76,7 +80,66 @@ enum AgentLiveness {
         for entry in table where entry.name == agent || entry.name == needle {
             if isDescendant(entry.pid, of: shellPID, parentOf: parentOf) { return .running(entry.pid) }
         }
+        // Not every agent is a process by its own name. Pi, Gemini and Amp are
+        // node scripts, aider is a Python one, and a version-manager shim can put
+        // a `sh` in between: `p_comm` then says `node` or `python3`, and the
+        // agent is only visible in the arguments (`…/pi-coding-agent/dist/cli.js`,
+        // `…/bin/aider`). Reading arguments is a sysctl per process, so it is
+        // done only for the shell's own descendants, which is a handful at most,
+        // and only after the cheap name pass has failed. Before this pass, a
+        // marker for any script-based agent was swept as stale within a minute
+        // of launch, which took the sidebar badge, the resume, and the screen
+        // sampler's interest in the session with it.
+        for entry in table where isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
+            if arguments(of: entry.pid).contains(where: { argumentNames(agent, $0) }) {
+                return .running(entry.pid)
+            }
+        }
         return .gone
+    }
+
+    /// Whether one argument is, or is a path to, the agent: a path component that
+    /// equals the name (`…/bin/aider`, `cursor-agent`) or starts it as a package
+    /// or file name (`pi-coding-agent`, `gemini-cli`, `aider.py`). Deliberately
+    /// no substring match: `pi` must not be found inside `pipx` or `api`.
+    static func argumentNames(_ agent: String, _ argument: String) -> Bool {
+        argument.split(separator: "/").contains { component in
+            component == agent[...]
+                || component.hasPrefix(agent + "-")
+                || component.hasPrefix(agent + ".")
+        }
+    }
+
+    /// The process's argument vector via `KERN_PROCARGS2`, executable path first.
+    /// Empty when it can't be read (another user's process, or one that exited
+    /// between the table and this call) — which the caller treats as "not it",
+    /// the same as an unreadable table treats the whole question.
+    static func arguments(of pid: pid_t) -> [String] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return [] }
+        // Layout: argc (Int32), the executable path, NUL padding, then argc
+        // NUL-terminated arguments (followed by the environment, not wanted).
+        let argc = Int(buffer.withUnsafeBytes { $0.load(as: Int32.self) })
+        var strings: [String] = []
+        var index = MemoryLayout<Int32>.size
+        func readString() -> String? {
+            guard index < size else { return nil }
+            let start = index
+            while index < size, buffer[index] != 0 { index += 1 }
+            let s = String(decoding: buffer[start..<index], as: UTF8.self)
+            while index < size, buffer[index] == 0 { index += 1 } // NUL(s) after
+            return s
+        }
+        guard let executable = readString() else { return [] }
+        strings.append(executable)
+        for _ in 0..<argc {
+            guard let arg = readString() else { break }
+            strings.append(arg)
+        }
+        return strings
     }
 
     /// Walk up the parent chain, bounded so a cycle in a torn process table can't

@@ -807,14 +807,20 @@ final class SessionManager {
     ///    what it means is GFPC. This is the case that used to be silently
     ///    wrong: the session was filed under GFPC and started wherever the
     ///    selection was standing, which looked exactly like it had worked.
-    /// 3. **Where the selected session was born**, not where it is now. `cwd`
-    ///    follows every `cd`, so inheriting it meant a session opened beside one
-    ///    you'd taken three levels deep started three levels deep too, and the
-    ///    next one inherited that. `originCwd` is the deliberate answer and
-    ///    doesn't drift. This is the "same folder as the one I'm in" case, which
-    ///    is why a plain ⌘N still stays next to what you're looking at.
-    /// 4. **The selected session's folder's directory**, for a session restored
-    ///    from a file old enough to have no recorded origin.
+    /// 3. **The selected session's folder's directory.** This is the "same
+    ///    folder as the one I'm in" case, which is why a plain ⌘N stays next to
+    ///    what you're looking at — and *the folder* is what "next to" means, not
+    ///    the selected session's own checkout. A worktree session lives in
+    ///    ~/.wortel/worktrees/…, and inheriting that put a plain ⌘N inside the
+    ///    worktree, on the branch's files, when what was asked for was another
+    ///    shell in the project. The worktree is one session's business; the
+    ///    folder's root is the project's.
+    /// 4. **Where the selected session was born**, not where it is now, for a
+    ///    session whose folder is still just a label or that is filed at the
+    ///    top level. `cwd` follows every `cd`, so inheriting it meant a session
+    ///    opened beside one you'd taken three levels deep started three levels
+    ///    deep too, and the next one inherited that. `originCwd` is the
+    ///    deliberate answer and doesn't drift.
     ///
     /// Falling off the end is `nil`, which lets `wortel.conf`'s
     /// `working-directory = home` answer — a first launch has no session to
@@ -837,8 +843,8 @@ final class SessionManager {
         // one git just wrote.
         let directory = cwd
             ?? existingDirectory(root(ofFolder: folder))
-            ?? existingDirectory(selected?.originCwd)
             ?? existingDirectory(root(ofFolder: selected?.folderPath))
+            ?? existingDirectory(selected?.originCwd)
         return makeSession(cwd: directory, inFolder: dir, via: origin)
     }
 
@@ -1227,8 +1233,13 @@ final class SessionManager {
             return
         }
 
+        // The row *above*, not the one that slid into the closed row's slot.
+        // ⌘N files the new session right after the selected one, so the round
+        // trip — ⌘N, do the thing, ⌘W — should land back where it started,
+        // not one row further down. Only the topmost row has nothing above
+        // it, and there the row below is the only answer.
         if wasSelected {
-            selectedID = sessions[min(index, sessions.count - 1)].id
+            selectedID = sessions[max(index - 1, 0)].id
         }
         scheduleSave()
     }

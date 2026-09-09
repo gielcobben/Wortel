@@ -73,13 +73,16 @@ final class Session: Identifiable {
     /// wandered. Fixed at creation and never updated by the pwd reports that
     /// keep `cwd` live.
     ///
-    /// This is the directory a new session next to this one should inherit. Not
-    /// `cwd`: that follows every `cd`, so opening a session beside one you'd
-    /// taken three levels deep started the new shell three levels deep too, and
-    /// every session after it inherited the drift. The birth directory is the
-    /// deliberate answer — it's the folder's root, or the worktree, or the path
-    /// `wortel new --cwd` was handed — and it's stable for as long as the
-    /// session lives. Persisted, so it survives a relaunch.
+    /// This is the directory a new session next to this one inherits when its
+    /// folder has no directory of its own (the folder's root wins otherwise: a
+    /// worktree session's origin is its checkout, and ⌘N beside it means the
+    /// project, not the branch). Not `cwd`: that follows every `cd`, so opening
+    /// a session beside one you'd taken three levels deep started the new shell
+    /// three levels deep too, and every session after it inherited the drift.
+    /// The birth directory is the deliberate answer — it's the folder's root,
+    /// or the worktree, or the path `wortel new --cwd` was handed — and it's
+    /// stable for as long as the session lives. Persisted, so it survives a
+    /// relaunch.
     let originCwd: String?
     /// A background session wants your eyes *now*, and *why*: it's blocked on
     /// you, something failed, or a long command finished while unselected. `nil`

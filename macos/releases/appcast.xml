@@ -3,6 +3,38 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.37.3</title>
+            <pubDate>Wed, 09 Sep 2026 17:15:33 -0400</pubDate>
+            <sparkle:version>2026.37.3</sparkle:version>
+            <sparkle:shortVersionString>2026.37.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Pi stays watched</h1>
+<p class="date">Wortel 2026.37.3 &middot; 2026-09-09</p>
+<p><strong>Pi is recognised as running for as long as it runs.</strong> The previous release taught Wortel to read Pi’s screen for the busy spinner, and it worked for about a minute. Once a minute Wortel checks that each agent it is tracking is still alive, by looking under the session’s shell for a process with the agent’s name. Pi is a Node script, so its process is called node and no process is ever called pi. The check failed, Wortel decided Pi had quit, and it stopped watching the session: no spinner, no agent badge in the sidebar, and no resume after a crash. The same was true of Gemini CLI and Amp, which also run under Node, and of aider, which runs under Python. The check now also looks at what a process was started with, so a Node process running Pi counts as Pi. Agents that are their own binary, Claude Code, Codex, crush, goose and opencode, were never affected.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.37.3.zip" length="18900107" type="application/octet-stream" sparkle:edSignature="Mh+IwNbMXOeKx3XPKrNfcza2kNo5Txu4nRlR1BEo8Krpv0OqTD+AUTaZssKo+DRCBJd3McY81TgP4jIZknJEAA=="/>
+        </item>
+        <item>
             <title>2026.37.2</title>
             <pubDate>Wed, 09 Sep 2026 14:34:03 -0400</pubDate>
             <sparkle:version>2026.37.2</sparkle:version>
@@ -79,42 +111,6 @@
 <li><strong>⌘W lands on the row above.</strong> ⌘N files a new session right after the selected one, so ⌘N, do the thing, ⌘W now lands back where you started instead of one row further down.</li>
 </ul>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.37.1.zip" length="18888419" type="application/octet-stream" sparkle:edSignature="Nh6s6nSb/cCuq110E8kLqE03by6lROzduU2YES215TwZLQKsx1ymHdV1rYCcRSMxzacwHrjvM9vF6ZvHoutzBw=="/>
-        </item>
-        <item>
-            <title>2026.34.1</title>
-            <pubDate>Mon, 17 Aug 2026 10:40:40 +0200</pubDate>
-            <sparkle:version>2026.34.1</sparkle:version>
-            <sparkle:shortVersionString>2026.34.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Two crashes, and ⌘Z belongs to the terminal again</h1>
-<p class="date">Wortel 2026.34.1 &middot; 2026-08-17</p>
-<p><strong>Wortel could quit on ⌘Z, and the longer the window had been open the likelier it was.</strong> This one came in from a window that had been up for five days. Typing in the commit box was registering its undo steps against the window rather than against the box, and those steps outlived the box every time the panel closed or you moved to another session. Pressing ⌘Z afterwards, with the terminal focused and the commit box nowhere on screen, reached for a step whose editor was long gone, and the app went down on the spot. The commit box keeps its own undo now, so nothing accumulates on the window and there is nothing stale left to reach for.</p>
-<ul>
-<li><strong>⌘Z goes to your shell again.</strong> The same bug had quietly taken the key: once you had typed a commit message, the Edit menu’s Undo claimed ⌘Z for itself, and the terminal’s own undo (clear the line you are typing) stopped happening. Undo inside the commit box works exactly as it did.</li>
-<li><strong>Closing the last session no longer crashes on the way out.</strong> The window was being freed the instant it closed, while the app was still holding on to it, so anything that ran in the gap could land in memory that had already gone. Updating the title to say no session is selected was enough to do it. It only ever surfaced once the window was gone, which is the least useful moment to hear about it.</li>
-</ul>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.34.1.zip" length="18713045" type="application/octet-stream" sparkle:edSignature="24Cg9cCGQSYswDQe7lTjjFKYhtfNmUQWP7pzMPNcJyoIhCRxqtduNh3Q7hEuoDqmCHB4O9/rnQfOvACfW7fKDw=="/>
         </item>
     </channel>
 </rss>

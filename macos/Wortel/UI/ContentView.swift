@@ -511,8 +511,10 @@ struct SessionRow: View {
                     // field (draft = session.name) still edits the full name, so
                     // retyping the prefix is how you move between folders — but
                     // it opens with only the leaf selected (`selectLeafName`).
-                    Text(session.leafName)
-                        .foregroundStyle(onAccent ? .white : .primary)
+                    // An AppKit label rather than Text, for the native
+                    // hover-to-expand on a name the row had to cut short.
+                    TruncatingLabel(text: session.leafName,
+                                    color: onAccent ? .white : .labelColor)
                 }
                 // Where the work lives, under what the work is. Only for a
                 // worktree session whose name has moved on from the branch;
@@ -521,12 +523,12 @@ struct SessionRow: View {
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.triangle.branch")
                             .font(.system(size: 9))
-                        Text(branch)
-                            .font(.system(size: 11))
-                            .lineLimit(1)
+                            .foregroundStyle(onAccent ? AnyShapeStyle(.white.opacity(0.85))
+                                                      : AnyShapeStyle(.secondary))
+                        TruncatingLabel(text: branch, font: .systemFont(ofSize: 11),
+                                        color: onAccent ? NSColor.white.withAlphaComponent(0.85)
+                                                        : .secondaryLabelColor)
                     }
-                    .foregroundStyle(onAccent ? AnyShapeStyle(.white.opacity(0.85))
-                                              : AnyShapeStyle(.secondary))
                 }
             }
             Spacer(minLength: 4)

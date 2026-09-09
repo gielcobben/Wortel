@@ -46,20 +46,53 @@ for busy detection), so adopting the name is a parse and a compare
 after the first prompt. It is also the same title Claude's own `/resume`
 picker shows, so the sidebar and the agent agree.
 
+**Every other agent gets the same thing from its first prompt.** Only Claude
+titles itself. For everyone else, Wortel reads the one input every agent has
+in common: the prompt the user types into it. Wortel owns the pty, so every
+keystroke passes through `PtyHost.write` on its way to the agent; while an
+agent is freshly launched (the marker file says when), a `PromptTap` on that
+path reconstructs typed lines (`TypedLineBuilder`: backspace, ctrl-U/W,
+bracketed paste, the kitty keyboard protocol, and the terminal's own query
+replies all handled or dropped), and the first line that is a prompt rather
+than a dialog answer or a slash command (`FirstPrompt.accept`) goes to the
+on-device model with a prompt tuned to Claude's style. A prompt on the
+agent's command line (`codex "add a changelog page"`) is taken as is. Without
+Apple Intelligence the title is the prompt's first sentence, cut at a word,
+which is what Cursor and Codex show.
+
+This is the approach the field converged on. cmux and the herdr renamer
+plugin both name from the first prompt, once; they get the prompt by
+installing hooks into each agent's config files and summarise with a
+per-agent cloud subprocess. The tap gets the same prompt for every agent,
+including ones with no hook system, without writing to any config file, and
+the summary never leaves the machine.
+
+The scoping is the privacy story. The tap exists from agent launch until a
+prompt is accepted, the agent exits, 16 KB has passed, or fifteen minutes
+have, and the manager detaches it the moment any of those happen. Nothing is
+kept but the one line. Three more rules: a title from the prompt is held for
+eight seconds so an agent that titles itself wins outright rather than the
+row renaming twice; an agent that was already running before this launch (a
+keeper reattach) is not listened to, since its next line is a follow-up; and a
+resumed conversation (`--continue`, `resume`) may replace a placeholder or a
+screen guess but never a name that was right.
+
 **Where a name came from decides who may replace it.** `Session.NameSource`,
 in precedence order:
 
 | Source | Set by | Replaced by |
 |---|---|---|
 | `placeholder` | the directory at creation; the branch for a worktree session | anything |
-| `model` | the on-device model, from the screen (`SessionNameGenerator`) | agent, user, or a better model guess |
+| `model` | the on-device model, from the screen (`SessionNameGenerator`) | prompt, agent, user, or a better model guess |
+| `prompt` | the first prompt typed into the agent, titled by the model | a new conversation's prompt, an agent title, or the user |
 | `agent` | the agent's terminal title | a new agent title, or the user |
 | `user` | an inline rename, or `wortel rename` | the user only |
 
-So the model only fills in where no agent has spoken (a plain shell running a
-long build, an agent CLI that sets no title), an agent title always wins over
-a guess, and a user rename is final. Nothing periodically renames an agent
-session: its title changes only when the agent's does.
+So the model's screen guess only fills in where nothing better has spoken (a
+plain shell running a long build), a prompt title beats that guess, an agent
+title beats the prompt title, and a user rename is final. Nothing
+periodically renames an agent session: its name changes only when a new
+conversation starts.
 
 **A worktree session is named for its task and shows its branch underneath.**
 The branch is where the work lives, not what the work is. The session starts
@@ -91,11 +124,12 @@ becomes `user`; `false` was a default or a model guess and becomes
 neither flag predates auto-naming altogether and is treated as user-named, so
 the feature never relabels a session someone settled on long ago.
 
-## Not done yet
+## Not done, on purpose
 
-The model path still reads the screen. The follow-up is to feed it the
-conversation instead, the way cmux does (the first prompt plus the latest
-one, from the transcript), and to ask for Claude's style: sentence case, verb
-first, three to seven words. Codex stores its thread titles in
-`~/.codex/state_5.sqlite` (`threads.title`) and sets no terminal title, so it
-would need that path too.
+Codex and opencode generate their own titles and keep them in a database
+(Codex: `~/.codex/state_5.sqlite`, `threads.title`), so a row could match
+their resume pickers the way Claude rows match Claude's. That is a reader per
+agent, and it is only worth writing for an agent that is actually in the
+terminal. Pi's `/name` reaches the terminal title as `pi - <name> - <dir>`,
+with no leading glyph, and is likewise not parsed yet. Neither is needed for
+the row to have a good name; both would make it the agent's own.

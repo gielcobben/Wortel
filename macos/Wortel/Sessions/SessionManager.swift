@@ -129,6 +129,22 @@ final class SessionManager {
     @ObservationIgnored private let autoNameThrottle = AutoNameThrottle()
     @ObservationIgnored private var autoNameState: [Session.ID: AutoNameThrottle.State] = [:]
 
+    /// One session's wait for its agent's first prompt. See `beginPromptCapture`.
+    private struct PromptCapture {
+        let token = UUID()
+        let startedAt: Date
+        let resume: Bool
+        let tap: PromptTap?
+    }
+    @ObservationIgnored private var promptCaptures: [Session.ID: PromptCapture] = [:]
+    /// An agent nobody has prompted for this long is not about to be; stop
+    /// listening rather than wait for a follow-up that would name it wrongly.
+    private static let promptCaptureDeadline: TimeInterval = 15 * 60
+    /// A title from the prompt is held back this long so an agent that names
+    /// itself (Claude Code, a few seconds after the first prompt) wins outright
+    /// instead of the row renaming twice in quick succession.
+    private static let promptTitleHold: TimeInterval = 8
+
     var selected: Session? {
         sessions.first { $0.id == selectedID }
     }
@@ -513,11 +529,19 @@ final class SessionManager {
         let live = AgentResumeStore.currentMarkers()
         for session in sessions {
             let marker = live[session.id]
+            let wasRunning = session.runningAgent
             if session.runningAgent != marker?.agent { session.runningAgent = marker?.agent }
             if session.runningModel != marker?.model { session.runningModel = marker?.model }
             session.runningArgv = marker?.argv
             session.runningShellPID = marker?.shellPID
             session.runningStartedAt = marker?.startedAt
+            // An agent launching is the moment to start listening for its first
+            // prompt; the same agent exiting, or being replaced, ends the wait.
+            if let marker, marker.agent != wasRunning {
+                beginPromptCapture(session, marker: marker)
+            } else if marker == nil, wasRunning != nil {
+                endPromptCapture(session)
+            }
         }
         // Markers appearing/vanishing is exactly when the screen sampler has
         // work to start or stop doing.
@@ -1177,6 +1201,7 @@ final class SessionManager {
         screenInferredBusy.remove(session.id)
         explicitSignalAt.removeValue(forKey: session.id)
         autoNameState.removeValue(forKey: session.id)
+        endPromptCapture(session)
         // The killed shell never reaches its prompt to clear its own agent
         // marker; drop it so a closed session isn't resumed on next launch.
         AgentResumeStore.remove(sessionID: session.id)
@@ -1661,8 +1686,9 @@ final class SessionManager {
     private func considerAutoName(_ session: Session) {
         guard #available(macOS 26.0, *), SessionNameGenerator.isAvailable else { return }
         // The model fills in only where nobody better has spoken: a session
-        // the user named, or that its agent has titled, keeps that name.
-        guard session.nameSource < .agent else { return }
+        // the user named, that its agent has titled, or that was named from
+        // its first prompt, keeps that name.
+        guard session.nameSource < .prompt else { return }
         guard let raw = session.surfaceView?.readScreenText() else { return }
         let distilled = SessionNameGenerator.distill(raw)
 
@@ -1694,7 +1720,7 @@ final class SessionManager {
             self.autoNameState[id] = state
 
             guard let session, self.sessions.contains(where: { $0.id == id }),
-                  session.nameSource < .agent, // renamed or agent-titled while we waited
+                  session.nameSource < .prompt, // renamed, or better-named, while we waited
                   let name, !name.isEmpty, name != session.leafName else { return }
             self.applyAutoName(session, to: name, source: .model)
         }
@@ -1729,6 +1755,95 @@ final class SessionManager {
         else { return }
         guard name != session.leafName else { return }
         applyAutoName(session, to: name, source: .agent)
+    }
+
+    // MARK: - Naming from the first prompt
+
+    /// An agent just launched in `session`: listen for the first prompt the
+    /// user types into it, and name the session from that. This is how every
+    /// agent gets what Claude Code's own title gives Claude sessions, with no
+    /// per-agent code: the prompt is the input every AI app names from, and
+    /// Wortel owns the pty it travels down. See `docs/session-naming.md`.
+    ///
+    /// Not started for a session the user named, an agent that has been running
+    /// since before this launch (a keeper reattach: its next line is a
+    /// follow-up), or a surface whose input isn't ours to see (the exec-backend
+    /// escape hatch). A prompt on the agent's own command line is taken as is.
+    private func beginPromptCapture(_ session: Session, marker: AgentMarker) {
+        endPromptCapture(session)
+        guard session.nameSource != .user else { return }
+        let now = Date()
+        if let started = marker.startedAt, now.timeIntervalSince(started) > 60 { return }
+        let resume = marker.argv.map(FirstPrompt.isResume) ?? false
+
+        if let argv = marker.argv, let prompt = FirstPrompt.fromCommandLine(argv) {
+            promptCaptures[session.id] = PromptCapture(startedAt: now, resume: resume, tap: nil)
+            nameSession(session, fromPrompt: prompt, capturedAt: now)
+            return
+        }
+        guard let pty = session.surfaceView?.ptyHost else { return }
+        let id = session.id
+        let tap = PromptTap { [weak self] line in
+            // The tap delivers on the main queue; say so to the compiler.
+            MainActor.assumeIsolated {
+                guard let self, let session = self.sessions.first(where: { $0.id == id }) else { return }
+                self.promptLineTyped(session, line: line)
+            }
+        }
+        let capture = PromptCapture(startedAt: now, resume: resume, tap: tap)
+        promptCaptures[id] = capture
+        pty.promptTap = tap
+        let token = capture.token
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.promptCaptureDeadline) { [weak self] in
+            guard let self, let session = self.sessions.first(where: { $0.id == id }),
+                  self.promptCaptures[id]?.token == token else { return }
+            self.endPromptCapture(session)
+        }
+    }
+
+    /// Stop listening, and let go of the tap so the pty carries nothing extra.
+    private func endPromptCapture(_ session: Session) {
+        guard promptCaptures.removeValue(forKey: session.id) != nil else { return }
+        session.surfaceView?.ptyHost?.promptTap = nil
+    }
+
+    /// A line was typed into the agent. Dialog answers and slash commands are
+    /// not prompts and keep the wait going; the first real one ends it.
+    private func promptLineTyped(_ session: Session, line: String) {
+        guard let capture = promptCaptures[session.id] else { return }
+        guard let prompt = FirstPrompt.accept(line) else { return }
+        session.surfaceView?.ptyHost?.promptTap = nil
+        promptCaptures[session.id] = PromptCapture(
+            startedAt: capture.startedAt, resume: capture.resume, tap: nil)
+        nameSession(session, fromPrompt: prompt, capturedAt: Date())
+    }
+
+    /// Turn a first prompt into a name: the on-device model in Claude's style,
+    /// or the prompt's own first sentence where there is no model. Applied only
+    /// after the hold, and only if nothing better arrived meanwhile.
+    private func nameSession(_ session: Session, fromPrompt prompt: String, capturedAt: Date) {
+        let id = session.id
+        let resume = promptCaptures[id]?.resume ?? false
+        Task { [weak self] in
+            var title = ""
+            if #available(macOS 26.0, *), SessionNameGenerator.isAvailable {
+                title = (try? await SessionNameGenerator.generate(prompt: prompt)) ?? ""
+            }
+            if title.isEmpty { title = FirstPrompt.fallbackTitle(prompt) }
+            let remaining = Self.promptTitleHold - Date().timeIntervalSince(capturedAt)
+            if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+
+            guard let self, let session = self.sessions.first(where: { $0.id == id }) else { return }
+            self.promptCaptures.removeValue(forKey: id)
+            // A new conversation renames a row an earlier prompt named, the same
+            // rule an agent's title follows. A *resumed* conversation's first
+            // line is a follow-up: it may replace a placeholder or a screen
+            // guess, never a name that was right.
+            let ceiling: Session.NameSource = resume ? .prompt : .agent
+            guard session.nameSource < ceiling, !title.isEmpty, title != session.leafName
+            else { return }
+            self.applyAutoName(session, to: title, source: .prompt)
+        }
     }
 
     /// Ask git which branch each worktree session is on, for the ones that

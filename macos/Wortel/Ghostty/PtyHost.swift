@@ -25,6 +25,11 @@ import os
 /// In the app this only ever *adopts* a descriptor the keeper passed; the keeper
 /// is the one that forks. `WORTEL_NO_KEEPER=1` opts a launch out entirely and
 /// puts it back on libghostty's exec backend.
+/// Something that wants a copy of the bytes the terminal sends the program.
+protocol PtyInputListener: AnyObject, Sendable {
+    func feed(_ bytes: UnsafePointer<UInt8>, count: Int)
+}
+
 final class PtyHost: @unchecked Sendable {
     /// An escape hatch, not a feature switch: survival is the default, and
     /// `WORTEL_NO_KEEPER=1` puts a launch back on libghostty's exec backend.
@@ -73,6 +78,18 @@ final class PtyHost: @unchecked Sendable {
     /// never leaves the lock except to be cancelled by the one caller that took
     /// it out.
     private let shared = OSAllocatedUnfairLock(uncheckedState: Shared())
+
+    /// Whoever is listening for the user's next typed line, if anyone. Set and
+    /// cleared on the main thread by the session manager while it waits for an
+    /// agent's first prompt (`PromptTap`); read on the write path, hence the
+    /// lock. nil is the normal state, and costs one lock take per write. A
+    /// protocol rather than the concrete tap because this file is also the
+    /// keeper's, which has no sessions to name.
+    private let tap = OSAllocatedUnfairLock<(any PtyInputListener)?>(initialState: nil)
+    var promptTap: (any PtyInputListener)? {
+        get { tap.withLock { $0 } }
+        set { tap.withLock { $0 = newValue } }
+    }
 
     /// The pty master. Reading it gives what the program wrote; writing it is
     /// what the user typed. -1 once the descriptor has been closed.
@@ -288,6 +305,7 @@ final class PtyHost: @unchecked Sendable {
     /// outright. Deliberately not done: it would put a retain/release on the
     /// keystroke path to fix a race no one has hit.
     func write(_ bytes: UnsafePointer<UInt8>, count: Int) {
+        if let tap = tap.withLock({ $0 }) { tap.feed(bytes, count: count) }
         let master = shared.withLock { $0.master }
         guard master >= 0 else { return }
         var offset = 0

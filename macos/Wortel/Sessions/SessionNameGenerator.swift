@@ -19,27 +19,60 @@ enum SessionNameGenerator {
         return false
     }
 
+    /// The house style is Claude Code's, since that is what the rows named by
+    /// an agent's own title look like and a sidebar in two styles reads as two
+    /// systems: sentence case, three to seven words, a verb first where one
+    /// fits.
+    private static let style = """
+    - 3 to 7 words, sentence case (capitalise only the first word and proper \
+    nouns), in the same language as the content.
+    - Start with a verb where natural and name the concrete task, for example \
+    "Fix login redirect loop", "Add PostHog analytics to Wortel", "Debug git \
+    panel display issues". Never just a tool or shell name like "Claude", "zsh" \
+    or "npm".
+    - No quotes, no dashes, no trailing punctuation, no leading "Session" or \
+    "Task".
+    """
+
     private static let instructions = """
     You name terminal sessions in a developer's sidebar. Given a snapshot of \
     what's currently on screen in ONE terminal, output ONLY a short title for \
     that session.
 
     Guidelines:
-    - 2 to 4 words, in the same language as the content, no quotes, no dashes, \
-    no trailing punctuation.
-    - Name it after the concrete task or topic, meaning what the developer is \
-    doing (e.g. "Fix quiesce race", "Postgres migration", "Reading Vite docs"). \
-    Never just a tool or shell name like "Claude", "zsh", or "npm".
+    \(style)
     - If a current title is given and it still fits what's on screen, reply with \
     that exact title unchanged.
+    """
+
+    private static let promptInstructions = """
+    You name coding sessions in a developer's sidebar. Given the first message \
+    a developer sent to a coding agent, output ONLY a short title for that \
+    session. Never answer the message; only name it.
+
+    Guidelines:
+    \(style)
     """
 
     /// Guided generation guarantees the shape, so there's no freeform parsing —
     /// only light sanitising of the one field.
     @Generable
     struct Name {
-        @Guide(description: "A 2 to 4 word session title, no quotes, no dashes, no trailing punctuation.")
+        @Guide(description: "A 3 to 7 word session title in sentence case, no quotes, no dashes, no trailing punctuation.")
         var title: String
+    }
+
+    /// Name a session from the first prompt the user typed into its agent.
+    /// Returns the sanitised title, or empty if the model produced nothing
+    /// usable; the caller falls back to `FirstPrompt.fallbackTitle`.
+    static func generate(prompt: String) async throws -> String {
+        let session = LanguageModelSession(instructions: promptInstructions)
+        let options = GenerationOptions(temperature: 0.3)
+        let budget = 2000
+        let text = prompt.count > budget ? String(prompt.prefix(budget)) : prompt
+        let response = try await session.respond(
+            to: "The developer's first message:\n\(text)", generating: Name.self, options: options)
+        return sanitize(response.content.title)
     }
 
     /// Summarise `screenText` (already distilled) into a session name. Returns
@@ -111,8 +144,8 @@ enum SessionNameGenerator {
         }
         s = s.split(whereSeparator: { $0 == " " || $0 == "\t" }).joined(separator: " ")
         while let last = s.last, ".!,;:".contains(last) { s = String(s.dropLast()) }
-        if s.count > 40 {
-            let cut = s.prefix(40)
+        if s.count > 48 {
+            let cut = s.prefix(48)
             s = cut.lastIndex(of: " ").map { String(cut[..<$0]) } ?? String(cut)
         }
         return s.trimmingCharacters(in: .whitespaces)

@@ -154,14 +154,17 @@ tolerates older files missing fields. `saveNow` runs synchronously on
 termination.
 
 **Session naming** (`Session.NameSource`, `Wortel/Sessions/AgentTitle.swift`,
+`Wortel/Sessions/PromptCapture.swift`, `Wortel/Ghostty/PromptTap.swift`,
 `SessionNameGenerator`) — a row's name comes from the best source that has
 spoken, in this order: a user rename, the agent's own terminal title (Claude
 Code titles its conversation from the first prompt and pushes `✳ <title>` as
-the terminal title, which `AgentTitle` parses), the on-device model's screen
-summary, and the placeholder (the directory, or the branch for a worktree
-session). Worktree sessions are named for their task and carry the branch on a
-second row line. See `docs/session-naming.md` for the reasoning and what the
-other tools do.
+the terminal title, which `AgentTitle` parses), a title the on-device model
+makes from the first prompt the user typed into the agent (a `PromptTap` on
+`PtyHost.write` reads it back for any agent, no hooks or config files
+involved), the model's screen summary, and the placeholder (the directory, or
+the branch for a worktree session). Worktree sessions are named for their task
+and carry the branch on a second row line. See `docs/session-naming.md` for
+the reasoning, the privacy scoping of the tap, and what the other tools do.
 
 **UI shell** (`Wortel/UI/`) — `ContentView` is a SwiftUI `NavigationSplitView`
 (sidebar list + terminal detail) hosted inside an AppKit window

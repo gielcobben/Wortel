@@ -25,19 +25,21 @@ final class Session: Identifiable {
     /// Where `name` came from, which decides who may replace it. Persisted.
     ///
     /// The order is the precedence: the user's word is final; an agent's own
-    /// title for its conversation beats anything guessed; the on-device model
-    /// only fills in where no agent has spoken; and a placeholder (the
-    /// directory, a branch) is what anything may replace. See
-    /// `docs/session-naming.md`.
+    /// title for its conversation beats anything guessed; a title made from the
+    /// first prompt the user typed into the agent beats a guess from the
+    /// screen; the on-device model's screen summary only fills in where nothing
+    /// better has spoken; and a placeholder (the directory, a branch) is what
+    /// anything may replace. See `docs/session-naming.md`.
     enum NameSource: String, Codable, Comparable {
-        case placeholder, model, agent, user
+        case placeholder, model, prompt, agent, user
 
         private var rank: Int {
             switch self {
             case .placeholder: return 0
             case .model: return 1
-            case .agent: return 2
-            case .user: return 3
+            case .prompt: return 2
+            case .agent: return 3
+            case .user: return 4
             }
         }
         static func < (lhs: NameSource, rhs: NameSource) -> Bool { lhs.rank < rhs.rank }

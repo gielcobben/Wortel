@@ -392,6 +392,10 @@ targets:
       # its placeholder forever, and a state word it lets through names one
       # "Working". Foundation only.
       - path: Wortel/Sessions/AgentTitle.swift
+      # Typed input read back as lines, and what counts as a first prompt.
+      # Pure, and the failure mode is naming a session after an escape
+      # sequence or a "y" typed at a trust dialog. Foundation only.
+      - path: Wortel/Sessions/PromptCapture.swift
       # Why a session is asking for attention, and the rollup rule a collapsed
       # folder shows on behalf of what it hides. Pure, and the rollup is a
       # max-not-latest rule whose failure mode is silence: a blocked agent

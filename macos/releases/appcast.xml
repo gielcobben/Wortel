@@ -3,6 +3,43 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.37.2</title>
+            <pubDate>Wed, 09 Sep 2026 14:34:03 -0400</pubDate>
+            <sparkle:version>2026.37.2</sparkle:version>
+            <sparkle:shortVersionString>2026.37.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Pi shows it is working, and a path in a name is not a folder</h1>
+<p class="date">Wortel 2026.37.2 &middot; 2026-09-09</p>
+<p><strong>Pi finally shows it is working.</strong> Pi ships with its progress reporting switched off, so Wortel had to read its screen to tell working from waiting, and that reading failed in two ways. It never watched the session you had selected, on the theory that you could see for yourself, so the one place you actually watched Pi work showed nothing. And every message Pi draws is wrapped in terminal marks that made the core believe a command had just finished, which switched the spinner off mid-turn and, with it, the “finished, your move” dot that follows a turn. Both are fixed. The selected session is watched like any other, with your own typing, pasting, clicking and scrolling discounted so a long prompt never reads as the agent at work, and a finished-command signal that arrives while an agent is running is ignored, since the agent, not your shell, still has the terminal. Expect the spinner a few seconds after Enter: this is Wortel guessing from the screen, and it waits for two changed frames before it commits.</p>
+<ul>
+<li><strong>A slash in a generated name no longer makes a folder.</strong> Session names come from your first prompt or the agent’s own title, and both are full of paths. “Debug web/src build” was being read as a session called “src build” inside a new folder called “Debug web”. Generated names now use a look-alike slash that the sidebar does not treat as a folder separator, so the path still reads as a path. A slash you type into a name yourself still moves the session into that folder, as before.</li>
+<li><strong>Quitting an agent no longer raises a “Command finished” dot.</strong> The finished-command signal at an agent’s exit was being reported like any long shell command. It counts as the agent leaving, not as a command worth flagging.</li>
+<li><strong>This applies to every agent that reports nothing</strong>, so opencode, goose and aider gain the spinner in the selected session too. Agents that announce themselves, Claude Code, Codex, Gemini, crush and Amp, are unchanged.</li>
+</ul>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.37.2.zip" length="18891879" type="application/octet-stream" sparkle:edSignature="TcsuYCiusn/BwO5lE5HS5j4+zqGlW1wDRH8/H0i5iQnHwUOGnykqgwE1Gyg9aM+b0QPMo/AlgKXPYvvbIZfkAQ=="/>
+        </item>
+        <item>
             <title>2026.37.1</title>
             <pubDate>Tue, 08 Sep 2026 22:30:57 -0400</pubDate>
             <sparkle:version>2026.37.1</sparkle:version>
@@ -78,46 +115,6 @@
 <li><strong>Closing the last session no longer crashes on the way out.</strong> The window was being freed the instant it closed, while the app was still holding on to it, so anything that ran in the gap could land in memory that had already gone. Updating the title to say no session is selected was enough to do it. It only ever surfaced once the window was gone, which is the least useful moment to hear about it.</li>
 </ul>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.34.1.zip" length="18713045" type="application/octet-stream" sparkle:edSignature="24Cg9cCGQSYswDQe7lTjjFKYhtfNmUQWP7pzMPNcJyoIhCRxqtduNh3Q7hEuoDqmCHB4O9/rnQfOvACfW7fKDw=="/>
-        </item>
-        <item>
-            <title>2026.33.2</title>
-            <pubDate>Thu, 13 Aug 2026 10:08:03 -0400</pubDate>
-            <sparkle:version>2026.33.2</sparkle:version>
-            <sparkle:shortVersionString>2026.33.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>The spinner tells the truth, and a branch you can actually pick</h1>
-<p class="date">Wortel 2026.33.2 &middot; 2026-08-13</p>
-<p><strong>The sidebar’s busy spinner had drifted away from the truth in two directions at once</strong>, and if you keep several agents open you will have seen both. A working session showed nothing, while a session that finished an hour ago kept spinning. The first was a marker list that had gone stale: Wortel recognised the braille spinner agents used to animate in their window title, and Claude Code now animates a different one, so it read every frame as “not working” and fell back to guessing from the screen. The second was worse in a quieter way. When the guessing tier lost sight of a session, which a window resize was enough to cause, it forgot that it owed that session a “stopped” and the spinner never came down. Looking at the session to see what it meant was itself one of the ways it got stuck, so it could never recover.</p>
-<ul>
-<li><strong>An agent that outlives the app is still an agent.</strong> Sessions survive quitting Wortel, but the record of which agent was running in each one was cleared at launch, on the assumption that anything still alive would re-announce itself. A long-running agent never does, because it never returns to a shell prompt. So a session you left running for days came back with no agent name in the sidebar and no activity detection at all, and the longer it ran the less Wortel knew about it. The record now survives when the shell it belongs to does.</li>
-<li><strong>New Session on Branch is a proper dialog now.</strong> It was an alert with a pop-up button whose menu carried a “Filter…” item that opened a list on top of it: a menu, to get to a filter, to get to the branches. It is one panel with one searchable list, and the list is the same one the toolbar’s branch switcher uses, so the two can no longer disagree about what a branch list is.</li>
-<li><strong>Typing a colleague’s branch name checks out their branch.</strong> It used to create a <em>new</em> branch forked from trunk wearing their name, with none of their work and nothing on screen to say so. A branch that exists on a remote is now recognised as a branch that exists, checked out with its history and set to track, and the dialog says which remote it came from before you commit to it.</li>
-<li><strong>A new branch starts from trunk as it is now</strong>, not as of the last time you happened to pull. Wortel fetches while the dialog is open, so the fork point is current by the time you press Create, and it gives up on a slow fetch rather than making you wait on it.</li>
-<li><strong>The first push from a new worktree session works.</strong> A branch forked from <code>origin/main</code> was inheriting <code>origin/main</code> as its upstream, which git then refuses to push to under its own default settings. New branches start with no upstream, and the first push sets the right one.</li>
-<li><strong>Remote branches no longer hold up the list.</strong> On a large repository they are the slow half by a wide margin, so the picker opens on your local branches and fills the rest in underneath, saying so while it does.</li>
-</ul>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.33.2.zip" length="18712276" type="application/octet-stream" sparkle:edSignature="ZtYlUyOJ7AvmhzAcWtJVSGzBzkMVpGn77rDhYOi0swf2AfJvp19urk32o+Bz97CN6CDm/JjKwkZhAUWBZ37CAQ=="/>
         </item>
     </channel>
 </rss>

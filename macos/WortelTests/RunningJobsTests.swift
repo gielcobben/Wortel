@@ -192,6 +192,86 @@ final class RunningJobsTests: XCTestCase {
                        "a sub-agent is the agent, not a stray process")
     }
 
+    /// The bug that hid both of a session's dev servers.
+    ///
+    /// Claude Code's shell tool runs `zsh -c 'source
+    /// ~/.claude/shell-snapshots/snapshot-….sh && …'`, so every job an agent
+    /// starts carries a mention of `.claude` in its command string. Matching an
+    /// agent name anywhere in argv classified both `bun dev` groups as the agent
+    /// and dropped them from the list they exist for.
+    func testACommandMentioningAnAgentIsNotAnAgent() {
+        let snapshotCommand = "source /Users/giel/.claude/shell-snapshots/"
+            + "snapshot-zsh-1789042062507-8nxo0e.sh 2>/dev/null || true && bun dev:web"
+        let extra: [pid_t: [String]] = [
+            15614: ["/bin/zsh", "zsh", "-c", snapshotCommand],
+            15631: ["/bin/zsh", "zsh", "-c", snapshotCommand],
+        ]
+        let snapshot = RunningJobs.scan(table: table, roots: [root], uid: 501,
+                                        details: details(extraArgv: extra))
+        XCTAssertEqual(Set(snapshot.work.map(\.pgid)), [15614, 15631],
+                       "a path in a command string is not the program being run")
+        XCTAssertEqual(snapshot.agents.map(\.pgid), [37616])
+    }
+
+    func testAgentMatchingLooksAtTheProgramNotTheCommandLine() {
+        let names: Set<String> = ["claude", "pi", "aider"]
+        XCTAssertTrue(RunningJobs.namesAgent(
+            in: ["/Users/giel/.local/bin/claude", "claude"], among: names))
+        XCTAssertTrue(RunningJobs.namesAgent(
+            in: ["/opt/node", "node", "/x/pi-coding-agent/dist/cli.js"], among: names),
+            "a script agent is named by the script, which is argv[1]")
+        XCTAssertFalse(RunningJobs.namesAgent(
+            in: ["/bin/zsh", "zsh", "-c", "source ~/.claude/x.sh && bun dev"], among: names),
+            "the command string is not the program")
+        XCTAssertFalse(RunningJobs.namesAgent(
+            in: ["/usr/local/bin/bun", "bun", "dev:web"], among: names))
+    }
+
+    // MARK: - Shells other than zsh
+
+    /// Wortel ships integration for bash, elvish, fish, nushell and zsh, and a
+    /// shell missing from the list costs an unreadable label and an unwanted row.
+    func testEveryShippedShellIsRecognised() {
+        for shell in ["zsh", "bash", "fish", "elvish", "nu"] {
+            XCTAssertTrue(
+                RunningJobs.isLoginShell(["/bin/\(shell)", "-\(shell)"]),
+                "\(shell) started as a login shell is the session, not a job")
+            XCTAssertTrue(
+                RunningJobs.isWrapper(["/bin/\(shell)", shell, "-c", "bun dev"]),
+                "\(shell) handed a command is scaffolding around that command")
+        }
+    }
+
+    /// The login shell is found the same way whatever shell it is, because the
+    /// dash-prefixed argv[0] is `login`'s convention, not zsh's.
+    func testALoginShellOtherThanZshIsStillTheSession() {
+        let withFish = [
+            entry(37498, 65344, 37498, "login"),
+            entry(37499, 37498, 37499, "fish"),
+            entry(15616, 37499, 15614, "bun"),
+            entry(15614, 37499, 15614, "fish"),
+        ]
+        let argvFish: [pid_t: [String]] = [
+            37499: ["/opt/homebrew/bin/fish", "-/opt/homebrew/bin/fish", "-l"],
+            15614: ["/opt/homebrew/bin/fish", "fish", "-c", "bun dev:web"],
+            15616: ["/usr/local/bin/bun", "bun", "dev:web"],
+        ]
+        let snapshot = RunningJobs.scan(
+            table: withFish,
+            roots: [SessionProcessRoot(sessionID: sessionID, shellPID: 37498, agentName: nil)],
+            uid: 501, details: details(extraArgv: argvFish))
+        XCTAssertEqual(snapshot.work.map(\.pgid), [15614])
+        XCTAssertEqual(snapshot.work.first?.label, "bun dev:web",
+                       "the label looks past a fish wrapper exactly as it does a zsh one")
+    }
+
+    func testCommandWrappersAreLookedThrough() {
+        XCTAssertTrue(RunningJobs.isWrapper(["/usr/bin/env", "env", "FOO=1"]))
+        XCTAssertTrue(RunningJobs.isWrapper(["/usr/bin/sudo", "sudo", "systemctl"]))
+        XCTAssertTrue(RunningJobs.isWrapper(["/usr/bin/nohup", "nohup", "server"]))
+        XCTAssertFalse(RunningJobs.isWrapper(["/opt/node", "node", "server.js"]))
+    }
+
     /// A session with an agent and nothing else is a session that is open, not a
     /// machine with something running on it.
     func testAgentsAloneAreNotWork() {

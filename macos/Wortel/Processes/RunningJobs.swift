@@ -151,11 +151,29 @@ enum RunningJobs {
     /// Node's `--inspect` lands here. Real, but never the port you meant.
     static let inspectorPorts = 9229...9249
 
-    /// Programs that are a way of running something else, so the label should
-    /// look past them. The group leader of an agent's job is literally
-    /// `zsh -c source ~/.claude/shell-snapshots/…`, which describes nothing.
+    /// Shells. Used both for "this is the session's login shell" and for "look
+    /// past this to the program it was told to run".
+    ///
+    /// Every shell Wortel ships integration for
+    /// (`Resources/ghostty/shell-integration`) plus the ones people swap in:
+    /// nothing here is zsh-specific, and a shell missing from this list costs a
+    /// readable label and an unwanted row, so it errs wide. The dash-prefixed
+    /// argv[0] that marks a login shell is a POSIX convention `login` applies
+    /// whatever shell it execs, so it works for all of them.
     static let shellWrappers: Set<String> = [
-        "zsh", "bash", "sh", "dash", "fish", "ksh", "login", "env",
+        "zsh", "bash", "sh", "dash", "ash", "ksh", "fish", "elvish", "nu",
+        "xonsh", "tcsh", "csh", "pwsh",
+    ]
+
+    /// Programs whose whole job is to run another program. The label should look
+    /// straight through them to the thing they launched.
+    ///
+    /// The same list the shell integration skips when it works out which command
+    /// you actually ran (`_ghostty_wortel_agent`), so the two halves agree about
+    /// what counts as scaffolding.
+    static let commandWrappers: Set<String> = [
+        "login", "env", "sudo", "doas", "command", "exec", "nohup", "nice",
+        "stdbuf", "setsid", "time", "arch", "caffeinate",
     ]
 
     /// Interpreters worth dropping from a label when they are followed by the
@@ -293,14 +311,42 @@ enum RunningJobs {
             // The argv pass, for agents whose process is named after their
             // interpreter (Pi, Gemini, aider) or after their own version
             // (`claude` reports `p_comm` as `2.1.267`).
-            let arguments = details.arguments(entry.pid)
-            if names.contains(where: { name in
-                arguments.contains { AgentLiveness.argumentNames(name, $0) }
-            }) {
+            if namesAgent(in: details.arguments(entry.pid), among: names) {
                 groups.insert(entry.pgid)
             }
         }
         return groups
+    }
+
+    /// Whether these arguments say the process **is** one of these agents.
+    ///
+    /// Only the program is looked at: the executable path, `argv[0]`, and
+    /// `argv[1]`, which is where a script-based agent's identity lives
+    /// (`node …/pi-coding-agent/dist/cli.js`). Deliberately **not** the rest of
+    /// the command line.
+    ///
+    /// That restriction is the whole point. `AgentLiveness` matches an agent
+    /// name anywhere in argv, which is safe for the question it asks: it fails
+    /// open, and a false positive there merely keeps a marker alive a little
+    /// longer. Here a false positive is expensive, because it takes a real
+    /// server off the list and hides the Quit button that was the reason for
+    /// looking.
+    ///
+    /// And it fired immediately. Claude Code's shell tool runs
+    /// `zsh -c 'source /Users/giel/.claude/shell-snapshots/snapshot-zsh-….sh …'`,
+    /// so every job an agent starts carries a mention of `.claude` in its
+    /// command string. Both of a session's dev servers were classified as the
+    /// agent and vanished from the list they existed for.
+    static func namesAgent(in arguments: [String], among names: Set<String>) -> Bool {
+        for argument in arguments.prefix(3) where !argument.isEmpty {
+            // A flag is never a program name, and `-c` is what precedes the
+            // command string this rule exists to ignore.
+            guard !argument.hasPrefix("-") else { continue }
+            if names.contains(where: { AgentLiveness.argumentNames($0, argument) }) {
+                return true
+            }
+        }
+        return false
     }
 
     /// Groups nothing is watching any more.
@@ -441,20 +487,26 @@ enum RunningJobs {
     /// thing itself.
     static func isWrapper(_ arguments: [String]) -> Bool {
         guard let command = commandName(arguments) else { return true }
+        // `sudo`, `env`, `nohup` and friends exist only to run something else.
+        if commandWrappers.contains(command) { return true }
         guard shellWrappers.contains(command) else { return false }
-        // A shell the user is actually sitting in is a real job; a shell with a
-        // script to run is scaffolding. `-c` is what tells them apart.
-        return arguments.dropFirst().contains { $0 == "-c" || $0.hasPrefix("-c") }
-            || command == "login" || command == "env"
+        // A shell you are sitting in is a real job; a shell handed a command to
+        // run is scaffolding. The command flag is what tells them apart, and it
+        // is `-c` in every shell Wortel ships integration for, including fish,
+        // elvish and nushell. PowerShell spells it `-Command`.
+        let flags = arguments.dropFirst()
+        return flags.contains { $0 == "-c" || $0.hasPrefix("-c") }
+            || flags.contains { $0.lowercased().hasPrefix("-command") }
             || arguments.count <= 2
     }
 
     /// Whether this is a shell started as a login shell.
     ///
     /// `login` marks one by prefixing argv[0] with a dash, which is the
-    /// convention shells read to decide whether to run the login profile. It is
-    /// the only reliable sign that a shell is a session rather than a job: the
-    /// command name is just `zsh` either way.
+    /// convention every shell reads to decide whether to run the login profile,
+    /// and which `login` applies whatever shell it execs. It is the only
+    /// reliable sign that a shell is a session rather than a job: the command
+    /// name is the same either way.
     static func isLoginShell(_ arguments: [String]) -> Bool {
         let tokens = arguments.count > 1 ? Array(arguments.dropFirst()) : arguments
         guard let argv0 = tokens.first, argv0.hasPrefix("-") else { return false }

@@ -626,10 +626,10 @@ private struct ImageDiffView: View {
                         .padding(.top, 24)
                 }
                 if let old = imageDiff.old {
-                    imageColumn(label: imageDiff.new == nil ? "Deleted" : "Before", image: old)
+                    imageColumn(label: imageDiff.new == nil ? "Deleted" : "Before", side: old)
                 }
                 if let new = imageDiff.new {
-                    imageColumn(label: imageDiff.old == nil ? "Added" : "After", image: new)
+                    imageColumn(label: imageDiff.old == nil ? "Added" : "After", side: new)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -637,13 +637,13 @@ private struct ImageDiffView: View {
         }
     }
 
-    private func imageColumn(label: String, image: NSImage) -> some View {
+    private func imageColumn(label: String, side: ImageDiff.Side) -> some View {
         VStack(spacing: 6) {
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Image(nsImage: image)
+            Image(nsImage: side.image)
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
@@ -654,7 +654,7 @@ private struct ImageDiffView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(Color(nsColor: .separatorColor)))
-            Text("\(Int(image.size.width)) × \(Int(image.size.height))")
+            Text(side.caption)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)

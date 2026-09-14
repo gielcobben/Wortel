@@ -5,8 +5,35 @@ import Observation
 /// The two sides of an image change, decoded for display. Either side is nil
 /// when it doesn't exist (a newly added or deleted image).
 struct ImageDiff {
-    let old: NSImage?
-    let new: NSImage?
+    /// One decoded side, kept together with the size of the blob it was decoded
+    /// from. The pixels say what changed; the bytes say what it costs, which is
+    /// the other half of reviewing an image commit.
+    struct Side {
+        let image: NSImage
+        let byteCount: Int
+
+        /// Nil when the side doesn't exist, or when its bytes won't decode as an
+        /// image — both read the same in the diff views.
+        init?(data: Data?) {
+            guard let data, let image = NSImage(data: data) else { return nil }
+            self.image = image
+            self.byteCount = data.count
+        }
+
+        /// "1200 × 630 · 245 KB" — the caption both diff views print under the
+        /// image. `.file` counts the way Finder does, so the number matches what
+        /// the Get Info panel says about the same file.
+        var caption: String {
+            let width = Int(image.size.width.rounded())
+            let height = Int(image.size.height.rounded())
+            let bytes = ByteCountFormatter.string(
+                fromByteCount: Int64(byteCount), countStyle: .file)
+            return "\(width) × \(height) · \(bytes)"
+        }
+    }
+
+    let old: Side?
+    let new: Side?
 }
 
 /// Observable state for one git work tree: its status, the selected file's
@@ -580,7 +607,7 @@ final class GitRepoModel {
             let (old, new) = await GitService.commitImageData(root: root, sha: sha, file: file)
             guard selectedCommitID == sha, expandedCommitFiles.contains(file.path) else { return }
             let images = ImageDiff(
-                old: old.flatMap(NSImage.init(data:)), new: new.flatMap(NSImage.init(data:)))
+                old: ImageDiff.Side(data: old), new: ImageDiff.Side(data: new))
             commitFileImageCache[cacheKey] = images
             commitFileImages[file.path] = images
             return
@@ -713,8 +740,8 @@ final class GitRepoModel {
             // A newer selection may have won while we were awaiting — drop stale.
             guard selectedChangeID == change.id else { return }
             diff = nil
-            imageDiff = ImageDiff(old: old.flatMap(NSImage.init(data:)),
-                                  new: new.flatMap(NSImage.init(data:)))
+            imageDiff = ImageDiff(old: ImageDiff.Side(data: old),
+                                  new: ImageDiff.Side(data: new))
             return
         }
         let text = await GitService.diff(root: root, change: change)

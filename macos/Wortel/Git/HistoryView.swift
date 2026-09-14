@@ -458,10 +458,10 @@ private struct CommitImageDiffView: View {
                     .foregroundStyle(.tertiary)
             }
             if let old = imageDiff.old {
-                column(label: imageDiff.new == nil ? "Deleted" : "Before", image: old)
+                column(label: imageDiff.new == nil ? "Deleted" : "Before", side: old)
             }
             if let new = imageDiff.new {
-                column(label: imageDiff.old == nil ? "Added" : "After", image: new)
+                column(label: imageDiff.old == nil ? "Added" : "After", side: new)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -473,12 +473,12 @@ private struct CommitImageDiffView: View {
     /// 54×54, not blown up to fill the pane.
     private static let maxImageHeight: CGFloat = 320
 
-    private func column(label: String, image: NSImage) -> some View {
+    private func column(label: String, side: ImageDiff.Side) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Image(nsImage: image)
+            Image(nsImage: side.image)
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
@@ -487,8 +487,8 @@ private struct CommitImageDiffView: View {
                 // the pane. `.padding` wraps the image, then the full-width frame
                 // centers that padded image inside the backing box.
                 .frame(
-                    maxWidth: image.size.width,
-                    maxHeight: min(image.size.height, Self.maxImageHeight))
+                    maxWidth: side.image.size.width,
+                    maxHeight: min(side.image.size.height, Self.maxImageHeight))
                 .padding(8)
                 .frame(maxWidth: .infinity)
                 .background(Color(nsColor: .textBackgroundColor))
@@ -496,7 +496,7 @@ private struct CommitImageDiffView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(Color(nsColor: .separatorColor)))
-            Text("\(Int(image.size.width)) × \(Int(image.size.height))")
+            Text(side.caption)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }

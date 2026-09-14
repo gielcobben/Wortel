@@ -725,14 +725,26 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         updateMenuForms()
     }
 
-    /// The glyph carries the one bit worth carrying: whether anything is
-    /// actually serving a port, or it is only builds and leftovers.
+    /// One glyph, always the same one.
+    ///
+    /// It used to swap between a bolt and broadcast rings depending on whether
+    /// anything held a port, which was the wrong axis twice over. Changing the
+    /// silhouette makes the item harder to find, and nobody was going to learn
+    /// that a bolt means "running but not serving" — a distinction the list
+    /// already draws properly, with a green dot and a port badge per row.
+    ///
+    /// The glyph carries no state because it does not have to: the item only
+    /// exists when something is running, so its presence is the signal and one
+    /// click is the detail. A dot field rather than an object, because this is
+    /// ambient load rather than a thing, and because nothing else in this
+    /// toolbar looks remotely like it.
+    private static let runningJobsSymbol = "aqi.medium"
+
     private func updateRunningJobsButton() {
         guard let button = runningJobsButton else { return }
         let snapshot = processes.snapshot
-        let serving = (snapshot.work + snapshot.orphans).contains { $0.primaryPort != nil }
-        let symbol = serving ? "dot.radiowaves.left.and.right" : "bolt.horizontal"
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Running")
+        button.image = NSImage(systemSymbolName: Self.runningJobsSymbol,
+                               accessibilityDescription: "Running")
         let count = snapshot.work.count + snapshot.orphans.count
         let noun = count == 1 ? "job" : "jobs"
         var tip = "\(count) \(noun) running in your sessions"

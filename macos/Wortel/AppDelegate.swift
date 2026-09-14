@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Drives the trailing source-control panel. Whether it's up follows the
     /// selected session (see GitPanelModel); new sessions start hidden.
     private let gitPanel = GitPanelModel()
+    /// What every session is still running. Sampled slowly in the background,
+    /// and read synchronously by the close sheet.
+    private let processes = ProcessMonitor()
     /// Drives the Files pane — the third view of the same column. Reads the repo
     /// the git panel has already resolved, so it costs no extra git work.
     private lazy var fileTree = FileTreeModel(git: gitPanel)
@@ -108,6 +111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
+        processes.roots = { [weak manager] in manager?.processRoots ?? [] }
+        processes.projectRoots = { [weak manager] in manager?.projectRoots ?? [] }
+        processes.startSampling()
         manager.onNeedsAttention = { [weak self] session, kind, title, body, alert in
             self?.postAttentionNotification(session, kind: kind, title: title, body: body, alert: alert)
         }
@@ -456,8 +462,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Close “\(session.name)”?"
-        alert.informativeText =
-            "A process is still running in this session. Closing it will terminate the process."
+        // Name what dies. The scan is milliseconds, so it runs inline rather
+        // than letting the sheet appear and then change its mind; if it finds
+        // nothing nameable (no shell pid on the fallback path, a torn process
+        // table) the original wording still stands.
+        let running = processes.scanNow().jobs(for: session.id)
+        alert.informativeText = RunningJobs.closeSummary(for: running)
+            ?? "A process is still running in this session. Closing it will terminate the process."
         alert.addButton(withTitle: "Close")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { response in

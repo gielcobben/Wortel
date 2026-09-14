@@ -90,7 +90,7 @@ final class RunningJobsTests: XCTestCase {
     }
 
     private var root: SessionProcessRoot {
-        SessionProcessRoot(sessionID: sessionID, shellPID: 37499, agentPID: 37616)
+        SessionProcessRoot(sessionID: sessionID, shellPID: 37499, agentName: "claude")
     }
 
     private func scan(projectRoots: [String] = [],
@@ -292,7 +292,7 @@ final class RunningJobsTests: XCTestCase {
     /// A session whose shell has already exited contributes nothing rather than
     /// dragging in whatever inherited its pid.
     func testASessionWhoseShellIsGoneContributesNothing() {
-        let gone = SessionProcessRoot(sessionID: sessionID, shellPID: 999_999, agentPID: nil)
+        let gone = SessionProcessRoot(sessionID: sessionID, shellPID: 999_999, agentName: nil)
         let snapshot = RunningJobs.scan(table: table, roots: [gone], details: details())
         XCTAssertTrue(snapshot.jobs.isEmpty)
     }
@@ -303,6 +303,47 @@ final class RunningJobsTests: XCTestCase {
             excludedPGIDs: [15614], details: details())
         XCTAssertFalse(snapshot.jobs.contains { $0.pgid == 15614 },
                        "Wortel and its keeper must not appear in their own list")
+    }
+
+    // MARK: - Close copy
+
+    /// "A process is still running in this session" is equally true of a session
+    /// holding one `sleep` and one holding 1.4 GB of dev servers, which is why
+    /// it was worth replacing.
+    func testCloseSummaryNamesWhatDies() throws {
+        let summary = try XCTUnwrap(RunningJobs.closeSummary(for: scan().jobs))
+        XCTAssertTrue(summary.contains("bun dev:web (:3000)"),
+                      "the biggest thing you are about to lose is named first: \(summary)")
+        XCTAssertTrue(summary.contains("claude"),
+                      "closing stops the agent too, which is the most important part")
+        XCTAssertTrue(summary.contains("8 processes"), "the session shell is not one of them: \(summary)")
+    }
+
+    /// No em-dashes in anything a user reads.
+    func testCloseSummaryUsesNoDashes() throws {
+        let summary = try XCTUnwrap(RunningJobs.closeSummary(for: scan().jobs))
+        XCTAssertFalse(summary.contains("—"), summary)
+        XCTAssertFalse(summary.contains("–"), summary)
+    }
+
+    func testCloseSummaryElidesALongList() throws {
+        let summary = try XCTUnwrap(
+            RunningJobs.closeSummary(for: scan().jobs, maximumNames: 1))
+        XCTAssertTrue(summary.contains("and 2 more"), summary)
+    }
+
+    func testCloseSummaryIsNilWhenThereIsNothingToName() {
+        XCTAssertNil(RunningJobs.closeSummary(for: []),
+                     "the caller keeps its own wording rather than printing an empty sentence")
+    }
+
+    /// One process is a process, not 1 processes.
+    func testCloseSummaryPluralises() throws {
+        let one = RunningJob(pgid: 10, sessionID: nil, label: "sleep", pids: [10],
+                             footprint: 1_000, ports: [], startedAt: t0,
+                             workingDirectory: nil, isAgent: false)
+        let summary = try XCTUnwrap(RunningJobs.closeSummary(for: [one]))
+        XCTAssertTrue(summary.contains("stops 1 process and"), summary)
     }
 
     // MARK: - Wrapper detection

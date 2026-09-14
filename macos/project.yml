@@ -479,6 +479,11 @@ targets:
       # Only here because RunningJobs and AgentResumeStore both call it. It is
       # the syscall layer and asserts nothing; the decisions are next door.
       - path: Wortel/Processes/ProcessTable.swift
+      # Which directories are specific enough to blame a stray process on. Too
+      # broad and the orphan list becomes a list of the whole Mac; too narrow
+      # and a server that really did outlive its session goes unnoticed. Pure
+      # path handling either way, which is the shape of code that fails quietly.
+      - path: Wortel/Processes/ProjectRoots.swift
     scheme:
       testTargets:
         - WortelTests

@@ -216,6 +216,13 @@ final class Session: Identifiable {
         surfaceView?.needsConfirmClose ?? false
     }
 
+    /// The pid of this session's shell, and so the root of every process the
+    /// session is running. See `SurfaceView.shellPID`.
+    ///
+    /// nil for a session that was never opened, and on the no-keeper fallback
+    /// path where libghostty spawns the shell without telling us its pid.
+    var shellPID: pid_t? { surfaceView?.shellPID }
+
     @discardableResult
     func ensureSurfaceView(runtime: GhosttyRuntime) -> SurfaceView {
         if let surfaceView { return surfaceView }

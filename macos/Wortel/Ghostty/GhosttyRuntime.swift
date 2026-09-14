@@ -267,6 +267,9 @@ final class GhosttyRuntime {
         let pty = PtyHost(adopting: attachment.descriptor)
         view.ptyHost = pty // the view's lifetime is the session's
         view.keeperSession = attachment.session
+        // The keeper forked the shell, so it is the only one that knows the pid.
+        // Everything the session goes on to run hangs off it.
+        view.shellPID = attachment.pid > 0 ? attachment.pid : nil
 
         cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
         cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()

@@ -6,9 +6,15 @@ struct SessionProcessRoot: Equatable {
     /// The session's shell. From the keeper's attachment, not from the agent
     /// marker — a session has a shell whether or not an agent is running in it.
     let shellPID: pid_t
-    /// The agent CLI running in this session, when one is. Its process group is
-    /// listed but never offered as killable.
-    let agentPID: pid_t?
+    /// The agent CLI running in this session, by command basename (`claude`,
+    /// `codex`), when one is. Its process group is listed but never killable.
+    ///
+    /// A name rather than a pid on purpose. A pid would have to be cached
+    /// somewhere and would go stale between refreshes, and "stale" here means
+    /// offering a Quit button on the user's agent — so it is resolved against
+    /// the same table every scan reads, and is never older than the rows it
+    /// guards.
+    let agentName: String?
 }
 
 /// The per-process facts that cost a syscall each, behind closures.
@@ -38,7 +44,12 @@ struct RunningJob: Identifiable, Equatable {
     let sessionID: UUID?
     /// What to call it, read from argv. Never `p_comm`.
     let label: String
-    let processCount: Int
+    /// Every process in the group when it was scanned, outermost first.
+    ///
+    /// Kept so the SIGKILL escalation can target the processes it actually
+    /// asked to stop rather than re-signalling `-pgid` blind: by the time the
+    /// grace window is up, that group number may belong to something else.
+    let pids: [pid_t]
     /// Physical footprint across the whole group, in bytes.
     let footprint: UInt64
     /// Listening ports worth showing, lowest first. See `displayPorts`.
@@ -50,6 +61,8 @@ struct RunningJob: Identifiable, Equatable {
     let isAgent: Bool
 
     var id: pid_t { pgid }
+
+    var processCount: Int { pids.count }
 
     /// The agent is the user's conversation, and the session shell is the
     /// session. Neither is a background job someone meant to leave running.
@@ -161,7 +174,8 @@ enum RunningJobs {
 
         for root in roots {
             guard byPID[root.shellPID] != nil else { continue }  // shell already gone
-            let agentPGID = root.agentPID.flatMap { byPID[$0]?.pgid }
+            let agentPGID = agentGroup(named: root.agentName, shellPID: root.shellPID,
+                                       table: table, parentOf: parentOf, details: details)
 
             // Every group with a member descended from this session's shell.
             var groupsHere: Set<pid_t> = []
@@ -189,6 +203,33 @@ enum RunningJobs {
 
         return RunningJobsSnapshot(jobs: jobs.sorted { $0.footprint > $1.footprint },
                                    orphans: orphans.sorted { $0.footprint > $1.footprint })
+    }
+
+    /// Which process group the session's agent is in, if it can be found.
+    ///
+    /// Two passes, the same two and in the same order as `AgentLiveness.locate`,
+    /// and for the same reason: an agent is usually a process by its own name,
+    /// but a script-based one (Pi, Gemini, aider) is named after its
+    /// interpreter, and `claude` renames itself to its version string — the real
+    /// tree here had `p_comm` reading `2.1.267`. So the cheap name check runs
+    /// first and argv decides whatever it misses.
+    ///
+    /// Getting this wrong in the permissive direction is the expensive one: an
+    /// unrecognised agent becomes a row with a Quit button on it.
+    static func agentGroup(named agent: String?, shellPID: pid_t,
+                           table: [ProcessEntry], parentOf: [pid_t: pid_t],
+                           details: ProcessDetails) -> pid_t? {
+        guard let agent, !agent.isEmpty else { return nil }
+        let needle = String(agent.prefix(ProcessTable.maxCommandNameLength - 1))
+        let descendants = table.filter {
+            ProcessTable.isDescendant($0.pid, of: shellPID, parentOf: parentOf)
+        }
+        if let byName = descendants.first(where: { $0.name == agent || $0.name == needle }) {
+            return byName.pgid
+        }
+        return descendants.first {
+            details.arguments($0.pid).contains { AgentLiveness.argumentNames(agent, $0) }
+        }?.pgid
     }
 
     /// Groups nothing is watching any more.
@@ -279,7 +320,7 @@ enum RunningJobs {
             pgid: pgid,
             sessionID: sessionID,
             label: label,
-            processCount: ordered.count,
+            pids: ordered.map(\.pid),
             footprint: footprint,
             ports: displayPorts(ports),
             startedAt: ordered.map(\.startedAt).min() ?? head.startedAt,
@@ -376,6 +417,42 @@ enum RunningJobs {
         let name = (first as NSString).lastPathComponent
         // A login shell is argv0-prefixed with a dash: `-zsh`.
         return name.hasPrefix("-") ? String(name.dropFirst()) : name
+    }
+
+    // MARK: - Copy
+
+    /// What to tell someone closing a session, given what it is running.
+    ///
+    /// The old text was "A process is still running in this session", which is
+    /// true of a session holding one `sleep` and equally true of one holding
+    /// 1.4 GB across two dev servers, and it cannot tell you which you are
+    /// about to lose. Naming them is the entire improvement.
+    ///
+    /// nil when there is nothing worth naming, so the caller keeps its generic
+    /// wording rather than printing an empty sentence.
+    ///
+    /// The agent is named too. Closing the session does stop it, and "you are
+    /// about to end your agent's turn" is the most important thing on the
+    /// screen at that moment.
+    static func closeSummary(for jobs: [RunningJob], maximumNames: Int = 3) -> String? {
+        guard !jobs.isEmpty else { return nil }
+
+        let ranked = jobs.sorted { $0.footprint > $1.footprint }
+        let named = ranked.prefix(maximumNames).map { job -> String in
+            guard let port = job.primaryPort else { return job.label }
+            return "\(job.label) (:\(port))"
+        }
+        let remainder = ranked.count - named.count
+        var list = named.joined(separator: ", ")
+        if remainder > 0 {
+            list += " and \(remainder) more"
+        }
+
+        let processes = ranked.reduce(0) { $0 + $1.processCount }
+        let bytes = ranked.reduce(0) { $0 + $1.footprint }
+        let size = ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+        let plural = processes == 1 ? "process" : "processes"
+        return "Still running: \(list). Closing stops \(processes) \(plural) and frees \(size)."
     }
 
     /// Ports worth putting in front of a person: deduplicated, sorted, and with

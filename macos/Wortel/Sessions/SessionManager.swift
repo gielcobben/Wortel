@@ -1961,7 +1961,39 @@ final class SessionManager {
     }
 
     private func scheduleSave() {
+        rememberProjectRoots()
         store.scheduleSave { [weak self] in self?.persistedSessions() ?? [] }
+    }
+
+    /// Where each live session's processes hang from, for `ProcessMonitor`.
+    ///
+    /// A session with no shell pid contributes nothing rather than a guess: that
+    /// is either a session never opened, or the no-keeper fallback path where
+    /// libghostty spawns the shell without telling us which pid it got.
+    var processRoots: [SessionProcessRoot] {
+        sessions.compactMap { session in
+            guard let shellPID = session.shellPID else { return nil }
+            return SessionProcessRoot(sessionID: session.id, shellPID: shellPID,
+                                      agentName: session.runningAgent)
+        }
+    }
+
+    /// Directories a stray process has to be sitting in to be counted as ours.
+    ///
+    /// Kept live *and* persisted, because the orphan worth finding is precisely
+    /// the one whose session closed days ago — by then the live list says
+    /// nothing about it. See `ProjectRoots`.
+    @ObservationIgnored private(set) var projectRoots: [String] = ProjectRoots.load()
+
+    /// Fold the current sessions' birth directories into the remembered list.
+    /// `originCwd` rather than `cwd`: where the session was opened is the
+    /// project, where its shell has since wandered is not.
+    private func rememberProjectRoots() {
+        let live = sessions.compactMap { $0.originCwd ?? $0.cwd }
+        let merged = ProjectRoots.merge(projectRoots, adding: live)
+        guard merged != projectRoots else { return }
+        projectRoots = merged
+        ProjectRoots.save(merged)
     }
 
     /// GitPanelModel flipped a session's `gitPanelVisible` or `inspectorPane`.

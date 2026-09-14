@@ -75,6 +75,18 @@ final class SurfaceView: NSView {
     /// turns on.
     var keeperSession: UUID?
 
+    /// The pid of this session's shell, as reported by whoever spawned it.
+    ///
+    /// The root of everything the session is running: every dev server, build
+    /// and agent in it is a descendant, so this is what turns "what is this
+    /// session holding open" into a question the process table can answer (see
+    /// `RunningJobs`). Distinct from `Session.runningShellPID`, which comes from
+    /// the agent marker and therefore only exists while an agent is running.
+    ///
+    /// nil on the no-keeper fallback path, where libghostty spawns the shell
+    /// itself and never tells us which pid it got.
+    var shellPID: pid_t?
+
     // MARK: - Lifecycle
 
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,

@@ -93,11 +93,15 @@ struct RunningJobsList: View {
     private func section(_ title: String, jobs: [RunningJob],
                          showsDetail: Bool) -> some View {
         if !jobs.isEmpty {
+            // A session can be named from its first prompt, so this heading is
+            // sometimes an entire sentence. It gets one line and an ellipsis
+            // rather than running to the edge of the popover.
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.top, 6)
                 .padding(.bottom, 2)
@@ -167,20 +171,25 @@ private struct JobRow: View {
                 .frame(width: 12)
 
             VStack(alignment: .leading, spacing: 0) {
+                // Tail, not middle: a command reads from the left, and middle
+                // truncation turned `quick.js serve dist --dir …` into
+                // `quick.js serve di…-chat-prototype`, which names nothing.
                 Text(verbatim: job.label)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
                 if showsDetail, let detail {
                     Text(verbatim: detail)
                         .font(.caption)
                         .foregroundStyle(secondaryStyle)
                         .lineLimit(1)
-                        .truncationMode(.head)
+                        .truncationMode(.tail)
                 }
             }
-            // The name is the row: without this SwiftUI splits the width between
-            // the labels and shortens all of them.
-            .layoutPriority(1)
+            // **No layout priority.** The label used to claim it, which left the
+            // port nothing to lay out in: `:13337` came out stacked one digit per
+            // line down the row. The label is the only thing here that can
+            // usefully shrink, so it is the one that gives way.
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 8)
 
@@ -198,12 +207,18 @@ private struct JobRow: View {
                             .font(.system(size: 8, weight: .semibold))
                     }
                 }
+                // An address is indivisible: it wraps or truncates into
+                // nonsense, so it takes its width before anything else does.
+                .fixedSize()
+                .layoutPriority(2)
                 .foregroundStyle(secondaryStyle)
             }
 
             trailing
                 .font(.caption.monospacedDigit())
+                .fixedSize()
                 .frame(width: 58, alignment: .trailing)
+                .layoutPriority(2)
         }
         .font(.callout)
         .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))

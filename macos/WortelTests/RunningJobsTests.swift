@@ -64,6 +64,8 @@ final class RunningJobsTests: XCTestCase {
         15614: 2_000_000, 15616: 2_600_000, 15617: 2_700_000,
         15618: 572_000_000, 15623: 133_400_000,
         15631: 2_000_000, 15633: 2_800_000,
+        // The real orphan's three survivors, as measured: 385 MB between them.
+        38938: 1_280_000, 38940: 176_100_000, 38942: 162_000_000,
     ]
 
     private let ports: [pid_t: [Int]] = [
@@ -458,6 +460,34 @@ final class RunningJobsTests: XCTestCase {
             cwd: [38938: "/Users/giel/Developer/gielcobben-2026/workers/images"])
         XCTAssertTrue(snapshot.orphans.isEmpty,
                       "with nothing to match against, claiming a process would be a guess")
+    }
+
+    /// A `chrome_crashpad_handler` sitting in a project directory at 2.8 MB is
+    /// not a server somebody forgot to stop.
+    func testASmallSilentOrphanIsNotWorthMentioning() {
+        let tiny = [entry(50100, 1, 50100, "chrome_crashpad")]
+        let snapshot = RunningJobs.scan(
+            table: table + tiny,
+            roots: [root], projectRoots: ["/Users/giel/dev"], uid: 501,
+            details: details(cwd: [50100: "/Users/giel/dev/app"],
+                             extraArgv: [50100: ["/x/chrome_crashpad", "chrome_crashpad"]]))
+        XCTAssertTrue(snapshot.orphans.isEmpty,
+                      "no port and nearly no memory means nothing to act on")
+    }
+
+    /// Small is fine when it is actually serving something: the real bun script
+    /// orphan held 15 MB and :8790.
+    func testASmallOrphanHoldingAPortIsStillListed() {
+        let serving = [entry(50200, 1, 50200, "bun")]
+        let snapshot = RunningJobs.scan(
+            table: table + serving,
+            roots: [root], projectRoots: ["/Users/giel/dev"], uid: 501,
+            details: ProcessDetails(
+                arguments: { [50200: ["/x/bun", "bun", "run", "dev:simulator"]][$0] ?? [] },
+                footprint: { $0 == 50200 ? 15_000_000 : 0 },
+                listeningPorts: { $0 == 50200 ? [8790] : [] },
+                workingDirectory: { $0 == 50200 ? "/Users/giel/dev/notify" : nil }))
+        XCTAssertEqual(snapshot.orphans.map(\.primaryPort), [8790])
     }
 
     /// A sibling directory must not match a project root by string prefix.

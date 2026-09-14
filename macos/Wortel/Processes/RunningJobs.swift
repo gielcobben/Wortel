@@ -180,6 +180,17 @@ enum RunningJobs {
     /// Node's `--inspect` lands here. Real, but never the port you meant.
     static let inspectorPorts = 9229...9249
 
+    /// What an abandoned group has to be costing to be worth mentioning, when it
+    /// is not serving anything.
+    ///
+    /// A session's own jobs are listed whatever they cost, because you started
+    /// them and they are still yours. An orphan is a guess by comparison, and the
+    /// guesses that are wrong are small: a `chrome_crashpad_handler` sitting in a
+    /// project directory at 2.8 MB is not a server anybody forgot to stop, it is
+    /// a helper of a helper. Either hold a port somebody could reach, or be big
+    /// enough that stopping it is the point.
+    static let orphanFootprintFloor: UInt64 = 20 * 1_048_576
+
     /// Shells. Used both for "this is the session's login shell" and for "look
     /// past this to the program it was told to run".
     ///
@@ -419,7 +430,8 @@ enum RunningJobs {
             guard let candidate = job(pgid: pgid, members: members, sessionID: nil,
                                       isAgent: false, parentOf: parentOf, details: details),
                   let cwd = candidate.workingDirectory,
-                  projectRoots.contains(where: { FolderRoot.root($0, contains: cwd) })
+                  projectRoots.contains(where: { FolderRoot.root($0, contains: cwd) }),
+                  !candidate.ports.isEmpty || candidate.footprint >= orphanFootprintFloor
             else { continue }
             found.append(candidate)
         }

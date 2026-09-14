@@ -166,6 +166,22 @@ enum RunningJobs {
         "node", "bun", "deno", "python", "python3", "ruby", "perl", "php",
     ]
 
+    /// Agent CLIs, recognised by name whether or not the session says one is
+    /// running.
+    ///
+    /// The session's own `agentName` comes from the shell integration's marker
+    /// file, and a marker is only written when an agent launches *under a shell
+    /// carrying the integration*. Anything older than the integration, or
+    /// started before the app restarted, leaves no marker: on a real machine the
+    /// marker directory was empty while eleven agents were running, so every one
+    /// of them was listed as a stray job with a Quit button on it.
+    ///
+    /// So the marker is a hint, not the source of truth. These are the agents
+    /// `AgentResumeStore` already knows how to resume, plus `claude`, which it
+    /// handles separately.
+    static let knownAgents: Set<String> =
+        Set(AgentResumeStore.resumeCommands.keys).union(["claude"])
+
     // MARK: - The scan
 
     /// Every job under every live session, plus the orphans.
@@ -259,15 +275,28 @@ enum RunningJobs {
     static func agentGroups(named agent: String?, shellPID: pid_t,
                             table: [ProcessEntry], parentOf: [pid_t: pid_t],
                             details: ProcessDetails) -> Set<pid_t> {
-        guard let agent, !agent.isEmpty else { return [] }
-        let needle = String(agent.prefix(ProcessTable.maxCommandNameLength - 1))
+        var names = knownAgents
+        if let agent, !agent.isEmpty { names.insert(agent) }
+        // `p_comm` is truncated, so each name needs its short form too.
+        var truncated: [String: String] = [:]
+        for name in names {
+            truncated[String(name.prefix(ProcessTable.maxCommandNameLength - 1))] = name
+        }
+
         var groups: Set<pid_t> = []
         for entry in table
         where ProcessTable.isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
-            if entry.name == agent || entry.name == needle {
+            if names.contains(entry.name) || truncated[entry.name] != nil {
                 groups.insert(entry.pgid)
-            } else if details.arguments(entry.pid).contains(
-                where: { AgentLiveness.argumentNames(agent, $0) }) {
+                continue
+            }
+            // The argv pass, for agents whose process is named after their
+            // interpreter (Pi, Gemini, aider) or after their own version
+            // (`claude` reports `p_comm` as `2.1.267`).
+            let arguments = details.arguments(entry.pid)
+            if names.contains(where: { name in
+                arguments.contains { AgentLiveness.argumentNames(name, $0) }
+            }) {
                 groups.insert(entry.pgid)
             }
         }

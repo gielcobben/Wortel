@@ -160,6 +160,38 @@ final class RunningJobsTests: XCTestCase {
                        "the agents still have to add up somewhere, just not in a row each")
     }
 
+    /// The marker file is a hint, not the source of truth. On a real machine the
+    /// marker directory was empty while eleven agents were running, so every one
+    /// of them was listed as a stray job with a Quit button on it.
+    func testAgentsAreRecognisedWithoutAMarker() {
+        let unmarked = SessionProcessRoot(sessionID: sessionID, shellPID: 37499,
+                                          agentName: nil)
+        let snapshot = RunningJobs.scan(table: table, roots: [unmarked], uid: 501,
+                                        details: details())
+        XCTAssertEqual(snapshot.agents.map(\.pgid), [37616],
+                       "claude is claude whether or not the shell integration said so")
+        XCTAssertEqual(Set(snapshot.work.map(\.pgid)), [15614, 15631])
+    }
+
+    /// Claude Code runs its sub-agents as further `claude` processes in groups of
+    /// their own. Matching only the first put a Quit button on all the rest.
+    func testEverySubAgentGroupCountsAsTheAgent() {
+        let withSubAgent = table + [
+            entry(15700, 37616, 15700, "2.1.267"),
+            entry(15701, 15700, 15700, "2.1.267"),
+        ]
+        let extra: [pid_t: [String]] = [
+            15700: ["/Users/giel/.local/bin/claude", "claude"],
+            15701: ["/Users/giel/.local/bin/claude", "claude"],
+        ]
+        let snapshot = RunningJobs.scan(
+            table: withSubAgent, roots: [root], uid: 501,
+            details: details(extraArgv: extra))
+        XCTAssertEqual(Set(snapshot.agents.map(\.pgid)), [37616, 15700])
+        XCTAssertFalse(snapshot.work.contains { $0.pgid == 15700 },
+                       "a sub-agent is the agent, not a stray process")
+    }
+
     /// A session with an agent and nothing else is a session that is open, not a
     /// machine with something running on it.
     func testAgentsAloneAreNotWork() {

@@ -193,12 +193,15 @@ private struct JobRow: View {
 
             Spacer(minLength: 8)
 
-            if let port = job.primaryPort {
+            if !job.shownPorts.isEmpty {
+                // Every port it holds, not just the lowest. One row can cover a
+                // job serving several, and naming one of them hid the others.
+                //
                 // `Text(":\(port)")` reads as a LocalizedStringKey and formats
                 // the number for the locale, which is how :3000 came out as
                 // ":3,000". A port is an address, not a quantity.
                 HStack(spacing: 2) {
-                    Text(verbatim: ":\(port)")
+                    Text(verbatim: job.shownPorts.map { ":\($0)" }.joined(separator: " "))
                         .font(.caption.monospacedDigit())
                     // Only while pointed at, so a list at rest stays a list of
                     // facts rather than a column of buttons.

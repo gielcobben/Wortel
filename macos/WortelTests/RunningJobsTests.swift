@@ -250,8 +250,9 @@ final class RunningJobsTests: XCTestCase {
         let withFish = [
             entry(37498, 65344, 37498, "login"),
             entry(37499, 37498, 37499, "fish"),
-            entry(15616, 37499, 15614, "bun"),
             entry(15614, 37499, 15614, "fish"),
+            // A child of the wrapper, which is what a shell actually produces.
+            entry(15616, 15614, 15614, "bun"),
         ]
         let argvFish: [pid_t: [String]] = [
             37499: ["/opt/homebrew/bin/fish", "-/opt/homebrew/bin/fish", "-l"],
@@ -283,6 +284,80 @@ final class RunningJobsTests: XCTestCase {
         XCTAssertFalse(snapshot.hasWork,
                        "the toolbar item would otherwise be there permanently")
         XCTAssertFalse(snapshot.agents.isEmpty, "the agent is still accounted for")
+    }
+
+    // MARK: - One group, several jobs
+
+    /// The shape that broke the model, transcribed from the machine.
+    ///
+    /// `bun dev` fanned out to `dev:web` and `dev:images`, and both trees ended
+    /// up in **one** process group (71584), with :3000 in one and :3002 in the
+    /// other. Reported as a single job it read as `bun dev:web` at :3000 with
+    /// nothing to say that :3002 existed, and its Quit would have stopped both.
+    private var sharedGroup: [ProcessEntry] {
+        [
+            entry(71587, 1, 71584, "bun"),          // dev:web tree
+            entry(71591, 71587, 71584, "bun"),
+            entry(71613, 71591, 71584, "workerd"),
+            entry(71589, 1, 71584, "bun"),          // dev:images tree
+            entry(71592, 71589, 71584, "bun"),
+            entry(71605, 71592, 71584, "workerd"),
+        ]
+    }
+
+    private func sharedGroupDetails() -> ProcessDetails {
+        let argv: [pid_t: [String]] = [
+            71587: ["/usr/local/bin/bun", "bun", "dev:web"],
+            71591: ["/usr/local/bin/bun", "bun", "--cwd", "workers/web", "dev"],
+            71613: ["/opt/workerd", "workerd", "serve"],
+            71589: ["/usr/local/bin/bun", "bun", "dev:images"],
+            71592: ["/usr/local/bin/bun", "bun", "--cwd", "workers/images", "dev"],
+            71605: ["/opt/workerd", "workerd", "serve"],
+        ]
+        return ProcessDetails(
+            arguments: { argv[$0] ?? [] },
+            footprint: { _ in 100_000_000 },
+            listeningPorts: { [71613: [3000], 71605: [3002]][$0] ?? [] },
+            workingDirectory: { _ in "/Users/giel/dev/gielcobben-2026" })
+    }
+
+    func testOneGroupHoldingTwoServersBecomesTwoRows() {
+        let snapshot = RunningJobs.scan(
+            table: sharedGroup, roots: [], projectRoots: ["/Users/giel/dev"],
+            uid: 501, details: sharedGroupDetails())
+        XCTAssertEqual(snapshot.orphans.map(\.label).sorted(), ["bun dev:images", "bun dev:web"],
+                       "one command starting two servers is two jobs, not one")
+        XCTAssertEqual(snapshot.orphans.map(\.primaryPort).sorted { ($0 ?? 0) < ($1 ?? 0) },
+                       [3000, 3002],
+                       ":3002 was collected and then hidden behind the lower port")
+    }
+
+    /// The reason the split matters more than the label: a Quit on a shared
+    /// group would have signalled the other server too.
+    func testAJobSharingItsGroupDoesNotOwnIt() {
+        let snapshot = RunningJobs.scan(
+            table: sharedGroup, roots: [], projectRoots: ["/Users/giel/dev"],
+            uid: 501, details: sharedGroupDetails())
+        XCTAssertTrue(snapshot.orphans.allSatisfy { !$0.ownsGroup },
+                      "neither job is the whole group, so neither may kill(-pgid)")
+        for job in snapshot.orphans {
+            XCTAssertEqual(job.pids.count, 3, "each row covers its own tree only")
+        }
+    }
+
+    /// A group with one tree still owns it, so the whole-group kill is kept
+    /// where it is correct.
+    func testASoleJobStillOwnsItsGroup() throws {
+        let web = try XCTUnwrap(scan().work.first { $0.pgid == 15614 })
+        XCTAssertTrue(web.ownsGroup)
+    }
+
+    func testShownPortsCarriesEveryMeaningfulPort() {
+        let job = RunningJob(rootPID: 1, pgid: 1, ownsGroup: true, sessionID: nil,
+                             label: "x", pids: [1], footprint: 0,
+                             ports: [3000, 3002, 9229], startedAt: t0,
+                             workingDirectory: nil, isAgent: false)
+        XCTAssertEqual(job.shownPorts, [3000, 3002], "the inspector port is still not one you meant")
     }
 
     // MARK: - The agent
@@ -376,7 +451,8 @@ final class RunningJobsTests: XCTestCase {
     /// A job with nothing listening has no address, so the row has nothing to
     /// open and says so by having no link.
     func testAJobWithNoPortHasNoAddress() {
-        let quiet = RunningJob(pgid: 10, sessionID: nil, label: "tsc --watch",
+        let quiet = RunningJob(rootPID: 10, pgid: 10, ownsGroup: true,
+                               sessionID: nil, label: "tsc --watch",
                                pids: [10], footprint: 1_000, ports: [], startedAt: t0,
                                workingDirectory: nil, isAgent: false)
         XCTAssertNil(quiet.localAddress)
@@ -565,7 +641,8 @@ final class RunningJobsTests: XCTestCase {
 
     /// One process is a process, not 1 processes.
     func testCloseSummaryPluralises() throws {
-        let one = RunningJob(pgid: 10, sessionID: nil, label: "sleep", pids: [10],
+        let one = RunningJob(rootPID: 10, pgid: 10, ownsGroup: true,
+                             sessionID: nil, label: "sleep", pids: [10],
                              footprint: 1_000, ports: [], startedAt: t0,
                              workingDirectory: nil, isAgent: false)
         let summary = try XCTUnwrap(RunningJobs.closeSummary(for: [one]))

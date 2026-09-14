@@ -98,9 +98,13 @@ final class ProcessMonitor {
         guard job.isKillable, job.pgid > 1 else { return }
         Telemetry.capture(.processQuit(orphan: job.sessionID == nil))
 
-        if kill(-job.pgid, SIGTERM) != 0 {
-            // No process group (already gone, or never one): fall back to the
-            // members directly rather than giving up.
+        // Only signal the group when this job *is* the group. One command can
+        // start several servers into one group (`bun dev` fanning out to
+        // `dev:web` and `dev:images`), and there `kill(-pgid, …)` would stop
+        // both from a row that names one.
+        if job.ownsGroup, kill(-job.pgid, SIGTERM) == 0 {
+            // Signalled the whole group; its members are the same processes.
+        } else {
             for pid in job.pids where pid > 1 { kill(pid, SIGTERM) }
         }
 
@@ -109,6 +113,8 @@ final class ProcessMonitor {
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.killGrace) {
             let survivors = ProcessTable.snapshot()
                 .filter { pids.contains($0.pid) && $0.pgid == pgid }
+            // The escalation is per-process either way, so a shared group is
+            // safe here for the same reason the SIGTERM above is.
             for survivor in survivors { kill(survivor.pid, SIGKILL) }
             Task { @MainActor [weak self] in self?.refresh() }
         }

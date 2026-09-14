@@ -38,8 +38,19 @@ struct ProcessDetails {
 /// One thing a session is running: a process group, with the little that
 /// describes it.
 struct RunningJob: Identifiable, Equatable {
-    /// The process group. Both the identity and the kill target.
+    /// The outermost process of this job. The identity, because a process group
+    /// can hold more than one job and `pgid` is therefore not unique.
+    let rootPID: pid_t
+    /// The process group this job's processes are in.
     let pgid: pid_t
+    /// Whether this job is the whole of its process group.
+    ///
+    /// One command can start several servers: `bun dev` running `dev:web` and
+    /// `dev:images` put both trees in one group, with `:3000` and `:3002` in it.
+    /// When that happens the group is not a job, it is two, and `kill(-pgid, …)`
+    /// would stop both from a row that names one. So a shared group is stopped
+    /// by its own processes instead.
+    let ownsGroup: Bool
     /// The session this belongs to, or nil for an orphan whose session is gone.
     let sessionID: UUID?
     /// What to call it, read from argv. Never `p_comm`.
@@ -60,7 +71,7 @@ struct RunningJob: Identifiable, Equatable {
     /// 409 MB of one session's 1.39 GB) but never killable.
     let isAgent: Bool
 
-    var id: pid_t { pgid }
+    var id: pid_t { rootPID }
 
     var processCount: Int { pids.count }
 
@@ -72,6 +83,17 @@ struct RunningJob: Identifiable, Equatable {
     /// vite holding `:3000` and `:9231` reads as `:3000`.
     var primaryPort: Int? {
         ports.first { !RunningJobs.inspectorPorts.contains($0) } ?? ports.first
+    }
+
+    /// The ports to put on the row: everything meaningful it holds, capped so a
+    /// job with a dozen of them cannot push the name off the row.
+    ///
+    /// Not just `primaryPort`. A single row can legitimately serve several, and
+    /// showing the lowest hid the rest: a `bun dev` fanning out to `dev:web` and
+    /// `dev:images` read as `:3000` with no sign that `:3002` existed at all.
+    var shownPorts: [Int] {
+        let meaningful = ports.filter { !RunningJobs.inspectorPorts.contains($0) }
+        return Array((meaningful.isEmpty ? ports : meaningful).prefix(3))
     }
 
     /// The address to copy, and the one to hand a browser: `localhost:3000`.
@@ -302,11 +324,10 @@ enum RunningJobs {
             for pgid in groupsHere.sorted() {
                 guard !claimed.contains(pgid), let members = membersOf[pgid] else { continue }
                 claimed.insert(pgid)
-                if let job = job(pgid: pgid, members: members, sessionID: root.sessionID,
-                                 isAgent: agentPGIDs.contains(pgid), parentOf: parentOf,
-                                 details: details) {
-                    jobs.append(job)
-                }
+                jobs.append(contentsOf: RunningJobs.jobs(pgid: pgid, members: members,
+                                                        sessionID: root.sessionID,
+                                                        isAgent: agentPGIDs.contains(pgid),
+                                                        parentOf: parentOf, details: details))
             }
         }
 
@@ -427,13 +448,14 @@ enum RunningJobs {
             guard byPID[pgid] == nil || members.contains(where: { $0.ppid <= 1 }) else { continue }
 
             seen.insert(pgid)
-            guard let candidate = job(pgid: pgid, members: members, sessionID: nil,
-                                      isAgent: false, parentOf: parentOf, details: details),
-                  let cwd = candidate.workingDirectory,
-                  projectRoots.contains(where: { FolderRoot.root($0, contains: cwd) }),
-                  !candidate.ports.isEmpty || candidate.footprint >= orphanFootprintFloor
-            else { continue }
-            found.append(candidate)
+            for candidate in jobs(pgid: pgid, members: members, sessionID: nil,
+                                  isAgent: false, parentOf: parentOf, details: details) {
+                guard let cwd = candidate.workingDirectory,
+                      projectRoots.contains(where: { FolderRoot.root($0, contains: cwd) }),
+                      !candidate.ports.isEmpty || candidate.footprint >= orphanFootprintFloor
+                else { continue }
+                found.append(candidate)
+            }
         }
         return found
     }
@@ -441,17 +463,72 @@ enum RunningJobs {
     // MARK: - One group
 
     /// Shape one process group into a row, or nil when it has nothing to say.
-    static func job(
+    /// Shape one process group into rows: usually one, sometimes several.
+    ///
+    /// A group holds one job when a shell started it, which is what an
+    /// interactive shell and an agent's `zsh -c` both do. It holds *several*
+    /// when one command starts several: `bun dev` fanning out to `dev:web` and
+    /// `dev:images` leaves two independent trees sharing a group, and reporting
+    /// that as one row named after whichever came first hides the second
+    /// server's port and puts a Quit on a row that would stop both.
+    ///
+    /// So the split is by tree: every member with no parent inside the group
+    /// starts a job, and its descendants within the group belong to it.
+    static func jobs(
         pgid: pid_t,
         members: [ProcessEntry],
         sessionID: UUID?,
         isAgent: Bool,
         parentOf: [pid_t: pid_t],
         details: ProcessDetails
-    ) -> RunningJob? {
-        guard !members.isEmpty else { return nil }
+    ) -> [RunningJob] {
+        let trees = independentTrees(members, parentOf: parentOf)
+        return trees.compactMap {
+            job(pgid: pgid, tree: $0, ownsGroup: trees.count == 1, sessionID: sessionID,
+                isAgent: isAgent, details: details)
+        }
+    }
 
-        let ordered = depthOrdered(members, parentOf: parentOf)
+    /// The members of a group split into the separate trees it contains,
+    /// outermost first within each.
+    static func independentTrees(_ members: [ProcessEntry],
+                                 parentOf: [pid_t: pid_t]) -> [[ProcessEntry]] {
+        let inGroup = Set(members.map(\.pid))
+        var childrenOf: [pid_t: [ProcessEntry]] = [:]
+        var roots: [ProcessEntry] = []
+        for member in members {
+            if let parent = parentOf[member.pid], inGroup.contains(parent) {
+                childrenOf[parent, default: []].append(member)
+            } else {
+                roots.append(member)
+            }
+        }
+        // A group that is entirely a cycle (a torn table) has no root to start
+        // from; treat the whole thing as one tree rather than losing it.
+        guard !roots.isEmpty else { return [members.sorted { $0.pid < $1.pid }] }
+
+        return roots.sorted { $0.pid < $1.pid }.map { root in
+            var tree: [ProcessEntry] = []
+            var queue = [root]
+            var visited: Set<pid_t> = []
+            while !queue.isEmpty {
+                let entry = queue.removeFirst()
+                guard visited.insert(entry.pid).inserted else { continue }
+                tree.append(entry)
+                queue.append(contentsOf: (childrenOf[entry.pid] ?? []).sorted { $0.pid < $1.pid })
+            }
+            return tree
+        }
+    }
+
+    private static func job(
+        pgid: pid_t,
+        tree ordered: [ProcessEntry],
+        ownsGroup: Bool,
+        sessionID: UUID?,
+        isAgent: Bool,
+        details: ProcessDetails
+    ) -> RunningJob? {
         guard let head = ordered.first else { return nil }
 
         // The first member that isn't a way of running something else. The
@@ -475,7 +552,9 @@ enum RunningJobs {
         }
 
         return RunningJob(
+            rootPID: head.pid,
             pgid: pgid,
+            ownsGroup: ownsGroup,
             sessionID: sessionID,
             label: label,
             pids: ordered.map(\.pid),
@@ -485,41 +564,6 @@ enum RunningJobs {
             workingDirectory: details.workingDirectory(labelled.pid)
                 ?? details.workingDirectory(head.pid),
             isAgent: isAgent)
-    }
-
-    /// Members ordered from the outside in, so "the shallowest" is `first`.
-    ///
-    /// Breadth-first from whichever members have no parent inside the group —
-    /// which is how this keeps working for an orphan whose leader has died and
-    /// whose survivors were reparented to launchd.
-    static func depthOrdered(_ members: [ProcessEntry],
-                             parentOf: [pid_t: pid_t]) -> [ProcessEntry] {
-        let inGroup = Set(members.map(\.pid))
-        var childrenOf: [pid_t: [ProcessEntry]] = [:]
-        var frontier: [ProcessEntry] = []
-        for member in members {
-            if let parent = parentOf[member.pid], inGroup.contains(parent) {
-                childrenOf[parent, default: []].append(member)
-            } else {
-                frontier.append(member)
-            }
-        }
-        // A group that is entirely a cycle (a torn table) would leave nothing to
-        // start from; fall back to the whole list rather than returning none.
-        if frontier.isEmpty { return members.sorted { $0.pid < $1.pid } }
-
-        var ordered: [ProcessEntry] = []
-        var queue = frontier.sorted { $0.pid < $1.pid }
-        var visited: Set<pid_t> = []
-        while !queue.isEmpty {
-            let entry = queue.removeFirst()
-            guard visited.insert(entry.pid).inserted else { continue }
-            ordered.append(entry)
-            queue.append(contentsOf: (childrenOf[entry.pid] ?? []).sorted { $0.pid < $1.pid })
-        }
-        // Anything unreachable (again, a torn table) still belongs to the group.
-        for member in members where !visited.contains(member.pid) { ordered.append(member) }
-        return ordered
     }
 
     // MARK: - Labels

@@ -22,6 +22,7 @@ final class GitRepoModel {
     private(set) var isRefreshing = false
     private(set) var isCommitting = false
     private(set) var isPushing = false
+    private(set) var isPulling = false
     private(set) var isFetching = false
     private(set) var isGeneratingMessage = false
     /// stderr from the last failed action (commit conflicts, hook rejects…).
@@ -231,6 +232,14 @@ final class GitRepoModel {
     /// push it doesn't wait on being ahead/behind — you fetch precisely to learn
     /// whether you've fallen behind.
     var canFetch: Bool { hasRemotes == true && !isFetching }
+
+    /// Whether there's an upstream to pull from. Like fetch, and unlike push,
+    /// this doesn't wait on the behind count: `git pull` fetches first, so
+    /// gating on the count would gate on what the *last* fetch knew, and a
+    /// branch someone pushed to a minute ago would read as nothing to do.
+    var canPull: Bool {
+        hasRemotes == true && status.branch != nil && status.upstream != nil && !isPulling
+    }
 
     /// Whether the on-device commit-message drafter can run right now (model
     /// available and something staged to describe).
@@ -807,7 +816,7 @@ final class GitRepoModel {
         await refresh()
     }
 
-    // MARK: - Fetch / Push
+    // MARK: - Fetch / Pull / Push
 
     func fetch() async {
         guard hasRemotes == true, !isFetching else { return }
@@ -823,6 +832,26 @@ final class GitRepoModel {
         }
         // Pick up the new behind count and any refs the fetch moved; refresh's
         // keyed recompute redraws the blue dots only if the range actually moved.
+        await refresh()
+    }
+
+    /// Fast-forward onto the upstream (fetching as part of it). A branch that
+    /// has diverged, or a work tree in the way, fails here rather than starting
+    /// a merge — the refusal git prints is the message worth showing.
+    func pull() async {
+        guard canPull else { return }
+
+        isPulling = true
+        let result = await GitService.pull(root: root)
+        isPulling = false
+
+        if result.ok {
+            lastError = nil
+        } else {
+            lastError = result.stderr.isEmpty ? result.stdout : result.stderr
+        }
+        // A fast-forward moves HEAD and the work tree under us: everything the
+        // panel shows is downstream of this refresh.
         await refresh()
     }
 

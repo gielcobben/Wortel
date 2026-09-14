@@ -915,6 +915,15 @@ enum GitService {
         await run(["fetch", "--prune"], in: root)
     }
 
+    /// Pull the current branch, fast-forward only. A panel with no conflict UI
+    /// has no business starting a merge or a rebase it can't finish, so a
+    /// diverged branch gets git's refusal in the error banner and the terminal
+    /// is right there to resolve it in. `git pull` fetches first, so this is
+    /// "catch up with the remote" in one step, not a merge of a stale ref.
+    static func pull(root: String) async -> CommandResult {
+        await run(["pull", "--ff-only"], in: root)
+    }
+
     /// Push the current branch. On a branch with no upstream yet, set one on
     /// `origin` so the first push just works; otherwise a plain `push`.
     static func push(root: String, setUpstream: Bool) async -> CommandResult {

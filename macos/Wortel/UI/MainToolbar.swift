@@ -237,7 +237,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         }
     }
 
-    /// Pop the repo-actions menu — fetch, push — below the "···" button. Built
+    /// Pop the repo-actions menu — fetch, pull, push — below the "···" button. Built
     /// fresh on each click so it reads live state (an in-flight op, whether
     /// there's a remote, the ahead count) without any observation wiring; a
     /// disabled item just can't be chosen. `autoenablesItems = false` so our
@@ -247,13 +247,13 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 
-    /// The fetch/push menu, shared by the "···" click and the overflow (`»`)
+    /// The fetch/pull/push menu, shared by the "···" click and the overflow (`»`)
     /// form. nil when no repo is open.
     private func repoActionsMenu() -> NSMenu? {
         guard let repo = git.repo else { return nil }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let busy = repo.isFetching || repo.isPushing
+        let busy = repo.isFetching || repo.isPulling || repo.isPushing
 
         let fetch = ClosureMenuItem(title: repo.isFetching ? "Fetching…" : "Fetch") {
             Task { await repo.fetch() }
@@ -261,6 +261,21 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         fetch.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
         fetch.isEnabled = !busy && repo.canFetch
         menu.addItem(fetch)
+
+        // Between fetch and push, in the order the work happens. Named with the
+        // count when the last fetch already found commits waiting; plain "Pull"
+        // otherwise, because pull fetches first and may well find some.
+        let pullTitle: String
+        if repo.isPulling {
+            pullTitle = "Pulling…"
+        } else {
+            let behind = repo.status.behind
+            pullTitle = behind > 0 ? "Pull \(behind) Commit\(behind == 1 ? "" : "s")" : "Pull"
+        }
+        let pull = ClosureMenuItem(title: pullTitle) { Task { await repo.pull() } }
+        pull.image = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: nil)
+        pull.isEnabled = !busy && repo.canPull
+        menu.addItem(pull)
 
         // Name what push will actually do: publish a fresh branch, or push a known
         // number of commits.
@@ -737,7 +752,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.view = button
             item.label = "Actions"
-            item.toolTip = "Fetch, push, and more"
+            item.toolTip = "Fetch, pull, push, and more"
             item.visibilityPriority = .low
             gitMenuItem = item
             cachedFixedSectionWidth = nil // this item is one of the two it measures

@@ -118,6 +118,59 @@ final class RunningJobsTests: XCTestCase {
                        "leader, two buns, node and workerd are one job between them")
     }
 
+    /// The keeper forks `/usr/bin/login`, so the pid it reports is login's and
+    /// the real shell gets a session (and a process group) of its own. Left
+    /// alone that shell is indistinguishable from a job, and every session grew
+    /// a permanent `zsh -l` row holding 4 MB of nothing.
+    func testTheLoginShellIsNotAJob() {
+        // The real shape: keeper -> login(37498) -> -/bin/zsh(37499), each in
+        // its own group, with the reported pid being login's.
+        let withLogin = [entry(37498, 65344, 37498, "login")] + table
+        let argvWithLogin = argv.merging([37499: ["/bin/zsh", "-/bin/zsh", "-l"]]) { _, new in new }
+        let snapshot = RunningJobs.scan(
+            table: withLogin,
+            roots: [SessionProcessRoot(sessionID: sessionID, shellPID: 37498, agentName: "claude")],
+            uid: 501, details: details(extraArgv: argvWithLogin))
+
+        XCTAssertFalse(snapshot.jobs.contains { $0.pgid == 37499 },
+                       "the login shell is the session, not something running in it")
+        XCTAssertEqual(Set(snapshot.work.map(\.pgid)), [15614, 15631],
+                       "what is left is the two dev servers, which is the point")
+    }
+
+    func testLoginShellDetection() {
+        XCTAssertTrue(RunningJobs.isLoginShell(["/bin/zsh", "-/bin/zsh", "-l"]),
+                      "login marks a login shell by prefixing argv0 with a dash")
+        XCTAssertTrue(RunningJobs.isLoginShell(["/bin/bash", "-bash"]))
+        XCTAssertFalse(RunningJobs.isLoginShell(["/bin/zsh", "zsh", "-l"]),
+                       "a shell you started yourself is a job like any other")
+        XCTAssertFalse(RunningJobs.isLoginShell(["/usr/local/bin/bun", "bun", "dev:web"]))
+        XCTAssertFalse(RunningJobs.isLoginShell(["/opt/thing", "-flaglike"]),
+                       "a dash alone is not enough; it has to name a shell")
+    }
+
+    // MARK: - Agents are accounted for, not listed
+
+    /// The first build of the list was five `claude` rows and five `zsh -l` rows
+    /// with the two dev servers it exists for buried in the middle.
+    func testWorkExcludesTheAgent() {
+        XCTAssertEqual(Set(scan().work.map(\.pgid)), [15614, 15631])
+        XCTAssertEqual(scan().agents.map(\.pgid), [37616])
+        XCTAssertEqual(scan().agentFootprint, 408_700_000,
+                       "the agents still have to add up somewhere, just not in a row each")
+    }
+
+    /// A session with an agent and nothing else is a session that is open, not a
+    /// machine with something running on it.
+    func testAgentsAloneAreNotWork() {
+        let quiet = [entry(37499, 37498, 37499, "zsh"), entry(37616, 37499, 37616, "2.1.267")]
+        let snapshot = RunningJobs.scan(table: quiet, roots: [root], uid: 501,
+                                        details: details())
+        XCTAssertFalse(snapshot.hasWork,
+                       "the toolbar item would otherwise be there permanently")
+        XCTAssertFalse(snapshot.agents.isEmpty, "the agent is still accounted for")
+    }
+
     // MARK: - The agent
 
     /// The agent is listed, because it was 409 MB of this session's total and a

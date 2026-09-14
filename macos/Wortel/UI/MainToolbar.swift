@@ -267,7 +267,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         let menu = NSMenu()
         menu.autoenablesItems = false
         let snapshot = processes.snapshot
-        for job in snapshot.jobs + snapshot.orphans {
+        for job in snapshot.work + snapshot.orphans {
             let port = job.primaryPort.map { " (:\($0))" } ?? ""
             let size = RunningJobsList.size(job.footprint)
             let title = job.isKillable
@@ -688,7 +688,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// Whether there is anything to show. The item is absent, not disabled, when
     /// a session has started nothing: an empty popover is chrome that teaches
     /// you to ignore it, and this is meant to be noticed on the days it appears.
-    private var showsRunningJobsItem: Bool { !processes.snapshot.isEmpty }
+    /// Agents alone are not "running something" — that is just having sessions
+    /// open, and it would put this item in the toolbar permanently.
+    private var showsRunningJobsItem: Bool { processes.snapshot.hasWork }
 
     private func syncProcessItem() {
         guard let toolbar else { return }
@@ -714,13 +716,16 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private func updateRunningJobsButton() {
         guard let button = runningJobsButton else { return }
         let snapshot = processes.snapshot
-        let serving = snapshot.jobs.contains { $0.primaryPort != nil }
-            || snapshot.orphans.contains { $0.primaryPort != nil }
+        let serving = (snapshot.work + snapshot.orphans).contains { $0.primaryPort != nil }
         let symbol = serving ? "dot.radiowaves.left.and.right" : "bolt.horizontal"
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Running")
-        let count = snapshot.jobs.count + snapshot.orphans.count
-        let noun = count == 1 ? "process" : "processes"
-        button.toolTip = "\(count) \(noun) running in your sessions"
+        let count = snapshot.work.count + snapshot.orphans.count
+        let noun = count == 1 ? "job" : "jobs"
+        var tip = "\(count) \(noun) running in your sessions"
+        if !snapshot.orphans.isEmpty {
+            tip += ", \(snapshot.orphans.count) with no session left"
+        }
+        button.toolTip = tip
         runningJobsItem?.toolTip = button.toolTip
     }
 
@@ -746,7 +751,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         // gets a popover sized for the list that was there before.
         processes.refresh()
         Telemetry.capture(.processesShown(
-            jobs: CountBucket(processes.snapshot.jobs.count),
+            jobs: CountBucket(processes.snapshot.work.count),
             orphans: CountBucket(processes.snapshot.orphans.count)))
         let popover = NSPopover()
         popover.behavior = .transient

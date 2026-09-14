@@ -88,6 +88,29 @@ struct RunningJobsSnapshot: Equatable {
         jobs.filter { $0.sessionID == sessionID }
     }
 
+    /// The things someone actually started and might want to stop.
+    ///
+    /// Separate from `agents` because the first list built here was mostly
+    /// `claude`: five sessions, five agent rows, and the two dev servers the
+    /// list exists for buried among them. An agent is not a stray process, it is
+    /// the session's whole point, so it belongs in the accounting rather than in
+    /// the list.
+    var work: [RunningJob] { jobs.filter { !$0.isAgent } }
+
+    var agents: [RunningJob] { jobs.filter(\.isAgent) }
+
+    func work(for sessionID: UUID) -> [RunningJob] {
+        work.filter { $0.sessionID == sessionID }
+    }
+
+    /// What the sessions' agents cost between them, for the one line that keeps
+    /// the numbers honest without spending a row each on them.
+    var agentFootprint: UInt64 { agents.reduce(0) { $0 + $1.footprint } }
+
+    /// Whether there is anything a person would call "running": real jobs, or
+    /// something left behind. Agents alone are just sessions being open.
+    var hasWork: Bool { !work.isEmpty || !orphans.isEmpty }
+
     /// What a session costs, agent included. The agent row is part of the sum
     /// on purpose: a total that excluded it would not match the rows above it.
     func footprint(for sessionID: UUID) -> UInt64 {
@@ -165,17 +188,34 @@ enum RunningJobs {
         for entry in table { membersOf[entry.pgid, default: []].append(entry) }
 
         // The shells themselves, and the groups they sit in, are never jobs.
+        //
+        // Two groups per session, not one. The keeper forks `/usr/bin/login`
+        // (see `ShellSpawn`), so the pid it reports is login's, and login gives
+        // the real shell a session of its own — a separate process group. Left
+        // to itself that shell is indistinguishable from a job, and every
+        // session grew a permanent `zsh -l` row holding 4 MB. The login shell is
+        // the session; the giveaway is argv[0], which login prefixes with a dash
+        // (`-/bin/zsh`) and nothing else on the machine does.
         let shellPIDs = Set(roots.map(\.shellPID))
         var reserved = excludedPGIDs
         for shell in shellPIDs { reserved.insert(byPID[shell]?.pgid ?? shell) }
+        for entry in table where isLoginShell(details.arguments(entry.pid)) {
+            guard shellPIDs.contains(where: {
+                entry.pid == $0 || ProcessTable.isDescendant(entry.pid, of: $0, parentOf: parentOf)
+            }) else { continue }
+            reserved.insert(entry.pgid)
+        }
 
         var jobs: [RunningJob] = []
         var claimed: Set<pid_t> = reserved
 
         for root in roots {
             guard byPID[root.shellPID] != nil else { continue }  // shell already gone
-            let agentPGID = agentGroup(named: root.agentName, shellPID: root.shellPID,
-                                       table: table, parentOf: parentOf, details: details)
+            // Groups, plural. Claude Code runs its sub-agents as further
+            // `claude` processes in groups of their own, and matching only the
+            // first put a Quit button on every one of them.
+            let agentPGIDs = agentGroups(named: root.agentName, shellPID: root.shellPID,
+                                         table: table, parentOf: parentOf, details: details)
 
             // Every group with a member descended from this session's shell.
             var groupsHere: Set<pid_t> = []
@@ -189,7 +229,7 @@ enum RunningJobs {
                 guard !claimed.contains(pgid), let members = membersOf[pgid] else { continue }
                 claimed.insert(pgid)
                 if let job = job(pgid: pgid, members: members, sessionID: root.sessionID,
-                                 isAgent: pgid == agentPGID, parentOf: parentOf,
+                                 isAgent: agentPGIDs.contains(pgid), parentOf: parentOf,
                                  details: details) {
                     jobs.append(job)
                 }
@@ -205,7 +245,7 @@ enum RunningJobs {
                                    orphans: orphans.sorted { $0.footprint > $1.footprint })
     }
 
-    /// Which process group the session's agent is in, if it can be found.
+    /// Which process groups the session's agent occupies.
     ///
     /// Two passes, the same two and in the same order as `AgentLiveness.locate`,
     /// and for the same reason: an agent is usually a process by its own name,
@@ -216,20 +256,22 @@ enum RunningJobs {
     ///
     /// Getting this wrong in the permissive direction is the expensive one: an
     /// unrecognised agent becomes a row with a Quit button on it.
-    static func agentGroup(named agent: String?, shellPID: pid_t,
-                           table: [ProcessEntry], parentOf: [pid_t: pid_t],
-                           details: ProcessDetails) -> pid_t? {
-        guard let agent, !agent.isEmpty else { return nil }
+    static func agentGroups(named agent: String?, shellPID: pid_t,
+                            table: [ProcessEntry], parentOf: [pid_t: pid_t],
+                            details: ProcessDetails) -> Set<pid_t> {
+        guard let agent, !agent.isEmpty else { return [] }
         let needle = String(agent.prefix(ProcessTable.maxCommandNameLength - 1))
-        let descendants = table.filter {
-            ProcessTable.isDescendant($0.pid, of: shellPID, parentOf: parentOf)
+        var groups: Set<pid_t> = []
+        for entry in table
+        where ProcessTable.isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
+            if entry.name == agent || entry.name == needle {
+                groups.insert(entry.pgid)
+            } else if details.arguments(entry.pid).contains(
+                where: { AgentLiveness.argumentNames(agent, $0) }) {
+                groups.insert(entry.pgid)
+            }
         }
-        if let byName = descendants.first(where: { $0.name == agent || $0.name == needle }) {
-            return byName.pgid
-        }
-        return descendants.first {
-            details.arguments($0.pid).contains { AgentLiveness.argumentNames(agent, $0) }
-        }?.pgid
+        return groups
     }
 
     /// Groups nothing is watching any more.
@@ -376,6 +418,19 @@ enum RunningJobs {
         return arguments.dropFirst().contains { $0 == "-c" || $0.hasPrefix("-c") }
             || command == "login" || command == "env"
             || arguments.count <= 2
+    }
+
+    /// Whether this is a shell started as a login shell.
+    ///
+    /// `login` marks one by prefixing argv[0] with a dash, which is the
+    /// convention shells read to decide whether to run the login profile. It is
+    /// the only reliable sign that a shell is a session rather than a job: the
+    /// command name is just `zsh` either way.
+    static func isLoginShell(_ arguments: [String]) -> Bool {
+        let tokens = arguments.count > 1 ? Array(arguments.dropFirst()) : arguments
+        guard let argv0 = tokens.first, argv0.hasPrefix("-") else { return false }
+        let name = (String(argv0.dropFirst()) as NSString).lastPathComponent
+        return shellWrappers.contains(name)
     }
 
     /// What to call a process, from its arguments. nil when there is nothing

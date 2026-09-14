@@ -1985,11 +1985,17 @@ final class SessionManager {
     /// nothing about it. See `ProjectRoots`.
     @ObservationIgnored private(set) var projectRoots: [String] = ProjectRoots.load()
 
-    /// Fold the current sessions' birth directories into the remembered list.
-    /// `originCwd` rather than `cwd`: where the session was opened is the
-    /// project, where its shell has since wandered is not.
+    /// Fold the current sessions' directories into the remembered list.
+    ///
+    /// Both `cwd` and `originCwd`, and `cwd` first, which is the opposite of
+    /// what it looks like it should be. A session's birth directory reads like
+    /// the better answer, but in practice almost every session is opened from
+    /// home and then `cd`s into the project: on this machine every persisted
+    /// `originCwd` was `/Users/giel`, which `ProjectRoots` rightly refuses as
+    /// too broad, so nothing was ever remembered and no orphan could ever be
+    /// attributed. Where the shell actually is *is* the project.
     private func rememberProjectRoots() {
-        let live = sessions.compactMap { $0.originCwd ?? $0.cwd }
+        let live = sessions.flatMap { [$0.cwd, $0.originCwd].compactMap { $0 } }
         let merged = ProjectRoots.merge(projectRoots, adding: live)
         guard merged != projectRoots else { return }
         projectRoots = merged

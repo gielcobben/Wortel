@@ -259,7 +259,7 @@ final class AgentResumeStoreTests: XCTestCase {
     /// Reading our own arguments proves the `KERN_PROCARGS2` parse: the first
     /// entry is the executable, and the rest is what we were launched with.
     func testReadsOwnArguments() {
-        let args = AgentLiveness.arguments(of: ProcessInfo.processInfo.processIdentifier)
+        let args = ProcessTable.arguments(of: ProcessInfo.processInfo.processIdentifier)
         XCTAssertFalse(args.isEmpty)
         XCTAssertEqual(args.first, Bundle.main.executablePath ?? args.first)
     }

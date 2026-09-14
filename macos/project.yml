@@ -469,6 +469,16 @@ targets:
       # fails silently (an agent that records no transcript), and what it must
       # keep fails loudly in every session (a shell with no TMPDIR or PATH).
       - path: Wortel/InheritedEnvironment.swift
+      # Which process group is a "job" you can quit, and which is the agent or
+      # the session's own shell. The kill target is derived here, so a wrong
+      # answer doesn't throw — it puts a Quit button on the wrong row and takes
+      # an agent down mid-turn. Pure shaping: the table comes in as a value and
+      # the per-process syscalls arrive as closures, so a fixture transcribed
+      # from a real session is enough to pin all of it.
+      - path: Wortel/Processes/RunningJobs.swift
+      # Only here because RunningJobs and AgentResumeStore both call it. It is
+      # the syscall layer and asserts nothing; the decisions are next door.
+      - path: Wortel/Processes/ProcessTable.swift
     scheme:
       testTargets:
         - WortelTests

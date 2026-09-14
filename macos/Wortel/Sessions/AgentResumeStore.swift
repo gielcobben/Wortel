@@ -46,9 +46,6 @@ struct AgentMarker {
 /// because a script-based agent's process is named after its interpreter (see
 /// `locate`).
 enum AgentLiveness {
-    /// `p_comm` is truncated to `MAXCOMLEN`, so compare on that basis.
-    private static let maxCommandNameLength = 16
-
     static func isRunning(agent: String, shellPID: pid_t?) -> Bool {
         guard shellPID != nil else { return true }     // nothing recorded — assume alive
         switch locate(agent: agent, shellPID: shellPID) {
@@ -67,7 +64,7 @@ enum AgentLiveness {
 
     static func locate(agent: String, shellPID: pid_t?) -> Located {
         guard let shellPID else { return .unknown }
-        let table = processTable()
+        let table = ProcessTable.snapshot()
         guard !table.isEmpty else { return .unknown }  // couldn't read — no claim
 
         var parentOf: [pid_t: pid_t] = [:]
@@ -76,9 +73,11 @@ enum AgentLiveness {
         // The shell itself is gone, so nothing can still be running under it.
         guard parentOf[shellPID] != nil else { return .gone }
 
-        let needle = String(agent.prefix(maxCommandNameLength - 1))
+        let needle = String(agent.prefix(ProcessTable.maxCommandNameLength - 1))
         for entry in table where entry.name == agent || entry.name == needle {
-            if isDescendant(entry.pid, of: shellPID, parentOf: parentOf) { return .running(entry.pid) }
+            if ProcessTable.isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
+                return .running(entry.pid)
+            }
         }
         // Not every agent is a process by its own name. Pi, Gemini and Amp are
         // node scripts, aider is a Python one, and a version-manager shim can put
@@ -90,8 +89,9 @@ enum AgentLiveness {
         // marker for any script-based agent was swept as stale within a minute
         // of launch, which took the sidebar badge, the resume, and the screen
         // sampler's interest in the session with it.
-        for entry in table where isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
-            if arguments(of: entry.pid).contains(where: { argumentNames(agent, $0) }) {
+        for entry in table
+        where ProcessTable.isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
+            if ProcessTable.arguments(of: entry.pid).contains(where: { argumentNames(agent, $0) }) {
                 return .running(entry.pid)
             }
         }
@@ -107,75 +107,6 @@ enum AgentLiveness {
             component == agent[...]
                 || component.hasPrefix(agent + "-")
                 || component.hasPrefix(agent + ".")
-        }
-    }
-
-    /// The process's argument vector via `KERN_PROCARGS2`, executable path first.
-    /// Empty when it can't be read (another user's process, or one that exited
-    /// between the table and this call) — which the caller treats as "not it",
-    /// the same as an unreadable table treats the whole question.
-    static func arguments(of pid: pid_t) -> [String] {
-        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
-        var size = 0
-        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
-        var buffer = [UInt8](repeating: 0, count: size)
-        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return [] }
-        // Layout: argc (Int32), the executable path, NUL padding, then argc
-        // NUL-terminated arguments (followed by the environment, not wanted).
-        let argc = Int(buffer.withUnsafeBytes { $0.load(as: Int32.self) })
-        var strings: [String] = []
-        var index = MemoryLayout<Int32>.size
-        func readString() -> String? {
-            guard index < size else { return nil }
-            let start = index
-            while index < size, buffer[index] != 0 { index += 1 }
-            let s = String(decoding: buffer[start..<index], as: UTF8.self)
-            while index < size, buffer[index] == 0 { index += 1 } // NUL(s) after
-            return s
-        }
-        guard let executable = readString() else { return [] }
-        strings.append(executable)
-        for _ in 0..<argc {
-            guard let arg = readString() else { break }
-            strings.append(arg)
-        }
-        return strings
-    }
-
-    /// Walk up the parent chain, bounded so a cycle in a torn process table can't
-    /// spin here — this runs on the main thread during termination.
-    private static func isDescendant(_ pid: pid_t, of ancestor: pid_t,
-                                     parentOf: [pid_t: pid_t]) -> Bool {
-        var current = pid
-        for _ in 0..<64 {
-            guard let parent = parentOf[current], parent > 0 else { return false }
-            if parent == ancestor { return true }
-            current = parent
-        }
-        return false
-    }
-
-    /// Every process visible to this user, as (pid, ppid, command name). One
-    /// `sysctl` — no forking a `ps`, which matters because the caller runs inside
-    /// `applicationWillTerminate`.
-    private static func processTable() -> [(pid: pid_t, ppid: pid_t, name: String)] {
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
-        var size = 0
-        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return [] }
-        // The table can grow between sizing and reading; over-allocate a little so
-        // a process spawned in that window doesn't truncate the result.
-        let capacity = size / MemoryLayout<kinfo_proc>.stride + 16
-        var procs = [kinfo_proc](repeating: kinfo_proc(), count: capacity)
-        size = capacity * MemoryLayout<kinfo_proc>.stride
-        guard sysctl(&mib, 4, &procs, &size, nil, 0) == 0 else { return [] }
-
-        let count = size / MemoryLayout<kinfo_proc>.stride
-        return procs.prefix(count).map { proc in
-            var proc = proc
-            let name = withUnsafeBytes(of: &proc.kp_proc.p_comm) { raw in
-                String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
-            }
-            return (proc.kp_proc.p_pid, proc.kp_eproc.e_ppid, name)
         }
     }
 }

@@ -33,6 +33,59 @@ extension GitWorktree {
             .appendingPathComponent(".wortel/worktrees", isDirectory: true)
     }
 
+    /// The namespace every branch Wortel generates lives in (`BranchSheet`
+    /// suggests `worktree/<adjective>-<noun>-<hex>`). It exists to group them
+    /// under one heading in `git branch`, where they are disposable and you will
+    /// want to sweep them later. One constant, because the half that makes the
+    /// name and the half that reads it back must never drift apart.
+    static let branchNamespace = "worktree/"
+
+    /// What a worktree session is called in the sidebar before an agent says
+    /// what it is for: the branch, minus Wortel's own namespace.
+    ///
+    /// The prefix is on every branch the app makes, so in a sidebar where every
+    /// one of these rows carries it, it distinguishes nothing. A namespace you
+    /// chose yourself (`fix/login`) is kept: there it is the half that says what
+    /// the branch is for.
+    ///
+    /// Whatever survives is made slash-free (`SessionName.asLeaf`), and that is
+    /// the point of this existing at all. A session's folder is the part of its
+    /// name before the last slash, so a branch dropped in whole filed its
+    /// session under a folder named for the branch's namespace — a second,
+    /// sibling group in the sidebar holding exactly the sessions that belong in
+    /// the first one. Every other automatic name already passes through
+    /// `asLeaf`; this was the one path that did not.
+    static func sessionLeaf(forBranch branch: String) -> String {
+        guard branch.hasPrefix(branchNamespace) else { return SessionName.asLeaf(branch) }
+        let stripped = branch.dropFirst(branchNamespace.count)
+        // A branch that is nothing but the namespace has no leaf to show, and an
+        // empty row is worse than a redundant one.
+        return SessionName.asLeaf(stripped.isEmpty ? branch : String(stripped))
+    }
+
+    /// A worktree session's name with the phantom folder an earlier build gave
+    /// it removed, or nil when there is nothing to repair.
+    ///
+    /// Until `sessionLeaf` above, a worktree session was named
+    /// "<folder>/<branch>" with the branch whole, so `GFPC` plus
+    /// `worktree/wakker-slide` became a session called `wakker-slide` in a
+    /// folder called `GFPC/worktree`. The agent rename that followed kept the
+    /// folder half (only the leaf changes), which is why the phantom folder
+    /// outlives the placeholder that made it and has to be undone here rather
+    /// than just stopped.
+    ///
+    /// Only the branch's own namespace is stripped, and only from the end of the
+    /// folder, so a folder someone deliberately named "worktree" for unrelated
+    /// sessions is untouched: those sessions have no branch to match it against.
+    static func repairedSessionName(_ name: String, branch: String) -> String? {
+        let namespace = (branch as NSString).deletingLastPathComponent
+        guard !namespace.isEmpty, let folder = SessionName.folder(of: name) else { return nil }
+        let leaf = SessionName.leaf(of: name)
+        if folder == namespace { return leaf }
+        guard folder.hasSuffix("/" + namespace) else { return nil }
+        return String(folder.dropLast(namespace.count + 1)) + "/" + leaf
+    }
+
     /// A branch name as one path component. Branch names may contain slashes
     /// (`feature/preview-window`), which would otherwise nest directories, and
     /// characters a path shouldn't carry.

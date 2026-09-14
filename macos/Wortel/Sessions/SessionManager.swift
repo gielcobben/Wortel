@@ -457,6 +457,14 @@ final class SessionManager {
             // user's: the one reading that can never relabel work by surprise.
             session.nameSource = Session.NameSource(rawValue: entry.nameSource) ?? .user
             session.worktreeBranch = entry.worktreeBranch
+            // An earlier build named these "<folder>/<branch>" with the branch
+            // whole, which read back as a folder of their own. The rename that
+            // gave them their real names kept that folder half, so stopping it
+            // isn't enough — the ones already filed there move on this launch.
+            if let branch = session.worktreeBranch,
+               let repaired = GitWorktree.repairedSessionName(session.name, branch: branch) {
+                session.name = repaired
+            }
             // nil means the file predates per-session visibility — inherit the
             // old app-wide flag just this once.
             session.gitPanelVisible = entry.gitPanelVisible ?? SessionStore.legacyGitPanelVisible
@@ -1108,7 +1116,12 @@ final class SessionManager {
         // (`worktreeBranch`), which is where "which checkout is this" belongs
         // once the name is busy saying what the work is.
         session.worktreeBranch = branch
-        session.name = session.folderPath.map { "\($0)/\(branch)" } ?? branch
+        // The branch's *leaf*, not the branch: a name is one folder plus one
+        // leaf, so dropping in `worktree/brave-river-1a2f` whole filed the
+        // session under a folder called "<project>/worktree" — a sibling group
+        // holding exactly the sessions that belong in the project's own.
+        let leaf = GitWorktree.sessionLeaf(forBranch: branch)
+        session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
         scheduleSave()
         return .success(session)
     }

@@ -1,9 +1,10 @@
 import XCTest
 
-/// Worktree paths and the listing parse — the two pieces of the feature that
-/// are string handling, and whose failures are silent: a slug that collides puts
-/// two branches in one directory, and a stanza parsed wrong hides an existing
-/// worktree so the next attempt tries to create it again and fails.
+/// Worktree paths, the sidebar name a branch turns into, and the listing parse
+/// — the pieces of the feature that are string handling, and whose failures are
+/// silent: a slug that collides puts two branches in one directory, a branch
+/// dropped into a name whole invents a sidebar folder, and a stanza parsed wrong
+/// hides an existing worktree so the next attempt tries to create it again.
 final class GitWorktreeTests: XCTestCase {
     // MARK: - Slugs
 
@@ -123,5 +124,89 @@ final class GitWorktreeTests: XCTestCase {
         let trees = GitWorktree.parse(porcelain: porcelain)
         XCTAssertEqual(trees.map(\.isPrimary), [true, false, false])
         XCTAssertEqual(trees.map(\.branch), ["b0", "b1", "b2"])
+    }
+
+    // MARK: - The sidebar name a branch turns into
+
+    /// Wortel's own namespace is on every branch it generates, so in a sidebar
+    /// where every one of these rows carries it, it says nothing.
+    func testGeneratedBranchLosesWortelsOwnNamespace() {
+        XCTAssertEqual(
+            GitWorktree.sessionLeaf(forBranch: "worktree/brave-river-1a2f"),
+            "brave-river-1a2f")
+    }
+
+    /// A namespace you chose yourself is the half that says what the branch is
+    /// for, so it stays — with the one slash it contains swapped for the
+    /// lookalike that is not a folder separator.
+    func testYourOwnNamespaceIsKeptButCannotMakeAFolder() {
+        XCTAssertEqual(GitWorktree.sessionLeaf(forBranch: "fix/login"), "fix\u{2215}login")
+        XCTAssertNil(SessionName.folder(of: GitWorktree.sessionLeaf(forBranch: "fix/login")))
+    }
+
+    func testBranchWithNoNamespaceIsItsOwnLeaf() {
+        XCTAssertEqual(GitWorktree.sessionLeaf(forBranch: "main"), "main")
+    }
+
+    /// A branch that is nothing but the namespace has no leaf to show, and an
+    /// empty sidebar row is worse than a redundant one.
+    func testBareNamespaceFallsBackToTheWholeBranch() {
+        XCTAssertEqual(GitWorktree.sessionLeaf(forBranch: "worktree/"), "worktree\u{2215}")
+    }
+
+    /// The whole point: what goes in a name can never be read back as a folder.
+    func testNoBranchCanInventAFolder() {
+        for branch in ["worktree/brave-river-1a2f", "fix/login", "a/b/c", "main", "worktree/"] {
+            let name = "GFPC/" + GitWorktree.sessionLeaf(forBranch: branch)
+            XCTAssertEqual(SessionName.folder(of: name), "GFPC", branch)
+        }
+    }
+
+    // MARK: - Undoing the folder an earlier build invented
+
+    /// The real thing this was written for: two sessions sitting in a folder
+    /// called "GFPC/worktree" beside the GFPC they belong to.
+    func testTheInventedFolderIsStrippedFromTheName() {
+        XCTAssertEqual(
+            GitWorktree.repairedSessionName(
+                "GFPC/worktree/wakker-menubar-demo", branch: "worktree/wakker-slide"),
+            "GFPC/wakker-menubar-demo")
+    }
+
+    /// A worktree session that was never in a folder ends up at the top level,
+    /// not in one called "worktree".
+    func testATopLevelWorktreeSessionLosesItsFolderEntirely() {
+        XCTAssertEqual(
+            GitWorktree.repairedSessionName("worktree/dvd-screensaver-icon",
+                                            branch: "worktree/pontueel-ios-icon"),
+            "dvd-screensaver-icon")
+    }
+
+    /// Only the branch's own namespace, and only off the end. A folder someone
+    /// deliberately named this is somebody's project, not our bookkeeping.
+    func testAnUnrelatedFolderIsLeftAlone() {
+        XCTAssertNil(GitWorktree.repairedSessionName(
+            "GFPC/wakker-menubar-demo", branch: "worktree/wakker-slide"))
+        XCTAssertNil(GitWorktree.repairedSessionName(
+            "worktree extras/thing", branch: "worktree/x"))
+        XCTAssertNil(GitWorktree.repairedSessionName(
+            "GFPC/worktree/thing", branch: "main"), "a branch with no namespace")
+        XCTAssertNil(GitWorktree.repairedSessionName("GFPC", branch: "worktree/x"),
+                     "no folder half at all")
+    }
+
+    /// Branch namespaces nest, and so does the folder one of them invented.
+    func testAMultiLevelNamespaceComesOffWhole() {
+        XCTAssertEqual(
+            GitWorktree.repairedSessionName("GFPC/a/b/thing", branch: "a/b/c"),
+            "GFPC/thing")
+    }
+
+    /// It runs on every launch, so the second one must find nothing to do.
+    func testRepairIsIdempotent() {
+        let once = GitWorktree.repairedSessionName(
+            "GFPC/worktree/wakker-menubar-demo", branch: "worktree/wakker-slide")
+        XCTAssertEqual(once, "GFPC/wakker-menubar-demo")
+        XCTAssertNil(GitWorktree.repairedSessionName(once!, branch: "worktree/wakker-slide"))
     }
 }

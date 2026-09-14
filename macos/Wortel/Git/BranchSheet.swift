@@ -45,7 +45,8 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     private static func slug(seed: UInt64) -> String {
         let adjective = slugAdjectives[Int(seed % UInt64(slugAdjectives.count))]
         let noun = slugNouns[Int((seed / UInt64(slugAdjectives.count)) % UInt64(slugNouns.count))]
-        return String(format: "worktree/%@-%@-%04x", adjective, noun, Int(seed & 0xffff))
+        return GitWorktree.branchNamespace
+            + String(format: "%@-%@-%04x", adjective, noun, Int(seed & 0xffff))
     }
 
     /// Seeded from the clock, then walked until the name is free. A name that

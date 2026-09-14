@@ -195,7 +195,11 @@ final class Session: Identifiable {
     /// the model says what it's for. Drives the row's two-line layout.
     var showsBranchLine: Bool {
         guard let label = worktreeLabel else { return false }
-        return label != leafName
+        // Against the branch's leaf, because that is what the name is made of.
+        // Comparing the whole branch would print `worktree/brave-river-1a2f`
+        // under a row already reading `brave-river-1a2f`. A branch with no
+        // namespace is its own leaf, so the old check is still in here.
+        return GitWorktree.sessionLeaf(forBranch: label) != leafName
     }
 
     /// Tilde-abbreviated working directory. Empty only when the cwd is unknown

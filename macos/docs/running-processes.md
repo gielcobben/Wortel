@@ -90,6 +90,35 @@ across launches, because the orphan worth finding is precisely the one whose
 session closed days ago. It refuses home and anything above it: a session opened
 at `~` is ordinary, and remembering that as a project would match everything.
 
+## Opening one
+
+A row holding a port is a link: clicking it opens `http://localhost:<port>`,
+and a right-click carries Open in Browser, Copy Address, Reveal in Finder and
+Quit.
+
+**`localhost`, never `127.0.0.1`.** Node tooling commonly binds the IPv6
+loopback only. Measured on the machine this was built against:
+
+```
+node [::1]:3000          <- vite, IPv6 only
+http://127.0.0.1:3000    <- connection refused
+http://localhost:3000    <- 200
+```
+
+A browser gets away with `localhost` because it resolves to both families and
+tries each. A v4 literal would have broken the single most common case.
+
+**No attempt is made to decide whether it is a web server.** Probing answers the
+wrong question, and the measurements say so plainly: the node inspector answers
+HTTP and is useless to open, while a real vite returned *nothing* to a `HEAD`
+and a workerd returned 400. A list of known web tools goes stale instead. So
+every port is offered, and the cost of guessing wrong is a browser tab that does
+not load, which is cheap and obvious, unlike a wrong Quit.
+
+Copy Address is what carries the rows this cannot classify. A database, a gRPC
+server or a broker is not something to open, but `localhost:6379` is exactly
+what its client wants, which is why the address is host and port with no scheme.
+
 ## Quitting
 
 SIGTERM to `-pgid`, then SIGKILL after three seconds. SIGTERM rather than the

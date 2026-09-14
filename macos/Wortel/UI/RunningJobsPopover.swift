@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// What the sessions are running, and a way to stop any of it.
@@ -104,6 +105,7 @@ struct RunningJobsList: View {
                 JobRow(job: job,
                        showsDetail: showsDetail,
                        isHighlighted: hovered == job.pgid,
+                       open: { open(job) },
                        quit: { monitor.quit(job) },
                        hover: { inside in
                            if inside {
@@ -118,6 +120,14 @@ struct RunningJobsList: View {
                        })
             }
         }
+    }
+
+    /// Hand the address to the browser and get out of the way: you clicked
+    /// through to somewhere else, so the popover has done its job.
+    private func open(_ job: RunningJob) {
+        guard let url = job.localURL else { return }
+        NSWorkspace.shared.open(url)
+        dismiss()
     }
 
     static func size(_ bytes: UInt64) -> String {
@@ -140,8 +150,12 @@ private struct JobRow: View {
     let job: RunningJob
     let showsDetail: Bool
     let isHighlighted: Bool
+    let open: () -> Void
     let quit: () -> Void
     let hover: (Bool) -> Void
+
+    /// Whether clicking the row goes anywhere.
+    private var isOpenable: Bool { job.localURL != nil }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -174,9 +188,17 @@ private struct JobRow: View {
                 // `Text(":\(port)")` reads as a LocalizedStringKey and formats
                 // the number for the locale, which is how :3000 came out as
                 // ":3,000". A port is an address, not a quantity.
-                Text(verbatim: ":\(port)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(secondaryStyle)
+                HStack(spacing: 2) {
+                    Text(verbatim: ":\(port)")
+                        .font(.caption.monospacedDigit())
+                    // Only while pointed at, so a list at rest stays a list of
+                    // facts rather than a column of buttons.
+                    if isHighlighted, isOpenable {
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(secondaryStyle)
             }
 
             trailing
@@ -196,8 +218,55 @@ private struct JobRow: View {
                     .padding(.horizontal, 6)
             }
         }
-        .onHover { hover($0) }
+        .onHover { inside in
+            hover(inside)
+            // The row is a link when it has an address, so it should say so
+            // before the click rather than after it.
+            if isOpenable {
+                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
+        }
+        // Left-click opens; the Quit button above keeps its own click because it
+        // is a real Button drawn over this.
+        .onTapGesture { if isOpenable { open() } }
+        .overlay(RightClickCatcher(onRightClick: {}, makeMenu: makeMenu))
         .help(tooltip)
+    }
+
+    /// Everything you might want to do with a listening process, including the
+    /// things a browser cannot do for you.
+    ///
+    /// `Copy Address` is the one that matters for the rows this feature cannot
+    /// classify: a database, a gRPC server or a message broker is not something
+    /// to open, but `localhost:6379` is exactly what its client wants.
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        if isOpenable {
+            menu.addItem(ClosureMenuItem(title: "Open in Browser", handler: open))
+        }
+        if let address = job.localAddress {
+            menu.addItem(ClosureMenuItem(title: "Copy Address", handler: {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(address, forType: .string)
+            }))
+        }
+        if let cwd = job.workingDirectory {
+            menu.addItem(ClosureMenuItem(title: "Reveal in Finder", handler: {
+                NSWorkspace.shared.activateFileViewerSelecting(
+                    [URL(fileURLWithPath: cwd)])
+            }))
+        }
+        if job.isKillable {
+            if !menu.items.isEmpty { menu.addItem(.separator()) }
+            menu.addItem(ClosureMenuItem(title: "Quit", handler: quit))
+        }
+        if menu.items.isEmpty {
+            let none = NSMenuItem(title: "Nothing to do", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            menu.addItem(none)
+        }
+        return menu
     }
 
     /// The size, or the way to stop it. Swapped rather than shown side by side:
@@ -242,6 +311,7 @@ private struct JobRow: View {
             lines.append("Listening on " + job.ports.map { ":\($0)" }.joined(separator: " "))
         }
         if let cwd = job.workingDirectory { lines.append(cwd) }
+        if let address = job.localAddress { lines.append("Click to open \(address)") }
         return lines.joined(separator: "\n")
     }
 }

@@ -350,6 +350,37 @@ final class RunningJobsTests: XCTestCase {
         XCTAssertEqual(RunningJobs.displayPorts([49749, 49750, 63788]), [])
     }
 
+    // MARK: - Addresses
+
+    /// **`localhost`, never `127.0.0.1`.** Measured against a real vite: it was
+    /// listening on `[::1]:3000` and nothing else, so `http://127.0.0.1:3000`
+    /// was refused outright while `http://localhost:3000` answered 200. A v4
+    /// literal here would break the most common case the feature exists for.
+    func testTheAddressIsLocalhostAndNotAnIPv4Literal() throws {
+        let web = try XCTUnwrap(scan().work.first { $0.pgid == 15614 })
+        XCTAssertEqual(web.localAddress, "localhost:3000")
+        XCTAssertEqual(web.localURL?.absoluteString, "http://localhost:3000")
+        XCTAssertFalse(web.localAddress?.contains("127.0.0.1") ?? true,
+                       "node tooling commonly binds the IPv6 loopback only")
+    }
+
+    /// Host and port, not a URL: it has to serve the rows that are not web
+    /// servers, where `localhost:6379` is what the client wants.
+    func testTheAddressCarriesNoScheme() throws {
+        let web = try XCTUnwrap(scan().work.first { $0.pgid == 15614 })
+        XCTAssertFalse(web.localAddress?.contains("http") ?? true)
+    }
+
+    /// A job with nothing listening has no address, so the row has nothing to
+    /// open and says so by having no link.
+    func testAJobWithNoPortHasNoAddress() {
+        let quiet = RunningJob(pgid: 10, sessionID: nil, label: "tsc --watch",
+                               pids: [10], footprint: 1_000, ports: [], startedAt: t0,
+                               workingDirectory: nil, isAgent: false)
+        XCTAssertNil(quiet.localAddress)
+        XCTAssertNil(quiet.localURL)
+    }
+
     // MARK: - Footprint
 
     func testFootprintSumsTheWholeGroup() throws {

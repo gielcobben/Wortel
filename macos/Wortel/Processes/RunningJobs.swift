@@ -73,6 +73,35 @@ struct RunningJob: Identifiable, Equatable {
     var primaryPort: Int? {
         ports.first { !RunningJobs.inspectorPorts.contains($0) } ?? ports.first
     }
+
+    /// The address to copy, and the one to hand a browser: `localhost:3000`.
+    ///
+    /// **`localhost`, never `127.0.0.1`.** Node tooling commonly binds the IPv6
+    /// loopback only — the vite this was built against was listening on
+    /// `[::1]:3000` and nothing else, so `http://127.0.0.1:3000` refused the
+    /// connection outright while `http://localhost:3000` answered 200. A browser
+    /// gets away with `localhost` because it resolves to both families and tries
+    /// each; hard-coding the v4 literal would have broken the most common case
+    /// this feature exists for.
+    ///
+    /// Host and port rather than a URL because it has to serve the things that
+    /// are not web servers too: it is what `psql -h`, `redis-cli -h` and a gRPC
+    /// client want, and pasting it into a browser still navigates.
+    var localAddress: String? {
+        primaryPort.map { "localhost:\($0)" }
+    }
+
+    /// The same address as something to open.
+    ///
+    /// Offered for anything holding a port, without trying to work out whether
+    /// it speaks HTTP. Probing answers the wrong question — the node inspector
+    /// answers HTTP and is useless to open, while a real vite returned nothing
+    /// to a `HEAD` and a workerd returned 400 — and a list of known web tools
+    /// goes stale. The cost of guessing wrong here is a browser tab that doesn't
+    /// load, which is cheap and obvious, unlike a wrong Quit.
+    var localURL: URL? {
+        primaryPort.flatMap { URL(string: "http://localhost:\($0)") }
+    }
 }
 
 /// Everything running under Wortel right now.

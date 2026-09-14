@@ -31,9 +31,12 @@ extension NSToolbarItem.Identifier {
     /// cramped strip. Present alongside the branch chip.
     static let gitMenu = NSToolbarItem.Identifier("wortel.gitMenu")
     static let gitPane = NSToolbarItem.Identifier("wortel.gitPane")
-    /// Servers and builds the sessions are still running. Inserted and removed
-    /// with the list itself (see `syncProcessItem`), so an ordinary terminal
-    /// that has started nothing carries no extra chrome at all.
+    /// Servers and builds the sessions are still running. Lives at the trailing
+    /// edge of the *content* section, on the terminal's side of the inspector's
+    /// tracking separator, because what a session is running is a fact about the
+    /// session and not about the repository the panel beside it is showing.
+    /// Inserted and removed with the list itself (see `syncProcessItem`), so an
+    /// ordinary terminal that has started nothing carries no extra chrome.
     static let runningJobs = NSToolbarItem.Identifier("wortel.runningJobs")
 }
 
@@ -461,6 +464,10 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// glyph button. Measured once and kept, because neither ever changes size
     /// and `fittingSize` is a layout query — not a thing to ask twice a frame
     /// while a divider is being dragged. Cleared when either item is rebuilt.
+    ///
+    /// The running-jobs button is deliberately **not** counted: it lives in the
+    /// content section, on the other side of the inspector's tracking separator,
+    /// so it takes none of the chip's room.
     private func fixedSectionWidth() -> CGFloat {
         if let cachedFixedSectionWidth { return cachedFixedSectionWidth }
         let panes = paneControl.map { max($0.frame.width, $0.fittingSize.width) } ?? 0
@@ -696,7 +703,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         guard let toolbar else { return }
         let present = toolbar.items.contains { $0.itemIdentifier == .runningJobs }
         if showsRunningJobsItem, !present {
-            let index = toolbar.items.firstIndex { $0.itemIdentifier == .gitPane }
+            let index = runningJobsInsertionIndex(in: toolbar.items.map(\.itemIdentifier))
                 ?? toolbar.items.count
             toolbar.insertItem(withItemIdentifier: .runningJobs, at: index)
         } else if !showsRunningJobsItem, present {
@@ -709,6 +716,13 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             }
         }
         updateRunningJobsButton()
+        // The `»` overflow form lists the jobs and their Quit actions, so it is
+        // as stale as the last scan. Rebuilt here rather than only in
+        // `syncToolbar`, which the *git panel* drives: without this the item
+        // could sit in the overflow menu for minutes showing jobs that had
+        // stopped, and on first insert it would have had no form at all, which
+        // AppKit renders as a dead disabled label.
+        updateMenuForms()
     }
 
     /// The glyph carries the one bit worth carrying: whether anything is
@@ -827,7 +841,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         }
         // Likewise for restored sessions whose servers survived the last quit:
         // the keeper keeps them running, so they are there before any scan.
-        if showsRunningJobsItem, let index = ids.firstIndex(of: .gitPane) {
+        if showsRunningJobsItem, let index = runningJobsInsertionIndex(in: ids) {
             ids.insert(.runningJobs, at: index)
         }
         return ids
@@ -838,10 +852,35 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         if let paneIndex = ids.firstIndex(of: .gitPane) {
             ids.insert(contentsOf: [.gitMenu, .gitControls], at: paneIndex)
         }
-        if let index = ids.firstIndex(of: .gitPane) {
+        if let index = runningJobsInsertionIndex(in: ids) {
             ids.insert(.runningJobs, at: index)
         }
         return ids
+    }
+
+    /// Where the running-jobs item goes: the trailing edge of the **content**
+    /// section, just before the separator that starts the repo cluster.
+    ///
+    /// Not among the repo controls, which is where it first landed. That cluster
+    /// is bound to the git panel's divider and is entirely about the repository:
+    /// a branch, its remote actions, and which pane the inspector shows. What a
+    /// session is still running is a fact about the session, so it belongs on the
+    /// terminal's side of the divider, and the tracking separator draws the line
+    /// that says so.
+    ///
+    /// Stated once and used by both the declared lists and the live insert,
+    /// because the two used to disagree. Both inserted "before `.gitPane`", so
+    /// the order came out of whichever arrived first: a session that started a
+    /// server before its repo resolved got the item on one side of the repo
+    /// controls, and one that resolved first got it on the other. A toolbar that
+    /// rearranges itself according to history is the kind of thing nobody
+    /// reports and everybody notices.
+    private func runningJobsInsertionIndex(
+        in ids: [NSToolbarItem.Identifier]) -> Int? {
+        for anchor in [NSToolbarItem.Identifier.trackingInspector, .gitPane] {
+            if let index = ids.firstIndex(of: anchor) { return index }
+        }
+        return nil
     }
 
     func toolbar(
@@ -918,7 +957,6 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             runningJobsButton = button
             runningJobsItem = item
             updateRunningJobsButton()
-            cachedFixedSectionWidth = nil // it shares the section the chip measures
             return item
         case .gitPane:
             // A plain NSSegmentedControl rather than an NSToolbarItemGroup: the

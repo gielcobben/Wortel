@@ -94,3 +94,27 @@ never return to the prompt; the agent's own signals take over.
 - macOS notification banners require a signed `/Applications` build
   (`./scripts/release.sh`); ad-hoc Debug builds only get the sidebar dot and
   Dock badge.
+
+
+## The name on the banner
+
+A notification is posted with the session's name, and the session is very
+often renamed moments later: `progressEnded` raises the attention and then
+calls `considerAutoName` on the next line, which runs the on-device model
+off-main and comes back seconds afterwards. The agent-title path
+(`adoptAgentTitle`) renames on the same terms.
+
+Left alone that produces a banner reading "Session 3" beside a sidebar row
+reading "Wortel memory usage visualization" — one event described by two
+names, which reads as a notification about a different session.
+
+So `SessionManager` remembers what each standing notification says and
+re-posts it when the session is renamed. The app layer keys notifications by
+session id, so the re-post replaces the banner in place rather than adding a
+second one, and it goes out with `alert: false`: the ding belonged to the
+original event, and correcting a name is not a new one.
+
+Bounded to a minute (`attentionRewriteWindow`). The renames this exists for
+land within seconds; past that the banner has been seen or dismissed, and
+putting a fresh one on screen for an event already dealt with would be worse
+than the stale name it corrected.

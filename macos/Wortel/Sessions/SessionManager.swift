@@ -1315,6 +1315,7 @@ final class SessionManager {
         normalizeOrder()
         if let folder = session.folderPath { collapsedFolders.remove(folder) }
         scheduleSave()
+        refreshAttentionNotification(session)
         // Whether people name sessions themselves, which is the premise of the
         // sidebar. `trimmed` is the name they chose and stays here.
         Telemetry.capture(.sessionRenamed(automatic: false))
@@ -1572,8 +1573,46 @@ final class SessionManager {
     private func clearAttention(_ session: Session) {
         guard session.attention != nil else { return }
         session.attention = nil
+        attentionContent[session.id] = nil
         refreshDockBadge()
         onAttentionCleared?(session)
+    }
+
+    /// What each session's standing notification says, kept so a rename can
+    /// rewrite it. `title` is nil when the banner was titled with the session's
+    /// own name, which is the part that goes stale.
+    @ObservationIgnored
+    private var attentionContent:
+        [UUID: (kind: AttentionKind, title: String?, body: String, postedAt: Date)] = [:]
+
+    /// How late a rename may still rewrite a banner.
+    ///
+    /// The renames this exists for land within seconds. Past that the banner has
+    /// been seen, dismissed or swept into Notification Center, and re-posting
+    /// would put a fresh one on screen for an event the user already dealt with,
+    /// which is a worse bug than the stale name it would be correcting.
+    private static let attentionRewriteWindow: TimeInterval = 60
+
+    /// Rewrite a renamed session's standing notification.
+    ///
+    /// A turn-ending notification is posted with the session's name, and then
+    /// the session is very often renamed *moments later*: `progressEnded` calls
+    /// `considerAutoName` on the next line, and that runs a model off-main and
+    /// comes back seconds afterwards, by which point the banner is already on
+    /// screen. The sidebar then says "Wortel memory usage visualization" while
+    /// the notification still says "Session 3" — the same event, described by
+    /// two different names, which reads as a notification about some other
+    /// session. The agent-title path renames on the same terms.
+    ///
+    /// Re-posting is enough to fix it because the app layer keys notifications
+    /// by session id, so this replaces the banner in place rather than adding a
+    /// second one. `alert: false` keeps it silent: the ding belonged to the
+    /// original event, and correcting a name is not a new one.
+    private func refreshAttentionNotification(_ session: Session) {
+        guard session.attention != nil, let content = attentionContent[session.id],
+              Date().timeIntervalSince(content.postedAt) < Self.attentionRewriteWindow
+        else { return }
+        onNeedsAttention?(session, content.kind, content.title ?? session.name, content.body, false)
     }
 
     /// A session by id — what the CLI has, since a shell knows its session as
@@ -1627,6 +1666,9 @@ final class SessionManager {
             session.unread = kind
         }
         refreshDockBadge()
+        // Remembered so a rename can rewrite the banner. nil title means "it was
+        // the session's own name", which is exactly what a rename invalidates.
+        attentionContent[session.id] = (kind, title == session.name ? nil : title, body, Date())
         onNeedsAttention?(session, kind, title, body, alert)
         // Past every gate, so this counts episodes a person was actually shown
         // rather than signals the detector saw. `title` and `body` are the
@@ -1785,6 +1827,9 @@ final class SessionManager {
         session.nameSource = source
         normalizeOrder()
         scheduleSave()
+        // The rename that races the turn-end banner: this is the one that
+        // arrives seconds after `progressEnded` posted it.
+        refreshAttentionNotification(session)
         // Whether automatic naming earns its keep is visible in the ratio of
         // these to hand renames, and nowhere else. `leaf` stays here.
         Telemetry.capture(.sessionRenamed(automatic: true))

@@ -241,7 +241,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var toolbarDelegate: MainToolbarDelegate?
 
     private func installToolbar(on window: NSWindow, splitView: NSSplitView) {
-        let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel)
+        let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel,
+                                           processes: processes)
+        delegate.sessionName = { [weak self] id in
+            self?.manager.sessions.first { $0.id == id }?.leafName
+        }
         toolbarDelegate = delegate
         let toolbar = NSToolbar(identifier: "wortel.main")
         toolbar.delegate = delegate

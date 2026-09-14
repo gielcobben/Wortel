@@ -96,6 +96,7 @@ final class ProcessMonitor {
     /// the same group to be hit, which does not happen.
     func quit(_ job: RunningJob) {
         guard job.isKillable, job.pgid > 1 else { return }
+        Telemetry.capture(.processQuit(orphan: job.sessionID == nil))
 
         if kill(-job.pgid, SIGTERM) != 0 {
             // No process group (already gone, or never one): fall back to the

@@ -56,6 +56,16 @@ enum TelemetryEvent: Equatable {
     /// A preview window was opened, and on which view.
     case previewOpened(mode: PreviewKind)
 
+    /// The running-processes list was opened, and roughly how much was in it.
+    /// `orphans` is the question this feature exists to answer: whether servers
+    /// really do outlive the sessions that started them often enough to matter.
+    case processesShown(jobs: CountBucket, orphans: CountBucket)
+
+    /// Something was quit from that list. Whether it was an orphan is the whole
+    /// property: quitting your own session's server is tidying, quitting one
+    /// nothing was tracking any more is the feature earning its keep.
+    case processQuit(orphan: Bool)
+
     /// A background session asked for attention. The typed kind is the feature
     /// the product's positioning rests on, so it is worth knowing which signals
     /// actually fire in the wild.
@@ -92,6 +102,8 @@ enum TelemetryEvent: Equatable {
         case .sessionRenamed: return "session_renamed"
         case .inspectorShown: return "inspector_shown"
         case .previewOpened: return "preview_opened"
+        case .processesShown: return "processes_shown"
+        case .processQuit: return "process_quit"
         case .agentAttention: return "agent_attention"
         case .agentJumpUsed: return "agent_jump_used"
         case .globalHotkeyUsed: return "global_hotkey_used"
@@ -116,6 +128,10 @@ enum TelemetryEvent: Equatable {
             return ["pane": pane.rawValue, "via": via.rawValue]
         case let .previewOpened(mode):
             return ["mode": mode.rawValue]
+        case let .processesShown(jobs, orphans):
+            return ["jobs": jobs.rawValue, "orphans": orphans.rawValue]
+        case let .processQuit(orphan):
+            return ["orphan": orphan ? "true" : "false"]
         case let .agentAttention(kind):
             return ["kind": kind.rawValue]
         case .agentJumpUsed, .globalHotkeyUsed, .reportingDisabled:

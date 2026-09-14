@@ -31,12 +31,21 @@ extension NSToolbarItem.Identifier {
     /// cramped strip. Present alongside the branch chip.
     static let gitMenu = NSToolbarItem.Identifier("wortel.gitMenu")
     static let gitPane = NSToolbarItem.Identifier("wortel.gitPane")
+    /// Servers and builds the sessions are still running. Inserted and removed
+    /// with the list itself (see `syncProcessItem`), so an ordinary terminal
+    /// that has started nothing carries no extra chrome at all.
+    static let runningJobs = NSToolbarItem.Identifier("wortel.runningJobs")
 }
 
 @MainActor
 final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate {
     private weak var splitView: NSSplitView?
     private let git: GitPanelModel
+    /// What the sessions are still running. Drives whether the item exists at
+    /// all, and fills the popover it opens.
+    private let processes: ProcessMonitor
+    /// Names for the popover's section headings. Set by AppDelegate.
+    var sessionName: (UUID) -> String? = { _ in nil }
     /// Held so the control can be re-synced when the panel is opened, closed, or
     /// switched from anywhere else — ⌘⌥G, ⌘⌥L, a divider drag, a session switch.
     private weak var paneControl: NSSegmentedControl?
@@ -94,6 +103,10 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private weak var paneItem: NSToolbarItem?
     private weak var gitControlsItem: NSToolbarItem?
     private weak var gitMenuItem: NSToolbarItem?
+    private weak var runningJobsItem: NSToolbarItem?
+    private weak var runningJobsButton: NSButton?
+    /// The open jobs popover, kept so a second click doesn't stack another.
+    private var runningJobsPopover: NSPopover?
     /// The chip stops growing here and truncates the branch name instead — the
     /// inspector section is 260pt at its narrowest, and an unbounded chip was
     /// what shoved the whole section into the `»` menu. High enough that ordinary
@@ -138,11 +151,13 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// the branch chip has. Kept so it can be removed with the delegate.
     private var resizeObserver: NSObjectProtocol?
 
-    init(splitView: NSSplitView, git: GitPanelModel) {
+    init(splitView: NSSplitView, git: GitPanelModel, processes: ProcessMonitor) {
         self.splitView = splitView
         self.git = git
+        self.processes = processes
         super.init()
         observePanel()
+        observeProcesses()
         // The chip's room is the inspector's width, so a divider drag or a window
         // resize is as much a reason to re-fit it as a checkout is. Straight off
         // the notification rather than plumbed through the split controller: this
@@ -198,6 +213,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             }
         }
         syncRepoItems()
+        syncProcessItem()
         updateBranchButton()
         updateMenuForms()
     }
@@ -235,6 +251,41 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             form.submenu = repoActionsMenu()
             gitMenuItem.menuFormRepresentation = form
         }
+        if let runningJobsItem {
+            // A submenu rather than a popover anchor: an overflowed item has no
+            // on-screen view to hang a popover from, and the list is short
+            // enough to be a menu. Quitting stays available from here, which is
+            // the part that would otherwise be lost.
+            let form = NSMenuItem(title: "Running", action: nil, keyEquivalent: "")
+            form.submenu = runningJobsMenu()
+            runningJobsItem.menuFormRepresentation = form
+        }
+    }
+
+    /// The jobs list as a menu, for the toolbar's `»` overflow.
+    private func runningJobsMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let snapshot = processes.snapshot
+        for job in snapshot.jobs + snapshot.orphans {
+            let port = job.primaryPort.map { " (:\($0))" } ?? ""
+            let size = RunningJobsList.size(job.footprint)
+            let title = job.isKillable
+                ? "Quit \(job.label)\(port), \(size)"
+                : "\(job.label)\(port), \(size)"
+            let entry = ClosureMenuItem(title: title) { [weak self] in
+                guard job.isKillable else { return }
+                self?.processes.quit(job)
+            }
+            entry.isEnabled = job.isKillable
+            menu.addItem(entry)
+        }
+        if menu.items.isEmpty {
+            let none = NSMenuItem(title: "Nothing running", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            menu.addItem(none)
+        }
+        return menu
     }
 
     /// Pop the repo-actions menu — fetch, pull, push — below the "···" button. Built
@@ -581,7 +632,13 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
 
     /// Drop the held reference once it closes, so the next click opens a fresh one.
     nonisolated func popoverDidClose(_ notification: Notification) {
-        Task { @MainActor in branchPopover = nil }
+        Task { @MainActor in
+            branchPopover = nil
+            runningJobsPopover = nil
+            // The list may have emptied while it was open, in which case the
+            // item was left standing rather than yanked out from under it.
+            syncProcessItem()
+        }
     }
 
     /// Whether there's a branch worth showing: the panel is open, pointed at an
@@ -626,6 +683,83 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
                 }
             }
         }
+    }
+
+    /// Whether there is anything to show. The item is absent, not disabled, when
+    /// a session has started nothing: an empty popover is chrome that teaches
+    /// you to ignore it, and this is meant to be noticed on the days it appears.
+    private var showsRunningJobsItem: Bool { !processes.snapshot.isEmpty }
+
+    private func syncProcessItem() {
+        guard let toolbar else { return }
+        let present = toolbar.items.contains { $0.itemIdentifier == .runningJobs }
+        if showsRunningJobsItem, !present {
+            let index = toolbar.items.firstIndex { $0.itemIdentifier == .gitPane }
+                ?? toolbar.items.count
+            toolbar.insertItem(withItemIdentifier: .runningJobs, at: index)
+        } else if !showsRunningJobsItem, present {
+            // Not while its own popover is open: pulling the anchor out from
+            // under a popover the user is reading closes it mid-sentence, and
+            // the last row vanishing is exactly when they are reading it.
+            guard runningJobsPopover == nil else { return }
+            if let index = toolbar.items.firstIndex(where: { $0.itemIdentifier == .runningJobs }) {
+                toolbar.removeItem(at: index)
+            }
+        }
+        updateRunningJobsButton()
+    }
+
+    /// The glyph carries the one bit worth carrying: whether anything is
+    /// actually serving a port, or it is only builds and leftovers.
+    private func updateRunningJobsButton() {
+        guard let button = runningJobsButton else { return }
+        let snapshot = processes.snapshot
+        let serving = snapshot.jobs.contains { $0.primaryPort != nil }
+            || snapshot.orphans.contains { $0.primaryPort != nil }
+        let symbol = serving ? "dot.radiowaves.left.and.right" : "bolt.horizontal"
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Running")
+        let count = snapshot.jobs.count + snapshot.orphans.count
+        let noun = count == 1 ? "process" : "processes"
+        button.toolTip = "\(count) \(noun) running in your sessions"
+        runningJobsItem?.toolTip = button.toolTip
+    }
+
+    /// Re-arming observation of the scan, so the item appears and disappears with
+    /// the list rather than at the next unrelated toolbar change.
+    private func observeProcesses() {
+        withObservationTracking {
+            _ = processes.snapshot
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.syncProcessItem()
+                self.processes.updateActivityAssertion()
+                self.observeProcesses()
+            }
+        }
+    }
+
+    @objc private func openRunningJobs(_ sender: NSButton) {
+        guard runningJobsPopover == nil else { return }
+        // Scan before showing, not after: NSPopover sizes itself to the content
+        // it is handed at presentation, so a list that fills in a moment later
+        // gets a popover sized for the list that was there before.
+        processes.refresh()
+        Telemetry.capture(.processesShown(
+            jobs: CountBucket(processes.snapshot.jobs.count),
+            orphans: CountBucket(processes.snapshot.orphans.count)))
+        let popover = NSPopover()
+        popover.behavior = .transient
+        let list = RunningJobsList(
+            monitor: processes,
+            sessionName: { [weak self] in self?.sessionName($0) },
+            dismiss: { [weak self] in self?.runningJobsPopover?.performClose(nil) })
+        let host = NSHostingController(rootView: list)
+        host.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = host
+        popover.delegate = self
+        runningJobsPopover = popover
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
 
     /// Keep the buttons honest when the panel moves without them. @Observable's
@@ -686,6 +820,11 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         if showsBranchItem, let paneIndex = ids.firstIndex(of: .gitPane) {
             ids.insert(contentsOf: [.gitMenu, .gitControls], at: paneIndex)
         }
+        // Likewise for restored sessions whose servers survived the last quit:
+        // the keeper keeps them running, so they are there before any scan.
+        if showsRunningJobsItem, let index = ids.firstIndex(of: .gitPane) {
+            ids.insert(.runningJobs, at: index)
+        }
         return ids
     }
 
@@ -693,6 +832,9 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         var ids = identifiers
         if let paneIndex = ids.firstIndex(of: .gitPane) {
             ids.insert(contentsOf: [.gitMenu, .gitControls], at: paneIndex)
+        }
+        if let index = ids.firstIndex(of: .gitPane) {
+            ids.insert(.runningJobs, at: index)
         }
         return ids
     }
@@ -756,6 +898,22 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             item.visibilityPriority = .low
             gitMenuItem = item
             cachedFixedSectionWidth = nil // this item is one of the two it measures
+            return item
+        case .runningJobs:
+            // Same shape as the "···" button: one narrow icon whose click opens a
+            // popover. Narrow so it never widens the section enough to push
+            // anything into the toolbar's `»` menu.
+            let button = NSButton(title: "", target: self, action: #selector(openRunningJobs))
+            button.bezelStyle = .toolbar
+            button.imagePosition = .imageOnly
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.view = button
+            item.label = "Running"
+            item.visibilityPriority = .low
+            runningJobsButton = button
+            runningJobsItem = item
+            updateRunningJobsButton()
+            cachedFixedSectionWidth = nil // it shares the section the chip measures
             return item
         case .gitPane:
             // A plain NSSegmentedControl rather than an NSToolbarItemGroup: the

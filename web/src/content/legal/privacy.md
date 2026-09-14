@@ -1,7 +1,7 @@
 ---
 title: Privacy
 description: What Wortel and wortel.sh record, what they never record, and how to turn the app's reporting off.
-updated: 2026-08-10
+updated: 2026-09-14
 nav: Privacy
 order: 10
 ---
@@ -62,6 +62,11 @@ about the thing it happened to:
 - the git panel was opened, on which of the three panes, and whether from the
   toolbar or the keyboard
 - a preview window was opened, and whether it showed source, a diff or Markdown
+- the list of processes your sessions are still running was opened, with rough
+  counts of how many there were and how many had outlived their session (never
+  what they are, what they are serving, or where they are running)
+- something was quit from that list, and whether it was one that had outlived
+  its session
 - a background session asked for attention, and which kind of signal raised it
 - the jump-to-next-waiting shortcut was used
 - a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`)

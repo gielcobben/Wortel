@@ -40,7 +40,7 @@ final class TelemetryTests: XCTestCase {
     func testPropertyKeysAreTheDocumentedSet() throws {
         let documented: Set<String> = [
             "sessions", "agents_resumed", "uptime", "via", "automatic",
-            "pane", "mode", "kind", "verb",
+            "pane", "mode", "kind", "verb", "jobs", "orphans", "orphan",
         ]
         for event in Self.everyEvent {
             for key in event.properties.keys {
@@ -219,6 +219,11 @@ final class TelemetryTests: XCTestCase {
         for mode in previews {
             events.append(.previewOpened(mode: mode))
         }
+        for count in CountBucket.allCases {
+            events.append(.processesShown(jobs: count, orphans: count))
+        }
+        events.append(.processQuit(orphan: true))
+        events.append(.processQuit(orphan: false))
         let causes: [AttentionCause] = [.needsInput, .failed, .turnDone, .finished]
         for cause in causes {
             events.append(.agentAttention(kind: cause))

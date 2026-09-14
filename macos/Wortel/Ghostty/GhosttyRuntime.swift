@@ -270,6 +270,16 @@ final class GhosttyRuntime {
         // The keeper forked the shell, so it is the only one that knows the pid.
         // Everything the session goes on to run hangs off it.
         view.shellPID = attachment.pid > 0 ? attachment.pid : nil
+        // A session that survived with nothing to replay: the keeper only
+        // buffers while detached and drains that buffer when it hands it over,
+        // so a program that sat idle while the app was gone has written nothing
+        // at all. Left alone the window is simply blank until you touch it,
+        // which is the "sometimes the app looks empty" this fixes. Asked for
+        // before the surface exists, because libghostty can report the window's
+        // size during `ghostty_surface_new` and the repaint has to follow it.
+        if attachment.resumed, attachment.replay.isEmpty {
+            pty.requestRedrawAfterNextResize()
+        }
 
         cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
         cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()

@@ -73,6 +73,9 @@ final class PtyHost: @unchecked Sendable {
         /// system is free to hand to someone else.
         var hasExited = false
         var reader: DispatchSourceRead?
+        /// Owed a forced repaint once the real window size has been applied.
+        /// See `requestRedrawAfterNextResize`.
+        var needsRedraw = false
     }
     /// `uncheckedState` only because `DispatchSourceRead` is not Sendable; it
     /// never leaves the lock except to be cancelled by the one caller that took
@@ -331,6 +334,43 @@ final class PtyHost: @unchecked Sendable {
             ws_xpixel: UInt16(truncatingIfNeeded: widthPx),
             ws_ypixel: UInt16(truncatingIfNeeded: heightPx))
         _ = ioctl(master, TIOCSWINSZ, &size)
+
+        let owed = shared.withLock { state -> Bool in
+            defer { state.needsRedraw = false }
+            return state.needsRedraw
+        }
+        guard owed, rows > 1 else { return }
+        // Report one row fewer and then the true size again. Both writes are a
+        // real change, so both raise SIGWINCH, and the program cannot dismiss
+        // either as a resize that wasn't one. It lands on the size it started
+        // from, so nothing about the terminal is left altered.
+        var smaller = size
+        smaller.ws_row = rows - 1
+        _ = ioctl(master, TIOCSWINSZ, &smaller)
+        _ = ioctl(master, TIOCSWINSZ, &size)
+    }
+
+    /// Make whatever is running paint itself again, once the real window size
+    /// has been applied.
+    ///
+    /// For a session that survived an app restart with nothing to replay. The
+    /// keeper only buffers while detached and hands that buffer over by
+    /// draining it, so a session whose program sat idle while the app was gone
+    /// comes back with **no bytes at all** — and a program at rest does not
+    /// reprint itself unasked. The window is blank until you touch it.
+    ///
+    /// Why this is a size change and not a signal: a bare `SIGWINCH` does not
+    /// work. Measured across nine real sessions, exactly one produced any
+    /// output from one, because a TUI that tracks its own dimensions treats a
+    /// resize that isn't one as nothing to do. Forcing a genuine change made
+    /// the same session repaint immediately.
+    ///
+    /// Deferred to the next resize rather than done here because the size that
+    /// matters is the window's, which libghostty reports a moment later. A
+    /// repaint sent before that would be drawn for whatever the pty was last
+    /// set to.
+    func requestRedrawAfterNextResize() {
+        shared.withLock { $0.needsRedraw = true }
     }
 
     /// Stop reading without giving up the pty.

@@ -45,16 +45,37 @@ final class TerminalHostViewController: NSViewController {
         }
     }
 
-    /// Make the terminal first responder so keystrokes land. During launch the
-    /// view may not be in a window yet — retry on the next runloop turn.
-    private func focusTerminal(_ surfaceView: SurfaceView) {
+    /// The window arriving is the other chance to focus, and the reliable one.
+    ///
+    /// `show` runs from SwiftUI's `updateNSViewController`, which during launch
+    /// can happen before this controller's view is in a window at all. When it
+    /// does, the retry below is the only thing standing between the user and a
+    /// terminal that draws but does not take a keystroke.
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        if let currentView { focusTerminal(currentView) }
+    }
+
+    /// Make the terminal first responder so keystrokes land.
+    ///
+    /// During launch the view may not be in a window yet. This used to try
+    /// exactly once more, on the next runloop turn, and then **give up in
+    /// silence** — and a terminal nobody told about the keyboard is a window you
+    /// can look at and not type into, with nothing on screen saying why. One
+    /// extra turn is a guess about how long a window takes to exist; it is not a
+    /// guarantee, and losing that race costs the whole session.
+    ///
+    /// So: keep asking for a few turns, and `viewDidAppear` catches the case
+    /// where the window takes longer than that.
+    private func focusTerminal(_ surfaceView: SurfaceView, attemptsLeft: Int = 10) {
         if let window = view.window {
             window.makeFirstResponder(surfaceView)
-        } else {
-            DispatchQueue.main.async { [weak self, weak surfaceView] in
-                guard let surfaceView, let window = self?.view.window else { return }
-                window.makeFirstResponder(surfaceView)
-            }
+            return
+        }
+        guard attemptsLeft > 0 else { return }
+        DispatchQueue.main.async { [weak self, weak surfaceView] in
+            guard let self, let surfaceView, surfaceView === self.currentView else { return }
+            self.focusTerminal(surfaceView, attemptsLeft: attemptsLeft - 1)
         }
     }
 }

@@ -3,6 +3,43 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.38.3</title>
+            <pubDate>Mon, 14 Sep 2026 21:25:46 -0400</pubDate>
+            <sparkle:version>2026.38.3</sparkle:version>
+            <sparkle:shortVersionString>2026.38.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>One row is one thing</h1>
+<p class="date">Wortel 2026.38.3 &middot; 2026-09-14</p>
+<p><strong>A command that starts two servers is two rows.</strong> <code>bun dev</code> fanning out to <code>dev:web</code> and <code>dev:images</code> puts both of them in one process group, and Wortel was treating a process group as one job. That is true when a shell starts it, and it is how an agent’s jobs arrive, which is why it held up for so long. It is false here: the pair came out as a single row named after whichever started first, carrying their combined memory and showing only the lower of the two ports, with nothing to say the second one existed.</p>
+<p>The hidden port was the smaller half of it. That row’s Quit would have stopped both servers, from a row naming one. A process group is now split into the separate trees it contains, so each server is its own row, with its own port and its own Quit. A job that is the whole of its group is still stopped as a group; one sharing a group stops only its own processes.</p>
+<p><strong>Pointing at one row no longer highlights several.</strong> The highlight was keyed on the process group, which stopped being unique the moment a group could hold more than one job. The same mistake had reached one other place: quitting a row would have taken its neighbour’s row away while that server kept running.</p>
+<p><strong>The cursor stays an arrow.</strong> It was turning into a pointing hand over a row, which is a web habit. macOS keeps the arrow over clickable rows and says “this does something” with the highlight.</p>
+<p><strong>The scan is twice as fast.</strong> It was slower than reading everything about every process on the machine, which is a good sign that something is being done twice, and three things were. Abandoned processes were fully inspected before being filtered on the directory that discarded nearly all of them, so the cheap question is asked first now. Whether a process belonged to a session was recomputed once per session rather than once. And each process had its command line read twice, once to recognise an agent and once to name a job.</p>
+<p><strong>The list reads properly with VoiceOver.</strong> A row was four separate fragments; it is one sentence now, with the port announced as a port, and each Quit says what it stops rather than being one of several identical buttons. The green dot is marked as decoration, because what it means is already in the sentence, and it uses the system green, which follows Increase Contrast.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.38.3.zip" length="19157600" type="application/octet-stream" sparkle:edSignature="YfIXvpS/wE6ArM/7AalRuEVjPmVTHpgVeBCdJaA1Zl7Xoss78zcTC2jnPt2I/VJNscEo8bQtO+oB4IW22DOKCw=="/>
+        </item>
+        <item>
             <title>2026.38.2</title>
             <pubDate>Mon, 14 Sep 2026 18:50:13 -0400</pubDate>
             <sparkle:version>2026.38.2</sparkle:version>
@@ -78,38 +115,6 @@
 <p><strong>Worktree sessions stop inventing a folder.</strong> A session’s folder is the part of its name before the last slash, so naming a worktree session after its branch filed it under a folder named for the branch’s namespace: a second sidebar group holding exactly the sessions that belonged in the first one. New sessions are named for the branch’s leaf, and any session already filed in a phantom folder moves back on this launch.</p>
 <p>Two new anonymous events come with this release, both counts only: that the running list was opened, with rough numbers of jobs and of processes that had outlived their session, and that something was quit from it. Never what they are, what they are serving, or where they are running. The full list is on <a href="/privacy">the privacy page</a>, which remains the whole list.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.38.1.zip" length="19144727" type="application/octet-stream" sparkle:edSignature="LSUQuhxTZyG5zR0LKNDnfdFS783nsgIqGXN131RyDat6lOeYriHyDMBldThllr7kTFBMiKVkezV1he3+ji2xAg=="/>
-        </item>
-        <item>
-            <title>2026.37.3</title>
-            <pubDate>Wed, 09 Sep 2026 17:15:33 -0400</pubDate>
-            <sparkle:version>2026.37.3</sparkle:version>
-            <sparkle:shortVersionString>2026.37.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Pi stays watched</h1>
-<p class="date">Wortel 2026.37.3 &middot; 2026-09-09</p>
-<p><strong>Pi is recognised as running for as long as it runs.</strong> The previous release taught Wortel to read Pi’s screen for the busy spinner, and it worked for about a minute. Once a minute Wortel checks that each agent it is tracking is still alive, by looking under the session’s shell for a process with the agent’s name. Pi is a Node script, so its process is called node and no process is ever called pi. The check failed, Wortel decided Pi had quit, and it stopped watching the session: no spinner, no agent badge in the sidebar, and no resume after a crash. The same was true of Gemini CLI and Amp, which also run under Node, and of aider, which runs under Python. The check now also looks at what a process was started with, so a Node process running Pi counts as Pi. Agents that are their own binary, Claude Code, Codex, crush, goose and opencode, were never affected.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.37.3.zip" length="18900107" type="application/octet-stream" sparkle:edSignature="Mh+IwNbMXOeKx3XPKrNfcza2kNo5Txu4nRlR1BEo8Krpv0OqTD+AUTaZssKo+DRCBJd3McY81TgP4jIZknJEAA=="/>
         </item>
     </channel>
 </rss>

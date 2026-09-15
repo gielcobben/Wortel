@@ -121,9 +121,12 @@ final class ProcessMonitor {
 
         // Take the row away now. The next scan confirms it, but a Quit button
         // that leaves its row sitting there reads as a button that did nothing.
+        // By id, not `pgid`: two jobs can share a group, and filtering on the
+        // group would take the sibling's row away too, for a server still
+        // running.
         snapshot = RunningJobsSnapshot(
-            jobs: snapshot.jobs.filter { $0.pgid != job.pgid },
-            orphans: snapshot.orphans.filter { $0.pgid != job.pgid })
+            jobs: snapshot.jobs.filter { $0.id != job.id },
+            orphans: snapshot.orphans.filter { $0.id != job.id })
     }
 
     // MARK: - App Nap

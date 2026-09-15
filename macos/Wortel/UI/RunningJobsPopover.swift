@@ -28,6 +28,10 @@ struct RunningJobsList: View {
     /// enough not to become the tallest thing on screen.
     static let maxListHeight: CGFloat = 264
 
+    /// The row under the pointer, by job id.
+    ///
+    /// **Not `pgid`.** A process group can hold more than one job, so two rows
+    /// can share one, and keying the highlight on it lit both at once.
     @State private var hovered: pid_t?
 
     private var snapshot: RunningJobsSnapshot { monitor.snapshot }
@@ -108,13 +112,13 @@ struct RunningJobsList: View {
             ForEach(jobs) { job in
                 JobRow(job: job,
                        showsDetail: showsDetail,
-                       isHighlighted: hovered == job.pgid,
+                       isHighlighted: hovered == job.id,
                        open: { open(job) },
                        quit: { monitor.quit(job) },
                        hover: { inside in
                            if inside {
-                               hovered = job.pgid
-                           } else if hovered == job.pgid {
+                               hovered = job.id
+                           } else if hovered == job.id {
                                // Only if it is still ours: the enter for the next
                                // row arrives before this row's exit, and clearing
                                // unconditionally blanks the highlight as the
@@ -236,14 +240,12 @@ private struct JobRow: View {
                     .padding(.horizontal, 6)
             }
         }
-        .onHover { inside in
-            hover(inside)
-            // The row is a link when it has an address, so it should say so
-            // before the click rather than after it.
-            if isOpenable {
-                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
-        }
+        // No cursor change. A pointing hand over a list row is a web idiom:
+        // macOS keeps the arrow over clickable rows everywhere, Finder and Xcode
+        // included, and says "this does something" with the highlight instead.
+        // It was also a `push()`/`pop()` pair that a row disappearing mid-hover
+        // would leave unbalanced, which is a cursor stuck app-wide.
+        .onHover { hover($0) }
         // Left-click opens; the Quit button above keeps its own click because it
         // is a real Button drawn over this.
         .onTapGesture { if isOpenable { open() } }

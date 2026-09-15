@@ -352,6 +352,19 @@ final class RunningJobsTests: XCTestCase {
         XCTAssertTrue(web.ownsGroup)
     }
 
+    /// Identity is the job's own root, because two rows can share a group and
+    /// everything keyed on `pgid` then acts on both: the hover highlight lit
+    /// each other's row, and quitting one took the other's row away.
+    func testJobsSharingAGroupHaveDistinctIdentities() {
+        let snapshot = RunningJobs.scan(
+            table: sharedGroup, roots: [], projectRoots: ["/Users/giel/dev"],
+            uid: 501, details: sharedGroupDetails())
+        let ids = snapshot.orphans.map(\.id)
+        XCTAssertEqual(Set(ids).count, ids.count, "one id per row, even in a shared group")
+        XCTAssertEqual(Set(snapshot.orphans.map(\.pgid)).count, 1,
+                       "and they really do share the group, which is the point")
+    }
+
     func testShownPortsCarriesEveryMeaningfulPort() {
         let job = RunningJob(rootPID: 1, pgid: 1, ownsGroup: true, sessionID: nil,
                              label: "x", pids: [1], footprint: 0,

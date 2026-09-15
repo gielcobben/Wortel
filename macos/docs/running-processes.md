@@ -38,18 +38,18 @@ alone at 37616 and the session's own shell at 37499.
 
 Two things follow, and both are why this is the model rather than a tree walk:
 
-- **The group is a safe kill target.** `kill(-15614, …)` reaches that job and
-  provably nothing else, because the agent and the shell are not in it. A subtree
-  walk would have to reach the same answer by being careful, and being careless
-  kills someone's agent mid-turn.
+- **The group is usually a safe kill target.** `kill(-15614, …)` reaches that job
+  and, when the group holds one job, provably nothing else, because the agent and
+  the shell are not in it. "Usually" is doing real work in that sentence: see
+  *A group is not always one job* below.
 - **A group outlives its leader.** The orphan's five processes still shared pgid
   38931 four days after 38931 itself died. Orphans therefore need no separate
   handling: they are groups with nothing above them.
 
-Within a session's tree, every distinct pgid is a row, minus two: the session
-shell's own, and the agent's. The agent still gets a row, dimmed and not
-killable, because it was 409 MB of that 1.39 GB and a total that hid it would not
-match the rows above it.
+Within a session's tree, every distinct pgid is at least one row, minus two
+groups: the session shell's own, and the agent's. The agent still gets a row,
+dimmed and not killable, because it was 409 MB of that 1.39 GB and a total that
+hid it would not match the rows above it.
 
 ## The numbers
 
@@ -70,8 +70,9 @@ whose argv cannot be read still gets a row rather than vanishing.
 
 **Ports are filtered hard.** That two-server session held fifteen listening ports;
 eleven were ephemeral (≥ 49152) or a node inspector (9229-9249). Showing them
-buries the `:3000` someone typed into a browser. The row shows the lowest
-non-inspector port; the rest are in the tooltip.
+buries the `:3000` someone typed into a browser. The row shows every port it
+holds that survives that filter, up to three so a name cannot be pushed off the
+row; the rest are in the tooltip.
 
 ## Orphans
 

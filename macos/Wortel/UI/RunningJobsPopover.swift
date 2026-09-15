@@ -173,6 +173,7 @@ private struct JobRow: View {
                 .font(.system(size: 7))
                 .foregroundStyle(dotStyle)
                 .frame(width: 12)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 0) {
                 // Tail, not middle: a command reads from the left, and middle
@@ -299,6 +300,7 @@ private struct JobRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.white)
                 .fontWeight(.medium)
+                .accessibilityLabel("Quit \(job.label)")
         } else {
             Text(verbatim: RunningJobsList.size(job.footprint))
                 .foregroundStyle(secondaryStyle)
@@ -308,7 +310,7 @@ private struct JobRow: View {
     private var dotStyle: AnyShapeStyle {
         if isHighlighted { return AnyShapeStyle(.white) }
         return job.primaryPort != nil
-            ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary)
+            ? AnyShapeStyle(Color(nsColor: .systemGreen)) : AnyShapeStyle(.tertiary)
     }
 
     private var secondaryStyle: AnyShapeStyle {

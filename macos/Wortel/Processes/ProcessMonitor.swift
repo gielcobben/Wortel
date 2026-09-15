@@ -168,4 +168,3 @@ private struct ScanRequest: Sendable {
     }
 }
 
-extension SessionProcessRoot: @unchecked Sendable {}

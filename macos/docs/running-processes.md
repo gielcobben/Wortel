@@ -149,11 +149,44 @@ door. `AgentLiveness` reads the same table rather than keeping a second one.
 
 ## Cost
 
-A full scan of 605 processes shapes in about **1 ms**, and a 14-process tree with
-argv, ports and footprint for every member measured 2.8 ms. It runs off the main
-thread every 10 seconds with a quarter-interval tolerance so the OS can coalesce
-it, and synchronously in exactly one place: the close sheet, where a dialog that
-appears and then changes its mind would be worse than the millisecond.
+Measured on a machine with 693 processes, 7 sessions and 6 remembered project
+roots. The raw syscalls are cheap: the whole table is 0.2 ms, and doing *every*
+read for *every* process comes to about 6 ms (argv 4.2, ports 0.9, cwd 0.5,
+footprint 0.4).
+
+A full scan is **6.9 ms**, down from 15.9 ms. It was slower than reading
+everything about everything, which is the shape of a scan doing work twice:
+
+- **Orphan candidates were shaped before being filtered.** A job is built by
+  reading argv for every process in it, and nearly every candidate is then
+  thrown away for sitting outside any known project. The directory decides, it
+  is one cheap syscall, and it is asked first now.
+- **Descendancy was recomputed per session.** The membership test walked each
+  candidate's parent chain once per session; with nine sessions and eight
+  hundred processes that was most of the scan. The set of pids under any session
+  is worked out once.
+- **Arguments were read twice per process**, once to classify the agent and once
+  to label. Memoised for the span of a scan, which is the only window over which
+  a pid's arguments cannot change.
+
+It runs off the main thread every 10 seconds with a quarter-interval tolerance so
+the OS can coalesce it, and synchronously in exactly one place: the close sheet,
+where a dialog that appears and then changes its mind would be worse than the
+milliseconds.
+
+## A group is not always one job
+
+`bun dev` fanning out to `dev:web` and `dev:images` puts both trees in one
+process group, holding `:3000` and `:3002` between them. Reported as one job it
+read as `bun dev:web` with the pair's combined memory, the lower port, and
+nothing to say the other existed, and its Quit would have stopped both.
+
+So a group is split by tree: any member whose parent sits outside the group
+starts a job, and its descendants belong to it. Identity is that root process,
+because `pgid` is no longer unique, and everything keyed on the group has to
+follow: the hover highlight and the optimistic row removal both acted on two
+rows until they did. A job that is the whole of its group still gets
+`kill(-pgid, …)`; one sharing a group signals its own processes.
 
 ## Known limits
 

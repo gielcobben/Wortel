@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where one session's processes hang from.
-struct SessionProcessRoot: Equatable {
+struct SessionProcessRoot: Equatable, Sendable {
     let sessionID: UUID
     /// The session's shell. From the keeper's attachment, not from the agent
     /// marker — a session has a shell whether or not an agent is running in it.
@@ -278,6 +278,12 @@ enum RunningJobs {
     ) -> RunningJobsSnapshot {
         guard !table.isEmpty else { return .empty }
 
+        // Reading a process's arguments is a `sysctl` each, and the same
+        // processes are read twice: once to decide whether a group is the
+        // agent's, once to label it. Memoised for the length of this scan, which
+        // is the only span over which the answer cannot change.
+        let details = details.memoisingArguments()
+
         let byPID = Dictionary(table.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
         let parentOf = byPID.mapValues(\.ppid)
         var membersOf: [pid_t: [ProcessEntry]] = [:]
@@ -430,6 +436,18 @@ enum RunningJobs {
     ) -> [RunningJob] {
         guard !projectRoots.isEmpty else { return [] }
 
+        // Every pid under any session, worked out once. The membership test used
+        // to walk each candidate's parent chain once per session, which is the
+        // same answer computed over and over: with nine sessions and eight
+        // hundred processes it was most of the cost of the whole scan.
+        var underSession: Set<pid_t> = []
+        for entry in table where shellPIDs.contains(entry.pid)
+            || shellPIDs.contains(where: {
+                ProcessTable.isDescendant(entry.pid, of: $0, parentOf: parentOf)
+            }) {
+            underSession.insert(entry.pid)
+        }
+
         var found: [RunningJob] = []
         var seen = claimed
 
@@ -437,21 +455,26 @@ enum RunningJobs {
             guard !seen.contains(pgid), let members = membersOf[pgid] else { continue }
             guard members.allSatisfy({ $0.uid == uid }) else { continue }
             // Anything still under a live session is that session's, not an orphan.
-            guard !members.contains(where: { member in
-                shellPIDs.contains(member.pid)
-                    || shellPIDs.contains(where: {
-                        ProcessTable.isDescendant(member.pid, of: $0, parentOf: parentOf)
-                    })
-            }) else { continue }
+            guard !members.contains(where: { underSession.contains($0.pid) }) else { continue }
             // A group whose leader is still alive and parented normally is
             // somebody else's business — a login shell, an app's helper.
             guard byPID[pgid] == nil || members.contains(where: { $0.ppid <= 1 }) else { continue }
 
             seen.insert(pgid)
-            for candidate in jobs(pgid: pgid, members: members, sessionID: nil,
-                                  isAgent: false, parentOf: parentOf, details: details) {
-                guard let cwd = candidate.workingDirectory,
-                      projectRoots.contains(where: { FolderRoot.root($0, contains: cwd) }),
+            for tree in independentTrees(members, parentOf: parentOf) {
+                // The directory decides whether this is ours at all, and it is
+                // one cheap syscall. Asked *before* the job is built, because
+                // building one reads arguments for every process in the tree and
+                // almost every candidate here is about to be thrown away.
+                guard tree.contains(where: { member in
+                    guard let cwd = details.workingDirectory(member.pid) else { return false }
+                    return projectRoots.contains { FolderRoot.root($0, contains: cwd) }
+                }) else { continue }
+
+                guard let candidate = job(pgid: pgid, tree: tree,
+                                          ownsGroup: members.count == tree.count,
+                                          sessionID: nil, isAgent: false, details: details),
+                      candidate.workingDirectory != nil,
                       !candidate.ports.isEmpty || candidate.footprint >= orphanFootprintFloor
                 else { continue }
                 found.append(candidate)
@@ -680,5 +703,25 @@ enum RunningJobs {
     /// the kernel's anonymous ones dropped.
     static func displayPorts(_ ports: [Int]) -> [Int] {
         Array(Set(ports.filter { $0 > 0 && $0 < ephemeralFloor })).sorted()
+    }
+}
+
+extension ProcessDetails {
+    /// The same reads, with `arguments` answered once per process.
+    ///
+    /// Valid only for the span of a single scan: a pid's arguments are fixed for
+    /// its lifetime, but a pid is not.
+    func memoisingArguments() -> ProcessDetails {
+        final class Cache { var values: [pid_t: [String]] = [:] }
+        let cache = Cache()
+        let read = arguments
+        var copy = self
+        copy.arguments = { pid in
+            if let cached = cache.values[pid] { return cached }
+            let value = read(pid)
+            cache.values[pid] = value
+            return value
+        }
+        return copy
     }
 }

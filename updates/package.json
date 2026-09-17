@@ -11,9 +11,9 @@
     "test": "node --test worker/*.test.ts"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250109.0",
+    "@cloudflare/workers-types": "^5.20260917.1",
     "@types/node": "^26.2.0",
     "typescript": "^5.9.3",
-    "wrangler": "^3.90.0"
+    "wrangler": "^4.134.0"
   }
 }

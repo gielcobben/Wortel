@@ -141,6 +141,8 @@ final class SurfaceView: NSView {
         // running and is handled by the connection simply dropping.
         if let keeperSession {
             GhosttyRuntime.keeper?.close(session: keeperSession)
+            // Its terminal's modes went with it.
+            TerminalModeRecorder.shared.forget(session: keeperSession)
             ptyHost?.release() // the keeper owns the process; just let go
         } else {
             ptyHost?.stop()

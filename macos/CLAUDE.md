@@ -159,6 +159,17 @@ This is *app state*, not user config — Wortel stays zero-config. Decoder
 tolerates older files missing fields. `saveNow` runs synchronously on
 termination.
 
+**Terminal modes across a reattach** (`Wortel/Ghostty/TerminalModes.swift`) —
+the keeper keeps a session's shell alive across a relaunch, so the *program*
+never restarts, but its terminal does: a new libghostty surface starts with
+every mode at its default while the program still believes what it set. That
+costs a paste its brackets (`?2004`), and each pasted line then arrives as
+Enter. So the app watches the output it already handles, records the sticky
+modes, persists them per session, and re-declares them into the new surface
+*before* the keeper's replay. **The watching cannot live in the keeper**: while
+a session is attached the app reads the pty itself, which is exactly when a
+program declares its modes. See `docs/terminal-modes.md`.
+
 **Session naming** (`Session.NameSource`, `Wortel/Sessions/AgentTitle.swift`,
 `Wortel/Sessions/PromptCapture.swift`, `Wortel/Ghostty/PromptTap.swift`,
 `SessionNameGenerator`) — a row's name comes from the best source that has

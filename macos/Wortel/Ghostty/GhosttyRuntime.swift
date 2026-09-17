@@ -264,6 +264,7 @@ final class GhosttyRuntime {
         view: SurfaceView, config cfg: inout ghostty_surface_config_s,
         attachment: KeeperConnection.Attachment
     ) -> ghostty_surface_t? {
+        let session = attachment.session
         let pty = PtyHost(adopting: attachment.descriptor)
         view.ptyHost = pty // the view's lifetime is the session's
         view.keeperSession = attachment.session
@@ -305,6 +306,9 @@ final class GhosttyRuntime {
         }
 
         pty.onOutput = { bytes, count in
+            // Watched on the way past, so a relaunch can tell the new terminal
+            // what this one has been told. See `TerminalModes`.
+            TerminalModeRecorder.shared.feed(session: session, bytes: bytes, count: count)
             ghostty_surface_write_buffer(surface, bytes, UInt(count))
         }
         pty.onExit = { code, milliseconds in
@@ -313,10 +317,29 @@ final class GhosttyRuntime {
             }
         }
 
-        // Replay first, then read: the buffer holds what the shell wrote while
-        // nobody was attached, and it has to reach the terminal before anything
-        // newer or the screen ends up out of order.
+        // The modes first, then the replay, then read.
+        //
+        // The shell survived and the program in it never restarted, so it still
+        // believes every mode it ever set. This terminal is new and believes
+        // none of them, and the first thing that disagreement costs is a paste:
+        // without `?2004` the terminal stops bracketing it and the agent reads
+        // each pasted line as Enter. The replay goes second on purpose —
+        // anything the program changed while nobody was attached is in there,
+        // and has to win over what was recorded before it detached.
+        if attachment.resumed {
+            let prelude = TerminalModeRecorder.shared.modes(for: session).prelude
+            if !prelude.isEmpty {
+                prelude.withUnsafeBufferPointer { raw in
+                    guard let base = raw.baseAddress else { return }
+                    ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+                }
+            }
+        }
+        // The buffer holds what the shell wrote while nobody was attached, and
+        // it has to reach the terminal before anything newer or the screen ends
+        // up out of order.
         if !attachment.replay.isEmpty {
+            TerminalModeRecorder.shared.feed(session: session, replay: attachment.replay)
             attachment.replay.withUnsafeBytes { raw in
                 guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
                 ghostty_surface_write_buffer(surface, base, UInt(raw.count))

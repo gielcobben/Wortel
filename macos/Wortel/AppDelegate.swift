@@ -447,6 +447,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the termination paths that never reach here.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         manager?.saveNow()
+        // The sessions outlive us; what their terminals were told has to as
+        // well, or the next launch pastes into an agent without brackets.
+        TerminalModeRecorder.shared.save()
         cli?.stop()
         Telemetry.capture(
             .appQuit(uptime: DurationBucket(seconds: Date().timeIntervalSince(launchedAt))))
@@ -457,6 +460,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationWillTerminate(_ notification: Notification) {
         manager?.saveNow()
+        TerminalModeRecorder.shared.save()
         // The socket's name is a file, and it outlives the process that made
         // it. The server recovers from a stale one on the next launch, but only
         // by proving it's stale — cheaper and less alarming to tidy up.

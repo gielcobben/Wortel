@@ -343,6 +343,13 @@ targets:
       # Line-based find: index arithmetic with wraparound, which is the one part
       # of a find bar that is wrong by exactly one and looks almost right.
       - path: Wortel/Preview/PreviewFind.swift
+      # Which terminal modes a program has switched on, and the incremental CSI
+      # scan that finds them in a byte stream arriving in arbitrary pieces. Pure,
+      # and the failure it exists to stop is invisible until you paste: a mode
+      # lost on reattach turns a pasted paragraph into one Enter per line. A
+      # scanner that reads inside a DCS passthrough, or misses a sequence split
+      # across two reads, is wrong in exactly the same silent way.
+      - path: Wortel/Ghostty/TerminalModes.swift
       # The font-size clamp, which is a `didSet` that assigns to its own
       # property — correct here, and one edit away from unbounded recursion.
       - path: Wortel/Preview/PreviewSettings.swift

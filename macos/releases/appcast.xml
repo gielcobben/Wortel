@@ -3,6 +3,42 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.38.5</title>
+            <pubDate>Thu, 17 Sep 2026 15:19:01 -0400</pubDate>
+            <sparkle:version>2026.38.5</sparkle:version>
+            <sparkle:shortVersionString>2026.38.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>A pasted paragraph is one message again</h1>
+<p class="date">Wortel 2026.38.5 &middot; 2026-09-17</p>
+<p><strong>A pasted paragraph is one message again.</strong> Paste a few lines into an agent’s prompt and each line could arrive as a separate submitted message, filling its queue. A terminal only wraps a paste as one block when the program has asked it to, and your sessions survive a Wortel restart while their terminal does not: the new one started with none of the settings the agent still believed were in place. Wortel now remembers what each session’s terminal has been told and says it again on reattach, so a paste stays a paste. The same fix covers shift+enter in an agent’s prompt, which could turn back into a submit for the same reason.</p>
+<p><strong>A server the agent keeps to itself is still your server.</strong> Some agents run commands in their own process group rather than giving each one its own: goose, Kimi, Factory droid, and Pi through an extension. A dev server started that way was counted as part of the agent, which meant it was missing from the toolbar pill, missing from the list, and not stopped when the session closed. It is now listed on its own, with its address, and stopping it can never reach the agent it was started from.</p>
+<p><strong>A server handed to the system is found again.</strong> <code>nohup npm run dev &#x26;</code>, the shape agents reach for most, hands the server to macOS the moment the command returns, leaving nothing pointing back at the terminal it came from. Wortel now recognises those by the session they were started in, so they appear in the pill within a scan instead of turning into a leftover nobody owns. This works for anything serving a port, including a plain <code>python3 -m http.server</code> in a subshell.</p>
+<p><strong>A project named after your agent is not your agent.</strong> A server in a folder called <code>claude-demo</code>, or a vite inside <code>pi-site</code>, was read as the agent itself and disappeared from the list along with it. Only the program’s own name counts now. Wortel also recognises Kimi, Qwen, droid and Copilot, which previously appeared as ordinary rows with a Stop button on the conversation.</p>
+<p><strong>A row shows a command, not your environment.</strong> An agent that renames its own process left parts of its environment in the row’s name, including things like an API token. Rows now drop environment values and show the command.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.38.5.zip" length="19347566" type="application/octet-stream" sparkle:edSignature="7Rbutd3BvZYiHdj2dQVLvs/5COHAo7ES1jNCudgHYl4b/cnKj+YDtFBt/1x2wCL0yvJClMsXUGgLJiA4TgHuCg=="/>
+        </item>
+        <item>
             <title>2026.38.4</title>
             <pubDate>Thu, 17 Sep 2026 12:25:06 -0400</pubDate>
             <sparkle:version>2026.38.4</sparkle:version>
@@ -76,41 +112,6 @@
 <p><strong>The scan is twice as fast.</strong> It was slower than reading everything about every process on the machine, which is a good sign that something is being done twice, and three things were. Abandoned processes were fully inspected before being filtered on the directory that discarded nearly all of them, so the cheap question is asked first now. Whether a process belonged to a session was recomputed once per session rather than once. And each process had its command line read twice, once to recognise an agent and once to name a job.</p>
 <p><strong>The list reads properly with VoiceOver.</strong> A row was four separate fragments; it is one sentence now, with the port announced as a port, and each Quit says what it stops rather than being one of several identical buttons. The green dot is marked as decoration, because what it means is already in the sentence, and it uses the system green, which follows Increase Contrast.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.38.3.zip" length="19157600" type="application/octet-stream" sparkle:edSignature="YfIXvpS/wE6ArM/7AalRuEVjPmVTHpgVeBCdJaA1Zl7Xoss78zcTC2jnPt2I/VJNscEo8bQtO+oB4IW22DOKCw=="/>
-        </item>
-        <item>
-            <title>2026.38.2</title>
-            <pubDate>Mon, 14 Sep 2026 18:50:13 -0400</pubDate>
-            <sparkle:version>2026.38.2</sparkle:version>
-            <sparkle:shortVersionString>2026.38.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>The running list, read properly</h1>
-<p class="date">Wortel 2026.38.2 &middot; 2026-09-14</p>
-<p><strong>A port is no longer squeezed out of shape.</strong> <code>:13337</code> rendered stacked one digit per line down the row, because the job’s name claimed the row’s width and left the port nothing to lay out in. An address cannot be split, so it takes its width first now, and the name, which is the only thing on the row that can usefully shrink, is what gives way.</p>
-<p><strong>Long commands truncate where you can still read them.</strong> They were shortened from the middle, which turned <code>quick.js serve dist --dir ...</code> into <code>quick.js serve di...-chat-prototype</code>. A command reads from the left, so it now keeps its beginning. The same goes for a session heading, which is sometimes a whole sentence, because a session can be named from the first thing you typed into it.</p>
-<p><strong>Abandoned processes have to be worth mentioning.</strong> A <code>chrome_crashpad_handler</code> sitting in a project directory at 2.8 MB is not a server anybody forgot to stop, and it was being listed as one. Something with no session left now has to be holding a port you could reach, or be big enough that stopping it is the point. Your own sessions’ jobs are still listed whatever they cost, because you started them and they are still yours.</p>
-<p><strong>One icon in the toolbar, and it stays the same.</strong> It used to swap between two different symbols depending on whether anything was serving a port, which made the item harder to find and encoded a distinction the list already draws far better, with a dot and a port on every row. The icon only appears when something is running, so it has nothing left to say beyond that.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.38.2.zip" length="19146113" type="application/octet-stream" sparkle:edSignature="xdyxtbG3IxhDaSo8xPF9QFLQ3CWon+UjpcGYb/qDdrrr23AeK2oxJqIU8XeEPPMxIzVMJgTFDGUUrKvaCBrPBA=="/>
         </item>
     </channel>
 </rss>

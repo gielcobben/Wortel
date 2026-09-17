@@ -94,6 +94,11 @@ final class SessionManager {
     /// Progress must have been active at least this long for its end to mean
     /// "the agent wants you"; shorter blips are noise, not a finished turn.
     private static let minBusyForQuiesceAttention: TimeInterval = 2.0
+    /// The same gate for a busy the screen tier only *corroborated* on a session
+    /// that has a channel of its own — see `progressEnded(corroborating:)`. Ten
+    /// seconds is far past anything two stray repaints can produce, and far
+    /// short of any turn worth a notification.
+    private static let minBusyForCorroboratedQuiesce: TimeInterval = 10.0
     /// Pending "show busy" work items, keyed by session; cancelled if the
     /// command finishes before the delay elapses.
     @ObservationIgnored private var busyTimers: [Session.ID: DispatchWorkItem] = [:]
@@ -595,37 +600,43 @@ final class SessionManager {
     @ObservationIgnored private var agentActivityAssertion: NSObjectProtocol?
 
     private func noteExplicitSignal(_ session: Session) {
-        let wasUnproven = explicitSignalAt[session.id] == nil
         explicitSignalAt[session.id] = Date()
-        // The tier's claim on this session's busy state lapses here, and it has
-        // to lapse *now* rather than at the next `markBusy`: that one returns
-        // early when the session is already busy, which is exactly the case —
-        // the screen tier guessed busy a moment ago and the agent is only now
-        // announcing the same turn. Left in the set, the session would be
-        // released on the next tick (it speaks for itself, so the sampler drops
-        // it) and the release would clear a busy the program owns, mid-turn,
-        // right after it said so. It would also take `busyStartedAt` with it, so
-        // the 9;4;0 at the end of the turn would read as too short to be worth a
-        // notification and the finished turn would go unannounced.
+        // Ownership transfers here: the screen tier guessed busy a moment ago
+        // and the program is only now announcing the same turn, so the turn is
+        // the program's to end. Without this the tier would still believe the
+        // busy was its own and would end it from a quiet screen, mid-turn, right
+        // after the program said otherwise — and take `busyStartedAt` with it,
+        // so the `9;4;0` at the real end read as too short to be worth a
+        // notification and the finished turn went unannounced.
         screenInferredBusy.remove(session.id)
-        // An agent that just proved it announces itself may have been the only
-        // reason the sampler was running. Ask again rather than waiting for the
-        // next marker change, which for a long-lived agent is when it exits.
-        if wasUnproven { updateAgentScreenSampling() }
+        // A session that just proved it announces itself no longer needs this
+        // app kept awake on its behalf. The sampler itself keeps running (see
+        // `wantsScreenSampling`) — what changes is only the assertion.
+        //
+        // Asked every time rather than only on the session's first-ever signal:
+        // `explicitSignalAt` outlives an agent run, so the *next* agent to run
+        // here finds a key already present and would never have been noticed
+        // announcing itself. The check is a handful of dictionary lookups and
+        // acts only on a transition.
+        updateAgentActivityAssertion()
     }
 
     /// Whether the agent currently running in `session` has already proved it
     /// announces its own turns (an OSC 9;4 progress report or a title spinner).
     ///
-    /// Once proved, the screen tier stays out of that session **for as long as
-    /// that agent runs** — not for a minute afterwards. The timeout this
-    /// replaces is what put an idle Claude Code session back under the guessing
-    /// tier: Claude emits one `9;4;3` per turn and no keepalive, so a session
-    /// sitting at its prompt looked, after sixty seconds, exactly like an agent
-    /// that had never said anything — and then the first stray repaint announced
-    /// a turn nobody had taken. An agent that announced the last turn will
-    /// announce the next one; if it stops announcing, `COMMAND_FINISHED` at the
-    /// next shell prompt is still the backstop.
+    /// This now decides **cost, not authority**. It used to switch the screen
+    /// tier off for the rest of the agent's run, which made it a verdict a
+    /// session could never appeal: the proof can come from a subprocess rather
+    /// than the agent (`onProgress` cannot tell them apart), and once recorded
+    /// nothing ever re-examined it. All it decides now is whether this app stays
+    /// awake in the background for that session — see `wantsActivityAssertion`.
+    /// Authority belongs to whoever claimed the busy, in `sampleAgentScreensPass`.
+    ///
+    /// Still sticky rather than a timeout, because the question it answers is
+    /// still "does this session have a channel of its own": Claude Code emits
+    /// one `9;4;3` per turn with no keepalive, so a minute after a turn ends it
+    /// is indistinguishable from an agent that never spoke, and the old timeout
+    /// read that silence as a reason to start guessing.
     ///
     /// Proof belongs to one agent run, so it's only honoured when it was
     /// observed after that run started — signals from whatever the session was
@@ -719,7 +730,13 @@ final class SessionManager {
             }
             AgentStatusLog.log.debug("dropping stale marker for \(agent, privacy: .public)")
             AgentResumeStore.remove(sessionID: session.id)
+            goneSweeps[session.id] = nil
             removedAny = true
+        }
+        // Sessions that closed while being counted against would otherwise keep
+        // their tally forever, and hand a strike to whatever reuses the id.
+        goneSweeps = goneSweeps.filter { id, _ in
+            sessions.contains { $0.id == id && $0.runningAgent != nil }
         }
         // Mirrors the markers back onto the sessions, which also stops the
         // sampler and releases the assertion when the last one goes.
@@ -729,26 +746,55 @@ final class SessionManager {
     /// Whether any session actually needs its screen read: the same question
     /// the sampler asks per session.
     ///
-    /// The distinction matters more than it looks: an agent that announces its
-    /// own turns never needs this tier, so with only such agents running (Claude
-    /// Code, Codex, crush — the common case) the timer never starts, no screen is
-    /// ever read, and, most importantly, the App Nap assertion below is never
-    /// taken. Keyed off the marker alone, an idle agent left open overnight kept
-    /// this app awake until morning to watch a screen it had already been told
-    /// about.
+    /// Any live agent marker is worth watching, including agents that announce
+    /// themselves.
+    ///
+    /// This tier used to stand down the moment a session proved it had a channel
+    /// of its own, which made that proof a one-way door: `onProgress` cannot tell
+    /// an agent's OSC 9;4 from one emitted by something the agent *ran* (cargo,
+    /// mise, systemd and winget all report progress), so a single `cargo build`
+    /// through a silent agent's shell tool retired its only busy signal for the
+    /// rest of the session. The same door shut on any agent whose title glyph
+    /// stopped matching after a restyle, and it never reopened, because nothing
+    /// re-examines a session that has been written off.
+    ///
+    /// Standing down is no longer how this tier stays out of the way. Ownership
+    /// is: it claims busy only when nothing else has, and only ever speaks about
+    /// a busy it claimed (see `sampleAgentScreensPass`). An agent that reports
+    /// its own progress therefore gets sampled and still decides its own state,
+    /// while an agent that goes quiet for any reason gets a spinner anyway.
     private var wantsScreenSampling: Bool {
-        sessions.contains { $0.runningAgent != nil && !speaksForItself($0) }
+        sessions.contains { $0.runningAgent != nil }
+    }
+
+    /// Whether to hold off App Nap for it, which is the part that actually costs
+    /// something: without the assertion a backgrounded app's timers are throttled.
+    ///
+    /// Only a session with no channel of its own earns that, because only there
+    /// is this tier the sole source of a *notification*, which has to be punctual
+    /// even when the app is buried. For everyone else the tier produces a
+    /// spinner, and a spinner nobody can see is not worth a wakeup: an idle agent
+    /// left open overnight once kept this app awake until morning watching a
+    /// screen it had already been told about.
+    ///
+    /// Three shapes earn it, and they are all "this tier is the one who has to
+    /// say when it ends": a session with no channel of its own; a session whose
+    /// busy this tier *claimed*, however it normally announces itself (a
+    /// subprocess's progress report can make a silent agent look like a
+    /// speaking one, and the assertion must not be fooled along with it); and a
+    /// settle window already ticking towards a notification.
+    private var wantsActivityAssertion: Bool {
+        sessions.contains {
+            guard $0.runningAgent != nil else { return false }
+            return !speaksForItself($0)
+                || screenInferredBusy.contains($0.id)
+                || quiesceTimers[$0.id] != nil
+        }
     }
 
     private func updateAgentScreenSampling() {
-            goneSweeps[session.id] = nil
         let wanted = wantsScreenSampling
         if wanted, agentScreenTimer == nil {
-        // Sessions that closed while being counted against would otherwise keep
-        // their tally forever, and hand a strike to whatever reuses the id.
-        goneSweeps = goneSweeps.filter { id, _ in
-            sessions.contains { $0.id == id && $0.runningAgent != nil }
-        }
             let timer = Timer.scheduledTimer(
                 withTimeInterval: AgentActivity.sampleInterval, repeats: true
             ) { [weak self] _ in
@@ -758,24 +804,33 @@ final class SessionManager {
             // coalesce it with other timers instead of waking the CPU alone.
             timer.tolerance = AgentActivity.sampleInterval / 4
             agentScreenTimer = timer
-            agentActivityAssertion = ProcessInfo.processInfo.beginActivity(
-                options: [.userInitiatedAllowingIdleSystemSleep],
-                reason: "Watching a running agent so its turn-end is noticed promptly")
         } else if !wanted, agentScreenTimer != nil {
             agentScreenTimer?.invalidate()
             agentScreenTimer = nil
             releaseAllAgentScreenTrackers()
-            if let assertion = agentActivityAssertion {
-                ProcessInfo.processInfo.endActivity(assertion)
-                agentActivityAssertion = nil
-            }
+        }
+        // Tracked separately from the timer: which sessions need punctuality can
+        // change (an agent announces itself mid-run) without the timer itself
+        // starting or stopping.
+        updateAgentActivityAssertion()
+    }
+
+    /// Take or drop the App Nap assertion to match `wantsActivityAssertion`.
+    private func updateAgentActivityAssertion() {
+        let wanted = wantsActivityAssertion
+        if wanted, agentActivityAssertion == nil {
+            agentActivityAssertion = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiatedAllowingIdleSystemSleep],
+                reason: "Watching a running agent so its turn-end is noticed promptly")
+        } else if !wanted, let assertion = agentActivityAssertion {
+            ProcessInfo.processInfo.endActivity(assertion)
+            agentActivityAssertion = nil
         }
     }
 
-    /// One pass over the sessions worth watching. A session qualifies only
-    /// while an agent is running in it, it has a live surface, and it hasn't
-    /// recently spoken for itself — anything else drops its tracker, so the
-    /// next qualifying moment re-baselines.
+    /// One pass over the sessions worth watching. A session qualifies while an
+    /// agent is running in it and it has a live surface; anything else drops its
+    /// tracker, so the next qualifying moment re-baselines.
     ///
     /// The session you are looking at is watched like any other. It used to be
     /// skipped, on the grounds that it needs no notification and that your own
@@ -799,6 +854,15 @@ final class SessionManager {
     /// stale marker can't quietly drain a battery.
     @ObservationIgnored private var livenessTicks = 0
 
+    /// Consecutive sweeps that failed to find each session's agent. Reset the
+    /// moment it is seen again, so only a sustained absence is believed.
+    @ObservationIgnored private var goneSweeps: [UUID: Int] = [:]
+
+    /// How many sweeps in a row have to miss an agent before its marker goes.
+    /// Two, a minute apart: long enough that no single transient read decides
+    /// it, short enough that a shell killed outright stops the sampler promptly.
+    private static let sweepsBeforeDroppingMarker = 2
+
     private func sampleAgentScreensPass() {
         let now = Date()
         livenessTicks += 1
@@ -807,10 +871,7 @@ final class SessionManager {
             sweepDeadAgentMarkers()
         }
         for session in sessions {
-            guard session.runningAgent != nil,
-                  let view = session.surfaceView,
-                  !speaksForItself(session)
-            else {
+            guard session.runningAgent != nil, let view = session.surfaceView else {
                 releaseAgentScreenTracker(session)
                 continue
             }
@@ -820,15 +881,36 @@ final class SessionManager {
             let event = tracker.sample(digest: digest, now: now)
             agentScreenTrackers[session.id] = tracker
 
-            switch event {
-            case .startedWorking:
-                AgentStatusLog.log.debug("""
-                    screen: working (\(session.runningAgent ?? "?", privacy: .public)) \
-                    in \(session.name, privacy: .private)
-                    """)
-                screenInferredBusy.insert(session.id)
+            // Claim busy only when nothing else has. A program that reports its
+            // own progress owns its state, and the moving screen this tier can
+            // see is that same turn seen a second way — saying so again would
+            // put this tier's name on a busy it would then feel entitled to end,
+            // which is how a guess gets to overrule the thing it was guessing
+            // about. `busyTimers` is checked too because `markBusy` is debounced:
+            // a busy can be a runloop turn away from showing and still be
+            // somebody's.
+            //
+            // Level-triggered, not on `.startedWorking`: see `isWorking`. The
+            // whole point is the turn where the program's signal drops halfway
+            // and the screen keeps moving, which produces no new edge at all.
+            if tracker.isWorking, !session.isBusy, busyTimers[session.id] == nil {
+                if screenInferredBusy.insert(session.id).inserted {
+                    AgentStatusLog.log.debug("""
+                        screen: claiming busy (\(session.runningAgent ?? "?", privacy: .public)) \
+                        in \(session.name, privacy: .private)
+                        """)
+                }
                 markBusy(session)
+            }
+
+            switch event {
             case .wentQuiet:
+                // Only ever about a busy this tier claimed. For an agent with a
+                // channel of its own, a screen that stops moving is not news:
+                // it pauses mid-turn on a slow tool that prints nothing, and
+                // announcing a finished turn there would be wrong at the loudest
+                // possible moment.
+                guard screenInferredBusy.contains(session.id) else { break }
                 // The one moment the content itself is worth reading: is the
                 // agent blocked on you, or simply done?
                 let blocked = view.activeScreenTail().map(AgentPrompt.looksBlocked) ?? false
@@ -837,11 +919,17 @@ final class SessionManager {
                     (\(session.runningAgent ?? "?", privacy: .public)) \
                     in \(session.name, privacy: .private)
                     """)
-                progressEnded(session, inferred: blocked ? .needsInput : .turnDone, source: "screen")
-            case nil:
+                progressEnded(session, inferred: blocked ? .needsInput : .turnDone, source: "screen",
+                              corroborating: speaksForItself(session))
+            case .startedWorking, nil:
+                // The start edge is not acted on here; the claim above reads the
+                // level, so it covers this sample and every one after it.
                 break
             }
         }
+        // Claims come and go inside this loop, and a claimed busy is one this
+        // tier has to see through to its end on time (see `wantsActivityAssertion`).
+        updateAgentActivityAssertion()
     }
 
     // MARK: - Operations
@@ -865,15 +953,6 @@ final class SessionManager {
     ///    worktree, on the branch's files, when what was asked for was another
     ///    shell in the project. The worktree is one session's business; the
     ///    folder's root is the project's.
-    /// Consecutive sweeps that failed to find each session's agent. Reset the
-    /// moment it is seen again, so only a sustained absence is believed.
-    @ObservationIgnored private var goneSweeps: [UUID: Int] = [:]
-
-    /// How many sweeps in a row have to miss an agent before its marker goes.
-    /// Two, a minute apart: long enough that no single transient read decides
-    /// it, short enough that a shell killed outright stops the sampler promptly.
-    private static let sweepsBeforeDroppingMarker = 2
-
     /// 4. **Where the selected session was born**, not where it is now, for a
     ///    session whose folder is still just a label or that is filed at the
     ///    top level. `cwd` follows every `cd`, so inheriting it meant a session
@@ -1510,7 +1589,13 @@ final class SessionManager {
         adoptAgentTitle(session, title: trimmed)
         if trimmed.hasPrefix("✋") || trimmed.contains("Action Required") {
             titleShowsWorking.remove(session.id)
-            noteExplicitSignal(session)
+            // Deliberately *not* `noteExplicitSignal`. An agent proving it can
+            // say "I need you" is no proof it can say "I'm working": those are
+            // different titles on different code paths, and Codex and Gemini
+            // emit this one while never necessarily matching `hasWorkingMarker`.
+            // Counting it as proof retired the screen sampler for the whole of
+            // that agent's run, so the first approval prompt of a session could
+            // leave it with no busy signal at all for the rest of the day.
             clearBusy(session)
             raiseAttention(session, kind: .needsInput, title: session.name, body: "Action required",
                            source: "title")
@@ -1563,10 +1648,22 @@ final class SessionManager {
     /// `inferred` is what to raise if the settle window passes quietly. The OSC
     /// path can't tell "blocked" from "done" and so leaves it at `.turnDone`;
     /// the screen path reads the stopped screen and may already know better.
+    ///
+    /// `corroborating` is the screen tier saying so about a session that has a
+    /// channel of its own. That tier now watches such sessions too, so that a
+    /// program whose signal drops mid-turn still gets a spinner — but it means
+    /// two stray repaints on an *idle* one can again look like a short turn,
+    /// which is the phantom-notification bug this tier was once fenced off for.
+    /// A busy it merely corroborated therefore has to have lasted much longer
+    /// before it is announced: real work runs for many seconds, and a spinner
+    /// that quietly appears and disappears costs nothing, where a badge on a
+    /// session nobody touched costs trust.
     private func progressEnded(_ session: Session, inferred kind: AttentionKind = .turnDone,
-                               source: String) {
+                               source: String, corroborating: Bool = false) {
+        let required = corroborating
+            ? Self.minBusyForCorroboratedQuiesce : Self.minBusyForQuiesceAttention
         let busyLongEnough = busyStartedAt[session.id].map {
-            Date().timeIntervalSince($0) >= Self.minBusyForQuiesceAttention
+            Date().timeIntervalSince($0) >= required
         } ?? false
         clearBusy(session)
         guard busyLongEnough else { return }
@@ -1575,6 +1672,14 @@ final class SessionManager {
         let work = DispatchWorkItem { [weak self, weak session] in
             guard let self, let session else { return }
             self.quiesceTimers[id] = nil
+            // The settle window exists to find out whether the program really
+            // stopped, and the answer is not always "progress resumed" (which
+            // cancels this timer through `markBusy`): the screen tier re-claims
+            // a still-moving screen on its next sample, up to a full interval
+            // later, which can land *after* this fires. A session that is busy
+            // again by now, or is a debounce away from it, did not finish — a
+            // subprocess's `9;4;0` cleared its spinner for a second, that's all.
+            guard !session.isBusy, self.busyTimers[id] == nil else { return }
             // The agent went quiet without an explicit prompt — inferred
             // turn-end. If it *did* prompt (a notification / action-required
             // title), that already raised a louder .needsInput which priority
@@ -1589,6 +1694,9 @@ final class SessionManager {
         }
         quiesceTimers[id] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiesceSettleDelay, execute: work)
+        // A pending notification is the one thing that must fire on time even
+        // with the app buried; hold off App Nap for it.
+        updateAgentActivityAssertion()
     }
 
     // MARK: - Attention

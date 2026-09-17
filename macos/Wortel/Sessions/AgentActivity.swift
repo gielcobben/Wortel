@@ -82,6 +82,15 @@ struct AgentActivityTracker: Equatable {
     private var changes = 0
     private var changesSince: Date?
 
+    /// Whether the screen is currently moving, as opposed to the *edge* where it
+    /// started. The busy claim has to be level-triggered: a start edge that
+    /// arrives while the program still owns its own busy is spent, and if that
+    /// program's signal then drops mid-turn (a subprocess's `9;4;0`, a title
+    /// that stopped matching) the screen is still moving but will not produce
+    /// another edge until it first goes still for `quietAfter`. Reading the
+    /// level instead, the spinner comes back on the next sample.
+    var isWorking: Bool { working }
+
     init(now: Date, grace: TimeInterval = AgentActivity.graceWindow) {
         lastChange = now
         self.grace = grace

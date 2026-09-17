@@ -116,6 +116,9 @@ final class AgentActivityTrackerTests: XCTestCase {
 
         // The inspector opens: every session re-wraps, this one included.
         tracker.rebaseline(now: after(3))
+        // The verdict survives, which is also what keeps a busy claim taken
+        // from `isWorking` from being dropped by a resize or a focus report.
+        XCTAssertTrue(tracker.isWorking)
         // The frame after is the new baseline, never evidence...
         XCTAssertNil(tracker.sample(digest: 99, now: after(4)))
         // ...and the agent, which had in fact stopped, still gets to go quiet.
@@ -172,6 +175,63 @@ final class AgentActivityTrackerTests: XCTestCase {
         for tick in 1...20 {
             XCTAssertNil(tracker.sample(digest: 7, now: after(Double(tick))))
         }
+    }
+
+    // MARK: - The working *level*, not just its edges
+
+    /// `isWorking` has to stay true for the whole of a moving screen, because
+    /// the busy claim reads it every sample rather than reacting to the edge.
+    func testIsWorkingTracksTheLevelBetweenEdges() {
+        var tracker = AgentActivityTracker(now: t0, grace: 0)
+        _ = tracker.sample(digest: 1, now: t0)
+        XCTAssertFalse(tracker.isWorking, "a baseline sample is not work")
+
+        XCTAssertNil(tracker.sample(digest: 2, now: after(1)))
+        XCTAssertFalse(tracker.isWorking, "one changed frame is not work either")
+
+        XCTAssertEqual(tracker.sample(digest: 3, now: after(2)), .startedWorking)
+        XCTAssertTrue(tracker.isWorking)
+
+        // The edge is long spent; the level is what the claim reads.
+        for tick in 3...8 {
+            _ = tracker.sample(digest: UInt64(tick + 1), now: after(Double(tick)))
+            XCTAssertTrue(tracker.isWorking, "still moving at tick \(tick)")
+        }
+    }
+
+    /// The exact shape that reopened after the fix: the program owned the busy
+    /// while the screen started moving, so the start edge was spent on a claim
+    /// that could not be taken. When that program's signal drops mid-turn — a
+    /// subprocess's `9;4;0`, a title that stopped matching — the screen is still
+    /// moving and will produce **no further edge** until it first goes still.
+    /// Edge-triggered, the spinner would stay gone for the rest of the turn; the
+    /// level is still true, which is what lets the claim be retaken.
+    func testLevelStaysTrueWhenTheStartEdgeWasSpentElsewhere() {
+        var tracker = AgentActivityTracker(now: t0, grace: 0)
+        _ = tracker.sample(digest: 1, now: t0)
+        _ = tracker.sample(digest: 2, now: after(1))
+        XCTAssertEqual(tracker.sample(digest: 3, now: after(2)), .startedWorking)
+
+        // Thirty more seconds of a moving screen. Not one of them is an edge.
+        for tick in 3...33 {
+            XCTAssertNil(tracker.sample(digest: UInt64(tick + 1), now: after(Double(tick))),
+                         "no new edge at tick \(tick)")
+            XCTAssertTrue(tracker.isWorking, "but the level still says working")
+        }
+    }
+
+    /// And the level falls with the quiet edge, so a claim taken from it is
+    /// given up at the same moment a claim taken from the edge would have been.
+    func testLevelFallsWhenTheScreenGoesStill() {
+        var tracker = AgentActivityTracker(now: t0, grace: 0)
+        _ = tracker.sample(digest: 1, now: t0)
+        _ = tracker.sample(digest: 2, now: after(1))
+        XCTAssertEqual(tracker.sample(digest: 3, now: after(2)), .startedWorking)
+
+        XCTAssertNil(tracker.sample(digest: 3, now: after(3)))
+        XCTAssertTrue(tracker.isWorking, "one still frame is not a finished turn")
+        XCTAssertEqual(tracker.sample(digest: 3, now: after(5.1)), .wentQuiet)
+        XCTAssertFalse(tracker.isWorking)
     }
 }
 

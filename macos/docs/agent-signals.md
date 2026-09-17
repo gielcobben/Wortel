@@ -23,15 +23,50 @@ re-verify before relying on details.
    extension.
 4. **Bell** and **command-finished ≥10s while unselected** — classic paths for
    non-agent commands.
-5. **Screen activity** (`AgentActivity`) — the fallback for agents that emit
-   none of the above (opencode, goose, aider, Pi by default). A watched session's active screen
-   is hashed once a second; a screen that keeps changing is an agent working, one
-   that then holds still for 3s is a turn ending. It is the only *guessing* tier,
-   so it is fenced in hard:
-   - It never watches a session whose agent has already announced itself
-     (`SessionManager.speaksForItself`) — proof lasts for that whole agent run,
-     not for a timeout. An idle Claude Code session has no signals to show for
-     the last hour and must not therefore look like a silent agent.
+5. **Screen activity** (`AgentActivity`) — the backstop under all of the above.
+   A watched session's active screen is hashed once a second; a screen that keeps
+   changing is an agent working, one that then holds still for 3s is a turn
+   ending. For agents that emit nothing (opencode, goose, aider, Pi by default)
+   it is the only signal there is; for the rest it is what covers a channel that
+   goes quiet when it shouldn't. It is the only *guessing* tier, so it is fenced
+   in hard:
+   - **It claims busy only when nothing else has, and only ever ends a busy it
+     claimed.** Authority is ownership, not identity. It used to stand down
+     entirely for any session that had proved it has a channel of its own, and
+     that proof was a one-way door: `onProgress` cannot tell an agent's OSC 9;4
+     from one emitted by something the agent *ran* (cargo, mise, systemd and
+     winget all report progress), so one `cargo build` through a silent agent's
+     shell tool retired its only busy signal for the rest of the session. Now
+     the tier watches every session with a live marker, stays silent while the
+     program owns its own state (`SessionManager.screenInferredBusy` records who
+     claimed), and picks the spinner back up the moment nobody does.
+   - **The claim reads the working *level*, not the start edge**
+     (`AgentActivityTracker.isWorking`). An edge that arrives while the program
+     still owns its busy is spent, and a screen that keeps moving produces no
+     second edge until it has first gone still — so an edge-triggered claim
+     could never recover a turn whose signal dropped halfway, which is the whole
+     case this exists for.
+   - **A busy it only corroborated is announced late, or not at all.** On a
+     session with a channel of its own, the tier's quiesce needs the busy to
+     have lasted `minBusyForCorroboratedQuiesce` (10s) rather than 2s before it
+     raises anything. Watching those sessions re-exposes the old "two stray
+     repaints on an idle TUI look like a short turn" bug for them, and ten
+     seconds is past anything a repaint pair produces and short of any turn
+     worth a badge. Real work that lost its signal mid-turn is unaffected: the
+     re-claim lands inside `busyContinuationWindow`, so the episode keeps its
+     original start.
+   - **A settle window checks the session is still quiet before it fires.** A
+     subprocess's `9;4;0` clears the spinner, the tier re-claims the still-moving
+     screen on its next sample (up to a full interval later), and that can land
+     after the 1s settle. A session busy again by then, or a debounce away from
+     it, did not finish, and the phantom "Finished, your move" is dropped.
+   - `speaksForItself` now decides **cost, not authority**. The App Nap
+     assertion is held for a session with no channel of its own, for any
+     session whose busy this tier *claimed* (a subprocess's progress can make a
+     silent agent look like a speaking one; the assertion must not be fooled
+     with it), and while a settle window is ticking towards a notification.
+     Everyone else gets a spinner, and a spinner nobody is awake to see is not
+     worth a wakeup.
    - It never watches a session with no agent marker. It *does* watch the one
      you're looking at (it didn't, once, and a silent agent had no spinner in
      the session you were watching it work in); your own keys, pastes, clicks
@@ -94,6 +129,28 @@ never return to the prompt; the agent's own signals take over.
 - macOS notification banners require a signed `/Applications` build
   (`./scripts/release.sh`); ad-hoc Debug builds only get the sidebar dot and
   Dock badge.
+- **A failed `KERN_PROCARGS2` read is not an absent agent.** `AgentLiveness`
+  finds most agents only by their arguments, because the cheap `p_comm` pass
+  misses them: pi, gemini and amp are `node`, aider is `python3`, and Claude
+  Code renames itself to its version (`p_comm` reads `2.1.272`, measured). Only
+  codex, crush, goose, opencode and cursor-agent ship a binary under their own
+  name and skip the read. That read is a size probe followed by a read,
+  and a live process can grow its argv in between, so it fails routinely on a
+  healthy one. `ProcessTable.arguments` flattened that to `[]`, which looks
+  exactly like a process that was searched and didn't match, so the minute
+  sweep declared a running Pi gone and deleted its marker — and nothing writes
+  a marker again until the shell reaches a prompt the agent is holding. The
+  session lost its spinner mid-turn (`refreshAgentActivity` reads a vanished
+  marker as the shell returning and clears busy) and never got it back.
+  Intermittent and total, but only *visible* on agents with no other channel:
+  `markBusy` from OSC 9;4 or a title marker never consults the agent marker, so
+  Claude and Codex kept their spinners and lost only resume, the agent badge and
+  the `onCommandFinished` suppression. Pi, aider, opencode and goose have
+  nothing but the marker-gated screen tier, so they lost everything. Fixed by
+  `ProcessTable.argumentsIfReadable` returning nil for "couldn't read", which
+  `locate` turns into `.unknown`, plus `sweepsBeforeDroppingMarker` so no single
+  reading can delete a marker. Anything else that decides an agent is gone owes
+  the same two guarantees.
 
 
 ## The name on the banner
@@ -118,25 +175,3 @@ Bounded to a minute (`attentionRewriteWindow`). The renames this exists for
 land within seconds; past that the banner has been seen or dismissed, and
 putting a fresh one on screen for an event already dealt with would be worse
 than the stale name it corrected.
-- **A failed `KERN_PROCARGS2` read is not an absent agent.** `AgentLiveness`
-  finds most agents only by their arguments, because the cheap `p_comm` pass
-  misses them: pi, gemini and amp are `node`, aider is `python3`, and Claude
-  Code renames itself to its version (`p_comm` reads `2.1.272`, measured). Only
-  codex, crush, goose, opencode and cursor-agent ship a binary under their own
-  name and skip the read. That read is a size probe followed by a read,
-  and a live process can grow its argv in between, so it fails routinely on a
-  healthy one. `ProcessTable.arguments` flattened that to `[]`, which looks
-  exactly like a process that was searched and didn't match, so the minute
-  sweep declared a running Pi gone and deleted its marker — and nothing writes
-  a marker again until the shell reaches a prompt the agent is holding. The
-  session lost its spinner mid-turn (`refreshAgentActivity` reads a vanished
-  marker as the shell returning and clears busy) and never got it back.
-  Intermittent and total, but only *visible* on agents with no other channel:
-  `markBusy` from OSC 9;4 or a title marker never consults the agent marker, so
-  Claude and Codex kept their spinners and lost only resume, the agent badge and
-  the `onCommandFinished` suppression. Pi, aider, opencode and goose have
-  nothing but the marker-gated screen tier, so they lost everything. Fixed by
-  `ProcessTable.argumentsIfReadable` returning nil for "couldn't read", which
-  `locate` turns into `.unknown`, plus `sweepsBeforeDroppingMarker` so no single
-  reading can delete a marker. Anything else that decides an agent is gone owes
-  the same two guarantees.

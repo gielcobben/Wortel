@@ -484,6 +484,10 @@ targets:
       # and a server that really did outlive its session goes unnoticed. Pure
       # path handling either way, which is the shape of code that fails quietly.
       - path: Wortel/Processes/ProjectRoots.swift
+      # Who started which process, across launches. Keyed by pid and start
+      # time, and a start time that fails to round-trip exactly matches nothing
+      # without a word, which is what the test pins.
+      - path: Wortel/Processes/ProcessOwnersStore.swift
     scheme:
       testTargets:
         - WortelTests

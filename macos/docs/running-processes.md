@@ -74,7 +74,52 @@ buries the `:3000` someone typed into a browser. The row shows every port it
 holds that survives that filter, up to three so a name cannot be pushed off the
 row; the rest are in the tooltip.
 
+## A job belongs to its session
+
+A server started in a session is that session's for its whole life, and closing
+the session stops it. There is no mode in which the two drift apart on purpose.
+
+This had to be made true rather than assumed. Closing a session hangs up its
+shell, and a hang-up is advisory: `nohup`, `disown`, and any dev server that
+daemonises itself shrug it off, get reparented to launchd, and keep holding
+`:3000` with nothing on screen to say so. That is exactly how the four-day-old
+orphan above came to exist. The close sheet was already saying "Closing stops
+…", which was a promise nothing kept.
+
+Two pieces keep it:
+
+- **Ownership is sticky.** Ancestry answers "whose is this" only while the
+  process is still under the shell, and it forgets at the exact moment the
+  answer starts to matter. So every scan records each work process against its
+  session (`RunningJobs.recordingOwners`), keyed by pid *and start time*, since
+  a recycled pid is somebody else's process. A group that has left every shell
+  but holds a recorded process is claimed for its session and marked
+  `detached`. If that session is already gone it is an orphan that says whose it
+  was (`lastSessionID`), and skips the project-directory guesswork below, because
+  it is not a guess. The map is saved to `process-owners.json` beside `project-roots.json`
+  (`ProcessOwnersStore`) whenever it changes, because the keeper keeps shells, and
+  so their detached servers, alive across a relaunch, and without the record a
+  quit made strangers of them. Its start times are stored as seconds since the
+  reference date, `Date`'s own representation: seconds since 1970 do not survive
+  the round trip exactly, and a record a hair off matches nothing, silently.
+- **Closing stops the work.** `SessionManager.close` asks
+  `ProcessMonitor.stopWork(of:)` before it hangs up the shell. That scans fresh
+  (the last snapshot can be ten seconds old and miss the server started just
+  before ⌘W) and sends each job the same SIGTERM-then-SIGKILL as Quit. Agents are
+  not in it: the agent is the session, and its hang-up is the shell's. A session
+  closing is not counted as `process_quit`, which measures people choosing to.
+
+The close sheet also asks when the terminal itself sees nothing running. Ghostty
+only knows the foreground process, so a shell at its prompt with `bun dev &`
+behind it used to close without a word.
+
 ## Orphans
+
+Since the above, an orphan is the fallback, not the normal way a server is found:
+something from before this existed, a `setsid`, a session on the no-keeper path,
+or a server that left its shell and whose session closed before any scan saw it.
+The pill and popover are about one session, so an orphan no session owns is not
+listed there; one whose session is known is listed under it as detached.
 
 A process group with no live session above it, whose working directory sits
 inside a project Wortel has opened a session in.
@@ -141,8 +186,10 @@ The agent and the session shell are never killable, at any layer.
 | `Wortel/Processes/ProcessTable.swift` | The syscalls, and nothing else. `sysctl` for the table, `KERN_PROCARGS2` for argv, `proc_pid_rusage` for footprint, `proc_pidfdinfo` for LISTEN ports, `PROC_PIDVNODEPATHINFO` for cwd. |
 | `Wortel/Processes/RunningJobs.swift` | All the decisions: grouping, labelling, port filtering, orphan classification, the close-sheet copy. Pure, and pinned by `RunningJobsTests`. |
 | `Wortel/Processes/ProjectRoots.swift` | Which directories are specific enough to attribute an orphan to. |
-| `Wortel/Processes/ProcessMonitor.swift` | Cadence, the published snapshot, and the kill. |
-| `Wortel/UI/RunningJobsPopover.swift` | The toolbar popover. |
+| `Wortel/Processes/ProcessOwnersStore.swift` | Which session started which process, on disk, so a detached server is still its session's after a relaunch. |
+| `Wortel/Processes/ProcessMonitor.swift` | Cadence, the published snapshot, the ownership map, and the kill. |
+| `Wortel/UI/MainToolbar.swift` | The status pill, centred in the toolbar and about the selected session only: `bun dev :3000`, or `2 servers :3000 :5173`, from `RunningJobsSnapshot.status`. |
+| `Wortel/UI/RunningJobsPopover.swift` | The popover: that session's jobs as one flat list, hover Copy and Stop per row. |
 
 The split exists so `RunningJobs` can be handed a fixture: the syscall layer is
 untestable by construction, and everything that can silently be wrong lives next
@@ -198,6 +245,10 @@ rows until they did. A job that is the whole of its group still gets
   the shell itself and never reports the pid, so those sessions have no tree to
   walk and degrade to orphan scanning only. Fixing it means touching shell
   integration, which the cwd finding otherwise made unnecessary.
-- **`setsid`.** A process that leaves its session entirely is only findable as an
-  orphan, which is the correct outcome but means it is never attributed to the
-  session that started it while that session is still open.
+- **`setsid`.** A process that leaves its session before any scan has seen it
+  under the shell is only findable as an orphan. One that a scan did see first
+  stays its session's, detached.
+- **The ten-second window.** A server that leaves its shell and whose shell then
+  exits on its own (`exit`, not ⌘W) inside one scan interval was never recorded,
+  so it outlives the session as an orphan. ⌘W scans at the moment of closing
+  and is not affected.

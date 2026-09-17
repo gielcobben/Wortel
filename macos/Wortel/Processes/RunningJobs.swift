@@ -35,6 +35,31 @@ struct ProcessDetails {
         workingDirectory: ProcessTable.workingDirectory(of:))
 }
 
+/// One process, named so that a recycled pid cannot answer for it.
+///
+/// A pid alone is not an identity once the process behind it can exit: macOS
+/// hands the number out again, and "this pid belonged to that session" would
+/// then put somebody else's process on a session's list, and on its close.
+/// The start time is what a reused pid cannot also reuse.
+struct ProcessKey: Hashable, Sendable {
+    let pid: pid_t
+    let startedAt: Date
+
+    init(pid: pid_t, startedAt: Date) {
+        self.pid = pid
+        self.startedAt = startedAt
+    }
+
+    init(_ entry: ProcessEntry) {
+        self.init(pid: entry.pid, startedAt: entry.startedAt)
+    }
+}
+
+/// Which session started which process, as far as any scan has seen.
+///
+/// See `RunningJobs.recordingOwners`.
+typealias ProcessOwners = [ProcessKey: UUID]
+
 /// One thing a session is running: a process group, with the little that
 /// describes it.
 struct RunningJob: Identifiable, Equatable {
@@ -70,6 +95,16 @@ struct RunningJob: Identifiable, Equatable {
     /// The agent CLI's own group. Listed so the numbers add up (claude was
     /// 409 MB of one session's 1.39 GB) but never killable.
     let isAgent: Bool
+    /// Still this session's, but no longer under its shell.
+    ///
+    /// A `nohup`, a `disown`, or a server that daemonises itself leaves the
+    /// shell's tree and is reparented to launchd. It was started in this
+    /// session, a scan saw it there, and it stops when the session closes.
+    var detached = false
+    /// For an orphan: the session that started it, when a scan saw that
+    /// happen. That session is closed (or closing), which is exactly the case
+    /// where its servers have to be found without a shell to look under.
+    var lastSessionID: UUID?
 
     var id: pid_t { rootPID }
 
@@ -124,6 +159,16 @@ struct RunningJob: Identifiable, Equatable {
     var localURL: URL? {
         primaryPort.flatMap { URL(string: "http://localhost:\($0)") }
     }
+
+    /// The same job, claimed for a session it has drifted away from.
+    func attributed(to session: UUID) -> RunningJob {
+        var job = RunningJob(rootPID: rootPID, pgid: pgid, ownsGroup: ownsGroup,
+                             sessionID: session, label: label, pids: pids,
+                             footprint: footprint, ports: ports, startedAt: startedAt,
+                             workingDirectory: workingDirectory, isAgent: isAgent)
+        job.detached = true
+        return job
+    }
 }
 
 /// Everything running under Wortel right now.
@@ -137,6 +182,20 @@ struct RunningJobsSnapshot: Equatable {
 
     func jobs(for sessionID: UUID) -> [RunningJob] {
         jobs.filter { $0.sessionID == sessionID }
+    }
+
+    /// The part of the picture that is one session's: its jobs, agent included,
+    /// and anything it started that has already been filed as an orphan.
+    func scoped(to sessionID: UUID) -> RunningJobsSnapshot {
+        RunningJobsSnapshot(jobs: jobs(for: sessionID),
+                            orphans: orphans.filter { $0.lastSessionID == sessionID })
+    }
+
+    /// Everything closing this session has to stop: its work, detached or
+    /// not, and anything it started that a scan already filed as an orphan
+    /// because the session stopped being listed first.
+    func workToStop(for sessionID: UUID) -> [RunningJob] {
+        work(for: sessionID) + orphans.filter { $0.lastSessionID == sessionID }
     }
 
     /// The things someone actually started and might want to stop.
@@ -169,6 +228,43 @@ struct RunningJobsSnapshot: Equatable {
     }
 
     var isEmpty: Bool { jobs.isEmpty && orphans.isEmpty }
+
+    /// What the toolbar pill says, at a glance and without opening anything.
+    ///
+    /// The server is the headline because the server is what you come looking
+    /// for: one of them is named (`bun dev`), several are counted, and their
+    /// addresses ride alongside, because `:3000` is the fact most often wanted
+    /// from this whole feature. Work that serves nothing is only counted.
+    var status: RunningStatus {
+        let all = work + orphans
+        let serving = all.filter { $0.primaryPort != nil }
+        let ports = Array(Set(serving.compactMap(\.primaryPort))).sorted()
+        var shown = ports.prefix(RunningStatus.maxPorts).map { ":\($0)" }
+        if ports.count > RunningStatus.maxPorts {
+            shown.append("+\(ports.count - RunningStatus.maxPorts)")
+        }
+        switch serving.count {
+        case 0:
+            return RunningStatus(title: all.count == 1 ? all[0].label : "\(all.count) running",
+                                 ports: [], isServing: false)
+        case 1:
+            return RunningStatus(title: serving[0].label, ports: shown, isServing: true)
+        default:
+            return RunningStatus(title: "\(serving.count) servers", ports: shown, isServing: true)
+        }
+    }
+}
+
+/// The toolbar pill's content. See `RunningJobsSnapshot.status`.
+struct RunningStatus: Equatable {
+    /// Two addresses, then a count: past that the pill is a sentence, and the
+    /// popover is one click away.
+    static let maxPorts = 2
+
+    let title: String
+    let ports: [String]
+    /// Whether anything is listening, which is what turns the dot green.
+    let isServing: Bool
 }
 
 /// Turning a process table into the list of things a session is running.
@@ -268,12 +364,19 @@ enum RunningJobs {
     ///
     /// `excludedPGIDs` keeps Wortel and its keeper out of their own list; the
     /// caller passes its own group.
+    ///
+    /// `owners` is what earlier scans saw (`recordingOwners`). A group that has
+    /// left every shell's tree but holds a process one of them owned is still
+    /// that session's: listed under it as `detached` while the session is open,
+    /// and as an orphan carrying `lastSessionID` once it is not. Either way it
+    /// skips the orphan guesswork below, because it is not a guess.
     static func scan(
         table: [ProcessEntry],
         roots: [SessionProcessRoot],
         projectRoots: [String] = [],
         uid: uid_t = getuid(),
         excludedPGIDs: Set<pid_t> = [],
+        owners: ProcessOwners = [:],
         details: ProcessDetails = .live
     ) -> RunningJobsSnapshot {
         guard !table.isEmpty else { return .empty }
@@ -337,13 +440,79 @@ enum RunningJobs {
             }
         }
 
-        let orphans = orphans(
+        // What left a shell's tree but was seen starting in one. Before the
+        // orphan pass, so a server a session started never has to pass for a
+        // stray in a project directory to be found.
+        var owned: [RunningJob] = []
+        if !owners.isEmpty {
+            let open = Set(roots.map(\.sessionID))
+            for pgid in membersOf.keys.sorted() where !claimed.contains(pgid) {
+                guard let members = membersOf[pgid],
+                      members.allSatisfy({ $0.uid == uid }),
+                      let owner = members.lazy.compactMap({ owners[ProcessKey($0)] }).first
+                else { continue }
+                claimed.insert(pgid)
+                let shaped = RunningJobs.jobs(pgid: pgid, members: members, sessionID: nil,
+                                              isAgent: false, parentOf: parentOf,
+                                              details: details)
+                for var job in shaped {
+                    if open.contains(owner) {
+                        job = job.attributed(to: owner)
+                        jobs.append(job)
+                    } else {
+                        job.lastSessionID = owner
+                        owned.append(job)
+                    }
+                }
+            }
+        }
+
+        let orphans = owned + orphans(
             table: table, membersOf: membersOf, parentOf: parentOf, byPID: byPID,
             shellPIDs: shellPIDs, claimed: claimed, projectRoots: projectRoots,
             uid: uid, details: details)
 
         return RunningJobsSnapshot(jobs: jobs.sorted { $0.footprint > $1.footprint },
                                    orphans: orphans.sorted { $0.footprint > $1.footprint })
+    }
+
+    /// Servers first, lowest port first, because the server is what you open
+    /// this list to find and its port is how you find it. Everything else after
+    /// them, biggest first, since memory is the only thing that sets one build
+    /// helper apart from another.
+    static func partitioned(_ jobs: [RunningJob]) -> (servers: [RunningJob], others: [RunningJob]) {
+        let servers = jobs.filter { $0.primaryPort != nil }
+            .sorted { ($0.primaryPort ?? 0, $0.rootPID) < ($1.primaryPort ?? 0, $1.rootPID) }
+        let others = jobs.filter { $0.primaryPort == nil }
+            .sorted { ($0.footprint, $1.rootPID) > ($1.footprint, $0.rootPID) }
+        return (servers, others)
+    }
+
+    /// Carry forward who started what.
+    ///
+    /// Every process in a session's work is recorded against that session, and
+    /// every record whose process is gone (or whose pid now belongs to a
+    /// different start time) is dropped, so the map is never bigger than what
+    /// is running. Agents are left out: the agent is the session, and its HUP
+    /// is the shell's business.
+    ///
+    /// This is what makes a server belong to its session for its whole life.
+    /// Ancestry alone forgets the moment the server leaves the shell's tree,
+    /// which is precisely the moment it starts to matter: it is the server that
+    /// would otherwise outlive the session.
+    static func recordingOwners(_ snapshot: RunningJobsSnapshot,
+                                table: [ProcessEntry],
+                                previous: ProcessOwners) -> ProcessOwners {
+        let live = Dictionary(table.map { ($0.pid, ProcessKey($0)) },
+                              uniquingKeysWith: { first, _ in first })
+        var owners = previous.filter { live[$0.key.pid] == $0.key }
+        for job in snapshot.work {
+            guard let session = job.sessionID else { continue }
+            for pid in job.pids {
+                if let key = live[pid] { owners[key] = session }
+            }
+        }
+        return owners
     }
 
     /// Which process groups the session's agent occupies.

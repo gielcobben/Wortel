@@ -111,6 +111,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
+        // A fresh scan, not the last snapshot: closing silently stops what the
+        // session runs, and a server started in the last ten seconds is exactly
+        // the one a stale snapshot would miss.
+        manager.hasBackgroundWork = { [weak self] session in
+            !(self?.processes.scanNow().workToStop(for: session.id).isEmpty ?? true)
+        }
+        manager.stopSessionWork = { [weak self] session in
+            self?.processes.stopWork(of: session.id)
+        }
         processes.roots = { [weak manager] in manager?.processRoots ?? [] }
         processes.projectRoots = { [weak manager] in manager?.projectRoots ?? [] }
         processes.startSampling()
@@ -470,7 +479,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // than letting the sheet appear and then change its mind; if it finds
         // nothing nameable (no shell pid on the fallback path, a torn process
         // table) the original wording still stands.
-        let running = processes.scanNow().jobs(for: session.id)
+        // The agent too, which closing ends as well, plus anything the session
+        // started that has already left its shell.
+        let scanned = processes.scanNow()
+        let running = scanned.jobs(for: session.id)
+            + scanned.orphans.filter { $0.lastSessionID == session.id }
         alert.informativeText = RunningJobs.closeSummary(for: running)
             ?? "A process is still running in this session. Closing it will terminate the process."
         alert.addButton(withTitle: "Close")

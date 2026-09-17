@@ -33,6 +33,24 @@ final class ProcessMonitor {
     @ObservationIgnored private var activity: NSObjectProtocol?
     @ObservationIgnored private var scanning = false
 
+    /// Bumped by anything that makes an in-flight background scan stale: a
+    /// synchronous scan, or a job being stopped. A background scan that lands
+    /// after one of those carries an older picture, and publishing it would
+    /// put a stopped row back, or drop an ownership record the newer scan made.
+    @ObservationIgnored private var generation = 0
+
+    /// Who started what, carried from scan to scan and across launches. See
+    /// `RunningJobs.recordingOwners` and `ProcessOwnersStore`.
+    @ObservationIgnored private var owners: ProcessOwners = ProcessOwnersStore.load()
+
+    /// Take a scan's ownership map, writing it down only when it changed: a
+    /// scan every ten seconds that finds the same servers writes nothing.
+    private func adopt(_ updated: ProcessOwners) {
+        guard updated != owners else { return }
+        owners = updated
+        ProcessOwnersStore.save(updated)
+    }
+
     // MARK: - Cadence
 
     func startSampling() {
@@ -61,12 +79,17 @@ final class ProcessMonitor {
     func refresh() {
         guard !scanning else { return }
         scanning = true
-        let request = ScanRequest(roots: roots(), projectRoots: projectRoots())
+        let request = ScanRequest(roots: roots(), projectRoots: projectRoots(),
+                                  owners: owners)
+        let started = generation
         Task.detached(priority: .utility) {
             let result = request.run()
             await MainActor.run { [weak self] in
-                self?.snapshot = result
-                self?.scanning = false
+                guard let self else { return }
+                self.scanning = false
+                guard self.generation == started else { return }
+                self.adopt(result.owners)
+                self.snapshot = result.snapshot
             }
         }
     }
@@ -75,9 +98,27 @@ final class ProcessMonitor {
     /// has to name what closing a session will stop. It is milliseconds, and
     /// the alternative is a dialog that appears and then changes its mind.
     func scanNow() -> RunningJobsSnapshot {
-        let result = ScanRequest(roots: roots(), projectRoots: projectRoots()).run()
-        snapshot = result
-        return result
+        generation += 1
+        let result = ScanRequest(roots: roots(), projectRoots: projectRoots(),
+                                 owners: owners).run()
+        adopt(result.owners)
+        snapshot = result.snapshot
+        return result.snapshot
+    }
+
+    /// Stop everything a session started, because the session is closing.
+    ///
+    /// Closing only hangs up the shell, and a hang-up is advisory: `nohup`,
+    /// `disown`, and every dev server that daemonises itself shrug it off and
+    /// are reparented to launchd, still holding `:3000` with nothing on screen
+    /// to say so. The close sheet already promised "Closing stops …"; this is
+    /// what makes that true.
+    ///
+    /// Scanned fresh rather than read from the last snapshot, which can be ten
+    /// seconds old and so miss the server started just before ⌘W.
+    func stopWork(of sessionID: UUID) {
+        let doomed = scanNow().workToStop(for: sessionID)
+        for job in doomed { terminate(job) }
     }
 
     // MARK: - Quitting a job
@@ -97,6 +138,14 @@ final class ProcessMonitor {
     func quit(_ job: RunningJob) {
         guard job.isKillable, job.pgid > 1 else { return }
         Telemetry.capture(.processQuit(orphan: job.sessionID == nil))
+        terminate(job)
+    }
+
+    /// The signalling half of `quit`, without counting it as somebody choosing
+    /// to quit from the list: a session closing is not that.
+    private func terminate(_ job: RunningJob) {
+        guard job.isKillable, job.pgid > 1 else { return }
+        generation += 1
 
         // Only signal the group when this job *is* the group. One command can
         // start several servers into one group (`bun dev` fanning out to
@@ -157,14 +206,22 @@ final class ProcessMonitor {
 private struct ScanRequest: Sendable {
     let roots: [SessionProcessRoot]
     let projectRoots: [String]
+    let owners: ProcessOwners
 
-    func run() -> RunningJobsSnapshot {
-        RunningJobs.scan(
-            table: ProcessTable.snapshot(),
+    func run() -> (snapshot: RunningJobsSnapshot, owners: ProcessOwners) {
+        let table = ProcessTable.snapshot()
+        // An unreadable table claims nothing, and must not forget anything
+        // either: pruning against an empty table would drop every record.
+        guard !table.isEmpty else { return (.empty, owners) }
+        let snapshot = RunningJobs.scan(
+            table: table,
             roots: roots,
             projectRoots: projectRoots,
             // Wortel and its keeper must never appear in their own list.
-            excludedPGIDs: [getpgrp()])
+            excludedPGIDs: [getpgrp()],
+            owners: owners)
+        return (snapshot, RunningJobs.recordingOwners(snapshot, table: table,
+                                                       previous: owners))
     }
 }
 

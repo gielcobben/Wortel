@@ -51,6 +51,17 @@ final class SessionManager {
     /// asking.
     @ObservationIgnored var confirmClose: ((Session, @escaping (Bool) -> Void) -> Void)?
 
+    /// Whether a session has work running that the terminal itself cannot see:
+    /// a server behind the prompt (`bun dev &`), or one that has left the shell
+    /// altogether. Ghostty only knows about the foreground process, so a shell
+    /// idling at its prompt closes without a word while `:3000` goes with it.
+    @ObservationIgnored var hasBackgroundWork: ((Session) -> Bool)?
+
+    /// Stop everything a session started, as it closes. A session and the
+    /// servers it ran are one thing: closing it must not leave them running,
+    /// orphaned under launchd with nothing on screen to say so.
+    @ObservationIgnored var stopSessionWork: ((Session) -> Void)?
+
     /// A background session raised attention (a program asked for you — e.g.
     /// Claude Code emits OSC 777 on a permission/idle prompt, or a bell). The
     /// app layer turns this into a native macOS notification. `title`/`body`
@@ -1355,6 +1366,9 @@ final class SessionManager {
         // marker; drop it so a closed session isn't resumed on next launch.
         AgentResumeStore.remove(sessionID: session.id)
         let folder = session.folderPath
+        // Before the shell goes: while it is alive its jobs are found by
+        // ancestry, which needs no history at all.
+        stopSessionWork?(session)
         session.close()
         sessions.remove(at: index)
         // Closing the last session in a folder removes that section — including
@@ -1390,7 +1404,8 @@ final class SessionManager {
     /// Interactive close (menu / context menu / ⌘W): confirms first if the
     /// session still has a running process, otherwise closes immediately.
     func requestClose(_ session: Session) {
-        guard session.needsConfirmClose, let confirmClose else {
+        let needsConfirm = session.needsConfirmClose || hasBackgroundWork?(session) == true
+        guard needsConfirm, let confirmClose else {
             close(session)
             return
         }

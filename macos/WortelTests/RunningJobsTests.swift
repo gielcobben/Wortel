@@ -597,6 +597,157 @@ final class RunningJobsTests: XCTestCase {
                        "only the group with no session above it is an orphan")
     }
 
+    // MARK: - A job belongs to its session
+
+    /// The orphan's processes, as a scan saw them while they were still under
+    /// this session's shell.
+    private func owned(by session: UUID) -> ProcessOwners {
+        Dictionary(uniqueKeysWithValues: orphanTable
+            .filter { [38938, 38940, 38942].contains($0.pid) }
+            .map { (ProcessKey($0), session) })
+    }
+
+    /// `nohup bun dev &` leaves the shell's tree. It is still the session's.
+    func testADetachedServerStaysWithItsOpenSession() throws {
+        let snapshot = RunningJobs.scan(
+            table: orphanTable, roots: [root], projectRoots: [], uid: 501,
+            owners: owned(by: sessionID), details: details(extraArgv: orphanArgv))
+        let job = try XCTUnwrap(snapshot.jobs.first { $0.pgid == 38931 })
+        XCTAssertEqual(job.sessionID, sessionID,
+                       "it was started here, and a reparent does not change that")
+        XCTAssertTrue(job.detached)
+        XCTAssertTrue(snapshot.orphans.isEmpty,
+                      "and it is not also a stray, with or without a project root to match")
+        XCTAssertTrue(snapshot.workToStop(for: sessionID).contains(job))
+    }
+
+    /// Once its session is gone it is an orphan, but a known one: it skips the
+    /// project-directory and size guesswork, and it says whose it was, so the
+    /// session's close can still find it.
+    func testAServerOfAClosedSessionIsAnOrphanThatRemembers() throws {
+        let closed = UUID()
+        let snapshot = RunningJobs.scan(
+            table: orphanTable, roots: [root], projectRoots: [], uid: 501,
+            owners: owned(by: closed), details: details(extraArgv: orphanArgv))
+        let orphan = try XCTUnwrap(snapshot.orphans.first)
+        XCTAssertNil(orphan.sessionID)
+        XCTAssertEqual(orphan.lastSessionID, closed)
+        XCTAssertEqual(snapshot.workToStop(for: closed).map(\.pgid), [38931])
+        XCTAssertTrue(snapshot.workToStop(for: sessionID).allSatisfy { $0.pgid != 38931 },
+                      "closing a different session must never reach it")
+    }
+
+    /// A recycled pid is not the process that was recorded.
+    func testARecycledPidIsNotClaimed() {
+        let stale: ProcessOwners = [
+            ProcessKey(pid: 38938, startedAt: t0.addingTimeInterval(12)): sessionID,
+        ]
+        let snapshot = RunningJobs.scan(
+            table: orphanTable, roots: [root], projectRoots: [], uid: 501,
+            owners: stale, details: details(extraArgv: orphanArgv))
+        XCTAssertFalse(snapshot.jobs.contains { $0.pgid == 38931 },
+                       "same number, different start time: somebody else's process")
+        XCTAssertTrue(snapshot.orphans.isEmpty)
+    }
+
+    func testOwnersRecordWorkAndForgetWhatExited() {
+        let gone = ProcessKey(pid: 77777, startedAt: t0)
+        let snapshot = scan()
+        let owners = RunningJobs.recordingOwners(snapshot, table: table,
+                                                 previous: [gone: UUID()])
+        XCTAssertNil(owners[gone], "a process that is gone is not remembered")
+        XCTAssertEqual(owners[ProcessKey(pid: 15618, startedAt: t0.addingTimeInterval(5))],
+                       sessionID, "every process of a session's work is recorded")
+        XCTAssertNil(owners[ProcessKey(pid: 37616, startedAt: t0)],
+                     "the agent is the session, not work it started")
+    }
+
+    /// The pill is about the session on screen. Another session's servers, and
+    /// leftovers nobody owns, are not this session's news.
+    func testScopingKeepsOnlyThisSessionsWork() {
+        let other = UUID()
+        let snapshot = RunningJobs.scan(
+            table: orphanTable, roots: [root], projectRoots: [], uid: 501,
+            owners: owned(by: other), details: details(extraArgv: orphanArgv))
+        XCTAssertEqual(Set(snapshot.scoped(to: sessionID).work.map(\.pgid)), [15614, 15631])
+        XCTAssertTrue(snapshot.scoped(to: sessionID).orphans.isEmpty)
+        XCTAssertEqual(snapshot.scoped(to: other).orphans.map(\.pgid), [38931])
+        XCTAssertTrue(snapshot.scoped(to: UUID()).isEmpty)
+    }
+
+    /// A detached server's only link to its session after a relaunch. The start
+    /// time has to come back exactly, microseconds included, or the record
+    /// silently matches nothing.
+    func testOwnershipSurvivesARoundTripToDisk() throws {
+        // Built the way `ProcessTable` builds one, from seconds and microseconds.
+        var owners: ProcessOwners = [:]
+        for usec in stride(from: 0, to: 1_000_000, by: 7_919) {
+            let started = Date(timeIntervalSince1970: 1_789_000_000 + Double(usec) / 1_000_000)
+            owners[ProcessKey(pid: pid_t(40_000 + usec % 1000), startedAt: started)] = sessionID
+        }
+        owners.merge([
+            ProcessKey(pid: 38938, startedAt: t0): sessionID,
+            ProcessKey(pid: 15618, startedAt: t0.addingTimeInterval(5)): UUID(),
+        ]) { first, _ in first }
+        let data = try XCTUnwrap(ProcessOwnersStore.encode(owners))
+        XCTAssertEqual(ProcessOwnersStore.decode(data), owners)
+        XCTAssertEqual(ProcessOwnersStore.decode(Data("not json".utf8)), [:],
+                       "a damaged file forgets ownership, it does not fail the launch")
+    }
+
+    /// Servers lead, by port; everything else follows, by size.
+    func testServersAreListedBeforeOtherProcesses() {
+        func job(_ pid: pid_t, port: Int?, bytes: UInt64) -> RunningJob {
+            RunningJob(rootPID: pid, pgid: pid, ownsGroup: true, sessionID: sessionID,
+                       label: "j\(pid)", pids: [pid], footprint: bytes,
+                       ports: port.map { [$0] } ?? [], startedAt: t0,
+                       workingDirectory: nil, isAgent: false)
+        }
+        let (servers, others) = RunningJobs.partitioned([
+            job(1, port: nil, bytes: 62_000_000),
+            job(2, port: 4001, bytes: 14_000_000),
+            job(3, port: 4000, bytes: 15_000_000),
+            job(4, port: nil, bytes: 90_000_000),
+        ])
+        XCTAssertEqual(servers.map(\.rootPID), [3, 2], "lowest port first")
+        XCTAssertEqual(others.map(\.rootPID), [4, 1], "biggest first")
+    }
+
+    // MARK: - The pill
+
+    func testThePillNamesALoneServer() {
+        let status = scan().status
+        XCTAssertEqual(status.title, "bun dev:web",
+                       "one server is named; bun dev:images serves nothing and is not a server")
+        XCTAssertEqual(status.ports, [":3000"])
+        XCTAssertTrue(status.isServing)
+    }
+
+    func testThePillCountsSeveralServersAndCapsTheirPorts() {
+        func server(_ pid: pid_t, _ port: Int) -> RunningJob {
+            RunningJob(rootPID: pid, pgid: pid, ownsGroup: true, sessionID: sessionID,
+                       label: "s\(pid)", pids: [pid], footprint: 0, ports: [port],
+                       startedAt: t0, workingDirectory: nil, isAgent: false)
+        }
+        let snapshot = RunningJobsSnapshot(
+            jobs: [server(1, 5173), server(2, 3000), server(3, 8080)], orphans: [])
+        XCTAssertEqual(snapshot.status.title, "3 servers")
+        XCTAssertEqual(snapshot.status.ports, [":3000", ":5173", "+1"])
+    }
+
+    func testThePillOnlyCountsWorkThatServesNothing() {
+        let quiet = RunningJob(rootPID: 10, pgid: 10, ownsGroup: true, sessionID: sessionID,
+                               label: "tsc --watch", pids: [10], footprint: 0, ports: [],
+                               startedAt: t0, workingDirectory: nil, isAgent: false)
+        let other = RunningJob(rootPID: 11, pgid: 11, ownsGroup: true, sessionID: sessionID,
+                           label: "make", pids: [11], footprint: 0, ports: [],
+                           startedAt: t0, workingDirectory: nil, isAgent: false)
+        XCTAssertEqual(RunningJobsSnapshot(jobs: [quiet], orphans: []).status.title, "tsc --watch")
+        let two = RunningJobsSnapshot(jobs: [quiet, other], orphans: []).status
+        XCTAssertEqual(two.title, "2 running")
+        XCTAssertFalse(two.isServing)
+    }
+
     // MARK: - Fail-safe
 
     func testAnUnreadableTableClaimsNothing() {

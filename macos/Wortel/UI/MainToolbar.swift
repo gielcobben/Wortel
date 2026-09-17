@@ -47,8 +47,12 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// What the sessions are still running. Drives whether the item exists at
     /// all, and fills the popover it opens.
     private let processes: ProcessMonitor
-    /// Names for the popover's section headings. Set by AppDelegate.
-    var sessionName: (UUID) -> String? = { _ in nil }
+    /// The session on screen. The pill and its popover are about this session
+    /// only: a server is a session's, and a toolbar that showed every session's
+    /// servers whichever one you were in said nothing about the one you were in.
+    /// Read inside observation tracking, so switching session re-draws the pill.
+    /// Set by AppDelegate.
+    var selectedSession: () -> UUID? = { nil }
     /// Held so the control can be re-synced when the panel is opened, closed, or
     /// switched from anywhere else — ⌘⌥G, ⌘⌥L, a divider drag, a session switch.
     private weak var paneControl: NSSegmentedControl?
@@ -108,6 +112,15 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private weak var gitMenuItem: NSToolbarItem?
     private weak var runningJobsItem: NSToolbarItem?
     private weak var runningJobsButton: NSButton?
+    /// The pill's width, set from its content plus `chipPadding` like the branch
+    /// chip's. Left to the bezel, the toolbar sized the capsule on its own terms
+    /// and the title sat off centre inside it. Held strongly for the same reason
+    /// as `branchWidthConstraint`.
+    private var runningJobsWidthConstraint: NSLayoutConstraint?
+    /// What the pill last drew. The title is an attributed string with an image
+    /// in it, and attachments compare by identity, so comparing titles said
+    /// "changed" on every scan and re-measured the pill every ten seconds.
+    private var runningJobsDrawnStatus: RunningStatus?
     /// The open jobs popover, kept so a second click doesn't stack another.
     private var runningJobsPopover: NSPopover?
     /// The chip stops growing here and truncates the branch name instead — the
@@ -269,12 +282,12 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private func runningJobsMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let snapshot = processes.snapshot
+        let snapshot = runningJobsSnapshot
         for job in snapshot.work + snapshot.orphans {
             let port = job.primaryPort.map { " (:\($0))" } ?? ""
             let size = RunningJobsList.size(job.footprint)
             let title = job.isKillable
-                ? "Quit \(job.label)\(port), \(size)"
+                ? "Stop \(job.label)\(port), \(size)"
                 : "\(job.label)\(port), \(size)"
             let entry = ClosureMenuItem(title: title) { [weak self] in
                 guard job.isKillable else { return }
@@ -697,7 +710,15 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     /// you to ignore it, and this is meant to be noticed on the days it appears.
     /// Agents alone are not "running something" — that is just having sessions
     /// open, and it would put this item in the toolbar permanently.
-    private var showsRunningJobsItem: Bool { processes.snapshot.hasWork }
+    private var showsRunningJobsItem: Bool { runningJobsSnapshot.hasWork }
+
+    /// What the selected session is running, and anything it started that has
+    /// already left. Leftovers nobody owns are not in it: they would put the
+    /// pill in every session, which is the thing this scoping exists to stop.
+    private var runningJobsSnapshot: RunningJobsSnapshot {
+        guard let id = selectedSession() else { return .empty }
+        return processes.snapshot.scoped(to: id)
+    }
 
     private func syncProcessItem() {
         guard let toolbar else { return }
@@ -725,34 +746,85 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         updateMenuForms()
     }
 
-    /// One glyph, always the same one.
+    /// A status pill, the way Xcode's activity view and Proxyman's "Listening
+    /// on" capsule do it: the state itself, in the toolbar, not an icon that
+    /// stands for it.
     ///
-    /// It used to swap between a bolt and broadcast rings depending on whether
-    /// anything held a port, which was the wrong axis twice over. Changing the
-    /// silhouette makes the item harder to find, and nobody was going to learn
-    /// that a bolt means "running but not serving" — a distinction the list
-    /// already draws properly, with a green dot and a port badge per row.
+    /// This used to be one glyph (`aqi.medium`) that carried no state, on the
+    /// reasoning that the item only exists while something runs. True, but it
+    /// made the one fact people open this for, which port, cost a click every
+    /// time. `bun dev :3000` answers it where you are already looking.
     ///
-    /// The glyph carries no state because it does not have to: the item only
-    /// exists when something is running, so its presence is the signal and one
-    /// click is the detail. A dot field rather than an object, because this is
-    /// ambient load rather than a thing, and because nothing else in this
-    /// toolbar looks remotely like it.
-    private static let runningJobsSymbol = "aqi.medium"
-
+    /// The dot is the same green as the rows' dot, so "listening" means one
+    /// thing in both places.
     private func updateRunningJobsButton() {
         guard let button = runningJobsButton else { return }
-        let snapshot = processes.snapshot
-        button.image = NSImage(systemSymbolName: Self.runningJobsSymbol,
-                               accessibilityDescription: "Running")
+        let snapshot = runningJobsSnapshot
+        let status = snapshot.status
+        if status != runningJobsDrawnStatus {
+            runningJobsDrawnStatus = status
+            button.attributedTitle = Self.runningJobsTitle(status)
+            // Measure unconstrained, then pin: the same move as the branch chip,
+            // so the bezel centres the content with equal air either side.
+            runningJobsWidthConstraint?.isActive = false
+            runningJobsWidthConstraint?.constant = ceil(button.fittingSize.width) + Self.chipPadding
+            runningJobsWidthConstraint?.isActive = true
+        }
+        let spoken = ([status.title] + status.ports).joined(separator: " ")
+        button.setAccessibilityLabel("Running: \(spoken)")
+
         let count = snapshot.work.count + snapshot.orphans.count
         let noun = count == 1 ? "job" : "jobs"
-        var tip = "\(count) \(noun) running in your sessions"
-        if !snapshot.orphans.isEmpty {
-            tip += ", \(snapshot.orphans.count) with no session left"
-        }
-        button.toolTip = tip
+        button.toolTip = "\(count) \(noun) running in this session"
         runningJobsItem?.toolTip = button.toolTip
+    }
+
+    /// The longest title the pill carries before it gives way to an ellipsis.
+    /// Counted in characters rather than measured: a label is a command line,
+    /// and the addresses after it are the part that must never be the one cut.
+    private static let maxRunningTitleLength = 22
+
+    private static func runningJobsTitle(_ status: RunningStatus) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+        let result = NSMutableAttributedString()
+
+        let dotColor: NSColor = status.isServing ? .systemGreen : .tertiaryLabelColor
+        if let dot = NSImage(systemSymbolName: status.isServing ? "circle.fill" : "circle",
+                             accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 7, weight: .regular)
+                .applying(.init(paletteColors: [dotColor]))) {
+            let attachment = NSTextAttachment()
+            attachment.image = dot
+            // Centred on the cap height, same as the branch chip's glyph.
+            attachment.bounds = CGRect(
+                x: 0, y: (font.capHeight - dot.size.height) / 2,
+                width: dot.size.width, height: dot.size.height)
+            result.append(NSAttributedString(attachment: attachment))
+            result.append(NSAttributedString(string: "  ", attributes: [.font: font]))
+        }
+
+        var title = status.title
+        if title.count > maxRunningTitleLength {
+            title = String(title.prefix(maxRunningTitleLength - 1)) + "\u{2026}"
+        }
+        result.append(NSAttributedString(string: title, attributes: [
+            .font: font,
+            .foregroundColor: NSColor.labelColor,
+        ]))
+
+        if !status.ports.isEmpty {
+            // A port is an address: monospaced digits so `:3000` and `:5173`
+            // hold their width as the list changes, and secondary so the name
+            // stays the headline.
+            result.append(NSAttributedString(
+                string: "  " + status.ports.joined(separator: " "),
+                attributes: [
+                    .font: NSFont.monospacedDigitSystemFont(
+                        ofSize: NSFont.systemFontSize, weight: .regular),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]))
+        }
+        return result
     }
 
     /// Re-arming observation of the scan, so the item appears and disappears with
@@ -760,6 +832,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
     private func observeProcesses() {
         withObservationTracking {
             _ = processes.snapshot
+            _ = selectedSession()
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -779,11 +852,12 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
         Telemetry.capture(.processesShown(
             jobs: CountBucket(processes.snapshot.work.count),
             orphans: CountBucket(processes.snapshot.orphans.count)))
+        guard let session = selectedSession() else { return }
         let popover = NSPopover()
         popover.behavior = .transient
         let list = RunningJobsList(
             monitor: processes,
-            sessionName: { [weak self] in self?.sessionName($0) },
+            session: session,
             dismiss: { [weak self] in self?.runningJobsPopover?.performClose(nil) })
         let host = NSHostingController(rootView: list)
         host.sizingOptions = [.preferredContentSize]
@@ -956,12 +1030,19 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate, NSPopoverDelegate 
             cachedFixedSectionWidth = nil // this item is one of the two it measures
             return item
         case .runningJobs:
-            // Same shape as the "···" button: one narrow icon whose click opens a
-            // popover. Narrow so it never widens the section enough to push
-            // anything into the toolbar's `»` menu.
+            // A capsule carrying its own status (see `updateRunningJobsButton`),
+            // built like the branch chip: a real NSButton so the whole pill
+            // takes the click. Its title is capped in characters, so it can
+            // never widen the content section enough to push the repo controls
+            // into `»`.
             let button = NSButton(title: "", target: self, action: #selector(openRunningJobs))
             button.bezelStyle = .toolbar
-            button.imagePosition = .imageOnly
+            button.imagePosition = .noImage
+            button.lineBreakMode = .byTruncatingTail
+            let width = button.widthAnchor.constraint(equalToConstant: 0)
+            runningJobsWidthConstraint = width
+            // A fresh button has drawn nothing, whatever the last one showed.
+            runningJobsDrawnStatus = nil
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.view = button
             item.label = "Running"

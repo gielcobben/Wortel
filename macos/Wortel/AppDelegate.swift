@@ -252,14 +252,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func installToolbar(on window: NSWindow, splitView: NSSplitView) {
         let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel,
                                            processes: processes)
-        delegate.sessionName = { [weak self] id in
-            self?.manager.sessions.first { $0.id == id }?.leafName
-        }
+        delegate.selectedSession = { [weak self] in self?.manager.selectedID }
         toolbarDelegate = delegate
         let toolbar = NSToolbar(identifier: "wortel.main")
         toolbar.delegate = delegate
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
+        // The running pill sits in the middle of the window, where Xcode keeps
+        // its activity view: status, not a control among controls.
+        toolbar.centeredItemIdentifiers = [.runningJobs]
         // The delegate inserts and removes the branch item as the panel opens and
         // closes, so it needs the toolbar it's the delegate of.
         delegate.toolbar = toolbar

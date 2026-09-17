@@ -1,32 +1,36 @@
 import AppKit
 import SwiftUI
 
-/// What the sessions are running, and a way to stop any of it.
+/// What the session on screen is running, and a way to stop any of it.
 ///
-/// Deliberately the same list as the branch switcher: caption section headings,
-/// callout rows, a row inset the highlight sits inside, and the trailing detail
-/// in tertiary caption. Two popovers off the same toolbar that answered their
-/// questions in two different visual languages read as two different apps.
+/// One flat list, no headings. Every row is this session's: it was started
+/// here, it is listed here, and closing the session stops it, so a heading
+/// naming the session would only repeat the sidebar. Earlier versions grouped
+/// by session because they listed every session's servers at once; binding
+/// servers to their session removed the reason for the grouping.
 ///
-/// The editing is the design. The first version listed everything it could see,
-/// and on a real machine that was eleven `claude` rows and five `zsh -l` rows
-/// with the two dev servers it exists for buried in the middle. Only work is
-/// listed; agents get one accounting line at the bottom; sessions running
-/// nothing are not mentioned.
+/// Leftovers that no session owns any more are not listed. They belong to no
+/// session, so they have no place in a list that is about one, and they only
+/// come from before servers were bound to their sessions (or from a `setsid`).
+///
+/// Laid out with room, the way Proxyman's and Xcode's status popovers are: a
+/// header, two-line rows whose second line is the address, and controls that
+/// are always where you expect them. The first cut borrowed the branch
+/// switcher's dense single-line rows, and a list of two servers read as cramped
+/// rather than calm.
 struct RunningJobsList: View {
     let monitor: ProcessMonitor
-    /// Sessions are named in `SessionManager`; this view only needs to print
-    /// them, so it takes a lookup rather than the whole manager.
-    let sessionName: (UUID) -> String?
+    /// The session this popover is about.
+    let session: UUID
     let dismiss: () -> Void
 
-    /// A touch wider than the branch list's 300: these rows carry a name, a port
-    /// and a size where that one carries a name and an upstream.
-    static let width: CGFloat = 330
+    static let width: CGFloat = 360
 
-    /// Roughly eight rows, same as the branch list. Tall enough to browse, short
-    /// enough not to become the tallest thing on screen.
-    static let maxListHeight: CGFloat = 264
+    /// About five rows before it scrolls.
+    static let maxListHeight: CGFloat = 300
+
+    /// The outer margin everything lines up on: header, rows' content, footer.
+    static let inset: CGFloat = 16
 
     /// The row under the pointer, by job id.
     ///
@@ -34,100 +38,123 @@ struct RunningJobsList: View {
     /// can share one, and keying the highlight on it lit both at once.
     @State private var hovered: pid_t?
 
-    private var snapshot: RunningJobsSnapshot { monitor.snapshot }
+    /// This session's jobs, and what it started that has already been filed
+    /// as an orphan (it is still this session's to stop).
+    private var snapshot: RunningJobsSnapshot { monitor.snapshot.scoped(to: session) }
 
-    /// Sessions that are actually running something, biggest first.
-    private var sections: [(id: UUID, name: String, jobs: [RunningJob])] {
-        var seen: Set<UUID> = []
-        var sections: [(id: UUID, name: String, jobs: [RunningJob])] = []
-        for job in snapshot.work {
-            guard let id = job.sessionID, seen.insert(id).inserted else { continue }
-            sections.append((id, sessionName(id) ?? "Session", snapshot.work(for: id)))
-        }
-        return sections
-    }
+    /// This session's work, detached or not.
+    private var rows: [RunningJob] { snapshot.work + snapshot.orphans }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if snapshot.hasWork {
+            header
+
+            if rows.isEmpty {
+                Text("Nothing running in this session")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(sections, id: \.id) { group in
-                            section(group.name, jobs: group.jobs, showsDetail: false)
+                    VStack(alignment: .leading, spacing: 2) {
+                        let (servers, others) = RunningJobs.partitioned(rows)
+                        ForEach(servers) { job in row(job) }
+                        if !servers.isEmpty, !others.isEmpty {
+                            // A heading only when there are two kinds to tell
+                            // apart; a list of one kind is its own heading.
+                            Text("Other processes")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                                .padding(.horizontal, 10)
+                                .padding(.top, 10)
+                                .padding(.bottom, 2)
                         }
-                        section("Not attached to a session",
-                                jobs: snapshot.orphans, showsDetail: true)
+                        ForEach(others) { job in row(job) }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 8)
                 }
                 .frame(maxHeight: Self.maxListHeight)
-            } else {
-                Text("Nothing running")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
             }
 
             if !snapshot.agents.isEmpty {
                 Divider()
+                    .padding(.horizontal, Self.inset)
                 agentFooter
             }
         }
         .frame(width: Self.width)
     }
 
-    /// One accounting line, so leaving the agents out of the list above doesn't
-    /// quietly leave three gigabytes unexplained.
+    private func row(_ job: RunningJob) -> some View {
+        JobRow(job: job,
+               isHighlighted: hovered == job.id,
+               open: { open(job) },
+               quit: { monitor.quit(job) },
+               hover: { inside in
+                   if inside {
+                       hovered = job.id
+                   } else if hovered == job.id {
+                       // Only if it is still ours: the enter
+                       // for the next row arrives before this
+                       // row's exit, and clearing
+                       // unconditionally blanks the highlight
+                       // as the pointer slides down the list.
+                       hovered = nil
+                   }
+               })
+    }
+
+    /// What this is and what it costs, before the detail.
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(verbatim: headline)
+                .font(.system(size: 13, weight: .semibold))
+            Spacer(minLength: 8)
+            if !rows.isEmpty {
+                Text(verbatim: RunningJobsList.size(rows.reduce(0) { $0 + $1.footprint }))
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, Self.inset)
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+    }
+
+    private var headline: String {
+        let serving = rows.filter { $0.primaryPort != nil }.count
+        let other = rows.count - serving
+        switch (serving, other) {
+        case (0, 0): return "Running"
+        case (0, _): return other == 1 ? "1 job running" : "\(other) jobs running"
+        case (_, 0): return serving == 1 ? "1 server running" : "\(serving) servers running"
+        default:
+            let servers = serving == 1 ? "1 server" : "\(serving) servers"
+            let jobs = other == 1 ? "1 job" : "\(other) jobs"
+            return "\(servers), \(jobs)"
+        }
+    }
+
+    /// One accounting line, so leaving the agent out of the list above doesn't
+    /// quietly leave its memory unexplained.
     private var agentFooter: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
             Text(verbatim: snapshot.agents.count == 1
-                 ? "1 agent" : "\(snapshot.agents.count) agents")
+                 ? "Agent" : "\(snapshot.agents.count) agents")
             Spacer(minLength: 8)
             Text(verbatim: RunningJobsList.size(snapshot.agentFootprint))
                 .monospacedDigit()
         }
-        .font(.caption)
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-    }
-
-    @ViewBuilder
-    private func section(_ title: String, jobs: [RunningJob],
-                         showsDetail: Bool) -> some View {
-        if !jobs.isEmpty {
-            // A session can be named from its first prompt, so this heading is
-            // sometimes an entire sentence. It gets one line and an ellipsis
-            // rather than running to the edge of the popover.
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.top, 6)
-                .padding(.bottom, 2)
-            ForEach(jobs) { job in
-                JobRow(job: job,
-                       showsDetail: showsDetail,
-                       isHighlighted: hovered == job.id,
-                       open: { open(job) },
-                       quit: { monitor.quit(job) },
-                       hover: { inside in
-                           if inside {
-                               hovered = job.id
-                           } else if hovered == job.id {
-                               // Only if it is still ours: the enter for the next
-                               // row arrives before this row's exit, and clearing
-                               // unconditionally blanks the highlight as the
-                               // pointer slides down the list.
-                               hovered = nil
-                           }
-                       })
-            }
-        }
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, Self.inset)
+        .padding(.vertical, 11)
     }
 
     /// Hand the address to the browser and get out of the way: you clicked
@@ -141,117 +168,135 @@ struct RunningJobsList: View {
     static func size(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
     }
-
-    /// Compact and deliberately coarse. "4d" is the point being made about an
-    /// orphan; "4d 2h 11m" is not.
-    static func age(since date: Date, now: Date = Date()) -> String {
-        let seconds = max(0, now.timeIntervalSince(date))
-        if seconds < 90 { return "\(Int(seconds))s" }
-        if seconds < 3600 { return "\(Int(seconds / 60))m" }
-        if seconds < 86400 { return "\(Int(seconds / 3600))h" }
-        return "\(Int(seconds / 86400))d"
-    }
 }
 
-/// One job. Metrics deliberately identical to `BranchOptionRow`.
+/// One job: its name, and underneath, where it is and what it costs.
 private struct JobRow: View {
     let job: RunningJob
-    let showsDetail: Bool
     let isHighlighted: Bool
     let open: () -> Void
     let quit: () -> Void
     let hover: (Bool) -> Void
 
+    /// Briefly true after Copy, so the button says it worked.
+    @State private var copied = false
+
     /// Whether clicking the row goes anywhere.
     private var isOpenable: Bool { job.localURL != nil }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .center, spacing: 10) {
             // Serving something, or merely running. The one bit of state worth a
             // glyph: a build and a web server look identical in a list of names.
-            Image(systemName: job.primaryPort != nil ? "circle.fill" : "circle")
-                .font(.system(size: 7))
-                .foregroundStyle(dotStyle)
-                .frame(width: 12)
+            Circle()
+                .fill(job.primaryPort != nil
+                      ? AnyShapeStyle(Color(nsColor: .systemGreen))
+                      : AnyShapeStyle(.quaternary))
+                .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
                 // Tail, not middle: a command reads from the left, and middle
                 // truncation turned `quick.js serve dist --dir …` into
                 // `quick.js serve di…-chat-prototype`, which names nothing.
                 Text(verbatim: job.label)
+                    .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                if showsDetail, let detail {
-                    Text(verbatim: detail)
-                        .font(.caption)
-                        .foregroundStyle(secondaryStyle)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+                subtitle
             }
-            // **No layout priority.** The label used to claim it, which left the
-            // port nothing to lay out in: `:13337` came out stacked one digit per
-            // line down the row. The label is the only thing here that can
+            // **No layout priority.** The name is the only thing here that can
             // usefully shrink, so it is the one that gives way.
             .frame(maxWidth: .infinity, alignment: .leading)
+            // One sentence for VoiceOver rather than a name, an address, a size
+            // and two middle dots read out as separate fragments. The buttons
+            // stay their own elements beside it.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(spokenDescription)
+            .accessibilityAddTraits(isOpenable ? .isButton : [])
+            .accessibilityHint(isOpenable ? "Opens in your browser" : "")
+            .accessibilityAction { if isOpenable { open() } }
 
-            Spacer(minLength: 8)
-
-            if !job.shownPorts.isEmpty {
-                // Every port it holds, not just the lowest. One row can cover a
-                // job serving several, and naming one of them hid the others.
-                //
-                // `Text(":\(port)")` reads as a LocalizedStringKey and formats
-                // the number for the locale, which is how :3000 came out as
-                // ":3,000". A port is an address, not a quantity.
-                HStack(spacing: 2) {
-                    Text(verbatim: job.shownPorts.map { ":\($0)" }.joined(separator: " "))
-                        .font(.caption.monospacedDigit())
-                    // Only while pointed at, so a list at rest stays a list of
-                    // facts rather than a column of buttons.
-                    if isHighlighted, isOpenable {
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 8, weight: .semibold))
-                    }
+            HStack(spacing: 2) {
+                if let address = job.localAddress {
+                    RowIconButton(symbol: copied ? "checkmark" : "doc.on.doc",
+                                  label: "Copy \(address)") { copy(address) }
                 }
-                // An address is indivisible: it wraps or truncates into
-                // nonsense, so it takes its width before anything else does.
-                .fixedSize()
-                .layoutPriority(2)
-                .foregroundStyle(secondaryStyle)
+                if job.isKillable {
+                    RowIconButton(symbol: "stop.fill", label: "Stop \(job.label)",
+                                  isDestructive: true, action: quit)
+                }
             }
-
-            trailing
-                .font(.caption.monospacedDigit())
-                .fixedSize()
-                .frame(width: 58, alignment: .trailing)
-                .layoutPriority(2)
+            // Quiet at rest, full strength under the pointer. Present either way,
+            // so nothing shifts as the pointer moves down the list.
+            .opacity(isHighlighted ? 1 : 0.35)
         }
-        .font(.callout)
-        .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
         .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .background {
-            if isHighlighted {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.accentColor)
-                    .padding(.horizontal, 6)
-            }
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(isHighlighted ? 0.06 : 0))
         }
+        .animation(.easeOut(duration: 0.12), value: isHighlighted)
         // No cursor change. A pointing hand over a list row is a web idiom:
         // macOS keeps the arrow over clickable rows everywhere, Finder and Xcode
         // included, and says "this does something" with the highlight instead.
-        // It was also a `push()`/`pop()` pair that a row disappearing mid-hover
-        // would leave unbalanced, which is a cursor stuck app-wide.
         .onHover { hover($0) }
-        // Left-click opens; the Quit button above keeps its own click because it
-        // is a real Button drawn over this.
+        // Left-click opens; the buttons keep their own clicks because they are
+        // real Buttons drawn over this.
         .onTapGesture { if isOpenable { open() } }
         .overlay(RightClickCatcher(onRightClick: {}, makeMenu: makeMenu))
         .help(tooltip)
+    }
+
+    /// Where it is, what it costs, and whether it has left the shell.
+    private var subtitle: some View {
+        HStack(spacing: 5) {
+            if let address = job.localAddress {
+                // Every port it holds, not just the lowest: one row can serve
+                // several, and naming one of them hid the others.
+                //
+                // Verbatim, because `Text(":\(port)")` formats the number for
+                // the locale, which is how :3000 came out as ":3,000".
+                let extra = job.shownPorts.filter { $0 != job.primaryPort }
+                Text(verbatim: ([address] + extra.map { ":\($0)" }).joined(separator: " "))
+                    .foregroundStyle(isHighlighted && isOpenable
+                                     ? AnyShapeStyle(Color.accentColor)
+                                     : AnyShapeStyle(.secondary))
+                    // An address is indivisible: it takes its width first.
+                    .fixedSize()
+                    .layoutPriority(1)
+                dot
+            }
+            Text(verbatim: RunningJobsList.size(job.footprint))
+            if job.detached || job.lastSessionID != nil {
+                dot
+                Text("Detached")
+                    .lineLimit(1)
+            }
+        }
+        .font(.system(size: 11.5).monospacedDigit())
+        .foregroundStyle(.tertiary)
+    }
+
+    /// "vite dev, port 3000, 14.8 MB, detached from the shell." Ports spelled
+    /// as ports, because ":3000" read aloud is "colon three thousand".
+    private var spokenDescription: String {
+        var parts = [job.label]
+        let ports = job.shownPorts
+        if !ports.isEmpty {
+            parts.append((ports.count == 1 ? "port " : "ports ")
+                         + ports.map(String.init).joined(separator: ", "))
+        }
+        parts.append(RunningJobsList.size(job.footprint))
+        if job.detached || job.lastSessionID != nil { parts.append("detached from the shell") }
+        return parts.joined(separator: ", ")
+    }
+
+    private var dot: some View {
+        Text(verbatim: "\u{00B7}").accessibilityHidden(true)
     }
 
     /// Everything you might want to do with a listening process, including the
@@ -280,7 +325,7 @@ private struct JobRow: View {
         }
         if job.isKillable {
             if !menu.items.isEmpty { menu.addItem(.separator()) }
-            menu.addItem(ClosureMenuItem(title: "Quit", handler: quit))
+            menu.addItem(ClosureMenuItem(title: "Stop", handler: quit))
         }
         if menu.items.isEmpty {
             let none = NSMenuItem(title: "Nothing to do", action: nil, keyEquivalent: "")
@@ -290,50 +335,48 @@ private struct JobRow: View {
         return menu
     }
 
-    /// The size, or the way to stop it. Swapped rather than shown side by side:
-    /// a fixed-width slot keeps the column from shifting under the pointer, and
-    /// a row that always shows a button reads as a form to fill in.
-    @ViewBuilder
-    private var trailing: some View {
-        if isHighlighted, job.isKillable {
-            Button("Quit", action: quit)
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .fontWeight(.medium)
-                .accessibilityLabel("Quit \(job.label)")
-        } else {
-            Text(verbatim: RunningJobsList.size(job.footprint))
-                .foregroundStyle(secondaryStyle)
-        }
-    }
-
-    private var dotStyle: AnyShapeStyle {
-        if isHighlighted { return AnyShapeStyle(.white) }
-        return job.primaryPort != nil
-            ? AnyShapeStyle(Color(nsColor: .systemGreen)) : AnyShapeStyle(.tertiary)
-    }
-
-    private var secondaryStyle: AnyShapeStyle {
-        isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary)
-    }
-
-    /// Only the orphans carry one: how long it has been there and which project
-    /// it came out of, which is the whole of what makes it recognisable once its
-    /// session is long gone.
-    private var detail: String? {
-        let age = RunningJobsList.age(since: job.startedAt)
-        guard let cwd = job.workingDirectory else { return age }
-        let name = (cwd as NSString).lastPathComponent
-        return name.isEmpty ? age : "\(age) in \(name)"
+    private func copy(_ address: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(address, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
     }
 
     private var tooltip: String {
-        var lines = ["\(job.label) — \(job.processCount) processes, pgid \(job.pgid)"]
+        var lines = ["\(job.label): \(job.processCount) processes, pgid \(job.pgid)"]
         if !job.ports.isEmpty {
             lines.append("Listening on " + job.ports.map { ":\($0)" }.joined(separator: " "))
         }
         if let cwd = job.workingDirectory { lines.append(cwd) }
         if let address = job.localAddress { lines.append("Click to open \(address)") }
         return lines.joined(separator: "\n")
+    }
+}
+
+/// A small round icon button that lights up under the pointer, the kind
+/// Proxyman puts beside a value to copy it.
+private struct RowIconButton: View {
+    let symbol: String
+    let label: String
+    var isDestructive = false
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isHovered && isDestructive
+                                 ? AnyShapeStyle(Color(nsColor: .systemRed))
+                                 : AnyShapeStyle(.secondary))
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.primary.opacity(isHovered ? 0.09 : 0)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(label)
+        .accessibilityLabel(label)
     }
 }

@@ -89,13 +89,27 @@ enum AgentLiveness {
         // marker for any script-based agent was swept as stale within a minute
         // of launch, which took the sidebar badge, the resume, and the screen
         // sampler's interest in the session with it.
+        //
+        // A read that *fails* is not a process that doesn't match: `KERN_PROCARGS2`
+        // probes for a size and then reads, and a live process can grow its argv
+        // in between, so the second call fails routinely on a perfectly healthy
+        // one. Flattened to an empty array, that convicted the agent it was
+        // looking for and deleted its marker — permanently, since nothing writes
+        // one again until the shell reaches a prompt the agent never gives it
+        // back. So an unreadable descendant makes the whole answer `.unknown`,
+        // which the caller already knows to treat as "still alive".
+        var unreadable = false
         for entry in table
         where ProcessTable.isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
-            if ProcessTable.arguments(of: entry.pid).contains(where: { argumentNames(agent, $0) }) {
+            guard let arguments = ProcessTable.argumentsIfReadable(of: entry.pid) else {
+                unreadable = true
+                continue
+            }
+            if arguments.contains(where: { argumentNames(agent, $0) }) {
                 return .running(entry.pid)
             }
         }
-        return .gone
+        return unreadable ? .unknown : .gone
     }
 
     /// Whether one argument is, or is a path to, the agent: a path component that

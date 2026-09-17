@@ -263,4 +263,67 @@ final class AgentResumeStoreTests: XCTestCase {
         XCTAssertFalse(args.isEmpty)
         XCTAssertEqual(args.first, Bundle.main.executablePath ?? args.first)
     }
+
+    /// A successful read reports the arguments; there is no ambiguity to resolve.
+    func testReadableArgumentsAreReported() {
+        let args = ProcessTable.argumentsIfReadable(of: ProcessInfo.processInfo.processIdentifier)
+        XCTAssertEqual(args, ProcessTable.arguments(of: ProcessInfo.processInfo.processIdentifier))
+    }
+
+    /// The distinction the agent sweep is built on: a read the kernel won't
+    /// answer is `nil`, *not* an empty argument list.
+    ///
+    /// Flattened to `[]`, a failed read looked exactly like a process that had
+    /// been searched and didn't match — so `AgentLiveness` declared a running
+    /// script-based agent (Pi, Gemini, Amp, aider) gone and deleted its marker,
+    /// which nothing rewrites while the agent holds the shell. The session lost
+    /// its busy state for the rest of that agent's life.
+    func testUnreadableArgumentsAreNotAnEmptyAnswer() {
+        // A pid nothing can be running under: the kernel refuses, which is the
+        // same refusal a live process gives when its argv moves mid-read.
+        XCTAssertNil(ProcessTable.argumentsIfReadable(of: -1))
+        XCTAssertTrue(ProcessTable.arguments(of: -1).isEmpty) // the lossy view, unchanged
+    }
+
+    /// Nothing recorded means nothing to disprove: fail open.
+    func testLivenessBelievesAnAgentWithNoRecordedShell() {
+        XCTAssertTrue(AgentLiveness.isRunning(agent: "pi", shellPID: nil))
+    }
+
+    /// The real shape the sweep runs against: a live shell with the agent as a
+    /// descendant is `.running`, and the same shell once it has exited is
+    /// `.gone`. Uses a real process tree rather than whatever happens to be on
+    /// the machine, so it says the same thing on every run.
+    func testLivenessFindsADescendantAndNoticesTheShellExiting() throws {
+        let shell = Process()
+        shell.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // The trailing `:` matters: given a single command, `sh -c` execs into
+        // it rather than forking, and the shell pid *becomes* the sleep — no
+        // descendant to find, which is not the shape this is testing.
+        shell.arguments = ["-c", "sleep 30; :"]
+        try shell.run()
+        defer { if shell.isRunning { shell.terminate() } }
+
+        // `sleep` is spawned by the shell, so it takes a moment to appear.
+        let deadline = Date().addingTimeInterval(5)
+        var located = AgentLiveness.locate(agent: "sleep", shellPID: shell.processIdentifier)
+        while Date() < deadline, !isRunning(located) {
+            usleep(50_000)
+            located = AgentLiveness.locate(agent: "sleep", shellPID: shell.processIdentifier)
+        }
+        XCTAssertTrue(isRunning(located), "a live descendant should locate as running")
+
+        shell.terminate()
+        shell.waitUntilExit()
+        // The shell's own pid is what the sweep holds; once it leaves the table
+        // there is nothing left to be running under it.
+        XCTAssertFalse(
+            AgentLiveness.isRunning(agent: "sleep", shellPID: shell.processIdentifier),
+            "a shell that has exited takes its agent with it")
+    }
+
+    private func isRunning(_ located: AgentLiveness.Located) -> Bool {
+        if case .running = located { return true }
+        return false
+    }
 }

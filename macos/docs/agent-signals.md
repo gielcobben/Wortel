@@ -118,3 +118,25 @@ Bounded to a minute (`attentionRewriteWindow`). The renames this exists for
 land within seconds; past that the banner has been seen or dismissed, and
 putting a fresh one on screen for an event already dealt with would be worse
 than the stale name it corrected.
+- **A failed `KERN_PROCARGS2` read is not an absent agent.** `AgentLiveness`
+  finds most agents only by their arguments, because the cheap `p_comm` pass
+  misses them: pi, gemini and amp are `node`, aider is `python3`, and Claude
+  Code renames itself to its version (`p_comm` reads `2.1.272`, measured). Only
+  codex, crush, goose, opencode and cursor-agent ship a binary under their own
+  name and skip the read. That read is a size probe followed by a read,
+  and a live process can grow its argv in between, so it fails routinely on a
+  healthy one. `ProcessTable.arguments` flattened that to `[]`, which looks
+  exactly like a process that was searched and didn't match, so the minute
+  sweep declared a running Pi gone and deleted its marker — and nothing writes
+  a marker again until the shell reaches a prompt the agent is holding. The
+  session lost its spinner mid-turn (`refreshAgentActivity` reads a vanished
+  marker as the shell returning and clears busy) and never got it back.
+  Intermittent and total, but only *visible* on agents with no other channel:
+  `markBusy` from OSC 9;4 or a title marker never consults the agent marker, so
+  Claude and Codex kept their spinners and lost only resume, the agent badge and
+  the `onCommandFinished` suppression. Pi, aider, opencode and goose have
+  nothing but the marker-gated screen tier, so they lost everything. Fixed by
+  `ProcessTable.argumentsIfReadable` returning nil for "couldn't read", which
+  `locate` turns into `.unknown`, plus `sweepsBeforeDroppingMarker` so no single
+  reading can delete a marker. Anything else that decides an agent is gone owes
+  the same two guarantees.

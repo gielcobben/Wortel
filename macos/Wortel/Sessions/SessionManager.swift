@@ -697,9 +697,26 @@ final class SessionManager {
     private func sweepDeadAgentMarkers() {
         var removedAny = false
         for session in sessions where session.runningAgent != nil {
-            guard let agent = session.runningAgent,
-                  !AgentLiveness.isRunning(agent: agent, shellPID: session.runningShellPID)
-            else { continue }
+            guard let agent = session.runningAgent else { continue }
+            guard !AgentLiveness.isRunning(agent: agent, shellPID: session.runningShellPID) else {
+                goneSweeps[session.id] = nil // seen alive; any earlier miss was noise
+                continue
+            }
+            // Deleting a marker is irreversible for a running agent — only the
+            // shell writes one, at a prompt the agent is holding — so it takes
+            // more than one reading. Every way of missing a live process here is
+            // transient (a racing sysctl, a pid that moved between the table and
+            // the argument read), and every one of them used to cost the session
+            // its busy state for the rest of the agent's life. A dead marker
+            // surviving one more minute costs a timer that was already running.
+            let misses = (goneSweeps[session.id] ?? 0) + 1
+            goneSweeps[session.id] = misses
+            guard misses >= Self.sweepsBeforeDroppingMarker else {
+                AgentStatusLog.log.debug("""
+                    \(agent, privacy: .public) unseen \(misses, privacy: .public)x — keeping its marker
+                    """)
+                continue
+            }
             AgentStatusLog.log.debug("dropping stale marker for \(agent, privacy: .public)")
             AgentResumeStore.remove(sessionID: session.id)
             removedAny = true
@@ -724,8 +741,14 @@ final class SessionManager {
     }
 
     private func updateAgentScreenSampling() {
+            goneSweeps[session.id] = nil
         let wanted = wantsScreenSampling
         if wanted, agentScreenTimer == nil {
+        // Sessions that closed while being counted against would otherwise keep
+        // their tally forever, and hand a strike to whatever reuses the id.
+        goneSweeps = goneSweeps.filter { id, _ in
+            sessions.contains { $0.id == id && $0.runningAgent != nil }
+        }
             let timer = Timer.scheduledTimer(
                 withTimeInterval: AgentActivity.sampleInterval, repeats: true
             ) { [weak self] _ in
@@ -842,6 +865,15 @@ final class SessionManager {
     ///    worktree, on the branch's files, when what was asked for was another
     ///    shell in the project. The worktree is one session's business; the
     ///    folder's root is the project's.
+    /// Consecutive sweeps that failed to find each session's agent. Reset the
+    /// moment it is seen again, so only a sustained absence is believed.
+    @ObservationIgnored private var goneSweeps: [UUID: Int] = [:]
+
+    /// How many sweeps in a row have to miss an agent before its marker goes.
+    /// Two, a minute apart: long enough that no single transient read decides
+    /// it, short enough that a shell killed outright stops the sampler promptly.
+    private static let sweepsBeforeDroppingMarker = 2
+
     /// 4. **Where the selected session was born**, not where it is now, for a
     ///    session whose folder is still just a label or that is filed at the
     ///    top level. `cwd` follows every `cd`, so inheriting it meant a session

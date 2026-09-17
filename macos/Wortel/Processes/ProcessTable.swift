@@ -79,13 +79,36 @@ enum ProcessTable {
     ///
     /// Empty when it can't be read (another user's process, or one that exited
     /// between the table and this call), which callers treat as "nothing known",
-    /// never as an error.
+    /// never as an error. A caller that has to tell *those two apart* wants
+    /// `argumentsIfReadable` instead.
     static func arguments(of pid: pid_t) -> [String] {
+        argumentsIfReadable(of: pid) ?? []
+    }
+
+    /// The same read, but `nil` when the kernel would not answer, rather than
+    /// an empty array that reads like a successful search for nothing.
+    ///
+    /// The distinction is not pedantic: this is a size probe followed by a
+    /// read, and a live process can grow its argv between the two calls, so the
+    /// second `sysctl` fails routinely for a process that is perfectly healthy.
+    /// `AgentLiveness` searches these arguments for the agent's name and treats
+    /// "no match" as proof the agent exited — so a failed read, flattened to
+    /// `[]`, used to convict a running agent and delete its marker, which
+    /// nothing rewrites until the shell reaches a prompt a long-lived agent
+    /// never gives it back.
+    ///
+    /// This is most of the roster, not a corner: the cheap `p_comm` pass misses
+    /// every script-based agent (pi, gemini and amp are `node`, aider is
+    /// `python3`) **and Claude Code, which renames itself to its version**
+    /// (`p_comm` reads `2.1.272`, measured). Only agents shipping a binary under
+    /// their own name — codex, crush, goose, opencode, cursor-agent — never
+    /// reach this read at all.
+    static func argumentsIfReadable(of pid: pid_t) -> [String]? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
-        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
         var buffer = [UInt8](repeating: 0, count: size)
-        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return [] }
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
         // Layout: argc (Int32), the executable path, NUL padding, then argc
         // NUL-terminated arguments (followed by the environment, not wanted).
         let argc = Int(buffer.withUnsafeBytes { $0.load(as: Int32.self) })
@@ -99,7 +122,9 @@ enum ProcessTable {
             while index < size, buffer[index] == 0 { index += 1 } // NUL(s) after
             return s
         }
-        guard let executable = readString() else { return [] }
+        // A buffer that arrived but doesn't parse is still "no answer", not an
+        // answer of none — same reasoning as the failed reads above.
+        guard let executable = readString() else { return nil }
         strings.append(executable)
         for _ in 0..<argc {
             guard let arg = readString() else { break }

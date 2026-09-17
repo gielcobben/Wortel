@@ -27,12 +27,19 @@ struct ProcessDetails {
     var footprint: (pid_t) -> UInt64
     var listeningPorts: (pid_t) -> [Int]
     var workingDirectory: (pid_t) -> String?
+    /// The `WORTEL_SESSION_ID` a process was started with, if it can be read.
+    /// See `RunningJobs.scan` on detached servers.
+    var sessionTag: (ProcessEntry) -> UUID? = { _ in nil }
+    /// The process's terminal session (`getsid`), 0 when it can't be read.
+    var terminalSession: (pid_t) -> pid_t = { _ in 0 }
 
     static let live = ProcessDetails(
         arguments: ProcessTable.arguments(of:),
         footprint: { ProcessTable.footprint(of: $0) ?? 0 },
         listeningPorts: ProcessTable.listeningPorts(of:),
-        workingDirectory: ProcessTable.workingDirectory(of:))
+        workingDirectory: ProcessTable.workingDirectory(of:),
+        sessionTag: { ProcessTable.sessionTag(of: $0.pid) },
+        terminalSession: ProcessTable.terminalSession(of:))
 }
 
 /// One process, named so that a recycled pid cannot answer for it.
@@ -356,7 +363,17 @@ enum RunningJobs {
     /// `AgentResumeStore` already knows how to resume, plus `claude`, which it
     /// handles separately.
     static let knownAgents: Set<String> =
-        Set(AgentResumeStore.resumeCommands.keys).union(["claude"])
+        Set(AgentResumeStore.resumeCommands.keys).union(["claude"]).union(unresumableAgents)
+
+    /// Agents Wortel does not know how to resume but must still recognise.
+    ///
+    /// Recognition and resume are different questions, and this is the list
+    /// where getting them confused is expensive: Kimi and Factory droid run a
+    /// tool's command **in their own process group** (`create_subprocess_exec`
+    /// with no new session; droid's foreground `Execute` passes
+    /// `detached: false`), so an unrecognised one is not a hidden agent, it is
+    /// a killable row whose Quit ends the user's conversation.
+    static let unresumableAgents: Set<String> = ["qwen", "kimi", "droid", "copilot"]
 
     // MARK: - The scan
 
@@ -433,6 +450,13 @@ enum RunningJobs {
             for pgid in groupsHere.sorted() {
                 guard !claimed.contains(pgid), let members = membersOf[pgid] else { continue }
                 claimed.insert(pgid)
+                if agentPGIDs.contains(pgid) {
+                    jobs.append(contentsOf: agentJobs(pgid: pgid, members: members,
+                                                      agentName: root.agentName,
+                                                      sessionID: root.sessionID,
+                                                      parentOf: parentOf, details: details))
+                    continue
+                }
                 jobs.append(contentsOf: RunningJobs.jobs(pgid: pgid, members: members,
                                                         sessionID: root.sessionID,
                                                         isAgent: agentPGIDs.contains(pgid),
@@ -464,6 +488,66 @@ enum RunningJobs {
                         owned.append(job)
                     }
                 }
+            }
+        }
+
+        // Servers that left a session before any scan saw them there.
+        //
+        // The shape agents reach for most: `nohup pnpm dev > log 2>&1 &` in a
+        // shell tool that returns as soon as the line does. The `sh -c` exits
+        // in milliseconds, the server is reparented to launchd, and neither
+        // ancestry nor the ownership map above ever saw it under the session.
+        // Measured with a real login shell: every such server was invisible.
+        //
+        // What it cannot shed is its environment. Every session's shell is
+        // started with `WORTEL_SESSION_ID`, and whatever it runs inherits it
+        // through any number of forks, `setsid`s and `nohup`s. The kernel will
+        // not hand over an Apple platform binary's environment, but it does for
+        // node, bun, deno, and a Homebrew, uv or nix python, which is what
+        // serves a port.
+        //
+        // Only groups holding a port are claimed, and that is the whole of the
+        // test. A tag says where a process was started, not that it is a job:
+        // `code .` from a session starts an editor carrying the same variable,
+        // and a Quit button on an editor would be wrong. A port is what makes
+        // a server, and it is also the line an app bundle cannot be judged by:
+        // an Electron or Tauri dev build *is* an `.app` (under `node_modules`,
+        // or `target/debug`), and Apple's own python lives inside
+        // `Xcode.app/…/Python.app`, so excluding bundles hid a dev app and a
+        // `python3 -m http.server` alike. An editor that really is serving
+        // something (a Live Server on `:5500`) is a server too.
+        let openSessions = Set(roots.map(\.sessionID))
+        // The session each shell's terminal session belongs to. `getsid` is the
+        // second half of the answer, and the half that needs no environment:
+        // a terminal session changes only when something calls `setsid`, so
+        // `( npm run dev & )` and `nohup … &` keep the one their shell had.
+        // It is what finds a server on an Apple platform binary, whose
+        // environment the kernel will not hand over: `/usr/bin/python3 -m
+        // http.server` reads as a session of its own otherwise.
+        var sessionOfSID: [pid_t: UUID] = [:]
+        for root in roots {
+            let sid = details.terminalSession(root.shellPID)
+            if sid > 0 { sessionOfSID[sid] = root.sessionID }
+        }
+        if !openSessions.isEmpty {
+            for pgid in membersOf.keys.sorted() where !claimed.contains(pgid) {
+                guard let members = membersOf[pgid],
+                      members.allSatisfy({ $0.uid == uid }) else { continue }
+                let tagged = members.lazy.compactMap({ details.sessionTag($0) })
+                    .first(where: { openSessions.contains($0) })
+                // The terminal session is only asked when the environment did
+                // not answer: `??` does not evaluate its right side otherwise,
+                // and this runs for every group no session's tree holds.
+                guard let tag = tagged ?? members.lazy
+                    .compactMap({ sessionOfSID[details.terminalSession($0.pid)] }).first
+                else { continue }
+                let servers = RunningJobs.jobs(pgid: pgid, members: members, sessionID: nil,
+                                               isAgent: false, parentOf: parentOf,
+                                               details: details)
+                    .filter { !$0.ports.isEmpty }
+                guard !servers.isEmpty else { continue }
+                claimed.insert(pgid)
+                jobs.append(contentsOf: servers.map { $0.attributed(to: tag) })
             }
         }
 
@@ -529,29 +613,104 @@ enum RunningJobs {
     static func agentGroups(named agent: String?, shellPID: pid_t,
                             table: [ProcessEntry], parentOf: [pid_t: pid_t],
                             details: ProcessDetails) -> Set<pid_t> {
+        let isAgent = agentMatcher(named: agent, details: details)
+        var groups: Set<pid_t> = []
+        for entry in table
+        where ProcessTable.isDescendant(entry.pid, of: shellPID, parentOf: parentOf)
+            && isAgent(entry) {
+            groups.insert(entry.pgid)
+        }
+        return groups
+    }
+
+    /// Whether a process is itself one of the agents, by name first and argv
+    /// for whatever the name misses. See `agentGroups`.
+    static func agentMatcher(named agent: String?,
+                             details: ProcessDetails) -> (ProcessEntry) -> Bool {
         var names = knownAgents
         if let agent, !agent.isEmpty { names.insert(agent) }
         // `p_comm` is truncated, so each name needs its short form too.
-        var truncated: [String: String] = [:]
+        var truncated: Set<String> = []
         for name in names {
-            truncated[String(name.prefix(ProcessTable.maxCommandNameLength - 1))] = name
+            truncated.insert(String(name.prefix(ProcessTable.maxCommandNameLength - 1)))
         }
-
-        var groups: Set<pid_t> = []
-        for entry in table
-        where ProcessTable.isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
-            if names.contains(entry.name) || truncated[entry.name] != nil {
-                groups.insert(entry.pgid)
-                continue
-            }
+        return { entry in
+            let comm = plainName(entry.name)
+            if names.contains(comm) || truncated.contains(comm) { return true }
             // The argv pass, for agents whose process is named after their
             // interpreter (Pi, Gemini, aider) or after their own version
             // (`claude` reports `p_comm` as `2.1.267`).
-            if namesAgent(in: details.arguments(entry.pid), among: names) {
-                groups.insert(entry.pgid)
-            }
+            return namesAgent(in: details.arguments(entry.pid), among: names)
         }
-        return groups
+    }
+
+    /// The agent's group as rows: the agent, plus any server it started without
+    /// giving it a group of its own.
+    ///
+    /// A job is a process group, and an agent's shell tool normally keeps to
+    /// that: Claude Code's `zsh -c` and Pi's own bash tool each start a new
+    /// group. A Pi extension's background-job tool did not. On a real machine
+    /// `pi` (19665) led a group holding `chrome-devtools-mcp`, then
+    /// `pnpm run preview` and the vite under it serving `:5188`, all pgid 19665.
+    /// The whole group was the agent, the agent is never work, and the server
+    /// the session was running vanished from the pill and the list.
+    ///
+    /// So a child of the agent whose tree holds a listening port is split out
+    /// as work. Only one holding a port: the agent's other children are its
+    /// scaffolding (an MCP server over stdio), and a Quit button on one of those
+    /// breaks the agent mid-turn. A split job never owns the group, which is
+    /// the agent's, so stopping it signals its own processes and never
+    /// `-pgid`.
+    static func agentJobs(
+        pgid: pid_t,
+        members: [ProcessEntry],
+        agentName: String?,
+        sessionID: UUID,
+        parentOf: [pid_t: pid_t],
+        details: ProcessDetails
+    ) -> [RunningJob] {
+        let isAgent = agentMatcher(named: agentName, details: details)
+        let agentPIDs = Set(members.filter(isAgent).map(\.pid))
+        var childrenOf: [pid_t: [ProcessEntry]] = [:]
+        for member in members {
+            if let parent = parentOf[member.pid] { childrenOf[parent, default: []].append(member) }
+        }
+
+        var splitOff: Set<pid_t> = []
+        var servers: [RunningJob] = []
+        // The agent's children, and anything in its group whose parent is not:
+        // `exec("pnpm dev &")` leaves the server in the agent's group but
+        // adopted by launchd once its `sh -c` returns.
+        let inGroup = Set(members.map(\.pid))
+        let candidates = members
+            .filter { member in
+                guard !agentPIDs.contains(member.pid) else { return false }
+                let parent = parentOf[member.pid] ?? 0
+                return agentPIDs.contains(parent) || !inGroup.contains(parent)
+            }
+            .sorted { $0.pid < $1.pid }
+        for child in candidates {
+            var tree: [ProcessEntry] = []
+            var queue = [child]
+            while !queue.isEmpty {
+                let entry = queue.removeFirst()
+                // A sub-agent under it stays the agent's.
+                guard !agentPIDs.contains(entry.pid),
+                      !tree.contains(where: { $0.pid == entry.pid }) else { continue }
+                tree.append(entry)
+                queue.append(contentsOf: (childrenOf[entry.pid] ?? []).sorted { $0.pid < $1.pid })
+            }
+            guard tree.contains(where: { !displayPorts(details.listeningPorts($0.pid)).isEmpty }),
+                  let server = job(pgid: pgid, tree: tree, ownsGroup: false,
+                                   sessionID: sessionID, isAgent: false, details: details)
+            else { continue }
+            servers.append(server)
+            splitOff.formUnion(tree.map(\.pid))
+        }
+
+        let rest = members.filter { !splitOff.contains($0.pid) }
+        return servers + jobs(pgid: pgid, members: rest, sessionID: sessionID, isAgent: true,
+                              parentOf: parentOf, details: details)
     }
 
     /// Whether these arguments say the process **is** one of these agents.
@@ -573,16 +732,56 @@ enum RunningJobs {
     /// so every job an agent starts carries a mention of `.claude` in its
     /// command string. Both of a session's dev servers were classified as the
     /// agent and vanished from the list they existed for.
+    ///
+    /// Within those three it looks only where a program's *name* lives, not at
+    /// every directory on the way to it. Matching any path component made
+    /// `/Users/x/claude-demo/server.js` Claude Code and
+    /// `/Users/x/Developer/pi-site/…/vite` Pi, because `claude-demo` starts
+    /// with `claude-`, and the server vanished into the agent's row.
     static func namesAgent(in arguments: [String], among names: Set<String>) -> Bool {
         for argument in arguments.prefix(3) where !argument.isEmpty {
             // A flag is never a program name, and `-c` is what precedes the
             // command string this rule exists to ignore.
             guard !argument.hasPrefix("-") else { continue }
-            if names.contains(where: { AgentLiveness.argumentNames($0, argument) }) {
+            if names.contains(where: { programNames($0, argument) }) {
                 return true
             }
         }
         return false
+    }
+
+    /// Whether this path is the agent's program: its file (`…/bin/aider`,
+    /// `aider.py`, `claude`), or a file inside its installed package
+    /// (`node_modules/@earendil-works/pi-coding-agent/dist/cli.js`,
+    /// `@google/gemini-cli/dist/index.js`).
+    static func programNames(_ agent: String, _ argument: String) -> Bool {
+        let components = argument.split(separator: "/")
+        guard let file = components.last else { return false }
+        let name = plainName(String(file))
+        if name == agent || name.hasPrefix(agent + ".") { return true }
+        // A package directory: the component after `node_modules`, or after
+        // an `@scope`. The only places a directory is named for the program in
+        // it rather than for the project around it.
+        for (index, component) in components.dropLast().enumerated() {
+            guard component == "node_modules" || component.hasPrefix("@") else { continue }
+            let package = components[index + 1]
+            if package == agent[...] || package.hasPrefix(agent + "-") { return true }
+        }
+        return false
+    }
+
+    /// A program's name with the decoration a packager put on it: the dot and
+    /// `-wrapped` nixpkgs' `wrapProgram` leaves behind (`.pi-wrapped`), and the
+    /// `.exe` Bun-compiled binaries carry on macOS too (`amp.exe`). Both are
+    /// what `p_comm` and the executable path then read as, and neither is a
+    /// different program.
+    static func plainName(_ name: String) -> String {
+        var name = name
+        if name.hasPrefix(".") { name.removeFirst() }
+        for suffix in ["-wrapped", ".exe"] where name.hasSuffix(suffix) {
+            name.removeLast(suffix.count)
+        }
+        return name
     }
 
     /// Groups nothing is watching any more.
@@ -802,7 +1001,7 @@ enum RunningJobs {
         // honest name (it is what the user typed), so prefer it and fall back.
         var tokens = Array(arguments.dropFirst())
         if tokens.isEmpty { tokens = Array(arguments.prefix(1)) }
-        tokens = tokens.filter { !$0.isEmpty }
+        tokens = tokens.filter { !$0.isEmpty && !isEnvironmentAssignment($0) }
         guard !tokens.isEmpty else { return nil }
 
         // `node …/bin/vite dev` is really `vite dev`. Only when the next token
@@ -821,6 +1020,24 @@ enum RunningJobs {
         var label = parts.prefix(4).joined(separator: " ")
         if label.count > 48 { label = String(label.prefix(47)) + "…" }
         return label.isEmpty ? nil : label
+    }
+
+    /// Whether a token is a `NAME=value` environment assignment rather than
+    /// part of the command.
+    ///
+    /// Two reasons, and the second is why it matters. `FOO=1 npm run dev` puts
+    /// the assignment in argv, and it is not what the job is called. And a
+    /// program that renames its own process (`process.title = "pi"`, which Pi
+    /// does) writes over the argv area, so the read comes back as the new name
+    /// followed by whatever of the old argv and **the environment** is still
+    /// lying there: the real label was
+    /// `pi CLAUDE_CODE_MESSAGING_TOKEN=34af1b03…`. A row in the popover is not
+    /// the place for the contents of someone's environment.
+    static func isEnvironmentAssignment(_ token: String) -> Bool {
+        guard let equals = token.firstIndex(of: "="), equals != token.startIndex else { return false }
+        let name = token[token.startIndex..<equals]
+        guard let first = name.first, first.isLetter || first == "_" else { return false }
+        return name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
     }
 
     /// The command a process was invoked as, path stripped.

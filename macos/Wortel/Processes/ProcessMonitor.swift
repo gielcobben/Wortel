@@ -43,6 +43,9 @@ final class ProcessMonitor {
     /// `RunningJobs.recordingOwners` and `ProcessOwnersStore`.
     @ObservationIgnored private var owners: ProcessOwners = ProcessOwnersStore.load()
 
+    /// Each process's session tag, read once. See `SessionTagCache`.
+    @ObservationIgnored private let sessionTags = SessionTagCache()
+
     /// Take a scan's ownership map, writing it down only when it changed: a
     /// scan every ten seconds that finds the same servers writes nothing.
     private func adopt(_ updated: ProcessOwners) {
@@ -80,7 +83,7 @@ final class ProcessMonitor {
         guard !scanning else { return }
         scanning = true
         let request = ScanRequest(roots: roots(), projectRoots: projectRoots(),
-                                  owners: owners)
+                                  owners: owners, sessionTags: sessionTags)
         let started = generation
         Task.detached(priority: .utility) {
             let result = request.run()
@@ -100,7 +103,7 @@ final class ProcessMonitor {
     func scanNow() -> RunningJobsSnapshot {
         generation += 1
         let result = ScanRequest(roots: roots(), projectRoots: projectRoots(),
-                                 owners: owners).run()
+                                 owners: owners, sessionTags: sessionTags).run()
         adopt(result.owners)
         snapshot = result.snapshot
         return result.snapshot
@@ -207,21 +210,61 @@ private struct ScanRequest: Sendable {
     let roots: [SessionProcessRoot]
     let projectRoots: [String]
     let owners: ProcessOwners
+    let sessionTags: SessionTagCache
 
     func run() -> (snapshot: RunningJobsSnapshot, owners: ProcessOwners) {
         let table = ProcessTable.snapshot()
         // An unreadable table claims nothing, and must not forget anything
         // either: pruning against an empty table would drop every record.
         guard !table.isEmpty else { return (.empty, owners) }
+        var details = ProcessDetails.live
+        details.sessionTag = sessionTags.lookup
+        defer { sessionTags.prune(keeping: table) }
         let snapshot = RunningJobs.scan(
             table: table,
             roots: roots,
             projectRoots: projectRoots,
             // Wortel and its keeper must never appear in their own list.
             excludedPGIDs: [getpgrp()],
-            owners: owners)
+            owners: owners,
+            details: details)
         return (snapshot, RunningJobs.recordingOwners(snapshot, table: table,
                                                        previous: owners))
     }
 }
 
+
+/// Which session each process was started in, read from its environment once
+/// per process lifetime.
+///
+/// The detached-server pass asks this of every group no session's tree holds,
+/// which is most of the machine: a few hundred login agents and app helpers.
+/// The answer cannot change (it is the environment at `exec`), so it is kept
+/// by `ProcessKey` and the steady state costs nothing. A recycled pid has a
+/// different start time and is read afresh. Locked because the scan runs off
+/// the main actor and `scanNow` runs on it.
+final class SessionTagCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tags: [ProcessKey: UUID?] = [:]
+
+    func lookup(_ entry: ProcessEntry) -> UUID? {
+        let key = ProcessKey(entry)
+        lock.lock()
+        if let cached = tags[key] { lock.unlock(); return cached }
+        lock.unlock()
+        let tag = ProcessTable.sessionTag(of: entry.pid)
+        lock.lock()
+        tags[key] = .some(tag)
+        lock.unlock()
+        return tag
+    }
+
+    /// Forget processes that have exited, so the cache is never bigger than
+    /// the table.
+    func prune(keeping table: [ProcessEntry]) {
+        let live = Set(table.map { ProcessKey($0) })
+        lock.lock()
+        tags = tags.filter { live.contains($0.key) }
+        lock.unlock()
+    }
+}

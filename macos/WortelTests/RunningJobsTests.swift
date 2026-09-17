@@ -220,13 +220,222 @@ final class RunningJobsTests: XCTestCase {
         XCTAssertTrue(RunningJobs.namesAgent(
             in: ["/Users/giel/.local/bin/claude", "claude"], among: names))
         XCTAssertTrue(RunningJobs.namesAgent(
-            in: ["/opt/node", "node", "/x/pi-coding-agent/dist/cli.js"], among: names),
+            in: ["/opt/node", "node",
+                 "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"],
+            among: names),
             "a script agent is named by the script, which is argv[1]")
+        XCTAssertTrue(RunningJobs.namesAgent(
+            in: ["/opt/python3", "python3", "/Users/giel/.local/bin/aider"], among: names))
+        XCTAssertTrue(RunningJobs.namesAgent(
+            in: ["/nix/store/abc-pi-0.82/bin/pi", "pi"], among: names))
         XCTAssertFalse(RunningJobs.namesAgent(
             in: ["/bin/zsh", "zsh", "-c", "source ~/.claude/x.sh && bun dev"], among: names),
             "the command string is not the program")
         XCTAssertFalse(RunningJobs.namesAgent(
             in: ["/usr/local/bin/bun", "bun", "dev:web"], among: names))
+    }
+
+    /// Transcribed from the machine: a Pi extension's background-job tool
+    /// started `pnpm run preview` inside Pi's own group, next to an MCP server.
+    ///
+    ///     zsh -l [19025] pgid 19025
+    ///       pi [19665] pgid 19665
+    ///         chrome-devtools-mcp [28805] pgid 19665
+    ///         node …/pnpm run preview [74353] pgid 19665
+    ///           node …/vite preview [74401] pgid 19665   :5188
+    ///             esbuild --service [74408] pgid 19665
+    private var piTable: [ProcessEntry] {
+        [
+            entry(19025, 19024, 19025, "zsh"),
+            entry(19665, 19025, 19665, "pi"),
+            entry(28805, 19665, 19665, "chrome-devtools"),
+            entry(74353, 19665, 19665, "node"),
+            entry(74401, 74353, 19665, "node"),
+            entry(74408, 74401, 19665, "esbuild"),
+        ]
+    }
+
+    private func piScan() -> RunningJobsSnapshot {
+        let argv: [pid_t: [String]] = [
+            19025: ["/bin/zsh", "-/bin/zsh", "-l"],
+            19665: ["/Users/giel/.nix-profile/bin/pi", "pi"],
+            28805: ["/opt/node", "node", "/x/node_modules/.bin/chrome-devtools-mcp"],
+            74353: ["/opt/node", "node", "/nix/store/pnpm-10.28.0/bin/pnpm", "run", "preview"],
+            74401: ["/opt/node", "node", "/p/node_modules/.bin/vite", "preview"],
+            74408: ["/p/node_modules/esbuild", "esbuild", "--service"],
+        ]
+        let root = SessionProcessRoot(sessionID: sessionID, shellPID: 19025, agentName: "pi")
+        return RunningJobs.scan(
+            table: piTable, roots: [root], uid: 501,
+            details: ProcessDetails(arguments: { argv[$0] ?? [] },
+                                    footprint: { _ in 10_000_000 },
+                                    listeningPorts: { $0 == 74401 ? [5188] : [] },
+                                    workingDirectory: { _ in "/p" }))
+    }
+
+    func testAServerInTheAgentsGroupIsStillWork() throws {
+        let snapshot = piScan()
+        let server = try XCTUnwrap(snapshot.work.first)
+        XCTAssertEqual(snapshot.work.count, 1)
+        XCTAssertEqual(server.primaryPort, 5188)
+        XCTAssertEqual(server.label, "pnpm run preview")
+        XCTAssertEqual(server.pids, [74353, 74401, 74408])
+        XCTAssertEqual(snapshot.status.title, "pnpm run preview")
+        XCTAssertEqual(snapshot.status.ports, [":5188"])
+    }
+
+    /// The group is the agent's, so the server's Quit must never reach `-pgid`,
+    /// and the agent's own scaffolding stays out of the list.
+    func testAServerSplitFromTheAgentNeverOwnsItsGroup() throws {
+        let snapshot = piScan()
+        let server = try XCTUnwrap(snapshot.work.first)
+        XCTAssertFalse(server.ownsGroup, "kill(-19665) would stop pi")
+        let agent = try XCTUnwrap(snapshot.agents.first)
+        XCTAssertEqual(snapshot.agents.count, 1)
+        XCTAssertEqual(agent.pids, [19665, 28805],
+                       "an MCP server holding no port is the agent's, not a job to quit")
+        XCTAssertFalse(agent.isKillable)
+    }
+
+    /// Measured: a real `pi` in a real session labelled its row
+    /// `pi CLAUDE_CODE_MESSAGING_TOKEN=34af1b03…`. Pi renames its own process,
+    /// which writes over the argv area, so the read comes back as the name plus
+    /// whatever of the environment was still there.
+    func testALabelIsNotSomebodysEnvironment() {
+        XCTAssertEqual(
+            RunningJobs.label(forArguments: ["/opt/pi", "pi", "CLAUDE_CODE_MESSAGING_TOKEN=34af1b03",
+                                             "ANTHROPIC_API_KEY=sk-ant-x"]),
+            "pi")
+        XCTAssertEqual(
+            RunningJobs.label(forArguments: ["/opt/npm", "npm", "NODE_ENV=production", "run", "dev"]),
+            "npm run dev",
+            "an inline assignment is not what the job is called")
+        XCTAssertEqual(
+            RunningJobs.label(forArguments: ["/opt/node", "node", "--env-file=.env", "server.js"]),
+            "node --env-file=.env server.js",
+            "a flag that happens to carry an = is still part of the command")
+    }
+
+    /// The real process shapes each agent presents, from reading their sources
+    /// and their installers. Recognition is what keeps a Quit button off an
+    /// agent, and an agent that shares its group with the commands it runs (
+    /// goose, Kimi, droid) makes that the difference between a hidden row and
+    /// an ended conversation.
+    func testEveryKnownAgentIsRecognisedInItsRealForm() {
+        let names = RunningJobs.knownAgents
+        let shapes: [(String, [String])] = [
+            ("claude native", ["/Users/x/.local/share/claude/versions/2.1.274", "claude"]),
+            ("claude npm", ["/opt/node", "node",
+                            "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js"]),
+            ("codex homebrew", ["/opt/homebrew/bin/codex", "codex"]),
+            ("codex npm", ["/opt/node", "node",
+                           "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"]),
+            ("gemini", ["/opt/node", "node",
+                        "/opt/homebrew/lib/node_modules/@google/gemini-cli/dist/index.js"]),
+            ("qwen", ["/opt/node", "node",
+                      "/opt/homebrew/lib/node_modules/@qwen-code/qwen-code/dist/index.js"]),
+            ("pi nix", ["/nix/store/abc-pi-coding-agent-0.85.1/bin/pi", "pi"]),
+            ("pi nixpkgs wrapper", ["/nix/store/abc-pi/bin/.pi-wrapped", ".pi-wrapped"]),
+            ("pi npm", ["/opt/node", "node",
+                        "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"]),
+            ("amp bun binary", ["/opt/homebrew/lib/node_modules/@ampcode/cli/bin/amp.exe", "amp.exe"]),
+            ("cursor-agent", ["/Users/x/.local/share/cursor-agent/versions/2026.09.15/node",
+                              "cursor-agent", "index.js"]),
+            ("opencode", ["/opt/homebrew/bin/opencode", "opencode"]),
+            ("crush", ["/opt/homebrew/bin/crush", "crush"]),
+            ("goose", ["/opt/homebrew/bin/goose", "goose"]),
+            ("aider pipx", ["/opt/python3", "python3", "/Users/x/.local/bin/aider"]),
+            ("droid", ["/opt/homebrew/lib/node_modules/@factory/cli/bin/droid", "droid"]),
+            ("copilot", ["/Users/x/Library/Caches/copilot/pkg/darwin-arm64/1.0.85/copilot",
+                         "copilot"]),
+            ("kimi", ["/opt/python3", "python3", "/Users/x/.local/bin/kimi"]),
+        ]
+        for (what, argv) in shapes {
+            XCTAssertTrue(RunningJobs.namesAgent(in: argv, among: names),
+                          "\(what) is an agent, and its group must not be killable")
+        }
+    }
+
+    /// A project named after an agent is not the agent. Matching any path
+    /// component hid every server under `claude-demo/`, `pi-site/` or the
+    /// `/private/tmp/claude-501/` Claude Code's own scratch space lives in.
+    func testAProjectNamedLikeAnAgentIsNotTheAgent() {
+        let names: Set<String> = ["claude", "pi", "llm"]
+        XCTAssertFalse(RunningJobs.namesAgent(
+            in: ["/opt/node", "node", "/Users/giel/Developer/claude-demo/server.js"], among: names))
+        XCTAssertFalse(RunningJobs.namesAgent(
+            in: ["/opt/node", "node", "/Users/giel/Developer/pi-site/node_modules/.bin/vite"],
+            among: names))
+        XCTAssertFalse(RunningJobs.namesAgent(
+            in: ["/opt/node", "node", "/private/tmp/claude-501/x/server.js"], among: names))
+        XCTAssertFalse(RunningJobs.namesAgent(
+            in: ["/Users/giel/llm-lab/.venv/bin/python", "python", "-m", "http.server"],
+            among: names))
+    }
+
+    /// The shape agents reach for most: `nohup pnpm dev &` from a shell tool
+    /// that returns at once. The server is adopted by launchd before any scan
+    /// sees it under the session, and only its environment still says whose it
+    /// is.
+    func testADetachedServerIsFoundByItsSessionTag() throws {
+        let adopted = table + [
+            entry(50001, 1, 50000, "node"),
+            entry(50002, 50001, 50000, "esbuild"),
+            // An editor started with `code .` carries the same tag. It holds
+            // no port, which is the only thing keeping it out of the list.
+            entry(50010, 1, 50010, "Electron"),
+        ]
+        let other = UUID()
+        let extraArgv: [pid_t: [String]] = [
+            50001: ["/opt/node", "node", "/p/node_modules/.bin/vite", "dev"],
+            50002: ["/p/esbuild", "esbuild", "--service"],
+            50010: ["/Applications/Visual Studio Code.app/Contents/MacOS/Electron", "Electron"],
+        ]
+        var details = details(extraArgv: extraArgv)
+        let base = details.listeningPorts
+        details.listeningPorts = { $0 == 50001 ? [5173] : base($0) }
+        details.sessionTag = { [sessionID] in [50001: sessionID, 50010: sessionID][$0.pid] }
+        let snapshot = RunningJobs.scan(table: adopted, roots: [root], uid: 501, details: details)
+
+        let server = try XCTUnwrap(snapshot.work.first { $0.pgid == 50000 })
+        XCTAssertEqual(server.sessionID, sessionID)
+        XCTAssertTrue(server.detached)
+        XCTAssertEqual(server.pids, [50001, 50002])
+        XCTAssertFalse(snapshot.jobs.contains { $0.pgid == 50010 },
+                       "an app that inherited the variable is not this session's server")
+        XCTAssertNil(snapshot.status.title.range(of: "Electron"))
+
+        details.sessionTag = { $0.pid == 50001 ? other : nil }
+        let elsewhere = RunningJobs.scan(table: adopted, roots: [root], uid: 501, details: details)
+        XCTAssertFalse(elsewhere.jobs.contains { $0.pgid == 50000 },
+                       "a tag naming no open session claims nothing")
+    }
+
+    /// The same shape without `setsid`: `exec("pnpm dev &")` from an agent
+    /// whose shell tool shares its group leaves the server in the agent's group
+    /// with launchd as its parent.
+    func testAServerAdoptedOutOfTheAgentsGroupIsStillWork() throws {
+        let adopted = piTable.filter { $0.pid != 74353 }.map {
+            $0.pid == 74401 ? entry(74401, 1, 19665, "node") : $0
+        }
+        let argv: [pid_t: [String]] = [
+            19025: ["/bin/zsh", "-/bin/zsh", "-l"],
+            19665: ["/nix/store/abc-pi/bin/pi", "pi"],
+            28805: ["/opt/node", "node", "/x/node_modules/.bin/chrome-devtools-mcp"],
+            74401: ["/opt/node", "node", "/p/node_modules/.bin/vite", "preview"],
+            74408: ["/p/esbuild", "esbuild", "--service"],
+        ]
+        let root = SessionProcessRoot(sessionID: sessionID, shellPID: 19025, agentName: "pi")
+        let snapshot = RunningJobs.scan(
+            table: adopted, roots: [root], uid: 501,
+            details: ProcessDetails(arguments: { argv[$0] ?? [] },
+                                    footprint: { _ in 1 },
+                                    listeningPorts: { $0 == 74401 ? [5188] : [] },
+                                    workingDirectory: { _ in "/p" }))
+        let server = try XCTUnwrap(snapshot.work.first)
+        XCTAssertEqual(server.pids, [74401, 74408])
+        XCTAssertFalse(server.ownsGroup)
+        XCTAssertEqual(snapshot.agents.flatMap(\.pids), [19665, 28805])
     }
 
     // MARK: - Shells other than zsh

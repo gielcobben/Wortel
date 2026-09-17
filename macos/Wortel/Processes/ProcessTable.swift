@@ -133,6 +133,59 @@ enum ProcessTable {
         return strings
     }
 
+    /// The session a process was started in, from the `WORTEL_SESSION_ID` in
+    /// the environment it was started with.
+    ///
+    /// The same `KERN_PROCARGS2` buffer as `argumentsIfReadable`: the
+    /// environment follows the arguments. It is the environment at `exec`, so
+    /// a process cannot move itself to another session by `setenv`, and a
+    /// `nohup`, `setsid` or double fork keeps it. The kernel withholds it for
+    /// Apple platform binaries (`sleep`, `/bin/zsh`), and returns it for the
+    /// runtimes that actually serve ports: measured for a node server that
+    /// had already been reparented to launchd.
+    static func sessionTag(of pid: pid_t) -> UUID? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
+        let argc = Int(buffer.withUnsafeBytes { $0.load(as: Int32.self) })
+        let prefix = Array("\(WortelCommandParser.sessionVariable)=".utf8)
+
+        // Executable path, its padding, then argc arguments, then the
+        // environment, each NUL-terminated. Counted as strings, not NULs,
+        // because the padding after the path is a run of them.
+        var index = MemoryLayout<Int32>.size
+        var strings = 0
+        while index < size {
+            let start = index
+            while index < size, buffer[index] != 0 { index += 1 }
+            let length = index - start
+            while index < size, buffer[index] == 0 { index += 1 }
+            guard length > 0 else { continue }
+            strings += 1
+            guard strings > argc + 1 else { continue }
+            guard length > prefix.count,
+                  buffer[start..<(start + prefix.count)].elementsEqual(prefix) else { continue }
+            let value = String(decoding: buffer[(start + prefix.count)..<(start + length)], as: UTF8.self)
+            return UUID(uuidString: value)
+        }
+        return nil
+    }
+
+    /// The process's terminal session id (`getsid`).
+    ///
+    /// A session is inherited through every fork and survives the leader's
+    /// death; only `setsid` changes it. That makes it the one link a
+    /// `nohup … &` or `( … & )` cannot shed, and unlike the environment the
+    /// kernel answers for every process, Apple's platform binaries included.
+    ///
+    /// 0 when the process is gone.
+    static func terminalSession(of pid: pid_t) -> pid_t {
+        let sid = getsid(pid)
+        return sid < 0 ? 0 : sid
+    }
+
     /// Physical footprint in bytes: the number Activity Monitor calls "Memory",
     /// and the only one worth showing.
     ///

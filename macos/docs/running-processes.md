@@ -113,6 +113,61 @@ The close sheet also asks when the terminal itself sees nothing running. Ghostty
 only knows the foreground process, so a shell at its prompt with `bun dev &`
 behind it used to close without a word.
 
+## A server inside the agent's own group
+
+An agent's shell tool usually starts a command in a new process group, and that
+is what makes the group model work: Claude Code's `zsh -c`, Pi's bash tool,
+opencode, amp and cursor-agent all `setsid`. Three do not. **goose** runs
+`bash -c` with no new group at all, **Kimi** and **Factory droid**'s foreground
+tool do the same, and a Pi extension that reaches for `pi.exec` instead of the
+bash tool inherits Pi's group too. Every stdio MCP server is in there as well.
+
+Measured on a real machine, `pi` (19665) led a group holding
+`chrome-devtools-mcp`, `pnpm run preview` and the vite under it serving `:5188`,
+all pgid 19665. The group contained the agent, the agent is never work, and so
+the server the session was running was not in the pill, the popover, or what
+closing the session would stop.
+
+So the agent's group is split: a child of the agent whose tree holds a listening
+port is its own job. **Only one holding a port**, because the agent's other
+children are its scaffolding — an MCP server over stdio is not something to
+offer a Quit button on, and stopping one breaks the agent mid-turn. The split
+job never owns the group (the group is the agent's), so stopping it signals its
+own processes and never `-pgid`.
+
+## A server that left before any scan saw it
+
+The shape agents reach for most is `nohup pnpm dev > log 2>&1 &` in a shell tool
+that returns as soon as the line does. The `sh -c` exits in milliseconds, the
+server is adopted by launchd, and neither ancestry nor the ownership map ever
+saw it under the session. People type the same thing (`( npm run dev & )`), and
+a server that daemonises itself does it without being asked.
+
+Two links survive that, and neither is a guess:
+
+- **The environment.** Every session's shell is started with
+  `WORTEL_SESSION_ID`, and whatever it runs inherits it through any number of
+  forks, `setsid`s and `nohup`s. `KERN_PROCARGS2` returns the environment a
+  process was `exec`ed with, so it cannot be edited away either. The kernel
+  withholds it for Apple's platform binaries, and returns it for node, bun, deno
+  and a Homebrew, uv or nix python — which is what serves a port.
+- **The terminal session.** `getsid` changes only when something calls `setsid`,
+  so `( … & )` and `nohup … &` keep the session their shell had, and the kernel
+  answers for every process including Apple's own. This is what finds
+  `/usr/bin/python3 -m http.server`, whose environment is withheld.
+
+**A port is what qualifies a group here, and that is the whole test.** A tag
+says where a process was started, not that it is a job: `code .` from a session
+starts an editor carrying the same variable and the same terminal session, and a
+Quit button on somebody's editor would be worse than the bug. Bundles are not
+excluded, because an Electron or Tauri dev build *is* an `.app` (in
+`node_modules`, or `target/debug`) and Apple's python lives inside
+`Xcode.app/…/Python.app`: the rule that hid an editor hid those too.
+
+Each process's tag is read once and kept by pid and start time
+(`SessionTagCache`), so the steady state costs nothing and a recycled pid is
+read afresh.
+
 ## Orphans
 
 Since the above, an orphan is the fallback, not the normal way a server is found:
@@ -187,6 +242,7 @@ The agent and the session shell are never killable, at any layer.
 | `Wortel/Processes/RunningJobs.swift` | All the decisions: grouping, labelling, port filtering, orphan classification, the close-sheet copy. Pure, and pinned by `RunningJobsTests`. |
 | `Wortel/Processes/ProjectRoots.swift` | Which directories are specific enough to attribute an orphan to. |
 | `Wortel/Processes/ProcessOwnersStore.swift` | Which session started which process, on disk, so a detached server is still its session's after a relaunch. |
+| `scripts/verify-running-jobs.py` | The live check: real servers, in a real login shell, in every shape agents and people start them in, scanned by this code. |
 | `Wortel/Processes/ProcessMonitor.swift` | Cadence, the published snapshot, the ownership map, and the kill. |
 | `Wortel/UI/MainToolbar.swift` | The status pill, centred in the toolbar and about the selected session only: `bun dev :3000`, or `2 servers :3000 :5173`, from `RunningJobsSnapshot.status`. |
 | `Wortel/UI/RunningJobsPopover.swift` | The popover: that session's jobs as one flat list, hover Copy and Stop per row. |
@@ -222,6 +278,48 @@ the OS can coalesce it, and synchronously in exactly one place: the close sheet,
 where a dialog that appears and then changes its mind would be worse than the
 milliseconds.
 
+## An agent is recognised by its program, not by a path
+
+An agent's group is hidden, so anything mistaken for an agent disappears. The
+name is matched against `p_comm` and against the executable, `argv[0]` and
+`argv[1]` — but within those, only where a program's *name* lives: the file
+itself (`claude`, `…/bin/aider`, `aider.py`) or its installed package
+(`node_modules/@earendil-works/pi-coding-agent/dist/cli.js`,
+`@google/gemini-cli/dist/index.js`).
+
+Matching any path component instead made `/Users/x/claude-demo/server.js` Claude
+Code and `pi-site/node_modules/.bin/vite` Pi. A project named after the agent
+you use with it is not a rare thing to have.
+
+Packagers decorate the name, and the decoration is not a different program:
+nixpkgs' `wrapProgram` leaves `.pi-wrapped`, and a Bun-compiled binary carries
+`.exe` on macOS too (`amp.exe`). Both are stripped before matching.
+
+`RunningJobs.unresumableAgents` carries the agents Wortel cannot resume but must
+still recognise — Kimi, Qwen, droid and Copilot. Recognition and resume are
+different questions, and confusing them is expensive here: Kimi and droid run a
+tool's command in their own process group, so an unrecognised one is not a
+hidden agent, it is a killable row whose Quit ends the user's conversation.
+
+## Checking it against a real machine
+
+`RunningJobsTests` pins the shaping against fixtures. It cannot tell you that
+the shapes are the ones that happen, and every bug this feature has shipped was
+of that kind: a server nobody had a fixture for, found by the person running it.
+
+`./scripts/verify-running-jobs.py` starts real servers in a real login shell —
+`/usr/bin/login` and the bash trampoline, the way the keeper does it — and asks
+this code what it sees. 44 shapes: typed at the prompt, `&`, `nohup`, a
+subshell daemon, a double fork, an Apple platform binary, and for three kinds of
+agent every spawn shape found in their source (same group, `setsid`, a pty, a
+subshell wrapper, a worker in between, and each of those backgrounding with
+`&`). It also checks that a project named `claude-demo` or `pi-site` is not
+mistaken for an agent.
+
+It compiles `ProcessTable` + `RunningJobs` into a small command, so what runs is
+the shipping code rather than a copy of it. Run it before releasing anything
+that touches this.
+
 ## A group is not always one job
 
 `bun dev` fanning out to `dev:web` and `dev:images` puts both trees in one
@@ -245,9 +343,16 @@ rows until they did. A job that is the whole of its group still gets
   the shell itself and never reports the pid, so those sessions have no tree to
   walk and degrade to orphan scanning only. Fixing it means touching shell
   integration, which the cwd finding otherwise made unnecessary.
-- **`setsid`.** A process that leaves its session before any scan has seen it
-  under the shell is only findable as an orphan. One that a scan did see first
-  stays its session's, detached.
+- **Work with no port that leaves before a scan.** A detached process is
+  claimed by its environment or its terminal session only when it holds a port,
+  because that is the only thing that distinguishes a server from an editor
+  somebody launched from the same shell. A `nohup npm run build:watch &` that
+  serves nothing, started and detached inside one scan interval, is therefore
+  only findable as an orphan.
+- **A process that sheds both links.** `setsid` plus `env -i`, or anything
+  started by launchd on the session's behalf (`brew services`, a LaunchAgent),
+  keeps no connection to the session at all and is an orphan by directory or
+  nothing.
 - **The ten-second window.** A server that leaves its shell and whose shell then
   exits on its own (`exit`, not ⌘W) inside one scan interval was never recorded,
   so it outlives the session as an orphan. ⌘W scans at the moment of closing

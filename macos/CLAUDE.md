@@ -68,6 +68,12 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   `SessionNameTests` pins the Folder/Leaf split for the same reason — a session's
   folder is just the part of its name before the last slash, so a wrong split
   doesn't throw, it silently moves the session.
+- **`./scripts/verify-running-jobs.py`** checks the running-processes feature
+  against a real machine: real servers in a real `/usr/bin/login` pty session,
+  in all 44 shapes agents and people start them in, scanned by the shipping
+  code. Fixtures cannot catch a shape nobody thought of, and that is what every
+  bug in that feature has been. Run it before releasing a change to
+  `Wortel/Processes/`.
 - Performance checks live in `bench/`: `./bench/measure.sh` (cold-launch time +
   memory, Release only), `./bench/gen.sh` (throughput fixtures). Most latency /
   render checks are manual side-by-side vs Ghostty.app — see `bench/BENCHMARKS.md`.

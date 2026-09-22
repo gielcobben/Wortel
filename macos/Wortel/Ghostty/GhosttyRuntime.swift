@@ -14,6 +14,18 @@ final class GhosttyRuntime {
     private var observers: [NSObjectProtocol] = []
     private var appearanceObservation: NSKeyValueObservation?
 
+    /// Whether an appearance is a dark one, and what the Mac's is right now.
+    ///
+    /// One definition on purpose. Three places ask — the app-level forwarding
+    /// below, each surface in `viewDidChangeEffectiveAppearance`, and the catch-up
+    /// report a resumed session gets — and a program is only ever told one thing,
+    /// so they have to agree.
+    static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    static var systemIsDark: Bool { isDark(NSApplication.shared.effectiveAppearance) }
+
     init?() {
         guard ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS else {
             return nil
@@ -144,7 +156,7 @@ final class GhosttyRuntime {
 
         // -- System appearance forwarding (app-level) --------------------------
         let applyAppearance = { (appearance: NSAppearance) in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let isDark = GhosttyRuntime.isDark(appearance)
             ghostty_app_set_color_scheme(
                 appHandle, isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT)
         }
@@ -343,6 +355,38 @@ final class GhosttyRuntime {
             attachment.replay.withUnsafeBytes { raw in
                 guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
                 ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+            }
+        }
+
+        // And then, if the program asked to hear about it, what the appearance
+        // is *now*.
+        //
+        // Restoring `?2031` above only re-subscribes it; it says nothing about
+        // what changed while nobody was attached, and a Mac left on "Auto"
+        // flips at sunset. A session resumed the next morning has an agent
+        // still painting last night's palette: dark diff blocks on a white
+        // screen. It will never notice either, because it asked once, at its
+        // own startup, and has been waiting for us ever since.
+        //
+        // This is the one thing here written to the *program* rather than to
+        // the terminal, so it goes after the replay has been read for modes —
+        // a program that turned reporting off while detached said so in there,
+        // and must not be written to.
+        //
+        // Sent on every resume, not only when the appearance changed. Tracking
+        // what each program was last told would mean persisting a second belief
+        // about the far side and being wrong about it silently, which is the
+        // shape of the bug this whole file exists for. A report a program
+        // already agrees with costs it nothing: it sets the theme it is already
+        // painting. The only case that shows is a mode recorded as on for a
+        // program that has since exited, and the prelude above already accepts
+        // that same risk for seventeen modes with far more to say.
+        if attachment.resumed,
+           TerminalModeRecorder.shared.modes(for: session).wantsColorSchemeReports {
+            let report = TerminalModes.colorSchemeReport(dark: Self.systemIsDark)
+            report.withUnsafeBufferPointer { raw in
+                guard let base = raw.baseAddress else { return }
+                pty.write(base, count: raw.count)
             }
         }
         pty.beginReading()

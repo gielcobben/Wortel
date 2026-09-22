@@ -38,6 +38,17 @@ The lost keyboard flags (`>5u`) are the same bug wearing different clothes: they
 are how the agent and the terminal agree about shift+enter, so losing them turns
 a newline in the prompt back into a submit.
 
+**And so is the agent that stopped following light and dark.** `?2031` is how a
+program subscribes to theme changes: with it on, the terminal sends
+`ESC[?997;1n` for dark and `ESC[?997;2n` for light whenever the Mac's appearance
+changes, and ghostty checks that mode before sending anything
+(`Surface.reportColorScheme`). Claude Code turns it on at startup when its theme
+is `auto`, reads the background once via `OSC 11`, and then never asks again —
+it has no reason to. A resumed terminal never heard the subscription, so ghostty
+stayed quiet and the agent went on painting the palette it picked hours earlier:
+dark-background diff blocks on a white screen, or a white prompt box on a dark
+one. Intermittent for the same replay-tail reason, and permanent once it hit.
+
 ## What it does now
 
 `TerminalModes` watches the output the app is already handling, records the
@@ -59,7 +70,8 @@ its `?1049l` in that replay.
 **An allowlist, and a short one.** A mode replayed into a terminal that never
 asked for it is as wrong as a mode lost. `TerminalModes.restorable` holds the
 sticky ones whose loss you can see: application cursor keys, mouse reporting,
-focus reporting, the alternate screen, bracketed paste, the keyboard shape.
+focus reporting, the alternate screen, bracketed paste, theme reports, the
+keyboard shape.
 Deliberately not `?25` (cursor visibility), `?12` (blink) or `?2026`
 (synchronised output) — a TUI toggles those every frame, so recording them would
 mean writing to disk continuously to restore a state that is already one frame
@@ -68,6 +80,24 @@ old.
 **A mode nobody mentioned is not mentioned.** Absent, not false: the default
 belongs to the terminal, and `ESC[?1l` for a mode no program ever touched is
 noise that can only do harm.
+
+**And, for `?2031` alone, what the appearance is now.** Re-declaring the mode
+only re-subscribes the program; it says nothing about what changed while nobody
+was attached, and a Mac left on "Auto" flips at sunset. So a resumed session
+whose program wants theme reports is also sent one, matching the current
+appearance. This is the only thing here written to the *program* rather than to
+the terminal, which is why it goes after the replay has been read for modes: a
+program that turned reporting off while detached said so in there, and must not
+be written to.
+
+It is sent on every resume rather than only when the appearance changed.
+Tracking what each program was last told would mean persisting a second belief
+about the far side and being silently wrong about it, which is the shape of the
+bug this whole file exists for, and a report a program already agrees with costs
+it nothing — it sets the theme it is already painting. Note that a fresh
+surface's conditional theme is `.light` (ghostty's default), so on a *light* Mac
+ghostty's own `set_color_scheme` sees no change and reports nothing: without
+this the light case would never resync at all.
 
 ## The scanner
 
@@ -99,3 +129,8 @@ emulator, this only needs to know what to say again.
 - **Keyboard flag stacks.** `CSI > flags u` is recorded; a `CSI < u` pop leaves
   flags this cannot know, so it claims none rather than asserting what it saw
   pushed.
+- **A theme report reaches the foreground process group**, which is normally
+  the agent. A session resumed with `vim` or a pager in front hands those nine
+  bytes to that instead, exactly as a live appearance change already would. And
+  a `?2031` recorded as on for a program that has since exited writes them at a
+  shell prompt, the same risk the prelude already takes for every other mode.

@@ -21,6 +21,14 @@ import Foundation
 /// to still be in that tail, the replay set the mode again on its way through
 /// and the paste behaved. Quiet sessions worked; busy ones did not.
 ///
+/// **`?2031` is the same bug wearing different clothes.** An agent subscribes
+/// to theme changes once, at startup, and from then on trusts the terminal to
+/// say when the Mac goes light or dark. A resumed session's terminal never got
+/// that subscription, so ghostty stays quiet, and the agent keeps painting the
+/// palette it picked hours ago: dark-background diff blocks on a white screen,
+/// or a white prompt box on a dark one. Nothing recovers on its own, because
+/// the agent has no reason to ask again.
+///
 /// **This has to live in the app, not the keeper.** While a session is
 /// attached the app reads the pty itself and the keeper sees none of those
 /// bytes, which is precisely when a program declares its modes. So the app
@@ -43,6 +51,8 @@ struct TerminalModes: Equatable {
     /// - `1047`, `1048`, `1049` the alternate screen. A program that is in it
     ///   draws over a terminal that thinks it is on the primary screen.
     /// - `2004` bracketed paste: the one above.
+    /// - `2031` theme change notifications: the terminal reports light/dark to
+    ///   the program, which is how an agent follows the system appearance.
     /// - `67` backspace sends delete, `1036`/`1039` meta sends escape:
     ///   keyboard shape, set at startup by editors.
     ///
@@ -52,7 +62,7 @@ struct TerminalModes: Equatable {
     /// state that is one frame old anyway.
     static let restorable: Set<Int> = [
         1, 9, 67, 1000, 1002, 1003, 1004, 1005, 1006, 1015, 1016,
-        1036, 1039, 1047, 1048, 1049, 2004,
+        1036, 1039, 1047, 1048, 1049, 2004, 2031,
     ]
 
     /// Which of those are on, and which were explicitly turned off. A mode
@@ -85,6 +95,21 @@ struct TerminalModes: Equatable {
             out += "\u{1B}[>\(flags)u"
         }
         return Array(out.utf8)
+    }
+
+    /// Whether the program asked to be told when the system appearance changes
+    /// (`?2031`). The prelude puts the mode back in the *terminal*; this asks a
+    /// different question — is anyone on the far side listening — and it is the
+    /// one that decides whether anything may be written into the program's
+    /// input at all.
+    var wantsColorSchemeReports: Bool { privateModes[2031] == true }
+
+    /// What a terminal sends a program that turned `?2031` on: `CSI ? 997 ; 1 n`
+    /// for dark, `; 2 n` for light. The same bytes ghostty writes on a live
+    /// appearance change, which is the point — the program cannot tell a
+    /// resumed session's catch-up report from the real thing, and shouldn't.
+    static func colorSchemeReport(dark: Bool) -> [UInt8] {
+        Array("\u{1B}[?997;\(dark ? 1 : 2)n".utf8)
     }
 
     mutating func feed(_ bytes: UnsafePointer<UInt8>, count: Int, parser: inout CSIScanner) {

@@ -48,6 +48,33 @@ final class TerminalModesTests: XCTestCase {
         XCTAssertEqual(prelude(["\u{1B}[?1049h", "\u{1B}[?1049l"]), "\u{1B}[?1049l")
     }
 
+    /// The other half of the same bug: an agent subscribes to theme changes
+    /// once, at startup, and then trusts the terminal to say when the Mac goes
+    /// light or dark. A resumed terminal that never heard the subscription
+    /// stays quiet, and the agent paints last night's palette forever.
+    func testThemeReportsComeBack() {
+        XCTAssertEqual(prelude(["\u{1B}[?2031h"]), "\u{1B}[?2031h")
+        XCTAssertTrue(track(["\u{1B}[?2031h"]).wantsColorSchemeReports)
+    }
+
+    /// Whether anyone is listening is a separate question from what the prelude
+    /// says, because the answer decides whether bytes may be written into the
+    /// program's *input*. Nobody asked, or asked and withdrew: nothing goes in.
+    func testNothingIsReportedToAProgramThatDidNotAsk() {
+        XCTAssertFalse(TerminalModes().wantsColorSchemeReports)
+        XCTAssertFalse(track(["\u{1B}[?2004h"]).wantsColorSchemeReports)
+        XCTAssertFalse(track(["\u{1B}[?2031h", "\u{1B}[?2031l"]).wantsColorSchemeReports)
+    }
+
+    /// The bytes are ghostty's own, so a catch-up report is indistinguishable
+    /// from a live one — which is the point.
+    func testTheColorSchemeReportIsWhatGhosttyWouldSend() {
+        XCTAssertEqual(String(decoding: TerminalModes.colorSchemeReport(dark: true), as: UTF8.self),
+                       "\u{1B}[?997;1n")
+        XCTAssertEqual(String(decoding: TerminalModes.colorSchemeReport(dark: false), as: UTF8.self),
+                       "\u{1B}[?997;2n")
+    }
+
     func testTheKeyboardProtocolFlagsComeBack() {
         XCTAssertEqual(prelude(["\u{1B}[>1u"]), "\u{1B}[>1u")
     }

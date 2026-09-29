@@ -460,6 +460,32 @@ final class GitPanelModel {
         open(.terminal(UUID()), in: .main)
     }
 
+    /// A new browser in `region`'s row, on `url` or on nothing yet (its
+    /// address field takes the keyboard).
+    func openBrowser(at url: URL?, in region: TabRegion) {
+        guard let session else { return }
+        let id = UUID()
+        session.browserAddresses[id] = url?.absoluteString
+        open(.browser(id), in: region)
+    }
+
+    /// Show what's at `url`: a browser already on that server comes forward
+    /// wherever it is, otherwise a new one opens in the column.
+    func showInBrowser(_ url: URL) {
+        guard let session else { return }
+        let tabs = session.mainTabs + session.sideTabs + session.bottomTabs
+        let existing = tabs.first { tab in
+            guard let id = tab.browserID,
+                  let address = session.browserAddresses[id].flatMap(URL.init(string:)) else { return false }
+            return address.host() == url.host() && address.port == url.port
+        }
+        if let existing {
+            open(existing)
+        } else {
+            openBrowser(at: url, in: .side)
+        }
+    }
+
     /// Put the column on the terminal's leading or trailing side.
     func setColumnLeading(_ leading: Bool) {
         guard let session, session.sideColumnLeading != leading else { return }

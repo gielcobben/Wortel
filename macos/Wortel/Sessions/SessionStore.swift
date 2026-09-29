@@ -75,6 +75,9 @@ struct PersistedSession: Codable {
     let mainTabs: [String]?
     let activeMainTab: String?
     let sideColumnLeading: Bool?
+    /// `Session.browserAddresses`, keyed by the tab id's string. nil in older
+    /// files: no browsers.
+    let browserAddresses: [String: String]?
 
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
@@ -102,7 +105,7 @@ struct PersistedSession: Codable {
         case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
-        case mainTabs, activeMainTab, sideColumnLeading
+        case mainTabs, activeMainTab, sideColumnLeading, browserAddresses
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
@@ -119,6 +122,7 @@ struct PersistedSession: Codable {
          closedTabs: [String]? = nil,
          mainTabs: [String]? = nil, activeMainTab: String? = nil,
          sideColumnLeading: Bool? = nil,
+         browserAddresses: [String: String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
@@ -137,6 +141,7 @@ struct PersistedSession: Codable {
         self.mainTabs = mainTabs
         self.activeMainTab = activeMainTab
         self.sideColumnLeading = sideColumnLeading
+        self.browserAddresses = browserAddresses
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -187,6 +192,7 @@ struct PersistedSession: Codable {
         mainTabs = try c.decodeIfPresent([String].self, forKey: .mainTabs)
         activeMainTab = try c.decodeIfPresent(String.self, forKey: .activeMainTab)
         sideColumnLeading = try c.decodeIfPresent(Bool.self, forKey: .sideColumnLeading)
+        browserAddresses = try c.decodeIfPresent([String: String].self, forKey: .browserAddresses)
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.

@@ -321,9 +321,11 @@ session has three places for tabs, modelled on the ChatGPT app's bounded layout
 - **the bottom strip** under the main area (⌘J).
 
 Besides panes and terminals, a tab can be a previewed file (`SideTab.file`) or
-a page the session serves (`SideTab.web`, `Wortel/Browser/BrowserTabs.swift`),
-opened from the running-jobs popover or the column's "+". A page's web view
-lives in `BrowserTabs`, not in the view, so moving its tab doesn't reload it.
+a browser (`SideTab.browser(id)`, `Wortel/Browser/`), opened blank from "+" or
+on a server from the running-jobs popover. A browser's address lives on its
+session (`browserAddresses`, persisted) and its live web view in
+`BrowserTabs`, not in the view, so moving the tab or making it a window
+doesn't reload it.
 
 A tab is in exactly one row; the one in front fills its area. Any tab goes in
 any row, except the session's terminal, which never leaves the

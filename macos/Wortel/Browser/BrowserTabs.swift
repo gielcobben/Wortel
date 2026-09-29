@@ -3,35 +3,63 @@ import Observation
 import SwiftUI
 import WebKit
 
-/// Pages from what a session serves, shown in tabs: the dev server beside the
-/// agent editing it.
+/// Browsers in tabs: the dev server beside the agent editing it, docs beside
+/// the terminal. A browser is a tab like any other: "+" opens one, it moves
+/// between rows, a session can have several, and it can become a window.
 ///
-/// One live page per address, kept here rather than in the view, for the same
+/// One live page per tab, kept here rather than in the view, for the same
 /// reason terminals live in their keepers: a tab moves between rows and
 /// sessions come and go, and a page rebuilt on every move would lose its
 /// scroll, its form state and its HMR connection each time. The view borrows
 /// the page's web view and hands it back (`WebViewHost`).
 ///
-/// Not a browser. The address is where it was opened, there is no address
-/// bar to type into, and a link to anywhere that isn't local goes to your
-/// browser, which is where the rest of the web belongs.
+/// Where each browser is, is session state (`Session.browserAddresses`),
+/// reached through `address` and written through `onNavigate`, both set by
+/// AppDelegate. A page is made the first time its tab is shown.
+@Observable
 @MainActor
 final class BrowserTabs {
     static let shared = BrowserTabs()
 
-    private var pages: [String: BrowserPage] = [:]
+    private var pages: [UUID: BrowserPage] = [:]
+    @ObservationIgnored private var windows: [BrowserWindowController] = []
+
+    /// Where a browser tab is, from its session.
+    @ObservationIgnored var address: (UUID) -> URL? = { _ in nil }
+    /// A browser tab went somewhere: record it on its session.
+    @ObservationIgnored var onNavigate: (UUID, URL) -> Void = { _, _ in }
+    /// A tab became a window: take the tab away.
+    @ObservationIgnored var onMovedToWindow: (UUID) -> Void = { _ in }
 
     /// The page for a tab, loaded the first time it's asked for.
-    func page(for address: String) -> BrowserPage {
-        if let page = pages[address] { return page }
-        let page = BrowserPage(address: URL(string: address) ?? URL(string: "about:blank")!)
-        pages[address] = page
+    func page(for id: UUID) -> BrowserPage {
+        if let page = pages[id] { return page }
+        let page = BrowserPage(address: address(id))
+        page.onNavigate = { [weak self] url in self?.onNavigate(id, url) }
+        pages[id] = page
         return page
     }
 
+    /// The page for a tab if it has one yet: what its tab is titled by.
+    func existingPage(for id: UUID) -> BrowserPage? { pages[id] }
+
     /// A tab closed: let its page go.
-    func forget(_ address: String) {
-        pages.removeValue(forKey: address)?.close()
+    func forget(_ id: UUID) {
+        pages.removeValue(forKey: id)?.close()
+    }
+
+    /// Turn a tab into a window, the same page and all, as a file tab can.
+    func openInWindow(_ id: UUID) {
+        let page = self.page(for: id)
+        pages[id] = nil
+        let controller = BrowserWindowController(page: page)
+        controller.onClose = { [weak self, weak controller] in
+            page.close()
+            self?.windows.removeAll { $0 === controller }
+        }
+        windows.append(controller)
+        controller.showWindow(nil)
+        onMovedToWindow(id)
     }
 }
 
@@ -39,25 +67,31 @@ final class BrowserTabs {
 @Observable
 @MainActor
 final class BrowserPage: NSObject {
-    /// Where the tab was opened: what it retries while the server is down.
-    let address: URL
     @ObservationIgnored let webView: WKWebView
-
+    /// Where it was opened, or nil for a new browser with nothing typed yet.
+    private(set) var address: URL?
     private(set) var currentURL: URL?
+    private(set) var title = ""
     private(set) var canGoBack = false
     private(set) var canGoForward = false
     private(set) var isLoading = false
-    /// Nothing answers at the address yet, or any more: a server starting, or
-    /// restarting. The page keeps trying until it does.
+    /// Nothing answers at a local address, yet or any more: a server starting,
+    /// or restarting. The page keeps trying until it does.
     private(set) var isWaiting = false
+    /// Why the last load failed, for anything that isn't a local server coming
+    /// back: a typo, no network.
+    private(set) var failure: String?
+    /// Bumped to put the keyboard in the address field.
+    private(set) var addressFocusRequest = 0
 
+    @ObservationIgnored var onNavigate: (URL) -> Void = { _ in }
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var retry: Task<Void, Never>?
 
-    /// How often a page whose server is down tries again.
+    /// How often a page whose local server is down tries again.
     private static let retryInterval: Duration = .seconds(1)
 
-    init(address: URL) {
+    init(address: URL?) {
         self.address = address
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
@@ -65,13 +99,20 @@ final class BrowserPage: NSObject {
         super.init()
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        // Inspect Element in the context menu: it's a developer's page.
+        // Inspect Element in the context menu.
         webView.isInspectable = true
         webView.allowsBackForwardNavigationGestures = true
         webView.autoresizingMask = [.width, .height]
         observations = [
             webView.observe(\.url) { [weak self] view, _ in
-                MainActor.assumeIsolated { self?.currentURL = view.url }
+                MainActor.assumeIsolated {
+                    guard let self, let url = view.url else { return }
+                    self.currentURL = url
+                    self.onNavigate(url)
+                }
+            },
+            webView.observe(\.title) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.title = view.title ?? "" }
             },
             webView.observe(\.canGoBack) { [weak self] view, _ in
                 MainActor.assumeIsolated { self?.canGoBack = view.canGoBack }
@@ -83,15 +124,36 @@ final class BrowserPage: NSObject {
                 MainActor.assumeIsolated { self?.isLoading = view.isLoading }
             },
         ]
-        webView.load(URLRequest(url: address))
+        if let address {
+            webView.load(URLRequest(url: address))
+        } else {
+            addressFocusRequest += 1
+        }
+    }
+
+    /// Where the page is, or is about to be.
+    var location: URL? { currentURL ?? address }
+
+    /// What a tab is called: the page's title, or where it is until it has
+    /// one, or "New Tab" before it's anywhere.
+    var tabTitle: String {
+        if !title.isEmpty { return title }
+        return location.map(BrowserAddress.short) ?? "New Tab"
+    }
+
+    /// Go where the address field says.
+    func go(to typed: String) {
+        guard let url = BrowserAddress.url(from: typed) else { return }
+        if address == nil { address = url }
+        load(url)
     }
 
     func goBack() { webView.goBack() }
     func goForward() { webView.goForward() }
 
     func reload() {
-        if isWaiting || webView.url == nil {
-            webView.load(URLRequest(url: currentURL ?? address))
+        if isWaiting || failure != nil || webView.url == nil {
+            if let location { load(location) }
         } else {
             webView.reload()
         }
@@ -100,8 +162,10 @@ final class BrowserPage: NSObject {
     func stop() { webView.stopLoading() }
 
     func openInBrowser() {
-        NSWorkspace.shared.open(currentURL ?? address)
+        if let location { NSWorkspace.shared.open(location) }
     }
+
+    func focusAddress() { addressFocusRequest += 1 }
 
     fileprivate func close() {
         retry?.cancel()
@@ -111,106 +175,95 @@ final class BrowserPage: NSObject {
         webView.removeFromSuperview()
     }
 
-    /// `localhost:5173`, `localhost:5173/docs`: what a tab and a header call an
-    /// address. The scheme is always http and says nothing.
-    static func shortAddress(_ url: URL?) -> String {
-        guard let url, let host = url.host() else { return url?.absoluteString ?? "Page" }
-        var text = host
-        if let port = url.port { text += ":\(port)" }
-        let path = url.path()
-        if !path.isEmpty, path != "/" { text += path }
-        return text
+    private func load(_ url: URL) {
+        failure = nil
+        currentURL = url
+        webView.load(URLRequest(url: url))
     }
 
-    /// Whether a URL is the session's own, a page to keep in the tab, rather
-    /// than the web at large.
-    fileprivate static func isLocal(_ url: URL) -> Bool {
-        guard let host = url.host()?.lowercased() else { return url.scheme == "about" }
-        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
-            || host.hasSuffix(".localhost") || host.hasSuffix(".local")
-    }
-
-    /// Try the address again in a moment, until something answers.
+    /// Try again in a moment, until something answers.
     private func scheduleRetry() {
         retry?.cancel()
         retry = Task { [weak self] in
             try? await Task.sleep(for: Self.retryInterval)
-            guard !Task.isCancelled, let self, self.isWaiting else { return }
-            self.webView.load(URLRequest(url: self.currentURL ?? self.address))
+            guard !Task.isCancelled, let self, self.isWaiting, let location = self.location else { return }
+            self.webView.load(URLRequest(url: location))
         }
     }
 }
 
 extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
-    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
-                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-        // A link out of the session's own pages opens in the browser.
-        if action.navigationType == .linkActivated, let url = action.request.url,
-           action.targetFrame?.isMainFrame ?? true, !Self.isLocal(url) {
-            NSWorkspace.shared.open(url)
-            decisionHandler(.cancel)
-            return
-        }
-        decisionHandler(.allow)
-    }
-
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isWaiting = false
+        failure = nil
         retry?.cancel()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: any Error) {
-        let code = (error as NSError).code
-        // A reload or link click cut short by the next one isn't a failure.
-        guard code != NSURLErrorCancelled else { return }
+        let error = error as NSError
+        // A load cut short by the next one isn't a failure.
+        guard error.code != NSURLErrorCancelled else { return }
         let unreachable: Set<Int> = [NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost,
-                                     NSURLErrorTimedOut, NSURLErrorCannotFindHost,
-                                     NSURLErrorNotConnectedToInternet]
-        guard unreachable.contains(code) else { return }
-        isWaiting = true
-        scheduleRetry()
+                                     NSURLErrorTimedOut]
+        if unreachable.contains(error.code), let host = location?.host(), BrowserAddress.isLocalHost(host) {
+            isWaiting = true
+            scheduleRetry()
+        } else {
+            failure = error.localizedDescription
+        }
     }
 
-    /// `target="_blank"` and `window.open`: a local page in this tab, anything
-    /// else in the browser. There's no second window to give it.
+    /// `target="_blank"` and `window.open`: in this tab. There's no second
+    /// window to give it.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url {
-            if Self.isLocal(url) { webView.load(action.request) } else { NSWorkspace.shared.open(url) }
-        }
+        if action.request.url != nil { webView.load(action.request) }
         return nil
     }
 }
 
-/// A web page's tab: a slim header and the page.
+// MARK: - Views
+
+/// A browser: a slim header and the page. The same view in a tab and in a
+/// window; only the tab offers to become a window.
 struct BrowserTab: View {
     let page: BrowserPage
+    /// Turn the tab into a window; nil in a window.
+    var openInWindow: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
-            BrowserTabHeader(page: page)
+            BrowserHeader(page: page, openInWindow: openInWindow)
             Rectangle()
                 .fill(Color(nsColor: Chrome.hairline))
                 .frame(height: 1)
             ZStack {
                 WebViewHost(page: page)
-                if page.isWaiting {
-                    WaitingForServer(address: BrowserPage.shortAddress(page.address))
+                if page.isWaiting, let location = page.location {
+                    PageNotice(spinner: true, text: "Waiting for \(BrowserAddress.short(location))")
+                } else if let failure = page.failure {
+                    PageNotice(spinner: false, text: failure)
+                } else if page.location == nil {
+                    PageNotice(spinner: false, text: "Type an address, or just a port like 3000")
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: Chrome.content))
-        // Another page in the same row is another web view to borrow.
+        // Another browser in the same row is another web view to borrow.
         .id(ObjectIdentifier(page))
     }
 }
 
-/// Back, forward, reload, where the page is, and the way out to the browser.
-/// Laid out like a file tab's header.
-private struct BrowserTabHeader: View {
+/// Back, forward, reload, the address, and the ways out: a window, or your
+/// browser. Laid out like a file tab's header.
+private struct BrowserHeader: View {
     let page: BrowserPage
+    let openInWindow: (() -> Void)?
+
+    @State private var typed = ""
+    @FocusState private var editing: Bool
 
     var body: some View {
         HStack(spacing: 2) {
@@ -222,19 +275,48 @@ private struct BrowserTabHeader: View {
                 button("xmark", "Stop Loading", action: page.stop)
             } else {
                 button("arrow.clockwise", "Reload", action: page.reload)
+                    .disabled(page.location == nil)
             }
-            Text(BrowserPage.shortAddress(page.currentURL ?? page.address))
+            TextField("Address", text: $typed)
+                .textFieldStyle(.plain)
                 .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help((page.currentURL ?? page.address).absoluteString)
-                .padding(.leading, 6)
-            Spacer(minLength: 8)
+                .foregroundStyle(editing ? .primary : .secondary)
+                .focused($editing)
+                .onSubmit {
+                    page.go(to: typed)
+                    editing = false
+                }
+                .onExitCommand {
+                    typed = shown
+                    editing = false
+                }
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color(nsColor: editing ? Chrome.hoverFill : .clear)))
+                .padding(.leading, 4)
+            if let openInWindow {
+                button("macwindow.badge.plus", "Open in New Window", action: openInWindow)
+            }
             button("arrow.up.forward.square", "Open in Browser", action: page.openInBrowser)
+                .disabled(page.location == nil)
         }
         .padding(.horizontal, 8)
         .frame(height: 34)
+        .onAppear {
+            typed = shown
+            if page.location == nil { editing = true }
+        }
+        .onChange(of: page.currentURL) { _, _ in if !editing { typed = shown } }
+        .onChange(of: page.addressFocusRequest) { _, _ in editing = true }
+        .onChange(of: editing) { _, now in
+            // The whole address to edit; the short one to read.
+            typed = now ? (page.location?.absoluteString ?? "") : shown
+        }
+    }
+
+    private var shown: String {
+        page.location.map(BrowserAddress.short) ?? ""
     }
 
     private func button(_ symbol: String, _ label: String,
@@ -252,17 +334,22 @@ private struct BrowserTabHeader: View {
     }
 }
 
-/// What a page shows while nothing answers at its address.
-private struct WaitingForServer: View {
-    let address: String
+/// What a page shows when there's no page to show.
+private struct PageNotice: View {
+    let spinner: Bool
+    let text: String
 
     var body: some View {
         VStack(spacing: 10) {
-            ProgressView()
-                .controlSize(.small)
-            Text("Waiting for \(address)")
+            if spinner {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            Text(text)
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: Chrome.content))
@@ -295,5 +382,42 @@ private struct WebViewHost: NSViewRepresentable {
         container.subviews.forEach { $0.removeFromSuperview() }
         webView.frame = container.bounds
         container.addSubview(webView)
+    }
+}
+
+/// A browser tab turned into a window: the same page, titled by it.
+@MainActor
+private final class BrowserWindowController: NSWindowController, NSWindowDelegate {
+    var onClose: () -> Void = {}
+    private let page: BrowserPage
+
+    init(page: BrowserPage) {
+        self.page = page
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false)
+        window.contentViewController = NSHostingController(rootView: BrowserTab(page: page))
+        window.setContentSize(NSSize(width: 1100, height: 760))
+        window.isReleasedWhenClosed = false
+        window.setFrameAutosaveName("BrowserWindow")
+        window.center()
+        super.init(window: window)
+        window.delegate = self
+        followTitle()
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    private func followTitle() {
+        withObservationTracking {
+            window?.title = page.tabTitle
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followTitle() }
+        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onClose()
     }
 }

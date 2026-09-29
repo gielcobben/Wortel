@@ -520,6 +520,9 @@ final class SessionManager {
             session.workspace = tabs.normalized()
             session.sideColumnWidth = entry.sideColumnWidth
             session.sideColumnLeading = entry.sideColumnLeading ?? false
+            for (key, address) in entry.browserAddresses ?? [:] {
+                if let id = UUID(uuidString: key) { session.browserAddresses[id] = address }
+            }
             // A surviving marker means the app died without cleaning up (a crash),
             // and is the most direct evidence. A clean quit leaves none — killing
             // the agent hands control back to the shell, whose last prompt clears
@@ -2145,6 +2148,17 @@ final class SessionManager {
 
     // MARK: - Persistence
 
+    /// The addresses of the browsers a session still has, open or closed and
+    /// waiting for ⌘⇧T; the rest are gone for good.
+    private static func persistedBrowserAddresses(of session: Session) -> [String: String]? {
+        let workspace = session.workspace
+        let kept = Set((workspace.main + workspace.side + workspace.bottom
+                        + workspace.closed.map(\.tab)).compactMap(\.browserID))
+        let addresses = session.browserAddresses.filter { kept.contains($0.key) }
+        guard !addresses.isEmpty else { return nil }
+        return Dictionary(uniqueKeysWithValues: addresses.map { ($0.key.uuidString, $0.value) })
+    }
+
     private func persistedSessions() -> [PersistedSession] {
         sessions.map { session in
             // What to record as "the agent to resume next launch", resolved as one
@@ -2194,6 +2208,7 @@ final class SessionManager {
                 mainTabs: session.mainTabs.map(\.rawValue),
                 activeMainTab: session.activeMainTab?.rawValue,
                 sideColumnLeading: session.sideColumnLeading,
+                browserAddresses: Self.persistedBrowserAddresses(of: session),
                 runningAgent: agent?.agent, runningModel: agent?.model,
                 runningArgv: agent?.argv,
                 runningConversationID: agent == nil ? nil : conversationID)

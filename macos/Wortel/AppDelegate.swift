@@ -178,9 +178,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self.previewWindows.open(url, diff: diff, hasChanges: hasChanges)
             self.gitPanel.close(.file(url.path))
         }
+        // Browsers keep where they are on their session, so a relaunch or a
+        // reopen goes back there.
+        BrowserTabs.shared.address = { [weak self] id in
+            self?.manager.sessions.lazy.compactMap { $0.browserAddresses[id] }.first
+                .flatMap(URL.init(string:))
+        }
+        BrowserTabs.shared.onNavigate = { [weak self] id, url in
+            guard let self, url.scheme != "about",
+                  let session = self.manager.sessions.first(where: {
+                      $0.workspace.region(of: .browser(id)) != nil
+                  }),
+                  session.browserAddresses[id] != url.absoluteString else { return }
+            session.browserAddresses[id] = url.absoluteString
+            self.manager.sessionStateChanged()
+        }
+        BrowserTabs.shared.onMovedToWindow = { [weak self] id in
+            self?.gitPanel.close(.browser(id))
+        }
         gitPanel.onTabClosed = { [weak self] tab in
             if let path = tab.filePath { self?.previewTabs.forget(path) }
-            if let address = tab.webAddress { BrowserTabs.shared.forget(address) }
+            if let id = tab.browserID { BrowserTabs.shared.forget(id) }
         }
         // A link in a rendered README is a fifth way to open a file, and it goes
         // through the same opener as the other four.

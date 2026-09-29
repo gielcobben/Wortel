@@ -38,8 +38,9 @@ struct InspectorContainer: View {
             case .file(let path)?:
                 PreviewTab(tabs: previewTabs, path: path)
                     .background(Color(nsColor: Chrome.content))
-            case .web(let address)?:
-                BrowserTab(page: BrowserTabs.shared.page(for: address))
+            case .browser(let id)?:
+                BrowserTab(page: BrowserTabs.shared.page(for: id),
+                           openInWindow: { BrowserTabs.shared.openInWindow(id) })
             case .terminal?, .session?:
                 EmptyView()
             }

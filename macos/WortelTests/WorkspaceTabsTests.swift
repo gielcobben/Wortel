@@ -226,11 +226,20 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(file.rawValue, "file:/Users/giel/Developer/wortel/README.md")
     }
 
-    func testWebTabRawValuesRoundTrip() {
-        let web = SideTab.web("http://localhost:5173")
-        XCTAssertEqual(SideTab(rawValue: web.rawValue), web)
-        XCTAssertEqual(web.rawValue, "web:http://localhost:5173")
-        XCTAssertNil(SideTab(rawValue: "web:"))
+    func testBrowserTabRawValuesRoundTrip() {
+        let browser = SideTab.browser(UUID())
+        XCTAssertEqual(SideTab(rawValue: browser.rawValue), browser)
+        XCTAssertNil(SideTab(rawValue: "browser:localhost"))
+    }
+
+    /// A browser, unlike a terminal, comes back as itself: its address is
+    /// kept under its id.
+    func testAReopenedBrowserKeepsItsID() {
+        var tabs = WorkspaceTabs()
+        let browser = SideTab.browser(UUID())
+        tabs.place(browser, in: .side, at: 0)
+        tabs.close(browser)
+        XCTAssertEqual(tabs.reopen(preferring: .side), browser)
     }
 
     func testClosedTabRawValuesRoundTrip() {

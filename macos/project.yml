@@ -219,10 +219,12 @@ targets:
         NSHumanReadableCopyright: "© Giel Cobben"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSSupportsSuddenTermination: false
-        # Web tabs show what a session serves (http://localhost:5173), which
-        # App Transport Security would otherwise refuse for being plain http.
+        # Browser tabs load what a session serves (http://localhost:5173) and
+        # whatever else is typed, which App Transport Security would otherwise
+        # refuse for being plain http.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoadsInWebContent: true
         # Sparkle auto-update feed (served from the wortel-updates R2 bucket).
         SUFeedURL: https://updates.wortel.sh/appcast.xml
         # EdDSA public key — private half lives in the login Keychain (shared
@@ -364,6 +366,7 @@ targets:
       - path: Wortel/UI/ClosureMenuItem.swift
       - path: Wortel/UI/Chrome.swift
       - path: Wortel/UI/SideTabStrip.swift
+      - path: Wortel/Browser/BrowserAddress.swift
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/GitRepoModel.swift
       - path: Wortel/Git/GitRepoWatcher.swift

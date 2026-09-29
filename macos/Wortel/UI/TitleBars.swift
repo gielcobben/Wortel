@@ -465,9 +465,12 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             let symbol = ["md", "markdown"].contains(url.pathExtension.lowercased())
                 ? "doc.richtext" : "doc.text"
             return .init(tab: tab, title: url.lastPathComponent, symbol: symbol)
-        case .web(let address):
-            return .init(tab: tab, title: BrowserPage.shortAddress(URL(string: address)),
-                         symbol: "globe")
+        case .browser(let id):
+            // The page's title once it has one, where it is until then.
+            let title = BrowserTabs.shared.existingPage(for: id)?.tabTitle
+                ?? session?.browserAddresses[id].flatMap(URL.init(string:)).map(BrowserAddress.short)
+                ?? "New Tab"
+            return .init(tab: tab, title: title, symbol: "globe")
         case .session:
             // The session's own terminal, by the session's name.
             let name = session.map { SessionName.leaf(of: $0.name) } ?? "Terminal"
@@ -523,6 +526,12 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         }
         menu.addItem(terminal)
 
+        let browser = ClosureMenuItem(title: "New Browser") { [weak self] in
+            self?.git.openBrowser(at: nil, in: region)
+        }
+        Self.setGlyph("globe", on: browser)
+        menu.addItem(browser)
+
         menu.addItem(.separator())
         for pane in InspectorPane.allCases {
             let item = ClosureMenuItem(title: pane.title) { [weak self] in
@@ -543,7 +552,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             for job in servers {
                 guard let url = job.localURL, let address = job.localAddress else { continue }
                 let item = ClosureMenuItem(title: address) { [weak self] in
-                    self?.git.open(.web(url.absoluteString), in: region)
+                    self?.git.showInBrowser(url)
                 }
                 Self.setGlyph("globe", on: item)
                 item.toolTip = job.label
@@ -574,6 +583,11 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         terminal.keyEquivalent = "t"
         terminal.keyEquivalentModifierMask = [.command]
         menu.addItem(terminal)
+        let browser = ClosureMenuItem(title: "New Browser") { [weak self] in
+            self?.git.openBrowser(at: nil, in: .main)
+        }
+        Self.setGlyph("globe", on: browser)
+        menu.addItem(browser)
         let strip = ClosureMenuItem(title: git.bottomVisible ? "Hide Strip" : "Show Strip") { [weak self] in
             self?.git.toggleBottom()
         }
@@ -687,7 +701,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         let list = RunningJobsList(
             monitor: processes, session: session,
-            openInTab: { [weak self] url in self?.git.open(.web(url.absoluteString)) },
+            openInTab: { [weak self] url in self?.git.showInBrowser(url) },
             dismiss: { [weak self] in self?.runningPopover?.performClose(nil) })
         let host = NSHostingController(rootView: list)
         host.sizingOptions = [.preferredContentSize]

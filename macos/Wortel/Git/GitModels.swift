@@ -311,14 +311,14 @@ enum SideTab: Hashable, Sendable {
     /// is canonical (symlinks resolved), which makes it the tab's identity: one
     /// tab per file, wherever it was opened from.
     case file(String)
-    /// A page from something the session serves, `http://localhost:5173` and
-    /// the like. The address it was opened on is its identity; where the page
-    /// has navigated since is the page's business (BrowserTabs).
-    case web(String)
+    /// A browser. Its id is its identity, so a session can have several, on
+    /// the same address or none yet; where each one is lives on the session
+    /// (`Session.browserAddresses`) and its live page in `BrowserTabs`.
+    case browser(UUID)
 
     private static let terminalPrefix = "terminal:"
     private static let filePrefix = "file:"
-    private static let webPrefix = "web:"
+    private static let browserPrefix = "browser:"
 
     init?(rawValue: String) {
         if let pane = InspectorPane(rawValue: rawValue) {
@@ -328,8 +328,9 @@ enum SideTab: Hashable, Sendable {
             self = .terminal(id)
         } else if rawValue.hasPrefix(Self.filePrefix), rawValue.count > Self.filePrefix.count {
             self = .file(String(rawValue.dropFirst(Self.filePrefix.count)))
-        } else if rawValue.hasPrefix(Self.webPrefix), rawValue.count > Self.webPrefix.count {
-            self = .web(String(rawValue.dropFirst(Self.webPrefix.count)))
+        } else if rawValue.hasPrefix(Self.browserPrefix),
+                  let id = UUID(uuidString: String(rawValue.dropFirst(Self.browserPrefix.count))) {
+            self = .browser(id)
         } else if rawValue == "session" {
             self = .session
         } else {
@@ -343,7 +344,7 @@ enum SideTab: Hashable, Sendable {
         case .terminal(let id): return Self.terminalPrefix + id.uuidString
         case .session: return "session"
         case .file(let path): return Self.filePrefix + path
-        case .web(let address): return Self.webPrefix + address
+        case .browser(let id): return Self.browserPrefix + id.uuidString
         }
     }
 
@@ -352,13 +353,13 @@ enum SideTab: Hashable, Sendable {
         return nil
     }
 
-    var webAddress: String? {
-        if case .web(let address) = self { return address }
+    var browserID: UUID? {
+        if case .browser(let id) = self { return id }
         return nil
     }
 
     /// Whether a row draws this tab as a page of its own (a pane, a file, a
-    /// web page) rather than hosting a terminal.
+    /// browser) rather than hosting a terminal.
     var isPage: Bool { terminalID == nil && self != .session }
 
     var pane: InspectorPane? {

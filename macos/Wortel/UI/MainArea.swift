@@ -101,8 +101,9 @@ struct TabContent: View {
             switch tab {
             case .file(let path)?:
                 PreviewTab(tabs: previewTabs, path: path)
-            case .web(let address)?:
-                BrowserTab(page: BrowserTabs.shared.page(for: address))
+            case .browser(let id)?:
+                BrowserTab(page: BrowserTabs.shared.page(for: id),
+                           openInWindow: { BrowserTabs.shared.openInWindow(id) })
             case .pane(.files)?:
                 FileTreePanel(model: files, focusRequest: git.listFocusRequest)
             case .pane(let pane)?:

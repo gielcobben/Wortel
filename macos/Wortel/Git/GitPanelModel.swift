@@ -231,13 +231,24 @@ final class GitPanelModel {
     /// Show or hide the column. Hiding keeps its tabs; showing a column that
     /// has none opens the pane you last chose, because an empty column is not
     /// something to show.
+    ///
+    /// The keyboard follows, as it does for the strip (⌘J): showing the column
+    /// puts you in it (a terminal, or a pane's list), hiding it puts you back in
+    /// the session's terminal. That's what makes ⌥⌘B, ⌘T, ⌘W a sequence you can
+    /// type without reaching for the pointer.
     func toggle() {
         if !isVisible, tabs.isEmpty {
             fillEmptyColumn()
+            focus(.side)
             return
         }
         setVisible(!isVisible)
         resolveCurrent()
+        if isVisible {
+            focus(.side)
+        } else {
+            onFocusMainTerminal?()
+        }
     }
 
     // MARK: - Tabs

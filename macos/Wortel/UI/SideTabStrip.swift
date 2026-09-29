@@ -44,8 +44,10 @@ final class SideTabStrip: NSView {
 
     override var isFlipped: Bool { true }
 
-    /// Empty space in the strip is titlebar: it drags the window.
-    override var mouseDownCanMoveWindow: Bool { true }
+    /// Not itself a drag handle for the window: a click on empty strip is
+    /// passed up to the titlebar row, which moves the window itself (see
+    /// ChromeBarView). Saying yes here marked the tabs' own area as draggable.
+    override var mouseDownCanMoveWindow: Bool { false }
 
     func update(items: [Item], active: SideTab?) {
         guard items != self.items || active != self.active else { return }
@@ -137,8 +139,8 @@ private final class SideTabView: NSView {
         didSet { divider.isHidden = !showsTrailingDivider }
     }
 
-    private let icon = NSImageView()
-    private let label = NSTextField(labelWithString: "")
+    private let icon = StationaryImageView()
+    private let label = StationaryLabel(labelWithString: "")
     private let closeButton = HoverFillButton()
     private let divider = FilledView(color: Chrome.hairlineStrong)
     private var isActive = false
@@ -305,5 +307,26 @@ private final class SideTabView: NSView {
     /// A tab is a control, not titlebar: dragging it must not move the window.
     override var mouseDownCanMoveWindow: Bool { false }
 
+    /// The whole tab is one target, except its close button. In the titlebar
+    /// the window moves when the view under a click allows it, and a label or
+    /// an image view allows it by default: grabbing a tab by its title dragged
+    /// the window instead of the tab.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        if hit === closeButton || hit.isDescendant(of: closeButton) { return hit }
+        return self
+    }
+
     @objc private func closePressed() { onClose() }
+}
+
+/// A label and an image view that never move the window. Both allow it by
+/// default (they're not opaque), and in the titlebar that made a tab's title
+/// and glyph handles for dragging the window rather than the tab.
+private final class StationaryLabel: NSTextField {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
+private final class StationaryImageView: NSImageView {
+    override var mouseDownCanMoveWindow: Bool { false }
 }

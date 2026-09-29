@@ -336,8 +336,17 @@ final class GitPanelModel {
 
     /// Put a tab back: a pane as itself, a terminal as a new shell in the place
     /// the old one had. ⌘⇧T.
-    func reopenClosedTab() {
-        guard let session, let closed = session.closedTabs.popLast() else { return }
+    ///
+    /// Where you are decides which one: in the bottom strip it's the last tab
+    /// closed there, anywhere else the last closed in the side column, and only
+    /// when that place has nothing to give back, the last closed anywhere. A
+    /// plain "last closed" stack felt random once tabs close in two places: the
+    /// same key put things back in whichever one you'd happened to close last.
+    func reopenClosedTab(in region: TabRegion) {
+        guard let session, !session.closedTabs.isEmpty else { return }
+        let index = session.closedTabs.lastIndex { $0.region == region }
+            ?? session.closedTabs.count - 1
+        let closed = session.closedTabs.remove(at: index)
         let tab: SideTab = closed.tab.terminalID != nil ? .terminal(UUID()) : closed.tab
         if tab.pane != nil, session.sideTabs.contains(tab) {
             select(tab)

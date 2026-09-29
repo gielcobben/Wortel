@@ -659,7 +659,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc func reopenClosedTab(_ sender: Any?) {
         focusMainWindow()
-        gitPanel.reopenClosedTab()
+        // The strip, if the keyboard is in one of its terminals.
+        var region = TabRegion.side
+        if let focused = window.firstResponder as? SurfaceView,
+           let session = manager.selected,
+           let id = session.sideSurfaces.first(where: { $0.value === focused })?.key,
+           session.bottomTabs.contains(id) {
+            region = .bottom
+        }
+        gitPanel.reopenClosedTab(in: region)
     }
 
     @objc func newSideTerminal(_ sender: Any?) {

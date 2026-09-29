@@ -31,7 +31,9 @@ final class SessionSwitcher {
             backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        // The card draws its own shadow: the panel is taller than the card,
+        // and a window shadow would outline the clear part too.
+        panel.hasShadow = false
         panel.isReleasedWhenClosed = false
         panel.animationBehavior = .utilityWindow
         panel.onResign = { [weak self] in self?.close() }
@@ -39,14 +41,18 @@ final class SessionSwitcher {
             self?.close()
             self?.manager.selectedID = id
         }, cancel: { [weak self] in self?.close() }))
-        host.sizingOptions = [.preferredContentSize]
+        // A fixed height, the card pinned to its top: the panel never has to
+        // resize as the list shortens, and its top stays put. (Sized from the
+        // view's fitting size instead, it opened at no height at all: there,
+        // with the keyboard, and invisible.)
+        host.sizingOptions = []
         panel.contentView = host
         // A little below the top of the window, centred on it.
         let frame = window.frame
-        let size = host.fittingSize
+        let height = SwitcherView.maximumHeight
         panel.setFrame(NSRect(x: frame.midX - SwitcherView.width / 2,
-                              y: frame.maxY - 90 - size.height,
-                              width: SwitcherView.width, height: size.height), display: false)
+                              y: frame.maxY - 90 - height,
+                              width: SwitcherView.width, height: height), display: false)
         window.addChildWindow(panel, ordered: .above)
         panel.makeKeyAndOrderFront(nil)
         self.panel = panel
@@ -80,6 +86,9 @@ private struct SwitcherView: View {
     static let width: CGFloat = 520
     private static let visibleRows = 8
     private static let rowHeight: CGFloat = 44
+    private static let fieldHeight: CGFloat = 50
+    /// The card at its tallest: the field and eight rows.
+    static var maximumHeight: CGFloat { fieldHeight + 1 + CGFloat(visibleRows) * rowHeight + 12 + 24 }
 
     let manager: SessionManager
     let pick: (UUID) -> Void
@@ -116,7 +125,7 @@ private struct SwitcherView: View {
                     .onKeyPress(.upArrow) { move(-1, in: matches.count) }
             }
             .padding(.horizontal, 16)
-            .frame(height: 50)
+            .frame(height: Self.fieldHeight)
             if !matches.isEmpty {
                 Divider()
                 ScrollViewReader { proxy in
@@ -151,6 +160,9 @@ private struct SwitcherView: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .strokeBorder(Color(nsColor: Chrome.hairlineStrong), lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
+        // Top of a panel that's as tall as the card can get; the rest is clear.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { focused = true }
         .onChange(of: query) { _, _ in highlighted = 0 }
     }

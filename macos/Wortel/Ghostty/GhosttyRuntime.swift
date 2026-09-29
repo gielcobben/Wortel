@@ -592,6 +592,30 @@ final class GhosttyRuntime {
             DispatchQueue.main.async { view.onNotification?(title, body) }
             return true
 
+        // ⌘F: libghostty searches, the find bar shows it (TerminalFindBar).
+        case GHOSTTY_ACTION_START_SEARCH:
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            let needle = action.action.start_search.needle.map { String(cString: $0) }
+            DispatchQueue.main.async { view.searchStarted(needle: needle) }
+            return true
+
+        case GHOSTTY_ACTION_END_SEARCH:
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            DispatchQueue.main.async { view.searchEnded() }
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_TOTAL:
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            let total = Int(action.action.search_total.total)
+            DispatchQueue.main.async { view.searchTotal(total < 0 ? nil : total) }
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_SELECTED:
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            let selected = Int(action.action.search_selected.selected)
+            DispatchQueue.main.async { view.searchSelected(selected < 0 ? nil : selected) }
+            return true
+
         case GHOSTTY_ACTION_OPEN_URL:
             // A ⌘-clicked link — a URL, an OSC 8 hyperlink, or a matched path. We
             // intercept one kind: a local markdown file (→ the in-app preview).

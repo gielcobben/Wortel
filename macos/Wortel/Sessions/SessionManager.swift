@@ -1792,18 +1792,6 @@ final class SessionManager {
     /// read "now"). What "waiting 4m" counts from.
     @ObservationIgnored private var attentionSince: [UUID: Date] = [:]
 
-    /// Sessions waiting on you, from any folder: loudest first, then longest
-    /// waiting. The sidebar's Needs You section, which is what makes a
-    /// blocked agent in a collapsed folder, or one scrolled out of view,
-    /// impossible to miss.
-    var needsYou: [Session] {
-        sessions.filter { $0.attention != nil }.sorted { a, b in
-            let pa = a.attention?.priority ?? 0, pb = b.attention?.priority ?? 0
-            if pa != pb { return pa > pb }
-            return (attentionSince[a.id] ?? .distantFuture) < (attentionSince[b.id] ?? .distantFuture)
-        }
-    }
-
     /// What a waiting session said (the body of its notification, else its
     /// title when that isn't just the session's name), and since when.
     func attentionNote(for session: Session) -> (message: String?, since: Date?) {

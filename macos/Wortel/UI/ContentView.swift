@@ -55,16 +55,13 @@ struct SidebarPane: View {
         // exactly NSOutlineView's home turf and beyond what List exposes. Row
         // *content* stays SwiftUI (SessionRow hosted per row), so the pill,
         // attention dots, and inline rename are unchanged.
-        VStack(spacing: 0) {
-            NeedsYouSection(manager: manager)
-            SidebarOutlineView(
-                manager: manager,
-                snapshot: manager.sidebarGroups.map {
-                    SidebarSnapshotGroup(
-                        folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
-                        tallIDs: Set($0.sessions.filter(\.showsBranchLine).map(\.id)))
-                })
-        }
+        SidebarOutlineView(
+            manager: manager,
+            snapshot: manager.sidebarGroups.map {
+                SidebarSnapshotGroup(
+                    folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
+                    tallIDs: Set($0.sessions.filter(\.hasSecondLine).map(\.id)))
+            })
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 2) {
                     // Grouped like the Session menu, and in the same order, so
@@ -118,120 +115,6 @@ struct SidebarPane: View {
     }
 }
 
-/// Every session waiting on you, from any folder, above the folders: an agent
-/// blocked on a permission in a collapsed folder, or scrolled out of view,
-/// can't be missed. The most asked-for thing Codex's sidebar lacks.
-///
-/// Its rows are the session's, a second time: the folder keeps its own, so
-/// the list doesn't rearrange itself as things come and go. Picking one takes
-/// you there, and since looking is what answers a ping, it leaves the section
-/// as you arrive. Pinned rather than scrolled with the list, and gone
-/// entirely when nothing is waiting.
-struct NeedsYouSection: View {
-    let manager: SessionManager
-
-    var body: some View {
-        let waiting = manager.needsYou
-        VStack(alignment: .leading, spacing: 0) {
-            if !waiting.isEmpty {
-                // Styled as a folder header: the same size, set apart by grey.
-                Text("Needs You")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 12)
-                    .frame(height: 28, alignment: .bottom)
-                    .padding(.bottom, 2)
-                ForEach(waiting, id: \.id) { session in
-                    NeedsYouRow(manager: manager, session: session)
-                }
-                Divider()
-                    .padding(.horizontal, 12)
-                    .padding(.top, 6)
-            }
-        }
-        .padding(.horizontal, 10)
-        .animation(.easeOut(duration: 0.18), value: waiting.map(\.id))
-    }
-}
-
-/// One waiting session: its dot and name, how long it's been waiting, and on
-/// the line under it its folder and what it's waiting on, in its own words.
-private struct NeedsYouRow: View {
-    let manager: SessionManager
-    let session: Session
-    @State private var hovering = false
-
-    var body: some View {
-        let kind = session.attention ?? .finished
-        let note = manager.attentionNote(for: session)
-        Button {
-            manager.selectedID = session.id
-        } label: {
-            HStack(alignment: .top, spacing: 8) {
-                AttentionDot(color: SessionStatusIndicator.attentionColor(kind),
-                             motion: kind == .needsInput ? .pulse : .still)
-                    .frame(width: 8, height: 16)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(session.leafName)
-                            .font(.system(size: 13))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Spacer(minLength: 4)
-                        if let since = note.since {
-                            // Kept current without anything else changing.
-                            TimelineView(.periodic(from: .now, by: 30)) { context in
-                                Text(Self.elapsed(from: since, to: context.date))
-                                    .font(.system(size: 11).monospacedDigit())
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                    Text(subtitle(kind: kind, message: note.message))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(hovering ? 0.05 : 0)))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(note.message ?? session.name)
-    }
-
-    /// "networth · Allow edit to App.swift?": the folder, because this row
-    /// is out of it, and what the session said, or what kind of wait it is.
-    private func subtitle(kind: AttentionKind, message: String?) -> String {
-        let what = message ?? {
-            switch kind {
-            case .needsInput: return "Waiting on you"
-            case .failed: return "A command failed"
-            case .turnDone: return "Finished its turn"
-            case .finished: return "A command finished"
-            }
-        }()
-        return [session.folderPath, what].compactMap { $0 }.joined(separator: " · ")
-    }
-
-    /// "now", "4m", "2h", "3d".
-    static func elapsed(from start: Date, to now: Date) -> String {
-        let seconds = max(0, now.timeIntervalSince(start))
-        switch seconds {
-        case ..<60: return "now"
-        case ..<3600: return "\(Int(seconds / 60))m"
-        case ..<86400: return "\(Int(seconds / 3600))h"
-        default: return "\(Int(seconds / 86400))d"
-        }
-    }
-}
-
 /// The ⓘ beside the +, and the anchor the usage-data popover hangs off.
 ///
 /// AppKit rather than a SwiftUI `Button` with `.popover`, for the one thing this
@@ -271,6 +154,10 @@ struct SidebarRowContent: View {
             isSelected: manager.selectedID == session.id,
             isEditing: manager.editingID == session.id,
             isInWorktree: session.isInOwnWorktree,
+            waiting: session.attention.map { kind in
+                let note = manager.attentionNote(for: session)
+                return SessionRow.Waiting(kind: kind, message: note.message, since: note.since)
+            },
             commit: { newName in
                 manager.rename(session, to: newName)
                 manager.editingID = nil
@@ -567,8 +454,18 @@ struct SessionRow: View {
     /// still *is* the branch, as a leading glyph — without which it sits in the
     /// list looking exactly like a session that's just a shell in a directory.
     let isInWorktree: Bool
+    /// What the session is waiting on you for, while it is: shown as the
+    /// row's second line, in place of the branch.
+    let waiting: Waiting?
     let commit: (String) -> Void
     let cancel: () -> Void
+
+    struct Waiting {
+        let kind: AttentionKind
+        /// What it said: the body of its notification.
+        let message: String?
+        let since: Date?
+    }
 
     @State private var draft = ""
     @State private var cancelling = false
@@ -630,10 +527,16 @@ struct SessionRow: View {
                     // hover-to-expand on a name the row had to cut short.
                     TruncatingLabel(text: session.leafName, color: .labelColor)
                 }
-                // Where the work lives, under what the work is. Only for a
-                // worktree session whose name has moved on from the branch;
-                // the row height follows `showsBranchLine` (SidebarOutlineView).
-                if session.showsBranchLine, let branch = session.worktreeLabel {
+                // What it's waiting on, while it is: the useful half of a
+                // notification, where the session already is. The row grows
+                // for it and shrinks back once you've looked (SidebarOutlineView
+                // eases the height).
+                if let waiting, !isEditing {
+                    WaitingLine(waiting: waiting)
+                } else if session.showsBranchLine, let branch = session.worktreeLabel {
+                    // Where the work lives, under what the work is. Only for a
+                    // worktree session whose name has moved on from the branch;
+                    // the row height follows `hasSecondLine` (SidebarOutlineView).
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.triangle.branch")
                             .font(.system(size: 9))
@@ -678,6 +581,43 @@ struct SessionRow: View {
                 return
             }
             if (try? await Task.sleep(for: .milliseconds(16))) == nil { return }
+        }
+    }
+}
+
+/// A waiting session's second line: what it said, or what kind of wait it is,
+/// and for how long. "Allow edit to App.swift? · 4m", "Finished its turn · now".
+private struct WaitingLine: View {
+    let waiting: SessionRow.Waiting
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            TruncatingLabel(text: text(at: context.date), font: .systemFont(ofSize: 11),
+                            color: .secondaryLabelColor)
+        }
+    }
+
+    private func text(at now: Date) -> String {
+        let what = waiting.message ?? {
+            switch waiting.kind {
+            case .needsInput: return "Waiting on you"
+            case .failed: return "A command failed"
+            case .turnDone: return "Finished its turn"
+            case .finished: return "A command finished"
+            }
+        }()
+        guard let since = waiting.since else { return what }
+        return "\(what) · \(Self.elapsed(from: since, to: now))"
+    }
+
+    /// "now", "4m", "2h", "3d".
+    static func elapsed(from start: Date, to now: Date) -> String {
+        let seconds = max(0, now.timeIntervalSince(start))
+        switch seconds {
+        case ..<60: return "now"
+        case ..<3600: return "\(Int(seconds / 60))m"
+        case ..<86400: return "\(Int(seconds / 3600))h"
+        default: return "\(Int(seconds / 86400))d"
         }
     }
 }

@@ -10,6 +10,8 @@ final class SidebarPillRowView: NSTableRowView {
     /// clear of the pill's edges, so its padding reads the same on all three
     /// sides it touches.
     private static let pillInset = NSSize(width: 10, height: 2)
+    /// The pill's corners: a tab's and a titlebar button's.
+    private static let pillRadius: CGFloat = 8
     /// The selected row's fill, and the hover's, over the sidebar material. The
     /// hover has to stay visibly lighter than the selection it isn't.
     private static let pillAlpha: CGFloat = 0.08
@@ -46,13 +48,13 @@ final class SidebarPillRowView: NSTableRowView {
             // the loudest thing in the window: it drowned out the attention dots,
             // which are the colour in this list that actually means something.
             NSColor.labelColor.withAlphaComponent(Self.pillAlpha).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
         } else if showsDropHighlight {
             NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
         } else if showsHover {
             NSColor.labelColor.withAlphaComponent(Self.hoverAlpha).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
         }
     }
 
@@ -535,6 +537,23 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         func apply(_ new: [SidebarSnapshotGroup]) {
             guard let outline else { return }
+            // Only rows growing or shrinking a line (a session starting or
+            // stopping waiting): ease the heights instead of reloading, so the
+            // row opens and closes rather than the list jumping.
+            if new != snapshot, Self.sameStructure(new, snapshot) {
+                let changed = Set(new.flatMap(\.tallIDs)).symmetricDifference(snapshot.flatMap(\.tallIDs))
+                snapshot = new
+                let rows = IndexSet(changed.compactMap { id in
+                    sessionCache[id].map { outline.row(forItem: $0) }.flatMap { $0 >= 0 ? $0 : nil }
+                })
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = Motion.tabs
+                    context.timingFunction = Motion.curve
+                    outline.noteHeightOfRows(withIndexesChanged: rows)
+                }
+                syncExpansion()
+                return
+            }
             if new != snapshot {
                 snapshot = new
                 rebuildItems()
@@ -543,6 +562,12 @@ struct SidebarOutlineView: NSViewRepresentable {
                 isSyncing = false
             }
             syncExpansion()
+        }
+
+        /// The same groups holding the same sessions in the same order: only
+        /// which rows are two lines tall differs.
+        private static func sameStructure(_ a: [SidebarSnapshotGroup], _ b: [SidebarSnapshotGroup]) -> Bool {
+            a.count == b.count && zip(a, b).allSatisfy { $0.folder == $1.folder && $0.sessionIDs == $1.sessionIDs }
         }
 
         private func rebuildItems() {
@@ -642,9 +667,11 @@ struct SidebarOutlineView: NSViewRepresentable {
             // title (content bottom-aligns, see SidebarHeaderContent). A
             // worktree session named for its task carries its branch on a
             // second line (see `Session.showsBranchLine`).
-            if item is FolderItem { return 32 }
-            if let session = (item as? SessionItem)?.session, session.showsBranchLine { return 42 }
-            return 30
+            // Roomier than a Finder list, as the ChatGPT app's is: a session
+            // row is something you read and pick all day, not scan past.
+            if item is FolderItem { return 36 }
+            if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 48 }
+            return 34
         }
 
         /// Row views draw the selection pill (full row width, across the

@@ -243,6 +243,11 @@ final class Session: Identifiable {
     /// The name with any folder prefix stripped — what the sidebar row shows.
     var leafName: String { SessionName.leaf(of: name) }
 
+    /// Whether the sidebar row is two lines tall: it's waiting on you (what
+    /// for, under the name), or it's a worktree session named for its task
+    /// (its branch, under the name).
+    var hasSecondLine: Bool { attention != nil || showsBranchLine }
+
     /// Short, Finder-like label: the working directory's last path component
     /// (~ for home). Falls back to the shell title.
     var displayName: String {

@@ -463,6 +463,7 @@ final class SessionManager {
         // the *next* launch would have nothing to resume.
         startAgentActivityWatch()
         let persisted = store.load()
+        hasRestored = true
         guard !persisted.isEmpty else {
             newSession()
             return
@@ -2239,9 +2240,17 @@ final class SessionManager {
     }
 
     private func scheduleSave() {
+        guard hasRestored else { return }
         rememberProjectRoots()
         store.scheduleSave { [weak self] in self?.persistedSessions() ?? [] }
     }
+
+    /// Whether `restore` has read the saved sessions. Nothing is saved before
+    /// it has: a launch that failed before restoring (an exception thrown while
+    /// building the window, 2026-09-29) had no sessions, and saved that on its
+    /// way out over every session there was. The shells lived on in the
+    /// keeper; the list of what they were did not.
+    private var hasRestored = false
 
     /// Where each live session's processes hang from, for `ProcessMonitor`.
     ///
@@ -2298,6 +2307,7 @@ final class SessionManager {
     }
 
     func saveNow() {
+        guard hasRestored else { return }
         store.saveNow(persistedSessions())
     }
 

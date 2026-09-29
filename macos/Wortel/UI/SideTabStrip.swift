@@ -61,7 +61,9 @@ final class SideTabStrip: NSView {
         trailingAccessory.map { $0.fittingSize.width + Self.gap * 2 } ?? 0
     }
 
-    private let scroll = TabScrollView()
+    /// Internal rather than private for TabStripTests, which check it never
+    /// insets itself under the titlebar or scrolls vertically.
+    let scroll = TabScrollView()
     private let content = FlippedView()
     private var items: [Item] = []
     private var active: SideTab?
@@ -74,6 +76,15 @@ final class SideTabStrip: NSView {
         scroll.hasVerticalScroller = false
         scroll.horizontalScrollElasticity = .allowed
         scroll.verticalScrollElasticity = .none
+        // **Off, and it's the whole difference between a row that works and one
+        // that doesn't.** A scroll view in a transparent titlebar reads the
+        // titlebar as content it's scrolled under and insets itself by the
+        // titlebar's height (40pt: the row's entire height). The tabs still
+        // drew, but every click on them landed on the scroll view's own edge
+        // effect instead: nothing selected, closed or dragged, the press moved
+        // the window, and the row scrolled up and down by those 40pt.
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsetsZero
         scroll.documentView = content
         scroll.wantsLayer = true
         scroll.contentView.postsBoundsChangedNotifications = true
@@ -300,7 +311,7 @@ final class SideTabStrip: NSView {
 /// The row's scroll view: a vertical wheel scrolls it sideways, since a row of
 /// tabs has no other direction to go. A trackpad's sideways swipe already does.
 @MainActor
-private final class TabScrollView: NSScrollView {
+final class TabScrollView: NSScrollView {
     override func scrollWheel(with event: NSEvent) {
         guard abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX),
               let document = documentView else {
@@ -312,7 +323,7 @@ private final class TabScrollView: NSScrollView {
         guard room > 0 else { return }
         let step = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 12
         let x = min(max(0, clip.bounds.origin.x - step), room)
-        clip.setBoundsOrigin(NSPoint(x: x, y: clip.bounds.origin.y))
+        clip.setBoundsOrigin(NSPoint(x: x, y: 0))
         reflectScrolledClipView(clip)
     }
 

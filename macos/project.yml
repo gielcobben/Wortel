@@ -358,6 +358,8 @@ targets:
       # every call site and crashed the app when it went unmet. A menu item copy
       # needs no window, so it's pinned here.
       - path: Wortel/UI/ClosureMenuItem.swift
+      - path: Wortel/UI/Chrome.swift
+      - path: Wortel/UI/SideTabStrip.swift
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/GitRepoModel.swift
       - path: Wortel/Git/GitRepoWatcher.swift

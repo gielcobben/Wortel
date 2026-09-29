@@ -1406,6 +1406,7 @@ final class SessionManager {
         screenInferredBusy.remove(session.id)
         explicitSignalAt.removeValue(forKey: session.id)
         autoNameState.removeValue(forKey: session.id)
+        attentionSince.removeValue(forKey: session.id)
         endPromptCapture(session)
         // The killed shell never reaches its prompt to clear its own agent
         // marker; drop it so a closed session isn't resumed on next launch.
@@ -1775,6 +1776,7 @@ final class SessionManager {
         guard session.attention != nil else { return }
         session.attention = nil
         attentionContent[session.id] = nil
+        attentionSince[session.id] = nil
         refreshDockBadge()
         onAttentionCleared?(session)
     }
@@ -1785,6 +1787,31 @@ final class SessionManager {
     @ObservationIgnored
     private var attentionContent:
         [UUID: (kind: AttentionKind, title: String?, body: String, postedAt: Date)] = [:]
+    /// When each session's current episode began: its first signal, not its
+    /// latest (an agent that re-emits per tool call would otherwise always
+    /// read "now"). What "waiting 4m" counts from.
+    @ObservationIgnored private var attentionSince: [UUID: Date] = [:]
+
+    /// Sessions waiting on you, from any folder: loudest first, then longest
+    /// waiting. The sidebar's Needs You section, which is what makes a
+    /// blocked agent in a collapsed folder, or one scrolled out of view,
+    /// impossible to miss.
+    var needsYou: [Session] {
+        sessions.filter { $0.attention != nil }.sorted { a, b in
+            let pa = a.attention?.priority ?? 0, pb = b.attention?.priority ?? 0
+            if pa != pb { return pa > pb }
+            return (attentionSince[a.id] ?? .distantFuture) < (attentionSince[b.id] ?? .distantFuture)
+        }
+    }
+
+    /// What a waiting session said (the body of its notification, else its
+    /// title when that isn't just the session's name), and since when.
+    func attentionNote(for session: Session) -> (message: String?, since: Date?) {
+        let content = attentionContent[session.id]
+        let body = content?.body.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let message = body.isEmpty ? content?.title : body
+        return (message, attentionSince[session.id])
+    }
 
     /// How late a rename may still rewrite a banner.
     ///
@@ -1862,6 +1889,7 @@ final class SessionManager {
         // (some agents fire a notification per tool call) updates the banner
         // text silently instead of spamming dings.
         let alert = current.map { kind.priority > $0.priority } ?? true
+        if current == nil { attentionSince[session.id] = Date() }
         session.attention = kind // observed → sidebar dot
         // The quieter tier: mark it unread too, at the highest kind seen, so the
         // trail survives past the loud dot until you've actually engaged.

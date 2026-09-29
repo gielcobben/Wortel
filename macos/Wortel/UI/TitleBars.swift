@@ -571,25 +571,43 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         git.toggle()
     }
 
-    /// The "+" menu: a terminal first, because a new one is what "+" usually
-    /// means, then the panes, ticked when they're already open.
+    /// The "+" card: a terminal first, because a new one is what "+" usually
+    /// means, then the panes, then what the session is serving. See NewTabCard.
     @objc private func presentNewTabMenu(_ sender: NSView) {
-        let menu = NSMenu()
-        let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
-            self?.git.openTerminal()
+        let terminal = NewTabCard.Row(
+            id: "terminal", symbol: "apple.terminal", title: "Terminal",
+            detail: "A shell beside this session", trailing: "\u{2303}`"
+        ) { [weak self] in self?.git.openTerminal() }
+
+        let panes = InspectorPane.allCases.map { pane in
+            let isOpen = git.tabs.contains(.pane(pane))
+            let shortcut = pane == .files ? "\u{2325}\u{2318}E" : nil
+            return NewTabCard.Row(
+                id: pane.rawValue, symbol: pane.symbol, title: pane.title,
+                trailing: isOpen ? "Open" : shortcut
+            ) { [weak self] in self?.git.show(pane) }
         }
-        terminal.image = NSImage(systemSymbolName: "apple.terminal", accessibilityDescription: nil)
-        terminal.keyEquivalent = "`"
-        terminal.keyEquivalentModifierMask = [.control]
-        menu.addItem(terminal)
-        menu.addItem(.separator())
-        for pane in InspectorPane.allCases {
-            let item = ClosureMenuItem(title: pane.title) { [weak self] in self?.git.show(pane) }
-            item.image = NSImage(systemSymbolName: pane.symbol, accessibilityDescription: nil)
-            item.state = git.tabs.contains(.pane(pane)) ? .on : .off
-            menu.addItem(item)
+
+        // What the session holds a port open for, to open in the browser. The
+        // same list the running pill shows, filtered to what has an address.
+        let servers = (runningSnapshot.work + runningSnapshot.orphans).compactMap { job -> NewTabCard.Row? in
+            guard let url = job.localURL, let address = job.localAddress else { return nil }
+            return NewTabCard.Row(
+                id: "server-\(job.pgid)-\(address)", symbol: "globe", title: address,
+                detail: job.label, trailing: "\u{2197}"
+            ) { NSWorkspace.shared.open(url) }
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+
+        var sections = [
+            NewTabCard.Section(id: "new", title: "New", rows: [terminal]),
+            NewTabCard.Section(id: "panes", title: "Panes", rows: panes),
+        ]
+        if !servers.isEmpty {
+            sections.append(NewTabCard.Section(id: "running", title: "Running", rows: servers))
+        }
+        ChromePopover.present(
+            NewTabCard(sections: sections, dismiss: { ChromePopover.dismissCurrent() }),
+            from: sender)
     }
 
     // MARK: Running jobs

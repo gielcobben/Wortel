@@ -89,6 +89,9 @@ final class BrowserPage: NSObject {
     /// The page as it last looked, for its tab's hover card: a page that
     /// isn't in front isn't drawn, so it's taken while it is.
     @ObservationIgnored private var snapshot: NSImage?
+    /// When the page's process last died, for the crash-reload cap.
+    @ObservationIgnored private var crashes: [Date] = []
+    @ObservationIgnored private var reloadWhenShown = false
     @ObservationIgnored private var snapshotTimer: Timer?
 
     /// How often a page whose local server is down tries again.
@@ -198,7 +201,12 @@ final class BrowserPage: NSObject {
     fileprivate func screenMayHaveChanged() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.onScreenChanged(self.webView.window != nil && !self.webView.isHiddenOrHasHiddenAncestor)
+            let visible = self.webView.window != nil && !self.webView.isHiddenOrHasHiddenAncestor
+            if visible, self.reloadWhenShown {
+                self.reloadWhenShown = false
+                self.reload()
+            }
+            self.onScreenChanged(visible)
         }
     }
 
@@ -300,7 +308,15 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
     /// The page's process died (a crash, or memory pressure): start again
     /// rather than leave a blank tab.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        reload()
+        let now = Date()
+        crashes = crashes.filter { now.timeIntervalSince($0) < 60 } + [now]
+        // Killed off screen under memory pressure: reloading now would undo
+        // the reason. Crashing over and over: stop and say so.
+        guard crashes.count <= 3 else {
+            failure = "This page keeps crashing. Reload to try again."
+            return
+        }
+        if webView.window != nil { reload() } else { reloadWhenShown = true }
     }
 
     /// `target="_blank"` and `window.open`: in this tab. There's no second
@@ -364,11 +380,10 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
 
     private func present(_ alert: NSAlert, in webView: WKWebView,
                          completion: @escaping (NSApplication.ModalResponse) -> Void) {
-        if let window = webView.window {
-            alert.beginSheetModal(for: window, completionHandler: completion)
-        } else {
-            completion(alert.runModal())
-        }
+        // Not on screen: the default answer, rather than an app-modal dialog
+        // that would stop every terminal for a page nobody can see.
+        guard let window = webView.window else { return completion(.alertSecondButtonReturn) }
+        alert.beginSheetModal(for: window, completionHandler: completion)
     }
 }
 

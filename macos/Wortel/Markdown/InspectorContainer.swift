@@ -109,8 +109,14 @@ final class SideTerminalHostController: NSViewController {
                 if hadKeyboard, surface == nil || focusRequest == handledFocusRequest {
                     // Not now: this runs inside a view update, and handing
                     // back changes what the views observe.
-                    current.window?.makeFirstResponder(nil)
-                    DispatchQueue.main.async(execute: handBack)
+                    let window = current.window
+                    window?.makeFirstResponder(nil)
+                    // Only if nothing took the keyboard meanwhile: a new
+                    // browser's address field does, in this same update.
+                    DispatchQueue.main.async {
+                        guard let window, window.firstResponder === window else { return }
+                        handBack()
+                    }
                 }
             }
             if let surface {

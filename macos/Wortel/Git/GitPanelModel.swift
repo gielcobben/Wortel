@@ -220,7 +220,7 @@ final class GitPanelModel {
             if generation == checkoutGeneration, repo === self.repo, owner === session {
                 checkouts = []
                 terminalCheckout = terminal
-                checkoutsRead = (Self.checkoutsKey(root: root, pinned: pinnedCheckout), Date())
+                checkoutsRead = (Self.checkoutsKey(root: root, pinned: pinnedCheckout, cwd: cwd), Date())
             }
             return
         }
@@ -238,7 +238,7 @@ final class GitPanelModel {
         guard generation == checkoutGeneration, repo === self.repo, owner === session else { return }
         terminalCheckout = terminal
         if found != checkouts { checkouts = found }
-        checkoutsRead = (Self.checkoutsKey(root: root, pinned: pinnedCheckout), Date())
+        checkoutsRead = (Self.checkoutsKey(root: root, pinned: pinnedCheckout, cwd: cwd), Date())
     }
 
     @ObservationIgnored private var checkoutGeneration = 0
@@ -248,13 +248,16 @@ final class GitPanelModel {
     @ObservationIgnored private var checkoutsRead: (key: String, at: Date)?
     private static let checkoutsMaxAge: TimeInterval = 30
 
-    private static func checkoutsKey(root: String, pinned: String?) -> String {
-        root + "\u{0}" + (pinned ?? "")
+    /// The terminal's directory too: which checkout is the terminal's is read
+    /// from it, and two sessions pinned alike can have terminals in different
+    /// checkouts.
+    private static func checkoutsKey(root: String, pinned: String?, cwd: String?) -> String {
+        [root, pinned ?? "", cwd ?? ""].joined(separator: "\u{0}")
     }
 
     private func checkoutsAreCurrent(for root: String) -> Bool {
         guard let read = checkoutsRead else { return false }
-        return read.key == Self.checkoutsKey(root: root, pinned: pinnedCheckout)
+        return read.key == Self.checkoutsKey(root: root, pinned: pinnedCheckout, cwd: session?.cwd)
             && Date().timeIntervalSince(read.at) < Self.checkoutsMaxAge
     }
 
@@ -499,6 +502,10 @@ final class GitPanelModel {
             mainFocusRequest += 1
         } else if region == .bottom, bottomVisible, activeBottomTab?.terminalID != nil {
             bottomFocusRequest += 1
+        } else if region == .main || (region == .side && isVisible) || (region == .bottom && bottomVisible) {
+            // The row is still there: you're still in it, so the next ⌘W
+            // closes its next tab rather than, from the main area, the session.
+            focusFront(of: region)
         } else {
             focus(.main)
         }
@@ -734,8 +741,11 @@ final class GitPanelModel {
             tab = front
             if tab.terminalID != nil { bottomFocusRequest += 1; return }
         }
-        if let id = tab.browserID {
-            BrowserTabs.shared.existingPage(for: id)?.focusPage()
+        if let id = tab.browserID, let page = BrowserTabs.shared.existingPage(for: id) {
+            // Nowhere yet, its address field; else the page.
+            if page.location == nil { page.focusAddress() } else { page.focusPage() }
+        } else if tab.browserID != nil {
+            return
         } else if tab.pane != nil {
             requestListFocus(in: region)
         } else {
@@ -804,8 +814,13 @@ final class GitPanelModel {
     /// Show the panel if needed and ask the changes list to take keyboard focus.
     func requestListFocus() {
         // Where a source-control or files pane is in front, else the column's.
-        let region = [lastRegion, .main, .side, .bottom].first { activeTab(in: $0)?.pane != nil }
-        if region == nil { open(.pane(pane)) }
+        var region = [lastRegion, .main, .side, .bottom].first { activeTab(in: $0)?.pane != nil }
+        if region == nil {
+            open(.pane(pane))
+            // Wherever it came forward: the main row or the strip, if that's
+            // where it was.
+            region = session?.workspace.region(of: .pane(pane)) ?? .side
+        }
         lastRegion = region ?? .side
         requestListFocus(in: lastRegion)
     }

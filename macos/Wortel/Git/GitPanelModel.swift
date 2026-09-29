@@ -81,6 +81,9 @@ final class GitPanelModel {
     /// Hand the keyboard back to the session's main terminal, for when the tab
     /// that had it closes. Set by AppDelegate.
     @ObservationIgnored var onFocusMainTerminal: (() -> Void)?
+    /// A tab closed, for whoever holds something for it (a previewed file's
+    /// document). Set by AppDelegate.
+    @ObservationIgnored var onTabClosed: ((SideTab) -> Void)?
     /// Ask whether to close a side terminal that is still running something;
     /// calls back only if the answer is yes. Set by AppDelegate.
     @ObservationIgnored var confirmCloseTerminal: ((_ proceed: @escaping () -> Void) -> Void)?
@@ -336,6 +339,7 @@ final class GitPanelModel {
         guard let owner = target ?? session,
               let region = change(owner, { $0.close(tab) }) else { return }
         if let id = tab.terminalID { owner.closeSideSurface(id) }
+        onTabClosed?(tab)
         if region == .side, let pane = owner.activeSideTab?.pane { owner.inspectorPane = pane }
         onStateChanged?()
         guard owner === session else { return }

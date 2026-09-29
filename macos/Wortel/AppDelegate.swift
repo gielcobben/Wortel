@@ -32,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// The preview windows. Accessories to the main window — they close with it,
     /// so quitting stays what it has always been.
     private lazy var previewWindows = PreviewWindows(highlighter: DiffHighlighter.shared)
+    /// Files previewed as tabs, the default way a file opens (see PreviewTabs);
+    /// a window is one click away from any of them.
+    private let previewTabs = PreviewTabs(highlighter: DiffHighlighter.shared)
     /// The `wortel` command's way in. Started once the session manager exists,
     /// since every command it serves is about a session.
     private var cli: WortelCLIService?
@@ -108,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.titleBars = titleBars
         let split = MainSplitViewController(
             runtime: runtime, manager: manager, git: gitPanel, files: fileTree,
-            titleBars: titleBars)
+            titleBars: titleBars, previewTabs: previewTabs)
         self.splitController = split
         window.contentViewController = BackdropController(child: split)
         titleBars.start()
@@ -164,7 +167,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.openPreview(url)
         }
         gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
-            self?.previewWindows.open(url, diff: diff, hasChanges: hasChanges)
+            self?.presentPreview(url, diff: diff, hasChanges: hasChanges)
+        }
+        previewTabs.onOpenFile = { [weak self] url in
+            self?.openPreview(url)
+        }
+        // A tab becoming a window: the window opens and the tab goes.
+        previewTabs.onOpenInWindow = { [weak self] url, diff, hasChanges in
+            guard let self else { return }
+            self.previewWindows.open(url, diff: diff, hasChanges: hasChanges)
+            self.gitPanel.close(.file(url.path))
+        }
+        gitPanel.onTabClosed = { [weak self] tab in
+            if let path = tab.filePath { self?.previewTabs.forget(path) }
         }
         // A link in a rendered README is a fifth way to open a file, and it goes
         // through the same opener as the other four.
@@ -544,7 +559,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // file, while the window is opened with the path you actually clicked so
         // it can tell you when that was an alias.
         let url = requested.resolvingSymlinksInPath().standardizedFileURL
-        // Already open: focus it and do no git work whatsoever.
+        // Already open, in a tab or a window: bring it forward and do no git
+        // work whatsoever.
+        if manager.selected?.workspace.region(of: .file(url.path)) != nil {
+            gitPanel.open(.file(url.path))
+            return
+        }
         if previewWindows.focus(url) { return }
 
         // The panel already knows this repo and its status — free, and it also
@@ -553,10 +573,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let change = repo.status.unstagedChanges.first { $0.path == relative }
                 ?? repo.status.stagedChanges.first { $0.path == relative }
             if let change {
-                previewWindows.open(requested, diff: .change(root: repo.root, change: change),
-                                    hasChanges: true)
+                presentPreview(requested, diff: .change(root: repo.root, change: change),
+                               hasChanges: true)
             } else {
-                previewWindows.open(
+                presentPreview(
                     requested,
                     diff: .workingTree(root: repo.root, path: relative, untracked: false))
             }
@@ -574,18 +594,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 repoRootCache[directory] = root
             }
             guard let root, let relative = Self.relativePath(of: url, in: root) else {
-                previewWindows.open(requested)
+                presentPreview(requested)
                 return
             }
             // One line of porcelain, not a patch: it decides whether the window
             // opens on the diff or on the file, and whether that diff is against
             // HEAD or against nothing at all.
             let state = await GitService.workingTreeState(root: root, path: relative)
-            previewWindows.open(
+            presentPreview(
                 requested,
                 diff: .workingTree(root: root, path: relative, untracked: state == .untracked),
                 hasChanges: state.hasChanges)
         }
+    }
+
+    /// Show a file: as a tab beside the session (the column, or where it
+    /// already is), which is where the preview window's job, "look at what an
+    /// agent just did, and get back", is done with the least travel.
+    private func presentPreview(_ url: URL, diff: PreviewDiffSource = .none,
+                                hasChanges: Bool = false) {
+        gitPanel.open(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges))
     }
 
     private static func relativePath(of url: URL, in root: String) -> String? {

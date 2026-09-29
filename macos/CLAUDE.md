@@ -417,10 +417,13 @@ with two right columns gets cramped), so opening a `.md` from the tree hides the
 tree until the preview is closed or the Files segment reclaims it — the same rule
 as clicking a `.md` path in the terminal.
 
-**Preview windows** (`Wortel/Preview/`) — double-click a file (the tree, a
-Changes row, a file in a commit) or ⌘-click a path in the terminal and it opens
-in its own window: Source, Diff or Rendered Markdown, plus Quick Look for
-anything that isn't text. See `docs/file-preview.md` for the decisions; the three
+**Previews** (`Wortel/Preview/`) — double-click a file (the tree, a Changes
+row, a file in a commit) or ⌘-click a path in the terminal and it opens as a
+**tab** (`SideTab.file`, `PreviewTabs`) in the column, or comes forward where
+it already is: Source, Diff or Rendered Markdown, plus Quick Look for anything
+that isn't text. The tab hosts the same document and view as a window, and its
+header's "Open in Window" turns it into one. One tab per file; no replaceable
+preview tab (tried in the window era and removed, see the doc). See `docs/file-preview.md` for the decisions; the three
 that shape the code are that **`DiffView` renders both Source and Diff** (the file
 is handed over as an all-context diff, so they match by construction and the diff
 highlighter needs no new code), that **loading is `MarkdownPreviewModel`'s old

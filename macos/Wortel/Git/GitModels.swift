@@ -307,8 +307,13 @@ enum SideTab: Hashable, Sendable {
     /// reordered there but never closed, and never leaves that row: it is what
     /// the main area goes back to.
     case session
+    /// A file, previewed: its source, its diff, or rendered Markdown. The path
+    /// is canonical (symlinks resolved), which makes it the tab's identity: one
+    /// tab per file, wherever it was opened from.
+    case file(String)
 
     private static let terminalPrefix = "terminal:"
+    private static let filePrefix = "file:"
 
     init?(rawValue: String) {
         if let pane = InspectorPane(rawValue: rawValue) {
@@ -316,6 +321,8 @@ enum SideTab: Hashable, Sendable {
         } else if rawValue.hasPrefix(Self.terminalPrefix),
                   let id = UUID(uuidString: String(rawValue.dropFirst(Self.terminalPrefix.count))) {
             self = .terminal(id)
+        } else if rawValue.hasPrefix(Self.filePrefix), rawValue.count > Self.filePrefix.count {
+            self = .file(String(rawValue.dropFirst(Self.filePrefix.count)))
         } else if rawValue == "session" {
             self = .session
         } else {
@@ -328,7 +335,13 @@ enum SideTab: Hashable, Sendable {
         case .pane(let pane): return pane.rawValue
         case .terminal(let id): return Self.terminalPrefix + id.uuidString
         case .session: return "session"
+        case .file(let path): return Self.filePrefix + path
         }
+    }
+
+    var filePath: String? {
+        if case .file(let path) = self { return path }
+        return nil
     }
 
     var pane: InspectorPane? {

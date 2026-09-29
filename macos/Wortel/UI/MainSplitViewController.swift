@@ -86,8 +86,11 @@ final class MainSplitViewController: NSSplitViewController {
     private var sidebarItem: NSSplitViewItem!
     private var contentItem: NSSplitViewItem!
 
+    private let previewTabs: PreviewTabs
+
     init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
-         files: FileTreeModel, titleBars: TitleBarController) {
+         files: FileTreeModel, titleBars: TitleBarController, previewTabs: PreviewTabs) {
+        self.previewTabs = previewTabs
         self.runtime = runtime
         self.manager = manager
         self.git = git
@@ -139,7 +142,7 @@ final class MainSplitViewController: NSSplitViewController {
         let mainArea = MainAreaController(
             terminal: NSHostingController(rootView: DetailPane(
                 runtime: runtime, manager: manager, git: git, files: files)),
-            runtime: runtime, manager: manager, git: git, files: files)
+            runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs)
         let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
         let detail = ChromePaneController(
             bar: titleBars.mainBar, content: workspace, bodyColor: Chrome.content)
@@ -152,7 +155,7 @@ final class MainSplitViewController: NSSplitViewController {
         // The side column. collapseBehavior keeps the *window* still when the
         // column opens/closes, resizing the terminal instead.
         let inspectorContent = NSHostingController(rootView: InspectorContainer(
-            runtime: runtime, manager: manager, git: git, files: files))
+            runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs))
         let inspector = ChromePaneController(
             bar: titleBars.sideBar, content: inspectorContent, bodyColor: Chrome.content)
         let width = ColumnWidth.width(for: manager.selected)

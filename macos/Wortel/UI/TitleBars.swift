@@ -646,6 +646,11 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
                 return .init(tab: tab, title: pane.title, symbol: pane.symbol)
             case .terminal(let id):
                 return .init(tab: tab, title: Self.terminalTitle(titles[id]), symbol: "apple.terminal")
+            case .file(let path):
+                let url = URL(fileURLWithPath: path)
+                let symbol = ["md", "markdown"].contains(url.pathExtension.lowercased())
+                    ? "doc.richtext" : "doc.text"
+                return .init(tab: tab, title: url.lastPathComponent, symbol: symbol)
             case .session:
                 // The session's own terminal: pinned first, by the session's name.
                 let name = manager.selected.map { SessionName.leaf(of: $0.name) } ?? "Terminal"

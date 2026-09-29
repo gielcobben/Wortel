@@ -19,12 +19,13 @@ final class MainAreaController: NSViewController {
     private let git: GitPanelModel
 
     init(terminal: NSViewController, runtime: GhosttyRuntime, manager: SessionManager,
-         git: GitPanelModel, files: FileTreeModel) {
+         git: GitPanelModel, files: FileTreeModel, previewTabs: PreviewTabs) {
         self.terminal = terminal
         self.runtime = runtime
         self.manager = manager
         self.git = git
-        paneHost = NSHostingController(rootView: MainAreaPane(git: git, files: files))
+        paneHost = NSHostingController(rootView: MainAreaPane(git: git, files: files,
+                                                              previewTabs: previewTabs))
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -58,7 +59,9 @@ final class MainAreaController: NSViewController {
     private func sync() {
         let session = manager.selected
         let active = git.activeMainTab
-        let showsPane = active?.pane != nil
+        // A pane or a file: anything that isn't a terminal is drawn by the
+        // SwiftUI cover.
+        let showsPane = active?.pane != nil || active?.filePath != nil
         paneHost.view.isHidden = !showsPane
         let surface = active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) }
         tabHost.show(surface, focusRequest: git.mainFocusRequest, mainTerminal: session?.surfaceView)
@@ -77,10 +80,13 @@ final class MainAreaController: NSViewController {
 struct MainAreaPane: View {
     @Bindable var git: GitPanelModel
     @Bindable var files: FileTreeModel
+    let previewTabs: PreviewTabs
 
     var body: some View {
         Group {
             switch git.activeMainTab {
+            case .file(let path)?:
+                PreviewTab(tabs: previewTabs, path: path)
             case .pane(.files)?:
                 FileTreePanel(model: files, focusRequest: git.listFocusRequest)
             case .pane(let pane)?:

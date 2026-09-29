@@ -18,6 +18,7 @@ struct InspectorContainer: View {
     @Bindable var manager: SessionManager
     @Bindable var git: GitPanelModel
     @Bindable var files: FileTreeModel
+    let previewTabs: PreviewTabs
 
     var body: some View {
         ZStack {
@@ -34,6 +35,9 @@ struct InspectorContainer: View {
                 SourceControlPanel(panel: git, pane: pane)
             case nil:
                 SourceControlPanel(panel: git)
+            case .file(let path)?:
+                PreviewTab(tabs: previewTabs, path: path)
+                    .background(Color(nsColor: Chrome.content))
             case .terminal?, .session?:
                 EmptyView()
             }

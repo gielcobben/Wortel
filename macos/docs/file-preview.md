@@ -21,6 +21,17 @@ Editing is deliberately out of scope for now. If it ever arrives it is ⌘S and
 nothing else, gated behind a modification check so it can never clobber an agent
 mid-run.
 
+## Tabs
+
+Files now open as **tabs** beside the session, in the side column, rather than
+in windows: the job ("look at what an agent just did, and get back") is done with
+less travel when the file sits next to the terminal. The rules below still hold,
+tab for window: opening a file that already has a tab brings that tab forward,
+one tab per file, and no tab ever changes its file under you. A tab's header has
+the mode control and "Open in Window" for when a file deserves a window of its
+own. A tab restored after a relaunch opens on the file, not a diff: where the
+diff came from was a moment's state.
+
 ## Behaviour
 
 **Double-click opens a window and focuses it.** Opening a file that already has

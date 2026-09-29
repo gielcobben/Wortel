@@ -85,7 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // off. On macOS 26 the items pick up Liquid Glass automatically (it keys
         // off the linked SDK, not the deployment target); on 14 they render as a
         // conventional unified toolbar.
-        window.toolbarStyle = .unified
+        //
+        // Compact: one line of title, and a titlebar short enough to be chrome
+        // rather than a band of its own above the terminal.
+        window.toolbarStyle = .unifiedCompact
         let split = MainSplitViewController(
             runtime: runtime, manager: manager, git: gitPanel, files: fileTree)
         self.splitController = split
@@ -275,7 +278,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func observeWindowTitle() {
         withObservationTracking {
             _ = manager.selected?.name
-            _ = manager.selected?.abbreviatedPath
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -286,9 +288,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         applyWindowTitle()
     }
 
+    /// The session's name and nothing else. The path used to sit under it as a
+    /// subtitle, which changed on every `cd` and made the titlebar the one piece
+    /// of chrome that moved while you typed; the prompt already says where you
+    /// are.
     private func applyWindowTitle() {
         window?.title = manager.selected?.name ?? "Wortel"
-        window?.subtitle = manager.selected?.abbreviatedPath ?? ""
     }
 
     // MARK: - Show/hide from anywhere (⌃⌥⌘., see GlobalHotkey)

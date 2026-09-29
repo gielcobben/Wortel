@@ -2252,14 +2252,15 @@ final class SessionManager {
         sessions.flatMap { session -> [SessionProcessRoot] in
             var roots: [SessionProcessRoot] = []
             if let shellPID = session.shellPID {
+                let unshown = session.terminalTabIDs.filter { session.sideSurfaces[$0] == nil }
                 roots.append(SessionProcessRoot(sessionID: session.id, shellPID: shellPID,
-                                                agentName: session.runningAgent))
+                                                agentName: session.runningAgent, tags: unshown))
             }
             // A side terminal's jobs are filed under the session it sits in.
             // No agent name: agent tracking follows the main shell only.
             for shell in session.sideShells {
                 roots.append(SessionProcessRoot(sessionID: session.id, shellPID: shell.pid,
-                                                agentName: nil, tag: shell.tab))
+                                                agentName: nil, tags: [shell.tab]))
             }
             return roots
         }

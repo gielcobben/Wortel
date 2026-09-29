@@ -383,6 +383,9 @@ enum MainMenu {
         openLocation.keyEquivalentModifierMask = [.command]
         let newBottom = viewMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "`")
         newBottom.keyEquivalentModifierMask = [.control, .shift]
+        // The shifted twin, as ⌘⇧] carries: with Shift kept, ⌃⇧` can arrive as ~.
+        addHidden(viewMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
+                  "~", [.control, .shift])
         let reopen = viewMenu.addItem(withTitle: "Reopen Closed Tab", action: #selector(AppDelegate.reopenClosedTab(_:)), keyEquivalent: "t")
         reopen.keyEquivalentModifierMask = [.command, .shift]
         let nextTab = viewMenu.addItem(withTitle: "Next Tab", action: #selector(AppDelegate.selectNextSideTab(_:)), keyEquivalent: "\t")

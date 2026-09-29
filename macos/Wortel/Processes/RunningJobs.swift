@@ -15,10 +15,12 @@ struct SessionProcessRoot: Equatable, Sendable {
     /// the same table every scan reads, and is never older than the rows it
     /// guards.
     let agentName: String?
-    /// The `WORTEL_SESSION_ID` this shell was started with, when it isn't the
-    /// session's own id: a side terminal carries its tab's id (which keys its
-    /// own agent marker), and what it starts carries that too.
-    var tag: UUID? = nil
+    /// `WORTEL_SESSION_ID`s that mean this session besides its own id: a
+    /// side terminal's shell carries its tab's id (which keys its own agent
+    /// marker), and what it starts carries that too. On the session's own
+    /// root, also the terminals restored but not shown yet, which have a live
+    /// shell and no view to report it.
+    var tags: [UUID] = []
 }
 
 /// The per-process facts that cost a syscall each, behind closures.
@@ -525,7 +527,7 @@ enum RunningJobs {
         var sessionOfTag: [UUID: UUID] = [:]
         for root in roots {
             sessionOfTag[root.sessionID] = root.sessionID
-            if let tag = root.tag { sessionOfTag[tag] = root.sessionID }
+            for tag in root.tags { sessionOfTag[tag] = root.sessionID }
         }
         let openSessions = Set(sessionOfTag.keys)
         // The session each shell's terminal session belongs to. `getsid` is the

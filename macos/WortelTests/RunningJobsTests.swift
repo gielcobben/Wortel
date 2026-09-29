@@ -422,7 +422,7 @@ final class RunningJobsTests: XCTestCase {
         let base = details.listeningPorts
         details.listeningPorts = { $0 == 50001 ? [5173] : base($0) }
         details.sessionTag = { $0.pid == 50001 ? sideTab : nil }
-        let side = SessionProcessRoot(sessionID: sessionID, shellPID: 59999, agentName: nil, tag: sideTab)
+        let side = SessionProcessRoot(sessionID: sessionID, shellPID: 59999, agentName: nil, tags: [sideTab])
         let snapshot = RunningJobs.scan(table: adopted, roots: [root, side], uid: 501, details: details)
 
         let server = try XCTUnwrap(snapshot.jobs.first { $0.pgid == 50000 })
@@ -431,6 +431,13 @@ final class RunningJobsTests: XCTestCase {
         let without = RunningJobs.scan(table: adopted, roots: [root], uid: 501, details: details)
         XCTAssertFalse(without.jobs.contains { $0.pgid == 50000 },
                        "with that terminal gone, its tag names no open session")
+
+        // Restored and not shown yet: no view, so no shell of its own to list,
+        // but the session's root carries its id.
+        let restored = SessionProcessRoot(sessionID: sessionID, shellPID: root.shellPID,
+                                          agentName: root.agentName, tags: [sideTab])
+        let unshown = RunningJobs.scan(table: adopted, roots: [restored], uid: 501, details: details)
+        XCTAssertEqual(unshown.jobs.first { $0.pgid == 50000 }?.sessionID, sessionID)
     }
 
     /// The same shape without `setsid`: `exec("pnpm dev &")` from an agent

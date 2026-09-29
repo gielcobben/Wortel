@@ -1070,7 +1070,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // screen — with Files up, ⌘⌥G swaps rather than closes, so calling it
         // "Hide Source Control" would describe the wrong action.
         if menuItem.action == #selector(toggleSourceControl(_:)) {
-            let showing = gitPanel.isVisible && gitPanel.activeTab?.pane?.isSourceControl == true
+            // In front anywhere, as ⌘⌥G toggles it wherever it is.
+            let showing = [TabRegion.main, .side, .bottom]
+                .contains { gitPanel.activeTab(in: $0)?.pane?.isSourceControl == true }
             menuItem.title = showing ? "Hide Source Control" : "Show Source Control"
             return true
         }
@@ -1105,7 +1107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return visibleRegions.count > 1
         }
         if menuItem.action == #selector(toggleFileTree(_:)) {
-            let showing = gitPanel.isVisible && gitPanel.activeTab == .pane(.files)
+            let showing = [TabRegion.main, .side, .bottom]
+                .contains { gitPanel.activeTab(in: $0) == .pane(.files) }
             menuItem.title = showing ? "Hide Files" : "Show Files"
             return true
         }

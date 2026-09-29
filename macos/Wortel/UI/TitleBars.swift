@@ -28,6 +28,18 @@ enum Chrome {
     /// Room kept clear at the window's leading edge for the traffic lights.
     static let trafficLightInset: CGFloat = 78
 
+    // One set of numbers for every control in the rows, so a tab and a button
+    // beside it are the same height, the same roundness and the same glyph:
+    // the difference between a row that looks designed and one that looks
+    // assembled is mostly that nothing in it is two points off anything else.
+
+    /// The height of a tab, and the size of every glyph button beside one.
+    static let controlSize: CGFloat = 28
+    /// The corner radius of a tab, and of a button's hover and selected fill.
+    static let controlRadius: CGFloat = 8
+    /// Every glyph in the rows: tab icons and buttons alike.
+    static let glyph = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+
     /// The titlebar band: the frame the pages sit in. Clear, so the window's
     /// vibrancy shows through it (see `BackdropController`).
     static let band = NSColor.clear
@@ -158,18 +170,23 @@ class HoverFillButton: NSButton {
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     /// A glyph button for a titlebar row.
-    static func glyph(_ symbol: String, _ description: String, pointSize: CGFloat = 13) -> HoverFillButton {
+    static func glyph(_ symbol: String, _ description: String) -> HoverFillButton {
         let button = HoverFillButton()
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: description)?
-            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .regular))
+            .withSymbolConfiguration(Chrome.glyph)
         button.toolTip = description
         button.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: 28),
-            button.heightAnchor.constraint(equalToConstant: 28),
+            button.widthAnchor.constraint(equalToConstant: Chrome.controlSize),
+            button.heightAnchor.constraint(equalToConstant: Chrome.controlSize),
         ])
         return button
     }
+
+    /// None. A borderless NSButton reports insets around its content, and Auto
+    /// Layout sizes the rect *inside* them: a button constrained to 28pt came
+    /// out 32pt tall, its fill four points taller than the tab beside it.
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -190,7 +207,9 @@ class HoverFillButton: NSButton {
             : hovering ? Chrome.hoverFill : nil
         if let fill {
             fill.setFill()
-            let radius = min(7, bounds.height / 2)
+            // A full-size button rounds like a tab; a small one (a tab's ×)
+            // is a circle.
+            let radius = bounds.height >= Chrome.controlSize ? Chrome.controlRadius : bounds.height / 2
             NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
         }
         super.draw(dirtyRect)
@@ -457,8 +476,10 @@ final class SideColumnBar: ChromeBarView {
             sidebarToggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
             sidebarToggle.centerYAnchor.constraint(equalTo: centerYAnchor),
             stripLeading,
+            // The full row, like the buttons' centre: a tab centred on a strip
+            // that stopped short of the hairline sat half a point low.
             strip.topAnchor.constraint(equalTo: topAnchor),
-            strip.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
+            strip.bottomAnchor.constraint(equalTo: bottomAnchor),
             strip.trailingAnchor.constraint(equalTo: toggle.leadingAnchor, constant: -8),
             toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -487,12 +508,12 @@ final class RunningButton: HoverFillButton {
     convenience init() {
         self.init(frame: .zero)
         image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "Running")?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+            .withSymbolConfiguration(Chrome.glyph)
         toolTip = "Running in this session"
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 28),
-            heightAnchor.constraint(equalToConstant: 28),
+            widthAnchor.constraint(equalToConstant: Chrome.controlSize),
+            heightAnchor.constraint(equalToConstant: Chrome.controlSize),
         ])
         wantsLayer = true
         dot.cornerRadius = 3
@@ -802,7 +823,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     private static func setGlyph(_ symbol: String, on item: NSMenuItem) {
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+            .withSymbolConfiguration(Chrome.glyph)
         if #available(macOS 27.0, *) {
             item.preferredImageVisibility = .visible
         }

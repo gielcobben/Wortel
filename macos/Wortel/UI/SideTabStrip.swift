@@ -36,7 +36,7 @@ final class SideTabStrip: NSView {
     /// resolved by whoever knows every strip and drop zone (TabDragController).
     var onDrag: (DragPhase, SideTab, NSView, NSPoint) -> Void = { _, _, _, _ in }
 
-    static let tabHeight: CGFloat = 28
+    static let tabHeight: CGFloat = Chrome.controlSize
     static let minTabWidth: CGFloat = 90
     static let maxTabWidth: CGFloat = 240
     private static let gap: CGFloat = 4
@@ -236,11 +236,11 @@ private final class SideTabView: NSControl {
         // A tab takes clicks, never the keyboard: that stays in the terminal.
         refusesFirstResponder = true
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = Chrome.controlRadius
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = false
 
-        icon.symbolConfiguration = .init(pointSize: 12, weight: .regular)
+        icon.symbolConfiguration = Chrome.glyph
         icon.imageScaling = .scaleProportionallyDown
         label.font = .systemFont(ofSize: 13)
         label.lineBreakMode = .byTruncatingTail

@@ -347,7 +347,12 @@ final class TabDragController {
         }
     }
 
+    /// Whether the tab being dragged is the session's own, which reads the
+    /// same drop zones differently (see `resolve`).
+    private var draggingSession = false
+
     private func update(tab: SideTab, point: NSPoint) {
+        draggingSession = tab == .session
         target = resolve(tab: tab, point: point)
         guard let overlay else { return }
         overlay.pointer = overlay.convert(point, from: nil)
@@ -372,8 +377,14 @@ final class TabDragController {
         case .swap(let leading, let area):
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
-            overlay.zoneLabel = leading ? "Move Column to the Left" : "Move Column to the Right"
-            overlay.zoneEdge = leading ? .maxX : .minX
+            if draggingSession {
+                // The session's terminal trades places with the column.
+                overlay.zoneLabel = leading ? "Move Terminal to the Right" : "Move Terminal to the Left"
+                overlay.zoneEdge = leading ? .minX : .maxX
+            } else {
+                overlay.zoneLabel = leading ? "Move Column to the Left" : "Move Column to the Right"
+                overlay.zoneEdge = leading ? .maxX : .minX
+            }
         case nil:
             overlay.marker = nil
             overlay.zone = nil
@@ -393,8 +404,18 @@ final class TabDragController {
             let marker = NSRect(x: x - 1, y: rect.midY - 11, width: 2, height: 22)
             return .strip(entry.region, index: index, marker: marker)
         }
-        // The session's tab only ever reorders in its own row.
-        guard tab != .session else { return nil }
+        // The session's own tab never goes *into* the column's row: it is the
+        // main area's anchor, as the chat is in the ChatGPT app. Dropped on the
+        // column (its row or its page), it trades places with it instead: the
+        // terminal goes where the column was, the column to the other side.
+        if tab == .session {
+            guard let column = columnArea() else { return nil }
+            let row = strips.first { $0.region == .side }?.strip
+            let rowRect = row.flatMap { $0.window == nil ? nil : $0.convert($0.bounds, to: nil) }
+            guard column.contains(point) || rowRect?.insetBy(dx: -16, dy: -8).contains(point) == true
+            else { return nil }
+            return .swap(leading: !columnLeading(), area: column)
+        }
         if tab.fits(.bottom), let bottom = bottomArea(), bottom.contains(point) {
             return .zone(.bottom, area: bottom)
         }

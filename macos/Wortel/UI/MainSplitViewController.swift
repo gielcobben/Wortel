@@ -32,7 +32,12 @@ final class MainSplitViewController: NSSplitViewController {
     /// (sessions.json).
     enum ColumnWidth {
         static let minimum: CGFloat = 260
-        static let maximum: CGFloat = 760
+        /// No fixed cap: the column may take everything but the terminal's
+        /// `terminalMinimum`, as ChatGPT's content pane may take everything but
+        /// 320pt of chat. That is how a diff gets the window and the agent a
+        /// narrow strip beside it, without the terminal ever leaving its area.
+        static let maximum: CGFloat = 10_000
+        static let terminalMinimum: CGFloat = 320
         private static let fallback: CGFloat = 440
         private static let key = "sideColumn.lastWidth"
 
@@ -198,7 +203,7 @@ final class MainSplitViewController: NSSplitViewController {
             return view.convert(view.bounds, to: nil)
         }
         drag.onSwap = { [weak self] tab, leading in
-            self?.bringIntoColumn(tab)
+            if tab != .session { self?.bringIntoColumn(tab) }
             self?.git.setColumnLeading(leading)
         }
         drag.columnArea = { [weak self, weak inspectorContent] in
@@ -427,8 +432,22 @@ final class MainSplitViewController: NSSplitViewController {
     /// The panel can also be collapsed by dragging its divider to the edge, which
     /// bypasses GitPanelModel entirely — reflect that back so the menu item's
     /// Show/Hide title and the persisted state don't drift out of sync.
+    /// The column may grow until the terminal is `terminalMinimum` wide. Stated
+    /// as the item's maximum, so a divider drag stops there by itself.
+    private func updateColumnMaximum() {
+        guard let inspectorItem else { return }
+        let sidebar = (sidebarItem?.isCollapsed ?? true) ? 0 : (sidebarItem?.viewController.view.frame.width ?? 0)
+        let room = splitView.bounds.width - sidebar - ColumnWidth.terminalMinimum
+            - splitView.dividerThickness * 2
+        let maximum = max(ColumnWidth.minimum, room)
+        if abs(inspectorItem.maximumThickness - maximum) > 0.5 {
+            inspectorItem.maximumThickness = maximum
+        }
+    }
+
     override func splitViewDidResizeSubviews(_ notification: Notification) {
         super.splitViewDidResizeSubviews(notification)
+        updateColumnMaximum()
         let total = splitView.bounds.width
         let windowResized = total != lastSplitWidth
         lastSplitWidth = total

@@ -231,6 +231,13 @@ final class SurfaceView: NSView {
 
     private func sizeDidChange(_ size: NSSize) {
         guard window != nil else { return }
+        // A pane collapsing (the side column hiding, the terminal behind full
+        // view) sizes its terminal down to nothing on the way out. Passed on,
+        // that reflows the program to a single column and back again when the
+        // pane returns: an agent redraws its whole screen twice for a view
+        // that was only put away. Nothing this small is a size anyone works
+        // at, so it keeps the last real one.
+        guard size.width >= 40, size.height >= 20 else { return }
         let reflowed = size != contentSize
         contentSize = size
         if reflowed { onSizeChange?() }

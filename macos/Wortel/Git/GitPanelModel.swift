@@ -57,6 +57,12 @@ final class GitPanelModel {
     /// Whether the pending `bottomVisible` change should animate; false when a
     /// session switch drove it, for the same reason as the column's.
     @ObservationIgnored private(set) var animatesBottomChange = false
+    /// Mirrors of the focused session's full view (only ever true while the
+    /// column is up) and which side the column is on.
+    private(set) var isFullView = false
+    private(set) var fullViewShowsTerminal = false
+    private(set) var columnLeading = false
+
     /// Tabs closed in this session and not reopened yet, for the menu item.
     var canReopenClosedTab: Bool { !(session?.closedTabs.isEmpty ?? true) }
     /// Hand the keyboard back to the session's main terminal, for when the tab
@@ -153,6 +159,12 @@ final class GitPanelModel {
             animatesVisibilityChange = animated
             isVisible = visible
         }
+        let full = visible && (session?.sideFullView ?? false)
+        if full != isFullView { isFullView = full }
+        let showsTerminal = full && (session?.fullViewShowsTerminal ?? false)
+        if showsTerminal != fullViewShowsTerminal { fullViewShowsTerminal = showsTerminal }
+        let leading = session?.sideColumnLeading ?? false
+        if leading != columnLeading { columnLeading = leading }
         let bottom = session?.bottomTabs ?? []
         if bottom != bottomTabs { bottomTabs = bottom }
         let activeBottom = session?.activeBottomTab
@@ -231,6 +243,7 @@ final class GitPanelModel {
     func select(_ tab: SideTab) {
         guard let session, session.sideTabs.contains(tab) else { return }
         session.activeSideTab = tab
+        session.fullViewShowsTerminal = false
         if let pane = tab.pane { setPane(pane) }
         let wasVisible = isVisible
         session.gitPanelVisible = true
@@ -264,7 +277,6 @@ final class GitPanelModel {
               let (region, index) = detach(tab, from: owner) else { return }
         if let id = tab.terminalID { owner.closeSideSurface(id) }
         owner.closedTabs.append(ClosedTab(tab: tab, region: region, index: index))
-        tabsDebugLog.notice("close \(tab.rawValue, privacy: .public) region=\(region.rawValue, privacy: .public) stack=\(owner.closedTabs.count) focusedSession=\(owner === self.session)")
         if owner.closedTabs.count > Self.closedTabLimit {
             owner.closedTabs.removeFirst(owner.closedTabs.count - Self.closedTabLimit)
         }
@@ -298,7 +310,10 @@ final class GitPanelModel {
                     ? nil : owner.sideTabs[min(index, owner.sideTabs.count - 1)]
                 if let pane = owner.activeSideTab?.pane { owner.inspectorPane = pane }
             }
-            if owner.sideTabs.isEmpty { owner.gitPanelVisible = false }
+            if owner.sideTabs.isEmpty {
+                owner.gitPanelVisible = false
+                owner.sideFullView = false
+            }
             return (.side, index)
         }
         if let id = tab.terminalID, let index = owner.bottomTabs.firstIndex(of: id) {
@@ -344,7 +359,6 @@ final class GitPanelModel {
     /// plain "last closed" stack felt random once tabs close in two places: the
     /// same key put things back in whichever one you'd happened to close last.
     func reopenClosedTab(in region: TabRegion) {
-        tabsDebugLog.notice("reopen region=\(region.rawValue, privacy: .public) hasSession=\(self.session != nil) stack=\(self.session?.closedTabs.count ?? -1)")
         guard let session, !session.closedTabs.isEmpty else { return }
         let index = session.closedTabs.lastIndex { $0.region == region }
             ?? session.closedTabs.count - 1
@@ -386,6 +400,45 @@ final class GitPanelModel {
         }
         // A move that emptied the other region hid it; `select` mirrored
         // only what it touched.
+        mirror(session, animated: false)
+        onStateChanged?()
+    }
+
+    // MARK: - Full view and sides
+
+    /// Full view on or off. Turning it on needs a column with something in
+    /// it; it opens with the column's tab in front. ⌘⇧F.
+    func setFullView(_ on: Bool) {
+        guard let session else { return }
+        if on, session.sideTabs.isEmpty { open(.pane(Self.defaultPane)) }
+        session.sideFullView = on && !session.sideTabs.isEmpty
+        session.fullViewShowsTerminal = false
+        if on { session.gitPanelVisible = true }
+        mirror(session, animated: false)
+        onStateChanged?()
+        resolveCurrent()
+        if on, activeTab?.terminalID != nil {
+            terminalFocusRequest += 1
+        } else if !on {
+            onFocusMainTerminal?()
+        }
+    }
+
+    func toggleFullView() { setFullView(!isFullView) }
+
+    /// The pinned session tab in full view: the session's terminal in front.
+    func showSessionTerminal() {
+        guard let session, isFullView else { return }
+        session.fullViewShowsTerminal = true
+        mirror(session, animated: false)
+        onStateChanged?()
+        onFocusMainTerminal?()
+    }
+
+    /// Put the column on the terminal's leading or trailing side.
+    func setColumnLeading(_ leading: Bool) {
+        guard let session, session.sideColumnLeading != leading else { return }
+        session.sideColumnLeading = leading
         mirror(session, animated: false)
         onStateChanged?()
     }

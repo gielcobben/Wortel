@@ -303,6 +303,10 @@ enum InspectorPane: String, CaseIterable, Identifiable {
 enum SideTab: Hashable, Sendable {
     case pane(InspectorPane)
     case terminal(UUID)
+    /// The session's own terminal, as the pinned first tab of the strip in
+    /// full view. Never stored in a strip, never persisted, never dragged: it
+    /// is how full view shows the way back to the session.
+    case session
 
     private static let terminalPrefix = "terminal:"
 
@@ -312,6 +316,8 @@ enum SideTab: Hashable, Sendable {
         } else if rawValue.hasPrefix(Self.terminalPrefix),
                   let id = UUID(uuidString: String(rawValue.dropFirst(Self.terminalPrefix.count))) {
             self = .terminal(id)
+        } else if rawValue == "session" {
+            self = .session
         } else {
             return nil
         }
@@ -321,6 +327,7 @@ enum SideTab: Hashable, Sendable {
         switch self {
         case .pane(let pane): return pane.rawValue
         case .terminal(let id): return Self.terminalPrefix + id.uuidString
+        case .session: return "session"
         }
     }
 
@@ -335,10 +342,6 @@ enum SideTab: Hashable, Sendable {
     }
 }
 
-import os
-/// Temporary: tracing tab drags and reopen while they're being debugged.
-let tabsDebugLog = Logger(subsystem: "com.gielcobben.Wortel", category: "tabs-debug")
-
 /// Where a tab can live: the side column, or the strip under the session's
 /// terminal. Panes only ever go in the column (a diff or a tree in a short,
 /// full-width strip is useless); terminals go in either.
@@ -349,7 +352,8 @@ enum TabRegion: String, Sendable {
 extension SideTab {
     /// Whether this tab may be put in `region`.
     func fits(_ region: TabRegion) -> Bool {
-        region == .side || terminalID != nil
+        guard self != .session else { return false }
+        return region == .side || terminalID != nil
     }
 }
 

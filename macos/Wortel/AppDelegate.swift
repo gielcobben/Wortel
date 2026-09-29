@@ -666,6 +666,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.toggleBottom()
     }
 
+    @objc func toggleFullView(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.toggleFullView()
+    }
+
+    @objc func toggleColumnSide(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.setColumnLeading(!gitPanel.columnLeading)
+    }
+
     @objc func reopenClosedTab(_ sender: Any?) {
         focusMainWindow()
         // The strip, if the keyboard is in one of its terminals.
@@ -798,8 +808,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         if menuItem.action == #selector(reopenClosedTab(_:)) {
-            tabsDebugLog.notice("validate reopen -> \(self.gitPanel.canReopenClosedTab)")
             return gitPanel.canReopenClosedTab
+        }
+        if menuItem.action == #selector(toggleFullView(_:)) {
+            menuItem.title = gitPanel.isFullView ? "Exit Full View" : "Enter Full View"
+            return true
+        }
+        if menuItem.action == #selector(toggleColumnSide(_:)) {
+            menuItem.title = gitPanel.columnLeading
+                ? "Move Side Column to the Right" : "Move Side Column to the Left"
+            return true
         }
         if menuItem.action == #selector(toggleSideColumn(_:)) {
             menuItem.title = gitPanel.isVisible ? "Hide Side Column" : "Show Side Column"

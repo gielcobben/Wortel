@@ -32,7 +32,7 @@ struct InspectorContainer: View {
                 FileTreePanel(model: files, focusRequest: git.listFocusRequest)
             case .pane?, nil:
                 SourceControlPanel(panel: git)
-            case .terminal?:
+            case .terminal?, .session?:
                 EmptyView()
             }
         }

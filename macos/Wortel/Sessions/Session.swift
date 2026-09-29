@@ -80,6 +80,14 @@ final class Session: Identifiable {
     /// The strip under the session's terminal: its terminals in order, the one
     /// in front, and whether it's showing. Hiding keeps them, closing the last
     /// one hides it. Persisted.
+    /// Full view: the side column takes the whole window, and the session's
+    /// terminal becomes the pinned first tab of its strip. `fullViewShowsTerminal`
+    /// is which of the two is in front. Persisted.
+    var sideFullView = false
+    var fullViewShowsTerminal = false
+    /// The side column on the terminal's leading side rather than its trailing
+    /// one. Persisted.
+    var sideColumnLeading = false
     var bottomTabs: [UUID] = []
     var activeBottomTab: UUID?
     var bottomVisible = false

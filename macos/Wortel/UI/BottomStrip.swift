@@ -297,6 +297,10 @@ final class TabDragController {
     private enum Target: Equatable {
         case strip(TabRegion, index: Int, marker: NSRect)
         case zone(TabRegion, area: NSRect)
+        /// The middle of the terminal: open the tab in full view.
+        case fullView(area: NSRect)
+        /// The terminal's edge away from the column: the column moves there.
+        case swap(leading: Bool, area: NSRect)
     }
 
     var strips: [StripTarget] = []
@@ -305,13 +309,16 @@ final class TabDragController {
     /// The side column's content area when it's showing, in window coordinates.
     var columnArea: () -> NSRect? = { nil }
     var onDrop: (SideTab, TabRegion, Int) -> Void = { _, _, _ in }
+    /// Which side the column is on now.
+    var columnLeading: () -> Bool = { false }
+    var onFullView: (SideTab) -> Void = { _ in }
+    var onSwap: (SideTab, Bool) -> Void = { _, _ in }
 
     private var overlay: TabDragOverlay?
     private var target: Target?
     private weak var source: NSView?
 
     func handle(_ phase: SideTabStrip.DragPhase, tab: SideTab, view: NSView, point: NSPoint) {
-        tabsDebugLog.notice("drag \(String(describing: phase), privacy: .public) target=\(String(describing: self.target), privacy: .public)")
         switch phase {
         case .began:
             guard let window = view.window, let content = window.contentView else { return }
@@ -333,6 +340,8 @@ final class TabDragController {
             switch landing {
             case .strip(let region, let index, _): onDrop(tab, region, index)
             case .zone(let region, _): onDrop(tab, region, .max)
+            case .fullView: onFullView(tab)
+            case .swap(let leading, _): onSwap(tab, leading)
             case nil: break
             }
         case .cancelled:
@@ -352,7 +361,17 @@ final class TabDragController {
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
             overlay.zoneLabel = region == .bottom ? "Move to Bottom" : "Move to Side Column"
-            overlay.zoneEdge = region == .bottom ? .maxY : .minX
+            overlay.zoneEdge = region == .bottom ? .maxY : (columnLeading() ? .maxX : .minX)
+        case .fullView(let area):
+            overlay.marker = nil
+            overlay.zone = overlay.convert(area, from: nil)
+            overlay.zoneLabel = "Open in Full View"
+            overlay.zoneEdge = .minY
+        case .swap(let leading, let area):
+            overlay.marker = nil
+            overlay.zone = overlay.convert(area, from: nil)
+            overlay.zoneLabel = leading ? "Move Column to the Left" : "Move Column to the Right"
+            overlay.zoneEdge = leading ? .maxX : .minX
         case nil:
             overlay.marker = nil
             overlay.zone = nil
@@ -378,19 +397,32 @@ final class TabDragController {
                                                    width: area.width, height: height))
             }
         }
-        if tab.fits(.side) {
-            if let column = columnArea(), column.contains(point) {
-                return .zone(.side, area: column)
-            }
-            if columnArea() == nil, let area = terminalArea() {
-                let width = min(MainSplitViewController.ColumnWidth.lastChosen, area.width / 2)
-                let zone = NSRect(x: area.maxX - area.width / 4, y: area.minY,
-                                  width: area.width / 4, height: area.height)
-                if zone.contains(point) {
-                    return .zone(.side, area: NSRect(x: area.maxX - width, y: area.minY,
-                                                     width: width, height: area.height))
-                }
-            }
+        guard tab.fits(.side) else { return nil }
+        let column = columnArea()
+        if let column, column.contains(point) {
+            return .zone(.side, area: column)
+        }
+        guard let area = terminalArea() else { return nil }
+        // The terminal's two edges, a quarter of it each: the one on the
+        // column's side opens the column (when it's hidden), the far one moves
+        // the column over to it. What's left in the middle is full view.
+        let leading = columnLeading()
+        let edge = area.width / 4
+        let width = min(MainSplitViewController.ColumnWidth.lastChosen, area.width / 2)
+        let leftEdge = NSRect(x: area.minX, y: area.minY, width: edge, height: area.height)
+        let rightEdge = NSRect(x: area.maxX - edge, y: area.minY, width: edge, height: area.height)
+        let leftPane = NSRect(x: area.minX, y: area.minY, width: width, height: area.height)
+        let rightPane = NSRect(x: area.maxX - width, y: area.minY, width: width, height: area.height)
+        if leftEdge.contains(point) {
+            return leading ? (column == nil ? .zone(.side, area: leftPane) : nil)
+                           : .swap(leading: true, area: leftPane)
+        }
+        if rightEdge.contains(point) {
+            return leading ? .swap(leading: false, area: rightPane)
+                           : (column == nil ? .zone(.side, area: rightPane) : nil)
+        }
+        if area.contains(point) {
+            return .fullView(area: area.union(column ?? area))
         }
         return nil
     }
@@ -435,7 +467,9 @@ private final class TabDragOverlay: NSView {
             accent.withAlphaComponent(0.55).setFill()
             switch zoneEdge {
             case .maxY: NSRect(x: zone.minX, y: zone.maxY - 1, width: zone.width, height: 1).fill()
-            default: NSRect(x: zone.minX, y: zone.minY, width: 1, height: zone.height).fill()
+            case .maxX: NSRect(x: zone.maxX - 1, y: zone.minY, width: 1, height: zone.height).fill()
+            case .minX: NSRect(x: zone.minX, y: zone.minY, width: 1, height: zone.height).fill()
+            default: break
             }
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 12, weight: .semibold),

@@ -67,6 +67,11 @@ struct PersistedSession: Codable {
     let bottomVisible: Bool?
     /// What ⌘⇧T can bring back, as `ClosedTab` raw values, newest last.
     let closedTabs: [String]?
+    /// Full view, which of its two is in front, and which side the column is
+    /// on. nil in older files: split, trailing.
+    let sideFullView: Bool?
+    let fullViewShowsTerminal: Bool?
+    let sideColumnLeading: Bool?
 
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
@@ -94,6 +99,7 @@ struct PersistedSession: Codable {
         case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
+        case sideFullView, fullViewShowsTerminal, sideColumnLeading
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
@@ -108,6 +114,8 @@ struct PersistedSession: Codable {
          sideColumnWidth: Double? = nil,
          bottomTabs: [UUID]? = nil, activeBottomTab: UUID? = nil, bottomVisible: Bool? = nil,
          closedTabs: [String]? = nil,
+         sideFullView: Bool? = nil, fullViewShowsTerminal: Bool? = nil,
+         sideColumnLeading: Bool? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
@@ -123,6 +131,9 @@ struct PersistedSession: Codable {
         self.activeBottomTab = activeBottomTab
         self.bottomVisible = bottomVisible
         self.closedTabs = closedTabs
+        self.sideFullView = sideFullView
+        self.fullViewShowsTerminal = fullViewShowsTerminal
+        self.sideColumnLeading = sideColumnLeading
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -170,6 +181,9 @@ struct PersistedSession: Codable {
         activeBottomTab = try c.decodeIfPresent(UUID.self, forKey: .activeBottomTab)
         bottomVisible = try c.decodeIfPresent(Bool.self, forKey: .bottomVisible)
         closedTabs = try c.decodeIfPresent([String].self, forKey: .closedTabs)
+        sideFullView = try c.decodeIfPresent(Bool.self, forKey: .sideFullView)
+        fullViewShowsTerminal = try c.decodeIfPresent(Bool.self, forKey: .fullViewShowsTerminal)
+        sideColumnLeading = try c.decodeIfPresent(Bool.self, forKey: .sideColumnLeading)
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.

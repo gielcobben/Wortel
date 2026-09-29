@@ -19,6 +19,8 @@ final class SideTabStrip: NSView {
         let tab: SideTab
         let title: String
         let symbol: String
+        /// Full view's session tab: always first, never closed or dragged.
+        var pinned = false
     }
 
     enum DragPhase { case began, moved, ended, cancelled }
@@ -54,7 +56,7 @@ final class SideTabStrip: NSView {
         if items.map(\.tab) != self.items.map(\.tab) {
             tabViews.forEach { $0.removeFromSuperview() }
             tabViews = items.map { item in
-                let view = SideTabView(tab: item.tab)
+                let view = SideTabView(tab: item.tab, pinned: item.pinned)
                 view.onSelect = { [weak self] in self?.onSelect(item.tab) }
                 view.onClose = { [weak self] in self?.onClose(item.tab) }
                 view.onCloseOthers = { [weak self] in self?.onCloseOthers(item.tab) }
@@ -108,13 +110,16 @@ final class SideTabStrip: NSView {
     /// index among this strip's tabs, decided by which side of a tab's middle
     /// the pointer is on, and the x (window coordinates) to draw the marker at.
     func insertion(atWindowX x: CGFloat) -> (index: Int, markerX: CGFloat) {
+        // Over the tabs that can move: a pinned tab holds its place and isn't
+        // counted, so the index is one into the column's own list.
+        let movable = tabViews.filter { !$0.pinned }
         let local = convert(NSPoint(x: x, y: 0), from: nil).x
-        for (index, view) in tabViews.enumerated() where local < view.frame.midX {
+        for (index, view) in movable.enumerated() where local < view.frame.midX {
             let gapX = view.frame.minX - Self.gap / 2
             return (index, convert(NSPoint(x: gapX, y: 0), to: nil).x)
         }
         let end = (tabViews.last?.frame.maxX ?? 0) + Self.gap / 2
-        return (tabViews.count, convert(NSPoint(x: end, y: 0), to: nil).x)
+        return (movable.count, convert(NSPoint(x: end, y: 0), to: nil).x)
     }
 
     override func resizeSubviews(withOldSize oldSize: NSSize) {
@@ -135,6 +140,7 @@ final class SideTabStrip: NSView {
 @MainActor
 private final class SideTabView: NSControl {
     let tab: SideTab
+    let pinned: Bool
     var onSelect: () -> Void = {}
     var onClose: () -> Void = {}
     var onCloseOthers: () -> Void = {}
@@ -154,8 +160,9 @@ private final class SideTabView: NSControl {
         didSet { if hovering != oldValue { applyState() } }
     }
 
-    init(tab: SideTab) {
+    init(tab: SideTab, pinned: Bool = false) {
         self.tab = tab
+        self.pinned = pinned
         super.init(frame: .zero)
         // A tab takes clicks, never the keyboard: that stays in the terminal.
         refusesFirstResponder = true
@@ -228,7 +235,7 @@ private final class SideTabView: NSControl {
     }
 
     private func applyState() {
-        closeButton.isHidden = !(isActive || hovering)
+        closeButton.isHidden = pinned || !(isActive || hovering)
         label.textColor = isActive ? .labelColor : .secondaryLabelColor
         icon.contentTintColor = isActive ? .labelColor : .secondaryLabelColor
         needsDisplay = true
@@ -276,20 +283,17 @@ private final class SideTabView: NSControl {
     /// track the mouse ourselves: past 6pt it's a drag (ChatGPT's threshold),
     /// handed on as it goes; released before that, it was just the pick.
     override func mouseDown(with event: NSEvent) {
-        tabsDebugLog.notice("tab mouseDown \(self.tab.rawValue, privacy: .public) region=\(self.stripRegion().rawValue, privacy: .public)")
         onSelect()
-        guard let window else { return }
+        guard !pinned, let window else { return }
         let start = event.locationInWindow
         var dragging = false
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             let point = next.locationInWindow
             if next.type == .leftMouseUp {
-                tabsDebugLog.notice("tab mouseUp dragging=\(dragging)")
                 if dragging { onDrag(.ended, point) }
                 return
             }
             if !dragging, hypot(point.x - start.x, point.y - start.y) >= 6 {
-                tabsDebugLog.notice("tab drag began")
                 dragging = true
                 onDrag(.began, start)
             }
@@ -302,6 +306,7 @@ private final class SideTabView: NSControl {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        guard !pinned else { return nil }
         let menu = NSMenu()
         menu.addItem(ClosureMenuItem(title: "Close Tab") { [weak self] in self?.onClose() })
         menu.addItem(ClosureMenuItem(title: "Close Other Tabs") { [weak self] in self?.onCloseOthers() })

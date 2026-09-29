@@ -247,6 +247,7 @@ final class BottomPaneController: NSViewController {
             for tab in self.git.bottomTabs where tab != keep { self.git.requestClose(tab) }
         }
         strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
+        strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.manager.selected) }
         observe()
     }
 

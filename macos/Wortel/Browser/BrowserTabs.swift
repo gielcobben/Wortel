@@ -77,6 +77,10 @@ final class BrowserPage: NSObject {
     @ObservationIgnored fileprivate weak var host: NSView?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var retry: Task<Void, Never>?
+    /// The page as it last looked, for its tab's hover card: a page that
+    /// isn't in front isn't drawn, so it's taken while it is.
+    @ObservationIgnored private var snapshot: NSImage?
+    @ObservationIgnored private var snapshotTimer: Timer?
 
     /// How often a page whose local server is down tries again.
     private static let retryInterval: Duration = .seconds(1)
@@ -157,8 +161,41 @@ final class BrowserPage: NSObject {
 
     func focusAddress() { addressFocusRequest += 1 }
 
+    /// The page as it last looked, refreshed if it's on screen now.
+    func previewSnapshot() -> NSImage? {
+        captureSnapshot()
+        return snapshot
+    }
+
+    /// Take a picture of the page, if it's on screen to take one of.
+    fileprivate func captureSnapshot() {
+        guard webView.window != nil, !webView.isHiddenOrHasHiddenAncestor,
+              webView.bounds.width > 1, location != nil, !isWaiting, failure == nil else { return }
+        let configuration = WKSnapshotConfiguration()
+        // Points: as wide as the card shows it, at the screen's own scale.
+        configuration.snapshotWidth = 300
+        webView.takeSnapshot(with: configuration) { [weak self] image, _ in
+            MainActor.assumeIsolated {
+                if let image { self?.snapshot = image }
+            }
+        }
+    }
+
+    /// While the page is on screen, keep its picture recent: a page changes
+    /// without navigating (a dev server's hot reload), and the moment it
+    /// leaves the screen is too late to take one.
+    fileprivate func onScreenChanged(_ visible: Bool) {
+        snapshotTimer?.invalidate()
+        snapshotTimer = nil
+        guard visible else { return }
+        snapshotTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.captureSnapshot() }
+        }
+    }
+
     fileprivate func close() {
         retry?.cancel()
+        snapshotTimer?.invalidate()
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -187,6 +224,11 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         isWaiting = false
         failure = nil
         retry?.cancel()
+        // Once it's had a moment to paint.
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            self?.captureSnapshot()
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
@@ -254,6 +296,8 @@ struct BrowserTab: View {
                 .frame(height: 1)
             ZStack {
                 WebViewHost(page: page)
+                    .onAppear { page.onScreenChanged(true) }
+                    .onDisappear { page.onScreenChanged(false) }
                 if page.location == nil {
                     // Nowhere yet: the page is what you could open.
                     BlankPage(servers: servers, highlighted: highlighted, pick: go)

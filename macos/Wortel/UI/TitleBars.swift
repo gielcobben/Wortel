@@ -414,6 +414,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             for tab in self.git.tabs where tab != keep { self.git.requestClose(tab) }
         }
         sideBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
+        sideBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.manager.selected) }
         // The main area's row.
         mainBar.strip.onSelect = { [weak self] tab in self?.git.selectMain(tab) }
         mainBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
@@ -424,6 +425,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             }
         }
         mainBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
+        mainBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.manager.selected) }
     }
 
     func start() {
@@ -479,6 +481,23 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             let name = session.map { SessionName.leaf(of: $0.name) } ?? "Terminal"
             return .init(tab: tab, title: name, symbol: "terminal", pinned: true,
                          detail: session?.cwd.map { ($0 as NSString).abbreviatingWithTildeInPath })
+        }
+    }
+
+    /// What a tab's hover card shows of it: a terminal's last lines, the top of
+    /// a file, a page as it last looked. Read now, when the card opens.
+    static func preview(for tab: SideTab, in session: Session?) -> TabPreview? {
+        switch tab {
+        case .terminal(let id):
+            return .terminal(session?.sideSurfaces[id]?.activeScreenTail(maxBytes: 4096))
+        case .session:
+            return .terminal(session?.surfaceView?.activeScreenTail(maxBytes: 4096))
+        case .file(let path):
+            return .file(at: path)
+        case .browser(let id):
+            return BrowserTabs.shared.existingPage(for: id)?.previewSnapshot().map(TabPreview.image)
+        case .pane:
+            return nil
         }
     }
 

@@ -39,6 +39,9 @@ final class SideTabStrip: NSView {
     /// A tab is being dragged; `point` is in window coordinates. The drag is
     /// resolved by whoever knows every strip and drop zone (TabDragController).
     var onDrag: (DragPhase, SideTab, NSView, NSPoint) -> Void = { _, _, _, _ in }
+    /// A glimpse of what's in a tab, for its hover card. Asked when the card
+    /// opens.
+    var preview: (SideTab) -> TabPreview? = { _ in nil }
 
     static let tabHeight: CGFloat = Chrome.controlSize
     /// How far a long title's tab gives way when the row is short of room:
@@ -159,6 +162,7 @@ final class SideTabStrip: NSView {
             self.onDrag(phase, item.tab, view, point)
         }
         view.stripRegion = { [weak self] in self?.region ?? .side }
+        view.preview = { [weak self] in self?.preview(item.tab) }
         content.addSubview(view)
         return view
     }
@@ -364,7 +368,7 @@ private final class FlippedView: NSView {
 /// worked); `mouseDownCanMoveWindow` only speaks for AppKit's half of that
 /// decision, so a plain view that says no still let the window take the drag.
 @MainActor
-private final class SideTabView: NSControl {
+private final class SideTabView: NSControl, TabTitleProviding {
     let tab: SideTab
     let pinned: Bool
     var onSelect: () -> Void = {}
@@ -494,9 +498,11 @@ private final class SideTabView: NSControl {
     private var trackingArea: NSTrackingArea?
     /// Where the tab is: the second line of its hover card.
     private var detail: String?
+    var preview: () -> TabPreview? = { nil }
 
+    var title: String { label.stringValue }
     /// Whether the title is cut short where it is.
-    private var titleIsTruncated: Bool { titleWidth > label.frame.width + 0.5 }
+    var isTitleTruncated: Bool { titleWidth > label.frame.width + 0.5 }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -510,10 +516,9 @@ private final class SideTabView: NSControl {
 
     override func mouseEntered(with event: NSEvent) {
         hovering = true
-        // Only when there's something the tab itself doesn't say.
-        if detail != nil || titleIsTruncated {
-            TabHoverCard.shared.enter(self, title: label.stringValue, detail: detail)
-        }
+        // The card decides when it opens whether it has anything the tab
+        // doesn't already say.
+        TabHoverCard.shared.enter(self, .init(title: label.stringValue, detail: detail, preview: preview))
     }
 
     override func mouseExited(with event: NSEvent) {

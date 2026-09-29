@@ -605,10 +605,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // file, while the window is opened with the path you actually clicked so
         // it can tell you when that was an alias.
         let url = requested.resolvingSymlinksInPath().standardizedFileURL
+        // ⌥ read now, at the click: the open can land after a git lookup, and
+        // by then there's no event to ask.
+        let inMain = Self.optionClicked
         // Already open, in a tab or a window: bring it forward and do no git
         // work whatsoever.
         if manager.selected?.workspace.region(of: .file(url.path)) != nil {
-            gitPanel.open(.file(url.path))
+            gitPanel.openAtHome(.file(url.path), inMain: inMain)
             return
         }
         if previewWindows.focus(url) { return }
@@ -620,11 +623,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 ?? repo.status.stagedChanges.first { $0.path == relative }
             if let change {
                 presentPreview(requested, diff: .change(root: repo.root, change: change),
-                               hasChanges: true)
+                               hasChanges: true, inMain: inMain)
             } else {
                 presentPreview(
                     requested,
-                    diff: .workingTree(root: repo.root, path: relative, untracked: false))
+                    diff: .workingTree(root: repo.root, path: relative, untracked: false),
+                    inMain: inMain)
             }
             return
         }
@@ -640,7 +644,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 repoRootCache[directory] = root
             }
             guard let root, let relative = Self.relativePath(of: url, in: root) else {
-                presentPreview(requested)
+                presentPreview(requested, inMain: inMain)
                 return
             }
             // One line of porcelain, not a patch: it decides whether the window
@@ -650,16 +654,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             presentPreview(
                 requested,
                 diff: .workingTree(root: root, path: relative, untracked: state == .untracked),
-                hasChanges: state.hasChanges)
+                hasChanges: state.hasChanges, inMain: inMain)
         }
+    }
+
+    /// Whether the click (or key) doing this held ⌥: open in the main area.
+    private static var optionClicked: Bool {
+        NSApp.currentEvent?.modifierFlags.contains(.option) ?? false
     }
 
     /// Show a file: as a tab beside the session (the column, or where it
     /// already is), which is where the preview window's job, "look at what an
     /// agent just did, and get back", is done with the least travel.
+    ///
+    /// ⌥-click puts it in the main area this once. Read off the event that's
+    /// opening it, so every place a file opens from (the changes list,
+    /// History, the file tree, a path in a terminal, a link in Markdown) gets
+    /// it without each passing it along.
     private func presentPreview(_ url: URL, diff: PreviewDiffSource = .none,
-                                hasChanges: Bool = false) {
-        gitPanel.open(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges))
+                                hasChanges: Bool = false, inMain: Bool? = nil) {
+        gitPanel.openAtHome(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges),
+                            inMain: inMain ?? Self.optionClicked)
     }
 
     private static func relativePath(of url: URL, in root: String) -> String? {

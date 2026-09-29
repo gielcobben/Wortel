@@ -373,6 +373,23 @@ enum SideTab: Hashable, Sendable {
     }
 }
 
+/// The kinds of tab that open somewhere by habit: a file or a browser opened
+/// without saying where goes where you last moved one of its kind
+/// (`WorkspaceTabs.home(for:)`). Terminals and panes open where you ask.
+enum TabKind: String, Sendable {
+    case file, browser
+}
+
+extension SideTab {
+    var kind: TabKind? {
+        switch self {
+        case .file: return .file
+        case .browser: return .browser
+        default: return nil
+        }
+    }
+}
+
 /// Where a tab can live: the main area (beside the session's own terminal,
 /// which is one of its tabs), the side column, or the strip under the
 /// session's terminal. Any tab goes anywhere, except the session's terminal,

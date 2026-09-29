@@ -80,6 +80,9 @@ struct PersistedSession: Codable {
     let browserAddresses: [String: String]?
     /// `Session.gitCheckout`. nil in older files: follow the terminal.
     let gitCheckout: String?
+    /// `Session.tabHabits`, kind to region, raw values. nil in older files:
+    /// everything opens in the column.
+    let tabHabits: [String: String]?
 
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
@@ -107,7 +110,7 @@ struct PersistedSession: Codable {
         case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
-        case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout
+        case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
@@ -126,6 +129,7 @@ struct PersistedSession: Codable {
          sideColumnLeading: Bool? = nil,
          browserAddresses: [String: String]? = nil,
          gitCheckout: String? = nil,
+         tabHabits: [String: String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
@@ -146,6 +150,7 @@ struct PersistedSession: Codable {
         self.sideColumnLeading = sideColumnLeading
         self.browserAddresses = browserAddresses
         self.gitCheckout = gitCheckout
+        self.tabHabits = tabHabits
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -198,6 +203,7 @@ struct PersistedSession: Codable {
         sideColumnLeading = try c.decodeIfPresent(Bool.self, forKey: .sideColumnLeading)
         browserAddresses = try c.decodeIfPresent([String: String].self, forKey: .browserAddresses)
         gitCheckout = try c.decodeIfPresent(String.self, forKey: .gitCheckout)
+        tabHabits = try c.decodeIfPresent([String: String].self, forKey: .tabHabits)
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.

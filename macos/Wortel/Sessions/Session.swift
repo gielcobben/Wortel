@@ -102,6 +102,9 @@ final class Session: Identifiable {
     /// Tabs closed in this session, newest last, for ⌘⇧T. Persisted, so a
     /// relaunch (an update, a crash) doesn't quietly empty it.
     @ObservationIgnored var closedTabs: [ClosedTab] = []
+    /// Where files and browsers open in this session: where you last moved
+    /// one. See `WorkspaceTabs.home(for:)`. Persisted.
+    @ObservationIgnored var tabHabits: [TabKind: TabRegion] = [:]
 
     /// Every terminal tab id the session holds, wherever it sits.
     var terminalTabIDs: [UUID] { workspace.terminalIDs }
@@ -114,7 +117,7 @@ final class Session: Identifiable {
             WorkspaceTabs(main: mainTabs, activeMain: activeMainTab,
                           side: sideTabs, activeSide: activeSideTab, sideVisible: gitPanelVisible,
                           bottom: bottomTabs, activeBottom: activeBottomTab,
-                          bottomVisible: bottomVisible, closed: closedTabs)
+                          bottomVisible: bottomVisible, closed: closedTabs, habits: tabHabits)
         }
         set {
             if mainTabs != newValue.main { mainTabs = newValue.main }
@@ -126,6 +129,7 @@ final class Session: Identifiable {
             if activeBottomTab != newValue.activeBottom { activeBottomTab = newValue.activeBottom }
             if bottomVisible != newValue.bottomVisible { bottomVisible = newValue.bottomVisible }
             closedTabs = newValue.closed
+            tabHabits = newValue.habits
         }
     }
     /// Full title reported by the shell (user@host:cwd, or the running

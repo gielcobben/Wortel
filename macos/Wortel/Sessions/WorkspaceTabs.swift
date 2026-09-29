@@ -16,6 +16,9 @@ import Foundation
 ///   Taking out the one in front brings its neighbour forward, the one to its
 ///   right first. The column and the strip hide when they're left empty; the
 ///   main row never is, it always has the terminal.
+/// - Moving a file or a browser to another row makes that row where the next
+///   one of its kind opens (`home(for:)`): drag one browser to the main area
+///   and browsers open there. Until then, and for everything else, the column.
 /// - A closed tab is remembered, newest last, 25 at most, with where it was.
 ///   Reopening prefers the last one closed in the row you're in; a terminal
 ///   comes back as a new shell (a new id) in its old place.
@@ -35,12 +38,20 @@ struct WorkspaceTabs: Equatable, Sendable {
     var activeBottom: SideTab?
     var bottomVisible = false
     var closed: [ClosedTab] = []
+    /// Where you last moved a tab of each kind: where the next one opens.
+    var habits: [TabKind: TabRegion] = [:]
 
     static let closedLimit = 25
 
     /// Every terminal tab's id, wherever it is.
     var terminalIDs: [UUID] {
         (main + side + bottom).compactMap(\.terminalID)
+    }
+
+    /// Where a new tab opens when nothing says where: the row you last moved
+    /// one of its kind to, or the column.
+    func home(for tab: SideTab) -> TabRegion {
+        tab.kind.flatMap { habits[$0] } ?? .side
     }
 
     func region(of tab: SideTab) -> TabRegion? {
@@ -119,6 +130,9 @@ struct WorkspaceTabs: Equatable, Sendable {
         let target = from.region == region && from.index < index ? index - 1 : index
         place(tab, in: region, at: target)
         bringForward(tab)
+        // Taken to another row: that's where its kind lives now. A reorder
+        // says nothing about where things belong.
+        if from.region != region, let kind = tab.kind { habits[kind] = region }
         return true
     }
 

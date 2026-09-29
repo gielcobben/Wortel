@@ -326,6 +326,10 @@ on a server from the running-jobs popover. A browser's address lives on its
 session (`browserAddresses`, persisted) and its live web view in
 `BrowserTabs`, not in the view, so moving the tab doesn't reload it.
 
+A file or browser opened without saying where goes where you last *moved* one
+of its kind in that session (`WorkspaceTabs.home(for:)`, the column until
+then); ⌥-click puts it in the main area once without teaching that.
+
 A tab is in exactly one row; the one in front fills its area. Any tab goes in
 any row, except the session's terminal, which never leaves the
 main row and can't be closed: dragged onto the column it **swaps sides** instead,

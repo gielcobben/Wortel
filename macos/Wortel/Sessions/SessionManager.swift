@@ -508,7 +508,10 @@ final class SessionManager {
                 bottom: (entry.bottomTabs ?? []).compactMap(Self.stripTab),
                 activeBottom: entry.activeBottomTab.flatMap(Self.stripTab),
                 bottomVisible: entry.bottomVisible ?? false,
-                closed: (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)))
+                closed: (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)),
+                habits: Dictionary(uniqueKeysWithValues: (entry.tabHabits ?? [:]).compactMap { key, value in
+                    TabKind(rawValue: key).flatMap { kind in TabRegion(rawValue: value).map { (kind, $0) } }
+                }))
             if entry.sideTabs == nil, session.gitPanelVisible {
                 let pane = session.inspectorPane ?? GitPanelModel.defaultPane
                 tabs.side = [.pane(pane)]
@@ -2215,6 +2218,8 @@ final class SessionManager {
                 sideColumnLeading: session.sideColumnLeading,
                 browserAddresses: Self.persistedBrowserAddresses(of: session),
                 gitCheckout: session.gitCheckout,
+                tabHabits: session.tabHabits.isEmpty ? nil
+                    : Dictionary(uniqueKeysWithValues: session.tabHabits.map { ($0.key.rawValue, $0.value.rawValue) }),
                 runningAgent: agent?.agent, runningModel: agent?.model,
                 runningArgv: agent?.argv,
                 runningConversationID: agent == nil ? nil : conversationID)

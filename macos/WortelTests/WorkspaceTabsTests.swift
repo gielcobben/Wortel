@@ -99,6 +99,49 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(tabs.main, [.session])
     }
 
+    // MARK: - Habits
+
+    /// Files and browsers open in the column until you've moved one.
+    func testFilesAndBrowsersStartInTheColumn() {
+        let tabs = WorkspaceTabs()
+        XCTAssertEqual(tabs.home(for: .file("/tmp/a.md")), .side)
+        XCTAssertEqual(tabs.home(for: .browser(UUID())), .side)
+    }
+
+    /// Moving one to another row is where the next of its kind opens, and
+    /// only its kind.
+    func testMovingATabMakesItsRowHomeForItsKind() {
+        var tabs = WorkspaceTabs()
+        let browser = SideTab.browser(UUID())
+        tabs.place(browser, in: .side, at: 0)
+        tabs.move(browser, to: .main, at: .max)
+        XCTAssertEqual(tabs.home(for: .browser(UUID())), .main)
+        XCTAssertEqual(tabs.home(for: .file("/tmp/a.md")), .side, "files keep their own habit")
+
+        tabs.move(browser, to: .bottom, at: 0)
+        XCTAssertEqual(tabs.home(for: .browser(UUID())), .bottom, "the last move wins")
+    }
+
+    /// Reordering says nothing about where things belong.
+    func testReorderingDoesntChangeTheHabit() {
+        var tabs = WorkspaceTabs()
+        let a = SideTab.file("/tmp/a.md"), b = SideTab.file("/tmp/b.md")
+        tabs.place(a, in: .side, at: 0)
+        tabs.place(b, in: .side, at: 1)
+        tabs.move(b, to: .side, at: 0)
+        XCTAssertTrue(tabs.habits.isEmpty)
+    }
+
+    /// Terminals and panes open where you ask; moving them teaches nothing.
+    func testTerminalsAndPanesHaveNoHabit() {
+        var tabs = column()
+        let shell = terminal()
+        tabs.place(shell, in: .side, at: 0)
+        tabs.move(shell, to: .bottom, at: 0)
+        tabs.move(changes, to: .main, at: .max)
+        XCTAssertTrue(tabs.habits.isEmpty)
+    }
+
     // MARK: - Closing
 
     /// The tab that slid into the closed one's place comes forward; at the end

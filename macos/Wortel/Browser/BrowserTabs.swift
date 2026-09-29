@@ -239,8 +239,6 @@ struct BrowserTab: View {
     @State private var edited = false
     @State private var highlighted: URL?
     @FocusState private var editing: Bool
-    /// Where the address field is, so the suggestions hang from its edges.
-    @State private var field: CGRect = .zero
 
     var body: some View {
         let servers = BrowserTabs.shared.servers()
@@ -249,11 +247,12 @@ struct BrowserTab: View {
             BrowserHeader(page: page, typed: $typed, edited: $edited,
                           editing: $editing, suggestions: suggestions, highlighted: $highlighted,
                           go: go)
-                .onPreferenceChange(AddressFieldFrame.self) { field = $0 }
+                // Over the page, so the suggestions hanging from its field are.
+                .zIndex(1)
             Rectangle()
                 .fill(Color(nsColor: Chrome.hairline))
                 .frame(height: 1)
-            ZStack(alignment: .topLeading) {
+            ZStack {
                 WebViewHost(page: page)
                 if page.location == nil {
                     // Nowhere yet: the page is what you could open.
@@ -263,18 +262,10 @@ struct BrowserTab: View {
                 } else if let failure = page.failure {
                     PageNotice(spinner: false, text: failure)
                 }
-                if editing, page.location != nil, !suggestions.isEmpty {
-                    // Hung from the field: its left edge, its width, just
-                    // under the header's line.
-                    SuggestionList(servers: suggestions, highlighted: highlighted, pick: go)
-                        .frame(width: max(field.width, 260))
-                        .offset(x: field.minX, y: 3)
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: Chrome.content))
-        .coordinateSpace(.named(AddressFieldFrame.space))
         // Another browser in the same row is another web view to borrow.
         .id(ObjectIdentifier(page))
     }
@@ -294,13 +285,6 @@ struct BrowserTab: View {
         page.go(to: url.absoluteString)
         editing = false
     }
-}
-
-/// Where the address field sits in its browser.
-private struct AddressFieldFrame: PreferenceKey {
-    static let space = "browser"
-    static let defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
 
 /// Back, forward, reload, the address, and the way out to your browser.
@@ -343,10 +327,16 @@ private struct BrowserHeader: View {
                 .frame(height: 24)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(nsColor: editing.wrappedValue ? Chrome.hoverFill : .clear)))
-                .background(GeometryReader { proxy in
-                    Color.clear.preference(key: AddressFieldFrame.self,
-                                           value: proxy.frame(in: .named(AddressFieldFrame.space)))
-                })
+                // The suggestions hang from the field itself: its left edge,
+                // its width, a few points under it. Measuring the field and
+                // placing them over the page didn't survive the round trip.
+                .overlay(alignment: .topLeading) {
+                    if editing.wrappedValue, page.location != nil, !suggestions.isEmpty {
+                        SuggestionList(servers: suggestions, highlighted: highlighted, pick: go)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .offset(y: 28)
+                    }
+                }
                 .padding(.leading, 4)
             button("arrow.up.forward.square", "Open in Your Browser", action: page.openInBrowser)
                 .disabled(page.location == nil)

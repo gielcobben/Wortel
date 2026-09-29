@@ -751,7 +751,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         }
         Self.setGlyph("apple.terminal", on: terminal)
         terminal.keyEquivalent = "t"
-        terminal.keyEquivalentModifierMask = [.command, .option]
+        terminal.keyEquivalentModifierMask = [.command]
         menu.addItem(terminal)
         let strip = ClosureMenuItem(title: git.bottomVisible ? "Hide Strip" : "Show Strip") { [weak self] in
             self?.git.toggleBottom()

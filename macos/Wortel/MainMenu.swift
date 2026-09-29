@@ -140,14 +140,6 @@ enum MainMenu {
         // sit together so the second reads as the exception to the first rather
         // than as a second, unexplained "New Session".
         sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "n")
-        // ⌘T is every terminal's "new tab". Wortel has no tabs — a session is
-        // the thing that shortcut reaches for — so it's an alias of ⌘N above
-        // rather than a second visible row in a menu kept deliberately small.
-        // Hidden items are skipped by the key-equivalent scan unless they opt in
-        // via `allowsKeyEquivalentWhenHidden`. Free of a wortel.conf keybind.
-        let newSessionTab = sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "t")
-        newSessionTab.isHidden = true
-        newSessionTab.allowsKeyEquivalentWhenHidden = true
         // ⌘N inherits the directory you're in, which is right until the moment
         // you want out of it. This is the way out, and it's a command rather
         // than a preference because both answers are wanted by the same person
@@ -373,11 +365,12 @@ enum MainMenu {
         swapSides.keyEquivalentModifierMask = [.command, .option, .shift]
 
         viewMenu.addItem(.separator())
-        // ⌥⌘T: a terminal in the row you're in, as iTerm's "new tab next to
-        // current". ⌘T stays New Session: sessions are what other terminals
-        // call tabs.
+        // ⌘T: a new tab, as everywhere else; here a terminal in the row you're
+        // in, which is also what a terminal user's ⌘T has always given them: a
+        // new shell, right where they are. ⌘N is New Session. (Until the rows
+        // had tabs, ⌘T was an alias of ⌘N: a session was the only tab there was.)
         let newTerminal = viewMenu.addItem(withTitle: "New Terminal Tab", action: #selector(AppDelegate.newTerminalHere(_:)), keyEquivalent: "t")
-        newTerminal.keyEquivalentModifierMask = [.command, .option]
+        newTerminal.keyEquivalentModifierMask = [.command]
         newTerminal.image = NSImage(systemSymbolName: "apple.terminal", accessibilityDescription: nil)
         let newBottom = viewMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "`")
         newBottom.keyEquivalentModifierMask = [.control, .shift]

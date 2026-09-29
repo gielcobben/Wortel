@@ -8,11 +8,13 @@ Option with a letter always stay with the shell.
 
 ## Sessions
 
-Sessions are what other terminals call tabs, so they get the tab keys.
+A session is a sidebar row with its own terminal, layout and agent tracking.
+Sessions keep the "next / previous tab" keys other terminals use, since that's
+what people reach for to move between shells; ⌘T opens a tab in the session you're in.
 
 | Action | Shortcut | Same as |
 |---|---|---|
-| New session | ⌘N, ⌘T | Terminal, iTerm, Ghostty (new tab) |
+| New session | ⌘N | Safari, ChatGPT (new window, new chat) |
 | Close session | ⇧⌘W | iTerm, Ghostty |
 | Next / previous session | ⇧⌘] / ⇧⌘[, ⌥⌘↓ / ⌥⌘↑ | Safari, Terminal, iTerm, Ghostty |
 | Session 1 to 9 | ⌘1 to ⌘9 | Safari, iTerm, Ghostty |
@@ -36,7 +38,7 @@ keyboard, or the main area's.
 
 | Action | Shortcut | Same as |
 |---|---|---|
-| New terminal tab here | ⌥⌘T | iTerm (new tab next to current) |
+| New terminal tab here | ⌘T | everyone (new tab); in a terminal, a new shell where you are |
 | New terminal in the bottom strip | ⌃⇧` | VS Code, Zed |
 | Close tab | ⌘W | everyone |
 | Reopen closed tab | ⇧⌘T | Safari, VS Code, Zed, iTerm, Ghostty, ChatGPT |

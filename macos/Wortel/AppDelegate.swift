@@ -211,8 +211,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 }
         }
         gitPanel.onTabClosed = { [weak self] tab in
-            if let path = tab.filePath { self?.previewTabs.forget(path) }
+            if let path = tab.filePath { self?.releaseFile(path) }
             if let id = tab.browserID { BrowserTabs.shared.forget(id) }
+        }
+        // A closed session's pages and documents go with it: a web view keeps
+        // running its scripts and its dev server's socket, and a document
+        // keeps watching its file, for as long as anything holds them.
+        manager.onSessionClosed = { [weak self] session in
+            let workspace = session.workspace
+            let tabs = workspace.main + workspace.side + workspace.bottom + workspace.closed.map(\.tab)
+            for tab in tabs {
+                if let id = tab.browserID { BrowserTabs.shared.forget(id) }
+                if let path = tab.filePath { self?.releaseFile(path) }
+            }
         }
         // A link in a rendered README is a fifth way to open a file, and it goes
         // through the same opener as the other four.
@@ -888,6 +899,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func moveTabRight(_ sender: Any?) { moveFocusedTab(.maxX) }
     @objc func moveTabDown(_ sender: Any?) { moveFocusedTab(.minY) }
     @objc func moveTabUp(_ sender: Any?) { moveFocusedTab(.maxY) }
+
+    /// Let a file's document go, unless another session still has it open:
+    /// documents are one per file for the whole app, tabs are per session.
+    private func releaseFile(_ path: String) {
+        guard !manager.sessions.contains(where: { $0.workspace.region(of: .file(path)) != nil }) else { return }
+        previewTabs.forget(path)
+    }
 
     /// ⌘F with a file tab showing: that file's find bar, as a preview window's.
     /// The tab in front of the area you're in first, then any area's. With no

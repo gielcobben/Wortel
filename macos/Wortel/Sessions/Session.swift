@@ -352,6 +352,8 @@ final class Session: Identifiable {
             view.removeFromSuperview()
         } else {
             GhosttyRuntime.keeper?.close(session: id)
+            // What `SurfaceView.close` does for a terminal that has a view.
+            TerminalModeRecorder.shared.forget(session: id)
         }
         sideTerminalTitles[id] = nil
     }

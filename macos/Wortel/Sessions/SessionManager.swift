@@ -84,6 +84,9 @@ final class SessionManager {
     /// ended the session). Its tab goes with it; the column model decides what
     /// takes its place. Set by AppDelegate.
     @ObservationIgnored var onSideTerminalExited: ((Session, UUID) -> Void)?
+    /// A session closed, after its terminals: for whoever holds something for
+    /// its other tabs (a browser's page, a file's document).
+    @ObservationIgnored var onSessionClosed: ((Session) -> Void)?
 
     /// Whether Wortel is the frontmost app. A session the user is *actively
     /// viewing* (app active + window visible + selected) never raises
@@ -1412,6 +1415,7 @@ final class SessionManager {
         stopSessionWork?(session)
         session.close()
         sessions.remove(at: index)
+        onSessionClosed?(session)
         // Closing the last session in a folder removes that section — including
         // explicitly-created ("New Folder") ones, which otherwise linger empty.
         if let folder, !sessions.contains(where: { $0.folderPath == folder }) {

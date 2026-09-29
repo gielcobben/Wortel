@@ -393,6 +393,14 @@ enum GitService {
         return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
     }
 
+    /// How many commits `to` has that `from` doesn't. 0 when either is
+    /// unknown.
+    static func commitsAhead(from: String, to: String, root: String) async -> Int {
+        let result = await run(["rev-list", "--count", "\(from)..\(to)"], in: root)
+        guard result.ok else { return 0 }
+        return Int(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+    }
+
     /// Every checkout of this repository, primary first.
     static func worktrees(root: String) async -> [GitWorktree] {
         let result = await run(["worktree", "list", "--porcelain"], in: root)

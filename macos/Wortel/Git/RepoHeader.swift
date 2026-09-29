@@ -10,8 +10,13 @@ import SwiftUI
 /// tab belong inside that tab: the same place the ChatGPT app puts a browser
 /// tab's address bar. It costs the list its run up under the titlebar, which the
 /// tab strip would have covered anyway.
+///
+/// A session can show another checkout of the repo than its terminal's (an
+/// agent working in a worktree): chosen in the branch menu, and undone by the
+/// arrow that appears beside the branch while it's in effect.
 struct RepoHeader: View {
     @Bindable var repo: GitRepoModel
+    @Bindable var panel: GitPanelModel
     @State private var showsBranches = false
 
     var body: some View {
@@ -22,6 +27,7 @@ struct RepoHeader: View {
                     // it will show. A `for-each-ref`: the click still feels
                     // immediate.
                     await repo.loadBranches()
+                    await panel.loadCheckouts()
                     showsBranches = true
                 }
             } label: {
@@ -42,9 +48,23 @@ struct RepoHeader: View {
                 .contentShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(HeaderButtonStyle())
-            .help(repo.status.branch ?? "Switch branch")
+            .help(panel.pinnedCheckout.map { "Showing \($0)" } ?? repo.status.branch ?? "Switch branch")
             .popover(isPresented: $showsBranches, arrowEdge: .bottom) {
-                BranchList(repo: repo, dismiss: { showsBranches = false })
+                BranchList(repo: repo, panel: panel, dismiss: { showsBranches = false })
+            }
+
+            if panel.pinnedCheckout != nil {
+                Button {
+                    panel.showCheckout(nil)
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(HeaderButtonStyle())
+                .help("Back to the terminal's checkout")
             }
 
             Spacer(minLength: 4)

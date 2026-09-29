@@ -16,8 +16,10 @@ struct SourceControlPanel: View {
             case .changes:
                 if let repo = panel.repo {
                     VStack(spacing: 0) {
-                        RepoHeader(repo: repo)
-                        RepoView(repo: repo, focusRequest: panel.listFocusRequest)
+                        RepoHeader(repo: repo, panel: panel)
+                        RepoView(repo: repo, focusRequest: panel.listFocusRequest,
+                                 elsewhere: workElsewhere(than: repo),
+                                 showCheckout: { panel.showCheckout($0) })
                     }
                 } else {
                     emptyState
@@ -25,7 +27,7 @@ struct SourceControlPanel: View {
             case .history:
                 if let repo = panel.repo {
                     VStack(spacing: 0) {
-                        RepoHeader(repo: repo)
+                        RepoHeader(repo: repo, panel: panel)
                         HistoryView(repo: repo, focusRequest: panel.listFocusRequest)
                     }
                 } else {
@@ -43,6 +45,14 @@ struct SourceControlPanel: View {
         // the material itself (Liquid Glass on macOS 26), and painting anything
         // opaque here — a tinted fill, or an NSVisualEffectView — sits on top of
         // that material and blocks it. Width now comes from .inspectorColumnWidth.
+    }
+
+    /// Where the work is, when it isn't here: another checkout of the repo
+    /// with changes or commits this one doesn't have. The one with the most.
+    private func workElsewhere(than repo: GitRepoModel) -> GitPanelModel.Checkout? {
+        panel.checkouts
+            .filter { $0.path != repo.root && ($0.changes > 0 || $0.ahead > 0) }
+            .max { ($0.changes, $0.ahead) < ($1.changes, $1.ahead) }
     }
 
     private var emptyState: some View {
@@ -65,6 +75,9 @@ private struct RepoView: View {
     /// Monotonic focus-request token from GitPanelModel (⌘⌥L). A change means
     /// "put keyboard focus in the changes list."
     let focusRequest: Int
+    /// Another checkout with work in it, for a clean pane to point at.
+    var elsewhere: GitPanelModel.Checkout?
+    var showCheckout: (String) -> Void = { _ in }
     @FocusState private var listFocused: Bool
     /// Whether the native commit editor holds focus (drives its border). Driven
     /// by CommitMessageEditor's focus callback, not @FocusState — the editor is
@@ -188,7 +201,24 @@ private struct RepoView: View {
         // of its pane like the diff's does. Sharing `centered` is the point: the
         // two halves of this panel are empty at the same moments, and they
         // should say so the same way.
-        if repo.status.isClean {
+        if repo.status.isClean, let elsewhere {
+            // Clean here, busy in another worktree: most likely an agent in
+            // this session working there. Say so rather than just "nothing".
+            VStack(spacing: 10) {
+                Text("No changes")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                Button {
+                    showCheckout(elsewhere.path)
+                } label: {
+                    Text("Show \(elsewhere.name): \(GitPanelModel.summary(of: elsewhere))")
+                        .font(.callout)
+                }
+                .buttonStyle(.link)
+                .help(elsewhere.path)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if repo.status.isClean {
             centered("No changes")
         } else {
             populatedChangesList

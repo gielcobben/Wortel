@@ -520,6 +520,11 @@ final class SessionManager {
             session.workspace = tabs.normalized()
             session.sideColumnWidth = entry.sideColumnWidth
             session.sideColumnLeading = entry.sideColumnLeading ?? false
+            // A checkout that's gone (a worktree removed since) is forgotten:
+            // the panes follow the terminal again.
+            session.gitCheckout = entry.gitCheckout.flatMap {
+                FileManager.default.fileExists(atPath: $0) ? $0 : nil
+            }
             for (key, address) in entry.browserAddresses ?? [:] {
                 if let id = UUID(uuidString: key) { session.browserAddresses[id] = address }
             }
@@ -2209,6 +2214,7 @@ final class SessionManager {
                 activeMainTab: session.activeMainTab?.rawValue,
                 sideColumnLeading: session.sideColumnLeading,
                 browserAddresses: Self.persistedBrowserAddresses(of: session),
+                gitCheckout: session.gitCheckout,
                 runningAgent: agent?.agent, runningModel: agent?.model,
                 runningArgv: agent?.argv,
                 runningConversationID: agent == nil ? nil : conversationID)

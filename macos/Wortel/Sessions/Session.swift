@@ -77,6 +77,10 @@ final class Session: Identifiable {
     /// navigated to, so a relaunch or a reopen puts it back there. No entry
     /// is a new browser with nothing typed yet. Persisted.
     var browserAddresses: [UUID: String] = [:]
+    /// The checkout the git panes show when it isn't the terminal's: another
+    /// worktree of the same repository, where an agent in this session is
+    /// actually working. nil follows the terminal. Persisted.
+    var gitCheckout: String?
     /// How wide this session's side column is, the same for every tab in it;
     /// nil until its divider is first dragged, which leaves it at the last width
     /// chosen anywhere. Persisted. See `MainSplitViewController.ColumnWidth`.

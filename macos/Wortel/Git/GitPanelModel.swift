@@ -125,6 +125,87 @@ final class GitPanelModel {
     /// focus; a monotonic counter (rather than a Bool) so repeated requests
     /// always register, even back-to-back.
     private(set) var listFocusRequest = 0
+    // MARK: Checkouts
+
+    /// One checkout of the shown repository: its own or another worktree.
+    struct Checkout: Identifiable, Equatable {
+        let path: String
+        let branch: String?
+        /// Uncommitted changes there.
+        let changes: Int
+        /// Commits there that the shown checkout doesn't have.
+        let ahead: Int
+        var id: String { path }
+        var name: String { branch ?? (path as NSString).lastPathComponent }
+    }
+
+    /// Every checkout of the shown repository, when it has more than one:
+    /// what the branch menu offers to show instead, and what a clean Changes
+    /// pane points at when the work is somewhere else. Read when the repo
+    /// resolves and when the menu opens, not on every refresh.
+    private(set) var checkouts: [Checkout] = []
+    /// The root of the session terminal's own checkout.
+    private(set) var terminalCheckout: String?
+    /// Mirrors the focused session's `gitCheckout`: nil follows the terminal.
+    private(set) var pinnedCheckout: String?
+
+    /// "3 changes, 12 commits ahead", "clean": what a checkout has in it.
+    static func summary(of checkout: Checkout) -> String {
+        var parts: [String] = []
+        if checkout.changes > 0 {
+            parts.append("\(checkout.changes) change\(checkout.changes == 1 ? "" : "s")")
+        }
+        if checkout.ahead > 0 {
+            parts.append("\(checkout.ahead) commit\(checkout.ahead == 1 ? "" : "s") ahead")
+        }
+        return parts.isEmpty ? "clean" : parts.joined(separator: ", ")
+    }
+
+    /// Show another checkout of the repo in this session's git panes, or the
+    /// terminal's again (nil, or its own path).
+    func showCheckout(_ path: String?) {
+        guard let session else { return }
+        let pinned = path == terminalCheckout ? nil : path
+        guard session.gitCheckout != pinned else { return }
+        session.gitCheckout = pinned
+        pinnedCheckout = pinned
+        onStateChanged?()
+        currentCwd = pinned ?? session.cwd
+        resolveCurrent()
+    }
+
+    /// Read every checkout of the shown repo and what's in each.
+    func loadCheckouts() async {
+        guard let repo else { checkouts = []; return }
+        let root = repo.root
+        let cwd = session?.cwd
+        var terminal: String? = root
+        if pinnedCheckout != nil {
+            terminal = nil
+            if let cwd { terminal = await GitService.repoRoot(for: cwd) }
+        }
+        let worktrees = await GitService.worktrees(root: root)
+        guard worktrees.count > 1 else {
+            if repo === self.repo { checkouts = []; terminalCheckout = terminal }
+            return
+        }
+        let head = repo.status.head
+        var found: [Checkout] = []
+        for worktree in worktrees {
+            let status = await GitService.status(root: worktree.path)
+            var ahead = 0
+            if let head, let theirs = status.head, theirs != head {
+                ahead = await GitService.commitsAhead(from: head, to: theirs, root: root)
+            }
+            found.append(Checkout(path: worktree.path, branch: worktree.branch,
+                                  changes: status.changes.count, ahead: ahead))
+        }
+        // Only if the repo didn't change underneath.
+        guard repo === self.repo else { return }
+        terminalCheckout = terminal
+        if found != checkouts { checkouts = found }
+    }
+
     /// True once a cwd has been resolved and it turned out not to be a repo — so
     /// the panel can show "not a git repository" rather than a blank flash.
     private(set) var resolvedNonRepo = false
@@ -159,7 +240,8 @@ final class GitPanelModel {
     /// moves. No git work runs while hidden; showing re-focuses.
     func focus(session: Session?) {
         self.session = session
-        currentCwd = session?.cwd
+        currentCwd = session?.gitCheckout ?? session?.cwd
+        if session?.gitCheckout != pinnedCheckout { pinnedCheckout = session?.gitCheckout }
         // Only write `isVisible`/`pane` when they actually move: @Observable
         // fires its observers on every assignment, same value or not, and this
         // runs on each cwd report — i.e. every shell prompt — so an unguarded
@@ -706,5 +788,6 @@ final class GitPanelModel {
             resolvedNonRepo = false
             await model.refresh()
         }
+        await loadCheckouts()
     }
 }

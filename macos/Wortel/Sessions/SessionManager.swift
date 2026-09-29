@@ -499,31 +499,27 @@ final class SessionManager {
             // one: a session with Changes open opens on a Changes tab, and one
             // that never had the column up starts with none, which is also what
             // makes its first ⌘⌥G open the pane you'd expect.
-            if let raw = entry.sideTabs {
-                session.sideTabs = raw.compactMap(SideTab.init(rawValue:))
-                session.activeSideTab = entry.activeSideTab.flatMap(SideTab.init(rawValue:))
-                    .flatMap { session.sideTabs.contains($0) ? $0 : nil }
-                    ?? session.sideTabs.first
-            } else if session.gitPanelVisible {
+            var tabs = WorkspaceTabs(
+                main: (entry.mainTabs ?? []).compactMap(SideTab.init(rawValue:)),
+                activeMain: entry.activeMainTab.flatMap(SideTab.init(rawValue:)),
+                side: (entry.sideTabs ?? []).compactMap(SideTab.init(rawValue:)),
+                activeSide: entry.activeSideTab.flatMap(SideTab.init(rawValue:)),
+                sideVisible: session.gitPanelVisible,
+                bottom: entry.bottomTabs ?? [],
+                activeBottom: entry.activeBottomTab,
+                bottomVisible: entry.bottomVisible ?? false,
+                closed: (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)))
+            if entry.sideTabs == nil, session.gitPanelVisible {
                 let pane = session.inspectorPane ?? GitPanelModel.defaultPane
-                session.sideTabs = [.pane(pane)]
-                session.activeSideTab = .pane(pane)
+                tabs.side = [.pane(pane)]
+                tabs.activeSide = .pane(pane)
             }
+            // Whatever the file said, made consistent: the terminal in the main
+            // row exactly once, what's in front something the row has, an empty
+            // column or strip hidden. See `WorkspaceTabs.normalized`.
+            session.workspace = tabs.normalized()
             session.sideColumnWidth = entry.sideColumnWidth
-            session.bottomTabs = entry.bottomTabs ?? []
-            session.activeBottomTab = entry.activeBottomTab
-                .flatMap { session.bottomTabs.contains($0) ? $0 : nil } ?? session.bottomTabs.first
-            session.bottomVisible = (entry.bottomVisible ?? false) && !session.bottomTabs.isEmpty
-            session.closedTabs = (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:))
-            var mainTabs = (entry.mainTabs ?? []).compactMap(SideTab.init(rawValue:))
-            // The session's terminal, exactly once: first when the file had none.
-            if !mainTabs.contains(.session) { mainTabs.insert(.session, at: 0) }
-            session.mainTabs = mainTabs
-            session.activeMainTab = entry.activeMainTab.flatMap(SideTab.init(rawValue:))
-                .flatMap { session.mainTabs.contains($0) ? $0 : nil }
             session.sideColumnLeading = entry.sideColumnLeading ?? false
-            // Up with nothing in it is not a state the column has any more.
-            if session.sideTabs.isEmpty { session.gitPanelVisible = false }
             // A surviving marker means the app died without cleaning up (a crash),
             // and is the most direct evidence. A clean quit leaves none — killing
             // the agent hands control back to the shell, whose last prompt clears

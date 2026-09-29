@@ -160,7 +160,7 @@ final class GitPanelModel {
 
     /// Copy a session's column state onto the model, writing only what moved
     /// (see `focus` for why that matters).
-    private func mirror(_ session: Session?, animated: Bool) {
+    private func mirror(_ session: Session?, animated: Bool, animatesClosing: Bool = true) {
         let sessionTabs = session?.sideTabs ?? []
         if sessionTabs != tabs { tabs = sessionTabs }
         let active = session?.activeSideTab
@@ -169,7 +169,7 @@ final class GitPanelModel {
         if sessionPane != pane { pane = sessionPane }
         let visible = (session?.gitPanelVisible ?? false) && !sessionTabs.isEmpty
         if visible != isVisible {
-            animatesVisibilityChange = animated
+            animatesVisibilityChange = animated && (visible || animatesClosing)
             isVisible = visible
         }
         let main = session?.mainTabs ?? [.session]
@@ -184,7 +184,7 @@ final class GitPanelModel {
         if activeBottom != activeBottomTab { activeBottomTab = activeBottom }
         let showsBottom = (session?.bottomVisible ?? false) && !bottom.isEmpty
         if showsBottom != bottomVisible {
-            animatesBottomChange = animated
+            animatesBottomChange = animated && (showsBottom || animatesClosing)
             bottomVisible = showsBottom
         }
     }
@@ -241,19 +241,52 @@ final class GitPanelModel {
     }
 
     // MARK: - Tabs
+    //
+    // The rules live in `WorkspaceTabs`, a pure value with its own tests. Every
+    // operation here is the same shape: make the change to the session's
+    // `workspace`, then do what isn't pure (`settle`): the pane on screen, the
+    // keyboard, the repo, the mirror, saving.
 
-    /// Put a tab in front, adding it to the strip first if it isn't there. The
-    /// column opens with it: asking for a tab means wanting to see it.
+    /// Run a change on the session's tabs and write it back.
+    @discardableResult
+    private func change<T>(_ owner: Session, _ body: (inout WorkspaceTabs) -> T) -> T {
+        var workspace = owner.workspace
+        let result = body(&workspace)
+        owner.workspace = workspace
+        return result
+    }
+
+    /// After a tab was brought to the front: show its pane, give a terminal the
+    /// keyboard, and bring the model and the file up to date. A row that opened
+    /// slides open; one that emptied snaps shut, as ChatGPT's do.
+    private func settle(_ tab: SideTab, in session: Session) {
+        if let pane = tab.pane { setPane(pane) }
+        mirror(session, animated: true, animatesClosing: false)
+        onStateChanged?()
+        resolveCurrent()
+        switch session.workspace.region(of: tab) {
+        case .main?:
+            if tab == .session { onFocusMainTerminal?() }
+            else if tab.terminalID != nil { mainFocusRequest += 1 }
+        case .side?:
+            if tab.terminalID != nil { terminalFocusRequest += 1 }
+        case .bottom?:
+            bottomFocusRequest += 1
+        case nil:
+            break
+        }
+    }
+
+    /// Put a tab in the column's row (at the end, if it isn't in any row) and
+    /// bring it forward there. A tab that's in the main area's row is brought
+    /// forward there instead: that's where it is.
     func open(_ tab: SideTab) {
         guard let session else { return }
-        // Already open in the main area's row: that's where it is.
         if session.mainTabs.contains(tab) {
             selectMain(tab)
             return
         }
-        if !session.sideTabs.contains(tab) {
-            session.sideTabs.append(tab)
-        }
+        change(session) { $0.place(tab, in: .side, at: .max) }
         select(tab)
     }
 
@@ -262,17 +295,11 @@ final class GitPanelModel {
         open(.terminal(UUID()))
     }
 
-    /// Bring a tab that's already in the strip to the front.
+    /// Bring a tab that's already in the column's row to the front.
     func select(_ tab: SideTab) {
         guard let session, session.sideTabs.contains(tab) else { return }
-        session.activeSideTab = tab
-        if let pane = tab.pane { setPane(pane) }
-        let wasVisible = isVisible
-        session.gitPanelVisible = true
-        mirror(session, animated: !wasVisible)
-        onStateChanged?()
-        resolveCurrent()
-        if tab.terminalID != nil { terminalFocusRequest += 1 }
+        change(session) { $0.bringForward(tab) }
+        settle(tab, in: session)
     }
 
     /// The tab `offset` places along from the one in front, wrapping. ⌃Tab and
@@ -289,26 +316,23 @@ final class GitPanelModel {
 
     /// Close a tab, wherever it is. A terminal's shell ends with it. The
     /// neighbour that slides into its place comes to the front, and closing the
-    /// last one in a region hides that region, instantly: nothing is left to
-    /// animate towards. The tab goes on the session's reopen stack.
+    /// last one in the column or the strip hides it, instantly. The tab goes on
+    /// the session's reopen stack. Never the session's own terminal.
     ///
     /// `target` is for a tab closing in a session that isn't the focused one,
     /// which is what a side shell exiting in the background looks like.
     func close(_ tab: SideTab, in target: Session? = nil) {
-        guard tab != .session, let owner = target ?? session,
-              let (region, index) = detach(tab, from: owner) else { return }
+        guard let owner = target ?? session,
+              let region = change(owner, { $0.close(tab) }) else { return }
         if let id = tab.terminalID { owner.closeSideSurface(id) }
-        owner.closedTabs.append(ClosedTab(tab: tab, region: region, index: index))
-        if owner.closedTabs.count > Self.closedTabLimit {
-            owner.closedTabs.removeFirst(owner.closedTabs.count - Self.closedTabLimit)
-        }
+        if region == .side, let pane = owner.activeSideTab?.pane { owner.inspectorPane = pane }
         onStateChanged?()
         guard owner === session else { return }
         mirror(owner, animated: false)
         resolveCurrent()
         guard tab.terminalID != nil else { return }
-        // Keep the keyboard in the region the terminal was closed from if
-        // another terminal took its place there; otherwise hand it back.
+        // Keep the keyboard in the row the terminal was closed from if another
+        // terminal took its place there; otherwise hand it back.
         if region == .side, isVisible, activeTab?.terminalID != nil {
             terminalFocusRequest += 1
         } else if region == .main, activeMainTab?.terminalID != nil {
@@ -318,44 +342,6 @@ final class GitPanelModel {
         } else {
             onFocusMainTerminal?()
         }
-    }
-
-    /// How many closed tabs ⌘⇧T can reach back for, as in the ChatGPT app.
-    private static let closedTabLimit = 25
-
-    /// Take a tab out of whichever region holds it, fixing up what's in front
-    /// and hiding a region left empty. Its shell, if it has one, is untouched:
-    /// this is the half of closing that moving shares.
-    private func detach(_ tab: SideTab, from owner: Session) -> (TabRegion, Int)? {
-        if let index = owner.sideTabs.firstIndex(of: tab) {
-            owner.sideTabs.remove(at: index)
-            if owner.activeSideTab == tab {
-                owner.activeSideTab = owner.sideTabs.isEmpty
-                    ? nil : owner.sideTabs[min(index, owner.sideTabs.count - 1)]
-                if let pane = owner.activeSideTab?.pane { owner.inspectorPane = pane }
-            }
-            if owner.sideTabs.isEmpty { owner.gitPanelVisible = false }
-            return (.side, index)
-        }
-        if let index = owner.mainTabs.firstIndex(of: tab) {
-            owner.mainTabs.remove(at: index)
-            if owner.activeMainTab == tab {
-                // Its neighbour, or the terminal when it was the only one.
-                owner.activeMainTab = owner.mainTabs.isEmpty
-                    ? nil : owner.mainTabs[min(index, owner.mainTabs.count - 1)]
-            }
-            return (.main, index)
-        }
-        if let id = tab.terminalID, let index = owner.bottomTabs.firstIndex(of: id) {
-            owner.bottomTabs.remove(at: index)
-            if owner.activeBottomTab == id {
-                owner.activeBottomTab = owner.bottomTabs.isEmpty
-                    ? nil : owner.bottomTabs[min(index, owner.bottomTabs.count - 1)]
-            }
-            if owner.bottomTabs.isEmpty { owner.bottomVisible = false }
-            return (.bottom, index)
-        }
-        return nil
     }
 
     /// A close the user asked for: the × on a tab, ⌘W in a side terminal. A
@@ -373,69 +359,30 @@ final class GitPanelModel {
         close(tab)
     }
 
-    /// The tab in front of whichever region has the keyboard's terminal, for
-    /// ⌘W. `terminalID` is the id of the side surface that has focus.
+    /// The tab a terminal with the keyboard belongs to, for ⌘W. `id` is the
+    /// terminal tab's id.
     func tab(forTerminal id: UUID) -> SideTab? {
         guard let session, session.terminalTabIDs.contains(id) else { return nil }
         return .terminal(id)
     }
 
-    /// Put a tab back: a pane as itself, a terminal as a new shell in the place
-    /// the old one had. ⌘⇧T.
-    ///
-    /// Where you are decides which one: in the bottom strip it's the last tab
-    /// closed there, anywhere else the last closed in the side column, and only
-    /// when that place has nothing to give back, the last closed anywhere. A
-    /// plain "last closed" stack felt random once tabs close in two places: the
-    /// same key put things back in whichever one you'd happened to close last.
+    /// Put back a closed tab: the last closed in `region` (the row you're in),
+    /// or the last closed anywhere when that row has none. ⌘⇧T.
     func reopenClosedTab(in region: TabRegion) {
-        guard let session, !session.closedTabs.isEmpty else { return }
-        let index = session.closedTabs.lastIndex { $0.region == region }
-            ?? session.closedTabs.count - 1
-        let closed = session.closedTabs.remove(at: index)
-        let tab: SideTab = closed.tab.terminalID != nil ? .terminal(UUID()) : closed.tab
-        if tab.pane != nil, session.sideTabs.contains(tab) {
-            select(tab)
-            return
-        }
-        insert(tab, into: closed.region, at: closed.index, in: session)
+        guard let session, let tab = change(session, { $0.reopen(preferring: region) }) else { return }
+        settle(tab, in: session)
     }
 
     // MARK: - Moving tabs
 
-    /// Move a tab to `region` at `index` (clamped), or reorder it within the
-    /// region it's already in. The tab comes to the front of its new region,
-    /// and a region it leaves empty hides. A terminal keeps its shell: moving
-    /// is a new place for the same view, not a new terminal.
+    /// Move a tab to `region` at `index`, or reorder it within its row; see
+    /// `WorkspaceTabs.move`. It comes to the front of its new row, and a row it
+    /// leaves empty hides. A terminal keeps its shell: moving is a new place for
+    /// the same view, not a new terminal.
     func move(_ tab: SideTab, to region: TabRegion, at index: Int) {
-        guard let session, tab.fits(region),
-              let (from, oldIndex) = detach(tab, from: session) else { return }
-        // Removing the tab shifted everything after it by one; an index taken
-        // from the strip before the drag has to account for that.
-        let target = from == region && oldIndex < index ? index - 1 : index
-        insert(tab, into: region, at: target, in: session)
-    }
-
-    private func insert(_ tab: SideTab, into region: TabRegion, at index: Int, in session: Session) {
-        switch region {
-        case .side:
-            let at = min(max(index, 0), session.sideTabs.count)
-            session.sideTabs.insert(tab, at: at)
-            select(tab)
-        case .main:
-            let at = min(max(index, 0), session.mainTabs.count)
-            session.mainTabs.insert(tab, at: at)
-            selectMain(tab)
-        case .bottom:
-            guard let id = tab.terminalID else { return }
-            let at = min(max(index, 0), session.bottomTabs.count)
-            session.bottomTabs.insert(id, at: at)
-            selectBottom(id)
-        }
-        // A move that emptied the other region hid it; `select` mirrored
-        // only what it touched.
-        mirror(session, animated: false)
-        onStateChanged?()
+        guard let session, change(session, { $0.move(tab, to: region, at: index) }) else { return }
+        if let pane = session.activeSideTab?.pane { session.inspectorPane = pane }
+        settle(tab, in: session)
     }
 
     // MARK: - The main area's row
@@ -443,39 +390,28 @@ final class GitPanelModel {
     /// Bring a tab of the main area's row to the front; `.session` is the
     /// session's own terminal.
     func selectMain(_ tab: SideTab) {
-        guard let session else { return }
-        if tab == .session {
-            session.activeMainTab = nil
-            if !session.mainTabs.contains(.session) { session.mainTabs.insert(.session, at: 0) }
-        } else {
-            guard session.mainTabs.contains(tab) else { return }
-            session.activeMainTab = tab
-            if let pane = tab.pane { setPane(pane) }
-        }
-        mirror(session, animated: false)
-        onStateChanged?()
-        resolveCurrent()
-        if tab == .session {
-            onFocusMainTerminal?()
-        } else if tab.terminalID != nil {
-            mainFocusRequest += 1
-        }
+        guard let session, session.mainTabs.contains(tab) else { return }
+        change(session) { $0.bringForward(tab) }
+        settle(tab, in: session)
     }
 
-    /// Open `tab` in `region`'s row: to the front if it's there already,
-    /// moved over if it's in the other row, added at the end otherwise. What
-    /// "+" in a row means: here.
+    /// Open `tab` in `region`'s row: to the front if it's there already, moved
+    /// over if it's in the other row, added at the end otherwise. What "+" in a
+    /// row means: here.
     func open(_ tab: SideTab, in region: TabRegion) {
         guard let session else { return }
-        let here = region == .main ? session.mainTabs.contains(tab) : session.sideTabs.contains(tab)
-        let elsewhere = session.mainTabs.contains(tab) || session.sideTabs.contains(tab)
-        if here {
-            region == .main ? selectMain(tab) : select(tab)
-        } else if elsewhere {
-            move(tab, to: region, at: .max)
-        } else {
-            insert(tab, into: region, at: .max, in: session)
+        switch session.workspace.region(of: tab) {
+        case region?:
+            change(session) { $0.bringForward(tab) }
+        case _?:
+            change(session) { $0.move(tab, to: region, at: .max) }
+        case nil:
+            change(session) {
+                $0.place(tab, in: region, at: .max)
+                $0.bringForward(tab)
+            }
         }
+        settle(tab, in: session)
     }
 
     /// Give an empty column something to show, when it's asked to open. The
@@ -486,7 +422,7 @@ final class GitPanelModel {
         guard let session else { return }
         let panes = [Self.defaultPane] + InspectorPane.allCases
         if let pane = panes.first(where: { !session.mainTabs.contains(.pane($0)) }) {
-            insert(.pane(pane), into: .side, at: .max, in: session)
+            open(.pane(pane), in: .side)
         } else {
             openTerminal()
         }
@@ -494,10 +430,7 @@ final class GitPanelModel {
 
     /// A new shell in the main area's row.
     func openMainTerminal() {
-        guard let session else { return }
-        let tab = SideTab.terminal(UUID())
-        session.mainTabs.append(tab)
-        selectMain(tab)
+        open(.terminal(UUID()), in: .main)
     }
 
     /// Put the column on the terminal's leading or trailing side.
@@ -538,20 +471,13 @@ final class GitPanelModel {
     }
 
     func openBottomTerminal() {
-        guard let session else { return }
-        let id = UUID()
-        session.bottomTabs.append(id)
-        selectBottom(id)
+        open(.terminal(UUID()), in: .bottom)
     }
 
     func selectBottom(_ id: UUID) {
         guard let session, session.bottomTabs.contains(id) else { return }
-        session.activeBottomTab = id
-        let wasVisible = bottomVisible
-        session.bottomVisible = true
-        mirror(session, animated: !wasVisible)
-        onStateChanged?()
-        bottomFocusRequest += 1
+        change(session) { $0.bringForward(.terminal(id)) }
+        settle(.terminal(id), in: session)
     }
 
     /// Writable mirror of `isVisible` for the paths that don't toggle: dragging

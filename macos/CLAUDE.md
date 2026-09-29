@@ -189,9 +189,11 @@ Wortel's own (`TitleBars.swift`): the window keeps an *empty* toolbar only for
 its height and the centred traffic lights, the titlebar is transparent, and each
 pane draws its row of a flat grey band (the ChatGPT app's look). The reason is
 that on macOS 26+ every toolbar item, custom views included, sits on a Liquid
-Glass capsule, and AppKit has no switch to stop that. Selection is drawn as a custom accent "pill" rather than
-`List(selection:)` because the sidebar never holds keyboard focus (the terminal
-does). `TerminalHostViewController` is the key trick: it keeps **every**
+Glass capsule, and AppKit has no switch to stop that. The window's vibrancy is
+one behind-window material under everything (`BackdropController`); only the
+pages (terminal, column) are opaque. Sidebar selection is a custom neutral
+pill rather than `List(selection:)` because the sidebar never holds keyboard
+focus (the terminal does). `TerminalHostViewController` is the key trick: it keeps **every**
 session's `SurfaceView` in the hierarchy and switches via
 `isHidden`/occlusion/first-responder — never `removeFromSuperview`, never a
 rebuild — so switching back is instant with no flash. `updateNSViewController`
@@ -308,22 +310,53 @@ dragging to the edge is how you close the panel and the last width before it goe
 is the minimum. The split view's `autosaveName` still carries the sidebar; the
 inspector's width it saves but does not get to decide (see `viewDidLayout`).
 
-**Side column tabs** (`SideTab`, `GitPanelModel`, `Wortel/UI/SideTabStrip.swift`,
-`Wortel/Markdown/InspectorContainer.swift`) — the column is a strip of tabs per
-session: Changes, History and Files, plus **side terminals**, a second shell
-beside the session's own (⌃`). The strip sits in the column's titlebar row
-(the ChatGPT app's arrangement), with "+" and the column toggle at its trailing
-end; the branch and the fetch/pull/push menu live in `RepoHeader`, inside the
-source-control tabs. Rules:
-opening a tab opens the column, closing the last closes it (instantly), hiding
-it keeps the tabs; ⌘W closes a side terminal that has the keyboard, ⌃Tab walks
-the strip. A side terminal is a `SurfaceView` owned by its `Session`
-(`sideSurfaces`), created the first time its tab shows and kept, hidden, in an
-always-mounted host (`SideTerminalHostController`) exactly as the main host
-keeps sessions: never removed, never rebuilt. Its tab id is its keeper session
-id, so it survives a relaunch like a session does. Its processes count as the
-session's (`processRoots`); agent tracking, naming and resume follow the main
-shell only.
+**Tabs and the workspace** (`WorkspaceTabs`, `SideTab`, `GitPanelModel`,
+`Wortel/UI/SideTabStrip.swift`, `MainArea.swift`, `BottomStrip.swift`) — each
+session has three places for tabs, modelled on the ChatGPT app's bounded layout
+(a fixed set of regions, never a free grid of splits):
+
+- **the main area's row**: the session's own terminal (`SideTab.session`, by
+  the session's name) plus whatever is opened or dragged there;
+- **the side column's row**: Changes, History, Files, side terminals;
+- **the bottom strip** under the main area (⌘J): terminals only.
+
+A tab is in exactly one row; the one in front fills its area. Panes go in the
+main row or the column, never the strip. The session's terminal never leaves the
+main row and can't be closed: dragged onto the column it **swaps sides** instead,
+as ChatGPT's chat does. Opening a tab shows its row, closing the last hides the
+column or strip (instantly), hiding keeps the tabs, ⌘⇧T reopens the last closed
+in the row you're in. All of those rules live in **`WorkspaceTabs`**, a pure value
+with its own tests (`WorkspaceTabsTests`); `Session.workspace` reads the
+session's individually-observed fields into it and writes back only what
+changed, and `GitPanelModel` wraps each change with the side effects (the pane
+shown, the keyboard, saving). Change a rule there, not in the model.
+
+Things that look like detours and aren't:
+
+- **Terminals are never rebuilt when they move.** Side terminals (`sideSurfaces`
+  on the session, keyed by tab id, which is also their keeper id so they
+  survive a relaunch) live in always-mounted hosts (`SideTerminalHostController`)
+  that hide rather than remove; moving a terminal between rows is `addSubview`
+  into the other host. The session's own terminal stays mounted in the main
+  area and a pane in front of it is a cover that takes the keyboard away from it.
+- **The titlebar tabs are NSControls and the window is `isMovable = false`.** The
+  window server moves a window from any press in a transparent titlebar that
+  isn't on a control, whatever `mouseDownCanMoveWindow` says; the rows start
+  window drags themselves (`performWindowDrag`) from their empty space.
+- **Sidebar commands are Wortel's own** (`toggleSessionSidebar:`), not AppKit's
+  `toggleSidebar:`: SwiftUI's hosting views answer that one on its way up the
+  responder chain and swallow it.
+- **Terminals don't resize during pane animations** (`Motion.pane`,
+  `SurfaceView.holdResizes`): one resize when it lands instead of one a frame,
+  each of which made the program inside redraw. Collapsing panes never resize a
+  terminal below 40×20pt for the same reason.
+
+Width: the column's is per session and the same for every tab, and it may grow
+until the terminal has 320pt; the strip's height is app-wide. Tab drags are
+resolved by `TabDragController` against the rows and a few drop zones (the
+main area, the column, the strip, the far edge for swapping), each only for
+tabs allowed there. Side terminals' processes count as the session's
+(`processRoots`); agent tracking, naming and resume follow the main shell only.
 
 **Files pane** (`Wortel/Files/`) — the project as a tree, rooted at the repo
 work-tree root (the session's cwd outside a repo, which therefore re-roots as you

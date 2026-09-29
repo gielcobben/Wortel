@@ -370,6 +370,7 @@ targets:
       # and it's plain string handling (Foundation only) that `Session` — which
       # does drag in AppKit — only delegates to.
       - path: Wortel/Sessions/SessionName.swift
+      - path: Wortel/Sessions/WorkspaceTabs.swift
       # And once more: a folder's *directory* is path-string handling with the
       # same silent failure mode as the name split above. A `hasPrefix` that
       # forgets the separator hands one project's directory to the sibling whose

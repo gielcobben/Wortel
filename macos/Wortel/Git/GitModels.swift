@@ -361,7 +361,7 @@ extension SideTab {
 /// A tab that was closed, and where it was, so ⌘⇧T can put it back. A pane
 /// comes back as itself; a terminal's shell ended with it, so it comes back as
 /// a new one in the same place.
-struct ClosedTab: Sendable {
+struct ClosedTab: Equatable, Sendable {
     let tab: SideTab
     let region: TabRegion
     let index: Int

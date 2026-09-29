@@ -96,8 +96,29 @@ final class Session: Identifiable {
     @ObservationIgnored var closedTabs: [ClosedTab] = []
 
     /// Every terminal tab id the session holds, wherever it sits.
-    var terminalTabIDs: [UUID] {
-        sideTabs.compactMap(\.terminalID) + mainTabs.compactMap(\.terminalID) + bottomTabs
+    var terminalTabIDs: [UUID] { workspace.terminalIDs }
+
+    /// The tab layout above as one value, for the rules in `WorkspaceTabs`.
+    /// Written back field by field and only where something changed: each of
+    /// these is observed, and an unchanged write still wakes its observers.
+    var workspace: WorkspaceTabs {
+        get {
+            WorkspaceTabs(main: mainTabs, activeMain: activeMainTab,
+                          side: sideTabs, activeSide: activeSideTab, sideVisible: gitPanelVisible,
+                          bottom: bottomTabs, activeBottom: activeBottomTab,
+                          bottomVisible: bottomVisible, closed: closedTabs)
+        }
+        set {
+            if mainTabs != newValue.main { mainTabs = newValue.main }
+            if activeMainTab != newValue.activeMain { activeMainTab = newValue.activeMain }
+            if sideTabs != newValue.side { sideTabs = newValue.side }
+            if activeSideTab != newValue.activeSide { activeSideTab = newValue.activeSide }
+            if gitPanelVisible != newValue.sideVisible { gitPanelVisible = newValue.sideVisible }
+            if bottomTabs != newValue.bottom { bottomTabs = newValue.bottom }
+            if activeBottomTab != newValue.activeBottom { activeBottomTab = newValue.activeBottom }
+            if bottomVisible != newValue.bottomVisible { bottomVisible = newValue.bottomVisible }
+            closedTabs = newValue.closed
+        }
     }
     /// Full title reported by the shell (user@host:cwd, or the running
     /// program). Kept for reference; not currently shown.

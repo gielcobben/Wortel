@@ -193,6 +193,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             session.browserAddresses[id] = url.absoluteString
             self.manager.sessionStateChanged()
         }
+        // What a browser's address field suggests: every server on this Mac,
+        // the selected session's first, the others by their session's name.
+        BrowserTabs.shared.servers = { [weak self] in
+            guard let self else { return [] }
+            let selected = self.manager.selectedID
+            let snapshot = self.processes.snapshot
+            var seen = Set<URL>()
+            return (snapshot.jobs + snapshot.orphans)
+                .filter { $0.localURL != nil }
+                .sorted { ($0.sessionID == selected ? 0 : 1) < ($1.sessionID == selected ? 0 : 1) }
+                .compactMap { job in
+                    guard let url = job.localURL, seen.insert(url).inserted else { return nil }
+                    let session = job.sessionID == selected ? nil
+                        : self.manager.sessions.first { $0.id == job.sessionID }.map { SessionName.leaf(of: $0.name) }
+                    return BrowserServer(url: url, label: job.label, session: session)
+                }
+        }
         BrowserTabs.shared.onMovedToWindow = { [weak self] id in
             self?.gitPanel.close(.browser(id))
         }

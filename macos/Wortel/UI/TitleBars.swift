@@ -502,9 +502,9 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     }
 
     /// The "+" menu. Native and small, like the ChatGPT app's own menus: a
-    /// terminal first, because a new one is what "+" usually means, then the
-    /// panes, then whatever the session is serving, the groups set apart by
-    /// separators rather than labels. No
+    /// terminal first, because a new one is what "+" usually means, a browser,
+    /// then the panes, the groups set apart by separators rather than labels.
+    /// What's serving is offered by a new browser's address field instead. No
     /// checkmarks on the panes that are already open, since choosing one does the
     /// useful thing either way: it brings that tab to the front.
     ///
@@ -543,21 +543,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
                 item.badge = NSMenuItemBadge(count: count)
             }
             menu.addItem(item)
-        }
-
-        // What the session holds a port open for, to open as a tab here.
-        let servers = (runningSnapshot.work + runningSnapshot.orphans).filter { $0.localURL != nil }
-        if !servers.isEmpty {
-            menu.addItem(.separator())
-            for job in servers {
-                guard let url = job.localURL, let address = job.localAddress else { continue }
-                let item = ClosureMenuItem(title: address) { [weak self] in
-                    self?.git.showInBrowser(url)
-                }
-                Self.setGlyph("globe", on: item)
-                item.toolTip = job.label
-                menu.addItem(item)
-            }
         }
 
         let x = sender.bounds.width - menu.size.width

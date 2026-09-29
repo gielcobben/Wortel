@@ -30,6 +30,9 @@ final class BrowserTabs {
     @ObservationIgnored var onNavigate: (UUID, URL) -> Void = { _, _ in }
     /// A tab became a window: take the tab away.
     @ObservationIgnored var onMovedToWindow: (UUID) -> Void = { _ in }
+    /// What's serving on this Mac, the selected session's first: what an
+    /// address field offers.
+    @ObservationIgnored var servers: () -> [BrowserServer] = { [] }
 
     /// The page for a tab, loaded the first time it's asked for.
     func page(for id: UUID) -> BrowserPage {
@@ -85,6 +88,9 @@ final class BrowserPage: NSObject {
     private(set) var addressFocusRequest = 0
 
     @ObservationIgnored var onNavigate: (URL) -> Void = { _ in }
+    /// The view the web view is in, or should be: the newest place showing
+    /// this page. See `WebViewHost`.
+    @ObservationIgnored fileprivate weak var host: NSView?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var retry: Task<Void, Never>?
 
@@ -225,27 +231,58 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
 
 // MARK: - Views
 
+/// Something serving on this Mac, as an address field offers it.
+struct BrowserServer: Identifiable, Equatable {
+    let url: URL
+    /// What's serving it: `vite`, `python3 -m http.server`.
+    let label: String
+    /// The session it's running in, when that isn't the one you're in.
+    let session: String?
+
+    var id: URL { url }
+}
+
 /// A browser: a slim header and the page. The same view in a tab and in a
 /// window; only the tab offers to become a window.
+///
+/// The address field suggests what's serving: every running server while
+/// it's empty or untouched, the ones matching what you type after that. A
+/// new browser, with nowhere to be yet, shows the same list as its page.
 struct BrowserTab: View {
     let page: BrowserPage
     /// Turn the tab into a window; nil in a window.
     var openInWindow: (() -> Void)?
 
+    @State private var typed = ""
+    /// Whether what's in the field is the user's rather than the page's.
+    @State private var edited = false
+    @State private var highlighted: URL?
+    @FocusState private var editing: Bool
+
     var body: some View {
+        let servers = BrowserTabs.shared.servers()
+        let suggestions = matching(servers)
         VStack(spacing: 0) {
-            BrowserHeader(page: page, openInWindow: openInWindow)
+            BrowserHeader(page: page, openInWindow: openInWindow, typed: $typed, edited: $edited,
+                          editing: $editing, suggestions: suggestions, highlighted: $highlighted,
+                          go: go)
             Rectangle()
                 .fill(Color(nsColor: Chrome.hairline))
                 .frame(height: 1)
-            ZStack {
+            ZStack(alignment: .top) {
                 WebViewHost(page: page)
-                if page.isWaiting, let location = page.location {
+                if page.location == nil {
+                    // Nowhere yet: the page is what you could open.
+                    BlankPage(servers: servers, highlighted: highlighted, pick: go)
+                } else if page.isWaiting, let location = page.location {
                     PageNotice(spinner: true, text: "Waiting for \(BrowserAddress.short(location))")
                 } else if let failure = page.failure {
                     PageNotice(spinner: false, text: failure)
-                } else if page.location == nil {
-                    PageNotice(spinner: false, text: "Type an address, or just a port like 3000")
+                }
+                if editing, page.location != nil, !suggestions.isEmpty {
+                    SuggestionList(servers: suggestions, highlighted: highlighted, pick: go)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 6)
                 }
             }
         }
@@ -254,6 +291,22 @@ struct BrowserTab: View {
         // Another browser in the same row is another web view to borrow.
         .id(ObjectIdentifier(page))
     }
+
+    /// The servers the field suggests: all of them until you've typed, then
+    /// the ones whose address or command has what you typed in it.
+    private func matching(_ servers: [BrowserServer]) -> [BrowserServer] {
+        let query = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        guard edited, !query.isEmpty else { return servers }
+        return servers.filter {
+            BrowserAddress.short($0.url).lowercased().contains(query)
+                || $0.label.lowercased().contains(query)
+        }
+    }
+
+    private func go(_ url: URL) {
+        page.go(to: url.absoluteString)
+        editing = false
+    }
 }
 
 /// Back, forward, reload, the address, and the ways out: a window, or your
@@ -261,9 +314,12 @@ struct BrowserTab: View {
 private struct BrowserHeader: View {
     let page: BrowserPage
     let openInWindow: (() -> Void)?
-
-    @State private var typed = ""
-    @FocusState private var editing: Bool
+    @Binding var typed: String
+    @Binding var edited: Bool
+    var editing: FocusState<Bool>.Binding
+    let suggestions: [BrowserServer]
+    @Binding var highlighted: URL?
+    let go: (URL) -> Void
 
     var body: some View {
         HStack(spacing: 2) {
@@ -277,23 +333,23 @@ private struct BrowserHeader: View {
                 button("arrow.clockwise", "Reload", action: page.reload)
                     .disabled(page.location == nil)
             }
-            TextField("Address", text: $typed)
+            TextField("Address, or a port like 3000", text: $typed)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
-                .foregroundStyle(editing ? .primary : .secondary)
-                .focused($editing)
-                .onSubmit {
-                    page.go(to: typed)
-                    editing = false
-                }
+                .foregroundStyle(editing.wrappedValue ? .primary : .secondary)
+                .focused(editing)
+                .onSubmit(submit)
                 .onExitCommand {
                     typed = shown
-                    editing = false
+                    editing.wrappedValue = false
                 }
+                // Up and down walk the suggestions; Return takes the one lit.
+                .onKeyPress(.downArrow) { step(1) }
+                .onKeyPress(.upArrow) { step(-1) }
                 .padding(.horizontal, 8)
                 .frame(height: 24)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color(nsColor: editing ? Chrome.hoverFill : .clear)))
+                    .fill(Color(nsColor: editing.wrappedValue ? Chrome.hoverFill : .clear)))
                 .padding(.leading, 4)
             if let openInWindow {
                 button("macwindow.badge.plus", "Open in New Window", action: openInWindow)
@@ -305,18 +361,43 @@ private struct BrowserHeader: View {
         .frame(height: 34)
         .onAppear {
             typed = shown
-            if page.location == nil { editing = true }
+            if page.location == nil { editing.wrappedValue = true }
         }
-        .onChange(of: page.currentURL) { _, _ in if !editing { typed = shown } }
-        .onChange(of: page.addressFocusRequest) { _, _ in editing = true }
-        .onChange(of: editing) { _, now in
+        .onChange(of: page.currentURL) { _, _ in if !editing.wrappedValue { typed = shown } }
+        .onChange(of: page.addressFocusRequest) { _, _ in editing.wrappedValue = true }
+        .onChange(of: editing.wrappedValue) { _, now in
             // The whole address to edit; the short one to read.
             typed = now ? (page.location?.absoluteString ?? "") : shown
+            edited = false
+            highlighted = nil
+        }
+        .onChange(of: typed) { _, _ in
+            if editing.wrappedValue, typed != (page.location?.absoluteString ?? "") { edited = true }
+            if let highlighted, !suggestions.contains(where: { $0.url == highlighted }) {
+                self.highlighted = nil
+            }
         }
     }
 
     private var shown: String {
         page.location.map(BrowserAddress.short) ?? ""
+    }
+
+    private func submit() {
+        if let highlighted {
+            go(highlighted)
+        } else {
+            page.go(to: typed)
+            editing.wrappedValue = false
+        }
+    }
+
+    private func step(_ offset: Int) -> KeyPress.Result {
+        guard !suggestions.isEmpty else { return .ignored }
+        let index = suggestions.firstIndex { $0.url == highlighted }
+        let next = index.map { $0 + offset } ?? (offset > 0 ? 0 : suggestions.count - 1)
+        highlighted = (0..<suggestions.count).contains(next) ? suggestions[next].url : nil
+        return .handled
     }
 
     private func button(_ symbol: String, _ label: String,
@@ -331,6 +412,102 @@ private struct BrowserHeader: View {
         .foregroundStyle(.secondary)
         .help(label)
         .accessibilityLabel(label)
+    }
+}
+
+/// The servers, as rows to click: under the address field while you type, as
+/// a card over the page.
+private struct SuggestionList: View {
+    let servers: [BrowserServer]
+    let highlighted: URL?
+    let pick: (URL) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(servers) { server in
+                ServerRow(server: server, isHighlighted: server.url == highlighted) { pick(server.url) }
+            }
+        }
+        .padding(4)
+        .frame(maxWidth: 420, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(nsColor: Chrome.raised))
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color(nsColor: Chrome.hairlineStrong), lineWidth: 0.5)))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A new browser's page: what's running to open, or how to get somewhere.
+private struct BlankPage: View {
+    let servers: [BrowserServer]
+    let highlighted: URL?
+    let pick: (URL) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if servers.isEmpty {
+                Text("Nothing is serving yet. Type an address, or just a port like 3000.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 80)
+            } else {
+                Text("Running")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 10)
+                VStack(spacing: 0) {
+                    ForEach(servers) { server in
+                        ServerRow(server: server, isHighlighted: server.url == highlighted) {
+                            pick(server.url)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 460, alignment: .leading)
+        .padding(.top, 40)
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color(nsColor: Chrome.content))
+    }
+}
+
+private struct ServerRow: View {
+    let server: BrowserServer
+    let isHighlighted: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "globe")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text(BrowserAddress.short(server.url))
+                    .font(.system(size: 13))
+                    .fixedSize()
+                Text(server.session.map { "\(server.label) · \($0)" } ?? server.label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color(nsColor: isHighlighted ? Chrome.selectedFill
+                                     : hovering ? Chrome.hoverFill : .clear)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -356,20 +533,29 @@ private struct PageNotice: View {
     }
 }
 
-/// Borrows a page's web view for as long as the tab is on screen here. When
-/// the tab moves, the next host takes the view over (adding it moves it), and
-/// this one only lets go of it if it still has it.
+/// Borrows a page's web view while the tab is on screen here.
+///
+/// A moving tab has two of these for a moment, the new place's and the old
+/// one's, and SwiftUI updates and tears them down in no particular order:
+/// the old one, refreshed after the new one took the view, used to take it
+/// back and then leave with it, and the tab came up blank. So the page names
+/// its host, the newest one made, and only that host attaches or removes it.
 private struct WebViewHost: NSViewRepresentable {
     let page: BrowserPage
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
+        page.host = container
         attach(to: container)
         return container
     }
 
     func updateNSView(_ container: NSView, context: Context) {
-        attach(to: container)
+        // A host whose place was taken over stays out of it, unless the one
+        // that took over is gone. (Not "out of the window": a host just made
+        // isn't in one yet, and that's exactly when the old one refreshes.)
+        if page.host == nil { page.host = container }
+        if page.host === container { attach(to: container) }
     }
 
     static func dismantleNSView(_ container: NSView, coordinator: ()) {
@@ -379,7 +565,6 @@ private struct WebViewHost: NSViewRepresentable {
     private func attach(to container: NSView) {
         let webView = page.webView
         guard webView.superview !== container else { return }
-        container.subviews.forEach { $0.removeFromSuperview() }
         webView.frame = container.bounds
         container.addSubview(webView)
     }

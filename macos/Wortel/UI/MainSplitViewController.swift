@@ -129,11 +129,13 @@ final class MainSplitViewController: NSSplitViewController {
         // their width, the terminal gives. An 80pt floor keeps the window
         // shrinkable; ghostty reflows to whatever width it gets, so a narrow
         // terminal is cramped rather than broken.
-        let detail = ChromePaneController(
-            bar: titleBars.mainBar,
-            content: NSHostingController(rootView: DetailPane(
+        let bottomPane = BottomPaneController(runtime: runtime, manager: manager, git: git)
+        let workspace = TerminalWorkspaceController(
+            top: NSHostingController(rootView: DetailPane(
                 runtime: runtime, manager: manager, git: git, files: files)),
-            bodyColor: Chrome.content)
+            bottom: bottomPane, git: git)
+        let detail = ChromePaneController(
+            bar: titleBars.mainBar, content: workspace, bodyColor: Chrome.content)
         let contentItem = NSSplitViewItem(viewController: detail)
         contentItem.minimumThickness = 80
         contentItem.holdingPriority = NSLayoutConstraint.Priority(250)
@@ -141,11 +143,10 @@ final class MainSplitViewController: NSSplitViewController {
 
         // The side column. collapseBehavior keeps the *window* still when the
         // column opens/closes, resizing the terminal instead.
+        let inspectorContent = NSHostingController(rootView: InspectorContainer(
+            runtime: runtime, manager: manager, git: git, files: files))
         let inspector = ChromePaneController(
-            bar: titleBars.sideBar,
-            content: NSHostingController(rootView: InspectorContainer(
-                runtime: runtime, manager: manager, git: git, files: files)),
-            bodyColor: Chrome.content)
+            bar: titleBars.sideBar, content: inspectorContent, bodyColor: Chrome.content)
         let width = ColumnWidth.width(for: manager.selected)
         inspector.view.setFrameSize(NSSize(width: width, height: inspector.view.frame.height))
         lastOwner = manager.selectedID
@@ -170,7 +171,35 @@ final class MainSplitViewController: NSSplitViewController {
         titleBars.mainBar.setSidebarCollapsed(sidebarItem.isCollapsed)
 
         observeInspector()
+
+        // Tab drags: both tab rows, and the two panes a tab can be dropped on.
+        let drag = TabDragController()
+        drag.strips = [
+            .init(strip: titleBars.sideBar.strip, region: .side),
+            .init(strip: bottomPane.bar.strip, region: .bottom),
+        ]
+        drag.terminalArea = { [weak workspace] in
+            guard let view = workspace?.terminalView, view.window != nil else { return nil }
+            return view.convert(view.bounds, to: nil)
+        }
+        drag.columnArea = { [weak self, weak inspectorContent] in
+            guard let self, self.git.isVisible, let view = inspectorContent?.view,
+                  view.window != nil, view.bounds.width > 1 else { return nil }
+            return view.convert(view.bounds, to: nil)
+        }
+        drag.onDrop = { [weak self] tab, region, index in
+            self?.git.move(tab, to: region, at: index)
+        }
+        let forward: (SideTabStrip.DragPhase, SideTab, NSView, NSPoint) -> Void = { [weak drag] phase, tab, view, point in
+            drag?.handle(phase, tab: tab, view: view, point: point)
+        }
+        titleBars.sideBar.strip.onDrag = forward
+        bottomPane.bar.strip.onDrag = forward
+        tabDrag = drag
     }
+
+    /// Resolves tab drags across both tab rows. Held for the window's life.
+    private var tabDrag: TabDragController?
 
     /// The autosave restore above happens before the split view has a width, and
     /// it restores one column width for every session. Take the column back on

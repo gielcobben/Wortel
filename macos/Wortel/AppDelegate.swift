@@ -637,8 +637,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // tab, and closing it must not take the whole session with it.
         if let focused = window.firstResponder as? SurfaceView,
            focused !== manager.selected?.surfaceView,
-           let active = gitPanel.activeTab, active.terminalID != nil {
-            gitPanel.requestClose(active)
+           let id = manager.selected?.sideSurfaces.first(where: { $0.value === focused })?.key,
+           let tab = gitPanel.tab(forTerminal: id) {
+            gitPanel.requestClose(tab)
             return
         }
         manager.requestCloseSelected()
@@ -649,6 +650,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func toggleSideColumn(_ sender: Any?) {
         focusMainWindow()
         gitPanel.toggle()
+    }
+
+    @objc func toggleBottomStrip(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.toggleBottom()
+    }
+
+    @objc func reopenClosedTab(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.reopenClosedTab()
     }
 
     @objc func newSideTerminal(_ sender: Any?) {
@@ -764,6 +775,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let showing = gitPanel.isVisible && gitPanel.activeTab?.pane?.isSourceControl == true
             menuItem.title = showing ? "Hide Source Control" : "Show Source Control"
             return true
+        }
+        if menuItem.action == #selector(toggleBottomStrip(_:)) {
+            menuItem.title = gitPanel.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip"
+            return true
+        }
+        if menuItem.action == #selector(reopenClosedTab(_:)) {
+            return gitPanel.canReopenClosedTab
         }
         if menuItem.action == #selector(toggleSideColumn(_:)) {
             menuItem.title = gitPanel.isVisible ? "Hide Side Column" : "Show Side Column"

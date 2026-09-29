@@ -334,6 +334,13 @@ enum MainMenu {
         let sideColumn = viewMenu.addItem(withTitle: "Show Side Column", action: #selector(AppDelegate.toggleSideColumn(_:)), keyEquivalent: "b")
         sideColumn.keyEquivalentModifierMask = [.command, .option]
         sideColumn.image = NSImage(systemSymbolName: "sidebar.right", accessibilityDescription: nil)
+        // ⌘J for the strip under the terminal, as in the ChatGPT app and VS
+        // Code; ⌘⇧T to put back the tab you just closed, as in every browser.
+        let bottomStrip = viewMenu.addItem(withTitle: "Show Bottom Strip", action: #selector(AppDelegate.toggleBottomStrip(_:)), keyEquivalent: "j")
+        bottomStrip.keyEquivalentModifierMask = [.command]
+        bottomStrip.image = NSImage(systemSymbolName: "rectangle.bottomthird.inset.filled", accessibilityDescription: nil)
+        let reopen = viewMenu.addItem(withTitle: "Reopen Closed Tab", action: #selector(AppDelegate.reopenClosedTab(_:)), keyEquivalent: "t")
+        reopen.keyEquivalentModifierMask = [.command, .shift]
         let newTerminal = viewMenu.addItem(withTitle: "New Terminal Tab", action: #selector(AppDelegate.newSideTerminal(_:)), keyEquivalent: "`")
         newTerminal.keyEquivalentModifierMask = [.control]
         newTerminal.image = NSImage(systemSymbolName: "apple.terminal", accessibilityDescription: nil)

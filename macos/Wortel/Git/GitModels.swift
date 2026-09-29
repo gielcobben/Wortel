@@ -335,6 +335,29 @@ enum SideTab: Hashable, Sendable {
     }
 }
 
+/// Where a tab can live: the side column, or the strip under the session's
+/// terminal. Panes only ever go in the column (a diff or a tree in a short,
+/// full-width strip is useless); terminals go in either.
+enum TabRegion: String, Sendable {
+    case side, bottom
+}
+
+extension SideTab {
+    /// Whether this tab may be put in `region`.
+    func fits(_ region: TabRegion) -> Bool {
+        region == .side || terminalID != nil
+    }
+}
+
+/// A tab that was closed, and where it was, so ⌘⇧T can put it back. A pane
+/// comes back as itself; a terminal's shell ended with it, so it comes back as
+/// a new one in the same place.
+struct ClosedTab: Sendable {
+    let tab: SideTab
+    let region: TabRegion
+    let index: Int
+}
+
 /// How a diff line renders: drives its gutter numbers, sign, and tint.
 enum DiffLineKind: Sendable {
     case context

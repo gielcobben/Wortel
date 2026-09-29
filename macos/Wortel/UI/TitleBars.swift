@@ -47,6 +47,11 @@ enum Chrome {
     static let hairlineStrong = NSColor(name: nil) { appearance in
         isDark(appearance) ? .white.withAlphaComponent(0.12) : .black.withAlphaComponent(0.10)
     }
+    /// The bottom strip's tab row: a faint band on the page, so the tab in
+    /// front can be raised off it.
+    static let stripBand = NSColor(name: nil) { appearance in
+        isDark(appearance) ? .white.withAlphaComponent(0.04) : .black.withAlphaComponent(0.03)
+    }
     static let hoverFill = NSColor(name: nil) { appearance in
         isDark(appearance) ? .white.withAlphaComponent(0.07) : .black.withAlphaComponent(0.05)
     }
@@ -319,6 +324,7 @@ final class MainBar: ChromeBarView {
     let title = NSTextField(labelWithString: "")
     let running = RunningJobsPill()
     let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column")
+    let bottomToggle = HoverFillButton.glyph("rectangle.bottomthird.inset.filled", "Bottom Strip")
     private let sidebarControls: NSStackView
     private var leading: NSLayoutConstraint!
 
@@ -336,7 +342,7 @@ final class MainBar: ChromeBarView {
         title.lineBreakMode = .byTruncatingTail
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let trailing = NSStackView(views: [running, sideToggle])
+        let trailing = NSStackView(views: [running, bottomToggle, sideToggle])
         trailing.spacing = 4
         let spacer = NSView()
         spacer.setContentHuggingPriority(.init(1), for: .horizontal)
@@ -495,6 +501,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
         mainBar.sideToggle.target = self
         mainBar.sideToggle.action = #selector(toggleSideColumn)
+        mainBar.bottomToggle.target = self
+        mainBar.bottomToggle.action = #selector(toggleBottom)
         sideBar.toggle.target = self
         sideBar.toggle.action = #selector(toggleSideColumn)
         sideBar.add.target = self
@@ -510,6 +518,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             self.git.select(keep)
             for tab in self.git.tabs where tab != keep { self.git.requestClose(tab) }
         }
+        strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
     }
 
     func start() {
@@ -540,6 +549,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     private func syncColumn() {
         mainBar.sideToggle.isHidden = git.isVisible
+        mainBar.bottomToggle.isSelected = git.bottomVisible
+        mainBar.bottomToggle.toolTip = git.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip"
         let titles = manager.selected?.sideTerminalTitles ?? [:]
         let items = git.tabs.map { tab -> SideTabStrip.Item in
             switch tab {
@@ -555,7 +566,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     /// What a shell titled itself, trimmed to what fits on a tab. Shells title a
     /// terminal `user@host:path`, and the path's last component is the part
     /// that tells two terminals apart.
-    private static func terminalTitle(_ raw: String?) -> String {
+    static func terminalTitle(_ raw: String?) -> String {
         guard let raw = raw?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
             return "Terminal"
         }
@@ -569,6 +580,10 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     @objc private func toggleSideColumn() {
         git.toggle()
+    }
+
+    @objc private func toggleBottom() {
+        git.toggleBottom()
     }
 
     /// The "+" menu. Native and small, like the ChatGPT app's own menus: a

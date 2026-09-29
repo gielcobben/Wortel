@@ -47,6 +47,18 @@ final class GitPanelModel {
     /// or picked. A session switch that merely shows one does not bump it,
     /// because switching sessions puts you in the session's main terminal.
     private(set) var terminalFocusRequest = 0
+
+    /// Mirrors the focused session's strip under its terminal.
+    private(set) var bottomTabs: [UUID] = []
+    private(set) var activeBottomTab: UUID?
+    private(set) var bottomVisible = false
+    /// Bumped when the strip's terminal should take the keyboard.
+    private(set) var bottomFocusRequest = 0
+    /// Whether the pending `bottomVisible` change should animate; false when a
+    /// session switch drove it, for the same reason as the column's.
+    @ObservationIgnored private(set) var animatesBottomChange = false
+    /// Tabs closed in this session and not reopened yet, for the menu item.
+    var canReopenClosedTab: Bool { !(session?.closedTabs.isEmpty ?? true) }
     /// Hand the keyboard back to the session's main terminal, for when the tab
     /// that had it closes. Set by AppDelegate.
     @ObservationIgnored var onFocusMainTerminal: (() -> Void)?
@@ -141,6 +153,15 @@ final class GitPanelModel {
             animatesVisibilityChange = animated
             isVisible = visible
         }
+        let bottom = session?.bottomTabs ?? []
+        if bottom != bottomTabs { bottomTabs = bottom }
+        let activeBottom = session?.activeBottomTab
+        if activeBottom != activeBottomTab { activeBottomTab = activeBottom }
+        let showsBottom = (session?.bottomVisible ?? false) && !bottom.isEmpty
+        if showsBottom != bottomVisible {
+            animatesBottomChange = animated
+            bottomVisible = showsBottom
+        }
     }
 
     /// One click on a pane control — a toolbar segment, or a View-menu command.
@@ -231,34 +252,64 @@ final class GitPanelModel {
         select(tabs[next])
     }
 
-    /// Close a tab. A terminal's shell ends with it. The neighbour that slides
-    /// into its place comes to the front, and closing the last one closes the
-    /// column, instantly: nothing is left to animate towards.
+    /// Close a tab, wherever it is. A terminal's shell ends with it. The
+    /// neighbour that slides into its place comes to the front, and closing the
+    /// last one in a region hides that region, instantly: nothing is left to
+    /// animate towards. The tab goes on the session's reopen stack.
     ///
     /// `target` is for a tab closing in a session that isn't the focused one,
     /// which is what a side shell exiting in the background looks like.
     func close(_ tab: SideTab, in target: Session? = nil) {
         guard let owner = target ?? session,
-              let index = owner.sideTabs.firstIndex(of: tab) else { return }
+              let (region, index) = detach(tab, from: owner) else { return }
         if let id = tab.terminalID { owner.closeSideSurface(id) }
-        owner.sideTabs.remove(at: index)
-        if owner.activeSideTab == tab {
-            owner.activeSideTab = owner.sideTabs.isEmpty
-                ? nil : owner.sideTabs[min(index, owner.sideTabs.count - 1)]
-            if let pane = owner.activeSideTab?.pane { owner.inspectorPane = pane }
+        owner.closedTabs.append(ClosedTab(tab: tab, region: region, index: index))
+        if owner.closedTabs.count > Self.closedTabLimit {
+            owner.closedTabs.removeFirst(owner.closedTabs.count - Self.closedTabLimit)
         }
-        if owner.sideTabs.isEmpty { owner.gitPanelVisible = false }
         onStateChanged?()
         guard owner === session else { return }
         mirror(owner, animated: false)
         resolveCurrent()
-        if isVisible, activeTab?.terminalID != nil {
+        guard tab.terminalID != nil else { return }
+        // Keep the keyboard in the region the terminal was closed from if
+        // another terminal took its place there; otherwise hand it back.
+        if region == .side, isVisible, activeTab?.terminalID != nil {
             terminalFocusRequest += 1
-        } else if tab.terminalID != nil {
-            // The terminal that had the keyboard is gone, and nothing that
-            // takes one replaced it.
+        } else if region == .bottom, bottomVisible, activeBottomTab != nil {
+            bottomFocusRequest += 1
+        } else {
             onFocusMainTerminal?()
         }
+    }
+
+    /// How many closed tabs ⌘⇧T can reach back for, as in the ChatGPT app.
+    private static let closedTabLimit = 25
+
+    /// Take a tab out of whichever region holds it, fixing up what's in front
+    /// and hiding a region left empty. Its shell, if it has one, is untouched:
+    /// this is the half of closing that moving shares.
+    private func detach(_ tab: SideTab, from owner: Session) -> (TabRegion, Int)? {
+        if let index = owner.sideTabs.firstIndex(of: tab) {
+            owner.sideTabs.remove(at: index)
+            if owner.activeSideTab == tab {
+                owner.activeSideTab = owner.sideTabs.isEmpty
+                    ? nil : owner.sideTabs[min(index, owner.sideTabs.count - 1)]
+                if let pane = owner.activeSideTab?.pane { owner.inspectorPane = pane }
+            }
+            if owner.sideTabs.isEmpty { owner.gitPanelVisible = false }
+            return (.side, index)
+        }
+        if let id = tab.terminalID, let index = owner.bottomTabs.firstIndex(of: id) {
+            owner.bottomTabs.remove(at: index)
+            if owner.activeBottomTab == id {
+                owner.activeBottomTab = owner.bottomTabs.isEmpty
+                    ? nil : owner.bottomTabs[min(index, owner.bottomTabs.count - 1)]
+            }
+            if owner.bottomTabs.isEmpty { owner.bottomVisible = false }
+            return (.bottom, index)
+        }
+        return nil
     }
 
     /// A close the user asked for: the × on a tab, ⌘W in a side terminal. A
@@ -274,6 +325,104 @@ final class GitPanelModel {
             return
         }
         close(tab)
+    }
+
+    /// The tab in front of whichever region has the keyboard's terminal, for
+    /// ⌘W. `terminalID` is the id of the side surface that has focus.
+    func tab(forTerminal id: UUID) -> SideTab? {
+        guard let session, session.terminalTabIDs.contains(id) else { return nil }
+        return .terminal(id)
+    }
+
+    /// Put a tab back: a pane as itself, a terminal as a new shell in the place
+    /// the old one had. ⌘⇧T.
+    func reopenClosedTab() {
+        guard let session, let closed = session.closedTabs.popLast() else { return }
+        let tab: SideTab = closed.tab.terminalID != nil ? .terminal(UUID()) : closed.tab
+        if tab.pane != nil, session.sideTabs.contains(tab) {
+            select(tab)
+            return
+        }
+        insert(tab, into: closed.region, at: closed.index, in: session)
+    }
+
+    // MARK: - Moving tabs
+
+    /// Move a tab to `region` at `index` (clamped), or reorder it within the
+    /// region it's already in. The tab comes to the front of its new region,
+    /// and a region it leaves empty hides. A terminal keeps its shell: moving
+    /// is a new place for the same view, not a new terminal.
+    func move(_ tab: SideTab, to region: TabRegion, at index: Int) {
+        guard let session, tab.fits(region),
+              let (from, oldIndex) = detach(tab, from: session) else { return }
+        // Removing the tab shifted everything after it by one; an index taken
+        // from the strip before the drag has to account for that.
+        let target = from == region && oldIndex < index ? index - 1 : index
+        insert(tab, into: region, at: target, in: session)
+    }
+
+    private func insert(_ tab: SideTab, into region: TabRegion, at index: Int, in session: Session) {
+        switch region {
+        case .side:
+            let at = min(max(index, 0), session.sideTabs.count)
+            session.sideTabs.insert(tab, at: at)
+            select(tab)
+        case .bottom:
+            guard let id = tab.terminalID else { return }
+            let at = min(max(index, 0), session.bottomTabs.count)
+            session.bottomTabs.insert(id, at: at)
+            selectBottom(id)
+        }
+        // A move that emptied the other region hid it; `select` mirrored
+        // only what it touched.
+        mirror(session, animated: false)
+        onStateChanged?()
+    }
+
+    // MARK: - The strip under the terminal
+
+    /// Show or hide the strip. Showing one with nothing in it opens a
+    /// terminal there, because an empty strip is not something to show. ⌘J.
+    func toggleBottom() {
+        guard let session else { return }
+        if session.bottomTabs.isEmpty {
+            openBottomTerminal()
+            return
+        }
+        session.bottomVisible.toggle()
+        mirror(session, animated: true)
+        onStateChanged?()
+        if bottomVisible {
+            bottomFocusRequest += 1
+        } else {
+            onFocusMainTerminal?()
+        }
+    }
+
+    /// The strip's divider was dragged shut: record it like ⌘J would.
+    func bottomCollapsedByDrag() {
+        guard let session, session.bottomVisible else { return }
+        session.bottomVisible = false
+        mirror(session, animated: false)
+        onStateChanged?()
+        onFocusMainTerminal?()
+    }
+
+    func openBottomTerminal() {
+        guard let session else { return }
+        let id = UUID()
+        session.bottomTabs.append(id)
+        selectBottom(id)
+    }
+
+    func selectBottom(_ id: UUID) {
+        guard let session, session.bottomTabs.contains(id) else { return }
+        session.activeBottomTab = id
+        let wasVisible = bottomVisible
+        session.bottomVisible = true
+        mirror(session, animated: !wasVisible)
+        onStateChanged?()
+        bottomFocusRequest += 1
     }
 
     /// Writable mirror of `isVisible` for the paths that don't toggle: dragging

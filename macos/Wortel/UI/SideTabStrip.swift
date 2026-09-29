@@ -21,9 +21,17 @@ final class SideTabStrip: NSView {
         let symbol: String
     }
 
+    enum DragPhase { case began, moved, ended, cancelled }
+
+    /// Which region this strip is the tabs of. Decides what "Move to…" offers.
+    var region: TabRegion = .side
     var onSelect: (SideTab) -> Void = { _ in }
     var onClose: (SideTab) -> Void = { _ in }
     var onCloseOthers: (SideTab) -> Void = { _ in }
+    var onMove: (SideTab, TabRegion) -> Void = { _, _ in }
+    /// A tab is being dragged; `point` is in window coordinates. The drag is
+    /// resolved by whoever knows every strip and drop zone (TabDragController).
+    var onDrag: (DragPhase, SideTab, NSView, NSPoint) -> Void = { _, _, _, _ in }
 
     static let tabHeight: CGFloat = 28
     static let minTabWidth: CGFloat = 90
@@ -48,6 +56,12 @@ final class SideTabStrip: NSView {
                 view.onSelect = { [weak self] in self?.onSelect(item.tab) }
                 view.onClose = { [weak self] in self?.onClose(item.tab) }
                 view.onCloseOthers = { [weak self] in self?.onCloseOthers(item.tab) }
+                view.onMove = { [weak self] region in self?.onMove(item.tab, region) }
+                view.onDrag = { [weak self, weak view] phase, point in
+                    guard let self, let view else { return }
+                    self.onDrag(phase, item.tab, view, point)
+                }
+                view.stripRegion = { [weak self] in self?.region ?? .side }
                 addSubview(view)
                 return view
             }
@@ -88,6 +102,19 @@ final class SideTabStrip: NSView {
         }
     }
 
+    /// Where a tab dropped at `x` (window coordinates) would go: the insertion
+    /// index among this strip's tabs, decided by which side of a tab's middle
+    /// the pointer is on, and the x (window coordinates) to draw the marker at.
+    func insertion(atWindowX x: CGFloat) -> (index: Int, markerX: CGFloat) {
+        let local = convert(NSPoint(x: x, y: 0), from: nil).x
+        for (index, view) in tabViews.enumerated() where local < view.frame.midX {
+            let gapX = view.frame.minX - Self.gap / 2
+            return (index, convert(NSPoint(x: gapX, y: 0), to: nil).x)
+        }
+        let end = (tabViews.last?.frame.maxX ?? 0) + Self.gap / 2
+        return (tabViews.count, convert(NSPoint(x: end, y: 0), to: nil).x)
+    }
+
     override func resizeSubviews(withOldSize oldSize: NSSize) {
         super.resizeSubviews(withOldSize: oldSize)
         needsLayout = true
@@ -103,6 +130,9 @@ private final class SideTabView: NSView {
     var onSelect: () -> Void = {}
     var onClose: () -> Void = {}
     var onCloseOthers: () -> Void = {}
+    var onMove: (TabRegion) -> Void = { _ in }
+    var onDrag: (SideTabStrip.DragPhase, NSPoint) -> Void = { _, _ in }
+    var stripRegion: () -> TabRegion = { .side }
     var showsTrailingDivider = false {
         didSet { divider.isHidden = !showsTrailingDivider }
     }
@@ -232,8 +262,27 @@ private final class SideTabView: NSView {
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
 
-    /// Select on mouse-down, as tabs do: a tab is picked, not clicked.
-    override func mouseDown(with event: NSEvent) { onSelect() }
+    /// Select on mouse-down, as tabs do: a tab is picked, not clicked. Then
+    /// track the mouse ourselves: past 6pt it's a drag (ChatGPT's threshold),
+    /// handed on as it goes; released before that, it was just the pick.
+    override func mouseDown(with event: NSEvent) {
+        onSelect()
+        guard let window else { return }
+        let start = event.locationInWindow
+        var dragging = false
+        while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            let point = next.locationInWindow
+            if next.type == .leftMouseUp {
+                if dragging { onDrag(.ended, point) }
+                return
+            }
+            if !dragging, hypot(point.x - start.x, point.y - start.y) >= 6 {
+                dragging = true
+                onDrag(.began, start)
+            }
+            if dragging { onDrag(.moved, point) }
+        }
+    }
 
     override func otherMouseUp(with event: NSEvent) {
         if event.buttonNumber == 2 { onClose() } else { super.otherMouseUp(with: event) }
@@ -243,6 +292,13 @@ private final class SideTabView: NSView {
         let menu = NSMenu()
         menu.addItem(ClosureMenuItem(title: "Close Tab") { [weak self] in self?.onClose() })
         menu.addItem(ClosureMenuItem(title: "Close Other Tabs") { [weak self] in self?.onCloseOthers() })
+        // The other region, if this tab is allowed there.
+        let other: TabRegion = stripRegion() == .side ? .bottom : .side
+        if tab.fits(other) {
+            menu.addItem(.separator())
+            let title = other == .bottom ? "Move to Bottom" : "Move to Side Column"
+            menu.addItem(ClosureMenuItem(title: title) { [weak self] in self?.onMove(other) })
+        }
         return menu
     }
 

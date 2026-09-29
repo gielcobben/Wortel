@@ -59,9 +59,11 @@ private struct SideTerminalContainer: NSViewControllerRepresentable {
     }
 }
 
-/// The side column's counterpart to TerminalHostViewController: every side
-/// terminal that has been shown stays in this view, hidden when it isn't the
-/// one in front.
+/// The side column's (and the bottom strip's) counterpart to
+/// TerminalHostViewController: every terminal that has been shown here stays in
+/// this view, hidden when it isn't the one in front. A terminal moved to the
+/// other region is re-parented into that region's host by `show`, the same
+/// `addSubview` that put it here: a new place for the same live view.
 ///
 /// Opaque while a terminal shows. The terminal draws no background of its own
 /// (`background-opacity = 0` in wortel.conf), and over the column's glass it
@@ -82,7 +84,10 @@ final class SideTerminalHostController: NSViewController {
 
     func show(_ surface: SurfaceView?, focusRequest: Int, mainTerminal: SurfaceView?) {
         if surface !== current {
-            if let current {
+            // Only a view this host still holds. A terminal dragged to the
+            // other region has been re-parented into that region's host, and
+            // hiding it here would blank it there.
+            if let current, current.superview === view {
                 // A hidden view keeps first responder if nobody takes it, and
                 // then every keystroke goes to a terminal you can't see: the
                 // column was hidden, or another tab came to the front, while

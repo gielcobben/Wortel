@@ -60,6 +60,11 @@ struct PersistedSession: Codable {
     /// first dragged in that session (and in every older file), which means
     /// "the last width chosen anywhere".
     let sideColumnWidth: Double?
+    /// The terminals in the strip under the session's terminal, the one in
+    /// front, and whether the strip is showing. nil in older files: no strip.
+    let bottomTabs: [UUID]?
+    let activeBottomTab: UUID?
+    let bottomVisible: Bool?
 
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
@@ -86,6 +91,7 @@ struct PersistedSession: Codable {
     enum CodingKeys: String, CodingKey {
         case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
+        case bottomTabs, activeBottomTab, bottomVisible
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
@@ -98,6 +104,7 @@ struct PersistedSession: Codable {
          gitPanelVisible: Bool?, inspectorPane: String? = nil,
          sideTabs: [String]? = nil, activeSideTab: String? = nil,
          sideColumnWidth: Double? = nil,
+         bottomTabs: [UUID]? = nil, activeBottomTab: UUID? = nil, bottomVisible: Bool? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
@@ -109,6 +116,9 @@ struct PersistedSession: Codable {
         self.sideTabs = sideTabs
         self.activeSideTab = activeSideTab
         self.sideColumnWidth = sideColumnWidth
+        self.bottomTabs = bottomTabs
+        self.activeBottomTab = activeBottomTab
+        self.bottomVisible = bottomVisible
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -152,6 +162,9 @@ struct PersistedSession: Codable {
         sideTabs = try c.decodeIfPresent([String].self, forKey: .sideTabs)
         activeSideTab = try c.decodeIfPresent(String.self, forKey: .activeSideTab)
         sideColumnWidth = try c.decodeIfPresent(Double.self, forKey: .sideColumnWidth)
+        bottomTabs = try c.decodeIfPresent([UUID].self, forKey: .bottomTabs)
+        activeBottomTab = try c.decodeIfPresent(UUID.self, forKey: .activeBottomTab)
+        bottomVisible = try c.decodeIfPresent(Bool.self, forKey: .bottomVisible)
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.

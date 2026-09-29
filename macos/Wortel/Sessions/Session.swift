@@ -77,6 +77,18 @@ final class Session: Identifiable {
     /// nil until its divider is first dragged, which leaves it at the last width
     /// chosen anywhere. Persisted. See `MainSplitViewController.ColumnWidth`.
     @ObservationIgnored var sideColumnWidth: Double?
+    /// The strip under the session's terminal: its terminals in order, the one
+    /// in front, and whether it's showing. Hiding keeps them, closing the last
+    /// one hides it. Persisted.
+    var bottomTabs: [UUID] = []
+    var activeBottomTab: UUID?
+    var bottomVisible = false
+    /// Tabs closed in this session, newest last, for ⌘⇧T. Not persisted: a
+    /// relaunch is not an undo boundary anyone expects to reach across.
+    @ObservationIgnored var closedTabs: [ClosedTab] = []
+
+    /// Every terminal tab id the session holds, wherever it sits.
+    var terminalTabIDs: [UUID] { sideTabs.compactMap(\.terminalID) + bottomTabs }
     /// Full title reported by the shell (user@host:cwd, or the running
     /// program). Kept for reference; not currently shown.
     var title: String
@@ -292,7 +304,7 @@ final class Session: Identifiable {
     }
 
     func close() {
-        for id in sideTabs.compactMap(\.terminalID) { closeSideSurface(id) }
+        for id in terminalTabIDs { closeSideSurface(id) }
         surfaceView?.close()
         surfaceView?.removeFromSuperview()
         surfaceView = nil

@@ -987,6 +987,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    private lazy var sessionSwitcher = SessionSwitcher(manager: manager)
+
+    /// ⌘P: go to a session by name, folder, branch or directory.
+    @objc func showSessionSwitcher(_ sender: Any?) {
+        // ⌘P again puts it away. Before focusing the window: that would take
+        // the keyboard from the switcher, which closes it, and this would open
+        // a new one.
+        if sessionSwitcher.isShown { return sessionSwitcher.close() }
+        focusMainWindow()
+        guard let window else { return }
+        sessionSwitcher.toggle(over: window)
+    }
+
     @objc func renameSession(_ sender: Any?) {
         focusMainWindow()
         manager.beginRenameSelected()

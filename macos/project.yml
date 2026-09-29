@@ -368,6 +368,7 @@ targets:
       - path: Wortel/UI/SideTabStrip.swift
       - path: Wortel/UI/TabHoverCard.swift
       - path: Wortel/Browser/BrowserAddress.swift
+      - path: Wortel/Sessions/SessionSwitcherMatch.swift
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/GitRepoModel.swift
       - path: Wortel/Git/GitRepoWatcher.swift

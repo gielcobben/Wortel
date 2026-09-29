@@ -18,6 +18,9 @@ final class SessionManager {
     var selectedID: Session.ID? {
         didSet {
             guard selectedID != oldValue, let session = selected else { return }
+            // Most recent first, for ⌘P's list.
+            recentSessionIDs.removeAll { $0 == session.id }
+            recentSessionIDs.insert(session.id, at: 0)
             // Switching into a waiting session: flash a ring in the detail view
             // to orient the eye before the dot clears.
             if let kind = session.attention {
@@ -32,6 +35,10 @@ final class SessionManager {
             scheduleSave()
         }
     }
+
+    /// Sessions in the order they were last selected, most recent first: what
+    /// ⌘P lists before you type (SessionSwitcherMatch).
+    @ObservationIgnored private(set) var recentSessionIDs: [Session.ID] = []
 
     /// The most recent "switched into a waiting session" event; the detail view
     /// flashes an orienting ring on each fresh value. Never cleared — at rest

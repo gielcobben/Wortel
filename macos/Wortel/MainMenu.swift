@@ -203,6 +203,9 @@ enum MainMenu {
         // Acting on the selected session, as opposed to making one. No ellipsis
         // on Rename: it starts an inline edit in the sidebar, not a dialog.
         sessionMenu.addItem(.separator())
+        // ⌘P, as VS Code, Cursor and Zed open a file by name: here, a session.
+        let goTo = sessionMenu.addItem(withTitle: "Go to Session\u{2026}", action: #selector(AppDelegate.showSessionSwitcher(_:)), keyEquivalent: "p")
+        goTo.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
         // ⌘W closes what you're in: a tab, or the session when its own terminal
         // is in front (as closing a tab in any other terminal ends its shell).

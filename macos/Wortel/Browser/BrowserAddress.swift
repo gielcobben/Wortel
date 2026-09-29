@@ -39,6 +39,23 @@ enum BrowserAddress {
         return components.url
     }
 
+    /// What the address field fills in as you type: the first address that
+    /// starts with what's typed, in whichever form it was typed in (the whole
+    /// URL, `localhost:4321`, or just `4321`). What you typed stays as typed;
+    /// the rest is the completion, which the field selects so the next key
+    /// replaces it. nil when nothing starts with it.
+    static func completion(of typed: String, among urls: [URL]) -> (text: String, url: URL)? {
+        let query = typed.lowercased()
+        guard !query.isEmpty else { return nil }
+        for url in urls {
+            let forms = [url.absoluteString, short(url), url.port.map(String.init)].compactMap { $0 }
+            for form in forms where form.lowercased().hasPrefix(query) && form.count > query.count {
+                return (typed + form.dropFirst(typed.count), url)
+            }
+        }
+        return nil
+    }
+
     /// The host of an address typed without a scheme.
     private static func host(of text: String) -> String {
         if text.hasPrefix("[") { return String(text.dropFirst().prefix { $0 != "]" }) }

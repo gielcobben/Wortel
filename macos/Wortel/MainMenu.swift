@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 
 /// Programmatic main menu. Kept deliberately small: AppKit scans key
 /// equivalents on every keypress, so every item here is on the hot path.
@@ -24,13 +25,46 @@ enum MainMenu {
 
     private static var textEditing = false
 
-    /// ⌘A for Select All wherever it isn't spoken for: a rename field, and a
-    /// preview window — neither of which has the terminal's claim on it (⌘A is a
-    /// `wortel.conf` keybind that clears the input line). Only the modifier moves;
-    /// the `selectAll:` action is the same one the terminal answers on ⌘⇧A.
+    /// ⌘A for Select All wherever it isn't spoken for: any text field or text
+    /// view with the keyboard (a rename, a browser's address, the commit box,
+    /// a find bar), a web page, and a preview window. None of those has the
+    /// terminal's claim on it (⌘A is a `wortel.conf` keybind that clears the
+    /// input line). Only the modifier moves; the `selectAll:` action is the
+    /// same one the terminal answers on ⌘⇧A.
+    ///
+    /// Asked on every key down (`installKeyMonitor`), because nothing says
+    /// when the keyboard moves into a field, and the item's shortcut has to be
+    /// right before AppKit matches the keypress against the menu.
     private static func syncSelectAll() {
         let plain = textEditing || NSApp.keyWindow?.windowController is PreviewWindowController
-        selectAllItem?.keyEquivalentModifierMask = plain ? [.command] : [.command, .shift]
+            || keyboardIsInText
+        let mask: NSEvent.ModifierFlags = plain ? [.command] : [.command, .shift]
+        if selectAllItem?.keyEquivalentModifierMask != mask { selectAllItem?.keyEquivalentModifierMask = mask }
+    }
+
+    /// Whether the key window's first responder edits text or is a web page:
+    /// a field editor or text view, or anything inside a web view.
+    private static var keyboardIsInText: Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder as? NSView else { return false }
+        if responder is NSTextView { return true }
+        var view: NSView? = responder
+        while let current = view {
+            if current is WKWebView { return true }
+            view = current.superview
+        }
+        return false
+    }
+
+    private static var keyMonitor: Any?
+
+    /// Keep Select All's shortcut right for wherever the keyboard is, just
+    /// before each keypress is matched against the menu.
+    static func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.modifierFlags.contains(.command) { syncSelectAll() }
+            return event
+        }
     }
 
     /// ⌘1…⌘3 have two meanings and only one can be true at a time: "session 1–3"
@@ -73,6 +107,7 @@ enum MainMenu {
 
     static func build() -> NSMenu {
         let main = NSMenu()
+        installKeyMonitor()
 
         // App menu
         let appItem = NSMenuItem()

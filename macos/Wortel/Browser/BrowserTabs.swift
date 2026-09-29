@@ -408,9 +408,12 @@ struct BrowserServer: Identifiable, Equatable {
 struct BrowserTab: View {
     let page: BrowserPage
 
+    /// What's in the field: the page's address, what you typed, or that plus
+    /// a completion.
     @State private var typed = ""
-    /// Whether what's in the field is the user's rather than the page's.
-    @State private var edited = false
+    /// What you typed, which is what the suggestions are filtered by. nil
+    /// until you type, when every server is suggested.
+    @State private var query: String?
     @State private var highlighted: URL?
     @FocusState private var editing: Bool
 
@@ -418,7 +421,7 @@ struct BrowserTab: View {
         let servers = BrowserTabs.shared.servers()
         let suggestions = matching(servers)
         VStack(spacing: 0) {
-            BrowserHeader(page: page, typed: $typed, edited: $edited,
+            BrowserHeader(page: page, typed: $typed, query: $query,
                           editing: $editing, suggestions: suggestions, highlighted: $highlighted,
                           go: go)
                 // Over the page, so the suggestions hanging from its field are.
@@ -453,8 +456,8 @@ struct BrowserTab: View {
     /// The servers the field suggests: all of them until you've typed, then
     /// the ones whose address or command has what you typed in it.
     private func matching(_ servers: [BrowserServer]) -> [BrowserServer] {
-        let query = typed.trimmingCharacters(in: .whitespaces).lowercased()
-        guard edited, !query.isEmpty else { return servers }
+        let query = (query ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return servers }
         return servers.filter {
             BrowserAddress.short($0.url).lowercased().contains(query)
                 || $0.label.lowercased().contains(query)
@@ -472,11 +475,16 @@ struct BrowserTab: View {
 private struct BrowserHeader: View {
     let page: BrowserPage
     @Binding var typed: String
-    @Binding var edited: Bool
+    @Binding var query: String?
     var editing: FocusState<Bool>.Binding
     let suggestions: [BrowserServer]
     @Binding var highlighted: URL?
     let go: (URL) -> Void
+
+    /// Set while the field's text is being set here rather than typed (a
+    /// completion, an arrowed-to suggestion), so the change isn't read as
+    /// typing.
+    @State private var settingText = false
 
     var body: some View {
         HStack(spacing: 2) {
@@ -496,11 +504,9 @@ private struct BrowserHeader: View {
                 .foregroundStyle(editing.wrappedValue ? .primary : .secondary)
                 .focused(editing)
                 .onSubmit(submit)
-                .onExitCommand {
-                    typed = shown
-                    editing.wrappedValue = false
-                }
-                // Up and down walk the suggestions; Return takes the one lit.
+                .onExitCommand(perform: escape)
+                // Up and down walk the suggestions, putting each in the field;
+                // Return takes the one lit.
                 .onKeyPress(.downArrow) { step(1) }
                 .onKeyPress(.upArrow) { step(-1) }
                 .padding(.horizontal, 8)
@@ -530,21 +536,53 @@ private struct BrowserHeader: View {
         .onChange(of: page.currentURL) { _, _ in if !editing.wrappedValue { typed = shown } }
         .onChange(of: page.addressFocusRequest) { _, _ in editing.wrappedValue = true }
         .onChange(of: editing.wrappedValue) { _, now in
-            // The whole address to edit; the short one to read.
-            typed = now ? (page.location?.absoluteString ?? "") : shown
-            edited = false
+            // The whole address to edit, all of it selected so typing replaces
+            // it, as a browser's field does; the short one to read.
+            setText(now ? (page.location?.absoluteString ?? "") : shown)
+            query = nil
             highlighted = nil
+            if now { selectInField(from: 0) }
         }
-        .onChange(of: typed) { _, _ in
-            if editing.wrappedValue, typed != (page.location?.absoluteString ?? "") { edited = true }
-            if let highlighted, !suggestions.contains(where: { $0.url == highlighted }) {
-                self.highlighted = nil
+        .onChange(of: typed) { old, new in
+            if settingText {
+                settingText = false
+                return
+            }
+            guard editing.wrappedValue else { return }
+            query = new
+            highlighted = nil
+            // Only while typing forward: deleting (a completion included)
+            // must not have the completion put straight back.
+            guard new.count > old.count, new.hasPrefix(old) || old.isEmpty else { return }
+            let urls = suggestions.map(\.url)
+            if let completion = BrowserAddress.completion(of: new, among: urls) {
+                setText(completion.text)
+                highlighted = completion.url
+                selectInField(from: new.count)
             }
         }
     }
 
     private var shown: String {
         page.location.map(BrowserAddress.short) ?? ""
+    }
+
+    /// Change the field's text without it counting as typing.
+    private func setText(_ text: String) {
+        guard text != typed else { return }
+        settingText = true
+        typed = text
+    }
+
+    /// Select the field's text from `start` to the end: all of it on focus,
+    /// the filled-in part of a completion.
+    private func selectInField(from start: Int) {
+        DispatchQueue.main.async {
+            guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+            let length = (editor.string as NSString).length
+            let from = min(start, length)
+            editor.setSelectedRange(NSRange(location: from, length: length - from))
+        }
     }
 
     private func submit() {
@@ -556,11 +594,32 @@ private struct BrowserHeader: View {
         }
     }
 
+    /// Escape: back to what you typed if the field shows a suggestion; out
+    /// of the field if it already shows what you typed.
+    private func escape() {
+        if let query, typed != query {
+            setText(query)
+            highlighted = nil
+        } else {
+            setText(shown)
+            editing.wrappedValue = false
+        }
+    }
+
     private func step(_ offset: Int) -> KeyPress.Result {
         guard !suggestions.isEmpty else { return .ignored }
         let index = suggestions.firstIndex { $0.url == highlighted }
         let next = index.map { $0 + offset } ?? (offset > 0 ? 0 : suggestions.count - 1)
-        highlighted = (0..<suggestions.count).contains(next) ? suggestions[next].url : nil
+        if (0..<suggestions.count).contains(next) {
+            let url = suggestions[next].url
+            highlighted = url
+            setText(BrowserAddress.short(url))
+            selectInField(from: (BrowserAddress.short(url) as NSString).length)
+        } else {
+            // Past either end: back to what you typed.
+            highlighted = nil
+            setText(query ?? typed)
+        }
         return .handled
     }
 

@@ -52,6 +52,22 @@ final class BrowserAddressTests: XCTestCase {
         XCTAssertNil(url("file:///etc/passwd"))
     }
 
+    /// Inline completion: the typed part kept as typed, the rest filled in
+    /// from the first address that starts with it, in the form it was typed.
+    func testCompletionFillsInTheRest() {
+        let servers = [URL(string: "http://localhost:4321/")!, URL(string: "http://localhost:3000/")!]
+        XCTAssertEqual(BrowserAddress.completion(of: "loc", among: servers)?.text, "localhost:4321")
+        XCTAssertEqual(BrowserAddress.completion(of: "Loc", among: servers)?.text, "Localhost:4321",
+                       "what was typed stays as typed")
+        XCTAssertEqual(BrowserAddress.completion(of: "30", among: servers)?.text, "3000")
+        XCTAssertEqual(BrowserAddress.completion(of: "30", among: servers)?.url, servers[1])
+        XCTAssertEqual(BrowserAddress.completion(of: "http://localhost:3", among: servers)?.text,
+                       "http://localhost:3000/")
+        XCTAssertNil(BrowserAddress.completion(of: "wortel", among: servers))
+        XCTAssertNil(BrowserAddress.completion(of: "localhost:4321", among: servers), "nothing left to fill in")
+        XCTAssertNil(BrowserAddress.completion(of: "", among: servers))
+    }
+
     func testNothingOrWordsGoNowhere() {
         XCTAssertNil(url(""))
         XCTAssertNil(url("   "))

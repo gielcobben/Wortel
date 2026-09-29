@@ -64,6 +64,74 @@ final class Session: Identifiable {
     /// Changes, the one you're exploring wants Files. Persisted; read and
     /// written by GitPanelModel.
     var inspectorPane: InspectorPane?
+    /// The side column's tabs, in strip order, and the one in front. Persisted.
+    /// `gitPanelVisible` still says whether the column is up: hiding it keeps the
+    /// tabs, and closing the last tab is what hides it. Read and written by
+    /// GitPanelModel, which mirrors the focused session's onto the column.
+    var sideTabs: [SideTab] = []
+    var activeSideTab: SideTab?
+    /// What each side terminal's shell last titled itself, for its tab's label.
+    /// Observed, so the strip follows a `cd` or a program starting.
+    var sideTerminalTitles: [UUID: String] = [:]
+    /// Where each browser tab is: where it was opened, then wherever it last
+    /// navigated to, so a relaunch or a reopen puts it back there. No entry
+    /// is a new browser with nothing typed yet. Persisted.
+    var browserAddresses: [UUID: String] = [:]
+    /// The checkout the git panes show when it isn't the terminal's: another
+    /// worktree of the same repository, where an agent in this session is
+    /// actually working. nil follows the terminal. Persisted.
+    var gitCheckout: String?
+    /// How wide this session's side column is, the same for every tab in it;
+    /// nil until its divider is first dragged, which leaves it at the last width
+    /// chosen anywhere. Persisted. See `MainSplitViewController.ColumnWidth`.
+    @ObservationIgnored var sideColumnWidth: Double?
+    /// The main area's tabs, the session's own terminal (`.session`) among
+    /// them, always exactly once; and the one in front: nil is the terminal.
+    /// Persisted.
+    var mainTabs: [SideTab] = [.session]
+    var activeMainTab: SideTab?
+    /// The side column on the terminal's leading side rather than its trailing
+    /// one. Persisted.
+    var sideColumnLeading = false
+    /// The strip under the session's terminal: its tabs in order, the one in
+    /// front, and whether it's showing. Hiding keeps them, closing the last
+    /// one hides it. Persisted.
+    var bottomTabs: [SideTab] = []
+    var activeBottomTab: SideTab?
+    var bottomVisible = false
+    /// Tabs closed in this session, newest last, for ⌘⇧T. Persisted, so a
+    /// relaunch (an update, a crash) doesn't quietly empty it.
+    @ObservationIgnored var closedTabs: [ClosedTab] = []
+    /// Where files and browsers open in this session: where you last moved
+    /// one. See `WorkspaceTabs.home(for:)`. Persisted.
+    @ObservationIgnored var tabHabits: [TabKind: TabRegion] = [:]
+
+    /// Every terminal tab id the session holds, wherever it sits.
+    var terminalTabIDs: [UUID] { workspace.terminalIDs }
+
+    /// The tab layout above as one value, for the rules in `WorkspaceTabs`.
+    /// Written back field by field and only where something changed: each of
+    /// these is observed, and an unchanged write still wakes its observers.
+    var workspace: WorkspaceTabs {
+        get {
+            WorkspaceTabs(main: mainTabs, activeMain: activeMainTab,
+                          side: sideTabs, activeSide: activeSideTab, sideVisible: gitPanelVisible,
+                          bottom: bottomTabs, activeBottom: activeBottomTab,
+                          bottomVisible: bottomVisible, closed: closedTabs, habits: tabHabits)
+        }
+        set {
+            if mainTabs != newValue.main { mainTabs = newValue.main }
+            if activeMainTab != newValue.activeMain { activeMainTab = newValue.activeMain }
+            if sideTabs != newValue.side { sideTabs = newValue.side }
+            if activeSideTab != newValue.activeSide { activeSideTab = newValue.activeSide }
+            if gitPanelVisible != newValue.sideVisible { gitPanelVisible = newValue.sideVisible }
+            if bottomTabs != newValue.bottom { bottomTabs = newValue.bottom }
+            if activeBottomTab != newValue.activeBottom { activeBottomTab = newValue.activeBottom }
+            if bottomVisible != newValue.bottomVisible { bottomVisible = newValue.bottomVisible }
+            closedTabs = newValue.closed
+            tabHabits = newValue.habits
+        }
+    }
     /// Full title reported by the shell (user@host:cwd, or the running
     /// program). Kept for reference; not currently shown.
     var title: String
@@ -147,6 +215,14 @@ final class Session: Identifiable {
     /// lazy). The SessionManager wires the view's callbacks here.
     @ObservationIgnored var onSurfaceCreated: ((SurfaceView) -> Void)?
 
+    /// The live views of this session's side terminals, by tab id. Created the
+    /// first time their tab is shown and kept, like `surfaceView`, until the tab
+    /// closes: switching tabs or sessions hides them, never rebuilds them.
+    @ObservationIgnored private(set) var sideSurfaces: [UUID: SurfaceView] = [:]
+    /// Called when a side terminal's view is created, so the manager can wire its
+    /// callbacks. The id is the tab's.
+    @ObservationIgnored var onSideSurfaceCreated: ((UUID, SurfaceView) -> Void)?
+
     init(id: UUID = UUID(), name: String = "Session", title: String = "shell",
          cwd: String? = nil, originCwd: String? = nil) {
         self.id = id
@@ -213,7 +289,8 @@ final class Session: Identifiable {
     /// UI should confirm first. A session with no surface (never opened) has
     /// nothing to confirm.
     var needsConfirmClose: Bool {
-        surfaceView?.needsConfirmClose ?? false
+        (surfaceView?.needsConfirmClose ?? false)
+            || sideSurfaces.values.contains { $0.needsConfirmClose }
     }
 
     /// The pid of this session's shell, and so the root of every process the
@@ -222,6 +299,21 @@ final class Session: Identifiable {
     /// nil for a session that was never opened, and on the no-keeper fallback
     /// path where libghostty spawns the shell without telling us its pid.
     var shellPID: pid_t? { surfaceView?.shellPID }
+
+    /// The shells of the side terminals that have been opened this launch. Their
+    /// work is the session's work: a dev server started beside an agent belongs
+    /// in the same running list as one the agent started.
+    /// Each side terminal's shell, by its tab id (the `WORTEL_SESSION_ID` it
+    /// was started with).
+    var sideShells: [(tab: UUID, pid: pid_t)] {
+        sideSurfaces.compactMap { id, view in view.shellPID.map { (id, $0) } }
+    }
+
+    /// Whether `id` is this session or one of its terminals: what a command's
+    /// `$WORTEL_SESSION_ID` can be.
+    func owns(terminal id: UUID) -> Bool {
+        id == self.id || terminalTabIDs.contains(id)
+    }
 
     @discardableResult
     func ensureSurfaceView(runtime: GhosttyRuntime) -> SurfaceView {
@@ -236,7 +328,38 @@ final class Session: Identifiable {
         return view
     }
 
+    /// The view for one of this session's side terminals, made on first use.
+    ///
+    /// Its id doubles as the keeper's session id, which is what brings the same
+    /// shell back after a relaunch. It starts where the session's shell is now
+    /// rather than where it was born: a terminal opened beside an agent is for
+    /// the thing the agent is working on.
+    @discardableResult
+    func ensureSideSurface(_ id: UUID, runtime: GhosttyRuntime) -> SurfaceView {
+        if let view = sideSurfaces[id] { return view }
+        let view = SurfaceView(runtime: runtime, workingDirectory: cwd ?? originCwd, sessionID: id)
+        sideSurfaces[id] = view
+        onSideSurfaceCreated?(id, view)
+        return view
+    }
+
+    /// End one side terminal's shell. A tab restored from the last launch but
+    /// never shown in this one has no view, and its shell is still being kept
+    /// alive for it, so that one is closed at the keeper directly.
+    func closeSideSurface(_ id: UUID) {
+        if let view = sideSurfaces.removeValue(forKey: id) {
+            view.close()
+            view.removeFromSuperview()
+        } else {
+            GhosttyRuntime.keeper?.close(session: id)
+            // What `SurfaceView.close` does for a terminal that has a view.
+            TerminalModeRecorder.shared.forget(session: id)
+        }
+        sideTerminalTitles[id] = nil
+    }
+
     func close() {
+        for id in terminalTabIDs { closeSideSurface(id) }
         surfaceView?.close()
         surfaceView?.removeFromSuperview()
         surfaceView = nil

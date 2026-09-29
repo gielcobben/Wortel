@@ -140,8 +140,8 @@ struct TelemetryInfoButton: NSViewRepresentable {
     func updateNSView(_ nsView: NSButton, context: Context) {}
 }
 
-/// One outline row's SwiftUI content: the session row on its always-accent
-/// selection pill, plus the row context menu. Reads the manager's observable
+/// One outline row's SwiftUI content: the session row on its selection pill,
+/// plus the row context menu. Reads the manager's observable
 /// state directly, so selection, rename, and attention changes update live
 /// inside the hosted view — no outline reload involved.
 struct SidebarRowContent: View {
@@ -354,9 +354,12 @@ struct SidebarHeaderContent: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            // The same size as the rows under it, and set apart by colour alone:
+            // a small bold header is a second type size and a second weight
+            // doing a job the grey already does.
             Text(folder)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 13))
+                .foregroundStyle(.tertiary)
                 .lineLimit(1)
             // What the folder is hiding. Same dot as a session row's, so it
             // reads as the same fact rather than as a new kind of badge — and
@@ -364,7 +367,7 @@ struct SidebarHeaderContent: View {
             // see is exactly the case this whole system is for.
             if let kind = manager.attention(inFolder: folder) {
                 AttentionDot(color: SessionStatusIndicator.attentionColor(kind),
-                             pulses: kind == .needsInput)
+                             motion: kind == .needsInput ? .pulse : .still)
             }
             Spacer(minLength: 4)
             // The directory the folder stands for, and the point of showing it
@@ -454,23 +457,18 @@ struct SessionRow: View {
     @State private var cancelling = false
     @FocusState private var fieldFocused: Bool
 
-    // The selected row sits on an always-accent pill, so its content is white.
-    // Not while editing: the rename field sits on a normal background.
-    private var onAccent: Bool { isSelected && !isEditing }
-
     var body: some View {
-        // Content padded inside an inset accent pill (~6pt from the cell edges,
-        // so it's not edge-to-edge).
+        // Content padded inside an inset pill (~6pt from the cell edges, so
+        // it's not edge-to-edge).
         HStack(spacing: 8) {
-            // The same symbol the toolbar's branch chip carries, so the two
+            // The same symbol the repo header's branch carries, so the two
             // places that mean "branch" look like the same fact. Not while
             // editing: the rename field should start where every other one does.
             // And not once the branch has its own line below the name.
             if isInWorktree && !isEditing && !session.showsBranchLine {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 11))
-                    .foregroundStyle(onAccent ? AnyShapeStyle(.white.opacity(0.85))
-                                              : AnyShapeStyle(.secondary))
+                    .foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
@@ -513,8 +511,7 @@ struct SessionRow: View {
                     // it opens with only the leaf selected (`selectLeafName`).
                     // An AppKit label rather than Text, for the native
                     // hover-to-expand on a name the row had to cut short.
-                    TruncatingLabel(text: session.leafName,
-                                    color: onAccent ? .white : .labelColor)
+                    TruncatingLabel(text: session.leafName, color: .labelColor)
                 }
                 // Where the work lives, under what the work is. Only for a
                 // worktree session whose name has moved on from the branch;
@@ -523,11 +520,9 @@ struct SessionRow: View {
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.triangle.branch")
                             .font(.system(size: 9))
-                            .foregroundStyle(onAccent ? AnyShapeStyle(.white.opacity(0.85))
-                                                      : AnyShapeStyle(.secondary))
+                            .foregroundStyle(.tertiary)
                         TruncatingLabel(text: branch, font: .systemFont(ofSize: 11),
-                                        color: onAccent ? NSColor.white.withAlphaComponent(0.85)
-                                                        : .secondaryLabelColor)
+                                        color: .tertiaryLabelColor)
                     }
                 }
             }
@@ -574,15 +569,14 @@ struct SessionRow: View {
 /// the close button so the two are interchangeable — see SidebarPillRowView.
 ///
 /// Attention (blocked on you / failed / long command done while unselected) wins
-/// over busy — once you select the session the attention clears and the spinner
+/// over busy — once you select the session the attention clears and the busy dot
 /// shows if a command is still running. The dot's colour encodes *why*: amber =
 /// waiting on you, red = failed, mint = an agent finished its turn, blue = a
-/// plain command finished. On the accent selection pill everything goes white
-/// for contrast (but a selected row has already cleared its attention). A
-/// non-selected session you haven't caught up with also carries a quiet hollow
-/// ring, which sits *next to* the spinner rather than being replaced by it —
-/// otherwise a session that failed and immediately started working again would
-/// look like any other busy session.
+/// plain command finished. With the selection pill neutral, a dot keeps its
+/// colour on the selected row too. A non-selected session you haven't caught up
+/// with also carries a quiet hollow ring, which sits *next to* the busy dot rather
+/// than being replaced by it — otherwise a session that failed and immediately
+/// started working again would look like any other busy session.
 ///
 /// It reads the manager directly rather than taking its state as arguments, so
 /// selection and attention changes redraw it through Observation without the
@@ -591,16 +585,11 @@ struct SessionStatusIndicator: View {
     let manager: SessionManager
     let session: Session
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     private var isSelected: Bool { manager.selectedID == session.id }
-    /// Matches SessionRow: the rename field sits on a normal background, so the
-    /// glyph comes off the accent only while the pill is actually drawn.
-    private var onAccent: Bool { isSelected && manager.editingID != session.id }
 
     var body: some View {
         HStack(spacing: 4) {
-            // The unread trail sits *beside* the spinner rather than behind it:
+            // The unread trail sits *beside* the busy dot rather than behind it:
             // a session that failed and is already working again still says so.
             // Hidden while a loud dot is up (the dot outranks it) and on the
             // selected row (you're on it, the dwell clock is running).
@@ -608,22 +597,20 @@ struct SessionStatusIndicator: View {
                 // Quiet "you haven't caught up here" trail: a hollow ring in the
                 // kind's colour, no pulse.
                 Circle()
-                    .stroke(Self.attentionColor(kind).opacity(0.8), lineWidth: 1.5)
+                    .stroke(Color(nsColor: Self.attentionColor(kind)).opacity(0.8), lineWidth: 1.5)
                     .frame(width: 7, height: 7)
             }
             if let kind = session.attention {
                 // Urgent states (waiting on you / failed) breathe to catch the eye
                 // in peripheral vision; a clean finish sits still.
-                AttentionDot(
-                    color: onAccent ? .white : Self.attentionColor(kind),
-                    pulses: kind.pulses && !reduceMotion)
+                AttentionDot(color: Self.attentionColor(kind),
+                             motion: kind.pulses ? .pulse : .still)
             } else if session.isBusy {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .controlSize(.small)
-                    .scaleEffect(0.7)
-                    .frame(width: 12, height: 12)
-                    .tint(onAccent ? .white : .secondary)
+                // Working. A small grey dot breathing slowly, where there used to
+                // be a spinner: a spinner says *the app* is loading, and three of
+                // them turning at once in a list of agents was the busiest thing
+                // on screen, for the least urgent news in it.
+                AttentionDot(color: .secondaryLabelColor, diameter: 6, motion: .breathe)
             }
         }
         // Centre in whatever slot the row view gives us — the same rect the
@@ -631,44 +618,127 @@ struct SessionStatusIndicator: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    static func attentionColor(_ kind: AttentionKind) -> Color {
+    static func attentionColor(_ kind: AttentionKind) -> NSColor {
         switch kind {
-        case .needsInput: return .orange
-        case .failed: return .red
-        case .turnDone: return .mint
-        case .finished: return .blue
+        case .needsInput: return .systemOrange
+        case .failed: return .systemRed
+        case .turnDone: return .systemMint
+        case .finished: return .systemBlue
         }
     }
 }
 
-/// A 7pt status dot that optionally "breathes" (opacity + a touch of scale) to
-/// draw peripheral attention. The animation starts on appear and stops on its
-/// own when the dot leaves the tree (attention cleared).
-struct AttentionDot: View {
-    let color: Color
-    let pulses: Bool
-    @State private var animating = false
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 7, height: 7)
-            .opacity(pulses && animating ? 0.35 : 1)
-            .scaleEffect(pulses && animating ? 1.18 : 1)
-            // Start on appear *and* when the kind is upgraded in place (a steady
-            // "finished" dot becoming a pulsing "needs input" without ever
-            // leaving the tree), so the pulse never gets stuck off.
-            .onAppear { syncPulse() }
-            .onChange(of: pulses) { _, _ in syncPulse() }
+/// A status dot that can pulse (urgent), breathe (working) or sit still.
+///
+/// A layer and a Core Animation animation rather than a SwiftUI
+/// `repeatForever`: the render server runs it, so a list with several agents
+/// working costs the main thread nothing per frame, where a SwiftUI animation
+/// re-evaluates the hosting view on every one of them. The animation is added
+/// when the dot reaches a window and goes with its layer when it leaves.
+struct AttentionDot: NSViewRepresentable {
+    enum Motion: Equatable {
+        /// Opacity and a touch of scale, fast enough to catch the eye.
+        case pulse
+        /// A slow, shallow opacity swell: present without asking for anything.
+        case breathe
+        case still
     }
 
-    private func syncPulse() {
-        if pulses {
-            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                animating = true
+    let color: NSColor
+    var diameter: CGFloat = 7
+    let motion: Motion
+
+    func makeNSView(context: Context) -> DotView { DotView() }
+
+    func updateNSView(_ view: DotView, context: Context) {
+        view.configure(color: color, motion: motion)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: DotView, context: Context) -> CGSize? {
+        CGSize(width: diameter, height: diameter)
+    }
+
+    final class DotView: NSView {
+        private var color: NSColor = .clear
+        private var motion: Motion = .still
+        private let dot = CALayer()
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            layer?.addSublayer(dot)
+        }
+        @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+        override var wantsUpdateLayer: Bool { true }
+
+        func configure(color: NSColor, motion: Motion) {
+            let motionChanged = motion != self.motion
+            self.color = color
+            self.motion = motion
+            needsDisplay = true
+            if motionChanged { applyMotion() }
+        }
+
+        override func layout() {
+            super.layout()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            dot.frame = bounds
+            dot.cornerRadius = min(bounds.width, bounds.height) / 2
+            CATransaction.commit()
+        }
+
+        /// Colours resolve against this view's appearance, so a dynamic colour
+        /// follows light and dark instead of freezing at whatever was current.
+        override func updateLayer() {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                dot.backgroundColor = color.cgColor
             }
-        } else {
-            withAnimation(.linear(duration: 0.15)) { animating = false }
+            CATransaction.commit()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            applyMotion()
+        }
+
+        private func applyMotion() {
+            dot.removeAllAnimations()
+            dot.opacity = 1
+            guard window != nil,
+                  !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+            switch motion {
+            case .still:
+                return
+            case .pulse:
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 1
+                fade.toValue = 0.35
+                let grow = CABasicAnimation(keyPath: "transform.scale")
+                grow.fromValue = 1
+                grow.toValue = 1.18
+                let group = CAAnimationGroup()
+                group.animations = [fade, grow]
+                group.duration = 0.7
+                add(group)
+            case .breathe:
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 0.9
+                fade.toValue = 0.3
+                fade.duration = 1.2
+                add(fade)
+            }
+        }
+
+        private func add(_ animation: CAAnimation) {
+            animation.autoreverses = true
+            animation.repeatCount = .infinity
+            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animation.isRemovedOnCompletion = false
+            dot.add(animation, forKey: "motion")
         }
     }
 }

@@ -2,7 +2,7 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// Row view that draws the always-accent selection pill at the *row* level, so
+/// Row view that draws the neutral selection pill at the *row* level, so
 /// it spans the full sidebar width — across the chevron gutter and indentation
 /// — like Mail's and Icon Composer's selection, instead of hugging the cell.
 final class SidebarPillRowView: NSTableRowView {
@@ -10,12 +10,15 @@ final class SidebarPillRowView: NSTableRowView {
     /// clear of the pill's edges, so its padding reads the same on all three
     /// sides it touches.
     private static let pillInset = NSSize(width: 10, height: 2)
+    /// The selected row's fill, and the hover's, over the sidebar material. The
+    /// hover has to stay visibly lighter than the selection it isn't.
+    private static let pillAlpha: CGFloat = 0.08
+    private static let hoverAlpha: CGFloat = 0.04
 
     var showsPill = false {
         didSet {
             guard showsPill != oldValue else { return }
             needsDisplay = true
-            closeButton.onAccent = showsPill
         }
     }
     /// A dragged session is hovering this folder header (drop-on / append).
@@ -24,7 +27,7 @@ final class SidebarPillRowView: NSTableRowView {
     }
     /// The pointer is over this row. Drawn as a very light fill in the pill's
     /// shape — enough to say *this* is the row the “×” would close, without
-    /// competing with the accent pill of the selected one.
+    /// competing with the pill of the selected one.
     private var showsHover = false {
         didSet { if showsHover != oldValue { needsDisplay = true } }
     }
@@ -38,13 +41,17 @@ final class SidebarPillRowView: NSTableRowView {
         super.drawBackground(in: dirtyRect)
         let rect = pillRect
         if showsPill {
-            NSColor.controlAccentColor.setFill()
+            // Grey, not accent. The sidebar never holds focus, so this is the
+            // same situation as an unfocused source list, and the accent pill was
+            // the loudest thing in the window: it drowned out the attention dots,
+            // which are the colour in this list that actually means something.
+            NSColor.labelColor.withAlphaComponent(Self.pillAlpha).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
         } else if showsDropHighlight {
             NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
         } else if showsHover {
-            NSColor.labelColor.withAlphaComponent(0.06).setFill()
+            NSColor.labelColor.withAlphaComponent(Self.hoverAlpha).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
         }
     }
@@ -180,16 +187,6 @@ final class SidebarCloseButton: NSButton {
 
     var onClick: () -> Void = {}
 
-    /// The row underneath is the accent selection pill, so glyph and disc both
-    /// have to come off it. Unselected rows sit on the sidebar material instead.
-    var onAccent = false {
-        didSet {
-            guard onAccent != oldValue else { return }
-            contentTintColor = onAccent ? .white : .secondaryLabelColor
-            applyHover()
-        }
-    }
-
     private var hovering = false
     private var hoverArea: NSTrackingArea?
 
@@ -249,9 +246,7 @@ final class SidebarCloseButton: NSButton {
             layer?.backgroundColor = nil
             return
         }
-        let tint = onAccent
-            ? NSColor.white.withAlphaComponent(0.22)
-            : NSColor.labelColor.withAlphaComponent(0.12)
+        let tint = NSColor.labelColor.withAlphaComponent(0.12)
         // labelColor is appearance-dependent, and `cgColor` resolves against
         // whatever appearance is current — which during event handling isn't
         // necessarily this view's.
@@ -308,9 +303,9 @@ final class SidebarCellView: NSTableCellView {
             let x = card.minX + 10
             if isHeader {
                 let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-                    .foregroundColor: NSColor.secondaryLabelColor]
-                (title as NSString).draw(at: NSPoint(x: x, y: card.midY - 7), withAttributes: attrs)
+                    .font: NSFont.systemFont(ofSize: 13),
+                    .foregroundColor: NSColor.tertiaryLabelColor]
+                (title as NSString).draw(at: NSPoint(x: x, y: card.midY - 8), withAttributes: attrs)
             } else if let subtitle {
                 let titleAttrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor]
@@ -419,7 +414,7 @@ struct SidebarSnapshotGroup: Equatable {
 ///
 /// Row content stays SwiftUI: each row hosts `SidebarRowContent` /
 /// `SidebarHeaderContent` (ContentView.swift) in an `NSHostingView`, so the
-/// accent pill, attention dots, and inline rename are the same views as before.
+/// selection pill, attention dots, and inline rename are the same views as before.
 struct SidebarOutlineView: NSViewRepresentable {
     let manager: SessionManager
     let snapshot: [SidebarSnapshotGroup]
@@ -443,9 +438,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         outline.usesAutomaticRowHeights = false
         outline.intercellSpacing = .zero
         outline.backgroundColor = .clear
-        // Selection is drawn by the hosted row (always-accent pill), never by
-        // AppKit — the native highlight would grey out whenever the sidebar
-        // isn't the focused column, and the terminal always is.
+        // Selection is drawn by the row view (the neutral pill), never by
+        // AppKit — the native highlight changes with focus, and the sidebar
+        // never has it: the terminal always does.
         outline.selectionHighlightStyle = .none
         outline.allowsMultipleSelection = false
         outline.allowsEmptySelection = true
@@ -671,13 +666,12 @@ struct SidebarOutlineView: NSViewRepresentable {
         private func showsPill(_ item: Any) -> Bool {
             guard let session = item as? SessionItem else { return false }
             // Suppressed while renaming so the edit field sits on a normal
-            // background (matches SessionRow's onAccent logic).
+            // background.
             return manager.selectedID == session.id && manager.editingID != session.id
         }
 
         /// Re-render the selection pill whenever selection or rename state
-        /// changes — which also re-tints the row's close button for the
-        /// background it now sits on. The hosted SwiftUI cells track Observation
+        /// changes. The hosted SwiftUI cells track Observation
         /// on their own; the AppKit row views need this explicit loop.
         func observeSelection() {
             withObservationTracking {

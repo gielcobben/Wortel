@@ -25,12 +25,9 @@ struct HistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // No header, deliberately. `commitList` being the pane's first view is
-            // what lets the log run up under the titlebar and pick up the system's
-            // blur; a strip of chrome here would sit under the toolbar opaquely
-            // and there'd be nothing scrolling beneath it to blur. The branch chip
-            // and this pane's actions live in the toolbar instead — see
-            // GitToolbarControls.
+            // The branch and the repo's actions sit above this, in RepoHeader,
+            // which SourceControlPanel puts on both source-control tabs: the
+            // titlebar over the column is the tab strip's now.
             GeometryReader { geo in
                 let maxList = max(Self.listMin, geo.size.height - Self.diffMin)
                 let listHeight = Binding(
@@ -60,7 +57,7 @@ struct HistoryView: View {
 
     /// Move keyboard focus into the commit list for an unseen focus request.
     private func applyFocusRequest(_ req: Int) {
-        guard req != lastHandledFocusRequest else { return }
+        guard req != 0, req != lastHandledFocusRequest else { return }
         lastHandledFocusRequest = req
         // Give ↑/↓ a starting point if nothing is selected yet. The log may still
         // be loading on a first open, in which case the list is empty and this

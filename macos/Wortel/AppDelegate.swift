@@ -17,8 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// and a sheet about a session belongs on the window the session is in.
     /// Weak, so this doesn't outlive the window it names.
     static private(set) weak var mainWindow: NSWindow?
-    /// The three-pane shell. Held so the toolbar's tracking separators can bind to
-    /// its split view, and so ⌘⌥S/⌘⌥G reach the right controller.
+    /// The window's split: sessions, the main area, the side column. Held so
+    /// the sidebar toggle and a click's area (`region(at:)`) reach it.
     private var splitController: MainSplitViewController!
     /// Drives the trailing source-control panel. Whether it's up follows the
     /// selected session (see GitPanelModel); new sessions start hidden.
@@ -32,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// The preview windows. Accessories to the main window — they close with it,
     /// so quitting stays what it has always been.
     private lazy var previewWindows = PreviewWindows(highlighter: DiffHighlighter.shared)
+    /// Files previewed as tabs, the default way a file opens (see PreviewTabs);
+    /// a window is one click away from any of them.
+    private let previewTabs = PreviewTabs(highlighter: DiffHighlighter.shared)
     /// The `wortel` command's way in. Started once the session manager exists,
     /// since every command it serves is about a session.
     private var cli: WortelCLIService?
@@ -74,23 +77,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // to make it likely rather than rare.
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        // Drop the hairline the system draws under the titlebar/toolbar so the
-        // terminal and sidebar run edge-to-edge with no border bottom.
+        // The titlebar is Wortel's own (see TitleBars.swift): every pane draws
+        // its row of it, and the system draws nothing there but the traffic
+        // lights. Transparent, so clicks reach the rows under it; no title, the
+        // terminal's row shows the session's name itself; no separator, each row
+        // draws its own hairline.
+        //
+        // The toolbar stays, empty, for the one thing only it can do: make the
+        // titlebar tall enough for a row of controls and centre the traffic
+        // lights in it. Compact is 40pt, next to the ChatGPT app's 42.
         window.titlebarSeparatorStyle = .none
-        // The unified style is what splits the titlebar into per-pane sections, so
-        // the title sits against the sidebar's trailing edge and toolbar items
-        // stop at the inspector's leading edge. Set here rather than via
-        // .windowToolbarStyle because that modifier is Scene-level and this app is
-        // an AppDelegate hosting SwiftUI, not an App struct — no Scene to hang it
-        // off. On macOS 26 the items pick up Liquid Glass automatically (it keys
-        // off the linked SDK, not the deployment target); on 14 they render as a
-        // conventional unified toolbar.
-        window.toolbarStyle = .unified
+        window.titlebarAppearsTransparent = true
+        // The window server's own titlebar dragging is off, and the rows start
+        // window moves themselves from their empty space (`performWindowDrag`,
+        // ChromeBarView). Left on, it moved the window from *anywhere* in the
+        // titlebar, tabs included, whatever the view under the pointer said:
+        // a tab drag carried the whole window along under the cursor, so the
+        // tab never moved relative to anything. This is how Electron apps, the
+        // ChatGPT app among them, give their titlebars draggable tabs. Moves
+        // started this way still snap, tile and cross Spaces like any other.
+        window.isMovable = false
+        window.titleVisibility = .hidden
+        let toolbar = NSToolbar(identifier: "wortel.main")
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
+        // The rows are as tall as the titlebar the system made, measured rather
+        // than assumed: it's the system's number and differs across releases.
+        window.contentView?.superview?.layoutSubtreeIfNeeded()
+        let titlebarHeight = window.frame.height - window.contentLayoutRect.height
+        if titlebarHeight > 20 { Chrome.titlebarHeight = titlebarHeight }
+        let titleBars = TitleBarController(manager: manager, git: gitPanel, processes: processes)
+        self.titleBars = titleBars
         let split = MainSplitViewController(
-            runtime: runtime, manager: manager, git: gitPanel, files: fileTree)
+            runtime: runtime, manager: manager, git: gitPanel, files: fileTree,
+            titleBars: titleBars, previewTabs: previewTabs)
         self.splitController = split
-        window.contentViewController = split
-        installToolbar(on: window, splitView: split.splitView)
+        window.contentViewController = BackdropController(child: split)
+        titleBars.start()
         window.setFrameAutosaveName("main")
         if window.frame.height < 320 {
             window.setContentSize(NSSize(width: 1100, height: 700))
@@ -143,7 +167,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.openPreview(url)
         }
         gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
-            self?.previewWindows.open(url, diff: diff, hasChanges: hasChanges)
+            self?.presentPreview(url, diff: diff, hasChanges: hasChanges)
+        }
+        previewTabs.onOpenFile = { [weak self] url in
+            self?.openPreview(url)
+        }
+        // A tab becoming a window: the window opens and the tab goes.
+        previewTabs.onOpenInWindow = { [weak self] url, diff, hasChanges in
+            guard let self else { return }
+            self.previewWindows.open(url, diff: diff, hasChanges: hasChanges)
+            self.gitPanel.close(.file(url.path))
+        }
+        // Browsers keep where they are on their session, so a relaunch or a
+        // reopen goes back there.
+        BrowserTabs.shared.address = { [weak self] id in
+            self?.manager.sessions.lazy.compactMap { $0.browserAddresses[id] }.first
+                .flatMap(URL.init(string:))
+        }
+        BrowserTabs.shared.onNavigate = { [weak self] id, url in
+            guard let self, url.scheme != "about",
+                  let session = self.manager.sessions.first(where: {
+                      $0.workspace.region(of: .browser(id)) != nil
+                  }),
+                  session.browserAddresses[id] != url.absoluteString else { return }
+            session.browserAddresses[id] = url.absoluteString
+            self.manager.sessionStateChanged()
+        }
+        // What a browser's address field suggests: every server on this Mac,
+        // the selected session's first, the others by their session's name.
+        BrowserTabs.shared.servers = { [weak self] in
+            guard let self else { return [] }
+            let selected = self.manager.selectedID
+            let snapshot = self.processes.snapshot
+            var seen = Set<URL>()
+            return (snapshot.jobs + snapshot.orphans)
+                .filter { $0.localURL != nil }
+                .sorted { ($0.sessionID == selected ? 0 : 1) < ($1.sessionID == selected ? 0 : 1) }
+                .compactMap { job in
+                    guard let url = job.localURL, seen.insert(url).inserted else { return nil }
+                    let session = job.sessionID == selected ? nil
+                        : self.manager.sessions.first { $0.id == job.sessionID }.map { SessionName.leaf(of: $0.name) }
+                    return BrowserServer(url: url, label: job.label, session: session)
+                }
+        }
+        gitPanel.onTabClosed = { [weak self] tab in
+            if let path = tab.filePath { self?.releaseFile(path) }
+            if let id = tab.browserID { BrowserTabs.shared.forget(id) }
+        }
+        // A closed session's pages and documents go with it: a web view keeps
+        // running its scripts and its dev server's socket, and a document
+        // keeps watching its file, for as long as anything holds them.
+        manager.onSessionClosed = { [weak self] session in
+            let workspace = session.workspace
+            let tabs = workspace.main + workspace.side + workspace.bottom + workspace.closed.map(\.tab)
+            for tab in tabs {
+                if let id = tab.browserID { BrowserTabs.shared.forget(id) }
+                if let path = tab.filePath { self?.releaseFile(path) }
+            }
         }
         // A link in a rendered README is a fifth way to open a file, and it goes
         // through the same opener as the other four.
@@ -189,6 +269,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Panel visibility and the chosen pane are session state, so a toggle has
         // to reach sessions.json.
         gitPanel.onStateChanged = { [weak manager] in manager?.sessionStateChanged() }
+        // The side column's tabs: a side shell that exits takes its tab with it,
+        // closing one that still runs something asks first, and the tab that had
+        // the keyboard hands it back to the session's own terminal.
+        manager.onSideTerminalExited = { [weak self] session, id in
+            self?.gitPanel.close(.terminal(id), in: session)
+        }
+        gitPanel.confirmCloseTerminal = { [weak self] count, proceed in
+            self?.confirmCloseSideTerminal(count: count, proceed)
+        }
+        SurfaceView.onKeyboardActivity = { [weak self] surface in
+            self?.noteKeyboardActivity(in: surface)
+        }
+        // A click in an area puts you in it, whatever it lands on: a web page,
+        // a pane's list or the file tree never take part in the terminals'
+        // typing reports, and without this ⌘W after clicking into a browser in
+        // the column went to wherever you'd last typed.
+        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            guard let self, event.window === self.window,
+                  let region = self.splitController.region(at: event.locationInWindow) else { return event }
+            if self.gitPanel.lastRegion != region { self.gitPanel.lastRegion = region }
+            return event
+        }
+        gitPanel.onClearKeyboard = { [weak self] in
+            guard let window = self?.window, window.firstResponder is SurfaceView else { return }
+            window.makeFirstResponder(nil)
+        }
+        gitPanel.onFocusMainTerminal = { [weak self] in
+            // Not while a tab in the main area's row covers the terminal.
+            guard let self, self.gitPanel.activeMainTab == nil,
+                  let view = self.manager.selected?.surfaceView else { return }
+            self.window?.makeFirstResponder(view)
+        }
 
         // **Before any surface exists.** `GhosttyRuntime.keeper` is a lazy
         // static, and touching it for the first time from inside surface
@@ -246,26 +358,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// When this launch started, for the uptime bucket on quit.
     private let launchedAt = Date()
 
-    /// The toolbar is retained here because NSWindow doesn't own its delegate.
-    private var toolbarDelegate: MainToolbarDelegate?
-
-    private func installToolbar(on window: NSWindow, splitView: NSSplitView) {
-        let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel,
-                                           processes: processes)
-        delegate.selectedSession = { [weak self] in self?.manager.selectedID }
-        toolbarDelegate = delegate
-        let toolbar = NSToolbar(identifier: "wortel.main")
-        toolbar.delegate = delegate
-        toolbar.displayMode = .iconOnly
-        toolbar.allowsUserCustomization = false
-        // The running pill sits in the middle of the window, where Xcode keeps
-        // its activity view: status, not a control among controls.
-        toolbar.centeredItemIdentifiers = [.runningJobs]
-        // The delegate inserts and removes the branch item as the panel opens and
-        // closes, so it needs the toolbar it's the delegate of.
-        delegate.toolbar = toolbar
-        window.toolbar = toolbar
-    }
+    /// The window's titlebar rows and what keeps them current.
+    private var titleBars: TitleBarController?
 
     /// The window title used to come from SwiftUI's .navigationTitle, which only
     /// exists inside a NavigationSplitView — gone with the AppKit shell, so drive
@@ -275,7 +369,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func observeWindowTitle() {
         withObservationTracking {
             _ = manager.selected?.name
-            _ = manager.selected?.abbreviatedPath
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -286,9 +379,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         applyWindowTitle()
     }
 
+    /// The session's name and nothing else. The path used to sit under it as a
+    /// subtitle, which changed on every `cd` and made the titlebar the one piece
+    /// of chrome that moved while you typed; the prompt already says where you
+    /// are.
     private func applyWindowTitle() {
         window?.title = manager.selected?.name ?? "Wortel"
-        window?.subtitle = manager.selected?.abbreviatedPath ?? ""
     }
 
     // MARK: - Show/hide from anywhere (⌃⌥⌘., see GlobalHotkey)
@@ -524,7 +620,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // file, while the window is opened with the path you actually clicked so
         // it can tell you when that was an alias.
         let url = requested.resolvingSymlinksInPath().standardizedFileURL
-        // Already open: focus it and do no git work whatsoever.
+        // ⌥ read now, at the click: the open can land after a git lookup, and
+        // by then there's no event to ask.
+        let inMain = Self.optionClicked
+        // Already open, in a tab or a window: bring it forward and do no git
+        // work whatsoever.
+        if manager.selected?.workspace.region(of: .file(url.path)) != nil {
+            gitPanel.openAtHome(.file(url.path), inMain: inMain)
+            return
+        }
         if previewWindows.focus(url) { return }
 
         // The panel already knows this repo and its status — free, and it also
@@ -533,12 +637,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let change = repo.status.unstagedChanges.first { $0.path == relative }
                 ?? repo.status.stagedChanges.first { $0.path == relative }
             if let change {
-                previewWindows.open(requested, diff: .change(root: repo.root, change: change),
-                                    hasChanges: true)
+                presentPreview(requested, diff: .change(root: repo.root, change: change),
+                               hasChanges: true, inMain: inMain)
             } else {
-                previewWindows.open(
+                presentPreview(
                     requested,
-                    diff: .workingTree(root: repo.root, path: relative, untracked: false))
+                    diff: .workingTree(root: repo.root, path: relative, untracked: false),
+                    inMain: inMain)
             }
             return
         }
@@ -554,18 +659,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 repoRootCache[directory] = root
             }
             guard let root, let relative = Self.relativePath(of: url, in: root) else {
-                previewWindows.open(requested)
+                presentPreview(requested, inMain: inMain)
                 return
             }
             // One line of porcelain, not a patch: it decides whether the window
             // opens on the diff or on the file, and whether that diff is against
             // HEAD or against nothing at all.
             let state = await GitService.workingTreeState(root: root, path: relative)
-            previewWindows.open(
+            presentPreview(
                 requested,
                 diff: .workingTree(root: root, path: relative, untracked: state == .untracked),
-                hasChanges: state.hasChanges)
+                hasChanges: state.hasChanges, inMain: inMain)
         }
+    }
+
+    /// Whether the click (or key) doing this held ⌥: open in the main area.
+    private static var optionClicked: Bool {
+        NSApp.currentEvent?.modifierFlags.contains(.option) ?? false
+    }
+
+    /// Show a file: as a tab beside the session (the column, or where it
+    /// already is), which is where the preview window's job, "look at what an
+    /// agent just did, and get back", is done with the least travel.
+    ///
+    /// ⌥-click puts it in the main area this once. Read off the event that's
+    /// opening it, so every place a file opens from (the changes list,
+    /// History, the file tree, a path in a terminal, a link in Markdown) gets
+    /// it without each passing it along.
+    private func presentPreview(_ url: URL, diff: PreviewDiffSource = .none,
+                                hasChanges: Bool = false, inMain: Bool? = nil) {
+        gitPanel.openAtHome(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges),
+                            inMain: inMain ?? Self.optionClicked)
     }
 
     private static func relativePath(of url: URL, in root: String) -> String? {
@@ -617,14 +741,250 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// ⌘W closes **what you are looking at**. With a preview window key that is
     /// the preview — closing a session from a file window is destructive, and no
-    /// Mac app does that with ⌘W. The menu item says "Close Session" because
-    /// that is what it does in the window it belongs to.
+    /// Mac app does that with ⌘W. In the main window it closes the tab in
+    /// front of the area you're in, and the session only when that's the
+    /// session's own terminal: the menu item says "Close Tab".
     @objc func closeSession(_ sender: Any?) {
         if let key = NSApp.keyWindow, key !== window {
             key.performClose(sender)
             return
         }
+        // ⌘W closes what's in front of the area you're in (the one you last
+        // clicked, typed, picked a tab or ⌘]-ed into): a terminal, a browser,
+        // a file, a pane. Only the session's own terminal in front of the
+        // main area means the session, as closing a terminal's last tab does.
+        if let tab = gitPanel.activeTab(in: focusedRegion()), tab != .session {
+            gitPanel.requestClose(tab)
+            return
+        }
         manager.requestCloseSelected()
+    }
+
+    /// ⌘⌥S and the titlebar's sidebar buttons. A command of Wortel's own
+    /// rather than AppKit's `toggleSidebar:`, because that one is answered by
+    /// whatever in the responder chain implements it first, and SwiftUI's
+    /// hosting views (the terminal sits in one) do, for SwiftUI's sidebars:
+    /// the command stopped there and never reached the window's split. Nothing
+    /// else implements this name, so it arrives here and goes straight to it.
+    @objc func toggleSessionSidebar(_ sender: Any?) {
+        splitController.toggleSidebar(sender)
+    }
+
+    // MARK: - Side column tabs
+
+    /// The area you're working in: the last one you clicked or typed in,
+    /// picked a tab in, or moved to (`GitPanelModel.lastRegion`), if it's
+    /// still showing. Not
+    /// the first responder alone: a file tab never takes the keyboard, so after
+    /// picking one in the column the keyboard is still in the main terminal,
+    /// and "move this tab" would have moved the wrong one.
+    private func focusedRegion() -> TabRegion {
+        switch gitPanel.lastRegion {
+        case .side: return gitPanel.isVisible ? .side : .main
+        case .bottom: return gitPanel.bottomVisible ? .bottom : .main
+        case .main: return .main
+        }
+    }
+
+    /// Typing in, or focusing, a terminal puts you in its area.
+    private func noteKeyboardActivity(in surface: SurfaceView) {
+        guard let session = manager.selected else { return }
+        let region: TabRegion
+        if surface === session.surfaceView {
+            region = .main
+        } else if let id = session.sideSurfaces.first(where: { $0.value === surface })?.key,
+                  let row = session.workspace.region(of: .terminal(id)) {
+            region = row
+        } else {
+            return
+        }
+        if gitPanel.lastRegion != region { gitPanel.lastRegion = region }
+    }
+
+    /// The areas in the order ⌘] walks them: left to right as they sit, then
+    /// the strip.
+    private var visibleRegions: [TabRegion] {
+        var regions: [TabRegion] = [.main]
+        if gitPanel.isVisible {
+            gitPanel.columnLeading ? regions.insert(.side, at: 0) : regions.append(.side)
+        }
+        if gitPanel.bottomVisible { regions.append(.bottom) }
+        return regions
+    }
+
+    @objc func focusNextArea(_ sender: Any?) { stepArea(1) }
+    @objc func focusPreviousArea(_ sender: Any?) { stepArea(-1) }
+
+    private func stepArea(_ offset: Int) {
+        let regions = visibleRegions
+        guard regions.count > 1, let index = regions.firstIndex(of: focusedRegion()) else { return }
+        gitPanel.focus(regions[(index + offset + regions.count) % regions.count])
+    }
+
+    @objc func newTerminalHere(_ sender: Any?) {
+        focusMainWindow()
+        switch focusedRegion() {
+        case .main: gitPanel.openMainTerminal()
+        case .side: gitPanel.openTerminal()
+        case .bottom: gitPanel.openBottomTerminal()
+        }
+    }
+
+    /// ⇧⌘L: a new browser in the row you're in.
+    @objc func newBrowserHere(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.openBrowser(at: nil, in: focusedRegion())
+    }
+
+    /// ⌘L: the address field of the browser in front, the area you're in
+    /// first.
+    @objc func openBrowserLocation(_ sender: Any?) {
+        focusMainWindow()
+        guard let id = frontBrowser() else { return }
+        // The keyboard is going there, so that's the area you're in: ⌘W next
+        // closes that browser, not what was in front where you were.
+        if let region = manager.selected?.workspace.region(of: .browser(id)) { gitPanel.lastRegion = region }
+        BrowserTabs.shared.page(for: id).focusAddress()
+    }
+
+    private func frontBrowser() -> UUID? {
+        let regions: [TabRegion] = [focusedRegion(), .side, .main, .bottom]
+        let visible = regions.filter { region in
+            switch region {
+            case .main: return true
+            case .side: return gitPanel.isVisible
+            case .bottom: return gitPanel.bottomVisible
+            }
+        }
+        return visible.lazy.compactMap { self.gitPanel.activeTab(in: $0)?.browserID }.first
+    }
+
+    @objc func newBottomTerminal(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.openBottomTerminal()
+    }
+
+    @objc func selectTabByNumber(_ sender: NSMenuItem) {
+        gitPanel.selectTab(number: sender.tag, in: focusedRegion())
+    }
+
+    @objc func showHistory(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.activate(.history, via: .shortcut)
+    }
+
+    @objc func closeWholeSession(_ sender: Any?) {
+        manager.requestCloseSelected()
+    }
+
+    /// Move the tab in front of the row you're in to the area in `direction`.
+    /// Sideways crosses between the main area and the column, whichever side
+    /// the column is on; down puts a terminal in the strip, up brings it back
+    /// to the main area. The session's own terminal moving sideways swaps sides.
+    private func moveFocusedTab(_ direction: NSRectEdge) {
+        let from = focusedRegion()
+        guard let tab = gitPanel.activeTab(in: from) else { return }
+        let columnOnLeft = gitPanel.columnLeading
+        var target: TabRegion?
+        switch (from, direction) {
+        case (.main, .minX): target = columnOnLeft ? .side : nil
+        case (.main, .maxX): target = columnOnLeft ? nil : .side
+        case (.side, .minX): target = columnOnLeft ? nil : .main
+        case (.side, .maxX): target = columnOnLeft ? .main : nil
+        case (.main, .minY), (.side, .minY): target = .bottom
+        case (.bottom, .maxY): target = .main
+        default: target = nil
+        }
+        guard let target else { return }
+        if tab == .session {
+            if target == .side { gitPanel.setColumnLeading(!columnOnLeft) }
+            return
+        }
+        gitPanel.move(tab, to: target, at: .max)
+    }
+
+    @objc func moveTabLeft(_ sender: Any?) { moveFocusedTab(.minX) }
+    @objc func moveTabRight(_ sender: Any?) { moveFocusedTab(.maxX) }
+    @objc func moveTabDown(_ sender: Any?) { moveFocusedTab(.minY) }
+    @objc func moveTabUp(_ sender: Any?) { moveFocusedTab(.maxY) }
+
+    /// Let a file's document go, unless another session still has it open:
+    /// documents are one per file for the whole app, tabs are per session.
+    private func releaseFile(_ path: String) {
+        guard !manager.sessions.contains(where: { $0.workspace.region(of: .file(path)) != nil }) else { return }
+        previewTabs.forget(path)
+    }
+
+    /// ⌘F with a file tab showing: that file's find bar, as a preview window's.
+    /// The tab in front of the area you're in first, then any area's. With no
+    /// searchable file on screen the item is disabled and ⌘F goes on to the
+    /// terminal, as it always has.
+    @objc func showPreviewFind(_ sender: Any?) {
+        guard let path = findableFileTab() else { return }
+        // As ⌘L: the find bar has the keyboard, so its area is the one you're in.
+        if let region = manager.selected?.workspace.region(of: .file(path)) { gitPanel.lastRegion = region }
+        previewTabs.document(for: path).find.isPresented = true
+    }
+
+    private func findableFileTab() -> String? {
+        let fronts = [focusedRegion(), .side, .main, .bottom].map { gitPanel.activeTab(in: $0) }
+        for case let path? in fronts.map({ $0?.filePath }) {
+            let document = previewTabs.document(for: path).document
+            if document.mode != .rendered, !document.isBinary { return path }
+        }
+        return nil
+    }
+
+    @objc func toggleSideColumn(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.toggle()
+    }
+
+    @objc func toggleBottomStrip(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.toggleBottom()
+    }
+
+    @objc func toggleColumnSide(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.setColumnLeading(!gitPanel.columnLeading)
+    }
+
+    @objc func reopenClosedTab(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.reopenClosedTab(in: focusedRegion())
+    }
+
+    @objc func newSideTerminal(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.openTerminal()
+    }
+
+    @objc func selectNextSideTab(_ sender: Any?) {
+        gitPanel.selectAdjacent(1, in: focusedRegion())
+    }
+
+    @objc func selectPreviousSideTab(_ sender: Any?) {
+        gitPanel.selectAdjacent(-1, in: focusedRegion())
+    }
+
+    /// Ask before a side terminal takes a running program down with it: the
+    /// dev server you opened it for is exactly what a stray ⌘W would kill.
+    private func confirmCloseSideTerminal(count: Int, _ proceed: @escaping () -> Void) {
+        guard let window else { return proceed() }
+        let alert = NSAlert()
+        if count == 1 {
+            alert.messageText = "Close this terminal?"
+            alert.informativeText = "A program is still running in it, and closing the tab stops it."
+        } else {
+            alert.messageText = "Close \(count) terminals?"
+            alert.informativeText = "Programs are still running in them, and closing the tabs stops them."
+        }
+        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { proceed() }
+        }
     }
 
     @objc func renameSession(_ sender: Any?) {
@@ -710,12 +1070,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // screen — with Files up, ⌘⌥G swaps rather than closes, so calling it
         // "Hide Source Control" would describe the wrong action.
         if menuItem.action == #selector(toggleSourceControl(_:)) {
-            let showing = gitPanel.isVisible && gitPanel.pane.isSourceControl
+            // In front anywhere, as ⌘⌥G toggles it wherever it is.
+            let showing = [TabRegion.main, .side, .bottom]
+                .contains { gitPanel.activeTab(in: $0)?.pane?.isSourceControl == true }
             menuItem.title = showing ? "Hide Source Control" : "Show Source Control"
             return true
         }
+        if menuItem.action == #selector(toggleBottomStrip(_:)) {
+            menuItem.title = gitPanel.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip"
+            return true
+        }
+        if menuItem.action == #selector(showPreviewFind(_:)) {
+            return findableFileTab() != nil
+        }
+        if menuItem.action == #selector(openBrowserLocation(_:)) {
+            return frontBrowser() != nil
+        }
+        if menuItem.action == #selector(reopenClosedTab(_:)) {
+            return gitPanel.canReopenClosedTab
+        }
+        if menuItem.action == #selector(toggleColumnSide(_:)) {
+            menuItem.title = gitPanel.columnLeading
+                ? "Move Side Column to the Right" : "Move Side Column to the Left"
+            return true
+        }
+        if menuItem.action == #selector(toggleSideColumn(_:)) {
+            menuItem.title = gitPanel.isVisible ? "Hide Side Column" : "Show Side Column"
+            return true
+        }
+        if menuItem.action == #selector(selectNextSideTab(_:))
+            || menuItem.action == #selector(selectPreviousSideTab(_:)) {
+            return gitPanel.tabs(in: focusedRegion()).count > 1
+        }
+        if menuItem.action == #selector(focusNextArea(_:))
+            || menuItem.action == #selector(focusPreviousArea(_:)) {
+            return visibleRegions.count > 1
+        }
         if menuItem.action == #selector(toggleFileTree(_:)) {
-            let showing = gitPanel.isVisible && gitPanel.pane == .files
+            let showing = [TabRegion.main, .side, .bottom]
+                .contains { gitPanel.activeTab(in: $0) == .pane(.files) }
             menuItem.title = showing ? "Hide Files" : "Show Files"
             return true
         }

@@ -159,7 +159,7 @@ struct FileTreePanel: View {
     // MARK: - Keyboard
 
     private func applyFocusRequest(_ req: Int) {
-        guard req != lastHandledFocusRequest else { return }
+        guard req != 0, req != lastHandledFocusRequest else { return }
         lastHandledFocusRequest = req
         if model.selectedID == nil { model.selectAdjacent(1) }
         // Next runloop turn: the focusable list is reliably installed by then,

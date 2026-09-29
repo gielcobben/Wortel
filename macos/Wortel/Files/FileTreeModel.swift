@@ -652,7 +652,7 @@ final class FileTreeModel {
     /// re-listing for a pane nobody is looking at is work the pane exists to
     /// avoid.
     private var isShowing: Bool {
-        git?.isVisible == true && git?.pane == .files
+        git?.showsFiles == true
     }
 
     // MARK: - Rows

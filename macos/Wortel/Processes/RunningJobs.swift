@@ -15,6 +15,12 @@ struct SessionProcessRoot: Equatable, Sendable {
     /// the same table every scan reads, and is never older than the rows it
     /// guards.
     let agentName: String?
+    /// `WORTEL_SESSION_ID`s that mean this session besides its own id: a
+    /// side terminal's shell carries its tab's id (which keys its own agent
+    /// marker), and what it starts carries that too. On the session's own
+    /// root, also the terminals restored but not shown yet, which have a live
+    /// shell and no view to report it.
+    var tags: [UUID] = []
 }
 
 /// The per-process facts that cost a syscall each, behind closures.
@@ -236,7 +242,8 @@ struct RunningJobsSnapshot: Equatable {
 
     var isEmpty: Bool { jobs.isEmpty && orphans.isEmpty }
 
-    /// What the toolbar pill says, at a glance and without opening anything.
+    /// What the titlebar's running button says, at a glance and without
+    /// opening anything.
     ///
     /// The server is the headline because the server is what you come looking
     /// for: one of them is named (`bun dev`), several are counted, and their
@@ -262,7 +269,7 @@ struct RunningJobsSnapshot: Equatable {
     }
 }
 
-/// The toolbar pill's content. See `RunningJobsSnapshot.status`.
+/// The titlebar's running button's content. See `RunningJobsSnapshot.status`.
 struct RunningStatus: Equatable {
     /// Two addresses, then a count: past that the pill is a sentence, and the
     /// popover is one click away.
@@ -516,7 +523,14 @@ enum RunningJobs {
         // `Xcode.app/…/Python.app`, so excluding bundles hid a dev app and a
         // `python3 -m http.server` alike. An editor that really is serving
         // something (a Live Server on `:5500`) is a server too.
-        let openSessions = Set(roots.map(\.sessionID))
+        // Every tag a live shell hands down, to the session it belongs to: a
+        // side terminal's is its tab's id, not the session's.
+        var sessionOfTag: [UUID: UUID] = [:]
+        for root in roots {
+            sessionOfTag[root.sessionID] = root.sessionID
+            for tag in root.tags { sessionOfTag[tag] = root.sessionID }
+        }
+        let openSessions = Set(sessionOfTag.keys)
         // The session each shell's terminal session belongs to. `getsid` is the
         // second half of the answer, and the half that needs no environment:
         // a terminal session changes only when something calls `setsid`, so
@@ -534,7 +548,7 @@ enum RunningJobs {
                 guard let members = membersOf[pgid],
                       members.allSatisfy({ $0.uid == uid }) else { continue }
                 let tagged = members.lazy.compactMap({ details.sessionTag($0) })
-                    .first(where: { openSessions.contains($0) })
+                    .compactMap({ sessionOfTag[$0] }).first
                 // The terminal session is only asked when the environment did
                 // not answer: `??` does not evaluate its right side otherwise,
                 // and this runs for every group no session's tree holds.

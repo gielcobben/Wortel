@@ -183,11 +183,17 @@ the branch for a worktree session). Worktree sessions are named for their task
 and carry the branch on a second row line. See `docs/session-naming.md` for
 the reasoning, the privacy scoping of the tap, and what the other tools do.
 
-**UI shell** (`Wortel/UI/`) — `ContentView` is a SwiftUI `NavigationSplitView`
-(sidebar list + terminal detail) hosted inside an AppKit window
-(`AppDelegate`). Selection is drawn as a custom accent "pill" rather than
-`List(selection:)` because the sidebar never holds keyboard focus (the terminal
-does). `TerminalHostViewController` is the key trick: it keeps **every**
+**UI shell** (`Wortel/UI/`) — three AppKit split panes (`MainSplitViewController`)
+hosting SwiftUI content, in an AppKit window (`AppDelegate`). The titlebar is
+Wortel's own (`TitleBars.swift`): the window keeps an *empty* toolbar only for
+its height and the centred traffic lights, the titlebar is transparent, and each
+pane draws its row of a flat grey band (the ChatGPT app's look). The reason is
+that on macOS 26+ every toolbar item, custom views included, sits on a Liquid
+Glass capsule, and AppKit has no switch to stop that. The window's vibrancy is
+one behind-window material under everything (`BackdropController`); only the
+pages (terminal, column) are opaque. Sidebar selection is a custom neutral
+pill rather than `List(selection:)` because the sidebar never holds keyboard
+focus (the terminal does). `TerminalHostViewController` is the key trick: it keeps **every**
 session's `SurfaceView` in the hierarchy and switches via
 `isHidden`/occlusion/first-responder — never `removeFromSuperview`, never a
 rebuild — so switching back is instant with no flash. `updateNSViewController`
@@ -288,21 +294,78 @@ you've never picked a pane on defer to `GitPanelModel.defaultPane`, the last pan
 chosen anywhere, so a new session inherits your habit instead of snapping to
 Changes. `lastSourceControlPane` is tracked separately so ⌘⌥G coming back from
 Files lands on History if that's where you were. One rule drives all three
-openers — the toolbar segments, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
-hidden → open on that pane, showing another → swap, showing that one → close.
+openers — the View menu, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
+hidden → open on that pane, showing another → swap, showing that one → close. A
+pane in the main row or the strip toggles there instead.
 
-**How wide** the column is, on the other hand, is per *occupant* rather than per
-session — `MainSplitViewController.InspectorOccupant` (the three panes plus the
-Markdown preview, which is a view of no pane at all). A tree of short names, a
-diff with a gutter and a rendered page want visibly different widths, and one
-remembered width for all of them means every switch is followed by a drag back.
-Each occupant carries its own default and its own `minimumThickness`, and
-`InspectorWidthStore` persists what you drag it to. Two rules keep that honest:
+**How wide** the column is, is per *session* and the same for every tab in it
+(`MainSplitViewController.ColumnWidth`, `Session.sideColumnWidth`): a width
+that changed with the tab in front made every tab switch a relayout of the
+terminal beside it. A session that has never had its divider dragged uses the
+last width chosen anywhere. Two rules keep that honest:
 only a *divider* drag is a preference (a window resize squeezing the terminal to
 its floor is not), and the width is committed once the drag settles, because
 dragging to the edge is how you close the panel and the last width before it goes
 is the minimum. The split view's `autosaveName` still carries the sidebar; the
 inspector's width it saves but does not get to decide (see `viewDidLayout`).
+
+**Tabs and the workspace** (`WorkspaceTabs`, `SideTab`, `GitPanelModel`,
+`Wortel/UI/SideTabStrip.swift`, `MainArea.swift`, `BottomStrip.swift`) — each
+session has three places for tabs, modelled on the ChatGPT app's bounded layout
+(a fixed set of regions, never a free grid of splits):
+
+- **the main area's row**: the session's own terminal (`SideTab.session`, by
+  the session's name) plus whatever is opened or dragged there;
+- **the side column's row**: Changes, History, Files, side terminals;
+- **the bottom strip** under the main area (⌘J).
+
+Besides panes and terminals, a tab can be a previewed file (`SideTab.file`) or
+a browser (`SideTab.browser(id)`, `Wortel/Browser/`), opened blank from "+" or
+on a server from the running-jobs popover. A browser's address lives on its
+session (`browserAddresses`, persisted) and its live web view in
+`BrowserTabs`, not in the view, so moving the tab doesn't reload it.
+
+A file or browser opened without saying where goes where you last *moved* one
+of its kind in that session (`WorkspaceTabs.home(for:)`, the column until
+then); ⌥-click puts it in the main area once without teaching that.
+
+A tab is in exactly one row; the one in front fills its area. Any tab goes in
+any row, except the session's terminal, which never leaves the
+main row and can't be closed: dragged onto the column it **swaps sides** instead,
+as ChatGPT's chat does. Opening a tab shows its row, closing the last hides the
+column or strip (instantly), hiding keeps the tabs, ⌘⇧T reopens the last closed
+in the row you're in. All of those rules live in **`WorkspaceTabs`**, a pure value
+with its own tests (`WorkspaceTabsTests`); `Session.workspace` reads the
+session's individually-observed fields into it and writes back only what
+changed, and `GitPanelModel` wraps each change with the side effects (the pane
+shown, the keyboard, saving). Change a rule there, not in the model.
+
+Things that look like detours and aren't:
+
+- **Terminals are never rebuilt when they move.** Side terminals (`sideSurfaces`
+  on the session, keyed by tab id, which is also their keeper id so they
+  survive a relaunch) live in always-mounted hosts (`SideTerminalHostController`)
+  that hide rather than remove; moving a terminal between rows is `addSubview`
+  into the other host. The session's own terminal stays mounted in the main
+  area and a pane in front of it is a cover that takes the keyboard away from it.
+- **The titlebar tabs are NSControls and the window is `isMovable = false`.** The
+  window server moves a window from any press in a transparent titlebar that
+  isn't on a control, whatever `mouseDownCanMoveWindow` says; the rows start
+  window drags themselves (`performWindowDrag`) from their empty space.
+- **Sidebar commands are Wortel's own** (`toggleSessionSidebar:`), not AppKit's
+  `toggleSidebar:`: SwiftUI's hosting views answer that one on its way up the
+  responder chain and swallow it.
+- **Terminals don't resize during pane animations** (`Motion.pane`,
+  `SurfaceView.holdResizes`): one resize when it lands instead of one a frame,
+  each of which made the program inside redraw. Collapsing panes never resize a
+  terminal below 40×20pt for the same reason.
+
+Width: the column's is per session and the same for every tab, and it may grow
+until the terminal has 320pt; the strip's height is app-wide. Tab drags are
+resolved by `TabDragController` against the rows and a few drop zones (the
+main area, the column, the strip, the far edge for swapping), each only for
+tabs allowed there. Side terminals' processes count as the session's
+(`processRoots`); agent tracking, naming and resume follow the main shell only.
 
 **Files pane** (`Wortel/Files/`) — the project as a tree, rooted at the repo
 work-tree root (the session's cwd outside a repo, which therefore re-roots as you
@@ -363,10 +426,13 @@ with two right columns gets cramped), so opening a `.md` from the tree hides the
 tree until the preview is closed or the Files segment reclaims it — the same rule
 as clicking a `.md` path in the terminal.
 
-**Preview windows** (`Wortel/Preview/`) — double-click a file (the tree, a
-Changes row, a file in a commit) or ⌘-click a path in the terminal and it opens
-in its own window: Source, Diff or Rendered Markdown, plus Quick Look for
-anything that isn't text. See `docs/file-preview.md` for the decisions; the three
+**Previews** (`Wortel/Preview/`) — double-click a file (the tree, a Changes
+row, a file in a commit) or ⌘-click a path in the terminal and it opens as a
+**tab** (`SideTab.file`, `PreviewTabs`) in the column, or comes forward where
+it already is: Source, Diff or Rendered Markdown, plus Quick Look for anything
+that isn't text. The tab hosts the same document and view as a window, and its
+header's "Open in Window" turns it into one. One tab per file; no replaceable
+preview tab (tried in the window era and removed, see the doc). See `docs/file-preview.md` for the decisions; the three
 that shape the code are that **`DiffView` renders both Source and Diff** (the file
 is handed over as an all-context diff, so they match by construction and the diff
 highlighter needs no new code), that **loading is `MarkdownPreviewModel`'s old
@@ -433,9 +499,11 @@ the same thing by all three.
   than one you have to audit. Adding a `String` parameter to any event is the
   change that breaks the promise on wortel.sh/privacy; if a question needs a
   value that is not a small closed set, the answer is a bucket or no event.
-- Deliberately **feature-minimal**: no tabs, no splits, no inspector, no
-  settings UI, no user-config loading. Returning `false`/doing nothing for those
-  is intentional, not a gap to fill.
+- Deliberately **feature-minimal**: no settings UI, no user-config loading. The
+  *terminal* has no tabs and no splits of its own: sessions are Wortel's tabs,
+  and libghostty's tab/split actions still return `false`. The one split is the
+  side column, and its tabs are Wortel's (see **Tabs and the workspace**), not
+  libghostty's.
 - Resources are shipped as **folder references** (`Resources/terminfo`,
   `Resources/ghostty`) landing in `Contents/Resources/`; the Zig core locates
   them via the `terminfo/78/xterm-ghostty` sentinel. Don't restructure those

@@ -219,6 +219,12 @@ targets:
         NSHumanReadableCopyright: "© Giel Cobben"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSSupportsSuddenTermination: false
+        # Browser tabs load what a session serves (http://localhost:5173) and
+        # whatever else is typed, which App Transport Security would otherwise
+        # refuse for being plain http.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoadsInWebContent: true
         # Sparkle auto-update feed (served from the wortel-updates R2 bucket).
         SUFeedURL: https://updates.wortel.sh/appcast.xml
         # EdDSA public key — private half lives in the login Keychain (shared
@@ -358,6 +364,10 @@ targets:
       # every call site and crashed the app when it went unmet. A menu item copy
       # needs no window, so it's pinned here.
       - path: Wortel/UI/ClosureMenuItem.swift
+      - path: Wortel/UI/Chrome.swift
+      - path: Wortel/UI/SideTabStrip.swift
+      - path: Wortel/UI/TabHoverCard.swift
+      - path: Wortel/Browser/BrowserAddress.swift
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/GitRepoModel.swift
       - path: Wortel/Git/GitRepoWatcher.swift
@@ -370,6 +380,7 @@ targets:
       # and it's plain string handling (Foundation only) that `Session` — which
       # does drag in AppKit — only delegates to.
       - path: Wortel/Sessions/SessionName.swift
+      - path: Wortel/Sessions/WorkspaceTabs.swift
       # And once more: a folder's *directory* is path-string handling with the
       # same silent failure mode as the name split above. A `hasPrefix` that
       # forgets the separator hands one project's directory to the sibling whose

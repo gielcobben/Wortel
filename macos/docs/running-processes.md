@@ -244,7 +244,7 @@ The agent and the session shell are never killable, at any layer.
 | `Wortel/Processes/ProcessOwnersStore.swift` | Which session started which process, on disk, so a detached server is still its session's after a relaunch. |
 | `scripts/verify-running-jobs.py` | The live check: real servers, in a real login shell, in every shape agents and people start them in, scanned by this code. |
 | `Wortel/Processes/ProcessMonitor.swift` | Cadence, the published snapshot, the ownership map, and the kill. |
-| `Wortel/UI/MainToolbar.swift` | The status pill, centred in the toolbar and about the selected session only: `bun dev :3000`, or `2 servers :3000 :5173`, from `RunningJobsSnapshot.status`. |
+| `Wortel/UI/TitleBars.swift` | `RunningButton`, in the main area's titlebar row and about the selected session only: a dot (green while something serves), and the popover's list behind it, from `RunningJobsSnapshot.status`. |
 | `Wortel/UI/RunningJobsPopover.swift` | The popover: that session's jobs as one flat list, hover Copy and Stop per row. |
 
 The split exists so `RunningJobs` can be handed a fixture: the syscall layer is

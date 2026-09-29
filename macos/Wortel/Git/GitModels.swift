@@ -250,10 +250,9 @@ struct CommitFileChange: Identifiable, Hashable {
     var directory: String { (path as NSString).deletingLastPathComponent }
 }
 
-/// Which pane the trailing inspector shows. Held per session by GitPanelModel
-/// (see `setPane`), and driven by the toolbar's segmented control — whose
-/// segments, tooltips and overflow entries are all built from `allCases`, so a
-/// case added here appears in the toolbar without touching it.
+/// The panes a tab can be: Changes, History, Files. The column's "+" menu
+/// lists them from `allCases`, so a case added here appears there without
+/// touching it.
 ///
 /// `files` is not source control, but it lives here because the *column* is one
 /// thing with three panes and one selection; splitting the enum would just mean
@@ -284,6 +283,151 @@ enum InspectorPane: String, CaseIterable, Identifiable {
         case .history: return "clock"
         case .files: return "folder"
         }
+    }
+}
+
+/// One tab in the side column: one of the inspector's panes, or a terminal of
+/// the session's own that runs beside its main one.
+///
+/// The column used to *be* the three panes, with one of them showing. It is now
+/// a strip of tabs a session opens and closes, which is what lets a terminal (and
+/// later a preview or a page) sit beside the session the way the panes do, and
+/// what makes "open something next to this" a cheap, reversible act instead of a
+/// window. The panes keep their own identity (`InspectorPane`), so everything
+/// that already reads `pane` still works; a terminal tab carries the id its shell
+/// is kept alive under by the keeper, which is how it survives a relaunch.
+///
+/// Stored as a string (`"changes"`, `"terminal:<uuid>"`) so `PersistedSession`
+/// stays a plain reading of the file, the same bargain `inspectorPane` makes.
+enum SideTab: Hashable, Sendable {
+    case pane(InspectorPane)
+    case terminal(UUID)
+    /// The session's own terminal, as a tab of the main area's row. It can be
+    /// reordered there but never closed, and never leaves that row: it is what
+    /// the main area goes back to.
+    case session
+    /// A file, previewed: its source, its diff, or rendered Markdown. The path
+    /// is canonical (symlinks resolved), which makes it the tab's identity: one
+    /// tab per file, wherever it was opened from.
+    case file(String)
+    /// A browser. Its id is its identity, so a session can have several, on
+    /// the same address or none yet; where each one is lives on the session
+    /// (`Session.browserAddresses`) and its live page in `BrowserTabs`.
+    case browser(UUID)
+
+    private static let terminalPrefix = "terminal:"
+    private static let filePrefix = "file:"
+    private static let browserPrefix = "browser:"
+
+    init?(rawValue: String) {
+        if let pane = InspectorPane(rawValue: rawValue) {
+            self = .pane(pane)
+        } else if rawValue.hasPrefix(Self.terminalPrefix),
+                  let id = UUID(uuidString: String(rawValue.dropFirst(Self.terminalPrefix.count))) {
+            self = .terminal(id)
+        } else if rawValue.hasPrefix(Self.filePrefix), rawValue.count > Self.filePrefix.count {
+            self = .file(String(rawValue.dropFirst(Self.filePrefix.count)))
+        } else if rawValue.hasPrefix(Self.browserPrefix),
+                  let id = UUID(uuidString: String(rawValue.dropFirst(Self.browserPrefix.count))) {
+            self = .browser(id)
+        } else if rawValue == "session" {
+            self = .session
+        } else {
+            return nil
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .pane(let pane): return pane.rawValue
+        case .terminal(let id): return Self.terminalPrefix + id.uuidString
+        case .session: return "session"
+        case .file(let path): return Self.filePrefix + path
+        case .browser(let id): return Self.browserPrefix + id.uuidString
+        }
+    }
+
+    var filePath: String? {
+        if case .file(let path) = self { return path }
+        return nil
+    }
+
+    var browserID: UUID? {
+        if case .browser(let id) = self { return id }
+        return nil
+    }
+
+    /// Whether a row draws this tab as a page of its own (a pane, a file, a
+    /// browser) rather than hosting a terminal.
+    var isPage: Bool { terminalID == nil && self != .session }
+
+    var pane: InspectorPane? {
+        if case .pane(let pane) = self { return pane }
+        return nil
+    }
+
+    var terminalID: UUID? {
+        if case .terminal(let id) = self { return id }
+        return nil
+    }
+}
+
+/// The kinds of tab that open somewhere by habit: a file or a browser opened
+/// without saying where goes where you last moved one of its kind
+/// (`WorkspaceTabs.home(for:)`). Terminals and panes open where you ask.
+enum TabKind: String, Sendable {
+    case file, browser
+}
+
+extension SideTab {
+    var kind: TabKind? {
+        switch self {
+        case .file: return .file
+        case .browser: return .browser
+        default: return nil
+        }
+    }
+}
+
+/// Where a tab can live: the main area (beside the session's own terminal,
+/// which is one of its tabs), the side column, or the strip under the
+/// session's terminal. Any tab goes anywhere, except the session's terminal,
+/// which stays in the main area.
+enum TabRegion: String, Sendable {
+    case main, side, bottom
+}
+
+extension SideTab {
+    /// Whether this tab may be put in `region`.
+    func fits(_ region: TabRegion) -> Bool {
+        if self == .session { return region == .main }
+        return true
+    }
+}
+
+/// A tab that was closed, and where it was, so ⌘⇧T can put it back. A pane
+/// comes back as itself; a terminal's shell ended with it, so it comes back as
+/// a new one in the same place.
+struct ClosedTab: Equatable, Sendable {
+    let tab: SideTab
+    let region: TabRegion
+    let index: Int
+
+    /// `side:2:changes`, the form it's saved in: a relaunch shouldn't empty
+    /// the list of what ⌘⇧T can bring back.
+    var rawValue: String { "\(region.rawValue):\(index):\(tab.rawValue)" }
+
+    init(tab: SideTab, region: TabRegion, index: Int) {
+        self.tab = tab
+        self.region = region
+        self.index = index
+    }
+
+    init?(rawValue: String) {
+        let parts = rawValue.split(separator: ":", maxSplits: 2).map(String.init)
+        guard parts.count == 3, let region = TabRegion(rawValue: parts[0]),
+              let index = Int(parts[1]), let tab = SideTab(rawValue: parts[2]) else { return nil }
+        self.init(tab: tab, region: region, index: index)
     }
 }
 

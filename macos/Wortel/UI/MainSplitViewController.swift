@@ -3,78 +3,56 @@ import SwiftUI
 import Observation
 
 /// The window's content: three real split panes — session sidebar, terminal,
-/// source-control inspector.
+/// side column — each wrapped with its own titlebar row (TitleBars.swift).
 ///
 /// This is deliberately AppKit rather than SwiftUI's `NavigationSplitView` +
-/// `.inspector`. That pairing gives the same *look* for free (Icon Composer is
-/// built exactly that way), but an inspector is not a split pane: AppKit defines
-/// it as a fixed-thickness auxiliary panel that holds its width and resizes the
-/// *window* instead of its siblings. That makes the window jump when the panel is
-/// dragged, and folds the terminal's current width into the window's resize
-/// floor. Owning the `NSSplitViewController` buys back `minimumThickness`,
-/// `maximumThickness`, `holdingPriority`, and `collapseBehavior` — which is what
-/// makes all three panes independently resizable — while `.sidebar`/`.inspector`
-/// *behaviors* still supply the system material (Liquid Glass on macOS 26) and
-/// full-height layout automatically.
+/// `.inspector`: an inspector is not a split pane (AppKit defines it as a
+/// fixed-thickness panel that resizes the *window*), and owning the
+/// `NSSplitViewController` buys back `minimumThickness`, `maximumThickness`,
+/// `holdingPriority`, and `collapseBehavior` — which is what makes all three
+/// panes independently resizable.
 ///
-/// Deliberately do NOT add an NSVisualEffectView to either pane: as of macOS 26
-/// that sits on top of the glass and blocks it.
+/// The items are plain ones, not the `.sidebar` / `.inspector` behaviors. Those
+/// supply the system's Liquid Glass material, and the look here is the ChatGPT
+/// app's instead: flat pages in a grey frame, hairlines between them. Each pane
+/// paints its own colour (see ChromePaneController), and collapsing the sidebar
+/// is implemented here because AppKit's only acts on a `.sidebar` item.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
-    /// What currently owns the inspector column. One per pane, because width is
-    /// remembered per occupant: a tree of short names and a diff with a gutter
-    /// want visibly different widths, and one width for both means every switch
-    /// is followed by a drag back to where you had it.
-    enum InspectorOccupant: String {
-        case changes, history, files
+    /// How wide the side column is. **Per session, and the same for every tab
+    /// in it.** It used to be per pane (a file tree and a diff want different
+    /// widths), but with tabs that made the divider jump on every tab switch,
+    /// which is exactly what makes tabs feel heavy. What does differ is the
+    /// session: the one running a dev server beside an agent wants a wide
+    /// column, the one you glance at Changes in doesn't.
+    ///
+    /// A session whose column has never been dragged opens at the last width
+    /// chosen anywhere, so a new session inherits your habit. That default is
+    /// app state (UserDefaults); the session's own width is session state
+    /// (sessions.json).
+    enum ColumnWidth {
+        static let minimum: CGFloat = 260
+        /// No fixed cap: the column may take everything but the terminal's
+        /// `terminalMinimum`, as ChatGPT's content pane may take everything but
+        /// 320pt of chat. That is how a diff gets the window and the agent a
+        /// narrow strip beside it, without the terminal ever leaving its area.
+        static let maximum: CGFloat = 10_000
+        static let terminalMinimum: CGFloat = 320
+        private static let fallback: CGFloat = 440
+        private static let key = "sideColumn.lastWidth"
 
-        @MainActor init(git: GitPanelModel) {
-            switch git.pane {
-            case .changes: self = .changes
-            case .history: self = .history
-            case .files: self = .files
-            }
+        static var lastChosen: CGFloat {
+            let stored = UserDefaults.standard.double(forKey: key)
+            return stored > 0 ? CGFloat(stored) : fallback
         }
 
-        /// Width before the user has ever dragged this occupant's divider. A file
-        /// tree is a column of short names; a diff is code with a gutter and needs
-        /// half again as much; a rendered Markdown page wants a readable measure.
-        var defaultWidth: CGFloat {
-            switch self {
-            case .files: return 260
-            case .changes, .history: return 420
-            }
+        static func remember(_ width: CGFloat) {
+            UserDefaults.standard.set(Double(width), forKey: key)
         }
 
-        /// How narrow this occupant may be dragged. The tree stays useful far
-        /// narrower than a diff does, and refusing to let it get there is most of
-        /// why one shared width felt wrong.
-        var minimumThickness: CGFloat {
-            switch self {
-            case .files: return 180
-            case .changes, .history: return 260
-            }
-        }
-    }
-
-    /// The width each occupant was last left at. App state, like the expanded
-    /// directories and the session list — UserDefaults, not a config file Wortel
-    /// deliberately doesn't have.
-    enum InspectorWidthStore {
-        private static let key = "inspector.widths"
-
-        static func width(for occupant: InspectorOccupant) -> CGFloat {
-            let stored = UserDefaults.standard.dictionary(forKey: key) as? [String: Double]
-            guard let saved = stored?[occupant.rawValue], saved > 0 else {
-                return occupant.defaultWidth
-            }
-            return CGFloat(saved)
-        }
-
-        static func save(_ width: CGFloat, for occupant: InspectorOccupant) {
-            var stored = (UserDefaults.standard.dictionary(forKey: key) as? [String: Double]) ?? [:]
-            stored[occupant.rawValue] = Double(width)
-            UserDefaults.standard.set(stored, forKey: key)
+        @MainActor static func width(for session: Session?) -> CGFloat {
+            let width = session?.sideColumnWidth.map { CGFloat($0) } ?? lastChosen
+            return min(max(width, minimum), maximum)
         }
     }
 
@@ -86,12 +64,12 @@ final class MainSplitViewController: NSSplitViewController {
     private var inspectorItem: NSSplitViewItem!
     /// Guards against the observer→collapse→observer feedback loop.
     private var syncingInspector = false
-    /// What was in the column at the last apply, so a pane swap can be told from
-    /// a mere visibility change and given its own width.
-    private var lastOccupant: InspectorOccupant?
-    /// The inspector width we last set or observed, so opening the column can
-    /// tell "same width as last time" (animate) from "this occupant is a
-    /// different size" (snap — see `applyInspectorVisibility`).
+    /// Whose width the column had at the last apply, so a session switch can be
+    /// told from a mere visibility change and given that session's width.
+    private var lastOwner: UUID?
+    /// The column width we last set or observed, so opening the column can
+    /// tell "same width as last time" (animate) from "this session's column is
+    /// a different size" (snap — see `applyInspectorVisibility`).
     private var lastAppliedWidth: CGFloat = 0
     /// The split view's own width at the last resize notification. A divider
     /// drag changes the inspector's width while this stays put; a *window*
@@ -104,13 +82,30 @@ final class MainSplitViewController: NSSplitViewController {
     /// The pending "the drag has settled, keep this width" commit.
     private var widthCaptureWork: DispatchWorkItem?
 
+    private let titleBars: TitleBarController
+    private var sidebarItem: NSSplitViewItem!
+    private var contentItem: NSSplitViewItem!
+    /// The strip under the terminal, bar and all: an area of its own inside
+    /// the content item. See `region(at:)`.
+    private weak var bottomAreaView: NSView?
+
+    private let previewTabs: PreviewTabs
+
     init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
-         files: FileTreeModel) {
+         files: FileTreeModel, titleBars: TitleBarController, previewTabs: PreviewTabs) {
+        self.previewTabs = previewTabs
         self.runtime = runtime
         self.manager = manager
         self.git = git
         self.files = files
+        self.titleBars = titleBars
         super.init(nibName: nil, bundle: nil)
+        // Before the view loads: the split view is the controller's to replace
+        // only until it's been used. Hairline dividers in the chrome's colour.
+        let split = ChromeSplitView()
+        split.isVertical = true
+        split.dividerStyle = .thin
+        splitView = split
     }
 
     @available(*, unavailable)
@@ -119,14 +114,23 @@ final class MainSplitViewController: NSSplitViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // Sidebar. `.sidebar` behavior supplies the material and full-height
-        // layout (paired with the window's .fullSizeContentView).
+        // Every pane is a plain split item wrapped with its own titlebar row
+        // (see TitleBars.swift). Not the `.sidebar` / `.inspector` behaviors:
+        // those bring the system's Liquid Glass material, and the look here is
+        // flat pages in a grey frame. What they did for sizing and collapsing is
+        // stated on the items directly.
+        //
         // NSSplitView takes each pane's starting width from its view's frame, so
         // the frame is the only place to state a default (the autosave below wins
         // on every launch after the first drag).
-        let sidebar = NSHostingController(rootView: SidebarPane(manager: manager))
+        let sidebar = ChromePaneController(
+            bar: titleBars.sidebarBar,
+            content: NSHostingController(rootView: SidebarPane(manager: manager)),
+            bodyColor: Chrome.sidebar)
         sidebar.view.setFrameSize(NSSize(width: 220, height: sidebar.view.frame.height))
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        let sidebarItem = NSSplitViewItem(viewController: sidebar)
+        sidebarItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
+        self.sidebarItem = sidebarItem
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 400
         sidebarItem.canCollapse = true
@@ -137,25 +141,35 @@ final class MainSplitViewController: NSSplitViewController {
         // their width, the terminal gives. An 80pt floor keeps the window
         // shrinkable; ghostty reflows to whatever width it gets, so a narrow
         // terminal is cramped rather than broken.
-        let detail = NSHostingController(rootView: DetailPane(runtime: runtime, manager: manager, git: git, files: files))
+        let bottomPane = BottomPaneController(runtime: runtime, manager: manager, git: git,
+                                              files: files, previewTabs: previewTabs)
+        let mainArea = MainAreaController(
+            terminal: NSHostingController(rootView: DetailPane(
+                runtime: runtime, manager: manager, git: git, files: files)),
+            runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs)
+        let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
+        bottomAreaView = bottomPane.view
+        let detail = ChromePaneController(
+            bar: titleBars.mainBar, content: workspace, bodyColor: Chrome.content)
         let contentItem = NSSplitViewItem(viewController: detail)
         contentItem.minimumThickness = 80
         contentItem.holdingPriority = NSLayoutConstraint.Priority(250)
+        self.contentItem = contentItem
         addSplitViewItem(contentItem)
 
-        // Inspector. `inspector(viewController:)` hard-codes a non-resizable 270pt
-        // thickness, so min/max are overridden right after to make it draggable.
-        // collapseBehavior keeps the *window* still when the panel opens/closes,
-        // resizing the terminal instead.
-        let inspector = NSHostingController(rootView: InspectorContainer(git: git, files: files))
-        let occupant = InspectorOccupant(git: git)
-        let width = InspectorWidthStore.width(for: occupant)
+        // The side column. collapseBehavior keeps the *window* still when the
+        // column opens/closes, resizing the terminal instead.
+        let inspectorContent = NSHostingController(rootView: InspectorContainer(
+            runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs))
+        let inspector = ChromePaneController(
+            bar: titleBars.sideBar, content: inspectorContent, bodyColor: Chrome.content)
+        let width = ColumnWidth.width(for: manager.selected)
         inspector.view.setFrameSize(NSSize(width: width, height: inspector.view.frame.height))
-        lastOccupant = occupant
+        lastOwner = manager.selectedID
         lastAppliedWidth = width
-        let item = NSSplitViewItem(inspectorWithViewController: inspector)
-        item.minimumThickness = occupant.minimumThickness
-        item.maximumThickness = 680
+        let item = NSSplitViewItem(viewController: inspector)
+        item.minimumThickness = ColumnWidth.minimum
+        item.maximumThickness = ColumnWidth.maximum
         item.canCollapse = true
         item.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
         item.holdingPriority = NSLayoutConstraint.Priority(260)
@@ -163,21 +177,82 @@ final class MainSplitViewController: NSSplitViewController {
         addSplitViewItem(item)
         inspectorItem = item
 
-        sidebarItem.holdingPriority = NSLayoutConstraint.Priority(260)
+        // The highest of the three: whatever else moves (the column opening,
+        // moving sides, a window resize), the sidebar keeps its width. At the
+        // column's own priority it would sometimes absorb part of a change.
+        sidebarItem.holdingPriority = NSLayoutConstraint.Priority(270)
 
         // Set last: NSSplitView restores saved divider positions the moment the
         // name is assigned, so every item has to exist by then. It carries the
-        // sidebar's width; the inspector's it also carries but does not get to
-        // decide, because that one is per occupant (see `viewDidLayout`).
+        // sidebar's width; the column's it also carries but does not get to
+        // decide, because that one is per session (see `viewDidLayout`).
         splitView.autosaveName = "main-split"
+        updateLeadingInsets()
 
         observeInspector()
+
+        // Tab drags: the three tab rows, and the areas a tab can be dropped on.
+        let drag = TabDragController()
+        drag.strips = [
+            .init(strip: titleBars.sideBar.strip, region: .side),
+            .init(strip: titleBars.mainBar.strip, region: .main),
+            .init(strip: bottomPane.bar.strip, region: .bottom),
+        ]
+        drag.terminalArea = { [weak workspace] in
+            guard let view = workspace?.terminalView, view.window != nil,
+                  !view.isHiddenOrHasHiddenAncestor, view.bounds.width > 1 else { return nil }
+            return view.convert(view.bounds, to: nil)
+        }
+        drag.columnLeading = { [weak self] in self?.git.columnLeading ?? false }
+        drag.regionOf = { [weak self] tab in
+            guard let git = self?.git else { return nil }
+            return [TabRegion.main, .side, .bottom].first { git.tabs(in: $0).contains(tab) }
+        }
+        drag.bottomArea = { [weak self, weak bottomPane] in
+            guard let self, self.git.bottomVisible, let view = bottomPane?.view,
+                  view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+                  view.bounds.height > 1 else { return nil }
+            return view.convert(view.bounds, to: nil)
+        }
+        drag.onSwap = { [weak self] tab, leading in
+            if tab != .session { self?.bringIntoColumn(tab) }
+            self?.git.setColumnLeading(leading)
+        }
+        drag.columnArea = { [weak self, weak inspectorContent] in
+            guard let self, self.git.isVisible, let view = inspectorContent?.view,
+                  view.window != nil, view.bounds.width > 1 else { return nil }
+            return view.convert(view.bounds, to: nil)
+        }
+        drag.onDrop = { [weak self] tab, region, index in
+            self?.git.move(tab, to: region, at: index)
+        }
+        titleBars.mainBar.strip.onDrag = { [weak drag] phase, tab, view, point in
+            drag?.handle(phase, tab: tab, view: view, point: point)
+        }
+        let forward: (SideTabStrip.DragPhase, SideTab, NSView, NSPoint) -> Void = { [weak drag] phase, tab, view, point in
+            drag?.handle(phase, tab: tab, view: view, point: point)
+        }
+        titleBars.sideBar.strip.onDrag = forward
+        bottomPane.bar.strip.onDrag = forward
+        tabDrag = drag
     }
 
+    /// A tab dropped somewhere that means "the column": already there, it
+    /// comes to the front; from the bottom strip, it moves in.
+    private func bringIntoColumn(_ tab: SideTab) {
+        if git.tabs.contains(tab) {
+            git.select(tab)
+        } else {
+            git.move(tab, to: .side, at: .max)
+        }
+    }
+
+    /// Resolves tab drags across both tab rows. Held for the window's life.
+    private var tabDrag: TabDragController?
+
     /// The autosave restore above happens before the split view has a width, and
-    /// it restores one inspector width for all four occupants. Take the column
-    /// back on the first real layout pass and give it the width this occupant
-    /// was left at.
+    /// it restores one column width for every session. Take the column back on
+    /// the first real layout pass and give it the selected session's width.
     private var didApplyInitialWidth = false
 
     override func viewDidLayout() {
@@ -186,11 +261,15 @@ final class MainSplitViewController: NSSplitViewController {
         didApplyInitialWidth = true
         lastSplitWidth = splitView.bounds.width
         // A turn later, deliberately: NSSplitView applies its autosaved divider
-        // positions during this same layout pass, and the per-occupant width is
-        // the one that has to win. Doing it inline is a race with that restore.
+        // positions during this same layout pass, and the session's width is the
+        // one that has to win. Doing it inline is a race with that restore.
         DispatchQueue.main.async { [weak self] in
-            guard let self, let item = self.inspectorItem, !item.isCollapsed else { return }
-            self.applyInspectorWidth(for: InspectorOccupant(git: self.git))
+            guard let self else { return }
+            // The restored session's side and full view, which no change
+            // notification will ever announce: they were already true at launch.
+            self.applyLayout()
+            guard let item = self.inspectorItem, !item.isCollapsed else { return }
+            self.applyInspectorWidth()
         }
     }
 
@@ -203,17 +282,54 @@ final class MainSplitViewController: NSSplitViewController {
     private func observeInspector() {
         withObservationTracking {
             _ = git.isVisible
-            // Which pane is showing decides how wide the column should be, so a
-            // swap has to reach here too — including the one a session switch
-            // makes, since the pane is per session.
-            _ = git.pane
+            // The width is the session's, so a session switch has to reach here
+            // even when the column stays up on both sides of it.
+            _ = manager.selectedID
+            _ = git.columnLeading
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.applyInspectorVisibility()
+                self.applyLayout()
                 self.observeInspector()
             }
         }
+    }
+
+    /// Everything about the column's place in the window: which side it's on,
+    /// whether it's up, and how wide.
+    private func applyLayout() {
+        applySide()
+        applyInspectorVisibility()
+        updateLeadingInsets()
+    }
+
+    /// Put the column on the side the session wants it: re-inserted at index 1
+    /// (before the terminal) or at the end. Only when it changes, since moving
+    /// a split item takes its views out of the window and puts them back.
+    private func applySide() {
+        guard let inspectorItem, let index = splitViewItems.firstIndex(of: inspectorItem) else { return }
+        let wanted = git.columnLeading ? 1 : splitViewItems.count - 1
+        guard index != wanted else { return }
+        syncingInspector = true
+        suspendWidthCapture = true
+        removeSplitViewItem(inspectorItem)
+        insertSplitViewItem(inspectorItem, at: git.columnLeading ? 1 : splitViewItems.count)
+        syncingInspector = false
+        DispatchQueue.main.async { [weak self] in
+            self?.applyInspectorWidth()
+            self?.suspendWidthCapture = false
+        }
+    }
+
+    /// Room for the traffic lights goes to whichever pane is leftmost once the
+    /// sidebar is collapsed: the terminal's row, or the column's when the
+    /// column is on the leading side (or has the window, in full view).
+    private func updateLeadingInsets() {
+        let sidebarCollapsed = sidebarItem?.isCollapsed ?? false
+        let firstVisible = splitViewItems.dropFirst().first { !$0.isCollapsed }
+        let columnFirst = firstVisible === inspectorItem
+        titleBars.mainBar.setSidebarCollapsed(sidebarCollapsed && !columnFirst)
+        titleBars.sideBar.setSidebarCollapsed(sidebarCollapsed && columnFirst)
     }
 
     /// Show the column when either side wants it. Animate when the user asked —
@@ -223,76 +339,77 @@ final class MainSplitViewController: NSSplitViewController {
     /// reflow the terminal every frame.
     private func applyInspectorVisibility() {
         let show = git.isVisible
-        let occupant = InspectorOccupant(git: git)
-        defer { lastOccupant = occupant }
+        let owner = manager.selectedID
+        defer { lastOwner = owner }
         guard let inspectorItem else { return }
 
         guard inspectorItem.isCollapsed == show else {
-            // Already up: a swap between panes is the only thing left to answer,
-            // and it answers in width.
-            if show, occupant != lastOccupant { applyInspectorWidth(for: occupant) }
+            // Already up: a session switch is the only thing left to answer, and
+            // it answers in width. A tab switch never gets here: it changes
+            // neither of the two things observed.
+            if show, owner != lastOwner { applyInspectorWidth() }
             return
         }
 
         // A collapsed item comes back at the thickness it had when it went away,
-        // which belongs to whatever was in the column *then*. When that isn't
-        // this occupant's width we snap instead of animating: sliding open at the
-        // wrong width and then jumping to the right one reads as a glitch, where
-        // an instant open just reads as instant.
-        let target = InspectorWidthStore.width(for: occupant)
+        // which belongs to whichever session had the column *then*. When that
+        // isn't this session's width we snap instead of animating: sliding open
+        // at the wrong width and then jumping to the right one reads as a
+        // glitch, where an instant open just reads as instant.
+        let target = ColumnWidth.width(for: manager.selected)
         let widthChanges = show && abs(target - lastAppliedWidth) > 1
         let animates = git.animatesVisibilityChange && !widthChanges
 
         syncingInspector = true
         suspendWidthCapture = true
         if animates {
-            NSAnimationContext.runAnimationGroup { _ in
+            Motion.pane(opening: show) {
                 inspectorItem.animator().isCollapsed = !show
-            } completionHandler: { [weak self] in
-                // Delivered on the main thread, but as a nonisolated closure.
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.suspendWidthCapture = false
-                    if show { self.applyInspectorWidth(for: occupant) }
-                }
+            } completion: { [weak self] in
+                guard let self else { return }
+                self.suspendWidthCapture = false
+                if show { self.applyInspectorWidth() }
             }
         } else {
             inspectorItem.isCollapsed = !show
             suspendWidthCapture = false
-            if show { applyInspectorWidth(for: occupant) }
+            if show { applyInspectorWidth() }
         }
         syncingInspector = false
     }
 
-    // MARK: - Inspector width (per occupant)
+    // MARK: - Column width (per session)
 
-    /// Give the column the width this occupant was last left at, and the floor it
-    /// is allowed to be dragged to. Both are per occupant, which is the whole
-    /// point: a file tree that can't go below a diff's minimum is a file tree
-    /// wasting a third of its width on nothing.
-    private func applyInspectorWidth(for occupant: InspectorOccupant) {
+    /// Give the column the width the selected session left it at.
+    private func applyInspectorWidth() {
         guard let inspectorItem, !inspectorItem.isCollapsed else { return }
         let total = splitView.bounds.width
         guard total > 0, splitViewItems.count >= 2 else { return }
 
-        inspectorItem.minimumThickness = occupant.minimumThickness
-        let target = min(max(InspectorWidthStore.width(for: occupant), occupant.minimumThickness),
-                         inspectorItem.maximumThickness)
+        let target = ColumnWidth.width(for: manager.selected)
         guard abs(target - inspectorItem.viewController.view.frame.width) > 0.5 else {
             lastAppliedWidth = target
             return
         }
         suspendWidthCapture = true
-        splitView.setPosition(total - target - splitView.dividerThickness,
-                              ofDividerAt: splitViewItems.count - 2)
+        guard let index = splitViewItems.firstIndex(of: inspectorItem) else { return }
+        if index == splitViewItems.count - 1 {
+            // Trailing: the divider before it sits the column's width from the end.
+            splitView.setPosition(total - target - splitView.dividerThickness,
+                                  ofDividerAt: index - 1)
+        } else {
+            // Leading: the divider after it sits the column's width past its start.
+            let start = inspectorItem.viewController.view.frame.minX
+            splitView.setPosition(start + target, ofDividerAt: index)
+        }
         lastAppliedWidth = target
         // Cleared a turn later: the resize notification this provokes may not
         // arrive until the next layout pass, and it must not be read as a drag.
         DispatchQueue.main.async { [weak self] in self?.suspendWidthCapture = false }
     }
 
-    /// Record the width the user just dragged the column to, against whatever is
-    /// in it. Only a *divider* drag counts: a window resize moves the split view's
+    /// Record the width the user just dragged the column to, on the session it
+    /// was dragged in. Only a *divider* drag counts: a window resize moves the split view's
     /// own width, and squeezing the terminal to its floor is the window telling
     /// the inspector what to do, not the user telling us what they want.
     ///
@@ -305,32 +422,103 @@ final class MainSplitViewController: NSSplitViewController {
               let inspectorItem, !inspectorItem.isCollapsed else { return }
         let width = inspectorItem.viewController.view.frame.width
         guard width > 1, abs(width - lastAppliedWidth) > 1 else { return }
-        let occupant = InspectorOccupant(git: git)
+        let session = manager.selected
         widthCaptureWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, let item = self.inspectorItem, !item.isCollapsed else { return }
+        let work = DispatchWorkItem { [weak self, weak session] in
+            guard let self, let session, session.id == self.manager.selectedID,
+                  let item = self.inspectorItem, !item.isCollapsed else { return }
             let settled = item.viewController.view.frame.width
             guard settled > 1 else { return }
             self.lastAppliedWidth = settled
-            InspectorWidthStore.save(settled, for: occupant)
+            session.sideColumnWidth = Double(settled)
+            ColumnWidth.remember(settled)
+            self.manager.sessionStateChanged()
         }
         widthCaptureWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
-    /// The panel can also be collapsed by dragging its divider to the edge, which
-    /// bypasses GitPanelModel entirely — reflect that back so the menu item's
-    /// Show/Hide title and the persisted state don't drift out of sync.
+    /// The column may grow until the terminal is `terminalMinimum` wide. Stated
+    /// as the item's maximum, so a divider drag stops there by itself.
+    private func updateColumnMaximum() {
+        guard let inspectorItem else { return }
+        let sidebar = (sidebarItem?.isCollapsed ?? true) ? 0 : (sidebarItem?.viewController.view.frame.width ?? 0)
+        let room = splitView.bounds.width - sidebar - ColumnWidth.terminalMinimum
+            - splitView.dividerThickness * 2
+        let maximum = max(ColumnWidth.minimum, room)
+        if abs(inspectorItem.maximumThickness - maximum) > 0.5 {
+            inspectorItem.maximumThickness = maximum
+        }
+    }
+
     override func splitViewDidResizeSubviews(_ notification: Notification) {
         super.splitViewDidResizeSubviews(notification)
+        updateColumnMaximum()
         let total = splitView.bounds.width
         let windowResized = total != lastSplitWidth
         lastSplitWidth = total
         captureInspectorWidth(windowResized: windowResized)
 
+        updateLeadingInsets()
+
+        // The column can also be collapsed by dragging its divider to the
+        // edge, which bypasses GitPanelModel entirely: reflect that back so the
+        // menu item's Show/Hide title and the persisted state don't drift.
         guard !syncingInspector, let inspectorItem else { return }
         let visible = !inspectorItem.isCollapsed
         guard visible != git.isVisible else { return }
         git.isPresented = visible
+    }
+
+    // MARK: - Sidebar and dividers
+
+    /// ⌘⌥S and the titlebar's sidebar buttons. NSSplitViewController's own
+    /// implementation only acts on an item with the `.sidebar` behavior, which
+    /// this one deliberately isn't (see `viewDidLoad`).
+    override func toggleSidebar(_ sender: Any?) {
+        guard let sidebarItem else { return }
+        let collapsing = !sidebarItem.isCollapsed
+        Motion.pane(opening: !collapsing) {
+            sidebarItem.animator().isCollapsed = collapsing
+        }
+    }
+
+    /// NSSplitViewController disables its own sidebar command when no item has
+    /// the `.sidebar` behavior, which would grey out ⌘⌥S here.
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(toggleSidebar(_:)) { return true }
+        return super.validateUserInterfaceItem(item)
+    }
+
+    /// A one-point divider is hard to hit, so the grab area is wider than what's
+    /// drawn: 4pt either side, the ChatGPT app's 16px handle in points.
+    override func splitView(_ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect,
+                            forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int) -> NSRect {
+        let rect = super.splitView(splitView, effectiveRect: proposedEffectiveRect,
+                                   forDrawnRect: drawnRect, ofDividerAt: dividerIndex)
+        return rect.insetBy(dx: -4, dy: 0)
+    }
+}
+
+extension MainSplitViewController {
+    /// Which area a point in the window is in: the column (its tab row
+    /// included), the strip under the terminal, or the main area. nil for the
+    /// session list, which isn't an area with tabs.
+    ///
+    /// What a click anywhere in an area means for the keyboard commands: ⌘W,
+    /// ⌘T and the rest act on the area you last clicked or typed in, and a
+    /// web page, a pane or the file tree never report typing of their own.
+    func region(at point: NSPoint) -> TabRegion? {
+        func contains(_ view: NSView?) -> Bool {
+            guard let view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+                  view.bounds.width > 1, view.bounds.height > 1 else { return false }
+            return view.bounds.contains(view.convert(point, from: nil))
+        }
+        if let inspectorItem, !inspectorItem.isCollapsed, contains(inspectorItem.viewController.view) {
+            return .side
+        }
+        if git.bottomVisible, contains(bottomAreaView) { return .bottom }
+        if let contentItem, contains(contentItem.viewController.view) { return .main }
+        return nil
     }
 }

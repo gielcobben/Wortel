@@ -96,6 +96,86 @@ final class PersistedSessionTests: XCTestCase {
         }
     }
 
+    // MARK: - Side tabs
+
+    /// A file from before the column had tabs says nothing about them, and that
+    /// has to reach `restore` as nil, not as an empty strip: nil is what turns
+    /// the old visible-and-pane pair into a one-tab strip, where an empty list
+    /// would close the column on every session that had it open.
+    func testAbsentSideTabsStayUnrecorded() throws {
+        let session = try decode(#"{"id":"\#(UUID())","gitPanelVisible":true,"inspectorPane":"history"}"#)
+        XCTAssertNil(session.sideTabs)
+        XCTAssertNil(session.activeSideTab)
+    }
+
+    func testSideTabsRoundTrip() throws {
+        let terminal = SideTab.terminal(UUID())
+        let tabs = [SideTab.pane(.changes), terminal, .pane(.files)]
+        let original = PersistedSession(
+            id: UUID(), name: "Wortel/App", title: "shell", cwd: "/tmp",
+            selected: true, nameSource: "user", gitPanelVisible: true,
+            sideTabs: tabs.map(\.rawValue), activeSideTab: terminal.rawValue)
+        let data = try JSONEncoder().encode([original])
+        let decoded = try XCTUnwrap(JSONDecoder().decode([PersistedSession].self, from: data).first)
+        XCTAssertEqual(decoded.sideTabs?.compactMap(SideTab.init(rawValue:)), tabs)
+        XCTAssertEqual(decoded.activeSideTab.flatMap(SideTab.init(rawValue:)), terminal)
+    }
+
+    /// Everything the workspace saves beyond the column comes back: the main
+    /// row and the strip, what ⌘⇧T can reopen, where browsers are, where
+    /// files and browsers open, and the pinned checkout. One of these lost in
+    /// the round trip is a row that's empty after an update, with no error.
+    func testTheWholeWorkspaceRoundTrips() throws {
+        let strip = SideTab.terminal(UUID())
+        let browser = SideTab.browser(UUID())
+        let file = SideTab.file("/tmp/notes.md")
+        let closed = ClosedTab(tab: .pane(.history), region: .side, index: 1)
+        let original = PersistedSession(
+            id: UUID(), name: "Wortel/App", title: "shell", cwd: "/tmp",
+            selected: true, nameSource: "user", gitPanelVisible: false,
+            bottomTabs: [strip.rawValue, file.rawValue], activeBottomTab: file.rawValue,
+            bottomVisible: true, closedTabs: [closed.rawValue],
+            mainTabs: [SideTab.session.rawValue, browser.rawValue], activeMainTab: browser.rawValue,
+            sideColumnLeading: true,
+            browserAddresses: [browser.browserID!.uuidString: "http://localhost:4321/"],
+            gitCheckout: "/tmp/worktree", tabHabits: ["browser": "main"])
+        let data = try JSONEncoder().encode([original])
+        let decoded = try XCTUnwrap(JSONDecoder().decode([PersistedSession].self, from: data).first)
+        XCTAssertEqual(decoded.bottomTabs?.compactMap(SideTab.init(rawValue:)), [strip, file])
+        XCTAssertEqual(decoded.activeBottomTab.flatMap(SideTab.init(rawValue:)), file)
+        XCTAssertEqual(decoded.bottomVisible, true)
+        XCTAssertEqual(decoded.closedTabs?.compactMap(ClosedTab.init(rawValue:)), [closed])
+        XCTAssertEqual(decoded.mainTabs?.compactMap(SideTab.init(rawValue:)), [.session, browser])
+        XCTAssertEqual(decoded.activeMainTab.flatMap(SideTab.init(rawValue:)), browser)
+        XCTAssertEqual(decoded.sideColumnLeading, true)
+        XCTAssertEqual(decoded.browserAddresses, [browser.browserID!.uuidString: "http://localhost:4321/"])
+        XCTAssertEqual(decoded.gitCheckout, "/tmp/worktree")
+        XCTAssertEqual(decoded.tabHabits, ["browser": "main"])
+    }
+
+    /// A file from before the main row, the strip, browsers and habits: all
+    /// nil, which `restore` reads as none of them.
+    func testAnOlderFileHasNoneOfTheNewerFields() throws {
+        let session = try decode(#"{"id":"\#(UUID())","gitPanelVisible":false}"#)
+        XCTAssertNil(session.mainTabs)
+        XCTAssertNil(session.bottomTabs)
+        XCTAssertNil(session.browserAddresses)
+        XCTAssertNil(session.gitCheckout)
+        XCTAssertNil(session.tabHabits)
+    }
+
+    /// The raw form is the one thing that has to agree between two builds: a
+    /// terminal tab's id is also the keeper's session id, so a tab that decodes
+    /// to a different id is a shell nobody can reach again.
+    func testSideTabRawValues() {
+        let id = UUID()
+        XCTAssertEqual(SideTab(rawValue: "changes"), .pane(.changes))
+        XCTAssertEqual(SideTab(rawValue: "terminal:\(id.uuidString)"), .terminal(id))
+        XCTAssertEqual(SideTab.terminal(id).rawValue, "terminal:\(id.uuidString)")
+        XCTAssertNil(SideTab(rawValue: "terminal:not-a-uuid"))
+        XCTAssertNil(SideTab(rawValue: "browser"))
+    }
+
     // MARK: - Origin directory
 
     /// Where a session was *born*, which is what a session opened beside it

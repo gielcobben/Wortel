@@ -63,6 +63,36 @@ final class SurfaceView: NSView {
     /// animations the frame may lag the target size).
     private var contentSize: NSSize = .zero
 
+    // MARK: Holding resizes while a pane animates
+
+    /// How many pane animations are running. While any is, terminals keep the
+    /// size they have and take the final one once, when the animation lands.
+    ///
+    /// Without this a pane sliding open resized every terminal beside it on
+    /// every frame: ghostty re-wrapped the screen and the program inside got a
+    /// resize signal each time, so an agent redrew its whole screen a dozen
+    /// times in a quarter of a second. That work is most of what made the
+    /// motion feel rough. During the hold the terminal's last frame is simply
+    /// shown pinned to the top left, clipped or with a little page beside it.
+    private static var resizeHolds = 0
+    private static let resizeHoldReleased = Notification.Name("WortelSurfaceResizeHoldReleased")
+    /// A size change arrived during a hold and still has to be applied.
+    private var resizePending = false
+
+    static func holdResizes() { resizeHolds += 1 }
+
+    static func releaseResizes() {
+        resizeHolds = max(0, resizeHolds - 1)
+        guard resizeHolds == 0 else { return }
+        NotificationCenter.default.post(name: resizeHoldReleased, object: nil)
+    }
+
+    @objc private func resizeHoldDidRelease(_ notification: Notification) {
+        guard resizePending else { return }
+        resizePending = false
+        sizeDidChange(frame.size)
+    }
+
     /// The pty and shell, when this surface's process is ours rather than
     /// libghostty's — the process-survival spike, off unless
     /// `WORTEL_HOST_MANAGED=1`. Held here because the view's lifetime is the
@@ -102,6 +132,10 @@ final class SurfaceView: NSView {
             sessionID: sessionID,
             initialInput: initialInput,
             fontSize: fontSize)
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(resizeHoldDidRelease(_:)),
+            name: Self.resizeHoldReleased, object: nil)
 
         NotificationCenter.default.addObserver(
             self,
@@ -165,9 +199,18 @@ final class SurfaceView: NSView {
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { updateFocus(firstResponder: true) }
+        if result {
+            updateFocus(firstResponder: true)
+            Self.onKeyboardActivity?(self)
+        }
         return result
     }
+
+    /// A terminal took the keyboard or was typed in. The app uses it to know
+    /// which area you're working in (GitPanelModel.lastRegion). Called on every
+    /// key, so what it does has to be cheap: it is a pointer comparison and a
+    /// lookup in a handful of tabs.
+    static var onKeyboardActivity: ((SurfaceView) -> Void)?
 
     override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
@@ -231,6 +274,23 @@ final class SurfaceView: NSView {
 
     private func sizeDidChange(_ size: NSSize) {
         guard window != nil else { return }
+        // A pane collapsing (the side column hiding, the terminal behind full
+        // view) sizes its terminal down to nothing on the way out. Passed on,
+        // that reflows the program to a single column and back again when the
+        // pane returns: an agent redraws its whole screen twice for a view
+        // that was only put away. Nothing this small is a size anyone works
+        // at, so it keeps the last real one.
+        guard size.width >= 40, size.height >= 20 else { return }
+        if Self.resizeHolds > 0 {
+            if !resizePending {
+                resizePending = true
+                // Pinned, not stretched, while it waits for its real size;
+                // left that way after, since a layer drawn at its own size
+                // never needs stretching.
+                layer?.contentsGravity = .topLeft
+            }
+            return
+        }
         let reflowed = size != contentSize
         contentSize = size
         if reflowed { onSizeChange?() }
@@ -503,6 +563,7 @@ final class SurfaceView: NSView {
     // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
+        Self.onKeyboardActivity?(self)
         guard let surface else {
             interpretKeyEvents([event])
             return

@@ -50,6 +50,40 @@ struct PersistedSession: Codable {
     /// `gitPanelVisible`, this needs no separate legacy flag.
     let inspectorPane: String?
 
+    /// The side column's tabs in strip order, as `SideTab` raw values, and the
+    /// one in front. nil in every file written before the column had tabs:
+    /// `SessionManager.restore` turns the old visible-and-pane pair into a
+    /// one-tab strip, so a session that had Changes open opens on a Changes tab.
+    let sideTabs: [String]?
+    let activeSideTab: String?
+    /// The side column's width in points, per session. nil until the divider is
+    /// first dragged in that session (and in every older file), which means
+    /// "the last width chosen anywhere".
+    let sideColumnWidth: Double?
+    /// The strip under the session's terminal: its tabs as `SideTab` raw
+    /// values, the one in front, and whether it's showing. nil in older files:
+    /// no strip. Files from when the strip held terminals only list bare
+    /// UUIDs; `restore` reads those as terminal tabs.
+    let bottomTabs: [String]?
+    let activeBottomTab: String?
+    let bottomVisible: Bool?
+    /// What ⌘⇧T can bring back, as `ClosedTab` raw values, newest last.
+    let closedTabs: [String]?
+    /// The main area's tabs, the session's terminal (`session`) among them, as
+    /// `SideTab` raw values, and the one in front (nil: the terminal). Which
+    /// side the column is on. nil in older files: just the terminal, trailing.
+    let mainTabs: [String]?
+    let activeMainTab: String?
+    let sideColumnLeading: Bool?
+    /// `Session.browserAddresses`, keyed by the tab id's string. nil in older
+    /// files: no browsers.
+    let browserAddresses: [String: String]?
+    /// `Session.gitCheckout`. nil in older files: follow the terminal.
+    let gitCheckout: String?
+    /// `Session.tabHabits`, kind to region, raw values. nil in older files:
+    /// everything opens in the column.
+    let tabHabits: [String: String]?
+
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
     ///
@@ -74,7 +108,9 @@ struct PersistedSession: Codable {
     // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
         case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch
-        case gitPanelVisible, inspectorPane
+        case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
+        case bottomTabs, activeBottomTab, bottomVisible, closedTabs
+        case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
@@ -85,6 +121,15 @@ struct PersistedSession: Codable {
     init(id: UUID, name: String, title: String, cwd: String?, originCwd: String? = nil,
          selected: Bool, nameSource: String, worktreeBranch: String? = nil,
          gitPanelVisible: Bool?, inspectorPane: String? = nil,
+         sideTabs: [String]? = nil, activeSideTab: String? = nil,
+         sideColumnWidth: Double? = nil,
+         bottomTabs: [String]? = nil, activeBottomTab: String? = nil, bottomVisible: Bool? = nil,
+         closedTabs: [String]? = nil,
+         mainTabs: [String]? = nil, activeMainTab: String? = nil,
+         sideColumnLeading: Bool? = nil,
+         browserAddresses: [String: String]? = nil,
+         gitCheckout: String? = nil,
+         tabHabits: [String: String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
@@ -93,6 +138,19 @@ struct PersistedSession: Codable {
         self.worktreeBranch = worktreeBranch
         self.gitPanelVisible = gitPanelVisible
         self.inspectorPane = inspectorPane
+        self.sideTabs = sideTabs
+        self.activeSideTab = activeSideTab
+        self.sideColumnWidth = sideColumnWidth
+        self.bottomTabs = bottomTabs
+        self.activeBottomTab = activeBottomTab
+        self.bottomVisible = bottomVisible
+        self.closedTabs = closedTabs
+        self.mainTabs = mainTabs
+        self.activeMainTab = activeMainTab
+        self.sideColumnLeading = sideColumnLeading
+        self.browserAddresses = browserAddresses
+        self.gitCheckout = gitCheckout
+        self.tabHabits = tabHabits
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -133,6 +191,19 @@ struct PersistedSession: Codable {
         // session with no preference, and which pane that should mean is
         // `restore`'s call, not this type's.
         inspectorPane = try c.decodeIfPresent(String.self, forKey: .inspectorPane)
+        sideTabs = try c.decodeIfPresent([String].self, forKey: .sideTabs)
+        activeSideTab = try c.decodeIfPresent(String.self, forKey: .activeSideTab)
+        sideColumnWidth = try c.decodeIfPresent(Double.self, forKey: .sideColumnWidth)
+        bottomTabs = try c.decodeIfPresent([String].self, forKey: .bottomTabs)
+        activeBottomTab = try c.decodeIfPresent(String.self, forKey: .activeBottomTab)
+        bottomVisible = try c.decodeIfPresent(Bool.self, forKey: .bottomVisible)
+        closedTabs = try c.decodeIfPresent([String].self, forKey: .closedTabs)
+        mainTabs = try c.decodeIfPresent([String].self, forKey: .mainTabs)
+        activeMainTab = try c.decodeIfPresent(String.self, forKey: .activeMainTab)
+        sideColumnLeading = try c.decodeIfPresent(Bool.self, forKey: .sideColumnLeading)
+        browserAddresses = try c.decodeIfPresent([String: String].self, forKey: .browserAddresses)
+        gitCheckout = try c.decodeIfPresent(String.self, forKey: .gitCheckout)
+        tabHabits = try c.decodeIfPresent([String: String].self, forKey: .tabHabits)
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.

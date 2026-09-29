@@ -11,7 +11,7 @@ import SwiftUI
 /// the keyboard moves, and a list without one wants the highlight gone the
 /// moment the pointer leaves.
 ///
-/// Used by the toolbar's branch switcher and by the "From" control in the
+/// Used by the repo header's branch switcher and by the "From" control in the
 /// new-session sheet. They answer the same question and used to answer it with
 /// two copies of the same code that had drifted apart in the one way that
 /// mattered: only one of them listed remote branches.

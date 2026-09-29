@@ -22,6 +22,8 @@ struct RunningJobsList: View {
     let monitor: ProcessMonitor
     /// The session this popover is about.
     let session: UUID
+    /// Show an address as a tab in the session, beside what's serving it.
+    let openInTab: (URL) -> Void
     let dismiss: () -> Void
 
     static let width: CGFloat = 360
@@ -91,6 +93,7 @@ struct RunningJobsList: View {
         JobRow(job: job,
                isHighlighted: hovered == job.id,
                open: { open(job) },
+               openInBrowser: { openInBrowser(job) },
                quit: { monitor.quit(job) },
                hover: { inside in
                    if inside {
@@ -157,9 +160,15 @@ struct RunningJobsList: View {
         .padding(.vertical, 11)
     }
 
-    /// Hand the address to the browser and get out of the way: you clicked
-    /// through to somewhere else, so the popover has done its job.
+    /// Show the address as a tab and get out of the way: you clicked
+    /// through to it, so the popover has done its job.
     private func open(_ job: RunningJob) {
+        guard let url = job.localURL else { return }
+        openInTab(url)
+        dismiss()
+    }
+
+    private func openInBrowser(_ job: RunningJob) {
         guard let url = job.localURL else { return }
         NSWorkspace.shared.open(url)
         dismiss()
@@ -175,6 +184,7 @@ private struct JobRow: View {
     let job: RunningJob
     let isHighlighted: Bool
     let open: () -> Void
+    let openInBrowser: () -> Void
     let quit: () -> Void
     let hover: (Bool) -> Void
 
@@ -214,7 +224,7 @@ private struct JobRow: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(spokenDescription)
             .accessibilityAddTraits(isOpenable ? .isButton : [])
-            .accessibilityHint(isOpenable ? "Opens in your browser" : "")
+            .accessibilityHint(isOpenable ? "Opens in a tab" : "")
             .accessibilityAction { if isOpenable { open() } }
 
             HStack(spacing: 2) {
@@ -309,7 +319,8 @@ private struct JobRow: View {
         let menu = NSMenu()
         menu.autoenablesItems = false
         if isOpenable {
-            menu.addItem(ClosureMenuItem(title: "Open in Browser", handler: open))
+            menu.addItem(ClosureMenuItem(title: "Open in Tab", handler: open))
+            menu.addItem(ClosureMenuItem(title: "Open in Browser", handler: openInBrowser))
         }
         if let address = job.localAddress {
             menu.addItem(ClosureMenuItem(title: "Copy Address", handler: {
@@ -348,7 +359,7 @@ private struct JobRow: View {
             lines.append("Listening on " + job.ports.map { ":\($0)" }.joined(separator: " "))
         }
         if let cwd = job.workingDirectory { lines.append(cwd) }
-        if let address = job.localAddress { lines.append("Click to open \(address)") }
+        if let address = job.localAddress { lines.append("Click to open \(address) in a tab") }
         return lines.joined(separator: "\n")
     }
 }

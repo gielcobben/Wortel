@@ -60,6 +60,17 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertFalse(tabs.sideVisible, "an empty column is not something to show")
     }
 
+    /// A drop between two tabs of another row lands exactly there.
+    func testMovingToAnotherRowLandsAtTheDropIndex() {
+        var tabs = column()
+        let a = terminal(), b = terminal()
+        tabs.place(a, in: .bottom, at: 0)
+        tabs.place(b, in: .bottom, at: 1)
+        tabs.move(history, to: .bottom, at: 1)
+        XCTAssertEqual(tabs.bottom, [a, history, b])
+        XCTAssertEqual(tabs.side, [changes, files])
+    }
+
     func testMovingATerminalToTheStripShowsIt() {
         var tabs = WorkspaceTabs()
         let shell = terminal()
@@ -122,6 +133,16 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(tabs.home(for: .browser(UUID())), .bottom, "the last move wins")
     }
 
+    /// A move asked for once (⌥-click) isn't a habit.
+    func testAMoveThatRecordsNoHabitLeavesTheHabitAlone() {
+        var tabs = WorkspaceTabs()
+        let file = SideTab.file("/tmp/a.md")
+        tabs.place(file, in: .side, at: 0)
+        tabs.move(file, to: .main, at: .max, recordsHabit: false)
+        XCTAssertEqual(tabs.region(of: file), .main)
+        XCTAssertEqual(tabs.home(for: .file("/tmp/b.md")), .side)
+    }
+
     /// Reordering says nothing about where things belong.
     func testReorderingDoesntChangeTheHabit() {
         var tabs = WorkspaceTabs()
@@ -154,6 +175,14 @@ final class WorkspaceTabsTests: XCTestCase {
 
         tabs.close(files)
         XCTAssertEqual(tabs.activeSide, changes)
+    }
+
+    /// Closing a tab that isn't in front leaves the one in front alone.
+    func testClosingABackgroundTabKeepsTheFrontOne() {
+        var tabs = column()
+        tabs.close(files)
+        XCTAssertEqual(tabs.activeSide, changes)
+        XCTAssertEqual(tabs.side, [changes, history])
     }
 
     func testClosingTheLastStripTerminalHidesTheStrip() {
@@ -257,6 +286,18 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertTrue(fixed.bottom.isEmpty, "the session's terminal never sits in the strip")
         XCTAssertNil(fixed.activeBottom)
         XCTAssertFalse(fixed.bottomVisible)
+    }
+
+    /// A tab listed twice, or in two rows, is kept once, in the first row
+    /// that lists it: one terminal must not have two places to be.
+    func testNormalizedKeepsEveryTabInOneRow() {
+        let shell = terminal()
+        let broken = WorkspaceTabs(main: [.session, shell], side: [shell, changes, changes],
+                                   bottom: [changes, history], closed: [])
+        let fixed = broken.normalized()
+        XCTAssertEqual(fixed.main, [.session, shell])
+        XCTAssertEqual(fixed.side, [changes])
+        XCTAssertEqual(fixed.bottom, [history])
     }
 
     func testNormalizedAddsTheTerminalToAMainRowWithoutIt() {

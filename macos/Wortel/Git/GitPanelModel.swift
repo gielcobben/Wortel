@@ -299,6 +299,15 @@ final class GitPanelModel {
             selectMain(activeMainTab == .pane(requested) ? .session : .pane(requested))
             return
         }
+        // In the strip: the same toggle, against the strip being up.
+        if bottomTabs.contains(.pane(requested)) {
+            if bottomVisible && activeBottomTab == .pane(requested) {
+                toggleBottom()
+            } else {
+                selectBottom(.pane(requested))
+            }
+            return
+        }
         if isVisible && activeTab == .pane(requested) {
             setVisible(false)
             resolveCurrent()
@@ -310,7 +319,7 @@ final class GitPanelModel {
     /// Show a pane without the toggle — for the paths where a click can only
     /// mean "give me this", never "close": reclaiming the column from the
     /// markdown preview, which is a view of neither pane.
-    func show(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
+    private func show(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
         let wasShowingThis = isVisible && activeTab == .pane(requested)
         open(.pane(requested))
         // Only when this actually put a different pane in front of someone. A
@@ -366,11 +375,13 @@ final class GitPanelModel {
     /// keyboard, and bring the model and the file up to date. A row that opened
     /// slides open; one that emptied snaps shut, as ChatGPT's do.
     private func settle(_ tab: SideTab, in session: Session) {
-        if let pane = tab.pane { setPane(pane) }
+        let region = session.workspace.region(of: tab)
+        // `pane` is the column's; a pane picked in another row only counts
+        // as the one you last chose.
+        if let pane = tab.pane { setPane(pane, inColumn: region == .side) }
         mirror(session, animated: true, animatesClosing: false)
         onStateChanged?()
         resolveCurrent()
-        let region = session.workspace.region(of: tab)
         if let region { lastRegion = region }
         switch region {
         case .main?:
@@ -385,17 +396,15 @@ final class GitPanelModel {
         }
     }
 
-    /// Put a tab in the column's row (at the end, if it isn't in any row) and
-    /// bring it forward there. A tab that's in the main area's row is brought
-    /// forward there instead: that's where it is.
+    /// Bring a tab forward wherever it is, or put it at the end of the
+    /// column's row if it isn't in any.
     func open(_ tab: SideTab) {
         guard let session else { return }
-        if session.mainTabs.contains(tab) {
-            selectMain(tab)
-            return
+        change(session) { workspace in
+            if workspace.region(of: tab) == nil { workspace.place(tab, in: .side, at: .max) }
+            workspace.bringForward(tab)
         }
-        change(session) { $0.place(tab, in: .side, at: .max) }
-        select(tab)
+        settle(tab, in: session)
     }
 
     /// A new shell beside the session's own.
@@ -410,18 +419,6 @@ final class GitPanelModel {
         settle(tab, in: session)
     }
 
-    /// The tab `offset` places along from the one in front, wrapping. ⌃Tab and
-    /// ⌃⇧Tab.
-    func selectAdjacent(_ offset: Int) {
-        guard !tabs.isEmpty else { return }
-        guard isVisible, let activeTab, let index = tabs.firstIndex(of: activeTab) else {
-            select(tabs[0])
-            return
-        }
-        let next = (index + offset % tabs.count + tabs.count) % tabs.count
-        select(tabs[next])
-    }
-
     /// Close a tab, wherever it is. A terminal's shell ends with it. The
     /// neighbour that slides into its place comes to the front, and closing the
     /// last one in the column or the strip hides it, instantly. The tab goes on
@@ -434,7 +431,9 @@ final class GitPanelModel {
               let region = change(owner, { $0.close(tab) }) else { return }
         if let id = tab.terminalID { owner.closeSideSurface(id) }
         onTabClosed?(tab)
-        if region == .side, let pane = owner.activeSideTab?.pane { owner.inspectorPane = pane }
+        if region == .side, let pane = owner.activeSideTab?.pane, owner.inspectorPane != pane {
+            owner.inspectorPane = pane
+        }
         onStateChanged?()
         guard owner === session else { return }
         mirror(owner, animated: false)
@@ -483,7 +482,7 @@ final class GitPanelModel {
     /// the same view, not a new terminal.
     func move(_ tab: SideTab, to region: TabRegion, at index: Int) {
         guard let session, change(session, { $0.move(tab, to: region, at: index) }) else { return }
-        if let pane = session.activeSideTab?.pane { session.inspectorPane = pane }
+        if let pane = session.activeSideTab?.pane, session.inspectorPane != pane { session.inspectorPane = pane }
         settle(tab, in: session)
     }
 
@@ -506,7 +505,9 @@ final class GitPanelModel {
         case region?:
             change(session) { $0.bringForward(tab) }
         case _?:
-            change(session) { $0.move(tab, to: region, at: .max) }
+            // Asked for here (⌥-click, a menu naming the row), not dragged:
+            // it says nothing about where this kind of tab belongs.
+            change(session) { $0.move(tab, to: region, at: .max, recordsHabit: false) }
         case nil:
             change(session) {
                 $0.place(tab, in: region, at: .max)
@@ -740,12 +741,13 @@ final class GitPanelModel {
     /// with no preference of its own opens on, and (for a source-control pane)
     /// the one ⌘⌥G returns to from Files. Those are defaults, not state — the
     /// session is the state.
-    private func setPane(_ requested: InspectorPane) {
+    private func setPane(_ requested: InspectorPane, inColumn: Bool = true) {
         UserDefaults.standard.set(requested.rawValue, forKey: Self.paneKey)
         if requested.isSourceControl {
             UserDefaults.standard.set(requested.rawValue, forKey: Self.lastGitPaneKey)
         }
-        pane = requested
+        guard inColumn else { return }
+        if pane != requested { pane = requested }
         guard let session, session.inspectorPane != requested else { return }
         session.inspectorPane = requested
         onStateChanged?()

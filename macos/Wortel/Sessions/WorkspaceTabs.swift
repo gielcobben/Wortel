@@ -124,15 +124,18 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// index is one into the row as it was before the tab left it, which is
     /// what a drop between two tabs measures. The tab comes to the front of its
     /// new row. False, and nothing changes, when it isn't allowed there.
+    /// `recordsHabit`: whether taking it to another row is you saying where
+    /// its kind belongs (a drag, Move to) or not (⌥-click, just this once).
     @discardableResult
-    mutating func move(_ tab: SideTab, to region: TabRegion, at index: Int) -> Bool {
+    mutating func move(_ tab: SideTab, to region: TabRegion, at index: Int,
+                       recordsHabit: Bool = true) -> Bool {
         guard tab.fits(region), let from = detach(tab) else { return false }
         let target = from.region == region && from.index < index ? index - 1 : index
         place(tab, in: region, at: target)
         bringForward(tab)
         // Taken to another row: that's where its kind lives now. A reorder
         // says nothing about where things belong.
-        if from.region != region, let kind = tab.kind { habits[kind] = region }
+        if recordsHabit, from.region != region, let kind = tab.kind { habits[kind] = region }
         return true
     }
 
@@ -174,18 +177,20 @@ struct WorkspaceTabs: Equatable, Sendable {
 
     // MARK: - Consistency
 
-    /// The same layout with anything a file could have got wrong put right: the
+    /// The same layout with anything a file could have got wrong put right:
+    /// every tab in one row only, the
     /// session's terminal in the main row exactly once, what's in front being
     /// something the row has, and an empty column or strip hidden. What
     /// `SessionManager.restore` applies to whatever it read.
     func normalized() -> WorkspaceTabs {
         var copy = self
-        var seen = false
-        copy.main = copy.main.filter { tab in
-            guard tab == .session else { return true }
-            defer { seen = true }
-            return !seen
-        }
+        // Each tab once, in the first row that lists it (main, then the
+        // column, then the strip): two rows claiming one terminal would give
+        // one view two places to be.
+        var placed = Set<SideTab>()
+        copy.main = copy.main.filter { placed.insert($0).inserted }
+        copy.side = copy.side.filter { placed.insert($0).inserted }
+        copy.bottom = copy.bottom.filter { placed.insert($0).inserted }
         if !copy.main.contains(.session) { copy.main.insert(.session, at: 0) }
         if let active = copy.activeMain, active == .session || !copy.main.contains(active) {
             copy.activeMain = nil

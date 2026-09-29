@@ -586,15 +586,23 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
             self?.git.openTerminal()
         }
-        terminal.image = Self.menuGlyph("apple.terminal")
+        Self.setGlyph("apple.terminal", on: terminal)
         terminal.keyEquivalent = "`"
         terminal.keyEquivalentModifierMask = [.control]
+        // Where it will start: the session's shell is standing there now.
+        if #available(macOS 14.4, *), let path = manager.selected?.abbreviatedPath, !path.isEmpty {
+            terminal.subtitle = "in \(path)"
+        }
         menu.addItem(terminal)
 
         menu.addItem(.sectionHeader(title: "Panes"))
         for pane in InspectorPane.allCases {
             let item = ClosureMenuItem(title: pane.title) { [weak self] in self?.git.show(pane) }
-            item.image = Self.menuGlyph(pane.symbol)
+            Self.setGlyph(pane.symbol, on: item)
+            // How much is waiting in Changes, as a native count badge.
+            if pane == .changes, let count = git.repo?.status.changes.count, count > 0 {
+                item.badge = NSMenuItemBadge(count: count)
+            }
             if pane == .files {
                 item.keyEquivalent = "e"
                 item.keyEquivalentModifierMask = [.command, .option]
@@ -609,8 +617,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             for job in servers {
                 guard let url = job.localURL, let address = job.localAddress else { continue }
                 let item = ClosureMenuItem(title: address) { NSWorkspace.shared.open(url) }
-                item.image = Self.menuGlyph("globe")
-                item.toolTip = job.label
+                Self.setGlyph("globe", on: item)
+                if #available(macOS 14.4, *) { item.subtitle = job.label } else { item.toolTip = job.label }
                 menu.addItem(item)
             }
         }
@@ -619,9 +627,15 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.bounds.height + 4), in: sender)
     }
 
-    private static func menuGlyph(_ symbol: String) -> NSImage? {
-        NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+    /// A glyph that actually shows. macOS 27 decides for itself whether a menu
+    /// item's image is drawn and "will typically hide" it (NSMenuItem.h); an
+    /// item has to ask for `.visible` to keep the one it was given.
+    private static func setGlyph(_ symbol: String, on item: NSMenuItem) {
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+        if #available(macOS 27.0, *) {
+            item.preferredImageVisibility = .visible
+        }
     }
 
     // MARK: Running jobs

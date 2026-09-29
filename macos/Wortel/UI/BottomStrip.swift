@@ -157,7 +157,19 @@ final class TerminalWorkspaceController: NSSplitViewController {
                         forDrawnRect: drawnRect, ofDividerAt: dividerIndex).insetBy(dx: 0, dy: -4)
     }
 
-    /// Where the terminal's own content sits, for the drag controller's zones.
+    /// Not ours to answer. The sidebar commands travel the responder chain up
+    /// from the terminal, and this split, being an NSSplitViewController, would
+    /// take them first and do nothing with them (it has no sidebar): ⌘⌥S and
+    /// the titlebar's sidebar buttons stopped reaching the window's split.
+    override func responds(to aSelector: Selector!) -> Bool {
+        if aSelector == #selector(NSSplitViewController.toggleSidebar(_:))
+            || aSelector == #selector(NSSplitViewController.toggleInspector(_:)) {
+            return false
+        }
+        return super.responds(to: aSelector)
+    }
+
+    /// The main area (above the strip), for the drag controller's zones.
     var terminalView: NSView { top.view }
 }
 

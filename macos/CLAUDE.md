@@ -318,10 +318,15 @@ session has three places for tabs, modelled on the ChatGPT app's bounded layout
 - **the main area's row**: the session's own terminal (`SideTab.session`, by
   the session's name) plus whatever is opened or dragged there;
 - **the side column's row**: Changes, History, Files, side terminals;
-- **the bottom strip** under the main area (⌘J): terminals only.
+- **the bottom strip** under the main area (⌘J).
 
-A tab is in exactly one row; the one in front fills its area. Panes go in the
-main row or the column, never the strip. The session's terminal never leaves the
+Besides panes and terminals, a tab can be a previewed file (`SideTab.file`) or
+a page the session serves (`SideTab.web`, `Wortel/Browser/BrowserTabs.swift`),
+opened from the running-jobs popover or the column's "+". A page's web view
+lives in `BrowserTabs`, not in the view, so moving its tab doesn't reload it.
+
+A tab is in exactly one row; the one in front fills its area. Any tab goes in
+any row, except the session's terminal, which never leaves the
 main row and can't be closed: dragged onto the column it **swaps sides** instead,
 as ChatGPT's chat does. Opening a tab shows its row, closing the last hides the
 column or strip (instantly), hiding keeps the tabs, ⌘⇧T reopens the last closed

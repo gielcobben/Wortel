@@ -311,9 +311,14 @@ enum SideTab: Hashable, Sendable {
     /// is canonical (symlinks resolved), which makes it the tab's identity: one
     /// tab per file, wherever it was opened from.
     case file(String)
+    /// A page from something the session serves, `http://localhost:5173` and
+    /// the like. The address it was opened on is its identity; where the page
+    /// has navigated since is the page's business (BrowserTabs).
+    case web(String)
 
     private static let terminalPrefix = "terminal:"
     private static let filePrefix = "file:"
+    private static let webPrefix = "web:"
 
     init?(rawValue: String) {
         if let pane = InspectorPane(rawValue: rawValue) {
@@ -323,6 +328,8 @@ enum SideTab: Hashable, Sendable {
             self = .terminal(id)
         } else if rawValue.hasPrefix(Self.filePrefix), rawValue.count > Self.filePrefix.count {
             self = .file(String(rawValue.dropFirst(Self.filePrefix.count)))
+        } else if rawValue.hasPrefix(Self.webPrefix), rawValue.count > Self.webPrefix.count {
+            self = .web(String(rawValue.dropFirst(Self.webPrefix.count)))
         } else if rawValue == "session" {
             self = .session
         } else {
@@ -336,6 +343,7 @@ enum SideTab: Hashable, Sendable {
         case .terminal(let id): return Self.terminalPrefix + id.uuidString
         case .session: return "session"
         case .file(let path): return Self.filePrefix + path
+        case .web(let address): return Self.webPrefix + address
         }
     }
 
@@ -343,6 +351,15 @@ enum SideTab: Hashable, Sendable {
         if case .file(let path) = self { return path }
         return nil
     }
+
+    var webAddress: String? {
+        if case .web(let address) = self { return address }
+        return nil
+    }
+
+    /// Whether a row draws this tab as a page of its own (a pane, a file, a
+    /// web page) rather than hosting a terminal.
+    var isPage: Bool { terminalID == nil && self != .session }
 
     var pane: InspectorPane? {
         if case .pane(let pane) = self { return pane }

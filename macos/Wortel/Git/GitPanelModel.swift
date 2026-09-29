@@ -549,6 +549,9 @@ final class GitPanelModel {
         mirror(session, animated: true)
         onStateChanged?()
         if bottomVisible {
+            // A pane in front of the strip needs this session's repo: while
+            // nothing showed one, a session switch left the last session's.
+            resolveCurrent()
             focus(.bottom)
         } else {
             lastRegion = .main

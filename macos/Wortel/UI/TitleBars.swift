@@ -465,6 +465,9 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             let symbol = ["md", "markdown"].contains(url.pathExtension.lowercased())
                 ? "doc.richtext" : "doc.text"
             return .init(tab: tab, title: url.lastPathComponent, symbol: symbol)
+        case .web(let address):
+            return .init(tab: tab, title: BrowserPage.shortAddress(URL(string: address)),
+                         symbol: "globe")
         case .session:
             // The session's own terminal, by the session's name.
             let name = session.map { SessionName.leaf(of: $0.name) } ?? "Terminal"
@@ -533,13 +536,15 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             menu.addItem(item)
         }
 
-        // What the session holds a port open for, to open in the browser.
+        // What the session holds a port open for, to open as a tab here.
         let servers = (runningSnapshot.work + runningSnapshot.orphans).filter { $0.localURL != nil }
         if !servers.isEmpty {
             menu.addItem(.separator())
             for job in servers {
                 guard let url = job.localURL, let address = job.localAddress else { continue }
-                let item = ClosureMenuItem(title: address) { NSWorkspace.shared.open(url) }
+                let item = ClosureMenuItem(title: address) { [weak self] in
+                    self?.git.open(.web(url.absoluteString), in: region)
+                }
                 Self.setGlyph("globe", on: item)
                 item.toolTip = job.label
                 menu.addItem(item)
@@ -682,6 +687,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         let list = RunningJobsList(
             monitor: processes, session: session,
+            openInTab: { [weak self] url in self?.git.open(.web(url.absoluteString)) },
             dismiss: { [weak self] in self?.runningPopover?.performClose(nil) })
         let host = NSHostingController(rootView: list)
         host.sizingOptions = [.preferredContentSize]

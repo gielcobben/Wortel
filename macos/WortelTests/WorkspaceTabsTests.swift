@@ -226,6 +226,13 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(file.rawValue, "file:/Users/giel/Developer/wortel/README.md")
     }
 
+    func testWebTabRawValuesRoundTrip() {
+        let web = SideTab.web("http://localhost:5173")
+        XCTAssertEqual(SideTab(rawValue: web.rawValue), web)
+        XCTAssertEqual(web.rawValue, "web:http://localhost:5173")
+        XCTAssertNil(SideTab(rawValue: "web:"))
+    }
+
     func testClosedTabRawValuesRoundTrip() {
         let shell = terminal()
         for entry in [ClosedTab(tab: changes, region: .side, index: 2),

@@ -219,6 +219,10 @@ targets:
         NSHumanReadableCopyright: "© Giel Cobben"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSSupportsSuddenTermination: false
+        # Web tabs show what a session serves (http://localhost:5173), which
+        # App Transport Security would otherwise refuse for being plain http.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         # Sparkle auto-update feed (served from the wortel-updates R2 bucket).
         SUFeedURL: https://updates.wortel.sh/appcast.xml
         # EdDSA public key — private half lives in the login Keychain (shared

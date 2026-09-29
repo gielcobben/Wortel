@@ -167,7 +167,7 @@ private struct ModeSwitch: View {
 }
 
 /// A plain button that fills lightly under the pointer, as the titlebar's do.
-private struct HoverFillStyle: ButtonStyle {
+struct HoverFillStyle: ButtonStyle {
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {

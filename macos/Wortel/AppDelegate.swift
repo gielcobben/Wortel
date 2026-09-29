@@ -180,6 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         gitPanel.onTabClosed = { [weak self] tab in
             if let path = tab.filePath { self?.previewTabs.forget(path) }
+            if let address = tab.webAddress { BrowserTabs.shared.forget(address) }
         }
         // A link in a rendered README is a fifth way to open a file, and it goes
         // through the same opener as the other four.

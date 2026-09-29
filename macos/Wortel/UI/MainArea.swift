@@ -59,9 +59,9 @@ final class MainAreaController: NSViewController {
     private func sync() {
         let session = manager.selected
         let active = git.activeMainTab
-        // A pane or a file: anything that isn't a terminal is drawn by the
-        // SwiftUI cover.
-        let showsPane = active?.pane != nil || active?.filePath != nil
+        // A pane, a file, a web page: anything that isn't a terminal is drawn
+        // by the SwiftUI cover.
+        let showsPane = active?.isPage ?? false
         paneHost.view.isHidden = !showsPane
         let surface = active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) }
         tabHost.show(surface, focusRequest: git.mainFocusRequest, mainTerminal: session?.surfaceView)
@@ -101,6 +101,8 @@ struct TabContent: View {
             switch tab {
             case .file(let path)?:
                 PreviewTab(tabs: previewTabs, path: path)
+            case .web(let address)?:
+                BrowserTab(page: BrowserTabs.shared.page(for: address))
             case .pane(.files)?:
                 FileTreePanel(model: files, focusRequest: git.listFocusRequest)
             case .pane(let pane)?:

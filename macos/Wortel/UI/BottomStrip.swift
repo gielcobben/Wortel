@@ -101,14 +101,11 @@ final class TerminalWorkspaceController: NSSplitViewController {
         syncing = true
         suspendCapture = true
         if git.animatesBottomChange {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.2
+            Motion.pane(opening: show) {
                 bottomItem.animator().isCollapsed = !show
-            } completionHandler: { [weak self] in
-                MainActor.assumeIsolated {
-                    self?.suspendCapture = false
-                    if show { self?.applyHeight() }
-                }
+            } completion: { [weak self] in
+                self?.suspendCapture = false
+                if show { self?.applyHeight() }
             }
         } else {
             bottomItem.isCollapsed = !show
@@ -155,18 +152,6 @@ final class TerminalWorkspaceController: NSSplitViewController {
                             forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int) -> NSRect {
         super.splitView(splitView, effectiveRect: proposedEffectiveRect,
                         forDrawnRect: drawnRect, ofDividerAt: dividerIndex).insetBy(dx: 0, dy: -4)
-    }
-
-    /// Not ours to answer. The sidebar commands travel the responder chain up
-    /// from the terminal, and this split, being an NSSplitViewController, would
-    /// take them first and do nothing with them (it has no sidebar): ⌘⌥S and
-    /// the titlebar's sidebar buttons stopped reaching the window's split.
-    override func responds(to aSelector: Selector!) -> Bool {
-        if aSelector == #selector(NSSplitViewController.toggleSidebar(_:))
-            || aSelector == #selector(NSSplitViewController.toggleInspector(_:)) {
-            return false
-        }
-        return super.responds(to: aSelector)
     }
 
     /// The main area (above the strip), for the drag controller's zones.

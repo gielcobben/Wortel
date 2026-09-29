@@ -351,15 +351,12 @@ final class MainSplitViewController: NSSplitViewController {
         syncingInspector = true
         suspendWidthCapture = true
         if animates {
-            NSAnimationContext.runAnimationGroup { _ in
+            Motion.pane(opening: show) {
                 inspectorItem.animator().isCollapsed = !show
-            } completionHandler: { [weak self] in
-                // Delivered on the main thread, but as a nonisolated closure.
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.suspendWidthCapture = false
-                    if show { self.applyInspectorWidth() }
-                }
+            } completion: { [weak self] in
+                guard let self else { return }
+                self.suspendWidthCapture = false
+                if show { self.applyInspectorWidth() }
             }
         } else {
             inspectorItem.isCollapsed = !show
@@ -468,10 +465,9 @@ final class MainSplitViewController: NSSplitViewController {
     /// this one deliberately isn't (see `viewDidLoad`).
     override func toggleSidebar(_ sender: Any?) {
         guard let sidebarItem else { return }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            context.allowsImplicitAnimation = true
-            sidebarItem.animator().isCollapsed.toggle()
+        let collapsing = !sidebarItem.isCollapsed
+        Motion.pane(opening: !collapsing) {
+            sidebarItem.animator().isCollapsed = collapsing
         }
     }
 

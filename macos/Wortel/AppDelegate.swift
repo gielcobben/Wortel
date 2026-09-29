@@ -662,11 +662,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.requestCloseSelected()
     }
 
-    /// The last stop for ⌘⌥S and the titlebar's sidebar buttons. They travel the
-    /// responder chain from whatever has the keyboard, and when nothing does (a
-    /// pane covering the terminal takes it away) the chain goes window, app,
-    /// here, and never passes the split that owns the sidebar.
-    @objc func toggleSidebar(_ sender: Any?) {
+    /// ⌘⌥S and the titlebar's sidebar buttons. A command of Wortel's own
+    /// rather than AppKit's `toggleSidebar:`, because that one is answered by
+    /// whatever in the responder chain implements it first, and SwiftUI's
+    /// hosting views (the terminal sits in one) do, for SwiftUI's sidebars:
+    /// the command stopped there and never reached the window's split. Nothing
+    /// else implements this name, so it arrives here and goes straight to it.
+    @objc func toggleSessionSidebar(_ sender: Any?) {
         splitController.toggleSidebar(sender)
     }
 

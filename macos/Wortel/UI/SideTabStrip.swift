@@ -54,22 +54,20 @@ final class SideTabStrip: NSView {
 
     func update(items: [Item], active: SideTab?) {
         guard items != self.items || active != self.active else { return }
-        if items.map(\.tab) != self.items.map(\.tab) {
-            tabViews.forEach { $0.removeFromSuperview() }
+        let orderChanged = items.map(\.tab) != self.items.map(\.tab)
+        let hadTabs = !tabViews.isEmpty && window != nil
+        var inserted: [SideTabView] = []
+        if orderChanged {
+            // Reuse each tab's view by identity, so a reorder, an insert or a
+            // close can slide the rest into place rather than redraw the row.
+            var existing = Dictionary(tabViews.map { ($0.tab, $0) }, uniquingKeysWith: { a, _ in a })
             tabViews = items.map { item in
-                let view = SideTabView(tab: item.tab, pinned: item.pinned)
-                view.onSelect = { [weak self] in self?.onSelect(item.tab) }
-                view.onClose = { [weak self] in self?.onClose(item.tab) }
-                view.onCloseOthers = { [weak self] in self?.onCloseOthers(item.tab) }
-                view.onMove = { [weak self] region in self?.onMove(item.tab, region) }
-                view.onDrag = { [weak self, weak view] phase, point in
-                    guard let self, let view else { return }
-                    self.onDrag(phase, item.tab, view, point)
-                }
-                view.stripRegion = { [weak self] in self?.region ?? .side }
-                addSubview(view)
+                if let view = existing.removeValue(forKey: item.tab) { return view }
+                let view = makeView(for: item)
+                inserted.append(view)
                 return view
             }
+            existing.values.forEach { $0.removeFromSuperview() }
         }
         self.items = items
         self.active = active
@@ -82,7 +80,58 @@ final class SideTabStrip: NSView {
             let next = index + 1 < items.count ? items[index + 1].tab : nil
             view.showsTrailingDivider = next != nil && items[index].tab != active && next != active
         }
-        needsLayout = true
+        if orderChanged, hadTabs {
+            slideIntoPlace(fadingIn: inserted)
+        } else {
+            needsLayout = true
+        }
+    }
+
+    private func makeView(for item: Item) -> SideTabView {
+        let view = SideTabView(tab: item.tab, pinned: item.pinned)
+        view.onSelect = { [weak self] in self?.onSelect(item.tab) }
+        view.onClose = { [weak self] in self?.onClose(item.tab) }
+        view.onCloseOthers = { [weak self] in self?.onCloseOthers(item.tab) }
+        view.onMove = { [weak self] region in self?.onMove(item.tab, region) }
+        view.onDrag = { [weak self, weak view] phase, point in
+            guard let self, let view else { return }
+            self.onDrag(phase, item.tab, view, point)
+        }
+        view.stripRegion = { [weak self] in self?.region ?? .side }
+        addSubview(view)
+        return view
+    }
+
+    /// Tabs glide to their new places and new ones fade in, on the panes'
+    /// curve: ChatGPT's tabs do the same over 150 to 180ms.
+    private func slideIntoPlace(fadingIn inserted: [SideTabView]) {
+        let frames = tabFrames()
+        for (view, frame) in zip(tabViews, frames) where inserted.contains(where: { $0 === view }) {
+            view.frame = frame
+            view.alphaValue = 0
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Motion.tabs
+            context.timingFunction = Motion.curve
+            context.allowsImplicitAnimation = true
+            for (view, frame) in zip(tabViews, frames) {
+                if inserted.contains(where: { $0 === view }) {
+                    view.animator().alphaValue = 1
+                } else {
+                    view.animator().frame = frame
+                }
+            }
+        }
+    }
+
+    /// Where each tab sits for the strip's current width.
+    private func tabFrames() -> [NSRect] {
+        var x: CGFloat = 0
+        let y = ((bounds.height - Self.tabHeight) / 2).rounded()
+        return tabWidths().map { width in
+            defer { x += width + Self.gap }
+            return NSRect(x: x, y: y, width: width, height: Self.tabHeight)
+        }
     }
 
     /// Each tab's width: what its title wants, clamped, then shrunk evenly when
@@ -99,12 +148,7 @@ final class SideTabStrip: NSView {
 
     override func layout() {
         super.layout()
-        var x: CGFloat = 0
-        let y = ((bounds.height - Self.tabHeight) / 2).rounded()
-        for (view, width) in zip(tabViews, tabWidths()) {
-            view.frame = NSRect(x: x, y: y, width: width, height: Self.tabHeight)
-            x += width + Self.gap
-        }
+        for (view, frame) in zip(tabViews, tabFrames()) { view.frame = frame }
     }
 
     /// Where a tab dropped at `x` (window coordinates) would go: the insertion

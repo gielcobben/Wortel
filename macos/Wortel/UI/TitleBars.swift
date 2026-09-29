@@ -73,6 +73,43 @@ enum Chrome {
     }
 }
 
+// MARK: - Motion
+
+/// How panes move: one curve and two durations for everything that slides.
+///
+/// The curve is the ChatGPT app's (`cubic-bezier(.23, 1, .32, 1)`, a quick
+/// ease-out): most of the distance early, then a long gentle settle, which
+/// reads as responsive rather than as something you wait for. Opening takes a
+/// little longer than closing, as in ChatGPT, where closing is instant: putting
+/// something away shouldn't make you watch it go.
+@MainActor
+enum Motion {
+    static let opening: TimeInterval = 0.26
+    static let closing: TimeInterval = 0.18
+    static let tabs: TimeInterval = 0.18
+    static let curve = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
+
+    /// A pane opening or closing, with every terminal's resizing held until it
+    /// lands (SurfaceView.holdResizes): one resize at the end instead of one a
+    /// frame. `completion` runs as it lands, before the terminals resize, so a
+    /// width it sets is the width they get.
+    static func pane(opening: Bool, _ changes: () -> Void,
+                     completion: @escaping @MainActor () -> Void = {}) {
+        SurfaceView.holdResizes()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = opening ? Self.opening : Self.closing
+            context.timingFunction = curve
+            context.allowsImplicitAnimation = true
+            changes()
+        } completionHandler: {
+            MainActor.assumeIsolated {
+                completion()
+                DispatchQueue.main.async { SurfaceView.releaseResizes() }
+            }
+        }
+    }
+}
+
 // MARK: - Building blocks
 
 /// A view filled with one (dynamic) colour, resolved against its own appearance
@@ -306,7 +343,7 @@ final class SidebarBar: ChromeBarView {
     override init() {
         super.init()
         let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar")
-        toggle.action = #selector(NSSplitViewController.toggleSidebar(_:))
+        toggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
         let new = HoverFillButton.glyph("square.and.pencil", "New Session")
         new.action = #selector(AppDelegate.newSession(_:))
         let stack = NSStackView(views: [toggle, new])
@@ -338,7 +375,7 @@ final class MainBar: ChromeBarView {
 
     override init() {
         let toggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar")
-        toggle.action = #selector(NSSplitViewController.toggleSidebar(_:))
+        toggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
         let new = HoverFillButton.glyph("square.and.pencil", "New Session")
         new.action = #selector(AppDelegate.newSession(_:))
         sidebarControls = NSStackView(views: [toggle, new])
@@ -387,7 +424,7 @@ final class SideColumnBar: ChromeBarView {
     override init() {
         super.init()
         toggle.isSelected = true
-        sidebarToggle.action = #selector(NSSplitViewController.toggleSidebar(_:))
+        sidebarToggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
         sidebarToggle.isHidden = true
         sidebarToggle.translatesAutoresizingMaskIntoConstraints = false
         strip.translatesAutoresizingMaskIntoConstraints = false

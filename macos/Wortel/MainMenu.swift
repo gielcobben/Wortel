@@ -304,7 +304,7 @@ enum MainMenu {
             previewModeItems.append(item)
         }
         viewMenu.addItem(.separator())
-        let toggleSidebar = viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
+        let toggleSidebar = viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(AppDelegate.toggleSessionSidebar(_:)), keyEquivalent: "s")
         toggleSidebar.keyEquivalentModifierMask = [.command, .option]
         // ⌘⌥G, not ⌘G: ⌘⌥S is already Toggle Sidebar above, and ⌘G is free of a
         // wortel.conf keybind. Routes through the responder chain to AppDelegate.

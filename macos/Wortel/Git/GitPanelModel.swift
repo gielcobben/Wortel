@@ -441,6 +441,72 @@ final class GitPanelModel {
         onStateChanged?()
     }
 
+    // MARK: - Rows by region (for the keyboard)
+
+    /// A row's tabs in order.
+    func tabs(in region: TabRegion) -> [SideTab] {
+        switch region {
+        case .main: return mainTabs
+        case .side: return tabs
+        case .bottom: return bottomTabs.map { .terminal($0) }
+        }
+    }
+
+    /// The tab in front of a row that's showing.
+    func activeTab(in region: TabRegion) -> SideTab? {
+        switch region {
+        case .main: return activeMainTab ?? .session
+        case .side: return isVisible ? activeTab : nil
+        case .bottom: return bottomVisible ? activeBottomTab.map { .terminal($0) } : nil
+        }
+    }
+
+    /// Bring a tab of `region`'s row forward.
+    func bringForward(_ tab: SideTab, in region: TabRegion) {
+        switch region {
+        case .main: selectMain(tab)
+        case .side: select(tab)
+        case .bottom: if let id = tab.terminalID { selectBottom(id) }
+        }
+    }
+
+    /// The tab `offset` places along in `region`'s row, wrapping. ⌃Tab, ⌥⌘→.
+    func selectAdjacent(_ offset: Int, in region: TabRegion) {
+        let row = tabs(in: region)
+        guard !row.isEmpty else { return }
+        guard let current = activeTab(in: region), let index = row.firstIndex(of: current) else {
+            bringForward(row[0], in: region)
+            return
+        }
+        bringForward(row[(index + offset % row.count + row.count) % row.count], in: region)
+    }
+
+    /// The `number`th tab (1-based) of `region`'s row; 9 is the last, as in
+    /// Safari. ⌥⌘1…⌥⌘9.
+    func selectTab(number: Int, in region: TabRegion) {
+        let row = tabs(in: region)
+        guard !row.isEmpty else { return }
+        let index = number >= 9 ? row.count - 1 : number - 1
+        guard row.indices.contains(index) else { return }
+        bringForward(row[index], in: region)
+    }
+
+    /// Give the keyboard to what's in front of `region`: a terminal, or the
+    /// list of a pane. ⌘] / ⌘[.
+    func focus(_ region: TabRegion) {
+        switch region {
+        case .main:
+            guard let tab = activeMainTab else { onFocusMainTerminal?(); return }
+            if tab.terminalID != nil { mainFocusRequest += 1 } else { listFocusRequest += 1 }
+        case .side:
+            guard isVisible, let tab = activeTab else { return }
+            if tab.terminalID != nil { terminalFocusRequest += 1 } else { listFocusRequest += 1 }
+        case .bottom:
+            guard bottomVisible, activeBottomTab != nil else { return }
+            bottomFocusRequest += 1
+        }
+    }
+
     // MARK: - The strip under the terminal
 
     /// Show or hide the strip. Showing one with nothing in it opens a

@@ -367,7 +367,9 @@ final class SidebarBar: ChromeBarView {
 final class MainBar: ChromeBarView {
     let strip = SideTabStrip()
     let add = HoverFillButton.glyph("plus", "New Tab")
-    let running = RunningJobsPill()
+    /// The session's actions, as ChatGPT's "…" is the conversation's.
+    let more = HoverFillButton.glyph("ellipsis", "Session")
+    let running = RunningButton()
     let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column")
     let bottomToggle = HoverFillButton.glyph("rectangle.bottomthird.inset.filled", "Bottom Strip")
     private let sidebarControls: NSStackView
@@ -386,7 +388,10 @@ final class MainBar: ChromeBarView {
         strip.setContentHuggingPriority(.init(1), for: .horizontal)
         strip.setContentCompressionResistancePriority(.init(1), for: .horizontal)
         strip.heightAnchor.constraint(equalToConstant: 38).isActive = true
-        let trailing = NSStackView(views: [add, running, bottomToggle, sideToggle])
+        // ChatGPT's order: the row's "+", then the conversation's own controls,
+        // a hairline, and the panel toggles at the far end.
+        let trailing = NSStackView(views: [add, ToolbarDivider(), more, running,
+                                           ToolbarDivider(), bottomToggle, sideToggle])
         trailing.spacing = 4
         let row = NSStackView(views: [sidebarControls, strip, trailing])
         row.spacing = 8
@@ -456,82 +461,74 @@ final class SideColumnBar: ChromeBarView {
 
 // MARK: - Running jobs
 
-/// What the session on screen is still running, as a pill in the terminal's
-/// titlebar row: the state itself (`bun dev :3000`), not an icon standing for
-/// it. Hidden while the session runs nothing, so an ordinary terminal carries no
-/// extra chrome. Opens the running list.
+/// What the session on screen is still running: a plain glyph, like the
+/// ChatGPT app's Outputs button, with a small dot while something runs (green
+/// when it's serving a port). Always there, so the row never shifts when a
+/// server starts; the list it opens says when nothing is. The count is in the
+/// tooltip.
 @MainActor
-final class RunningJobsPill: HoverFillButton {
-    private var drawn: RunningStatus?
+final class RunningButton: HoverFillButton {
+    private let dot = CALayer()
+    private var dotColor: NSColor?
 
     convenience init() {
         self.init(frame: .zero)
-        imagePosition = .noImage
-        lineBreakMode = .byTruncatingTail
+        image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "Running")?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+        toolTip = "Running in this session"
         translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(equalToConstant: 28).isActive = true
-        isHidden = true
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 28),
+            heightAnchor.constraint(equalToConstant: 28),
+        ])
+        wantsLayer = true
+        dot.cornerRadius = 3
+        dot.isHidden = true
+        layer?.addSublayer(dot)
     }
-
-    /// Room either side of the title inside the hover fill.
-    private static let padding: CGFloat = 20
-    private static let maxTitleLength = 22
-
-    private var widthConstraint: NSLayoutConstraint?
 
     func show(_ snapshot: RunningJobsSnapshot) {
-        isHidden = !snapshot.hasWork
         let status = snapshot.status
-        if status != drawn {
-            drawn = status
-            attributedTitle = Self.pillTitle(status)
-            let width = ceil(attributedTitle.size().width) + Self.padding
-            if let widthConstraint {
-                widthConstraint.constant = width
-            } else {
-                widthConstraint = widthAnchor.constraint(equalToConstant: width)
-                widthConstraint?.isActive = true
-            }
-        }
-        let spoken = ([status.title] + status.ports).joined(separator: " ")
-        setAccessibilityLabel("Running: \(spoken)")
         let count = snapshot.work.count + snapshot.orphans.count
-        toolTip = "\(count) \(count == 1 ? "job" : "jobs") running in this session"
+        dotColor = snapshot.hasWork ? (status.isServing ? .systemGreen : .secondaryLabelColor) : nil
+        dot.isHidden = dotColor == nil
+        needsDisplay = true
+        toolTip = count == 0 ? "Nothing running in this session"
+            : "\(count) \(count == 1 ? "job" : "jobs") running: \(([status.title] + status.ports).joined(separator: " "))"
+        setAccessibilityLabel(toolTip)
     }
 
-    private static func pillTitle(_ status: RunningStatus) -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        let result = NSMutableAttributedString()
-        let dotColor: NSColor = status.isServing ? .systemGreen : .tertiaryLabelColor
-        if let dot = NSImage(systemSymbolName: status.isServing ? "circle.fill" : "circle",
-                             accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 7, weight: .regular)
-                .applying(.init(paletteColors: [dotColor]))) {
-            let attachment = NSTextAttachment()
-            attachment.image = dot
-            attachment.bounds = CGRect(x: 0, y: (font.capHeight - dot.size.height) / 2,
-                                       width: dot.size.width, height: dot.size.height)
-            result.append(NSAttributedString(attachment: attachment))
-            result.append(NSAttributedString(string: "  ", attributes: [.font: font]))
-        }
-        var title = status.title
-        if title.count > maxTitleLength {
-            title = String(title.prefix(maxTitleLength - 1)) + "\u{2026}"
-        }
-        result.append(NSAttributedString(string: title, attributes: [
-            .font: font, .foregroundColor: NSColor.labelColor,
-        ]))
-        if !status.ports.isEmpty {
-            // Monospaced digits so `:3000` and `:5173` hold their width.
-            result.append(NSAttributedString(
-                string: "  " + status.ports.joined(separator: " "),
-                attributes: [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                ]))
-        }
-        return result
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        // On the glyph's shoulder, as a badge sits.
+        dot.frame = NSRect(x: bounds.maxX - 10, y: isFlipped ? 5 : bounds.maxY - 11, width: 6, height: 6)
+        CATransaction.commit()
     }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let dotColor else { return }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            dot.backgroundColor = dotColor.cgColor
+        }
+    }
+}
+
+/// The hairline between groups of titlebar controls, as ChatGPT sets its panel
+/// toggle apart from the conversation's own buttons.
+@MainActor
+final class ToolbarDivider: FilledView {
+    init() {
+        super.init(color: Chrome.hairlineStrong)
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 1),
+            heightAnchor.constraint(equalToConstant: 16),
+        ])
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 }
 
 // MARK: - Keeping the rows current
@@ -568,6 +565,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         mainBar.add.action = #selector(presentNewTabMenu(_:))
         mainBar.running.target = self
         mainBar.running.action = #selector(openRunningJobs(_:))
+        mainBar.more.target = self
+        mainBar.more.action = #selector(presentSessionMenu(_:))
 
         // The column's tab row.
         sideBar.strip.onSelect = { [weak self] tab in self?.git.select(tab) }
@@ -704,6 +703,75 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.bounds.height + 4), in: sender)
     }
 
+    /// The session's "…": its own actions, as ChatGPT's menu is the
+    /// conversation's. Native, small, glyphs that show, shortcuts on the right.
+    @objc private func presentSessionMenu(_ sender: NSView) {
+        guard let session = manager.selected else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let rename = ClosureMenuItem(title: "Rename") { [weak self] in
+            self?.manager.editingID = session.id
+        }
+        Self.setGlyph("pencil", on: rename)
+        rename.keyEquivalent = "r"
+        rename.keyEquivalentModifierMask = [.command]
+        menu.addItem(rename)
+
+        let destinations = manager.folderNames.filter { $0 != session.folderPath }
+        if session.folderPath != nil || !destinations.isEmpty {
+            let submenu = NSMenu()
+            if session.folderPath != nil {
+                submenu.addItem(ClosureMenuItem(title: "Top Level") { [weak self] in
+                    self?.manager.moveSession(id: session.id, toFolder: nil, at: .max)
+                })
+            }
+            for folder in destinations {
+                submenu.addItem(ClosureMenuItem(title: folder) { [weak self] in
+                    self?.manager.moveSession(id: session.id, toFolder: folder, at: .max)
+                })
+            }
+            let move = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
+            Self.setGlyph("folder", on: move)
+            move.submenu = submenu
+            menu.addItem(move)
+        }
+
+        menu.addItem(.separator())
+        let branch = ClosureMenuItem(title: "New Session on Branch\u{2026}") { [weak self] in
+            guard let self else { return }
+            newSessionOnBranch(self.manager, inFolder: session.folderPath)
+        }
+        Self.setGlyph("arrow.triangle.branch", on: branch)
+        menu.addItem(branch)
+
+        if let cwd = session.cwd {
+            let reveal = ClosureMenuItem(title: "Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
+            }
+            Self.setGlyph("folder.badge.gearshape", on: reveal)
+            menu.addItem(reveal)
+            let copy = ClosureMenuItem(title: "Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(cwd, forType: .string)
+            }
+            Self.setGlyph("doc.on.doc", on: copy)
+            menu.addItem(copy)
+        }
+
+        menu.addItem(.separator())
+        let close = ClosureMenuItem(title: "Close Session") { [weak self] in
+            self?.manager.requestClose(session)
+        }
+        Self.setGlyph("xmark.square", on: close)
+        close.keyEquivalent = "w"
+        close.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(close)
+
+        let x = sender.bounds.width - menu.size.width
+        menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.bounds.height + 4), in: sender)
+    }
+
     private static func setGlyph(_ symbol: String, on item: NSMenuItem) {
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
@@ -724,12 +792,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     private func observeProcesses() {
         withObservationTracking {
-            let snapshot = runningSnapshot
-            // Not hidden while its own popover is open: pulling the anchor out
-            // from under a list someone is reading closes it mid-sentence.
-            if snapshot.hasWork || runningPopover == nil {
-                mainBar.running.show(snapshot)
-            }
+            mainBar.running.show(runningSnapshot)
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }

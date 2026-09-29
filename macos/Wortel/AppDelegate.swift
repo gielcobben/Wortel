@@ -674,6 +674,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Side column tabs
 
+    /// The row the keyboard is in: the terminal or list that has it, and the
+    /// main area when nothing does.
+    private func focusedRegion() -> TabRegion {
+        guard let responder = window.firstResponder as? NSView else { return .main }
+        if let surface = responder as? SurfaceView, let session = manager.selected {
+            if surface === session.surfaceView { return .main }
+            if let id = session.sideSurfaces.first(where: { $0.value === surface })?.key {
+                return session.workspace.region(of: .terminal(id)) ?? .main
+            }
+        }
+        return splitController.region(containing: responder)
+    }
+
+    /// The areas in the order ⌘] walks them: left to right as they sit, then
+    /// the strip.
+    private var visibleRegions: [TabRegion] {
+        var regions: [TabRegion] = [.main]
+        if gitPanel.isVisible {
+            gitPanel.columnLeading ? regions.insert(.side, at: 0) : regions.append(.side)
+        }
+        if gitPanel.bottomVisible { regions.append(.bottom) }
+        return regions
+    }
+
+    @objc func focusNextArea(_ sender: Any?) { stepArea(1) }
+    @objc func focusPreviousArea(_ sender: Any?) { stepArea(-1) }
+
+    private func stepArea(_ offset: Int) {
+        let regions = visibleRegions
+        guard regions.count > 1, let index = regions.firstIndex(of: focusedRegion()) else { return }
+        gitPanel.focus(regions[(index + offset + regions.count) % regions.count])
+    }
+
+    @objc func newTerminalHere(_ sender: Any?) {
+        focusMainWindow()
+        switch focusedRegion() {
+        case .main: gitPanel.openMainTerminal()
+        case .side: gitPanel.openTerminal()
+        case .bottom: gitPanel.openBottomTerminal()
+        }
+    }
+
+    @objc func newBottomTerminal(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.openBottomTerminal()
+    }
+
+    @objc func selectTabByNumber(_ sender: NSMenuItem) {
+        gitPanel.selectTab(number: sender.tag, in: focusedRegion())
+    }
+
+    @objc func showHistory(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.activate(.history, via: .shortcut)
+    }
+
+    @objc func closeWholeSession(_ sender: Any?) {
+        manager.requestCloseSelected()
+    }
+
+    /// Move the tab in front of the row you're in to the area in `direction`.
+    /// Sideways crosses between the main area and the column, whichever side
+    /// the column is on; down puts a terminal in the strip, up brings it back
+    /// to the main area. The session's own terminal moving sideways swaps sides.
+    private func moveFocusedTab(_ direction: NSRectEdge) {
+        let from = focusedRegion()
+        guard let tab = gitPanel.activeTab(in: from) else { return }
+        let columnOnLeft = gitPanel.columnLeading
+        var target: TabRegion?
+        switch (from, direction) {
+        case (.main, .minX): target = columnOnLeft ? .side : nil
+        case (.main, .maxX): target = columnOnLeft ? nil : .side
+        case (.side, .minX): target = columnOnLeft ? nil : .main
+        case (.side, .maxX): target = columnOnLeft ? .main : nil
+        case (.main, .minY), (.side, .minY): target = .bottom
+        case (.bottom, .maxY): target = .main
+        default: target = nil
+        }
+        guard let target else { return }
+        if tab == .session {
+            if target == .side { gitPanel.setColumnLeading(!columnOnLeft) }
+            return
+        }
+        gitPanel.move(tab, to: target, at: .max)
+    }
+
+    @objc func moveTabLeft(_ sender: Any?) { moveFocusedTab(.minX) }
+    @objc func moveTabRight(_ sender: Any?) { moveFocusedTab(.maxX) }
+    @objc func moveTabDown(_ sender: Any?) { moveFocusedTab(.minY) }
+    @objc func moveTabUp(_ sender: Any?) { moveFocusedTab(.maxY) }
+
     @objc func toggleSideColumn(_ sender: Any?) {
         focusMainWindow()
         gitPanel.toggle()
@@ -708,11 +799,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc func selectNextSideTab(_ sender: Any?) {
-        gitPanel.selectAdjacent(1)
+        gitPanel.selectAdjacent(1, in: focusedRegion())
     }
 
     @objc func selectPreviousSideTab(_ sender: Any?) {
-        gitPanel.selectAdjacent(-1)
+        gitPanel.selectAdjacent(-1, in: focusedRegion())
     }
 
     /// Ask before a side terminal takes a running program down with it: the
@@ -834,7 +925,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(selectNextSideTab(_:))
             || menuItem.action == #selector(selectPreviousSideTab(_:)) {
-            return gitPanel.tabs.count > 1
+            return gitPanel.tabs(in: focusedRegion()).count > 1
+        }
+        if menuItem.action == #selector(focusNextArea(_:))
+            || menuItem.action == #selector(focusPreviousArea(_:)) {
+            return visibleRegions.count > 1
         }
         if menuItem.action == #selector(toggleFileTree(_:)) {
             let showing = gitPanel.isVisible && gitPanel.activeTab == .pane(.files)

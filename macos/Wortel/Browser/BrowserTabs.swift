@@ -22,7 +22,11 @@ import WebKit
 final class BrowserTabs {
     static let shared = BrowserTabs()
 
-    private var pages: [UUID: BrowserPage] = [:]
+    /// Not observed: a page is made while a tab's view is being built, and
+    /// writing an observed property there invalidates that same view.
+    /// `revision` says a page appeared, a turn later.
+    @ObservationIgnored private var pages: [UUID: BrowserPage] = [:]
+    private var revision = 0
 
     /// Where a browser tab is, from its session.
     @ObservationIgnored var address: (UUID) -> URL? = { _ in nil }
@@ -38,11 +42,16 @@ final class BrowserTabs {
         let page = BrowserPage(address: address(id))
         page.onNavigate = { [weak self] url in self?.onNavigate(id, url) }
         pages[id] = page
+        // So a tab row that read no page for this tab reads it now.
+        DispatchQueue.main.async { [weak self] in self?.revision += 1 }
         return page
     }
 
     /// The page for a tab if it has one yet: what its tab is titled by.
-    func existingPage(for id: UUID) -> BrowserPage? { pages[id] }
+    func existingPage(for id: UUID) -> BrowserPage? {
+        _ = revision
+        return pages[id]
+    }
 
     /// A tab closed: let its page go.
     func forget(_ id: UUID) {
@@ -186,10 +195,17 @@ final class BrowserPage: NSObject {
         }
     }
 
+    fileprivate func screenMayHaveChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.onScreenChanged(self.webView.window != nil && !self.webView.isHiddenOrHasHiddenAncestor)
+        }
+    }
+
     /// While the page is on screen, keep its picture recent: a page changes
     /// without navigating (a dev server's hot reload), and the moment it
     /// leaves the screen is too late to take one.
-    fileprivate func onScreenChanged(_ visible: Bool) {
+    private func onScreenChanged(_ visible: Bool) {
         snapshotTimer?.invalidate()
         snapshotTimer = nil
         guard visible else { return }
@@ -209,6 +225,9 @@ final class BrowserPage: NSObject {
 
     private func load(_ url: URL) {
         failure = nil
+        // Somewhere new: whatever it was waiting for is not what it wants now.
+        isWaiting = false
+        retry?.cancel()
         currentURL = url
         webView.load(URLRequest(url: url))
     }
@@ -239,24 +258,117 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: any Error) {
         let error = error as NSError
-        // A load cut short by the next one isn't a failure.
-        guard error.code != NSURLErrorCancelled else { return }
+        // A load cut short by the next one isn't a failure, and neither is one
+        // the policy below took elsewhere (WebKit's "frame load interrupted").
+        guard error.code != NSURLErrorCancelled,
+              !(error.domain == "WebKitErrorDomain" && error.code == 102) else { return }
         let unreachable: Set<Int> = [NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost,
                                      NSURLErrorTimedOut]
         if unreachable.contains(error.code), let host = location?.host(), BrowserAddress.isLocalHost(host) {
             isWaiting = true
             scheduleRetry()
         } else {
+            isWaiting = false
             failure = error.localizedDescription
         }
     }
 
+    /// What isn't a page goes where the Mac sends it: `mailto:`, `vscode://`
+    /// and the like to their apps.
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        if let url = action.request.url, let scheme = url.scheme?.lowercased(),
+           !["http", "https", "about", "data", "blob", "file"].contains(scheme) {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    /// A response the tab can't show (a download) goes to your browser.
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+        if !response.canShowMIMEType, response.isForMainFrame, let url = response.response.url {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    /// The page's process died (a crash, or memory pressure): start again
+    /// rather than leave a blank tab.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        reload()
+    }
+
     /// `target="_blank"` and `window.open`: in this tab. There's no second
-    /// window to give it.
+    /// window to give it. An empty popup (`window.open('')`) is ignored rather
+    /// than blanking the page.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if action.request.url != nil { webView.load(action.request) }
+        if let url = action.request.url, url.absoluteString != "about:blank" { webView.load(action.request) }
         return nil
+    }
+
+    // The page's own dialogs, as sheets on the window: the app being tested
+    // has "Delete this?" confirmations and file inputs too.
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor () -> Void) {
+        let alert = Self.alert(message, from: frame)
+        alert.addButton(withTitle: "OK")
+        present(alert, in: webView) { _ in completionHandler() }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor (Bool) -> Void) {
+        let alert = Self.alert(message, from: frame)
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        present(alert, in: webView) { completionHandler($0 == .alertFirstButtonReturn) }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping @MainActor (String?) -> Void) {
+        let alert = Self.alert(prompt, from: frame)
+        let field = NSTextField(string: defaultText ?? "")
+        field.frame = NSRect(x: 0, y: 0, width: 260, height: 22)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        present(alert, in: webView) { completionHandler($0 == .alertFirstButtonReturn ? field.stringValue : nil) }
+    }
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping @MainActor ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.canChooseFiles = true
+        guard let window = webView.window else { return completionHandler(nil) }
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
+    private static func alert(_ text: String, from frame: WKFrameInfo) -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = frame.securityOrigin.host.isEmpty ? "This page says" : "\(frame.securityOrigin.host) says"
+        alert.informativeText = text
+        return alert
+    }
+
+    private func present(_ alert: NSAlert, in webView: WKWebView,
+                         completion: @escaping (NSApplication.ModalResponse) -> Void) {
+        if let window = webView.window {
+            alert.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            completion(alert.runModal())
+        }
     }
 }
 
@@ -301,11 +413,15 @@ struct BrowserTab: View {
                 .frame(height: 1)
             ZStack {
                 WebViewHost(page: page)
-                    .onAppear { page.onScreenChanged(true) }
-                    .onDisappear { page.onScreenChanged(false) }
+                    // Whether it's on screen, once the move settles: a tab moving
+                    // rows appears in one place and disappears from the other
+                    // in no set order.
+                    .onAppear { page.screenMayHaveChanged() }
+                    .onDisappear { page.screenMayHaveChanged() }
                 if page.location == nil {
                     // Nowhere yet: the page is what you could open.
-                    BlankPage(servers: servers, highlighted: highlighted, pick: go)
+                    // What the field filters, so the arrows walk what's shown.
+                    BlankPage(servers: suggestions, highlighted: highlighted, pick: go)
                 } else if page.isWaiting, let location = page.location {
                     PageNotice(spinner: true, text: "Waiting for \(BrowserAddress.short(location))")
                 } else if let failure = page.failure {
@@ -448,8 +564,7 @@ private struct BrowserHeader: View {
     }
 }
 
-/// The servers, as rows to click: under the address field while you type, as
-/// a card over the page.
+/// The servers, as rows to click: the card hanging from the address field.
 private struct SuggestionList: View {
     let servers: [BrowserServer]
     let highlighted: URL?

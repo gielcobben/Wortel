@@ -6,8 +6,8 @@ enum BrowserAddress {
     /// `localhost:5173`, `localhost:5173/docs`, `wortel.sh`: what a tab and
     /// the address field call an address. The scheme is noise.
     static func short(_ url: URL) -> String {
-        guard let host = url.host() else { return url.absoluteString }
-        var text = host
+        guard let host = url.host(), !host.isEmpty else { return url.absoluteString }
+        var text = host.contains(":") ? "[\(host)]" : host
         if let port = url.port { text += ":\(port)" }
         let path = url.path()
         if !path.isEmpty, path != "/" { text += path }
@@ -15,25 +15,51 @@ enum BrowserAddress {
         return text
     }
 
-    /// What was typed, as somewhere to go. A port alone is a local server
-    /// (`3000`, `:3000`); a local name without a scheme is http, anything else
-    /// https.
+    /// What was typed, as somewhere to go, or nil when it isn't an address.
+    /// A port alone is a local server (`3000`, `:3000`); a local name or a
+    /// private network address without a scheme is http (dev servers don't
+    /// do TLS), anything else https. Only http and https.
     static func url(from typed: String) -> URL? {
         var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !text.contains(" ") else { return nil }
-        if text.hasPrefix(":") { text.removeFirst() }
-        if Int(text) != nil { text = "localhost:" + text }
-        if !text.contains("://") {
-            let host = text.split(whereSeparator: { ":/?".contains($0) }).first.map(String.init) ?? text
-            text = (isLocalHost(host) ? "http://" : "https://") + text
+        if Int(text.dropFirst(text.hasPrefix(":") ? 1 : 0)) != nil {
+            text = "localhost:" + text.drop { $0 == ":" }
         }
-        guard let url = URL(string: text), url.host() != nil else { return nil }
-        return url
+        if !text.contains("://") {
+            // A bare IPv6 address (`::1`) needs its brackets to be a host.
+            if !text.hasPrefix("["), !text.contains("/"), text.filter({ $0 == ":" }).count >= 2 {
+                text = "[\(text)]"
+            }
+            text = (isLocalHost(host(of: text)) ? "http://" : "https://") + text
+        }
+        guard let components = URLComponents(string: text),
+              let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = components.host, !host.isEmpty else { return nil }
+        if let port = components.port, !(1...65535).contains(port) { return nil }
+        return components.url
     }
 
+    /// The host of an address typed without a scheme.
+    private static func host(of text: String) -> String {
+        if text.hasPrefix("[") { return String(text.dropFirst().prefix { $0 != "]" }) }
+        return text.split(whereSeparator: { ":/?#".contains($0) }).first.map(String.init) ?? text
+    }
+
+    /// This Mac or the network it's on: where dev servers are, served as http.
     static func isLocalHost(_ host: String) -> Bool {
-        let host = host.lowercased()
-        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
-            || host == "0.0.0.0" || host.hasSuffix(".localhost") || host.hasSuffix(".local")
+        let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if ["localhost", "::1", "0.0.0.0"].contains(host)
+            || host.hasSuffix(".localhost") || host.hasSuffix(".local") {
+            return true
+        }
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        let octets = parts.compactMap { Int($0) }
+        guard parts.count == 4, octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) else {
+            return false
+        }
+        switch (octets[0], octets[1]) {
+        case (127, _), (10, _), (192, 168), (169, 254), (172, 16...31): return true
+        default: return false
+        }
     }
 }

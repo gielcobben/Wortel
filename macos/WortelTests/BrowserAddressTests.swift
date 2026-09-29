@@ -30,6 +30,28 @@ final class BrowserAddressTests: XCTestCase {
         XCTAssertEqual(url("  https://localhost:3000  "), "https://localhost:3000")
     }
 
+    /// `vite --host` serves on the network: private addresses are http too.
+    func testPrivateNetworkAddressesAreHttp() {
+        XCTAssertEqual(url("192.168.1.5:5173"), "http://192.168.1.5:5173")
+        XCTAssertEqual(url("10.0.0.2:3000"), "http://10.0.0.2:3000")
+        XCTAssertEqual(url("172.20.1.1"), "http://172.20.1.1")
+        XCTAssertEqual(url("172.32.1.1"), "https://172.32.1.1", "outside 172.16/12")
+        XCTAssertEqual(url("8.8.8.8"), "https://8.8.8.8")
+    }
+
+    func testIPv6LoopbackIsLocal() {
+        XCTAssertEqual(url("[::1]:3000"), "http://[::1]:3000")
+        XCTAssertEqual(url("::1"), "http://[::1]")
+        XCTAssertEqual(BrowserAddress.short(URL(string: "http://[::1]:3000/")!), "[::1]:3000")
+    }
+
+    func testOnlyRealPortsAndWebSchemes() {
+        XCTAssertNil(url("65536"))
+        XCTAssertNil(url("0"))
+        XCTAssertNil(url("javascript:alert(1)"))
+        XCTAssertNil(url("file:///etc/passwd"))
+    }
+
     func testNothingOrWordsGoNowhere() {
         XCTAssertNil(url(""))
         XCTAssertNil(url("   "))

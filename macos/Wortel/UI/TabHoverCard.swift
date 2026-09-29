@@ -129,10 +129,10 @@ final class TabHoverCard {
         background.layer?.borderColor = NSColor.black.withAlphaComponent(0.12).cgColor
         panel.contentView = background
 
-        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
         titleLabel.maximumNumberOfLines = 3
         titleLabel.lineBreakMode = .byTruncatingTail
-        detailLabel.font = .systemFont(ofSize: 12)
+        detailLabel.font = .systemFont(ofSize: 11)
         detailLabel.textColor = .secondaryLabelColor
         detailLabel.maximumNumberOfLines = 3
         detailLabel.lineBreakMode = .byCharWrapping

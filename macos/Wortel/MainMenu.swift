@@ -326,6 +326,26 @@ enum MainMenu {
         focusList.keyEquivalentModifierMask = [.command, .option]
         focusList.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: nil)
 
+        // The side column's tabs. ⌃` for a terminal beside this one, as in the
+        // ChatGPT app and VS Code; ⌃Tab to walk the strip, because ⌘⇧[ ] already
+        // walks sessions, and sessions are Wortel's real tabs. ⌘W closes a side
+        // terminal when it has the keyboard (see AppDelegate.closeSession).
+        viewMenu.addItem(.separator())
+        let sideColumn = viewMenu.addItem(withTitle: "Show Side Column", action: #selector(AppDelegate.toggleSideColumn(_:)), keyEquivalent: "b")
+        sideColumn.keyEquivalentModifierMask = [.command, .option]
+        sideColumn.image = NSImage(systemSymbolName: "sidebar.right", accessibilityDescription: nil)
+        let newTerminal = viewMenu.addItem(withTitle: "New Terminal Tab", action: #selector(AppDelegate.newSideTerminal(_:)), keyEquivalent: "`")
+        newTerminal.keyEquivalentModifierMask = [.control]
+        newTerminal.image = NSImage(systemSymbolName: "apple.terminal", accessibilityDescription: nil)
+        let nextTab = viewMenu.addItem(withTitle: "Next Tab", action: #selector(AppDelegate.selectNextSideTab(_:)), keyEquivalent: "\t")
+        nextTab.keyEquivalentModifierMask = [.control]
+        let previousTab = viewMenu.addItem(withTitle: "Previous Tab", action: #selector(AppDelegate.selectPreviousSideTab(_:)), keyEquivalent: "\t")
+        previousTab.keyEquivalentModifierMask = [.control, .shift]
+        // Shift+Tab arrives as backtab on some paths; the hidden twin catches it.
+        let previousBacktab = viewMenu.addItem(withTitle: "Previous Tab", action: #selector(AppDelegate.selectPreviousSideTab(_:)), keyEquivalent: "\u{19}")
+        previousBacktab.keyEquivalentModifierMask = [.control, .shift]
+        previousBacktab.isHidden = true
+
         // Window menu
         let windowItem = NSMenuItem()
         main.addItem(windowItem)

@@ -80,6 +80,10 @@ final class SessionManager {
     /// A markdown file was clicked in a session's terminal (already resolved to
     /// an absolute file URL). The app layer opens it in the right-hand preview.
     @ObservationIgnored var onOpenMarkdown: ((URL) -> Void)?
+    /// A side terminal's shell exited (`exit`, or the program it was running
+    /// ended the session). Its tab goes with it; the column model decides what
+    /// takes its place. Set by AppDelegate.
+    @ObservationIgnored var onSideTerminalExited: ((Session, UUID) -> Void)?
 
     /// Whether Wortel is the frontmost app. A session the user is *actively
     /// viewing* (app active + window visible + selected) never raises
@@ -490,6 +494,23 @@ final class SessionManager {
             // answer, so the session follows the last pane chosen anywhere
             // rather than being pinned to a guess made here.
             session.inspectorPane = entry.inspectorPane.flatMap(InspectorPane.init(rawValue:))
+            // The column's tabs. A file from before the column had them said only
+            // whether it was up and on which pane, and that becomes a strip of
+            // one: a session with Changes open opens on a Changes tab, and one
+            // that never had the column up starts with none, which is also what
+            // makes its first ⌘⌥G open the pane you'd expect.
+            if let raw = entry.sideTabs {
+                session.sideTabs = raw.compactMap(SideTab.init(rawValue:))
+                session.activeSideTab = entry.activeSideTab.flatMap(SideTab.init(rawValue:))
+                    .flatMap { session.sideTabs.contains($0) ? $0 : nil }
+                    ?? session.sideTabs.first
+            } else if session.gitPanelVisible {
+                let pane = session.inspectorPane ?? GitPanelModel.defaultPane
+                session.sideTabs = [.pane(pane)]
+                session.activeSideTab = .pane(pane)
+            }
+            // Up with nothing in it is not a state the column has any more.
+            if session.sideTabs.isEmpty { session.gitPanelVisible = false }
             // A surviving marker means the app died without cleaning up (a crash),
             // and is the most direct evidence. A clean quit leaves none — killing
             // the agent hands control back to the shell, whose last prompt clears
@@ -2154,6 +2175,8 @@ final class SessionManager {
                 worktreeBranch: session.worktreeBranch,
                 gitPanelVisible: session.gitPanelVisible,
                 inspectorPane: session.inspectorPane?.rawValue,
+                sideTabs: session.sideTabs.map(\.rawValue),
+                activeSideTab: session.activeSideTab?.rawValue,
                 runningAgent: agent?.agent, runningModel: agent?.model,
                 runningArgv: agent?.argv,
                 runningConversationID: agent == nil ? nil : conversationID)
@@ -2171,10 +2194,19 @@ final class SessionManager {
     /// is either a session never opened, or the no-keeper fallback path where
     /// libghostty spawns the shell without telling us which pid it got.
     var processRoots: [SessionProcessRoot] {
-        sessions.compactMap { session in
-            guard let shellPID = session.shellPID else { return nil }
-            return SessionProcessRoot(sessionID: session.id, shellPID: shellPID,
-                                      agentName: session.runningAgent)
+        sessions.flatMap { session -> [SessionProcessRoot] in
+            var roots: [SessionProcessRoot] = []
+            if let shellPID = session.shellPID {
+                roots.append(SessionProcessRoot(sessionID: session.id, shellPID: shellPID,
+                                                agentName: session.runningAgent))
+            }
+            // A side terminal's jobs are filed under the session it sits in.
+            // No agent name: agent tracking follows the main shell only.
+            for pid in session.sideShellPIDs {
+                roots.append(SessionProcessRoot(sessionID: session.id, shellPID: pid,
+                                                agentName: nil))
+            }
+            return roots
         }
     }
 
@@ -2217,6 +2249,30 @@ final class SessionManager {
 
     private func wire(_ session: Session) {
         let id = session.id
+        // Side terminals get the part of the wiring that is about a terminal:
+        // their title labels their tab, a finished command may have changed the
+        // work tree, a bell or a notification is the session calling for you,
+        // and a ⌘-clicked path opens like anywhere else. What is about an
+        // *agent* (busy detection, naming, resume) follows the main shell only.
+        session.onSideSurfaceCreated = { [weak self, weak session] tabID, view in
+            view.onTitleChange = { [weak session] title in
+                session?.sideTerminalTitles[tabID] = title
+            }
+            view.onCloseRequest = { [weak self, weak session] in
+                guard let self, let session else { return }
+                self.onSideTerminalExited?(session, tabID)
+            }
+            view.onCommandFinished = { [weak self, weak session] _, _ in
+                guard let self, let session else { return }
+                self.onCommandFinished?(session)
+            }
+            view.onBell = { [weak self, weak session] in
+                guard let self, let session else { return }
+                self.raiseAttention(session, kind: .needsInput, title: session.name, body: "Bell",
+                                    source: "bell")
+            }
+            view.onOpenMarkdown = { [weak self] url in self?.onOpenMarkdown?(url) }
+        }
         session.onSurfaceCreated = { [weak self, weak session] view in
             guard let self, let session else { return }
 

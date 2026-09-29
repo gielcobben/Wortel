@@ -192,6 +192,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Panel visibility and the chosen pane are session state, so a toggle has
         // to reach sessions.json.
         gitPanel.onStateChanged = { [weak manager] in manager?.sessionStateChanged() }
+        // The side column's tabs: a side shell that exits takes its tab with it,
+        // closing one that still runs something asks first, and the tab that had
+        // the keyboard hands it back to the session's own terminal.
+        manager.onSideTerminalExited = { [weak self] session, id in
+            self?.gitPanel.close(.terminal(id), in: session)
+        }
+        gitPanel.confirmCloseTerminal = { [weak self] proceed in
+            self?.confirmCloseSideTerminal(proceed)
+        }
+        gitPanel.onFocusMainTerminal = { [weak self] in
+            guard let self, let view = self.manager.selected?.surfaceView else { return }
+            self.window?.makeFirstResponder(view)
+        }
 
         // **Before any surface exists.** `GhosttyRuntime.keeper` is a lazy
         // static, and touching it for the first time from inside surface
@@ -256,6 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel,
                                            processes: processes)
         delegate.selectedSession = { [weak self] in self?.manager.selectedID }
+        delegate.sideTerminalTitle = { [weak self] id in self?.manager.selected?.sideTerminalTitles[id] }
         toolbarDelegate = delegate
         let toolbar = NSToolbar(identifier: "wortel.main")
         toolbar.delegate = delegate
@@ -268,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // closes, so it needs the toolbar it's the delegate of.
         delegate.toolbar = toolbar
         window.toolbar = toolbar
+        delegate.startObservingColumn()
     }
 
     /// The window title used to come from SwiftUI's .navigationTitle, which only
@@ -629,7 +644,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             key.performClose(sender)
             return
         }
+        // ⌘W means the thing you're in. A side terminal with the keyboard is a
+        // tab, and closing it must not take the whole session with it.
+        if let focused = window.firstResponder as? SurfaceView,
+           focused !== manager.selected?.surfaceView,
+           let active = gitPanel.activeTab, active.terminalID != nil {
+            gitPanel.requestClose(active)
+            return
+        }
         manager.requestCloseSelected()
+    }
+
+    // MARK: - Side column tabs
+
+    @objc func toggleSideColumn(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.toggle()
+    }
+
+    @objc func newSideTerminal(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.openTerminal()
+    }
+
+    @objc func selectNextSideTab(_ sender: Any?) {
+        gitPanel.selectAdjacent(1)
+    }
+
+    @objc func selectPreviousSideTab(_ sender: Any?) {
+        gitPanel.selectAdjacent(-1)
+    }
+
+    /// Ask before a side terminal takes a running program down with it: the
+    /// dev server you opened it for is exactly what a stray ⌘W would kill.
+    private func confirmCloseSideTerminal(_ proceed: @escaping () -> Void) {
+        guard let window else { return proceed() }
+        let alert = NSAlert()
+        alert.messageText = "Close this terminal?"
+        alert.informativeText = "A program is still running in it, and closing the tab stops it."
+        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { proceed() }
+        }
     }
 
     @objc func renameSession(_ sender: Any?) {
@@ -715,12 +772,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // screen — with Files up, ⌘⌥G swaps rather than closes, so calling it
         // "Hide Source Control" would describe the wrong action.
         if menuItem.action == #selector(toggleSourceControl(_:)) {
-            let showing = gitPanel.isVisible && gitPanel.pane.isSourceControl
+            let showing = gitPanel.isVisible && gitPanel.activeTab?.pane?.isSourceControl == true
             menuItem.title = showing ? "Hide Source Control" : "Show Source Control"
             return true
         }
+        if menuItem.action == #selector(toggleSideColumn(_:)) {
+            menuItem.title = gitPanel.isVisible ? "Hide Side Column" : "Show Side Column"
+            return true
+        }
+        if menuItem.action == #selector(selectNextSideTab(_:))
+            || menuItem.action == #selector(selectPreviousSideTab(_:)) {
+            return gitPanel.tabs.count > 1
+        }
         if menuItem.action == #selector(toggleFileTree(_:)) {
-            let showing = gitPanel.isVisible && gitPanel.pane == .files
+            let showing = gitPanel.isVisible && gitPanel.activeTab == .pane(.files)
             menuItem.title = showing ? "Hide Files" : "Show Files"
             return true
         }

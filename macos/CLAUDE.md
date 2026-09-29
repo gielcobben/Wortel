@@ -304,6 +304,22 @@ dragging to the edge is how you close the panel and the last width before it goe
 is the minimum. The split view's `autosaveName` still carries the sidebar; the
 inspector's width it saves but does not get to decide (see `viewDidLayout`).
 
+**Side column tabs** (`SideTab`, `GitPanelModel`, `Wortel/UI/SideTabStrip.swift`,
+`Wortel/Markdown/InspectorContainer.swift`) — the column is a strip of tabs per
+session: Changes, History and Files, plus **side terminals**, a second shell
+beside the session's own (⌃`). The strip sits in the titlebar over the column
+(the ChatGPT app's arrangement); the branch and the fetch/pull/push menu moved
+from the toolbar into `RepoHeader`, inside the source-control tabs. Rules:
+opening a tab opens the column, closing the last closes it (instantly), hiding
+it keeps the tabs; ⌘W closes a side terminal that has the keyboard, ⌃Tab walks
+the strip. A side terminal is a `SurfaceView` owned by its `Session`
+(`sideSurfaces`), created the first time its tab shows and kept, hidden, in an
+always-mounted host (`SideTerminalHostController`) exactly as the main host
+keeps sessions: never removed, never rebuilt. Its tab id is its keeper session
+id, so it survives a relaunch like a session does. Its processes count as the
+session's (`processRoots`); agent tracking, naming and resume follow the main
+shell only.
+
 **Files pane** (`Wortel/Files/`) — the project as a tree, rooted at the repo
 work-tree root (the session's cwd outside a repo, which therefore re-roots as you
 `cd`, since outside a repo there's no project to hold still for). Read-only by
@@ -433,9 +449,11 @@ the same thing by all three.
   than one you have to audit. Adding a `String` parameter to any event is the
   change that breaks the promise on wortel.sh/privacy; if a question needs a
   value that is not a small closed set, the answer is a bucket or no event.
-- Deliberately **feature-minimal**: no tabs, no splits, no inspector, no
-  settings UI, no user-config loading. Returning `false`/doing nothing for those
-  is intentional, not a gap to fill.
+- Deliberately **feature-minimal**: no settings UI, no user-config loading. The
+  *terminal* has no tabs and no splits of its own: sessions are Wortel's tabs,
+  and libghostty's tab/split actions still return `false`. The one split is the
+  side column, and its tabs are Wortel's (see **Side column tabs** below), not
+  libghostty's.
 - Resources are shipped as **folder references** (`Resources/terminfo`,
   `Resources/ghostty`) landing in `Contents/Resources/`; the Zig core locates
   them via the `terminfo/78/xterm-ghostty` sentinel. Don't restructure those

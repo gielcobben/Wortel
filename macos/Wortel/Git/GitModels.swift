@@ -287,6 +287,54 @@ enum InspectorPane: String, CaseIterable, Identifiable {
     }
 }
 
+/// One tab in the side column: one of the inspector's panes, or a terminal of
+/// the session's own that runs beside its main one.
+///
+/// The column used to *be* the three panes, with one of them showing. It is now
+/// a strip of tabs a session opens and closes, which is what lets a terminal (and
+/// later a preview or a page) sit beside the session the way the panes do, and
+/// what makes "open something next to this" a cheap, reversible act instead of a
+/// window. The panes keep their own identity (`InspectorPane`), so everything
+/// that already reads `pane` still works; a terminal tab carries the id its shell
+/// is kept alive under by the keeper, which is how it survives a relaunch.
+///
+/// Stored as a string (`"changes"`, `"terminal:<uuid>"`) so `PersistedSession`
+/// stays a plain reading of the file, the same bargain `inspectorPane` makes.
+enum SideTab: Hashable, Sendable {
+    case pane(InspectorPane)
+    case terminal(UUID)
+
+    private static let terminalPrefix = "terminal:"
+
+    init?(rawValue: String) {
+        if let pane = InspectorPane(rawValue: rawValue) {
+            self = .pane(pane)
+        } else if rawValue.hasPrefix(Self.terminalPrefix),
+                  let id = UUID(uuidString: String(rawValue.dropFirst(Self.terminalPrefix.count))) {
+            self = .terminal(id)
+        } else {
+            return nil
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .pane(let pane): return pane.rawValue
+        case .terminal(let id): return Self.terminalPrefix + id.uuidString
+        }
+    }
+
+    var pane: InspectorPane? {
+        if case .pane(let pane) = self { return pane }
+        return nil
+    }
+
+    var terminalID: UUID? {
+        if case .terminal(let id) = self { return id }
+        return nil
+    }
+}
+
 /// How a diff line renders: drives its gutter numbers, sign, and tint.
 enum DiffLineKind: Sendable {
     case context

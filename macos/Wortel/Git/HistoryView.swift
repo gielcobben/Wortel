@@ -25,12 +25,9 @@ struct HistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // No header, deliberately. `commitList` being the pane's first view is
-            // what lets the log run up under the titlebar and pick up the system's
-            // blur; a strip of chrome here would sit under the toolbar opaquely
-            // and there'd be nothing scrolling beneath it to blur. The branch chip
-            // and this pane's actions live in the toolbar instead — see
-            // GitToolbarControls.
+            // The branch and the repo's actions sit above this, in RepoHeader,
+            // which SourceControlPanel puts on both source-control tabs: the
+            // titlebar over the column is the tab strip's now.
             GeometryReader { geo in
                 let maxList = max(Self.listMin, geo.size.height - Self.diffMin)
                 let listHeight = Binding(

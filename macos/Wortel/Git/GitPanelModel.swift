@@ -17,8 +17,14 @@ import Observation
 /// `inspectorPane`, re-read on every `focus` and written back through
 /// `setVisible` / `setPane`. `SessionStore` persists both.
 ///
-/// (The name is historical — this predates the Files pane. Renaming it to
-/// `InspectorModel` would churn every call site for no behavioural gain.)
+/// The column is a strip of **tabs** (`SideTab`): the three panes, and terminals
+/// of the session's own. `tabs` and `activeTab` mirror the focused session's
+/// the same way, through `open` / `select` / `close`. Opening a tab opens the
+/// column, closing the last one closes it, and hiding it keeps them.
+///
+/// (The name is historical — this predates the Files pane and the tabs.
+/// Renaming it to `SideColumnModel` would churn every call site for no
+/// behavioural gain.)
 @Observable
 @MainActor
 final class GitPanelModel {
@@ -31,6 +37,22 @@ final class GitPanelModel {
     /// segmented control and the two View-menu commands, both through
     /// `activate(_:)`.
     private(set) var pane: InspectorPane = GitPanelModel.defaultPane
+
+    /// Mirrors the focused session's side tabs and the one in front. `pane`
+    /// keeps meaning "the pane on screen" whenever the active tab is a pane, so
+    /// everything built on it (the panels, the column width) reads unchanged.
+    private(set) var tabs: [SideTab] = []
+    private(set) var activeTab: SideTab?
+    /// Bumped when a terminal tab should take the keyboard: it was just opened
+    /// or picked. A session switch that merely shows one does not bump it,
+    /// because switching sessions puts you in the session's main terminal.
+    private(set) var terminalFocusRequest = 0
+    /// Hand the keyboard back to the session's main terminal, for when the tab
+    /// that had it closes. Set by AppDelegate.
+    @ObservationIgnored var onFocusMainTerminal: (() -> Void)?
+    /// Ask whether to close a side terminal that is still running something;
+    /// calls back only if the answer is yes. Set by AppDelegate.
+    @ObservationIgnored var confirmCloseTerminal: ((_ proceed: @escaping () -> Void) -> Void)?
 
     /// The pane a session with no stored preference opens on: the last one the
     /// user explicitly chose, anywhere. Not the session's state — the *default*
@@ -100,15 +122,25 @@ final class GitPanelModel {
         // runs on each cwd report — i.e. every shell prompt — so an unguarded
         // write would wake the split controller and the toolbar a few times a
         // second to decide nothing changed.
-        let visible = session?.gitPanelVisible ?? false
+        // The session, not the user, decided this — snap (see the flag).
+        mirror(session, animated: false)
+        resolveCurrent()
+    }
+
+    /// Copy a session's column state onto the model, writing only what moved
+    /// (see `focus` for why that matters).
+    private func mirror(_ session: Session?, animated: Bool) {
+        let sessionTabs = session?.sideTabs ?? []
+        if sessionTabs != tabs { tabs = sessionTabs }
+        let active = session?.activeSideTab
+        if active != activeTab { activeTab = active }
+        let sessionPane = active?.pane ?? session?.inspectorPane ?? Self.defaultPane
+        if sessionPane != pane { pane = sessionPane }
+        let visible = (session?.gitPanelVisible ?? false) && !sessionTabs.isEmpty
         if visible != isVisible {
-            // The session, not the user, decided this — snap (see the flag).
-            animatesVisibilityChange = false
+            animatesVisibilityChange = animated
             isVisible = visible
         }
-        let sessionPane = session?.inspectorPane ?? Self.defaultPane
-        if sessionPane != pane { pane = sessionPane }
-        resolveCurrent()
     }
 
     /// One click on a pane control — a toolbar segment, or a View-menu command.
@@ -122,7 +154,7 @@ final class GitPanelModel {
     /// The single implementation behind both the toolbar and the menu, so ⌘⌥G,
     /// ⌘⌥E and the segments can't drift apart.
     func activate(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
-        if isVisible && pane == requested {
+        if isVisible && activeTab == .pane(requested) {
             setVisible(false)
             resolveCurrent()
         } else {
@@ -134,10 +166,8 @@ final class GitPanelModel {
     /// mean "give me this", never "close": reclaiming the column from the
     /// markdown preview, which is a view of neither pane.
     func show(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
-        let wasShowingThis = isVisible && pane == requested
-        setPane(requested)
-        if !isVisible { setVisible(true) }
-        resolveCurrent()
+        let wasShowingThis = isVisible && activeTab == .pane(requested)
+        open(.pane(requested))
         // Only when this actually put a different pane in front of someone. A
         // session switch that restores a panel already on that pane is not a
         // use of the feature, and counting those would make whichever pane
@@ -147,9 +177,103 @@ final class GitPanelModel {
         }
     }
 
+    /// Show or hide the column. Hiding keeps its tabs; showing a column that
+    /// has none opens the pane you last chose, because an empty column is not
+    /// something to show.
     func toggle() {
+        if !isVisible, tabs.isEmpty {
+            open(.pane(Self.defaultPane))
+            return
+        }
         setVisible(!isVisible)
         resolveCurrent()
+    }
+
+    // MARK: - Tabs
+
+    /// Put a tab in front, adding it to the strip first if it isn't there. The
+    /// column opens with it: asking for a tab means wanting to see it.
+    func open(_ tab: SideTab) {
+        guard let session else { return }
+        if !session.sideTabs.contains(tab) {
+            session.sideTabs.append(tab)
+        }
+        select(tab)
+    }
+
+    /// A new shell beside the session's own.
+    func openTerminal() {
+        open(.terminal(UUID()))
+    }
+
+    /// Bring a tab that's already in the strip to the front.
+    func select(_ tab: SideTab) {
+        guard let session, session.sideTabs.contains(tab) else { return }
+        session.activeSideTab = tab
+        if let pane = tab.pane { setPane(pane) }
+        let wasVisible = isVisible
+        session.gitPanelVisible = true
+        mirror(session, animated: !wasVisible)
+        onStateChanged?()
+        resolveCurrent()
+        if tab.terminalID != nil { terminalFocusRequest += 1 }
+    }
+
+    /// The tab `offset` places along from the one in front, wrapping. ⌃Tab and
+    /// ⌃⇧Tab.
+    func selectAdjacent(_ offset: Int) {
+        guard !tabs.isEmpty else { return }
+        guard isVisible, let activeTab, let index = tabs.firstIndex(of: activeTab) else {
+            select(tabs[0])
+            return
+        }
+        let next = (index + offset % tabs.count + tabs.count) % tabs.count
+        select(tabs[next])
+    }
+
+    /// Close a tab. A terminal's shell ends with it. The neighbour that slides
+    /// into its place comes to the front, and closing the last one closes the
+    /// column, instantly: nothing is left to animate towards.
+    ///
+    /// `target` is for a tab closing in a session that isn't the focused one,
+    /// which is what a side shell exiting in the background looks like.
+    func close(_ tab: SideTab, in target: Session? = nil) {
+        guard let owner = target ?? session,
+              let index = owner.sideTabs.firstIndex(of: tab) else { return }
+        if let id = tab.terminalID { owner.closeSideSurface(id) }
+        owner.sideTabs.remove(at: index)
+        if owner.activeSideTab == tab {
+            owner.activeSideTab = owner.sideTabs.isEmpty
+                ? nil : owner.sideTabs[min(index, owner.sideTabs.count - 1)]
+            if let pane = owner.activeSideTab?.pane { owner.inspectorPane = pane }
+        }
+        if owner.sideTabs.isEmpty { owner.gitPanelVisible = false }
+        onStateChanged?()
+        guard owner === session else { return }
+        mirror(owner, animated: false)
+        resolveCurrent()
+        if isVisible, activeTab?.terminalID != nil {
+            terminalFocusRequest += 1
+        } else if tab.terminalID != nil {
+            // The terminal that had the keyboard is gone, and nothing that
+            // takes one replaced it.
+            onFocusMainTerminal?()
+        }
+    }
+
+    /// A close the user asked for: the × on a tab, ⌘W in a side terminal. A
+    /// terminal still running a program asks first; everything else just goes.
+    func requestClose(_ tab: SideTab) {
+        guard let session else { return }
+        if let id = tab.terminalID, session.sideSurfaces[id]?.needsConfirmClose == true,
+           let confirmCloseTerminal {
+            confirmCloseTerminal { [weak self, weak session] in
+                guard let self, let session else { return }
+                self.close(tab, in: session)
+            }
+            return
+        }
+        close(tab)
     }
 
     /// Writable mirror of `isVisible` for the paths that don't toggle: dragging
@@ -168,9 +292,8 @@ final class GitPanelModel {
 
     /// Show the panel if needed and ask the changes list to take keyboard focus.
     func requestListFocus() {
-        if !isVisible {
-            setVisible(true)
-            resolveCurrent()
+        if !isVisible || activeTab?.pane == nil {
+            open(.pane(pane))
         }
         listFocusRequest += 1
     }
@@ -179,6 +302,13 @@ final class GitPanelModel {
     /// *to*, and have that persisted. Every write to `isVisible` outside `focus`
     /// goes through here, so the session and the panel can't drift apart.
     private func setVisible(_ visible: Bool) {
+        // An empty column has nothing to show; opening one goes through `open`.
+        if visible, tabs.isEmpty {
+            if let session, session.sideTabs.isEmpty {
+                open(.pane(Self.defaultPane))
+            }
+            return
+        }
         animatesVisibilityChange = true
         isVisible = visible
         guard let session, session.gitPanelVisible != visible else { return }

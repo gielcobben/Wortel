@@ -96,6 +96,43 @@ final class PersistedSessionTests: XCTestCase {
         }
     }
 
+    // MARK: - Side tabs
+
+    /// A file from before the column had tabs says nothing about them, and that
+    /// has to reach `restore` as nil, not as an empty strip: nil is what turns
+    /// the old visible-and-pane pair into a one-tab strip, where an empty list
+    /// would close the column on every session that had it open.
+    func testAbsentSideTabsStayUnrecorded() throws {
+        let session = try decode(#"{"id":"\#(UUID())","gitPanelVisible":true,"inspectorPane":"history"}"#)
+        XCTAssertNil(session.sideTabs)
+        XCTAssertNil(session.activeSideTab)
+    }
+
+    func testSideTabsRoundTrip() throws {
+        let terminal = SideTab.terminal(UUID())
+        let tabs = [SideTab.pane(.changes), terminal, .pane(.files)]
+        let original = PersistedSession(
+            id: UUID(), name: "Wortel/App", title: "shell", cwd: "/tmp",
+            selected: true, nameSource: "user", gitPanelVisible: true,
+            sideTabs: tabs.map(\.rawValue), activeSideTab: terminal.rawValue)
+        let data = try JSONEncoder().encode([original])
+        let decoded = try XCTUnwrap(JSONDecoder().decode([PersistedSession].self, from: data).first)
+        XCTAssertEqual(decoded.sideTabs?.compactMap(SideTab.init(rawValue:)), tabs)
+        XCTAssertEqual(decoded.activeSideTab.flatMap(SideTab.init(rawValue:)), terminal)
+    }
+
+    /// The raw form is the one thing that has to agree between two builds: a
+    /// terminal tab's id is also the keeper's session id, so a tab that decodes
+    /// to a different id is a shell nobody can reach again.
+    func testSideTabRawValues() {
+        let id = UUID()
+        XCTAssertEqual(SideTab(rawValue: "changes"), .pane(.changes))
+        XCTAssertEqual(SideTab(rawValue: "terminal:\(id.uuidString)"), .terminal(id))
+        XCTAssertEqual(SideTab.terminal(id).rawValue, "terminal:\(id.uuidString)")
+        XCTAssertNil(SideTab(rawValue: "terminal:not-a-uuid"))
+        XCTAssertNil(SideTab(rawValue: "browser"))
+    }
+
     // MARK: - Origin directory
 
     /// Where a session was *born*, which is what a session opened beside it

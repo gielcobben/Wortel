@@ -26,9 +26,13 @@ final class MainSplitViewController: NSSplitViewController {
     /// want visibly different widths, and one width for both means every switch
     /// is followed by a drag back to where you had it.
     enum InspectorOccupant: String {
-        case changes, history, files
+        case changes, history, files, terminal
 
         @MainActor init(git: GitPanelModel) {
+            if git.activeTab?.terminalID != nil {
+                self = .terminal
+                return
+            }
             switch git.pane {
             case .changes: self = .changes
             case .history: self = .history
@@ -43,6 +47,9 @@ final class MainSplitViewController: NSSplitViewController {
             switch self {
             case .files: return 260
             case .changes, .history: return 420
+            // Room for a dev server's output or a test run at a readable width,
+            // without taking the agent beside it below its own.
+            case .terminal: return 520
             }
         }
 
@@ -52,7 +59,7 @@ final class MainSplitViewController: NSSplitViewController {
         var minimumThickness: CGFloat {
             switch self {
             case .files: return 180
-            case .changes, .history: return 260
+            case .changes, .history, .terminal: return 260
             }
         }
     }
@@ -147,7 +154,8 @@ final class MainSplitViewController: NSSplitViewController {
         // thickness, so min/max are overridden right after to make it draggable.
         // collapseBehavior keeps the *window* still when the panel opens/closes,
         // resizing the terminal instead.
-        let inspector = NSHostingController(rootView: InspectorContainer(git: git, files: files))
+        let inspector = NSHostingController(rootView: InspectorContainer(
+            runtime: runtime, manager: manager, git: git, files: files))
         let occupant = InspectorOccupant(git: git)
         let width = InspectorWidthStore.width(for: occupant)
         inspector.view.setFrameSize(NSSize(width: width, height: inspector.view.frame.height))
@@ -207,6 +215,8 @@ final class MainSplitViewController: NSSplitViewController {
             // swap has to reach here too — including the one a session switch
             // makes, since the pane is per session.
             _ = git.pane
+            // A terminal tab is its own occupant, with its own width.
+            _ = git.activeTab
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }

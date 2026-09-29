@@ -64,6 +64,15 @@ final class Session: Identifiable {
     /// Changes, the one you're exploring wants Files. Persisted; read and
     /// written by GitPanelModel.
     var inspectorPane: InspectorPane?
+    /// The side column's tabs, in strip order, and the one in front. Persisted.
+    /// `gitPanelVisible` still says whether the column is up: hiding it keeps the
+    /// tabs, and closing the last tab is what hides it. Read and written by
+    /// GitPanelModel, which mirrors the focused session's onto the column.
+    var sideTabs: [SideTab] = []
+    var activeSideTab: SideTab?
+    /// What each side terminal's shell last titled itself, for its tab's label.
+    /// Observed, so the strip follows a `cd` or a program starting.
+    var sideTerminalTitles: [UUID: String] = [:]
     /// Full title reported by the shell (user@host:cwd, or the running
     /// program). Kept for reference; not currently shown.
     var title: String
@@ -147,6 +156,14 @@ final class Session: Identifiable {
     /// lazy). The SessionManager wires the view's callbacks here.
     @ObservationIgnored var onSurfaceCreated: ((SurfaceView) -> Void)?
 
+    /// The live views of this session's side terminals, by tab id. Created the
+    /// first time their tab is shown and kept, like `surfaceView`, until the tab
+    /// closes: switching tabs or sessions hides them, never rebuilds them.
+    @ObservationIgnored private(set) var sideSurfaces: [UUID: SurfaceView] = [:]
+    /// Called when a side terminal's view is created, so the manager can wire its
+    /// callbacks. The id is the tab's.
+    @ObservationIgnored var onSideSurfaceCreated: ((UUID, SurfaceView) -> Void)?
+
     init(id: UUID = UUID(), name: String = "Session", title: String = "shell",
          cwd: String? = nil, originCwd: String? = nil) {
         self.id = id
@@ -213,7 +230,8 @@ final class Session: Identifiable {
     /// UI should confirm first. A session with no surface (never opened) has
     /// nothing to confirm.
     var needsConfirmClose: Bool {
-        surfaceView?.needsConfirmClose ?? false
+        (surfaceView?.needsConfirmClose ?? false)
+            || sideSurfaces.values.contains { $0.needsConfirmClose }
     }
 
     /// The pid of this session's shell, and so the root of every process the
@@ -222,6 +240,11 @@ final class Session: Identifiable {
     /// nil for a session that was never opened, and on the no-keeper fallback
     /// path where libghostty spawns the shell without telling us its pid.
     var shellPID: pid_t? { surfaceView?.shellPID }
+
+    /// The shells of the side terminals that have been opened this launch. Their
+    /// work is the session's work: a dev server started beside an agent belongs
+    /// in the same running list as one the agent started.
+    var sideShellPIDs: [pid_t] { sideSurfaces.values.compactMap(\.shellPID) }
 
     @discardableResult
     func ensureSurfaceView(runtime: GhosttyRuntime) -> SurfaceView {
@@ -236,7 +259,36 @@ final class Session: Identifiable {
         return view
     }
 
+    /// The view for one of this session's side terminals, made on first use.
+    ///
+    /// Its id doubles as the keeper's session id, which is what brings the same
+    /// shell back after a relaunch. It starts where the session's shell is now
+    /// rather than where it was born: a terminal opened beside an agent is for
+    /// the thing the agent is working on.
+    @discardableResult
+    func ensureSideSurface(_ id: UUID, runtime: GhosttyRuntime) -> SurfaceView {
+        if let view = sideSurfaces[id] { return view }
+        let view = SurfaceView(runtime: runtime, workingDirectory: cwd ?? originCwd, sessionID: id)
+        sideSurfaces[id] = view
+        onSideSurfaceCreated?(id, view)
+        return view
+    }
+
+    /// End one side terminal's shell. A tab restored from the last launch but
+    /// never shown in this one has no view, and its shell is still being kept
+    /// alive for it, so that one is closed at the keeper directly.
+    func closeSideSurface(_ id: UUID) {
+        if let view = sideSurfaces.removeValue(forKey: id) {
+            view.close()
+            view.removeFromSuperview()
+        } else {
+            GhosttyRuntime.keeper?.close(session: id)
+        }
+        sideTerminalTitles[id] = nil
+    }
+
     func close() {
+        for id in sideTabs.compactMap(\.terminalID) { closeSideSurface(id) }
         surfaceView?.close()
         surfaceView?.removeFromSuperview()
         surfaceView = nil

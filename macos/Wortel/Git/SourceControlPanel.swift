@@ -12,13 +12,19 @@ struct SourceControlPanel: View {
             switch panel.pane {
             case .changes:
                 if let repo = panel.repo {
-                    RepoView(repo: repo, focusRequest: panel.listFocusRequest)
+                    VStack(spacing: 0) {
+                        RepoHeader(repo: repo)
+                        RepoView(repo: repo, focusRequest: panel.listFocusRequest)
+                    }
                 } else {
                     emptyState
                 }
             case .history:
                 if let repo = panel.repo {
-                    HistoryView(repo: repo, focusRequest: panel.listFocusRequest)
+                    VStack(spacing: 0) {
+                        RepoHeader(repo: repo)
+                        HistoryView(repo: repo, focusRequest: panel.listFocusRequest)
+                    }
                 } else {
                     emptyState
                 }
@@ -80,10 +86,8 @@ private struct RepoView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // No header, deliberately — see HistoryView. The list has to be the
-            // pane's first view for it to run up under the titlebar and pick up
-            // the system's blur; the branch chip moved to the toolbar (see
-            // MainToolbar) to give it that back.
+            // The branch and the repo's actions are in RepoHeader, above this
+            // view (see SourceControlPanel).
             //
             // Draggable split between the files list and the diff. The list gets
             // an explicit, persisted height; the diff takes whatever's left.

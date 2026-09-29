@@ -24,8 +24,12 @@ enum Chrome {
     static let controlSize: CGFloat = 28
     /// The corner radius of a tab, and of a button's hover and selected fill.
     static let controlRadius: CGFloat = 8
-    /// Every glyph in the rows: tab icons and buttons alike.
-    static let glyph = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+    /// Every glyph in the rows: tab icons and buttons alike. A point over the
+    /// 13pt titles, so a glyph holds its own beside the text instead of
+    /// reading as a bullet.
+    static let glyph = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+    /// Glyphs in the rows' menus, sized to the menu's own 13pt text.
+    static let menuGlyph = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
 
     /// The titlebar band: the frame the pages sit in. Clear, so the window's
     /// vibrancy shows through it (see `BackdropController`).

@@ -642,7 +642,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     private static func setGlyph(_ symbol: String, on item: NSMenuItem) {
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(Chrome.glyph)
+            .withSymbolConfiguration(Chrome.menuGlyph)
         if #available(macOS 27.0, *) {
             item.preferredImageVisibility = .visible
         }

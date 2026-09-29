@@ -39,7 +39,10 @@ final class SideTabStrip: NSView {
     var onDrag: (DragPhase, SideTab, NSView, NSPoint) -> Void = { _, _, _, _ in }
 
     static let tabHeight: CGFloat = Chrome.controlSize
-    static let minTabWidth: CGFloat = 90
+    /// Wide enough for a dozen characters of title beside the glyph and the
+    /// close button's room: past that a row scrolls rather than shrinking
+    /// tabs into initials.
+    static let minTabWidth: CGFloat = 130
     static let maxTabWidth: CGFloat = 240
     private static let gap: CGFloat = 4
     private static let fade: CGFloat = 20
@@ -397,11 +400,11 @@ private final class SideTabView: NSControl {
 
     override var isFlipped: Bool { true }
 
-    /// ChatGPT's tab metrics: 10pt in, a 14pt glyph, 8pt to the title, and a
+    /// ChatGPT's tab metrics: 10pt in, a 16pt glyph box, 8pt to the title, and a
     /// 20pt close button 4pt from the end, room kept for it on every tab so
     /// hovering never moves a title.
     private static let inset: CGFloat = 10
-    private static let glyph: CGFloat = 14
+    private static let glyph: CGFloat = 16
     private static let glyphGap: CGFloat = 8
     private static let closeSize: CGFloat = 20
     private static let closeGap: CGFloat = 4
@@ -432,7 +435,7 @@ private final class SideTabView: NSControl {
     override func layout() {
         super.layout()
         let h = bounds.height
-        icon.frame = NSRect(x: Self.inset, y: (h - 16) / 2, width: Self.glyph, height: 16)
+        icon.frame = NSRect(x: Self.inset, y: (h - 18) / 2, width: Self.glyph, height: 18)
         let closeX = bounds.width - Self.endInset - Self.closeSize
         closeButton.frame = NSRect(x: closeX, y: (h - Self.closeSize) / 2,
                                    width: Self.closeSize, height: Self.closeSize)

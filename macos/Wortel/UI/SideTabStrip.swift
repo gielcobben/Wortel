@@ -67,9 +67,6 @@ final class SideTabStrip: NSView {
             needsLayout = true
         }
     }
-    private var accessoryWidth: CGFloat {
-        trailingAccessory.map { $0.fittingSize.width + Self.gap * 2 } ?? 0
-    }
 
     /// Internal rather than private for TabStripTests, which check it never
     /// insets itself under the titlebar or scrolls vertically.
@@ -135,7 +132,6 @@ final class SideTabStrip: NSView {
         for (view, item) in zip(tabViews, items) {
             view.configure(title: item.title, symbol: item.symbol, detail: item.detail,
                            isActive: item.tab == active)
-            view.needsLayout = true
         }
         // A divider between two quiet tabs only; the raised one is its own edge.
         for (index, view) in tabViews.enumerated() {
@@ -180,7 +176,9 @@ final class SideTabStrip: NSView {
     }
 
     private func plan() -> Plan {
-        let room = max(0, bounds.width - accessoryWidth)
+        // Measured once: a fitting size is an Auto Layout solve.
+        let accessorySize = trailingAccessory?.fittingSize
+        let room = max(0, bounds.width - (accessorySize.map { $0.width + Self.gap * 2 } ?? 0))
         let gaps = Self.gap * CGFloat(max(tabViews.count - 1, 0))
         // Each tab as wide as its title, up to the maximum, and never
         // narrower than that title or the readable minimum, whichever is less.
@@ -208,17 +206,26 @@ final class SideTabStrip: NSView {
         let contentWidth = (frames.last?.maxX ?? 0)
         let visibleWidth = min(contentWidth, room)
         var accessory: NSRect?
-        if let trailingAccessory {
-            let size = trailingAccessory.fittingSize
+        if let size = accessorySize {
             accessory = NSRect(x: visibleWidth + Self.gap * 2, y: ((bounds.height - size.height) / 2).rounded(),
                                width: size.width, height: size.height)
         }
         return Plan(tabs: frames, contentWidth: contentWidth, visibleWidth: visibleWidth, accessory: accessory)
     }
 
+    /// The width the row was last laid out at: narrowing it (a divider drag,
+    /// a window resize) can put the tab in front out of view.
+    private var laidOutWidth: CGFloat = 0
+
     override func layout() {
         super.layout()
         let plan = plan()
+        defer {
+            if bounds.width != laidOutWidth {
+                laidOutWidth = bounds.width
+                revealActive(animated: false)
+            }
+        }
         scroll.frame = NSRect(x: 0, y: 0, width: plan.visibleWidth, height: bounds.height)
         content.frame = NSRect(x: 0, y: 0, width: max(plan.contentWidth, plan.visibleWidth),
                                height: bounds.height)
@@ -431,10 +438,16 @@ private final class SideTabView: NSControl, TabTitleProviding {
     /// The title's width as it will actually draw. Measured through the cell,
     /// which knows the label's own padding; the text's bare width is a few
     /// points short of it, and a label given only that truncates what fits.
-    private var titleWidth: CGFloat {
-        ceil(label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: 10_000, height: 100)).width
-             ?? label.intrinsicContentSize.width)
+    /// Measured when the title changes, not on every layout pass: every
+    /// tab's width is asked for on each frame of a resize.
+    private var titleWidth: CGFloat = 0
+
+    private func measureTitle() {
+        titleWidth = ceil(label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: 10_000, height: 100)).width
+                          ?? label.intrinsicContentSize.width)
     }
+
+    private var symbol: String?
 
     /// What the tab would like to be: inset, glyph, title, close button.
     var fittingWidth: CGFloat {
@@ -442,14 +455,30 @@ private final class SideTabView: NSControl, TabTitleProviding {
             + Self.closeGap + Self.closeSize + Self.endInset
     }
 
+    /// Only what changed: a row is updated whole whenever any tab in it
+    /// changes, and a terminal's title changes often.
     func configure(title: String, symbol: String, detail: String?, isActive: Bool) {
-        label.stringValue = title
-        self.detail = detail
-        setAccessibilityHelp(detail)
-        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        self.isActive = isActive
-        applyState()
+        if label.stringValue != title || titleWidth == 0 {
+            label.stringValue = title
+            measureTitle()
+            needsLayout = true
+        }
+        if self.detail != detail {
+            self.detail = detail
+            setAccessibilityHelp(detail)
+        }
+        if self.symbol != symbol {
+            self.symbol = symbol
+            icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        }
+        if self.isActive != isActive || !configured {
+            self.isActive = isActive
+            configured = true
+            applyState()
+        }
     }
+
+    private var configured = false
 
     override func layout() {
         super.layout()
@@ -540,12 +569,22 @@ private final class SideTabView: NSControl, TabTitleProviding {
         guard let window else { return }
         let start = event.locationInWindow
         var dragging = false
-        while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+        // Escape abandons a drag; the rest of it, to the mouse-up, is ignored.
+        var cancelled = false
+        while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp, .keyDown]) {
             let point = next.locationInWindow
+            if next.type == .keyDown {
+                if next.keyCode == 53, dragging, !cancelled {
+                    cancelled = true
+                    onDrag(.cancelled, point)
+                }
+                continue
+            }
             if next.type == .leftMouseUp {
-                if dragging { onDrag(.ended, point) }
+                if dragging, !cancelled { onDrag(.ended, point) }
                 return
             }
+            if cancelled { continue }
             if !dragging, hypot(point.x - start.x, point.y - start.y) >= 6 {
                 dragging = true
                 onDrag(.began, start)

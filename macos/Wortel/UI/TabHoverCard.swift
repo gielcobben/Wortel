@@ -48,6 +48,8 @@ final class TabHoverCard {
     /// A tab that was clicked: no card for it until the pointer leaves it.
     private weak var suppressed: NSView?
     private var timer: Timer?
+    /// What the pending timer will show.
+    private var pending: Content?
     private var hiddenAt: Date = .distantPast
 
     private var isShown: Bool { panel?.isVisible ?? false }
@@ -60,9 +62,10 @@ final class TabHoverCard {
         if isShown || Date().timeIntervalSince(hiddenAt) < Self.grace {
             show(content, under: view)
         } else {
+            pending = content
             timer = Timer.scheduledTimer(withTimeInterval: Self.delay, repeats: false) { [weak self, weak view] _ in
                 MainActor.assumeIsolated {
-                    guard let self, let view, self.anchor === view else { return }
+                    guard let self, let view, self.anchor === view, let content = self.pending else { return }
                     self.show(content, under: view)
                 }
             }
@@ -83,18 +86,23 @@ final class TabHoverCard {
         suppressed = view
         anchor = nil
         timer?.invalidate()
-        if let panel, isShown {
-            panel.parent?.removeChildWindow(panel)
-            panel.orderOut(nil)
-        }
+        takeDown()
         hiddenAt = .distantPast
     }
 
     private func hide() {
-        guard let panel, isShown else { return }
+        let wasShown = isShown
+        takeDown()
+        if wasShown { hiddenAt = Date() }
+    }
+
+    /// Always, shown or not: switching apps hides the panel without telling
+    /// anyone (`hidesOnDeactivate`), and one left attached to its window came
+    /// back on reactivation under a tab the pointer had long left.
+    private func takeDown() {
+        guard let panel else { return }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
-        hiddenAt = Date()
     }
 
     private func show(_ content: Content, under view: NSView) {
@@ -139,11 +147,13 @@ final class TabHoverCard {
         y -= detailGap + detailHeight
         detailLabel.frame = NSRect(x: inset, y: y, width: textWidth, height: detailHeight)
 
-        // Under the tab, its left edge, kept on the screen.
+        // Under the tab, its left edge, kept on the screen: above the tab
+        // when there's no room under it (a strip tab near the Dock).
         let tab = window.convertToScreen(view.convert(view.bounds, to: nil))
         var origin = NSPoint(x: tab.minX, y: tab.minY - 6 - size.height)
         if let screen = window.screen?.visibleFrame {
             origin.x = min(max(origin.x, screen.minX + 4), screen.maxX - size.width - 4)
+            if origin.y < screen.minY + 4 { origin.y = tab.maxY + 6 }
         }
         panel.setFrame(NSRect(origin: origin, size: size), display: true)
         if panel.parent !== window {

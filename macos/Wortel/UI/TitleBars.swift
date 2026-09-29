@@ -30,7 +30,7 @@ extension Motion {
     /// frame. `completion` runs as it lands, before the terminals resize, so a
     /// width it sets is the width they get.
     static func pane(opening: Bool, _ changes: () -> Void,
-                     completion: @escaping @MainActor () -> Void = {}) {
+                     completion: @escaping @MainActor @Sendable () -> Void = {}) {
         SurfaceView.holdResizes()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = opening ? Self.opening : Self.closing
@@ -231,7 +231,10 @@ final class MainBar: ChromeBarView {
         strip.isHidden = true
         strip.setContentHuggingPriority(.init(1), for: .horizontal)
         strip.setContentCompressionResistancePriority(.init(1), for: .horizontal)
-        strip.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        // The full row, as the other two rows' strips: a strip of a fixed
+        // height centred in a row whose height is measured at launch sat half
+        // a point off whenever the two differed by an odd amount.
+        strip.heightAnchor.constraint(equalTo: heightAnchor).isActive = true
 
         let trailing = NSStackView(views: [more, running, sideDivider, sideToggle])
         trailing.spacing = 4
@@ -408,22 +411,13 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         // The column's tab row.
         sideBar.strip.onSelect = { [weak self] tab in self?.git.select(tab) }
         sideBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-        sideBar.strip.onCloseOthers = { [weak self] keep in
-            guard let self else { return }
-            self.git.select(keep)
-            for tab in self.git.tabs where tab != keep { self.git.requestClose(tab) }
-        }
+        sideBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         sideBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
         sideBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.manager.selected) }
         // The main area's row.
         mainBar.strip.onSelect = { [weak self] tab in self?.git.selectMain(tab) }
         mainBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-        mainBar.strip.onCloseOthers = { [weak self] keep in
-            guard let self else { return }
-            for tab in self.git.mainTabs where tab != keep && tab != .session {
-                self.git.requestClose(tab)
-            }
-        }
+        mainBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         mainBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
         mainBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.manager.selected) }
     }
@@ -530,10 +524,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         git.toggle()
     }
 
-    @objc private func toggleBottom() {
-        git.toggleBottom()
-    }
-
     /// The "+" menu. Native and small, like the ChatGPT app's own menus: a
     /// terminal first, because a new one is what "+" usually means, a browser,
     /// then the panes, the groups set apart by separators rather than labels.
@@ -549,14 +539,14 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
+        // ⌘T, which opens a terminal in the area you're in: from this menu,
+        // the column. (It said ⌃`, which shows and hides the strip.)
         let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
-            if region == .main { self?.git.openMainTerminal() } else { self?.git.openTerminal() }
+            self?.git.openTerminal()
         }
         Self.setGlyph("apple.terminal", on: terminal)
-        if region == .side {
-            terminal.keyEquivalent = "`"
-            terminal.keyEquivalentModifierMask = [.control]
-        }
+        terminal.keyEquivalent = "t"
+        terminal.keyEquivalentModifierMask = [.command]
         menu.addItem(terminal)
 
         let browser = ClosureMenuItem(title: "New Browser") { [weak self] in

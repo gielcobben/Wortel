@@ -191,7 +191,7 @@ final class MainSplitViewController: NSSplitViewController {
 
         observeInspector()
 
-        // Tab drags: both tab rows, and the two panes a tab can be dropped on.
+        // Tab drags: the three tab rows, and the areas a tab can be dropped on.
         let drag = TabDragController()
         drag.strips = [
             .init(strip: titleBars.sideBar.strip, region: .side),
@@ -204,6 +204,10 @@ final class MainSplitViewController: NSSplitViewController {
             return view.convert(view.bounds, to: nil)
         }
         drag.columnLeading = { [weak self] in self?.git.columnLeading ?? false }
+        drag.regionOf = { [weak self] tab in
+            guard let git = self?.git else { return nil }
+            return [TabRegion.main, .side, .bottom].first { git.tabs(in: $0).contains(tab) }
+        }
         drag.bottomArea = { [weak self, weak bottomPane] in
             guard let self, self.git.bottomVisible, let view = bottomPane?.view,
                   view.window != nil, !view.isHiddenOrHasHiddenAncestor,
@@ -434,9 +438,6 @@ final class MainSplitViewController: NSSplitViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
-    /// The panel can also be collapsed by dragging its divider to the edge, which
-    /// bypasses GitPanelModel entirely — reflect that back so the menu item's
-    /// Show/Hide title and the persisted state don't drift out of sync.
     /// The column may grow until the terminal is `terminalMinimum` wide. Stated
     /// as the item's maximum, so a divider drag stops there by itself.
     private func updateColumnMaximum() {
@@ -460,6 +461,9 @@ final class MainSplitViewController: NSSplitViewController {
 
         updateLeadingInsets()
 
+        // The column can also be collapsed by dragging its divider to the
+        // edge, which bypasses GitPanelModel entirely: reflect that back so the
+        // menu item's Show/Hide title and the persisted state don't drift.
         guard !syncingInspector, let inspectorItem else { return }
         let visible = !inspectorItem.isCollapsed
         guard visible != git.isVisible else { return }

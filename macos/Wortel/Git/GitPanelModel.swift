@@ -98,7 +98,7 @@ final class GitPanelModel {
     @ObservationIgnored var onTabClosed: ((SideTab) -> Void)?
     /// Ask whether to close a side terminal that is still running something;
     /// calls back only if the answer is yes. Set by AppDelegate.
-    @ObservationIgnored var confirmCloseTerminal: ((_ proceed: @escaping () -> Void) -> Void)?
+    @ObservationIgnored var confirmCloseTerminal: ((_ count: Int, _ proceed: @escaping () -> Void) -> Void)?
 
     /// The pane a session with no stored preference opens on: the last one the
     /// user explicitly chose, anywhere. Not the session's state — the *default*
@@ -510,13 +510,33 @@ final class GitPanelModel {
         guard tab != .session, let session else { return }
         if let id = tab.terminalID, session.sideSurfaces[id]?.needsConfirmClose == true,
            let confirmCloseTerminal {
-            confirmCloseTerminal { [weak self, weak session] in
+            confirmCloseTerminal(1) { [weak self, weak session] in
                 guard let self, let session else { return }
                 self.close(tab, in: session)
             }
             return
         }
         close(tab)
+    }
+
+    /// Close every tab in `keep`'s row but it (and the session's own
+    /// terminal), bringing `keep` forward. Terminals still running something
+    /// are asked about once, all together, not one sheet each.
+    func closeOthers(keeping keep: SideTab) {
+        guard let session, let region = session.workspace.region(of: keep) else { return }
+        change(session) { $0.bringForward(keep) }
+        settle(keep, in: session)
+        let others = tabs(in: region).filter { $0 != keep && $0 != .session }
+        let running = others.filter { tab in
+            tab.terminalID.flatMap { session.sideSurfaces[$0]?.needsConfirmClose } == true
+        }
+        for tab in others where !running.contains(tab) { close(tab) }
+        guard !running.isEmpty else { return }
+        let closeRunning = { [weak self, weak session] in
+            guard let self, let session else { return }
+            for tab in running { self.close(tab, in: session) }
+        }
+        if let confirmCloseTerminal { confirmCloseTerminal(running.count, closeRunning) } else { closeRunning() }
     }
 
     /// Put back a closed tab: the last closed in `region` (the row you're in),

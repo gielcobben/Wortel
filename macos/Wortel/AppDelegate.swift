@@ -275,8 +275,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.onSideTerminalExited = { [weak self] session, id in
             self?.gitPanel.close(.terminal(id), in: session)
         }
-        gitPanel.confirmCloseTerminal = { [weak self] proceed in
-            self?.confirmCloseSideTerminal(proceed)
+        gitPanel.confirmCloseTerminal = { [weak self] count, proceed in
+            self?.confirmCloseSideTerminal(count: count, proceed)
         }
         SurfaceView.onKeyboardActivity = { [weak self] surface in
             self?.noteKeyboardActivity(in: surface)
@@ -970,11 +970,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Ask before a side terminal takes a running program down with it: the
     /// dev server you opened it for is exactly what a stray ⌘W would kill.
-    private func confirmCloseSideTerminal(_ proceed: @escaping () -> Void) {
+    private func confirmCloseSideTerminal(count: Int, _ proceed: @escaping () -> Void) {
         guard let window else { return proceed() }
         let alert = NSAlert()
-        alert.messageText = "Close this terminal?"
-        alert.informativeText = "A program is still running in it, and closing the tab stops it."
+        if count == 1 {
+            alert.messageText = "Close this terminal?"
+            alert.informativeText = "A program is still running in it, and closing the tab stops it."
+        } else {
+            alert.messageText = "Close \(count) terminals?"
+            alert.informativeText = "Programs are still running in them, and closing the tabs stops them."
+        }
         alert.addButton(withTitle: "Close")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { response in

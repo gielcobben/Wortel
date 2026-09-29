@@ -242,10 +242,7 @@ final class BottomPaneController: NSViewController {
         let strip = bar.strip
         strip.onSelect = { [weak self] tab in self?.git.selectBottom(tab) }
         strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-        strip.onCloseOthers = { [weak self] keep in
-            guard let self else { return }
-            for tab in self.git.bottomTabs where tab != keep { self.git.requestClose(tab) }
-        }
+        strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
         strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.manager.selected) }
         observe()
@@ -323,6 +320,8 @@ final class TabDragController {
     /// Which side the column is on now.
     var columnLeading: () -> Bool = { false }
     var onSwap: (SideTab, Bool) -> Void = { _, _ in }
+    /// Which row a tab is in now: dropped back on its own area, it stays put.
+    var regionOf: (SideTab) -> TabRegion? = { _ in nil }
 
     private var overlay: TabDragOverlay?
     private var target: Target?
@@ -400,10 +399,19 @@ final class TabDragController {
             overlay.marker = nil
             overlay.zone = nil
         }
-        overlay.needsDisplay = true
+        overlay.redraw()
     }
 
+    /// Where a drop at `point` would land. Nowhere, when that's the area the
+    /// tab is already in: letting go over your own page is how a drag is
+    /// abandoned, and it used to send the tab to the end of its row.
     private func resolve(tab: SideTab, point: NSPoint) -> Target? {
+        let target = landing(tab: tab, point: point)
+        if case .zone(let region, _)? = target, region == regionOf(tab) { return nil }
+        return target
+    }
+
+    private func landing(tab: SideTab, point: NSPoint) -> Target? {
         for entry in strips {
             guard let strip = entry.strip, strip.window != nil, !strip.isHiddenOrHasHiddenAncestor,
                   tab.fits(entry.region) else { continue }
@@ -498,6 +506,30 @@ private final class TabDragOverlay: NSView {
     var zoneEdge: NSRectEdge = .maxY
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    /// What was drawn last time, so a move repaints what moved (the ghost,
+    /// the marker) and the zone only when it changes: this runs at mouse rate
+    /// over live terminals, and a whole-window repaint each time was the cost.
+    private var drawnGhost: NSRect?
+    private var drawnMarker: NSRect?
+    private var drawnZone: NSRect?
+
+    func redraw() {
+        let ghostRect = ghost.map {
+            NSRect(origin: NSPoint(x: pointer.x - grabOffset.x, y: pointer.y - grabOffset.y), size: $0.size)
+                .insetBy(dx: -2, dy: -2)
+        }
+        let markerRect = marker?.insetBy(dx: -2, dy: -2)
+        for rect in [drawnGhost, ghostRect, drawnMarker, markerRect].compactMap({ $0 }) {
+            setNeedsDisplay(rect)
+        }
+        if zone != drawnZone {
+            for rect in [drawnZone, zone].compactMap({ $0 }) { setNeedsDisplay(rect.insetBy(dx: -1, dy: -1)) }
+        }
+        drawnGhost = ghostRect
+        drawnMarker = markerRect
+        drawnZone = zone
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let accent = NSColor.controlAccentColor

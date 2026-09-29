@@ -33,8 +33,8 @@ what people reach for to move between shells; ⌘T opens a tab in the session yo
 
 ## Tabs
 
-These act on the tab row you're in: the one whose terminal or list has the
-keyboard, or the main area's.
+These act on the tab row you're in: the area you last typed in, picked a tab
+in, or moved to with ⌘] / ⌘[.
 
 | Action | Shortcut | Same as |
 |---|---|---|
@@ -49,6 +49,14 @@ keyboard, or the main area's.
 
 ⌘W closes what you're in. With your session's own terminal in front, that is the
 session, the same as closing a tab in any other terminal ends its shell.
+
+## Files
+
+| Action | Shortcut |
+|---|---|
+| Find in the file tab in front | ⌘F |
+
+With no file tab showing, ⌘F is left to the terminal.
 
 ## Panes
 

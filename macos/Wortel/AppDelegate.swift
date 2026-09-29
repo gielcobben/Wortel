@@ -813,6 +813,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func moveTabDown(_ sender: Any?) { moveFocusedTab(.minY) }
     @objc func moveTabUp(_ sender: Any?) { moveFocusedTab(.maxY) }
 
+    /// ⌘F with a file tab showing: that file's find bar, as a preview window's.
+    /// The tab in front of the area you're in first, then any area's. With no
+    /// searchable file on screen the item is disabled and ⌘F goes on to the
+    /// terminal, as it always has.
+    @objc func showPreviewFind(_ sender: Any?) {
+        guard let path = findableFileTab() else { return }
+        previewTabs.document(for: path).find.isPresented = true
+    }
+
+    private func findableFileTab() -> String? {
+        let fronts = [focusedRegion(), .side, .main, .bottom].map { gitPanel.activeTab(in: $0) }
+        for case let path? in fronts.map({ $0?.filePath }) {
+            let document = previewTabs.document(for: path).document
+            if document.mode != .rendered, !document.isBinary { return path }
+        }
+        return nil
+    }
+
     @objc func toggleSideColumn(_ sender: Any?) {
         focusMainWindow()
         gitPanel.toggle()
@@ -950,6 +968,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(toggleBottomStrip(_:)) {
             menuItem.title = gitPanel.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip"
             return true
+        }
+        if menuItem.action == #selector(showPreviewFind(_:)) {
+            return findableFileTab() != nil
         }
         if menuItem.action == #selector(reopenClosedTab(_:)) {
             return gitPanel.canReopenClosedTab

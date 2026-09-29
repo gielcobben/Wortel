@@ -108,28 +108,73 @@ private struct PreviewTabHeader: View {
                 .help(document.requestedURL.path)
             Spacer(minLength: 8)
             if document.availableModes.count > 1 {
-                Picker("Mode", selection: $document.mode) {
-                    ForEach(document.availableModes, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.small)
-                .fixedSize()
+                ModeSwitch(modes: document.availableModes, selection: $document.mode)
             }
             Button(action: openInWindow) {
-                Image(systemName: "macwindow")
+                Image(systemName: "macwindow.badge.plus")
                     .font(.system(size: 13))
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(HoverFillStyle())
             .foregroundStyle(.secondary)
-            .help("Open in Window")
+            .help("Open in New Window")
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)
         .frame(height: 34)
+    }
+}
+
+/// Diff · Source · Rendered, drawn like the tab rows rather than as a system
+/// segmented control: the one in front is a raised pill with a hairline, the
+/// rest are quiet text. A blue segmented control was the only accent in the
+/// chrome, and it said "control" louder than anything around it.
+private struct ModeSwitch: View {
+    let modes: [PreviewMode]
+    @Binding var selection: PreviewMode
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(modes, id: \.self) { mode in
+                let selected = mode == selection
+                Button {
+                    selection = mode
+                } label: {
+                    Text(mode.title)
+                        .font(.system(size: 12, weight: selected ? .medium : .regular))
+                        .foregroundStyle(selected ? .primary : .secondary)
+                        .padding(.horizontal, 10)
+                        .frame(height: 22)
+                        .background {
+                            if selected {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color(nsColor: Chrome.raised))
+                                    .shadow(color: .black.opacity(0.06), radius: 1, y: 0.5)
+                                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(Color(nsColor: Chrome.hairlineStrong), lineWidth: 0.5))
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color(nsColor: Chrome.hoverFill)))
+    }
+}
+
+/// A plain button that fills lightly under the pointer, as the titlebar's do.
+private struct HoverFillStyle: ButtonStyle {
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color(nsColor: configuration.isPressed ? Chrome.selectedFill
+                                     : hovering ? Chrome.hoverFill : .clear)))
+            .onHover { hovering = $0 }
     }
 }

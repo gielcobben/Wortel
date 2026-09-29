@@ -1,6 +1,6 @@
 import AppKit
 
-/// The side column's tabs, drawn in the column's own titlebar row.
+/// A row of tabs: the side column's, the main area's, the bottom strip's.
 ///
 /// Modelled on the ChatGPT app's workspace tabs, measured from its bundle and
 /// its screen: the tab in front is a raised pill in the content's own colour
@@ -8,11 +8,13 @@ import AppKit
 /// a hairline edge and a soft shadow; the rest are just a glyph and grey text
 /// that fill lightly on hover. A close button shows on the tab in front and the
 /// one under the pointer. Each tab is as wide as its title wants, between
-/// `minTabWidth` and `maxTabWidth`, and when the row runs out of room they
-/// shrink together rather than one of them disappearing.
+/// `minTabWidth` and `maxTabWidth`.
 ///
-/// The "+" is not part of the strip: it sits at the row's trailing end, where
-/// ChatGPT keeps it, so it doesn't move as tabs open and close.
+/// When they don't fit, they shrink together down to `minTabWidth` and then the
+/// row **scrolls**, as ChatGPT's does: sideways, with the edge faded on the side
+/// there's more, the tab in front always scrolled into view, and the "+" pinned
+/// just past the visible end. Squeezing every tab to a sliver instead was the
+/// row that read as a mess with six files open.
 @MainActor
 final class SideTabStrip: NSView {
     struct Item: Equatable {
@@ -40,9 +42,11 @@ final class SideTabStrip: NSView {
     static let minTabWidth: CGFloat = 90
     static let maxTabWidth: CGFloat = 240
     private static let gap: CGFloat = 4
+    private static let fade: CGFloat = 20
 
     /// A control that follows the last tab, as ChatGPT's "+" does: after the
-    /// row rather than at the far edge, so it reads as "one more of these".
+    /// row rather than at the far edge, so it reads as "one more of these", and
+    /// pinned at the visible end once the row scrolls.
     var trailingAccessory: NSView? {
         didSet {
             oldValue?.removeFromSuperview()
@@ -56,28 +60,41 @@ final class SideTabStrip: NSView {
     private var accessoryWidth: CGFloat {
         trailingAccessory.map { $0.fittingSize.width + Self.gap * 2 } ?? 0
     }
-    private func accessoryFrame(after frames: [NSRect]) -> NSRect? {
-        guard let trailingAccessory else { return nil }
-        let size = trailingAccessory.fittingSize
-        let x = (frames.last?.maxX ?? 0) + Self.gap * 2
-        return NSRect(x: x, y: ((bounds.height - size.height) / 2).rounded(),
-                      width: size.width, height: size.height)
-    }
 
+    private let scroll = TabScrollView()
+    private let content = FlippedView()
     private var items: [Item] = []
     private var active: SideTab?
     private var tabViews: [SideTabView] = []
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        scroll.drawsBackground = false
+        scroll.hasHorizontalScroller = false
+        scroll.hasVerticalScroller = false
+        scroll.horizontalScrollElasticity = .allowed
+        scroll.verticalScrollElasticity = .none
+        scroll.documentView = content
+        scroll.wantsLayer = true
+        scroll.contentView.postsBoundsChangedNotifications = true
+        addSubview(scroll)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(scrolled),
+            name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { true }
 
     /// Not itself a drag handle for the window: a click on empty strip is
     /// passed up to the titlebar row, which moves the window itself (see
-    /// ChromeBarView). Saying yes here marked the tabs' own area as draggable.
+    /// ChromeBarView).
     override var mouseDownCanMoveWindow: Bool { false }
 
     func update(items: [Item], active: SideTab?) {
         guard items != self.items || active != self.active else { return }
         let orderChanged = items.map(\.tab) != self.items.map(\.tab)
+        let activeChanged = active != self.active
         let hadTabs = !tabViews.isEmpty && window != nil
         var inserted: [SideTabView] = []
         if orderChanged {
@@ -107,7 +124,9 @@ final class SideTabStrip: NSView {
             slideIntoPlace(fadingIn: inserted)
         } else {
             needsLayout = true
+            layoutSubtreeIfNeeded()
         }
+        if orderChanged || activeChanged { revealActive(animated: hadTabs) }
     }
 
     private func makeView(for item: Item) -> SideTabView {
@@ -121,15 +140,67 @@ final class SideTabStrip: NSView {
             self.onDrag(phase, item.tab, view, point)
         }
         view.stripRegion = { [weak self] in self?.region ?? .side }
-        addSubview(view)
+        content.addSubview(view)
         return view
+    }
+
+    // MARK: Layout
+
+    /// Everything the row needs for its current width: each tab's frame in the
+    /// scrolling content, how wide the content and its visible window are, and
+    /// where the "+" goes.
+    private struct Plan {
+        var tabs: [NSRect]
+        var contentWidth: CGFloat
+        var visibleWidth: CGFloat
+        var accessory: NSRect?
+    }
+
+    private func plan() -> Plan {
+        let room = max(0, bounds.width - accessoryWidth)
+        let gaps = Self.gap * CGFloat(max(tabViews.count - 1, 0))
+        var widths = tabViews.map { min(max($0.fittingWidth, Self.minTabWidth), Self.maxTabWidth) }
+        let wanted = widths.reduce(0, +)
+        // Shrink together first, never below the readable minimum; past that,
+        // the row scrolls.
+        if wanted + gaps > room, wanted > 0 {
+            let scale = max(0, room - gaps) / wanted
+            widths = widths.map { max(Self.minTabWidth, ($0 * scale).rounded(.down)) }
+        }
+        var x: CGFloat = 0
+        let y = ((bounds.height - Self.tabHeight) / 2).rounded()
+        let frames = widths.map { width -> NSRect in
+            defer { x += width + Self.gap }
+            return NSRect(x: x, y: y, width: width, height: Self.tabHeight)
+        }
+        let contentWidth = (frames.last?.maxX ?? 0)
+        let visibleWidth = min(contentWidth, room)
+        var accessory: NSRect?
+        if let trailingAccessory {
+            let size = trailingAccessory.fittingSize
+            accessory = NSRect(x: visibleWidth + Self.gap * 2, y: ((bounds.height - size.height) / 2).rounded(),
+                               width: size.width, height: size.height)
+        }
+        return Plan(tabs: frames, contentWidth: contentWidth, visibleWidth: visibleWidth, accessory: accessory)
+    }
+
+    override func layout() {
+        super.layout()
+        let plan = plan()
+        scroll.frame = NSRect(x: 0, y: 0, width: plan.visibleWidth, height: bounds.height)
+        content.frame = NSRect(x: 0, y: 0, width: max(plan.contentWidth, plan.visibleWidth),
+                               height: bounds.height)
+        for (view, frame) in zip(tabViews, plan.tabs) { view.frame = frame }
+        if let frame = plan.accessory { trailingAccessory?.frame = frame }
+        updateFade()
     }
 
     /// Tabs glide to their new places and new ones fade in, on the panes'
     /// curve: ChatGPT's tabs do the same over 150 to 180ms.
     private func slideIntoPlace(fadingIn inserted: [SideTabView]) {
-        let frames = tabFrames()
-        for (view, frame) in zip(tabViews, frames) where inserted.contains(where: { $0 === view }) {
+        let plan = plan()
+        content.frame.size.width = max(plan.contentWidth, plan.visibleWidth, content.frame.width)
+        for (view, frame) in zip(tabViews, plan.tabs) where inserted.contains(where: { $0 === view }) {
             view.frame = frame
             view.alphaValue = 0
         }
@@ -137,64 +208,122 @@ final class SideTabStrip: NSView {
             context.duration = Motion.tabs
             context.timingFunction = Motion.curve
             context.allowsImplicitAnimation = true
-            for (view, frame) in zip(tabViews, frames) {
+            for (view, frame) in zip(tabViews, plan.tabs) {
                 if inserted.contains(where: { $0 === view }) {
                     view.animator().alphaValue = 1
                 } else {
                     view.animator().frame = frame
                 }
             }
-            if let frame = accessoryFrame(after: frames) { trailingAccessory?.animator().frame = frame }
+            scroll.animator().frame = NSRect(x: 0, y: 0, width: plan.visibleWidth, height: bounds.height)
+            if let frame = plan.accessory { trailingAccessory?.animator().frame = frame }
+        } completionHandler: {
+            MainActor.assumeIsolated { self.needsLayout = true }
         }
     }
 
-    /// Where each tab sits for the strip's current width.
-    private func tabFrames() -> [NSRect] {
-        var x: CGFloat = 0
-        let y = ((bounds.height - Self.tabHeight) / 2).rounded()
-        return tabWidths().map { width in
-            defer { x += width + Self.gap }
-            return NSRect(x: x, y: y, width: width, height: Self.tabHeight)
+    // MARK: Scrolling
+
+    /// Scroll so the tab in front is in view, with a little room beside it.
+    private func revealActive(animated: Bool) {
+        guard let view = tabViews.first(where: { $0.tab == active }) else { return }
+        let clip = scroll.contentView
+        let visible = clip.bounds
+        let wanted = view.frame.insetBy(dx: -Self.fade, dy: 0)
+        var x = visible.origin.x
+        if wanted.minX < visible.minX {
+            x = wanted.minX
+        } else if wanted.maxX > visible.maxX {
+            x = wanted.maxX - visible.width
         }
+        x = min(max(0, x), max(0, content.frame.width - visible.width))
+        guard abs(x - visible.origin.x) > 0.5 else { return }
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Motion.tabs
+                context.timingFunction = Motion.curve
+                clip.animator().setBoundsOrigin(NSPoint(x: x, y: 0))
+            }
+        } else {
+            clip.setBoundsOrigin(NSPoint(x: x, y: 0))
+        }
+        scroll.reflectScrolledClipView(clip)
     }
 
-    /// Each tab's width: what its title wants, clamped, then shrunk evenly when
-    /// the row would run past the strip.
-    private func tabWidths() -> [CGFloat] {
-        let wanted = tabViews.map { min(max($0.fittingWidth, Self.minTabWidth), Self.maxTabWidth) }
-        let room = bounds.width - accessoryWidth - Self.gap * CGFloat(max(tabViews.count - 1, 0))
-        let total = wanted.reduce(0, +)
-        guard total > room, !wanted.isEmpty, room > 0 else { return wanted }
-        let floor: CGFloat = 44
-        let scale = room / total
-        return wanted.map { max(floor, ($0 * scale).rounded(.down)) }
+    @objc private func scrolled(_ notification: Notification) { updateFade() }
+
+    /// Fade the edge the row continues past, so a cut-off tab reads as "more
+    /// this way" rather than as a tab drawn wrong.
+    private func updateFade() {
+        let clip = scroll.contentView.bounds
+        let hiddenLeading = clip.minX > 0.5
+        let hiddenTrailing = clip.maxX < content.frame.width - 0.5
+        guard hiddenLeading || hiddenTrailing, scroll.bounds.width > Self.fade * 2 else {
+            scroll.layer?.mask = nil
+            return
+        }
+        let mask = (scroll.layer?.mask as? CAGradientLayer) ?? CAGradientLayer()
+        let edge = Self.fade / scroll.bounds.width
+        let solid = NSColor.black.cgColor, clear = NSColor.clear.cgColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        mask.startPoint = CGPoint(x: 0, y: 0.5)
+        mask.endPoint = CGPoint(x: 1, y: 0.5)
+        mask.colors = [hiddenLeading ? clear : solid, solid, solid, hiddenTrailing ? clear : solid]
+        mask.locations = [0, NSNumber(value: Double(edge)), NSNumber(value: Double(1 - edge)), 1]
+        mask.frame = scroll.bounds
+        scroll.layer?.mask = mask
+        CATransaction.commit()
     }
 
-    override func layout() {
-        super.layout()
-        let frames = tabFrames()
-        for (view, frame) in zip(tabViews, frames) { view.frame = frame }
-        if let frame = accessoryFrame(after: frames) { trailingAccessory?.frame = frame }
-    }
+    // MARK: Drops
 
     /// Where a tab dropped at `x` (window coordinates) would go: the insertion
     /// index among this strip's tabs, decided by which side of a tab's middle
     /// the pointer is on, and the x (window coordinates) to draw the marker at.
     func insertion(atWindowX x: CGFloat) -> (index: Int, markerX: CGFloat) {
-        let movable = tabViews
-        let local = convert(NSPoint(x: x, y: 0), from: nil).x
-        for (index, view) in movable.enumerated() where local < view.frame.midX {
+        let local = content.convert(NSPoint(x: x, y: 0), from: nil).x
+        for (index, view) in tabViews.enumerated() where local < view.frame.midX {
             let gapX = view.frame.minX - Self.gap / 2
-            return (index, convert(NSPoint(x: gapX, y: 0), to: nil).x)
+            return (index, content.convert(NSPoint(x: gapX, y: 0), to: nil).x)
         }
         let end = (tabViews.last?.frame.maxX ?? 0) + Self.gap / 2
-        return (movable.count, convert(NSPoint(x: end, y: 0), to: nil).x)
+        return (tabViews.count, content.convert(NSPoint(x: end, y: 0), to: nil).x)
     }
 
     override func resizeSubviews(withOldSize oldSize: NSSize) {
         super.resizeSubviews(withOldSize: oldSize)
         needsLayout = true
     }
+}
+
+/// The row's scroll view: a vertical wheel scrolls it sideways, since a row of
+/// tabs has no other direction to go. A trackpad's sideways swipe already does.
+@MainActor
+private final class TabScrollView: NSScrollView {
+    override func scrollWheel(with event: NSEvent) {
+        guard abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX),
+              let document = documentView else {
+            super.scrollWheel(with: event)
+            return
+        }
+        let clip = contentView
+        let room = document.frame.width - clip.bounds.width
+        guard room > 0 else { return }
+        let step = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 12
+        let x = min(max(0, clip.bounds.origin.x - step), room)
+        clip.setBoundsOrigin(NSPoint(x: x, y: clip.bounds.origin.y))
+        reflectScrolledClipView(clip)
+    }
+
+    /// Titlebar, not a control: presses on its empty space move the window.
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
+/// A plain container with a top-left origin, for the tabs inside the scroll view.
+@MainActor
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }
 
 /// One tab: glyph, title, and the close button that appears on the tab in

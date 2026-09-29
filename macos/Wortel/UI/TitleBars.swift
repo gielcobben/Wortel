@@ -571,43 +571,57 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         git.toggle()
     }
 
-    /// The "+" card: a terminal first, because a new one is what "+" usually
-    /// means, then the panes, then what the session is serving. See NewTabCard.
+    /// The "+" menu. Native and small, like the ChatGPT app's own menus: a
+    /// terminal first, because a new one is what "+" usually means, then the
+    /// panes under a section label, then whatever the session is serving. No
+    /// checkmarks on the panes that are already open, since choosing one does the
+    /// useful thing either way: it brings that tab to the front.
+    ///
+    /// Right-aligned under the button, so it opens into the window rather than
+    /// off its side.
     @objc private func presentNewTabMenu(_ sender: NSView) {
-        let terminal = NewTabCard.Row(
-            id: "terminal", symbol: "apple.terminal", title: "Terminal",
-            detail: "A shell beside this session", trailing: "\u{2303}`"
-        ) { [weak self] in self?.git.openTerminal() }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
 
-        let panes = InspectorPane.allCases.map { pane in
-            let isOpen = git.tabs.contains(.pane(pane))
-            let shortcut = pane == .files ? "\u{2325}\u{2318}E" : nil
-            return NewTabCard.Row(
-                id: pane.rawValue, symbol: pane.symbol, title: pane.title,
-                trailing: isOpen ? "Open" : shortcut
-            ) { [weak self] in self?.git.show(pane) }
+        let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
+            self?.git.openTerminal()
+        }
+        terminal.image = Self.menuGlyph("apple.terminal")
+        terminal.keyEquivalent = "`"
+        terminal.keyEquivalentModifierMask = [.control]
+        menu.addItem(terminal)
+
+        menu.addItem(.sectionHeader(title: "Panes"))
+        for pane in InspectorPane.allCases {
+            let item = ClosureMenuItem(title: pane.title) { [weak self] in self?.git.show(pane) }
+            item.image = Self.menuGlyph(pane.symbol)
+            if pane == .files {
+                item.keyEquivalent = "e"
+                item.keyEquivalentModifierMask = [.command, .option]
+            }
+            menu.addItem(item)
         }
 
-        // What the session holds a port open for, to open in the browser. The
-        // same list the running pill shows, filtered to what has an address.
-        let servers = (runningSnapshot.work + runningSnapshot.orphans).compactMap { job -> NewTabCard.Row? in
-            guard let url = job.localURL, let address = job.localAddress else { return nil }
-            return NewTabCard.Row(
-                id: "server-\(job.pgid)-\(address)", symbol: "globe", title: address,
-                detail: job.label, trailing: "\u{2197}"
-            ) { NSWorkspace.shared.open(url) }
-        }
-
-        var sections = [
-            NewTabCard.Section(id: "new", title: "New", rows: [terminal]),
-            NewTabCard.Section(id: "panes", title: "Panes", rows: panes),
-        ]
+        // What the session holds a port open for, to open in the browser.
+        let servers = (runningSnapshot.work + runningSnapshot.orphans).filter { $0.localURL != nil }
         if !servers.isEmpty {
-            sections.append(NewTabCard.Section(id: "running", title: "Running", rows: servers))
+            menu.addItem(.sectionHeader(title: "Running"))
+            for job in servers {
+                guard let url = job.localURL, let address = job.localAddress else { continue }
+                let item = ClosureMenuItem(title: address) { NSWorkspace.shared.open(url) }
+                item.image = Self.menuGlyph("globe")
+                item.toolTip = job.label
+                menu.addItem(item)
+            }
         }
-        ChromePopover.present(
-            NewTabCard(sections: sections, dismiss: { ChromePopover.dismissCurrent() }),
-            from: sender)
+
+        let x = sender.bounds.width - menu.size.width
+        menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.bounds.height + 4), in: sender)
+    }
+
+    private static func menuGlyph(_ symbol: String) -> NSImage? {
+        NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
     }
 
     // MARK: Running jobs

@@ -27,10 +27,10 @@ struct InspectorContainer: View {
                 session: manager.selected,
                 terminalID: git.isVisible ? git.activeTab?.terminalID : nil,
                 focusRequest: git.terminalFocusRequest,
-                mainTerminal: manager.selected?.surfaceView)
+                handBack: { [weak git] in git?.focusFront(of: .main) })
             switch git.activeTab {
             case .pane(.files)?:
-                FileTreePanel(model: files, focusRequest: git.listFocusRequest)
+                FileTreePanel(model: files, focusRequest: git.listFocusRequest(in: .side))
             case .pane(let pane)?:
                 SourceControlPanel(panel: git, pane: pane)
             case nil:
@@ -55,7 +55,7 @@ private struct SideTerminalContainer: NSViewControllerRepresentable {
     let terminalID: UUID?
     let focusRequest: Int
     /// Where the keyboard goes when the side terminal that had it is hidden.
-    let mainTerminal: SurfaceView?
+    let handBack: () -> Void
 
     func makeNSViewController(context: Context) -> SideTerminalHostController {
         SideTerminalHostController()
@@ -63,7 +63,7 @@ private struct SideTerminalContainer: NSViewControllerRepresentable {
 
     func updateNSViewController(_ controller: SideTerminalHostController, context: Context) {
         let surface = terminalID.flatMap { id in session?.ensureSideSurface(id, runtime: runtime) }
-        controller.show(surface, focusRequest: focusRequest, mainTerminal: mainTerminal)
+        controller.show(surface, focusRequest: focusRequest, handBack: handBack)
     }
 }
 
@@ -90,7 +90,10 @@ final class SideTerminalHostController: NSViewController {
         self.view = view
     }
 
-    func show(_ surface: SurfaceView?, focusRequest: Int, mainTerminal: SurfaceView?) {
+    /// `handBack` gives the keyboard to the main area when the terminal that
+    /// had it is hidden: to what's in front there, which is not the session's
+    /// own terminal when a tab covers it.
+    func show(_ surface: SurfaceView?, focusRequest: Int, handBack: @escaping () -> Void) {
         if surface !== current {
             // Only a view this host still holds. A terminal dragged to the
             // other region has been re-parented into that region's host, and
@@ -103,9 +106,11 @@ final class SideTerminalHostController: NSViewController {
                 let hadKeyboard = current.window?.firstResponder === current
                 current.isHidden = true
                 current.occlusionDidChange(visible: false)
-                if hadKeyboard, surface == nil || focusRequest == handledFocusRequest,
-                   let mainTerminal {
-                    mainTerminal.window?.makeFirstResponder(mainTerminal)
+                if hadKeyboard, surface == nil || focusRequest == handledFocusRequest {
+                    // Not now: this runs inside a view update, and handing
+                    // back changes what the views observe.
+                    current.window?.makeFirstResponder(nil)
+                    DispatchQueue.main.async(execute: handBack)
                 }
             }
             if let surface {

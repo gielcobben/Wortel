@@ -64,15 +64,37 @@ final class MainAreaController: NSViewController {
         let showsPane = active?.isPage ?? false
         paneHost.view.isHidden = !showsPane
         let surface = active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) }
-        tabHost.show(surface, focusRequest: git.mainFocusRequest, mainTerminal: session?.surfaceView)
+        tabHost.show(surface, focusRequest: git.mainFocusRequest, handBack: { [weak git] in git?.focusFront(of: .main) })
         // Out of the way of clicks when it has nothing to show.
         tabHost.view.isHidden = surface == nil
-        // A covered terminal gives up the keyboard: typing into a terminal you
-        // can't see is the one thing a cover must not allow.
-        if showsPane, let window = view.window, let main = session?.surfaceView,
-           window.firstResponder === main {
-            window.makeFirstResponder(nil)
+        // After this turn: a session switch focuses the session's terminal in
+        // the same update, and the check has to come after that.
+        DispatchQueue.main.async { [weak self] in self?.keepKeyboardOffCoveredTerminal() }
+    }
+
+    /// A covered terminal gives up the keyboard, to what covers it: typing
+    /// into a terminal you can't see is the one thing a cover must not allow.
+    /// Checked after every change here and when the window becomes key, since
+    /// the session's terminal takes the keyboard at launch and on a switch.
+    private func keepKeyboardOffCoveredTerminal() {
+        guard git.activeMainTab != nil, let window = view.window,
+              let main = manager.selected?.surfaceView, window.firstResponder === main else { return }
+        window.makeFirstResponder(nil)
+        git.focusFront(of: .main)
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
+        if let window = view.window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowBecameKey(_:)),
+                                                   name: NSWindow.didBecomeKeyNotification, object: window)
         }
+        keepKeyboardOffCoveredTerminal()
+    }
+
+    @objc private func windowBecameKey(_ note: Notification) {
+        DispatchQueue.main.async { [weak self] in self?.keepKeyboardOffCoveredTerminal() }
     }
 }
 
@@ -83,7 +105,7 @@ struct MainAreaPane: View {
     let previewTabs: PreviewTabs
 
     var body: some View {
-        TabContent(tab: git.activeMainTab, git: git, files: files, previewTabs: previewTabs)
+        TabContent(tab: git.activeMainTab, region: .main, git: git, files: files, previewTabs: previewTabs)
     }
 }
 
@@ -92,6 +114,7 @@ struct MainAreaPane: View {
 /// rebuilt), so for those, and for nothing in front, this is clear.
 struct TabContent: View {
     let tab: SideTab?
+    let region: TabRegion
     @Bindable var git: GitPanelModel
     @Bindable var files: FileTreeModel
     let previewTabs: PreviewTabs
@@ -104,9 +127,9 @@ struct TabContent: View {
             case .browser(let id)?:
                 BrowserTab(page: BrowserTabs.shared.page(for: id))
             case .pane(.files)?:
-                FileTreePanel(model: files, focusRequest: git.listFocusRequest)
+                FileTreePanel(model: files, focusRequest: git.listFocusRequest(in: region))
             case .pane(let pane)?:
-                SourceControlPanel(panel: git, pane: pane)
+                SourceControlPanel(panel: git, pane: pane, region: region)
             default:
                 Color.clear
             }

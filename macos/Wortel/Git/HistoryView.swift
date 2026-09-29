@@ -57,7 +57,7 @@ struct HistoryView: View {
 
     /// Move keyboard focus into the commit list for an unseen focus request.
     private func applyFocusRequest(_ req: Int) {
-        guard req != lastHandledFocusRequest else { return }
+        guard req != 0, req != lastHandledFocusRequest else { return }
         lastHandledFocusRequest = req
         // Give ↑/↓ a starting point if nothing is selected yet. The log may still
         // be loading on a first open, in which case the list is empty and this

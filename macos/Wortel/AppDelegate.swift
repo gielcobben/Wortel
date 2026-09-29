@@ -291,6 +291,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if self.gitPanel.lastRegion != region { self.gitPanel.lastRegion = region }
             return event
         }
+        gitPanel.onClearKeyboard = { [weak self] in
+            guard let window = self?.window, window.firstResponder is SurfaceView else { return }
+            window.makeFirstResponder(nil)
+        }
         gitPanel.onFocusMainTerminal = { [weak self] in
             // Not while a tab in the main area's row covers the terminal.
             guard let self, self.gitPanel.activeMainTab == nil,
@@ -835,7 +839,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// ⌘L: the address field of the browser in front, the area you're in
     /// first.
     @objc func openBrowserLocation(_ sender: Any?) {
+        focusMainWindow()
         guard let id = frontBrowser() else { return }
+        // The keyboard is going there, so that's the area you're in: ⌘W next
+        // closes that browser, not what was in front where you were.
+        if let region = manager.selected?.workspace.region(of: .browser(id)) { gitPanel.lastRegion = region }
         BrowserTabs.shared.page(for: id).focusAddress()
     }
 
@@ -913,6 +921,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// terminal, as it always has.
     @objc func showPreviewFind(_ sender: Any?) {
         guard let path = findableFileTab() else { return }
+        // As ⌘L: the find bar has the keyboard, so its area is the one you're in.
+        if let region = manager.selected?.workspace.region(of: .file(path)) { gitPanel.lastRegion = region }
         previewTabs.document(for: path).find.isPresented = true
     }
 

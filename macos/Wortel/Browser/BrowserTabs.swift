@@ -161,6 +161,11 @@ final class BrowserPage: NSObject {
 
     func focusAddress() { addressFocusRequest += 1 }
 
+    /// The keyboard to the page itself. ⌘] onto a browser.
+    func focusPage() {
+        webView.window?.makeFirstResponder(webView)
+    }
+
     /// The page as it last looked, refreshed if it's on screen now.
     func previewSnapshot() -> NSImage? {
         captureSnapshot()

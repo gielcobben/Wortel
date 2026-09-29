@@ -9,6 +9,8 @@ struct SourceControlPanel: View {
     /// Which of the two panes, when the caller knows: a row shows its own tab,
     /// and with two rows the model's last-chosen pane can be the other one.
     var pane: InspectorPane? = nil
+    /// The row it's in, for its keyboard-focus requests.
+    var region: TabRegion = .side
 
     var body: some View {
         Group {
@@ -17,7 +19,7 @@ struct SourceControlPanel: View {
                 if let repo = panel.repo {
                     VStack(spacing: 0) {
                         RepoHeader(repo: repo, panel: panel)
-                        RepoView(repo: repo, focusRequest: panel.listFocusRequest,
+                        RepoView(repo: repo, focusRequest: panel.listFocusRequest(in: region),
                                  elsewhere: workElsewhere(than: repo),
                                  showCheckout: { panel.showCheckout($0) })
                     }
@@ -28,7 +30,7 @@ struct SourceControlPanel: View {
                 if let repo = panel.repo {
                     VStack(spacing: 0) {
                         RepoHeader(repo: repo, panel: panel)
-                        HistoryView(repo: repo, focusRequest: panel.listFocusRequest)
+                        HistoryView(repo: repo, focusRequest: panel.listFocusRequest(in: region))
                     }
                 } else {
                     emptyState
@@ -183,7 +185,7 @@ private struct RepoView: View {
 
     /// Move keyboard focus into the changes list for an unseen focus request.
     private func applyFocusRequest(_ req: Int) {
-        guard req != lastHandledFocusRequest else { return }
+        guard req != 0, req != lastHandledFocusRequest else { return }
         lastHandledFocusRequest = req
         // Give ↑/↓ a starting point if nothing is selected yet.
         if repo.selectedChangeID == nil { repo.selectAdjacent(1) }

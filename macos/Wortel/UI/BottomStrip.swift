@@ -268,7 +268,7 @@ final class BottomPaneController: NSViewController {
                          active: git.activeBottomTab)
         let active = git.bottomVisible ? git.activeBottomTab : nil
         let surface = active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) }
-        host.show(surface, focusRequest: git.bottomFocusRequest, mainTerminal: session?.surfaceView)
+        host.show(surface, focusRequest: git.bottomFocusRequest, handBack: { [weak git] in git?.focusFront(of: .main) })
         paneHost.view.isHidden = active == nil || active?.terminalID != nil
     }
 }
@@ -280,7 +280,7 @@ struct BottomAreaPane: View {
     let previewTabs: PreviewTabs
 
     var body: some View {
-        TabContent(tab: git.bottomVisible ? git.activeBottomTab : nil,
+        TabContent(tab: git.bottomVisible ? git.activeBottomTab : nil, region: .bottom,
                    git: git, files: files, previewTabs: previewTabs)
     }
 }

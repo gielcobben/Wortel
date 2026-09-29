@@ -90,6 +90,9 @@ final class GitPanelModel {
     /// Hand the keyboard back to the session's main terminal, for when the tab
     /// that had it closes. Set by AppDelegate.
     @ObservationIgnored var onFocusMainTerminal: (() -> Void)?
+    /// Take the keyboard from whatever has it, for when what's in front can't
+    /// hold it (a file). Set by AppDelegate.
+    @ObservationIgnored var onClearKeyboard: (() -> Void)?
     /// A tab closed, for whoever holds something for it (a previewed file's
     /// document). Set by AppDelegate.
     @ObservationIgnored var onTabClosed: ((SideTab) -> Void)?
@@ -119,12 +122,34 @@ final class GitPanelModel {
 
     private static let paneKey = "git.panelPane"
     private static let lastGitPaneKey = "git.lastSourceControlPane"
-    /// Bumped to ask the panel to move keyboard focus into the list of whichever
-    /// pane is showing — Changes or History. Both read the same token because
-    /// only one pane is ever mounted. The list view watches this and claims
-    /// focus; a monotonic counter (rather than a Bool) so repeated requests
-    /// always register, even back-to-back.
-    private(set) var listFocusRequest = 0
+    /// A request to put the keyboard in the list of the pane in front of one
+    /// row (Changes, History, the file tree). Each row reads its own through
+    /// `listFocusRequest(in:)`: a pane can be in front of all three, and one
+    /// shared request was answered by every one of them at once.
+    ///
+    /// A request is for the pane in front now or about to be (a tab opened
+    /// and focused in one go), not for whatever pane appears later: a list
+    /// takes a request it hasn't handled when it appears, so an old one would
+    /// pull the keyboard out of wherever you'd since gone. So it expires.
+    struct ListFocusRequest: Equatable {
+        let region: TabRegion
+        let serial: Int
+        let expires: Date
+    }
+    private(set) var listFocus: ListFocusRequest?
+    @ObservationIgnored private var listFocusSerial = 0
+
+    /// The request a pane in `region` should answer, or 0 for none.
+    func listFocusRequest(in region: TabRegion) -> Int {
+        guard let listFocus, listFocus.region == region, listFocus.expires > Date() else { return 0 }
+        return listFocus.serial
+    }
+
+    private func requestListFocus(in region: TabRegion) {
+        listFocusSerial += 1
+        listFocus = ListFocusRequest(region: region, serial: listFocusSerial,
+                                     expires: Date().addingTimeInterval(1))
+    }
     // MARK: Checkouts
 
     /// One checkout of the shown repository: its own or another worktree.
@@ -350,8 +375,7 @@ final class GitPanelModel {
         if isVisible {
             focus(.side)
         } else {
-            lastRegion = .main
-            onFocusMainTerminal?()
+            focus(.main)
         }
     }
 
@@ -438,9 +462,10 @@ final class GitPanelModel {
         guard owner === session else { return }
         mirror(owner, animated: false)
         resolveCurrent()
-        guard tab.terminalID != nil else { return }
-        // Keep the keyboard in the row the terminal was closed from if another
-        // terminal took its place there; otherwise hand it back.
+        // Only what can hold the keyboard: a terminal, or a browser's page.
+        guard tab.terminalID != nil || tab.browserID != nil else { return }
+        // Keep the keyboard in the row the tab was closed from if a terminal
+        // took its place there; otherwise hand it back.
         if region == .side, isVisible, activeTab?.terminalID != nil {
             terminalFocusRequest += 1
         } else if region == .main, activeMainTab?.terminalID != nil {
@@ -448,7 +473,7 @@ final class GitPanelModel {
         } else if region == .bottom, bottomVisible, activeBottomTab?.terminalID != nil {
             bottomFocusRequest += 1
         } else {
-            onFocusMainTerminal?()
+            focus(.main)
         }
     }
 
@@ -636,20 +661,40 @@ final class GitPanelModel {
         bringForward(row[index], in: region)
     }
 
-    /// Give the keyboard to what's in front of `region`: a terminal, or the
-    /// list of a pane. ⌘] / ⌘[.
+    /// Give the keyboard to what's in front of `region`: a terminal, a
+    /// browser's page, or the list of a pane. ⌘] / ⌘[.
     func focus(_ region: TabRegion) {
         lastRegion = region
+        focusFront(of: region)
+    }
+
+    /// Give the keyboard to what's in front of `region` without making it the
+    /// area you're in: for handing the keyboard back from a terminal that was
+    /// just hidden, which is housekeeping, not you going somewhere.
+    func focusFront(of region: TabRegion) {
+        let tab: SideTab
         switch region {
         case .main:
-            guard let tab = activeMainTab else { onFocusMainTerminal?(); return }
-            if tab.terminalID != nil { mainFocusRequest += 1 } else { listFocusRequest += 1 }
+            guard let front = activeMainTab else { onFocusMainTerminal?(); return }
+            tab = front
+            if tab.terminalID != nil { mainFocusRequest += 1; return }
         case .side:
-            guard isVisible, let tab = activeTab else { return }
-            if tab.terminalID != nil { terminalFocusRequest += 1 } else { listFocusRequest += 1 }
+            guard isVisible, let front = activeTab else { return }
+            tab = front
+            if tab.terminalID != nil { terminalFocusRequest += 1; return }
         case .bottom:
-            guard bottomVisible, let tab = activeBottomTab else { return }
-            if tab.terminalID != nil { bottomFocusRequest += 1 } else { listFocusRequest += 1 }
+            guard bottomVisible, let front = activeBottomTab else { return }
+            tab = front
+            if tab.terminalID != nil { bottomFocusRequest += 1; return }
+        }
+        if let id = tab.browserID {
+            BrowserTabs.shared.existingPage(for: id)?.focusPage()
+        } else if tab.pane != nil {
+            requestListFocus(in: region)
+        } else {
+            // A file takes no keyboard; at least take it from the terminal
+            // that had it, which may be the one this tab now hides.
+            onClearKeyboard?()
         }
     }
 
@@ -672,8 +717,7 @@ final class GitPanelModel {
             resolveCurrent()
             focus(.bottom)
         } else {
-            lastRegion = .main
-            onFocusMainTerminal?()
+            focus(.main)
         }
     }
 
@@ -683,7 +727,7 @@ final class GitPanelModel {
         session.bottomVisible = false
         mirror(session, animated: false)
         onStateChanged?()
-        onFocusMainTerminal?()
+        focus(.main)
     }
 
     func openBottomTerminal() {
@@ -712,10 +756,11 @@ final class GitPanelModel {
 
     /// Show the panel if needed and ask the changes list to take keyboard focus.
     func requestListFocus() {
-        if !isVisible || activeTab?.pane == nil {
-            open(.pane(pane))
-        }
-        listFocusRequest += 1
+        // Where a source-control or files pane is in front, else the column's.
+        let region = [lastRegion, .main, .side, .bottom].first { activeTab(in: $0)?.pane != nil }
+        if region == nil { open(.pane(pane)) }
+        lastRegion = region ?? .side
+        requestListFocus(in: lastRegion)
     }
 
     /// The user showed or hid the panel — record it on the session it was done

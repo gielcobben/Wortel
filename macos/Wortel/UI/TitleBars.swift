@@ -336,69 +336,70 @@ final class ChromeSplitView: NSSplitView {
 
 // MARK: - The three rows
 
-/// Over the sidebar: room for the traffic lights, then the sidebar toggle and
-/// a new session, where ChatGPT keeps its own.
+/// Over the sidebar: the traffic lights and, right beside them, the one
+/// control this row has, the sidebar toggle, where ChatGPT keeps its own. A new
+/// session is ⌘N or the sidebar's own "+".
 @MainActor
 final class SidebarBar: ChromeBarView {
     override init() {
         super.init()
-        let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar")
+        let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar (⌘B)")
         toggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
-        let new = HoverFillButton.glyph("square.and.pencil", "New Session")
-        new.action = #selector(AppDelegate.newSession(_:))
-        let stack = NSStackView(views: [toggle, new])
-        stack.spacing = 2
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        addSubview(toggle)
         NSLayoutConstraint.activate([
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
+            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 }
 
-/// Over the main area: its tab row (the session's own terminal pinned first,
-/// by name, then anything dragged or opened here), "+", and at the trailing end
-/// what the session is running and the toggles for the strip and the column.
-/// With the sidebar collapsed it takes over the sidebar row's job too: room for
-/// the traffic lights, and a way to bring the sidebar back.
+/// Over the main area, laid out like the ChatGPT app's conversation header: the
+/// session's name as a plain title, and at the trailing end its "…" menu and
+/// what it's running. Only once something else has been put in the main area's
+/// row does the title become that row's tabs. The column's toggle sits at the
+/// far end while the column is hidden, as ChatGPT's pane toggle does; with the
+/// sidebar collapsed the row also makes room for the traffic lights and the way
+/// back to the sidebar.
+///
+/// Everything else (a new terminal here, the bottom strip) is in the "…" menu
+/// and on the keyboard, not on the row: a titlebar full of glyphs is a titlebar
+/// nobody can read.
 @MainActor
 final class MainBar: ChromeBarView {
+    let title = PassthroughLabel(labelWithString: "")
     let strip = SideTabStrip()
-    let add = HoverFillButton.glyph("plus", "New Tab")
-    /// The session's actions, as ChatGPT's "…" is the conversation's.
     let more = HoverFillButton.glyph("ellipsis", "Session")
     let running = RunningButton()
-    let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column")
-    let bottomToggle = HoverFillButton.glyph("rectangle.bottomthird.inset.filled", "Bottom Strip")
-    private let sidebarControls: NSStackView
+    let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column (⌥⌘B)")
+    private let sideDivider = ToolbarDivider()
+    private let sidebarToggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar (⌘B)")
     private var leading: NSLayoutConstraint!
 
     override init() {
-        let toggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar")
-        toggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
-        let new = HoverFillButton.glyph("square.and.pencil", "New Session")
-        new.action = #selector(AppDelegate.newSession(_:))
-        sidebarControls = NSStackView(views: [toggle, new])
-        sidebarControls.spacing = 2
         super.init()
+        sidebarToggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
+
+        title.font = .systemFont(ofSize: 13, weight: .medium)
+        title.textColor = .labelColor
+        title.lineBreakMode = .byTruncatingTail
+        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        title.setContentHuggingPriority(.init(1), for: .horizontal)
 
         strip.region = .main
+        strip.isHidden = true
         strip.setContentHuggingPriority(.init(1), for: .horizontal)
         strip.setContentCompressionResistancePriority(.init(1), for: .horizontal)
         strip.heightAnchor.constraint(equalToConstant: 38).isActive = true
-        // ChatGPT's order: the row's "+", then the conversation's own controls,
-        // a hairline, and the panel toggles at the far end.
-        let trailing = NSStackView(views: [add, ToolbarDivider(), more, running,
-                                           ToolbarDivider(), bottomToggle, sideToggle])
+
+        let trailing = NSStackView(views: [more, running, sideDivider, sideToggle])
         trailing.spacing = 4
-        let row = NSStackView(views: [sidebarControls, strip, trailing])
+        let row = NSStackView(views: [sidebarToggle, title, strip, trailing])
         row.spacing = 8
         row.alignment = .centerY
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
-        leading = row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
+        leading = row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16)
         NSLayoutConstraint.activate([
             leading,
             row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
@@ -409,21 +410,35 @@ final class MainBar: ChromeBarView {
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     func setSidebarCollapsed(_ collapsed: Bool) {
-        sidebarControls.isHidden = !collapsed
-        leading.constant = collapsed ? Chrome.trafficLightInset : 8
+        sidebarToggle.isHidden = !collapsed
+        leading.constant = collapsed ? Chrome.trafficLightInset : (strip.isHidden ? 16 : 8)
+    }
+
+    /// The title, or the row's tabs once there's more than the terminal in it.
+    func setShowsTabs(_ shows: Bool) {
+        guard strip.isHidden == shows else { return }
+        strip.isHidden = !shows
+        title.isHidden = shows
+        setSidebarCollapsed(!sidebarToggle.isHidden)
+    }
+
+    /// The column's toggle, here only while the column is hidden.
+    func setShowsSideToggle(_ shows: Bool) {
+        sideToggle.isHidden = !shows
+        sideDivider.isHidden = !shows
     }
 }
 
-/// Over the side column: its tabs, then "+" and the column's toggle at the
-/// trailing end.
+/// Over the side column: its tabs with "+" right after the last one, as in
+/// ChatGPT's right pane, and the column's toggle at the far end.
 @MainActor
 final class SideColumnBar: ChromeBarView {
     let strip = SideTabStrip()
     let add = HoverFillButton.glyph("plus", "New Tab")
-    let toggle = HoverFillButton.glyph("sidebar.right", "Hide Side Column")
+    let toggle = HoverFillButton.glyph("sidebar.right", "Hide Side Column (⌥⌘B)")
     /// Shown when this row is the leftmost with the sidebar collapsed: the
     /// way back to the sidebar, where the main area's row would carry it.
-    let sidebarToggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar")
+    let sidebarToggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar (⌘B)")
     private var stripLeading: NSLayoutConstraint!
 
     override init() {
@@ -433,12 +448,10 @@ final class SideColumnBar: ChromeBarView {
         sidebarToggle.isHidden = true
         sidebarToggle.translatesAutoresizingMaskIntoConstraints = false
         strip.translatesAutoresizingMaskIntoConstraints = false
-        let trailing = NSStackView(views: [add, toggle])
-        trailing.spacing = 4
-        trailing.translatesAutoresizingMaskIntoConstraints = false
+        strip.trailingAccessory = add
         addSubview(sidebarToggle)
         addSubview(strip)
-        addSubview(trailing)
+        addSubview(toggle)
         stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         NSLayoutConstraint.activate([
             sidebarToggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
@@ -446,9 +459,9 @@ final class SideColumnBar: ChromeBarView {
             stripLeading,
             strip.topAnchor.constraint(equalTo: topAnchor),
             strip.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-            strip.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -8),
-            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
+            strip.trailingAnchor.constraint(equalTo: toggle.leadingAnchor, constant: -8),
+            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -555,14 +568,10 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
         mainBar.sideToggle.target = self
         mainBar.sideToggle.action = #selector(toggleSideColumn)
-        mainBar.bottomToggle.target = self
-        mainBar.bottomToggle.action = #selector(toggleBottom)
         sideBar.toggle.target = self
         sideBar.toggle.action = #selector(toggleSideColumn)
         sideBar.add.target = self
         sideBar.add.action = #selector(presentNewTabMenu(_:))
-        mainBar.add.target = self
-        mainBar.add.action = #selector(presentNewTabMenu(_:))
         mainBar.running.target = self
         mainBar.running.action = #selector(openRunningJobs(_:))
         mainBar.more.target = self
@@ -605,9 +614,10 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     }
 
     private func syncColumn() {
-        mainBar.sideToggle.isHidden = git.isVisible
-        mainBar.bottomToggle.isSelected = git.bottomVisible
-        mainBar.bottomToggle.toolTip = git.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip"
+        mainBar.setShowsSideToggle(!git.isVisible)
+        mainBar.title.stringValue = manager.selected?.name ?? "Wortel"
+        // A plain title until the row holds more than the session's terminal.
+        mainBar.setShowsTabs(git.mainTabs.count > 1)
         let titles = manager.selected?.sideTerminalTitles ?? [:]
         func item(_ tab: SideTab) -> SideTabStrip.Item {
             switch tab {
@@ -658,8 +668,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     /// Right-aligned under the button, so it opens into the window rather than
     /// off its side.
     @objc private func presentNewTabMenu(_ sender: NSView) {
-        // "+" means here: the row whose button it is.
-        let region: TabRegion = sender === mainBar.add ? .main : .side
+        // "+" is the column's; the main area's tabs come from the "…" menu.
+        let region: TabRegion = .side
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -709,6 +719,24 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         guard let session = manager.selected else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
+
+        // What used to be glyphs on the row: a terminal in the main area, and
+        // the strip under it.
+        let terminal = ClosureMenuItem(title: "New Terminal Tab") { [weak self] in
+            self?.git.openMainTerminal()
+        }
+        Self.setGlyph("apple.terminal", on: terminal)
+        terminal.keyEquivalent = "t"
+        terminal.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(terminal)
+        let strip = ClosureMenuItem(title: git.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip") { [weak self] in
+            self?.git.toggleBottom()
+        }
+        Self.setGlyph("rectangle.bottomthird.inset.filled", on: strip)
+        strip.keyEquivalent = "j"
+        strip.keyEquivalentModifierMask = [.command]
+        menu.addItem(strip)
+        menu.addItem(.separator())
 
         let rename = ClosureMenuItem(title: "Rename") { [weak self] in
             self?.manager.editingID = session.id

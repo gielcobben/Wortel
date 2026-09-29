@@ -41,6 +41,29 @@ final class SideTabStrip: NSView {
     static let maxTabWidth: CGFloat = 240
     private static let gap: CGFloat = 4
 
+    /// A control that follows the last tab, as ChatGPT's "+" does: after the
+    /// row rather than at the far edge, so it reads as "one more of these".
+    var trailingAccessory: NSView? {
+        didSet {
+            oldValue?.removeFromSuperview()
+            if let trailingAccessory {
+                trailingAccessory.translatesAutoresizingMaskIntoConstraints = true
+                addSubview(trailingAccessory)
+            }
+            needsLayout = true
+        }
+    }
+    private var accessoryWidth: CGFloat {
+        trailingAccessory.map { $0.fittingSize.width + Self.gap * 2 } ?? 0
+    }
+    private func accessoryFrame(after frames: [NSRect]) -> NSRect? {
+        guard let trailingAccessory else { return nil }
+        let size = trailingAccessory.fittingSize
+        let x = (frames.last?.maxX ?? 0) + Self.gap * 2
+        return NSRect(x: x, y: ((bounds.height - size.height) / 2).rounded(),
+                      width: size.width, height: size.height)
+    }
+
     private var items: [Item] = []
     private var active: SideTab?
     private var tabViews: [SideTabView] = []
@@ -121,6 +144,7 @@ final class SideTabStrip: NSView {
                     view.animator().frame = frame
                 }
             }
+            if let frame = accessoryFrame(after: frames) { trailingAccessory?.animator().frame = frame }
         }
     }
 
@@ -138,7 +162,7 @@ final class SideTabStrip: NSView {
     /// the row would run past the strip.
     private func tabWidths() -> [CGFloat] {
         let wanted = tabViews.map { min(max($0.fittingWidth, Self.minTabWidth), Self.maxTabWidth) }
-        let room = bounds.width - Self.gap * CGFloat(max(tabViews.count - 1, 0))
+        let room = bounds.width - accessoryWidth - Self.gap * CGFloat(max(tabViews.count - 1, 0))
         let total = wanted.reduce(0, +)
         guard total > room, !wanted.isEmpty, room > 0 else { return wanted }
         let floor: CGFloat = 44
@@ -148,7 +172,9 @@ final class SideTabStrip: NSView {
 
     override func layout() {
         super.layout()
-        for (view, frame) in zip(tabViews, tabFrames()) { view.frame = frame }
+        let frames = tabFrames()
+        for (view, frame) in zip(tabViews, frames) { view.frame = frame }
+        if let frame = accessoryFrame(after: frames) { trailingAccessory?.frame = frame }
     }
 
     /// Where a tab dropped at `x` (window coordinates) would go: the insertion

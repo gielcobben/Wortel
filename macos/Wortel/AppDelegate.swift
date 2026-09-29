@@ -662,6 +662,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.requestCloseSelected()
     }
 
+    /// The last stop for ⌘⌥S and the titlebar's sidebar buttons. They travel the
+    /// responder chain from whatever has the keyboard, and when nothing does (a
+    /// pane covering the terminal takes it away) the chain goes window, app,
+    /// here, and never passes the split that owns the sidebar.
+    @objc func toggleSidebar(_ sender: Any?) {
+        splitController.toggleSidebar(sender)
+    }
+
     // MARK: - Side column tabs
 
     @objc func toggleSideColumn(_ sender: Any?) {

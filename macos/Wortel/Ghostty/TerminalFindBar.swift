@@ -24,6 +24,21 @@ final class TerminalFindBar: NSVisualEffectView, NSTextFieldDelegate {
     var onPrevious: () -> Void = {}
     var onClose: () -> Void = {}
 
+    /// The program on screen has the terminal's alternate screen (a
+    /// full-screen agent, vim, less): it keeps its own history, and the
+    /// terminal only ever has the one screen of it to search. Said, so a
+    /// search that finds less than you scrolled past in the program isn't a
+    /// mystery.
+    var screenOnly = false {
+        didSet {
+            field.placeholderString = screenOnly ? "Find on screen" : "Find"
+            toolTip = screenOnly
+                ? "This program keeps its own history, so only what's on screen can be searched."
+                : nil
+            updateCount()
+        }
+    }
+
     /// Matches in all, and which one is selected (from 0), as libghostty
     /// reports them. nil: not known yet.
     var total: Int? { didSet { updateCount() } }
@@ -171,6 +186,7 @@ extension SurfaceView {
     func startSearch() {
         let bar = findBar ?? makeFindBar()
         attachFindBar()
+        bar.screenOnly = inAlternateScreen
         bar.focusField()
         // libghostty's own start; it answers with START_SEARCH, which lands
         // in `searchStarted` and changes nothing that's already so.
@@ -191,6 +207,7 @@ extension SurfaceView {
     func searchStarted(needle: String?) {
         let bar = findBar ?? makeFindBar()
         attachFindBar()
+        bar.screenOnly = inAlternateScreen
         if let needle, !needle.isEmpty, bar.field.stringValue != needle {
             bar.field.stringValue = needle
         }
@@ -204,6 +221,14 @@ extension SurfaceView {
 
     func searchTotal(_ total: Int?) { findBar?.total = total }
     func searchSelected(_ selected: Int?) { findBar?.selected = selected }
+
+    /// Whether the program has the alternate screen, from the modes Wortel
+    /// records off the output (TerminalModeRecorder).
+    private var inAlternateScreen: Bool {
+        guard let sessionID else { return false }
+        let modes = TerminalModeRecorder.shared.modes(for: sessionID).privateModes
+        return modes[1049] == true || modes[1047] == true
+    }
 
     // MARK: Placement
 

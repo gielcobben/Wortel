@@ -49,6 +49,9 @@ final class SurfaceView: NSView {
     /// owns this view's layer. It sits beside it and follows it; see
     /// TerminalFindBar.
     var findBar: TerminalFindBar?
+    /// The keeper session this terminal is (its tab's id for a side terminal):
+    /// what its recorded modes are filed under.
+    let sessionID: UUID?
 
     override var isHidden: Bool {
         didSet { findBar?.isHidden = isHidden }
@@ -136,6 +139,7 @@ final class SurfaceView: NSView {
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
          sessionID: UUID? = nil, initialInput: String? = nil, fontSize: Float = 0) {
         self.runtime = runtime
+        self.sessionID = sessionID
 
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))

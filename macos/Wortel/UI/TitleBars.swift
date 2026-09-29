@@ -458,24 +458,38 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         case .pane(let pane):
             return .init(tab: tab, title: pane.title, symbol: pane.symbol)
         case .terminal(let id):
-            return .init(tab: tab, title: terminalTitle(session?.sideTerminalTitles[id]),
-                         symbol: "apple.terminal")
+            let raw = session?.sideTerminalTitles[id]
+            return .init(tab: tab, title: terminalTitle(raw), symbol: "apple.terminal",
+                         detail: terminalDetail(raw))
         case .file(let path):
             let url = URL(fileURLWithPath: path)
             let symbol = ["md", "markdown"].contains(url.pathExtension.lowercased())
                 ? "doc.richtext" : "doc.text"
-            return .init(tab: tab, title: url.lastPathComponent, symbol: symbol)
+            return .init(tab: tab, title: url.lastPathComponent, symbol: symbol,
+                         detail: (path as NSString).abbreviatingWithTildeInPath)
         case .browser(let id):
             // The page's title once it has one, where it is until then.
-            let title = BrowserTabs.shared.existingPage(for: id)?.tabTitle
-                ?? session?.browserAddresses[id].flatMap(URL.init(string:)).map(BrowserAddress.short)
-                ?? "New Tab"
-            return .init(tab: tab, title: title, symbol: "globe")
+            let page = BrowserTabs.shared.existingPage(for: id)
+            let address = page?.location ?? session?.browserAddresses[id].flatMap(URL.init(string:))
+            let title = page?.tabTitle ?? address.map(BrowserAddress.short) ?? "New Tab"
+            return .init(tab: tab, title: title, symbol: "globe",
+                         detail: address?.absoluteString)
         case .session:
             // The session's own terminal, by the session's name.
             let name = session.map { SessionName.leaf(of: $0.name) } ?? "Terminal"
-            return .init(tab: tab, title: name, symbol: "terminal", pinned: true)
+            return .init(tab: tab, title: name, symbol: "terminal", pinned: true,
+                         detail: session?.cwd.map { ($0 as NSString).abbreviatingWithTildeInPath })
         }
+    }
+
+    /// What a hover card says about a terminal: its folder in full, or the
+    /// program it's running, when that's what the tab shortened.
+    static func terminalDetail(_ raw: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
+        if let colon = raw.lastIndex(of: ":"), raw[..<colon].contains("@") {
+            return String(raw[raw.index(after: colon)...])
+        }
+        return raw == terminalTitle(raw) ? nil : raw
     }
 
     /// What a shell titled itself, trimmed to what fits on a tab. Shells title a

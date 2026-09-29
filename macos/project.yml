@@ -366,6 +366,7 @@ targets:
       - path: Wortel/UI/ClosureMenuItem.swift
       - path: Wortel/UI/Chrome.swift
       - path: Wortel/UI/SideTabStrip.swift
+      - path: Wortel/UI/TabHoverCard.swift
       - path: Wortel/Browser/BrowserAddress.swift
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/GitRepoModel.swift

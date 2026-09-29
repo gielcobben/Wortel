@@ -24,6 +24,8 @@ final class SideTabStrip: NSView {
         /// The session's own tab: never closed, no menu. It can still be dragged
         /// within its row.
         var pinned = false
+        /// Where the tab is, for its hover card: a path, an address, a folder.
+        var detail: String? = nil
     }
 
     enum DragPhase { case began, moved, ended, cancelled }
@@ -128,7 +130,8 @@ final class SideTabStrip: NSView {
         self.items = items
         self.active = active
         for (view, item) in zip(tabViews, items) {
-            view.configure(title: item.title, symbol: item.symbol, isActive: item.tab == active)
+            view.configure(title: item.title, symbol: item.symbol, detail: item.detail,
+                           isActive: item.tab == active)
             view.needsLayout = true
         }
         // A divider between two quiet tabs only; the raised one is its own edge.
@@ -435,9 +438,10 @@ private final class SideTabView: NSControl {
             + Self.closeGap + Self.closeSize + Self.endInset
     }
 
-    func configure(title: String, symbol: String, isActive: Bool) {
+    func configure(title: String, symbol: String, detail: String?, isActive: Bool) {
         label.stringValue = title
-        toolTip = title
+        self.detail = detail
+        setAccessibilityHelp(detail)
         icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         self.isActive = isActive
         applyState()
@@ -488,6 +492,11 @@ private final class SideTabView: NSControl {
     // MARK: Mouse
 
     private var trackingArea: NSTrackingArea?
+    /// Where the tab is: the second line of its hover card.
+    private var detail: String?
+
+    /// Whether the title is cut short where it is.
+    private var titleIsTruncated: Bool { titleWidth > label.frame.width + 0.5 }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -499,13 +508,29 @@ private final class SideTabView: NSControl {
         trackingArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        // Only when there's something the tab itself doesn't say.
+        if detail != nil || titleIsTruncated {
+            TabHoverCard.shared.enter(self, title: label.stringValue, detail: detail)
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        TabHoverCard.shared.exit(self)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { TabHoverCard.shared.exit(self) }
+    }
 
     /// Select on mouse-down, as tabs do: a tab is picked, not clicked. Then
     /// track the mouse ourselves: past 6pt it's a drag (ChatGPT's threshold),
     /// handed on as it goes; released before that, it was just the pick.
     override func mouseDown(with event: NSEvent) {
+        TabHoverCard.shared.dismiss(self)
         onSelect()
         guard let window else { return }
         let start = event.locationInWindow

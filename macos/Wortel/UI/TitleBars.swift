@@ -573,7 +573,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     /// The "+" menu. Native and small, like the ChatGPT app's own menus: a
     /// terminal first, because a new one is what "+" usually means, then the
-    /// panes under a section label, then whatever the session is serving. No
+    /// panes, then whatever the session is serving, the groups set apart by
+    /// separators rather than labels. No
     /// checkmarks on the panes that are already open, since choosing one does the
     /// useful thing either way: it brings that tab to the front.
     ///
@@ -591,7 +592,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         terminal.keyEquivalentModifierMask = [.control]
         menu.addItem(terminal)
 
-        menu.addItem(.sectionHeader(title: "Panes"))
+        menu.addItem(.separator())
         for pane in InspectorPane.allCases {
             let item = ClosureMenuItem(title: pane.title) { [weak self] in self?.git.show(pane) }
             Self.setGlyph(pane.symbol, on: item)
@@ -609,7 +610,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         // What the session holds a port open for, to open in the browser.
         let servers = (runningSnapshot.work + runningSnapshot.orphans).filter { $0.localURL != nil }
         if !servers.isEmpty {
-            menu.addItem(.sectionHeader(title: "Running"))
+            menu.addItem(.separator())
             for job in servers {
                 guard let url = job.localURL, let address = job.localAddress else { continue }
                 let item = ClosureMenuItem(title: address) { NSWorkspace.shared.open(url) }
@@ -619,9 +620,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             }
         }
 
-        // One line a row and a little width to spare: native rows have a fixed
-        // height, so width is the room a menu can be given.
-        menu.minimumWidth = 220
         let x = sender.bounds.width - menu.size.width
         menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.bounds.height + 4), in: sender)
     }

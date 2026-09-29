@@ -589,10 +589,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         Self.setGlyph("apple.terminal", on: terminal)
         terminal.keyEquivalent = "`"
         terminal.keyEquivalentModifierMask = [.control]
-        // Where it will start: the session's shell is standing there now.
-        if #available(macOS 14.4, *), let path = manager.selected?.abbreviatedPath, !path.isEmpty {
-            terminal.subtitle = "in \(path)"
-        }
         menu.addItem(terminal)
 
         menu.addItem(.sectionHeader(title: "Panes"))
@@ -618,11 +614,14 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
                 guard let url = job.localURL, let address = job.localAddress else { continue }
                 let item = ClosureMenuItem(title: address) { NSWorkspace.shared.open(url) }
                 Self.setGlyph("globe", on: item)
-                if #available(macOS 14.4, *) { item.subtitle = job.label } else { item.toolTip = job.label }
+                item.toolTip = job.label
                 menu.addItem(item)
             }
         }
 
+        // One line a row and a little width to spare: native rows have a fixed
+        // height, so width is the room a menu can be given.
+        menu.minimumWidth = 220
         let x = sender.bounds.width - menu.size.width
         menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.bounds.height + 4), in: sender)
     }

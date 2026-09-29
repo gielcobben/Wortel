@@ -49,8 +49,14 @@ final class GitPanelModel {
     private(set) var terminalFocusRequest = 0
 
     /// Mirrors the focused session's strip under its terminal.
-    private(set) var bottomTabs: [UUID] = []
-    private(set) var activeBottomTab: UUID?
+    private(set) var bottomTabs: [SideTab] = []
+    private(set) var activeBottomTab: SideTab?
+    /// The area you last worked in: the row of the tab you last picked, opened
+    /// or moved, the area ⌘] took you to, or the one whose terminal you typed
+    /// in. It's what "the row you're in" means to the keyboard commands when
+    /// the keyboard itself isn't in a row: a file tab never takes it, and
+    /// picking one in the column still means you're in the column.
+    @ObservationIgnored var lastRegion: TabRegion = .main
     private(set) var bottomVisible = false
     /// Bumped when the strip's terminal should take the keyboard.
     private(set) var bottomFocusRequest = 0
@@ -70,11 +76,14 @@ final class GitPanelModel {
     /// file tree's upkeep is for.
     var showsFiles: Bool {
         (isVisible && activeTab == .pane(.files)) || activeMainTab == .pane(.files)
+            || (bottomVisible && activeBottomTab == .pane(.files))
     }
 
     /// Whether a repo view could be on screen anywhere, which is when resolving
     /// and refreshing the repo is worth doing.
-    private var needsRepo: Bool { isVisible || activeMainTab?.pane != nil }
+    private var needsRepo: Bool {
+        isVisible || activeMainTab?.pane != nil || (bottomVisible && activeBottomTab?.pane != nil)
+    }
 
     /// Tabs closed in this session and not reopened yet, for the menu item.
     var canReopenClosedTab: Bool { !(session?.closedTabs.isEmpty ?? true) }
@@ -250,6 +259,7 @@ final class GitPanelModel {
         if isVisible {
             focus(.side)
         } else {
+            lastRegion = .main
             onFocusMainTerminal?()
         }
     }
@@ -278,14 +288,16 @@ final class GitPanelModel {
         mirror(session, animated: true, animatesClosing: false)
         onStateChanged?()
         resolveCurrent()
-        switch session.workspace.region(of: tab) {
+        let region = session.workspace.region(of: tab)
+        if let region { lastRegion = region }
+        switch region {
         case .main?:
             if tab == .session { onFocusMainTerminal?() }
             else if tab.terminalID != nil { mainFocusRequest += 1 }
         case .side?:
             if tab.terminalID != nil { terminalFocusRequest += 1 }
         case .bottom?:
-            bottomFocusRequest += 1
+            if tab.terminalID != nil { bottomFocusRequest += 1 }
         case nil:
             break
         }
@@ -352,7 +364,7 @@ final class GitPanelModel {
             terminalFocusRequest += 1
         } else if region == .main, activeMainTab?.terminalID != nil {
             mainFocusRequest += 1
-        } else if region == .bottom, bottomVisible, activeBottomTab != nil {
+        } else if region == .bottom, bottomVisible, activeBottomTab?.terminalID != nil {
             bottomFocusRequest += 1
         } else {
             onFocusMainTerminal?()
@@ -463,7 +475,7 @@ final class GitPanelModel {
         switch region {
         case .main: return mainTabs
         case .side: return tabs
-        case .bottom: return bottomTabs.map { .terminal($0) }
+        case .bottom: return bottomTabs
         }
     }
 
@@ -472,7 +484,7 @@ final class GitPanelModel {
         switch region {
         case .main: return activeMainTab ?? .session
         case .side: return isVisible ? activeTab : nil
-        case .bottom: return bottomVisible ? activeBottomTab.map { .terminal($0) } : nil
+        case .bottom: return bottomVisible ? activeBottomTab : nil
         }
     }
 
@@ -481,7 +493,7 @@ final class GitPanelModel {
         switch region {
         case .main: selectMain(tab)
         case .side: select(tab)
-        case .bottom: if let id = tab.terminalID { selectBottom(id) }
+        case .bottom: selectBottom(tab)
         }
     }
 
@@ -509,6 +521,7 @@ final class GitPanelModel {
     /// Give the keyboard to what's in front of `region`: a terminal, or the
     /// list of a pane. ⌘] / ⌘[.
     func focus(_ region: TabRegion) {
+        lastRegion = region
         switch region {
         case .main:
             guard let tab = activeMainTab else { onFocusMainTerminal?(); return }
@@ -517,8 +530,8 @@ final class GitPanelModel {
             guard isVisible, let tab = activeTab else { return }
             if tab.terminalID != nil { terminalFocusRequest += 1 } else { listFocusRequest += 1 }
         case .bottom:
-            guard bottomVisible, activeBottomTab != nil else { return }
-            bottomFocusRequest += 1
+            guard bottomVisible, let tab = activeBottomTab else { return }
+            if tab.terminalID != nil { bottomFocusRequest += 1 } else { listFocusRequest += 1 }
         }
     }
 
@@ -536,8 +549,9 @@ final class GitPanelModel {
         mirror(session, animated: true)
         onStateChanged?()
         if bottomVisible {
-            bottomFocusRequest += 1
+            focus(.bottom)
         } else {
+            lastRegion = .main
             onFocusMainTerminal?()
         }
     }
@@ -555,10 +569,10 @@ final class GitPanelModel {
         open(.terminal(UUID()), in: .bottom)
     }
 
-    func selectBottom(_ id: UUID) {
-        guard let session, session.bottomTabs.contains(id) else { return }
-        change(session) { $0.bringForward(.terminal(id)) }
-        settle(.terminal(id), in: session)
+    func selectBottom(_ tab: SideTab) {
+        guard let session, session.bottomTabs.contains(tab) else { return }
+        change(session) { $0.bringForward(tab) }
+        settle(tab, in: session)
     }
 
     /// Writable mirror of `isVisible` for the paths that don't toggle: dragging

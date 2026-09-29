@@ -505,8 +505,8 @@ final class SessionManager {
                 side: (entry.sideTabs ?? []).compactMap(SideTab.init(rawValue:)),
                 activeSide: entry.activeSideTab.flatMap(SideTab.init(rawValue:)),
                 sideVisible: session.gitPanelVisible,
-                bottom: entry.bottomTabs ?? [],
-                activeBottom: entry.activeBottomTab,
+                bottom: (entry.bottomTabs ?? []).compactMap(Self.stripTab),
+                activeBottom: entry.activeBottomTab.flatMap(Self.stripTab),
                 bottomVisible: entry.bottomVisible ?? false,
                 closed: (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)))
             if entry.sideTabs == nil, session.gitPanelVisible {
@@ -2187,7 +2187,8 @@ final class SessionManager {
                 sideTabs: session.sideTabs.map(\.rawValue),
                 activeSideTab: session.activeSideTab?.rawValue,
                 sideColumnWidth: session.sideColumnWidth,
-                bottomTabs: session.bottomTabs, activeBottomTab: session.activeBottomTab,
+                bottomTabs: session.bottomTabs.map(\.rawValue),
+                activeBottomTab: session.activeBottomTab?.rawValue,
                 bottomVisible: session.bottomVisible,
                 closedTabs: session.closedTabs.map(\.rawValue),
                 mainTabs: session.mainTabs.map(\.rawValue),
@@ -2197,6 +2198,12 @@ final class SessionManager {
                 runningArgv: agent?.argv,
                 runningConversationID: agent == nil ? nil : conversationID)
         }
+    }
+
+    /// A strip tab as saved: a `SideTab` raw value, or, in files from when the
+    /// strip held terminals only, a bare UUID.
+    private static func stripTab(_ raw: String) -> SideTab? {
+        SideTab(rawValue: raw) ?? UUID(uuidString: raw).map { .terminal($0) }
     }
 
     private func scheduleSave() {

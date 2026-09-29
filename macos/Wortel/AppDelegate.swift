@@ -234,6 +234,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.confirmCloseTerminal = { [weak self] proceed in
             self?.confirmCloseSideTerminal(proceed)
         }
+        SurfaceView.onKeyboardActivity = { [weak self] surface in
+            self?.noteKeyboardActivity(in: surface)
+        }
         gitPanel.onFocusMainTerminal = { [weak self] in
             // Not while a tab in the main area's row covers the terminal.
             guard let self, self.gitPanel.activeMainTab == nil,
@@ -704,15 +707,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// The row the keyboard is in: the terminal or list that has it, and the
     /// main area when nothing does.
+    /// The area you're working in: the last one you typed in, picked a tab in,
+    /// or moved to (`GitPanelModel.lastRegion`), if it's still showing. Not
+    /// the first responder alone: a file tab never takes the keyboard, so after
+    /// picking one in the column the keyboard is still in the main terminal,
+    /// and "move this tab" would have moved the wrong one.
     private func focusedRegion() -> TabRegion {
-        guard let responder = window.firstResponder as? NSView else { return .main }
-        if let surface = responder as? SurfaceView, let session = manager.selected {
-            if surface === session.surfaceView { return .main }
-            if let id = session.sideSurfaces.first(where: { $0.value === surface })?.key {
-                return session.workspace.region(of: .terminal(id)) ?? .main
-            }
+        switch gitPanel.lastRegion {
+        case .side: return gitPanel.isVisible ? .side : .main
+        case .bottom: return gitPanel.bottomVisible ? .bottom : .main
+        case .main: return .main
         }
-        return splitController.region(containing: responder)
+    }
+
+    /// Typing in, or focusing, a terminal puts you in its area.
+    private func noteKeyboardActivity(in surface: SurfaceView) {
+        guard let session = manager.selected else { return }
+        let region: TabRegion
+        if surface === session.surfaceView {
+            region = .main
+        } else if let id = session.sideSurfaces.first(where: { $0.value === surface })?.key,
+                  let row = session.workspace.region(of: .terminal(id)) {
+            region = row
+        } else {
+            return
+        }
+        if gitPanel.lastRegion != region { gitPanel.lastRegion = region }
     }
 
     /// The areas in the order ⌘] walks them: left to right as they sit, then
@@ -810,15 +830,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc func reopenClosedTab(_ sender: Any?) {
         focusMainWindow()
-        // The strip, if the keyboard is in one of its terminals.
-        var region = TabRegion.side
-        if let focused = window.firstResponder as? SurfaceView,
-           let session = manager.selected,
-           let id = session.sideSurfaces.first(where: { $0.value === focused })?.key,
-           session.bottomTabs.contains(id) {
-            region = .bottom
-        }
-        gitPanel.reopenClosedTab(in: region)
+        gitPanel.reopenClosedTab(in: focusedRegion())
     }
 
     @objc func newSideTerminal(_ sender: Any?) {

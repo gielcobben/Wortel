@@ -83,8 +83,22 @@ struct MainAreaPane: View {
     let previewTabs: PreviewTabs
 
     var body: some View {
+        TabContent(tab: git.activeMainTab, git: git, files: files, previewTabs: previewTabs)
+    }
+}
+
+/// What any row shows for a tab that isn't a terminal: a pane or a file, on
+/// the page's colour. Terminals are the hosts' job (they must never be
+/// rebuilt), so for those, and for nothing in front, this is clear.
+struct TabContent: View {
+    let tab: SideTab?
+    @Bindable var git: GitPanelModel
+    @Bindable var files: FileTreeModel
+    let previewTabs: PreviewTabs
+
+    var body: some View {
         Group {
-            switch git.activeMainTab {
+            switch tab {
             case .file(let path)?:
                 PreviewTab(tabs: previewTabs, path: path)
             case .pane(.files)?:

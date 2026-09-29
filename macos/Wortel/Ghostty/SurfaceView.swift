@@ -199,9 +199,18 @@ final class SurfaceView: NSView {
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { updateFocus(firstResponder: true) }
+        if result {
+            updateFocus(firstResponder: true)
+            Self.onKeyboardActivity?(self)
+        }
         return result
     }
+
+    /// A terminal took the keyboard or was typed in. The app uses it to know
+    /// which area you're working in (GitPanelModel.lastRegion). Called on every
+    /// key, so what it does has to be cheap: it is a pointer comparison and a
+    /// lookup in a handful of tabs.
+    static var onKeyboardActivity: ((SurfaceView) -> Void)?
 
     override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
@@ -552,6 +561,7 @@ final class SurfaceView: NSView {
     // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
+        Self.onKeyboardActivity?(self)
         guard let surface else {
             interpretKeyEvents([event])
             return

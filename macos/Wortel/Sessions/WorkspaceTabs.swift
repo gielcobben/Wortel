@@ -11,8 +11,7 @@ import Foundation
 ///   accounts for the gap the tab left behind.
 /// - The session's own terminal (`.session`) is in the main row exactly once.
 ///   It can be reordered there, never moved out, never closed.
-/// - Panes go in the main row or the column; the strip takes terminals only
-///   (`SideTab.fits`).
+/// - Any tab goes in any row, except the session's terminal (`SideTab.fits`).
 /// - Putting a tab in a row brings it to the front there and shows the row.
 ///   Taking out the one in front brings its neighbour forward, the one to its
 ///   right first. The column and the strip hide when they're left empty; the
@@ -32,8 +31,8 @@ struct WorkspaceTabs: Equatable, Sendable {
     var side: [SideTab] = []
     var activeSide: SideTab?
     var sideVisible = false
-    var bottom: [UUID] = []
-    var activeBottom: UUID?
+    var bottom: [SideTab] = []
+    var activeBottom: SideTab?
     var bottomVisible = false
     var closed: [ClosedTab] = []
 
@@ -41,13 +40,13 @@ struct WorkspaceTabs: Equatable, Sendable {
 
     /// Every terminal tab's id, wherever it is.
     var terminalIDs: [UUID] {
-        main.compactMap(\.terminalID) + side.compactMap(\.terminalID) + bottom
+        (main + side + bottom).compactMap(\.terminalID)
     }
 
     func region(of tab: SideTab) -> TabRegion? {
         if main.contains(tab) { return .main }
         if side.contains(tab) { return .side }
-        if let id = tab.terminalID, bottom.contains(id) { return .bottom }
+        if bottom.contains(tab) { return .bottom }
         return nil
     }
 
@@ -73,9 +72,9 @@ struct WorkspaceTabs: Equatable, Sendable {
             }
             return (.main, index)
         }
-        if let id = tab.terminalID, let index = bottom.firstIndex(of: id) {
+        if let index = bottom.firstIndex(of: tab) {
             bottom.remove(at: index)
-            if activeBottom == id { activeBottom = Self.neighbour(in: bottom, of: index) }
+            if activeBottom == tab { activeBottom = Self.neighbour(in: bottom, of: index) }
             if bottom.isEmpty { bottomVisible = false }
             return (.bottom, index)
         }
@@ -91,9 +90,7 @@ struct WorkspaceTabs: Equatable, Sendable {
         switch region {
         case .main: main.insert(tab, at: min(max(index, 0), main.count))
         case .side: side.insert(tab, at: min(max(index, 0), side.count))
-        case .bottom:
-            guard let id = tab.terminalID else { return false }
-            bottom.insert(id, at: min(max(index, 0), bottom.count))
+        case .bottom: bottom.insert(tab, at: min(max(index, 0), bottom.count))
         }
         return true
     }
@@ -106,7 +103,7 @@ struct WorkspaceTabs: Equatable, Sendable {
             activeSide = tab
             sideVisible = true
         case .bottom?:
-            activeBottom = tab.terminalID
+            activeBottom = tab
             bottomVisible = true
         case nil: break
         }
@@ -180,6 +177,7 @@ struct WorkspaceTabs: Equatable, Sendable {
             copy.activeMain = nil
         }
         copy.side.removeAll { $0 == .session }
+        copy.bottom.removeAll { $0 == .session }
         if let active = copy.activeSide, !copy.side.contains(active) { copy.activeSide = copy.side.first }
         if copy.activeSide == nil { copy.activeSide = copy.side.first }
         if copy.side.isEmpty { copy.sideVisible = false }

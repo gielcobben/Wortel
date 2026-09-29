@@ -65,16 +65,21 @@ final class WorkspaceTabsTests: XCTestCase {
         let shell = terminal()
         tabs.place(shell, in: .side, at: 0)
         tabs.move(shell, to: .bottom, at: .max)
-        XCTAssertEqual(tabs.bottom, [shell.terminalID!])
-        XCTAssertEqual(tabs.activeBottom, shell.terminalID)
+        XCTAssertEqual(tabs.bottom, [shell])
+        XCTAssertEqual(tabs.activeBottom, shell)
         XCTAssertTrue(tabs.bottomVisible)
     }
 
-    /// A diff or a tree in a short, full-width strip is useless.
-    func testPanesNeverGoInTheStrip() {
+    /// Any tab goes in the strip, a pane and a file as much as a terminal.
+    func testTheStripTakesPanesAndFilesToo() {
         var tabs = column()
-        XCTAssertFalse(tabs.move(changes, to: .bottom, at: 0))
-        XCTAssertEqual(tabs.side, [changes, history, files], "a refused move changes nothing")
+        XCTAssertTrue(tabs.move(changes, to: .bottom, at: 0))
+        XCTAssertEqual(tabs.bottom, [changes])
+        let file = SideTab.file("/tmp/notes.md")
+        tabs.place(file, in: .side, at: .max)
+        XCTAssertTrue(tabs.move(file, to: .bottom, at: .max))
+        XCTAssertEqual(tabs.bottom, [changes, file])
+        XCTAssertEqual(tabs.activeBottom, file)
     }
 
     /// The session's terminal is the main area's anchor.
@@ -177,7 +182,7 @@ final class WorkspaceTabsTests: XCTestCase {
         let reopened = tabs.reopen(preferring: .bottom)
         XCTAssertNotNil(reopened?.terminalID)
         XCTAssertNotEqual(reopened, shell)
-        XCTAssertEqual(tabs.bottom, [reopened!.terminalID!])
+        XCTAssertEqual(tabs.bottom, [reopened!])
         XCTAssertTrue(tabs.bottomVisible)
     }
 
@@ -200,18 +205,25 @@ final class WorkspaceTabsTests: XCTestCase {
         let broken = WorkspaceTabs(
             main: [changes, .session, .session], activeMain: history,
             side: [], activeSide: files, sideVisible: true,
-            bottom: [], activeBottom: UUID(), bottomVisible: true, closed: [])
+            bottom: [.session], activeBottom: .terminal(UUID()), bottomVisible: true, closed: [])
         let fixed = broken.normalized()
         XCTAssertEqual(fixed.main, [changes, .session], "the terminal exactly once")
         XCTAssertNil(fixed.activeMain, "in front must be something the row has")
         XCTAssertNil(fixed.activeSide)
         XCTAssertFalse(fixed.sideVisible, "an empty column hides")
+        XCTAssertTrue(fixed.bottom.isEmpty, "the session's terminal never sits in the strip")
         XCTAssertNil(fixed.activeBottom)
         XCTAssertFalse(fixed.bottomVisible)
     }
 
     func testNormalizedAddsTheTerminalToAMainRowWithoutIt() {
         XCTAssertEqual(WorkspaceTabs(main: []).normalized().main, [.session])
+    }
+
+    func testFileTabRawValuesRoundTrip() {
+        let file = SideTab.file("/Users/giel/Developer/wortel/README.md")
+        XCTAssertEqual(SideTab(rawValue: file.rawValue), file)
+        XCTAssertEqual(file.rawValue, "file:/Users/giel/Developer/wortel/README.md")
     }
 
     func testClosedTabRawValuesRoundTrip() {

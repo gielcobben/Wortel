@@ -60,10 +60,12 @@ struct PersistedSession: Codable {
     /// first dragged in that session (and in every older file), which means
     /// "the last width chosen anywhere".
     let sideColumnWidth: Double?
-    /// The terminals in the strip under the session's terminal, the one in
-    /// front, and whether the strip is showing. nil in older files: no strip.
-    let bottomTabs: [UUID]?
-    let activeBottomTab: UUID?
+    /// The strip under the session's terminal: its tabs as `SideTab` raw
+    /// values, the one in front, and whether it's showing. nil in older files:
+    /// no strip. Files from when the strip held terminals only list bare
+    /// UUIDs; `restore` reads those as terminal tabs.
+    let bottomTabs: [String]?
+    let activeBottomTab: String?
     let bottomVisible: Bool?
     /// What ⌘⇧T can bring back, as `ClosedTab` raw values, newest last.
     let closedTabs: [String]?
@@ -113,7 +115,7 @@ struct PersistedSession: Codable {
          gitPanelVisible: Bool?, inspectorPane: String? = nil,
          sideTabs: [String]? = nil, activeSideTab: String? = nil,
          sideColumnWidth: Double? = nil,
-         bottomTabs: [UUID]? = nil, activeBottomTab: UUID? = nil, bottomVisible: Bool? = nil,
+         bottomTabs: [String]? = nil, activeBottomTab: String? = nil, bottomVisible: Bool? = nil,
          closedTabs: [String]? = nil,
          mainTabs: [String]? = nil, activeMainTab: String? = nil,
          sideColumnLeading: Bool? = nil,
@@ -178,8 +180,8 @@ struct PersistedSession: Codable {
         sideTabs = try c.decodeIfPresent([String].self, forKey: .sideTabs)
         activeSideTab = try c.decodeIfPresent(String.self, forKey: .activeSideTab)
         sideColumnWidth = try c.decodeIfPresent(Double.self, forKey: .sideColumnWidth)
-        bottomTabs = try c.decodeIfPresent([UUID].self, forKey: .bottomTabs)
-        activeBottomTab = try c.decodeIfPresent(UUID.self, forKey: .activeBottomTab)
+        bottomTabs = try c.decodeIfPresent([String].self, forKey: .bottomTabs)
+        activeBottomTab = try c.decodeIfPresent(String.self, forKey: .activeBottomTab)
         bottomVisible = try c.decodeIfPresent(Bool.self, forKey: .bottomVisible)
         closedTabs = try c.decodeIfPresent([String].self, forKey: .closedTabs)
         mainTabs = try c.decodeIfPresent([String].self, forKey: .mainTabs)

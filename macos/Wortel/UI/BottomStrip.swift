@@ -5,8 +5,8 @@ import SwiftUI
 // MARK: - The strip under the terminal
 
 /// The terminal pane's content: the session's terminal on top and, when it's
-/// showing, a strip of terminals under it (a dev server's output under the agent
-/// that started it).
+/// showing, a strip of tabs under it (most often a dev server's output under
+/// the agent that started it).
 ///
 /// Under the session's terminal only, not under the side column as well, which
 /// is where the ChatGPT app puts its bottom pane. The column is where diffs and
@@ -188,20 +188,25 @@ final class BottomBar: FilledView {
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 }
 
-/// The strip: its row, and a host for its terminals that works exactly like the
-/// side column's.
+/// The strip: its row, a host for its terminals that works exactly like the
+/// side column's, and in front of that the pane or file when one of those is
+/// the tab in front.
 @MainActor
 final class BottomPaneController: NSViewController {
     let bar = BottomBar()
     private let host = SideTerminalHostController()
+    private let paneHost: NSHostingController<BottomAreaPane>
     private let runtime: GhosttyRuntime
     private let manager: SessionManager
     private let git: GitPanelModel
 
-    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel) {
+    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
+         files: FileTreeModel, previewTabs: PreviewTabs) {
         self.runtime = runtime
         self.manager = manager
         self.git = git
+        paneHost = NSHostingController(rootView: BottomAreaPane(git: git, files: files,
+                                                                previewTabs: previewTabs))
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -209,20 +214,24 @@ final class BottomPaneController: NSViewController {
     override func loadView() {
         let root = NSView()
         addChild(host)
-        let body = host.view
+        addChild(paneHost)
         bar.translatesAutoresizingMaskIntoConstraints = false
-        body.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(body)
         root.addSubview(bar)
+        for body in [host.view, paneHost.view] {
+            body.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(body)
+            NSLayoutConstraint.activate([
+                body.topAnchor.constraint(equalTo: bar.bottomAnchor),
+                body.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+                body.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+                body.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            ])
+        }
         NSLayoutConstraint.activate([
             bar.topAnchor.constraint(equalTo: root.topAnchor),
             bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             bar.heightAnchor.constraint(equalToConstant: 36),
-            body.topAnchor.constraint(equalTo: bar.bottomAnchor),
-            body.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            body.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            body.bottomAnchor.constraint(equalTo: root.bottomAnchor),
         ])
         view = root
 
@@ -231,15 +240,11 @@ final class BottomPaneController: NSViewController {
         bar.hide.target = self
         bar.hide.action = #selector(hideStrip)
         let strip = bar.strip
-        strip.onSelect = { [weak self] tab in
-            if let id = tab.terminalID { self?.git.selectBottom(id) }
-        }
+        strip.onSelect = { [weak self] tab in self?.git.selectBottom(tab) }
         strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
         strip.onCloseOthers = { [weak self] keep in
             guard let self else { return }
-            for id in self.git.bottomTabs where id != keep.terminalID {
-                self.git.requestClose(.terminal(id))
-            }
+            for tab in self.git.bottomTabs where tab != keep { self.git.requestClose(tab) }
         }
         strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
         observe()
@@ -258,16 +263,24 @@ final class BottomPaneController: NSViewController {
 
     private func sync() {
         let session = manager.selected
-        let titles = session?.sideTerminalTitles ?? [:]
-        let items = git.bottomTabs.map { id in
-            SideTabStrip.Item(tab: .terminal(id), title: TitleBarController.terminalTitle(titles[id]),
-                              symbol: "apple.terminal")
-        }
-        bar.strip.update(items: items, active: git.activeBottomTab.map { .terminal($0) })
-        let surface = git.bottomVisible
-            ? git.activeBottomTab.flatMap { session?.ensureSideSurface($0, runtime: runtime) }
-            : nil
+        bar.strip.update(items: git.bottomTabs.map { TitleBarController.stripItem(for: $0, in: session) },
+                         active: git.activeBottomTab)
+        let active = git.bottomVisible ? git.activeBottomTab : nil
+        let surface = active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) }
         host.show(surface, focusRequest: git.bottomFocusRequest, mainTerminal: session?.surfaceView)
+        paneHost.view.isHidden = active == nil || active?.terminalID != nil
+    }
+}
+
+/// A pane or a file in the strip.
+struct BottomAreaPane: View {
+    @Bindable var git: GitPanelModel
+    @Bindable var files: FileTreeModel
+    let previewTabs: PreviewTabs
+
+    var body: some View {
+        TabContent(tab: git.bottomVisible ? git.activeBottomTab : nil,
+                   git: git, files: files, previewTabs: previewTabs)
     }
 }
 

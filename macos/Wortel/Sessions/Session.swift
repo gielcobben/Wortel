@@ -88,8 +88,8 @@ final class Session: Identifiable {
     /// The side column on the terminal's leading side rather than its trailing
     /// one. Persisted.
     var sideColumnLeading = false
-    var bottomTabs: [UUID] = []
-    var activeBottomTab: UUID?
+    var bottomTabs: [SideTab] = []
+    var activeBottomTab: SideTab?
     var bottomVisible = false
     /// Tabs closed in this session, newest last, for ⌘⇧T. Persisted, so a
     /// relaunch (an update, a crash) doesn't quietly empty it.

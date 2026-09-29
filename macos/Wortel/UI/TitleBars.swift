@@ -639,26 +639,30 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         mainBar.title.stringValue = manager.selected?.name ?? "Wortel"
         // A plain title until the row holds more than the session's terminal.
         mainBar.setShowsTabs(git.mainTabs.count > 1)
-        let titles = manager.selected?.sideTerminalTitles ?? [:]
-        func item(_ tab: SideTab) -> SideTabStrip.Item {
-            switch tab {
-            case .pane(let pane):
-                return .init(tab: tab, title: pane.title, symbol: pane.symbol)
-            case .terminal(let id):
-                return .init(tab: tab, title: Self.terminalTitle(titles[id]), symbol: "apple.terminal")
-            case .file(let path):
-                let url = URL(fileURLWithPath: path)
-                let symbol = ["md", "markdown"].contains(url.pathExtension.lowercased())
-                    ? "doc.richtext" : "doc.text"
-                return .init(tab: tab, title: url.lastPathComponent, symbol: symbol)
-            case .session:
-                // The session's own terminal: pinned first, by the session's name.
-                let name = manager.selected.map { SessionName.leaf(of: $0.name) } ?? "Terminal"
-                return .init(tab: tab, title: name, symbol: "terminal", pinned: true)
-            }
-        }
+        let session = manager.selected
+        func item(_ tab: SideTab) -> SideTabStrip.Item { Self.stripItem(for: tab, in: session) }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)
         mainBar.strip.update(items: git.mainTabs.map(item), active: git.activeMainTab ?? .session)
+    }
+
+    /// A tab as a row shows it: its title and glyph.
+    static func stripItem(for tab: SideTab, in session: Session?) -> SideTabStrip.Item {
+        switch tab {
+        case .pane(let pane):
+            return .init(tab: tab, title: pane.title, symbol: pane.symbol)
+        case .terminal(let id):
+            return .init(tab: tab, title: terminalTitle(session?.sideTerminalTitles[id]),
+                         symbol: "apple.terminal")
+        case .file(let path):
+            let url = URL(fileURLWithPath: path)
+            let symbol = ["md", "markdown"].contains(url.pathExtension.lowercased())
+                ? "doc.richtext" : "doc.text"
+            return .init(tab: tab, title: url.lastPathComponent, symbol: symbol)
+        case .session:
+            // The session's own terminal, by the session's name.
+            let name = session.map { SessionName.leaf(of: $0.name) } ?? "Terminal"
+            return .init(tab: tab, title: name, symbol: "terminal", pinned: true)
+        }
     }
 
     /// What a shell titled itself, trimmed to what fits on a tab. Shells title a

@@ -379,12 +379,13 @@ private final class SideTabView: NSControl {
         let menu = NSMenu()
         menu.addItem(ClosureMenuItem(title: "Close Tab") { [weak self] in self?.onClose() })
         menu.addItem(ClosureMenuItem(title: "Close Other Tabs") { [weak self] in self?.onCloseOthers() })
-        // The other region, if this tab is allowed there.
-        let other: TabRegion = stripRegion() == .side ? .bottom : .side
-        if tab.fits(other) {
-            menu.addItem(.separator())
-            let title = other == .bottom ? "Move to Bottom" : "Move to Side Column"
-            menu.addItem(ClosureMenuItem(title: title) { [weak self] in self?.onMove(other) })
+        // Every other area this tab may go to.
+        let destinations: [(TabRegion, String)] = [
+            (.main, "Move to Main Area"), (.side, "Move to Side Column"), (.bottom, "Move to Bottom Strip"),
+        ].filter { $0.0 != stripRegion() && tab.fits($0.0) }
+        if !destinations.isEmpty { menu.addItem(.separator()) }
+        for (region, title) in destinations {
+            menu.addItem(ClosureMenuItem(title: title) { [weak self] in self?.onMove(region) })
         }
         return menu
     }

@@ -138,7 +138,8 @@ final class MainSplitViewController: NSSplitViewController {
         // their width, the terminal gives. An 80pt floor keeps the window
         // shrinkable; ghostty reflows to whatever width it gets, so a narrow
         // terminal is cramped rather than broken.
-        let bottomPane = BottomPaneController(runtime: runtime, manager: manager, git: git)
+        let bottomPane = BottomPaneController(runtime: runtime, manager: manager, git: git,
+                                              files: files, previewTabs: previewTabs)
         let mainArea = MainAreaController(
             terminal: NSHostingController(rootView: DetailPane(
                 runtime: runtime, manager: manager, git: git, files: files)),
@@ -226,7 +227,6 @@ final class MainSplitViewController: NSSplitViewController {
         titleBars.sideBar.strip.onDrag = forward
         bottomPane.bar.strip.onDrag = forward
         tabDrag = drag
-        bottomPaneView = bottomPane.view
     }
 
     /// A tab dropped somewhere that means "the column": already there, it
@@ -238,15 +238,6 @@ final class MainSplitViewController: NSSplitViewController {
             git.move(tab, to: .side, at: .max)
         }
     }
-
-    /// Which area a view is in: the column, the bottom strip, or else the main
-    /// area. For the keyboard commands that act on "the row you're in".
-    func region(containing view: NSView) -> TabRegion {
-        if let column = inspectorItem?.viewController.view, view.isDescendant(of: column) { return .side }
-        if let strip = bottomPaneView, view.isDescendant(of: strip) { return .bottom }
-        return .main
-    }
-    private weak var bottomPaneView: NSView?
 
     /// Resolves tab drags across both tab rows. Held for the window's life.
     private var tabDrag: TabDragController?

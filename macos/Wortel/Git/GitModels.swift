@@ -356,9 +356,9 @@ enum SideTab: Hashable, Sendable {
 }
 
 /// Where a tab can live: the main area (beside the session's own terminal,
-/// which is always its first tab), the side column, or the strip under the
-/// session's terminal. Panes go in either of the first two; the strip takes
-/// terminals only (a diff or a tree in a short, full-width strip is useless).
+/// which is one of its tabs), the side column, or the strip under the
+/// session's terminal. Any tab goes anywhere, except the session's terminal,
+/// which stays in the main area.
 enum TabRegion: String, Sendable {
     case main, side, bottom
 }
@@ -367,7 +367,7 @@ extension SideTab {
     /// Whether this tab may be put in `region`.
     func fits(_ region: TabRegion) -> Bool {
         if self == .session { return region == .main }
-        return region != .bottom || terminalID != nil
+        return true
     }
 }
 

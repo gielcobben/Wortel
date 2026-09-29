@@ -73,6 +73,10 @@ final class Session: Identifiable {
     /// What each side terminal's shell last titled itself, for its tab's label.
     /// Observed, so the strip follows a `cd` or a program starting.
     var sideTerminalTitles: [UUID: String] = [:]
+    /// How wide this session's side column is, the same for every tab in it;
+    /// nil until its divider is first dragged, which leaves it at the last width
+    /// chosen anywhere. Persisted. See `MainSplitViewController.ColumnWidth`.
+    @ObservationIgnored var sideColumnWidth: Double?
     /// Full title reported by the shell (user@host:cwd, or the running
     /// program). Kept for reference; not currently shown.
     var title: String

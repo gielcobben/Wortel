@@ -101,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             runtime: runtime, manager: manager, git: gitPanel, files: fileTree,
             titleBars: titleBars)
         self.splitController = split
-        window.contentViewController = split
+        window.contentViewController = BackdropController(child: split)
         titleBars.start()
         window.setFrameAutosaveName("main")
         if window.frame.height < 320 {

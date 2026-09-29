@@ -56,6 +56,10 @@ struct PersistedSession: Codable {
     /// one-tab strip, so a session that had Changes open opens on a Changes tab.
     let sideTabs: [String]?
     let activeSideTab: String?
+    /// The side column's width in points, per session. nil until the divider is
+    /// first dragged in that session (and in every older file), which means
+    /// "the last width chosen anywhere".
+    let sideColumnWidth: Double?
 
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
@@ -81,7 +85,7 @@ struct PersistedSession: Codable {
     // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
         case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch
-        case gitPanelVisible, inspectorPane, sideTabs, activeSideTab
+        case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
@@ -93,6 +97,7 @@ struct PersistedSession: Codable {
          selected: Bool, nameSource: String, worktreeBranch: String? = nil,
          gitPanelVisible: Bool?, inspectorPane: String? = nil,
          sideTabs: [String]? = nil, activeSideTab: String? = nil,
+         sideColumnWidth: Double? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
@@ -103,6 +108,7 @@ struct PersistedSession: Codable {
         self.inspectorPane = inspectorPane
         self.sideTabs = sideTabs
         self.activeSideTab = activeSideTab
+        self.sideColumnWidth = sideColumnWidth
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -145,6 +151,7 @@ struct PersistedSession: Codable {
         inspectorPane = try c.decodeIfPresent(String.self, forKey: .inspectorPane)
         sideTabs = try c.decodeIfPresent([String].self, forKey: .sideTabs)
         activeSideTab = try c.decodeIfPresent(String.self, forKey: .activeSideTab)
+        sideColumnWidth = try c.decodeIfPresent(Double.self, forKey: .sideColumnWidth)
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.

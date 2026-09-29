@@ -28,10 +28,14 @@ enum Chrome {
     /// Room kept clear at the window's leading edge for the traffic lights.
     static let trafficLightInset: CGFloat = 78
 
-    /// The titlebar band: the frame the pages sit in.
-    static let band = dynamic(light: 0xF2F2F2, dark: 0x171717)
-    /// The session list, a step lighter than the band.
-    static let sidebar = dynamic(light: 0xFAFAFA, dark: 0x1B1B1B)
+    /// The titlebar band: the frame the pages sit in. Clear, so the window's
+    /// vibrancy shows through it (see `BackdropController`).
+    static let band = NSColor.clear
+    /// The session list: the same vibrancy, washed a step lighter in light mode
+    /// so the list reads as its own surface under the band, as ChatGPT's does.
+    static let sidebar = NSColor(name: nil) { appearance in
+        isDark(appearance) ? .white.withAlphaComponent(0.02) : .white.withAlphaComponent(0.35)
+    }
     /// The pages: the terminal, and the side column's tabs.
     static let content = dynamic(light: 0xFFFFFF, dark: 0x1F1F1F)
     /// The tab in front: the page's own colour in light mode, lifted in dark,
@@ -191,41 +195,87 @@ class ChromeBarView: FilledView {
     }
 }
 
-/// A pane of the main split: its titlebar row on top and its content below, on
-/// the pane's own colour.
+/// A pane of the main split: its titlebar row on top and its content below.
+/// The row is see-through to the window's vibrancy; the content sits on
+/// `bodyColor`, which is opaque for a page (the terminal, the side column) and a
+/// light wash for the sidebar.
 @MainActor
 final class ChromePaneController: NSViewController {
     let bar: NSView
     let content: NSViewController
-    private let background: NSColor
+    private let bodyColor: NSColor
 
-    init(bar: NSView, content: NSViewController, background: NSColor) {
+    init(bar: NSView, content: NSViewController, bodyColor: NSColor) {
         self.bar = bar
         self.content = content
-        self.background = background
+        self.bodyColor = bodyColor
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     override func loadView() {
-        let root = FilledView(color: background)
+        let root = NSView()
         addChild(content)
+        let page = FilledView(color: bodyColor)
         let body = content.view
-        bar.translatesAutoresizingMaskIntoConstraints = false
-        body.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(body)
-        root.addSubview(bar)
+        for view in [bar, page, body] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(view)
+        }
         NSLayoutConstraint.activate([
             bar.topAnchor.constraint(equalTo: root.topAnchor),
             bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             bar.heightAnchor.constraint(equalToConstant: Chrome.titlebarHeight),
-            body.topAnchor.constraint(equalTo: bar.bottomAnchor),
-            body.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            body.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            body.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            page.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            page.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            page.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            body.topAnchor.constraint(equalTo: page.topAnchor),
+            body.leadingAnchor.constraint(equalTo: page.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: page.trailingAnchor),
+            body.bottomAnchor.constraint(equalTo: page.bottomAnchor),
         ])
         view = root
+    }
+}
+
+/// The window's vibrancy: one behind-window material under everything, so the
+/// band and the sidebar are translucent to the desktop and only the pages are
+/// solid. That is the ChatGPT app's arrangement too (its window is a `menu`
+/// vibrancy with opaque pages on top).
+///
+/// Cheap where it matters: the blur is the window server's, over a region that
+/// only changes when what's *behind the window* does. The terminal is an
+/// opaque page in front of it, so its redraws never touch the blur, which is
+/// the compositor cost `background-blur` in wortel.conf would have paid on
+/// every frame.
+@MainActor
+final class BackdropController: NSViewController {
+    private let child: NSViewController
+
+    init(child: NSViewController) {
+        self.child = child
+        super.init(nibName: nil, bundle: nil)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
+        let backdrop = NSVisualEffectView()
+        backdrop.material = .sidebar
+        backdrop.blendingMode = .behindWindow
+        backdrop.state = .followsWindowActiveState
+        addChild(child)
+        let content = child.view
+        content.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: backdrop.topAnchor),
+            content.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
+            content.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
+        ])
+        view = backdrop
     }
 }
 

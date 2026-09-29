@@ -509,6 +509,7 @@ final class SessionManager {
                 session.sideTabs = [.pane(pane)]
                 session.activeSideTab = .pane(pane)
             }
+            session.sideColumnWidth = entry.sideColumnWidth
             // Up with nothing in it is not a state the column has any more.
             if session.sideTabs.isEmpty { session.gitPanelVisible = false }
             // A surviving marker means the app died without cleaning up (a crash),
@@ -2177,6 +2178,7 @@ final class SessionManager {
                 inspectorPane: session.inspectorPane?.rawValue,
                 sideTabs: session.sideTabs.map(\.rawValue),
                 activeSideTab: session.activeSideTab?.rawValue,
+                sideColumnWidth: session.sideColumnWidth,
                 runningAgent: agent?.agent, runningModel: agent?.model,
                 runningArgv: agent?.argv,
                 runningConversationID: agent == nil ? nil : conversationID)

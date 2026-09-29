@@ -56,6 +56,7 @@ final class SideTabStrip: NSView {
         self.active = active
         for (view, item) in zip(tabViews, items) {
             view.configure(title: item.title, symbol: item.symbol, isActive: item.tab == active)
+            view.needsLayout = true
         }
         // A divider between two quiet tabs only; the raised one is its own edge.
         for (index, view) in tabViews.enumerated() {
@@ -124,6 +125,7 @@ private final class SideTabView: NSView {
         layer?.masksToBounds = false
 
         icon.symbolConfiguration = .init(pointSize: 12, weight: .regular)
+        icon.imageScaling = .scaleProportionallyDown
         label.font = .systemFont(ofSize: 13)
         label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 1
@@ -139,9 +141,28 @@ private final class SideTabView: NSView {
 
     override var isFlipped: Bool { true }
 
+    /// ChatGPT's tab metrics: 10pt in, a 14pt glyph, 8pt to the title, and a
+    /// 20pt close button 4pt from the end, room kept for it on every tab so
+    /// hovering never moves a title.
+    private static let inset: CGFloat = 10
+    private static let glyph: CGFloat = 14
+    private static let glyphGap: CGFloat = 8
+    private static let closeSize: CGFloat = 20
+    private static let closeGap: CGFloat = 4
+    private static let endInset: CGFloat = 4
+
+    /// The title's width as it will actually draw. Measured through the cell,
+    /// which knows the label's own padding; the text's bare width is a few
+    /// points short of it, and a label given only that truncates what fits.
+    private var titleWidth: CGFloat {
+        ceil(label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: 10_000, height: 100)).width
+             ?? label.intrinsicContentSize.width)
+    }
+
     /// What the tab would like to be: inset, glyph, title, close button.
     var fittingWidth: CGFloat {
-        12 + 16 + 7 + ceil(label.intrinsicContentSize.width) + 6 + 18 + 6
+        Self.inset + Self.glyph + Self.glyphGap + titleWidth
+            + Self.closeGap + Self.closeSize + Self.endInset
     }
 
     func configure(title: String, symbol: String, isActive: Bool) {
@@ -155,15 +176,14 @@ private final class SideTabView: NSView {
     override func layout() {
         super.layout()
         let h = bounds.height
-        icon.frame = NSRect(x: 12, y: (h - 16) / 2, width: 16, height: 16)
-        let closeX = bounds.width - 6 - 18
-        closeButton.frame = NSRect(x: closeX, y: (h - 18) / 2, width: 18, height: 18)
-        let labelX: CGFloat = 12 + 16 + 7
+        icon.frame = NSRect(x: Self.inset, y: (h - 16) / 2, width: Self.glyph, height: 16)
+        let closeX = bounds.width - Self.endInset - Self.closeSize
+        closeButton.frame = NSRect(x: closeX, y: (h - Self.closeSize) / 2,
+                                   width: Self.closeSize, height: Self.closeSize)
+        let labelX = Self.inset + Self.glyph + Self.glyphGap
         let labelHeight = ceil(label.intrinsicContentSize.height)
-        // The title keeps the close button's room whether or not it shows, so
-        // hovering a tab never moves its text.
         label.frame = NSRect(x: labelX, y: ((h - labelHeight) / 2).rounded(),
-                             width: max(0, closeX - 6 - labelX), height: labelHeight)
+                             width: max(0, closeX - Self.closeGap - labelX), height: labelHeight)
         divider.frame = NSRect(x: bounds.width + 1.5, y: (h - 14) / 2, width: 1, height: 14)
     }
 

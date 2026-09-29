@@ -411,6 +411,28 @@ final class RunningJobsTests: XCTestCase {
                        "a tag naming no open session claims nothing")
     }
 
+    /// A side terminal's shell is started with its tab's id rather than the
+    /// session's (it keys that terminal's own agent marker), so a server
+    /// detached from one carries the tab's id, and still belongs to the
+    /// session the terminal is in.
+    func testADetachedServerFromASideTerminalIsItsSessions() throws {
+        let adopted = table + [entry(50001, 1, 50000, "node")]
+        let sideTab = UUID()
+        var details = details(extraArgv: [50001: ["/opt/node", "node", "/p/node_modules/.bin/vite"]])
+        let base = details.listeningPorts
+        details.listeningPorts = { $0 == 50001 ? [5173] : base($0) }
+        details.sessionTag = { $0.pid == 50001 ? sideTab : nil }
+        let side = SessionProcessRoot(sessionID: sessionID, shellPID: 59999, agentName: nil, tag: sideTab)
+        let snapshot = RunningJobs.scan(table: adopted, roots: [root, side], uid: 501, details: details)
+
+        let server = try XCTUnwrap(snapshot.jobs.first { $0.pgid == 50000 })
+        XCTAssertEqual(server.sessionID, sessionID)
+
+        let without = RunningJobs.scan(table: adopted, roots: [root], uid: 501, details: details)
+        XCTAssertFalse(without.jobs.contains { $0.pgid == 50000 },
+                       "with that terminal gone, its tag names no open session")
+    }
+
     /// The same shape without `setsid`: `exec("pnpm dev &")` from an agent
     /// whose shell tool shares its group leaves the server in the agent's group
     /// with launchd as its parent.

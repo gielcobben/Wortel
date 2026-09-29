@@ -303,7 +303,17 @@ final class Session: Identifiable {
     /// The shells of the side terminals that have been opened this launch. Their
     /// work is the session's work: a dev server started beside an agent belongs
     /// in the same running list as one the agent started.
-    var sideShellPIDs: [pid_t] { sideSurfaces.values.compactMap(\.shellPID) }
+    /// Each side terminal's shell, by its tab id (the `WORTEL_SESSION_ID` it
+    /// was started with).
+    var sideShells: [(tab: UUID, pid: pid_t)] {
+        sideSurfaces.compactMap { id, view in view.shellPID.map { (id, $0) } }
+    }
+
+    /// Whether `id` is this session or one of its terminals: what a command's
+    /// `$WORTEL_SESSION_ID` can be.
+    func owns(terminal id: UUID) -> Bool {
+        id == self.id || terminalTabIDs.contains(id)
+    }
 
     @discardableResult
     func ensureSurfaceView(runtime: GhosttyRuntime) -> SurfaceView {

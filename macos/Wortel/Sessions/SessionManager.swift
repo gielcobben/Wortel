@@ -1812,9 +1812,11 @@ final class SessionManager {
     }
 
     /// A session by id — what the CLI has, since a shell knows its session as
-    /// `$WORTEL_SESSION_ID` and nothing else.
+    /// `$WORTEL_SESSION_ID` and nothing else. A side terminal's shell carries
+    /// its tab's id there (it keys that terminal's own agent marker), so a
+    /// terminal's id finds the session it's in.
     func session(id: Session.ID) -> Session? {
-        sessions.first { $0.id == id }
+        sessions.first { $0.id == id } ?? sessions.first { $0.owns(terminal: id) }
     }
 
     /// Raise attention on a session from outside: `wortel notify`.
@@ -2251,9 +2253,9 @@ final class SessionManager {
             }
             // A side terminal's jobs are filed under the session it sits in.
             // No agent name: agent tracking follows the main shell only.
-            for pid in session.sideShellPIDs {
-                roots.append(SessionProcessRoot(sessionID: session.id, shellPID: pid,
-                                                agentName: nil))
+            for shell in session.sideShells {
+                roots.append(SessionProcessRoot(sessionID: session.id, shellPID: shell.pid,
+                                                agentName: nil, tag: shell.tab))
             }
             return roots
         }

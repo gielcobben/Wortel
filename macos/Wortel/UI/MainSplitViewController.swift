@@ -123,9 +123,17 @@ final class MainSplitViewController: NSSplitViewController {
         // NSSplitView takes each pane's starting width from its view's frame, so
         // the frame is the only place to state a default (the autosave below wins
         // on every launch after the first drag).
+        // No sizing from its SwiftUI content: the split view decides how big
+        // the sidebar is. By default a hosting controller turns its content's
+        // minimum and ideal size into constraints, and once the sidebar held a
+        // stack of rows (the Needs You section) rather than only a scrolling
+        // list, those fought the split and squeezed the terminal to a few
+        // columns in a corner: every session came up blank.
+        let sidebarHost = NSHostingController(rootView: SidebarPane(manager: manager))
+        sidebarHost.sizingOptions = []
         let sidebar = ChromePaneController(
             bar: titleBars.sidebarBar,
-            content: NSHostingController(rootView: SidebarPane(manager: manager)),
+            content: sidebarHost,
             bodyColor: Chrome.sidebar)
         sidebar.view.setFrameSize(NSSize(width: 220, height: sidebar.view.frame.height))
         let sidebarItem = NSSplitViewItem(viewController: sidebar)

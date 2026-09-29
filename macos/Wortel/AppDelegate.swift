@@ -17,8 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// and a sheet about a session belongs on the window the session is in.
     /// Weak, so this doesn't outlive the window it names.
     static private(set) weak var mainWindow: NSWindow?
-    /// The three-pane shell. Held so the toolbar's tracking separators can bind to
-    /// its split view, and so ⌘⌥S/⌘⌥G reach the right controller.
+    /// The window's split: sessions, the main area, the side column. Held so
+    /// the sidebar toggle and a click's area (`region(at:)`) reach it.
     private var splitController: MainSplitViewController!
     /// Drives the trailing source-control panel. Whether it's up follows the
     /// selected session (see GitPanelModel); new sessions start hidden.
@@ -741,8 +741,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// ⌘W closes **what you are looking at**. With a preview window key that is
     /// the preview — closing a session from a file window is destructive, and no
-    /// Mac app does that with ⌘W. The menu item says "Close Session" because
-    /// that is what it does in the window it belongs to.
+    /// Mac app does that with ⌘W. In the main window it closes the tab in
+    /// front of the area you're in, and the session only when that's the
+    /// session's own terminal: the menu item says "Close Tab".
     @objc func closeSession(_ sender: Any?) {
         if let key = NSApp.keyWindow, key !== window {
             key.performClose(sender)
@@ -771,10 +772,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Side column tabs
 
-    /// The row the keyboard is in: the terminal or list that has it, and the
-    /// main area when nothing does.
-    /// The area you're working in: the last one you typed in, picked a tab in,
-    /// or moved to (`GitPanelModel.lastRegion`), if it's still showing. Not
+    /// The area you're working in: the last one you clicked or typed in,
+    /// picked a tab in, or moved to (`GitPanelModel.lastRegion`), if it's
+    /// still showing. Not
     /// the first responder alone: a file tab never takes the keyboard, so after
     /// picking one in the column the keyboard is still in the main terminal,
     /// and "move this tab" would have moved the wrong one.

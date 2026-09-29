@@ -461,7 +461,7 @@ struct SessionRow: View {
         // Content padded inside an inset pill (~6pt from the cell edges, so
         // it's not edge-to-edge).
         HStack(spacing: 8) {
-            // The same symbol the toolbar's branch chip carries, so the two
+            // The same symbol the repo header's branch carries, so the two
             // places that mean "branch" look like the same fact. Not while
             // editing: the rename field should start where every other one does.
             // And not once the branch has its own line below the name.

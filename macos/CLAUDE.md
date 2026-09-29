@@ -294,16 +294,15 @@ you've never picked a pane on defer to `GitPanelModel.defaultPane`, the last pan
 chosen anywhere, so a new session inherits your habit instead of snapping to
 Changes. `lastSourceControlPane` is tracked separately so ⌘⌥G coming back from
 Files lands on History if that's where you were. One rule drives all three
-openers — the toolbar segments, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
-hidden → open on that pane, showing another → swap, showing that one → close.
+openers — the View menu, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
+hidden → open on that pane, showing another → swap, showing that one → close. A
+pane in the main row or the strip toggles there instead.
 
-**How wide** the column is, on the other hand, is per *occupant* rather than per
-session — `MainSplitViewController.InspectorOccupant` (the three panes plus the
-Markdown preview, which is a view of no pane at all). A tree of short names, a
-diff with a gutter and a rendered page want visibly different widths, and one
-remembered width for all of them means every switch is followed by a drag back.
-Each occupant carries its own default and its own `minimumThickness`, and
-`InspectorWidthStore` persists what you drag it to. Two rules keep that honest:
+**How wide** the column is, is per *session* and the same for every tab in it
+(`MainSplitViewController.ColumnWidth`, `Session.sideColumnWidth`): a width
+that changed with the tab in front made every tab switch a relayout of the
+terminal beside it. A session that has never had its divider dragged uses the
+last width chosen anywhere. Two rules keep that honest:
 only a *divider* drag is a preference (a window resize squeezing the terminal to
 its floor is not), and the width is committed once the drag settles, because
 dragging to the edge is how you close the panel and the last width before it goes
@@ -503,7 +502,7 @@ the same thing by all three.
 - Deliberately **feature-minimal**: no settings UI, no user-config loading. The
   *terminal* has no tabs and no splits of its own: sessions are Wortel's tabs,
   and libghostty's tab/split actions still return `false`. The one split is the
-  side column, and its tabs are Wortel's (see **Side column tabs** below), not
+  side column, and its tabs are Wortel's (see **Tabs and the workspace**), not
   libghostty's.
 - Resources are shipped as **folder references** (`Resources/terminfo`,
   `Resources/ghostty`) landing in `Contents/Resources/`; the Zig core locates

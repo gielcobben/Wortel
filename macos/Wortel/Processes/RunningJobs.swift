@@ -242,7 +242,8 @@ struct RunningJobsSnapshot: Equatable {
 
     var isEmpty: Bool { jobs.isEmpty && orphans.isEmpty }
 
-    /// What the toolbar pill says, at a glance and without opening anything.
+    /// What the titlebar's running button says, at a glance and without
+    /// opening anything.
     ///
     /// The server is the headline because the server is what you come looking
     /// for: one of them is named (`bun dev`), several are counted, and their
@@ -268,7 +269,7 @@ struct RunningJobsSnapshot: Equatable {
     }
 }
 
-/// The toolbar pill's content. See `RunningJobsSnapshot.status`.
+/// The titlebar's running button's content. See `RunningJobsSnapshot.status`.
 struct RunningStatus: Equatable {
     /// Two addresses, then a count: past that the pill is a sentence, and the
     /// popover is one click away.

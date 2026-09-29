@@ -69,9 +69,9 @@ struct PersistedSession: Codable {
     let bottomVisible: Bool?
     /// What ⌘⇧T can bring back, as `ClosedTab` raw values, newest last.
     let closedTabs: [String]?
-    /// The main area's tabs after the session's terminal, as `SideTab` raw
-    /// values, and the one in front (nil: the terminal). Which side the column
-    /// is on. nil in older files: no extra tabs, trailing.
+    /// The main area's tabs, the session's terminal (`session`) among them, as
+    /// `SideTab` raw values, and the one in front (nil: the terminal). Which
+    /// side the column is on. nil in older files: just the terminal, trailing.
     let mainTabs: [String]?
     let activeMainTab: String?
     let sideColumnLeading: Bool?

@@ -250,10 +250,9 @@ struct CommitFileChange: Identifiable, Hashable {
     var directory: String { (path as NSString).deletingLastPathComponent }
 }
 
-/// Which pane the trailing inspector shows. Held per session by GitPanelModel
-/// (see `setPane`), and driven by the toolbar's segmented control — whose
-/// segments, tooltips and overflow entries are all built from `allCases`, so a
-/// case added here appears in the toolbar without touching it.
+/// The panes a tab can be: Changes, History, Files. The column's "+" menu
+/// lists them from `allCases`, so a case added here appears there without
+/// touching it.
 ///
 /// `files` is not source control, but it lives here because the *column* is one
 /// thing with three panes and one selection; splitting the enum would just mean

@@ -122,7 +122,7 @@ final class GitRepoModel {
     private(set) var isCheckingOut = false
 
     /// Whether the repo has any remote at all. Decides whether "unpushed" means
-    /// anything and whether the toolbar's fetch/push controls do anything;
+    /// anything and whether the repo header's fetch/push commands do anything;
     /// resolved once (remotes essentially never change during a session) so the
     /// per-write status storm never pays for `git remote`. Observed — not
     /// `@ObservationIgnored` — so the sync controls light up when it lands.
@@ -329,7 +329,7 @@ final class GitRepoModel {
 
             // Resolve once whether there's a remote at all. The Changes pane can
             // be open long before History (which is what otherwise triggers this
-            // via refreshUnpushed), and the toolbar's fetch/push controls need the
+            // via refreshUnpushed), and the repo header's fetch/push commands need the
             // answer to enable themselves. Cached, so the status storm during a
             // build never re-runs `git remote`.
             if hasRemotes == nil { hasRemotes = await GitService.hasRemotes(root: root) }

@@ -284,7 +284,9 @@ final class SurfaceView: NSView {
         if Self.resizeHolds > 0 {
             if !resizePending {
                 resizePending = true
-                // Pinned, not stretched, while it waits for its real size.
+                // Pinned, not stretched, while it waits for its real size;
+                // left that way after, since a layer drawn at its own size
+                // never needs stretching.
                 layer?.contentsGravity = .topLeft
             }
             return

@@ -33,9 +33,9 @@ final class GitPanelModel {
     private(set) var isVisible = false
     private(set) var repo: GitRepoModel?
 
-    /// Mirrors the focused session's `inspectorPane`. Driven by the toolbar's
-    /// segmented control and the two View-menu commands, both through
-    /// `activate(_:)`.
+    /// Mirrors the focused session's `inspectorPane`: the pane in front of the
+    /// column. Changed by picking a tab and by the View-menu commands
+    /// (`activate(_:)`).
     private(set) var pane: InspectorPane = GitPanelModel.defaultPane
 
     /// Mirrors the focused session's side tabs and the one in front. `pane`
@@ -297,7 +297,7 @@ final class GitPanelModel {
         // Only write `isVisible`/`pane` when they actually move: @Observable
         // fires its observers on every assignment, same value or not, and this
         // runs on each cwd report — i.e. every shell prompt — so an unguarded
-        // write would wake the split controller and the toolbar a few times a
+        // write would wake the split controller and the titlebar a few times a
         // second to decide nothing changed.
         // The session, not the user, decided this — snap (see the flag).
         mirror(session, animated: false)
@@ -335,7 +335,7 @@ final class GitPanelModel {
         }
     }
 
-    /// One click on a pane control — a toolbar segment, or a View-menu command.
+    /// One pane command: ⌘⌥G, ⌘⌥E, or their View-menu items.
     /// Each means both "show me this pane" and "toggle, if it's already what's
     /// on screen":
     ///
@@ -343,8 +343,8 @@ final class GitPanelModel {
     /// - showing a *different* pane → swap in place, don't close
     /// - showing that pane → close
     ///
-    /// The single implementation behind both the toolbar and the menu, so ⌘⌥G,
-    /// ⌘⌥E and the segments can't drift apart.
+    /// A pane in the main row or the strip toggles there, against the terminal
+    /// or the strip being up.
     func activate(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
         // In the main area's row: the same toggle, against the terminal.
         if mainTabs.contains(.pane(requested)) {

@@ -15,7 +15,8 @@ import SwiftUI
 /// preview must never raise (docs/file-preview.md).
 ///
 /// Documents are made the first time their tab is shown and let go when it
-/// closes; a document watches its file for as long as it lives, and nothing
+/// closes (or its session does, and no other session has the file open); a
+/// document watches its file for as long as it lives, and nothing
 /// else. A tab restored after a relaunch has no diff to show (the source it
 /// came from was a moment's state) and opens on the file itself.
 @MainActor
@@ -62,6 +63,8 @@ final class PreviewTabs {
         documents[path] = entry
         return (entry.document, entry.find)
     }
+
+    func hasDocument(for path: String) -> Bool { documents[path] != nil }
 
     /// A file's tab closed: stop watching it.
     func forget(_ path: String) {

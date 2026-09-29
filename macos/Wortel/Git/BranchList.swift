@@ -2,11 +2,9 @@ import SwiftUI
 
 /// The branch switcher's popover: `BranchOptionList` wired to the repository.
 ///
-/// The chip that opens it is a real `NSButton` in the toolbar (see MainToolbar),
-/// not a SwiftUI control — a hosted SwiftUI button only takes clicks on its
-/// content, leaving the glass capsule's rim dead, whereas an NSButton *is* the
-/// capsule and is clickable across its whole surface. So only the list lives
-/// here in SwiftUI; the button and the popover presentation are AppKit's.
+/// The chip that opens it is the branch in `RepoHeader`, at the top of the
+/// Changes and History tabs; above the branches, the repo's other checkouts
+/// (`CheckoutList`) when it has any.
 ///
 /// Everything below the filter field is shared with the new-session picker.
 /// What's left here is what is genuinely this switcher's: where the branches

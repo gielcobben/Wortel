@@ -10,9 +10,9 @@ import SwiftUI
 /// terminal's host refuses to do (see TerminalHostViewController), and a tab
 /// switch should cost what a session switch costs, which is nothing.
 ///
-/// It used to be three panes, with the Markdown preview taking the whole column
-/// when a `.md` was opened. Markdown opens in a preview window now, so the column
-/// belongs to its tabs outright.
+/// What a tab that isn't a terminal shows is `TabContent`'s, the same as in
+/// the main area and the strip. A hidden column builds no browser page or file
+/// document it doesn't already have: they're made when first on screen.
 struct InspectorContainer: View {
     let runtime: GhosttyRuntime
     @Bindable var manager: SessionManager
@@ -28,21 +28,21 @@ struct InspectorContainer: View {
                 terminalID: git.isVisible ? git.activeTab?.terminalID : nil,
                 focusRequest: git.terminalFocusRequest,
                 handBack: { [weak git] in git?.focusFront(of: .main) })
-            switch git.activeTab {
-            case .pane(.files)?:
-                FileTreePanel(model: files, focusRequest: git.listFocusRequest(in: .side))
-            case .pane(let pane)?:
-                SourceControlPanel(panel: git, pane: pane)
-            case nil:
-                SourceControlPanel(panel: git)
-            case .file(let path)?:
-                PreviewTab(tabs: previewTabs, path: path)
-                    .background(Color(nsColor: Chrome.content))
-            case .browser(let id)?:
-                BrowserTab(page: BrowserTabs.shared.page(for: id))
-            case .terminal?, .session?:
-                EmptyView()
+            if let tab = git.activeTab, tab.isPage, git.isVisible || isBuilt(tab) {
+                TabContent(tab: tab, region: .side, git: git, files: files, previewTabs: previewTabs)
             }
+        }
+    }
+
+    /// Whether a page or document for this tab exists already. A hidden
+    /// column keeps showing those (it slides shut with them in it) but makes
+    /// none: a restored column that's hidden would otherwise start a web page
+    /// or a file watcher nobody can see.
+    private func isBuilt(_ tab: SideTab) -> Bool {
+        switch tab {
+        case .browser(let id): return BrowserTabs.shared.existingPage(for: id) != nil
+        case .file(let path): return previewTabs.hasDocument(for: path)
+        default: return true
         }
     }
 }
@@ -67,7 +67,7 @@ private struct SideTerminalContainer: NSViewControllerRepresentable {
     }
 }
 
-/// The side column's (and the bottom strip's) counterpart to
+/// The side column's, the bottom strip's and the main area's row's counterpart to
 /// TerminalHostViewController: every terminal that has been shown here stays in
 /// this view, hidden when it isn't the one in front. A terminal moved to the
 /// other region is re-parented into that region's host by `show`, the same

@@ -85,9 +85,6 @@ final class Session: Identifiable {
     /// nil until its divider is first dragged, which leaves it at the last width
     /// chosen anywhere. Persisted. See `MainSplitViewController.ColumnWidth`.
     @ObservationIgnored var sideColumnWidth: Double?
-    /// The strip under the session's terminal: its terminals in order, the one
-    /// in front, and whether it's showing. Hiding keeps them, closing the last
-    /// one hides it. Persisted.
     /// The main area's tabs, the session's own terminal (`.session`) among
     /// them, always exactly once; and the one in front: nil is the terminal.
     /// Persisted.
@@ -96,6 +93,9 @@ final class Session: Identifiable {
     /// The side column on the terminal's leading side rather than its trailing
     /// one. Persisted.
     var sideColumnLeading = false
+    /// The strip under the session's terminal: its tabs in order, the one in
+    /// front, and whether it's showing. Hiding keeps them, closing the last
+    /// one hides it. Persisted.
     var bottomTabs: [SideTab] = []
     var activeBottomTab: SideTab?
     var bottomVisible = false

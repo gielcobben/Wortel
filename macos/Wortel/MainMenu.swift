@@ -279,10 +279,9 @@ enum MainMenu {
         let selectAll = editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
         selectAll.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
-        // Only ever enabled while a preview window is key: it resolves through
-        // the responder chain to PreviewWindowController, and nothing in the
-        // main window implements it. That's what lets ⌘F live in the menu
-        // without taking it away from the shell, where ⌘F is the terminal's.
+        // A preview window answers it for its file, and AppDelegate for a file
+        // tab in front of an area. With neither it's disabled, and ⌘F goes on
+        // to the shell, where it's the terminal's.
         editMenu.addItem(withTitle: "Find",
                          action: #selector(PreviewWindowController.showPreviewFind(_:)),
                          keyEquivalent: "f")
@@ -328,9 +327,9 @@ enum MainMenu {
         let sourceControl = viewMenu.addItem(withTitle: "Show Source Control", action: #selector(AppDelegate.toggleSourceControl(_:)), keyEquivalent: "g")
         sourceControl.keyEquivalentModifierMask = [.command, .option]
         sourceControl.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)
-        // ⌘⌥E for the third pane of the same column — free in both this file and
-        // wortel.conf. It behaves exactly like ⌘⌥G and the toolbar segments: open
-        // on Files, swap to Files, or close if Files is already up.
+        // ⌘⌥E for the third pane — free in both this file and wortel.conf. It
+        // behaves exactly like ⌘⌥G: open on Files, bring it forward, or close
+        // it if Files is already up.
         let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "g")
         history.keyEquivalentModifierMask = [.command, .option, .shift]
         history.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)

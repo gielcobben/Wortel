@@ -736,6 +736,9 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     /// The session's "…": its own actions, as ChatGPT's menu is the
     /// conversation's. Native, small, glyphs that show, shortcuts on the right.
+    /// The titles are short on purpose: the longest title decides the menu's
+    /// width, and inside a session's own menu "Fork…" needs no more words to
+    /// say it forks this session onto a branch.
     @objc private func presentSessionMenu(_ sender: NSView) {
         guard let session = manager.selected else { return }
         let menu = NSMenu()
@@ -743,14 +746,14 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
         // What used to be glyphs on the row: a terminal in the main area, and
         // the strip under it.
-        let terminal = ClosureMenuItem(title: "New Terminal Tab") { [weak self] in
+        let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
             self?.git.openMainTerminal()
         }
         Self.setGlyph("apple.terminal", on: terminal)
         terminal.keyEquivalent = "t"
         terminal.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(terminal)
-        let strip = ClosureMenuItem(title: git.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip") { [weak self] in
+        let strip = ClosureMenuItem(title: git.bottomVisible ? "Hide Strip" : "Show Strip") { [weak self] in
             self?.git.toggleBottom()
         }
         Self.setGlyph("rectangle.bottomthird.inset.filled", on: strip)
@@ -787,7 +790,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         }
 
         menu.addItem(.separator())
-        let branch = ClosureMenuItem(title: "New Session on Branch\u{2026}") { [weak self] in
+        let branch = ClosureMenuItem(title: "Fork\u{2026}") { [weak self] in
             guard let self else { return }
             newSessionOnBranch(self.manager, inFolder: session.folderPath)
         }
@@ -795,7 +798,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         menu.addItem(branch)
 
         if let cwd = session.cwd {
-            let reveal = ClosureMenuItem(title: "Reveal in Finder") {
+            let reveal = ClosureMenuItem(title: "Show in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
             }
             Self.setGlyph("folder.badge.gearshape", on: reveal)

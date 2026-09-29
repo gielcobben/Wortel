@@ -333,10 +333,20 @@ final class RunningButton: HoverFillButton {
     private let dot = CALayer()
     private var dotColor: NSColor?
 
+    /// The badge, as SF Symbols draw theirs (`app.badge`): a dot on the
+    /// glyph's top-right corner with a ring of the glyph cut away around it,
+    /// so it reads as a badge and not as a blot on the lines. There is no
+    /// `list.bullet.badge` to use instead.
+    private static let dotSize: CGFloat = 6
+    private static let gap: CGFloat = 1.5
+
+    private let plain = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "Running")?
+        .withSymbolConfiguration(Chrome.glyph)
+    private lazy var badged: NSImage? = plain.map(Self.cutOut)
+
     convenience init() {
         self.init(frame: .zero)
-        image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "Running")?
-            .withSymbolConfiguration(Chrome.glyph)
+        image = plain
         toolTip = "Running in this session"
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -344,7 +354,7 @@ final class RunningButton: HoverFillButton {
             heightAnchor.constraint(equalToConstant: Chrome.controlSize),
         ])
         wantsLayer = true
-        dot.cornerRadius = 3
+        dot.cornerRadius = Self.dotSize / 2
         dot.isHidden = true
         layer?.addSublayer(dot)
     }
@@ -354,18 +364,57 @@ final class RunningButton: HoverFillButton {
         let count = snapshot.work.count + snapshot.orphans.count
         dotColor = snapshot.hasWork ? (status.isServing ? .systemGreen : .secondaryLabelColor) : nil
         dot.isHidden = dotColor == nil
+        // The glyph with its gap only while there's a dot to sit in it.
+        let wanted = dotColor == nil ? plain : badged
+        if image !== wanted { image = wanted }
+        needsLayout = true
         needsDisplay = true
         toolTip = count == 0 ? "Nothing running in this session"
             : "\(count) \(count == 1 ? "job" : "jobs") running: \(([status.title] + status.ports).joined(separator: " "))"
         setAccessibilityLabel(toolTip)
     }
 
+    /// Where the dot's centre sits on a glyph of `size`, in the glyph's own
+    /// (unflipped) coordinates: on its top-right corner, half out of it, as
+    /// `app.badge` sits.
+    private static func dotCenter(in size: NSSize) -> NSPoint {
+        NSPoint(x: size.width - 1.5, y: size.height - 1.5)
+    }
+
+    /// The glyph with a ring cut out where the dot goes. Still a template, so
+    /// it takes the button's tint in light and dark like any other glyph.
+    private static func cutOut(_ glyph: NSImage) -> NSImage {
+        let size = glyph.size
+        let image = NSImage(size: size, flipped: false) { rect in
+            glyph.draw(in: rect)
+            let center = dotCenter(in: size)
+            let radius = dotSize / 2 + gap
+            NSGraphicsContext.current?.compositingOperation = .destinationOut
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius,
+                                        width: radius * 2, height: radius * 2)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
     override func layout() {
         super.layout()
+        guard let image = badged else { return }
+        // Where the button actually draws its image, so the dot lands in the
+        // gap however the cell centres it.
+        let imageRect = cell?.imageRect(forBounds: bounds)
+            ?? NSRect(x: (bounds.width - image.size.width) / 2, y: (bounds.height - image.size.height) / 2,
+                      width: image.size.width, height: image.size.height)
+        let center = Self.dotCenter(in: image.size)
+        let x = imageRect.minX + center.x
+        let y = isFlipped ? imageRect.minY + (image.size.height - center.y) : imageRect.minY + center.y
+        let half = Self.dotSize / 2
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // On the glyph's shoulder, as a badge sits.
-        dot.frame = NSRect(x: bounds.maxX - 10, y: isFlipped ? 5 : bounds.maxY - 11, width: 6, height: 6)
+        dot.frame = backingAlignedRect(NSRect(x: x - half, y: y - half, width: Self.dotSize, height: Self.dotSize),
+                                       options: .alignAllEdgesNearest)
         CATransaction.commit()
     }
 

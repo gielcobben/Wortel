@@ -85,6 +85,9 @@ final class MainSplitViewController: NSSplitViewController {
     private let titleBars: TitleBarController
     private var sidebarItem: NSSplitViewItem!
     private var contentItem: NSSplitViewItem!
+    /// The strip under the terminal, bar and all: an area of its own inside
+    /// the content item. See `region(at:)`.
+    private weak var bottomAreaView: NSView?
 
     private let previewTabs: PreviewTabs
 
@@ -145,6 +148,7 @@ final class MainSplitViewController: NSSplitViewController {
                 runtime: runtime, manager: manager, git: git, files: files)),
             runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs)
         let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
+        bottomAreaView = bottomPane.view
         let detail = ChromePaneController(
             bar: titleBars.mainBar, content: workspace, bodyColor: Chrome.content)
         let contentItem = NSSplitViewItem(viewController: detail)
@@ -489,5 +493,28 @@ final class MainSplitViewController: NSSplitViewController {
         let rect = super.splitView(splitView, effectiveRect: proposedEffectiveRect,
                                    forDrawnRect: drawnRect, ofDividerAt: dividerIndex)
         return rect.insetBy(dx: -4, dy: 0)
+    }
+}
+
+extension MainSplitViewController {
+    /// Which area a point in the window is in: the column (its tab row
+    /// included), the strip under the terminal, or the main area. nil for the
+    /// session list, which isn't an area with tabs.
+    ///
+    /// What a click anywhere in an area means for the keyboard commands: ⌘W,
+    /// ⌘T and the rest act on the area you last clicked or typed in, and a
+    /// web page, a pane or the file tree never report typing of their own.
+    func region(at point: NSPoint) -> TabRegion? {
+        func contains(_ view: NSView?) -> Bool {
+            guard let view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+                  view.bounds.width > 1, view.bounds.height > 1 else { return false }
+            return view.bounds.contains(view.convert(point, from: nil))
+        }
+        if let inspectorItem, !inspectorItem.isCollapsed, contains(inspectorItem.viewController.view) {
+            return .side
+        }
+        if git.bottomVisible, contains(bottomAreaView) { return .bottom }
+        if let contentItem, contains(contentItem.viewController.view) { return .main }
+        return nil
     }
 }

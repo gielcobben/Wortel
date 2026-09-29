@@ -33,8 +33,8 @@ what people reach for to move between shells; ⌘T opens a tab in the session yo
 
 ## Tabs
 
-These act on the tab row you're in: the area you last typed in, picked a tab
-in, or moved to with ⌘] / ⌘[.
+These act on the tab row you're in: the area you last clicked or typed in,
+picked a tab in, or moved to with ⌘] / ⌘[.
 
 | Action | Shortcut | Same as |
 |---|---|---|

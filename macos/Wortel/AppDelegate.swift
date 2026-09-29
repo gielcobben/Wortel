@@ -270,6 +270,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         SurfaceView.onKeyboardActivity = { [weak self] surface in
             self?.noteKeyboardActivity(in: surface)
         }
+        // A click in an area puts you in it, whatever it lands on: a web page,
+        // a pane's list or the file tree never take part in the terminals'
+        // typing reports, and without this ⌘W after clicking into a browser in
+        // the column went to wherever you'd last typed.
+        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            guard let self, event.window === self.window,
+                  let region = self.splitController.region(at: event.locationInWindow) else { return event }
+            if self.gitPanel.lastRegion != region { self.gitPanel.lastRegion = region }
+            return event
+        }
         gitPanel.onFocusMainTerminal = { [weak self] in
             // Not while a tab in the main area's row covers the terminal.
             guard let self, self.gitPanel.activeMainTab == nil,
@@ -708,19 +718,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             key.performClose(sender)
             return
         }
-        // ⌘W means the thing you're in. A side terminal with the keyboard is a
-        // tab, and closing it must not take the whole session with it.
-        if let focused = window.firstResponder as? SurfaceView,
-           focused !== manager.selected?.surfaceView,
-           let id = manager.selected?.sideSurfaces.first(where: { $0.value === focused })?.key,
-           let tab = gitPanel.tab(forTerminal: id) {
+        // ⌘W closes what's in front of the area you're in (the one you last
+        // clicked, typed, picked a tab or ⌘]-ed into): a terminal, a browser,
+        // a file, a pane. Only the session's own terminal in front of the
+        // main area means the session, as closing a terminal's last tab does.
+        if let tab = gitPanel.activeTab(in: focusedRegion()), tab != .session {
             gitPanel.requestClose(tab)
-            return
-        }
-        // A tab in front in the main area covers the session's terminal; ⌘W
-        // closes that tab, never the session hidden behind it.
-        if let active = gitPanel.activeMainTab {
-            gitPanel.requestClose(active)
             return
         }
         manager.requestCloseSelected()

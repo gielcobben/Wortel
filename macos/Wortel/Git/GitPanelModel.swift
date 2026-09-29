@@ -468,13 +468,6 @@ final class GitPanelModel {
         close(tab)
     }
 
-    /// The tab a terminal with the keyboard belongs to, for ⌘W. `id` is the
-    /// terminal tab's id.
-    func tab(forTerminal id: UUID) -> SideTab? {
-        guard let session, session.terminalTabIDs.contains(id) else { return nil }
-        return .terminal(id)
-    }
-
     /// Put back a closed tab: the last closed in `region` (the row you're in),
     /// or the last closed anywhere when that row has none. ⌘⇧T.
     func reopenClosedTab(in region: TabRegion) {

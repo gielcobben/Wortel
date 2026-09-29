@@ -1,0 +1,599 @@
+import AppKit
+import Observation
+import SwiftUI
+
+/// Wortel's own titlebar: a flat band that each pane draws the top of, split
+/// by the same hairlines as the panes below it.
+///
+/// This replaces the system toolbar, and the reason is the ChatGPT app, which is
+/// what this is modelled on (measured from its bundle and its screen): a grey
+/// band, white pages under it, hairlines between them, plain glyphs that fill
+/// on hover, and the side column's tabs sitting in the band itself. The system
+/// toolbar can't be that on macOS 26 and later: every item it holds, custom
+/// views included, is set on a Liquid Glass capsule, and AppKit has no switch to
+/// turn that off (SwiftUI's `sharedBackgroundVisibility` has no AppKit twin). So
+/// the window keeps an *empty* toolbar, only for the height it gives the
+/// titlebar and the centred traffic lights, makes the titlebar transparent so
+/// clicks reach the views under it, and every pane draws its own row.
+///
+/// The rows are AppKit rather than SwiftUI for the same reasons the tab strip
+/// is: they are mostly empty space that has to drag the window, and double-click
+/// has to zoom it, which needs real events.
+@MainActor
+enum Chrome {
+    /// How tall the titlebar row is. Measured from the real window at launch
+    /// (see AppDelegate), because it is the system's number, not ours: it is
+    /// what centres the traffic lights, and our rows have to match it.
+    static var titlebarHeight: CGFloat = 40
+    /// Room kept clear at the window's leading edge for the traffic lights.
+    static let trafficLightInset: CGFloat = 78
+
+    /// The titlebar band: the frame the pages sit in.
+    static let band = dynamic(light: 0xF2F2F2, dark: 0x171717)
+    /// The session list, a step lighter than the band.
+    static let sidebar = dynamic(light: 0xFAFAFA, dark: 0x1B1B1B)
+    /// The pages: the terminal, and the side column's tabs.
+    static let content = dynamic(light: 0xFFFFFF, dark: 0x1F1F1F)
+    /// The tab in front: the page's own colour in light mode, lifted in dark,
+    /// where "the same colour as the page" disappears into it.
+    static let raised = dynamic(light: 0xFFFFFF, dark: 0x2E2E2E)
+    static let hairline = NSColor(name: nil) { appearance in
+        isDark(appearance) ? .white.withAlphaComponent(0.08) : .black.withAlphaComponent(0.07)
+    }
+    static let hairlineStrong = NSColor(name: nil) { appearance in
+        isDark(appearance) ? .white.withAlphaComponent(0.12) : .black.withAlphaComponent(0.10)
+    }
+    static let hoverFill = NSColor(name: nil) { appearance in
+        isDark(appearance) ? .white.withAlphaComponent(0.07) : .black.withAlphaComponent(0.05)
+    }
+    static let selectedFill = NSColor(name: nil) { appearance in
+        isDark(appearance) ? .white.withAlphaComponent(0.11) : .black.withAlphaComponent(0.07)
+    }
+
+    private static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
+    private static func dynamic(light: UInt32, dark: UInt32) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let value = isDark(appearance) ? dark : light
+            return NSColor(srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+                           green: CGFloat((value >> 8) & 0xFF) / 255,
+                           blue: CGFloat(value & 0xFF) / 255, alpha: 1)
+        }
+    }
+}
+
+// MARK: - Building blocks
+
+/// A view filled with one (dynamic) colour, resolved against its own appearance
+/// so it follows light and dark.
+class FilledView: NSView {
+    var color: NSColor {
+        didSet { needsDisplay = true }
+    }
+
+    init(color: NSColor) {
+        self.color = color
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = color.cgColor
+        }
+    }
+}
+
+/// A borderless glyph button that fills lightly under the pointer, and stays
+/// filled while it stands for something that's on (`isSelected`).
+@MainActor
+class HoverFillButton: NSButton {
+    var isSelected = false {
+        didSet { if isSelected != oldValue { needsDisplay = true } }
+    }
+    private var hovering = false {
+        didSet { if hovering != oldValue { needsDisplay = true } }
+    }
+    private var trackingArea: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        isBordered = false
+        imagePosition = .imageOnly
+        contentTintColor = .secondaryLabelColor
+        refusesFirstResponder = true
+    }
+    convenience init() { self.init(frame: .zero) }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    /// A glyph button for a titlebar row.
+    static func glyph(_ symbol: String, _ description: String, pointSize: CGFloat = 13) -> HoverFillButton {
+        let button = HoverFillButton()
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: description)?
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .regular))
+        button.toolTip = description
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 28),
+            button.heightAnchor.constraint(equalToConstant: 28),
+        ])
+        return button
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(rect: .zero,
+                                  options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let fill: NSColor? = isHighlighted ? Chrome.selectedFill
+            : isSelected ? Chrome.selectedFill
+            : hovering ? Chrome.hoverFill : nil
+        if let fill {
+            fill.setFill()
+            let radius = min(7, bounds.height / 2)
+            NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        }
+        super.draw(dirtyRect)
+    }
+
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
+/// One pane's titlebar row: the band colour, a hairline along its bottom where
+/// the page starts, and titlebar behaviour for whatever of it is empty: drag
+/// moves the window, double-click does what the Mac is set to do.
+@MainActor
+class ChromeBarView: FilledView {
+    private let bottomLine = FilledView(color: Chrome.hairline)
+
+    init() {
+        super.init(color: Chrome.band)
+        bottomLine.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(bottomLine)
+        NSLayoutConstraint.activate([
+            bottomLine.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bottomLine.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bottomLine.bottomAnchor.constraint(equalTo: bottomAnchor),
+            bottomLine.heightAnchor.constraint(equalToConstant: 1),
+        ])
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    /// Handled here rather than left to `mouseDownCanMoveWindow`, because a
+    /// window-server drag never delivers the second click of a double-click.
+    override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
+        if event.clickCount == 2 {
+            switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+            case "Minimize": window.performMiniaturize(nil)
+            case "None": break
+            default: window.performZoom(nil)
+            }
+        } else {
+            window.performDrag(with: event)
+        }
+    }
+}
+
+/// A pane of the main split: its titlebar row on top and its content below, on
+/// the pane's own colour.
+@MainActor
+final class ChromePaneController: NSViewController {
+    let bar: NSView
+    let content: NSViewController
+    private let background: NSColor
+
+    init(bar: NSView, content: NSViewController, background: NSColor) {
+        self.bar = bar
+        self.content = content
+        self.background = background
+        super.init(nibName: nil, bundle: nil)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
+        let root = FilledView(color: background)
+        addChild(content)
+        let body = content.view
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        body.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(body)
+        root.addSubview(bar)
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: root.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            bar.heightAnchor.constraint(equalToConstant: Chrome.titlebarHeight),
+            body.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            body.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            body.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+        ])
+        view = root
+    }
+}
+
+/// The split view, with hairline dividers in the chrome's own colour, running
+/// the full height of the window, through the titlebar band as well.
+final class ChromeSplitView: NSSplitView {
+    override var dividerColor: NSColor { Chrome.hairline }
+    override var dividerThickness: CGFloat { 1 }
+}
+
+// MARK: - The three rows
+
+/// Over the sidebar: room for the traffic lights, then the sidebar toggle and
+/// a new session, where ChatGPT keeps its own.
+@MainActor
+final class SidebarBar: ChromeBarView {
+    override init() {
+        super.init()
+        let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar")
+        toggle.action = #selector(NSSplitViewController.toggleSidebar(_:))
+        let new = HoverFillButton.glyph("square.and.pencil", "New Session")
+        new.action = #selector(AppDelegate.newSession(_:))
+        let stack = NSStackView(views: [toggle, new])
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+}
+
+/// Over the terminal: the session's name, and at the trailing end what the
+/// session is running and the side column's toggle while the column is hidden.
+/// With the sidebar collapsed it takes over the sidebar row's job too: room
+/// for the traffic lights, and a way to bring the sidebar back.
+@MainActor
+final class MainBar: ChromeBarView {
+    let title = NSTextField(labelWithString: "")
+    let running = RunningJobsPill()
+    let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column")
+    private let sidebarControls: NSStackView
+    private var leading: NSLayoutConstraint!
+
+    override init() {
+        let toggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar")
+        toggle.action = #selector(NSSplitViewController.toggleSidebar(_:))
+        let new = HoverFillButton.glyph("square.and.pencil", "New Session")
+        new.action = #selector(AppDelegate.newSession(_:))
+        sidebarControls = NSStackView(views: [toggle, new])
+        sidebarControls.spacing = 2
+        super.init()
+
+        title.font = .systemFont(ofSize: 13, weight: .medium)
+        title.textColor = .labelColor
+        title.lineBreakMode = .byTruncatingTail
+        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let trailing = NSStackView(views: [running, sideToggle])
+        trailing.spacing = 4
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.init(1), for: .horizontal)
+        let row = NSStackView(views: [sidebarControls, title, spacer, trailing])
+        row.spacing = 8
+        row.alignment = .centerY
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        leading = row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16)
+        NSLayoutConstraint.activate([
+            leading,
+            row.heightAnchor.constraint(equalToConstant: 28),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        setSidebarCollapsed(false)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    func setSidebarCollapsed(_ collapsed: Bool) {
+        sidebarControls.isHidden = !collapsed
+        leading.constant = collapsed ? Chrome.trafficLightInset : 16
+    }
+}
+
+/// Over the side column: its tabs, then "+" and the column's toggle at the
+/// trailing end.
+@MainActor
+final class SideColumnBar: ChromeBarView {
+    let strip = SideTabStrip()
+    let add = HoverFillButton.glyph("plus", "New Tab")
+    let toggle = HoverFillButton.glyph("sidebar.right", "Hide Side Column")
+
+    override init() {
+        super.init()
+        toggle.isSelected = true
+        strip.translatesAutoresizingMaskIntoConstraints = false
+        let trailing = NSStackView(views: [add, toggle])
+        trailing.spacing = 4
+        trailing.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(strip)
+        addSubview(trailing)
+        NSLayoutConstraint.activate([
+            strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            strip.topAnchor.constraint(equalTo: topAnchor),
+            strip.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
+            strip.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -8),
+            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+}
+
+// MARK: - Running jobs
+
+/// What the session on screen is still running, as a pill in the terminal's
+/// titlebar row: the state itself (`bun dev :3000`), not an icon standing for
+/// it. Hidden while the session runs nothing, so an ordinary terminal carries no
+/// extra chrome. Opens the running list.
+@MainActor
+final class RunningJobsPill: HoverFillButton {
+    private var drawn: RunningStatus?
+
+    convenience init() {
+        self.init(frame: .zero)
+        imagePosition = .noImage
+        lineBreakMode = .byTruncatingTail
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(equalToConstant: 28).isActive = true
+        isHidden = true
+    }
+
+    /// Room either side of the title inside the hover fill.
+    private static let padding: CGFloat = 20
+    private static let maxTitleLength = 22
+
+    private var widthConstraint: NSLayoutConstraint?
+
+    func show(_ snapshot: RunningJobsSnapshot) {
+        isHidden = !snapshot.hasWork
+        let status = snapshot.status
+        if status != drawn {
+            drawn = status
+            attributedTitle = Self.pillTitle(status)
+            let width = ceil(attributedTitle.size().width) + Self.padding
+            if let widthConstraint {
+                widthConstraint.constant = width
+            } else {
+                widthConstraint = widthAnchor.constraint(equalToConstant: width)
+                widthConstraint?.isActive = true
+            }
+        }
+        let spoken = ([status.title] + status.ports).joined(separator: " ")
+        setAccessibilityLabel("Running: \(spoken)")
+        let count = snapshot.work.count + snapshot.orphans.count
+        toolTip = "\(count) \(count == 1 ? "job" : "jobs") running in this session"
+    }
+
+    private static func pillTitle(_ status: RunningStatus) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        let result = NSMutableAttributedString()
+        let dotColor: NSColor = status.isServing ? .systemGreen : .tertiaryLabelColor
+        if let dot = NSImage(systemSymbolName: status.isServing ? "circle.fill" : "circle",
+                             accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 7, weight: .regular)
+                .applying(.init(paletteColors: [dotColor]))) {
+            let attachment = NSTextAttachment()
+            attachment.image = dot
+            attachment.bounds = CGRect(x: 0, y: (font.capHeight - dot.size.height) / 2,
+                                       width: dot.size.width, height: dot.size.height)
+            result.append(NSAttributedString(attachment: attachment))
+            result.append(NSAttributedString(string: "  ", attributes: [.font: font]))
+        }
+        var title = status.title
+        if title.count > maxTitleLength {
+            title = String(title.prefix(maxTitleLength - 1)) + "\u{2026}"
+        }
+        result.append(NSAttributedString(string: title, attributes: [
+            .font: font, .foregroundColor: NSColor.labelColor,
+        ]))
+        if !status.ports.isEmpty {
+            // Monospaced digits so `:3000` and `:5173` hold their width.
+            result.append(NSAttributedString(
+                string: "  " + status.ports.joined(separator: " "),
+                attributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]))
+        }
+        return result
+    }
+}
+
+// MARK: - Keeping the rows current
+
+/// Keeps the three rows in step with the models: the session's name, the side
+/// column's tabs, what the session is running. The rows only draw; this is
+/// where they learn what to draw and what their clicks mean.
+@MainActor
+final class TitleBarController: NSObject, NSPopoverDelegate {
+    let sidebarBar = SidebarBar()
+    let mainBar = MainBar()
+    let sideBar = SideColumnBar()
+
+    private let manager: SessionManager
+    private let git: GitPanelModel
+    private let processes: ProcessMonitor
+    private var runningPopover: NSPopover?
+
+    init(manager: SessionManager, git: GitPanelModel, processes: ProcessMonitor) {
+        self.manager = manager
+        self.git = git
+        self.processes = processes
+        super.init()
+
+        mainBar.sideToggle.target = self
+        mainBar.sideToggle.action = #selector(toggleSideColumn)
+        sideBar.toggle.target = self
+        sideBar.toggle.action = #selector(toggleSideColumn)
+        sideBar.add.target = self
+        sideBar.add.action = #selector(presentNewTabMenu(_:))
+        mainBar.running.target = self
+        mainBar.running.action = #selector(openRunningJobs(_:))
+
+        let strip = sideBar.strip
+        strip.onSelect = { [weak self] tab in self?.git.select(tab) }
+        strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
+        strip.onCloseOthers = { [weak self] keep in
+            guard let self else { return }
+            self.git.select(keep)
+            for tab in self.git.tabs where tab != keep { self.git.requestClose(tab) }
+        }
+    }
+
+    func start() {
+        observeTitle()
+        observeColumn()
+        observeProcesses()
+    }
+
+    // MARK: Title
+
+    private func observeTitle() {
+        withObservationTracking {
+            mainBar.title.stringValue = manager.selected?.name ?? "Wortel"
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeTitle() }
+        }
+    }
+
+    // MARK: Side column
+
+    private func observeColumn() {
+        withObservationTracking {
+            syncColumn()
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeColumn() }
+        }
+    }
+
+    private func syncColumn() {
+        mainBar.sideToggle.isHidden = git.isVisible
+        let titles = manager.selected?.sideTerminalTitles ?? [:]
+        let items = git.tabs.map { tab -> SideTabStrip.Item in
+            switch tab {
+            case .pane(let pane):
+                return .init(tab: tab, title: pane.title, symbol: pane.symbol)
+            case .terminal(let id):
+                return .init(tab: tab, title: Self.terminalTitle(titles[id]), symbol: "apple.terminal")
+            }
+        }
+        sideBar.strip.update(items: items, active: git.activeTab)
+    }
+
+    /// What a shell titled itself, trimmed to what fits on a tab. Shells title a
+    /// terminal `user@host:path`, and the path's last component is the part
+    /// that tells two terminals apart.
+    private static func terminalTitle(_ raw: String?) -> String {
+        guard let raw = raw?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
+            return "Terminal"
+        }
+        if let colon = raw.lastIndex(of: ":"), raw[..<colon].contains("@") {
+            let path = String(raw[raw.index(after: colon)...])
+            let leaf = (path as NSString).lastPathComponent
+            return leaf.isEmpty ? path : leaf
+        }
+        return raw
+    }
+
+    @objc private func toggleSideColumn() {
+        git.toggle()
+    }
+
+    /// The "+" menu: a terminal first, because a new one is what "+" usually
+    /// means, then the panes, ticked when they're already open.
+    @objc private func presentNewTabMenu(_ sender: NSView) {
+        let menu = NSMenu()
+        let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
+            self?.git.openTerminal()
+        }
+        terminal.image = NSImage(systemSymbolName: "apple.terminal", accessibilityDescription: nil)
+        terminal.keyEquivalent = "`"
+        terminal.keyEquivalentModifierMask = [.control]
+        menu.addItem(terminal)
+        menu.addItem(.separator())
+        for pane in InspectorPane.allCases {
+            let item = ClosureMenuItem(title: pane.title) { [weak self] in self?.git.show(pane) }
+            item.image = NSImage(systemSymbolName: pane.symbol, accessibilityDescription: nil)
+            item.state = git.tabs.contains(.pane(pane)) ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    // MARK: Running jobs
+
+    /// What the selected session is running, and anything it started that has
+    /// already left. Leftovers nobody owns are not in it: they would put the
+    /// pill in every session, which is the thing this scoping exists to stop.
+    private var runningSnapshot: RunningJobsSnapshot {
+        guard let id = manager.selectedID else { return .empty }
+        return processes.snapshot.scoped(to: id)
+    }
+
+    private func observeProcesses() {
+        withObservationTracking {
+            let snapshot = runningSnapshot
+            // Not hidden while its own popover is open: pulling the anchor out
+            // from under a list someone is reading closes it mid-sentence.
+            if snapshot.hasWork || runningPopover == nil {
+                mainBar.running.show(snapshot)
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.processes.updateActivityAssertion()
+                self.observeProcesses()
+            }
+        }
+    }
+
+    @objc private func openRunningJobs(_ sender: NSButton) {
+        guard runningPopover == nil, let session = manager.selectedID else { return }
+        // Scan before showing, not after: NSPopover sizes itself to the content
+        // it is handed at presentation.
+        processes.refresh()
+        Telemetry.capture(.processesShown(
+            jobs: CountBucket(processes.snapshot.work.count),
+            orphans: CountBucket(processes.snapshot.orphans.count)))
+        let popover = NSPopover()
+        popover.behavior = .transient
+        let list = RunningJobsList(
+            monitor: processes, session: session,
+            dismiss: { [weak self] in self?.runningPopover?.performClose(nil) })
+        let host = NSHostingController(rootView: list)
+        host.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = host
+        popover.delegate = self
+        runningPopover = popover
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    nonisolated func popoverDidClose(_ notification: Notification) {
+        Task { @MainActor in
+            self.runningPopover = nil
+            self.mainBar.running.show(self.runningSnapshot)
+        }
+    }
+}

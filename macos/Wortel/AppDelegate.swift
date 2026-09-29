@@ -74,26 +74,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // to make it likely rather than rare.
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        // Drop the hairline the system draws under the titlebar/toolbar so the
-        // terminal and sidebar run edge-to-edge with no border bottom.
-        window.titlebarSeparatorStyle = .none
-        // The unified style is what splits the titlebar into per-pane sections, so
-        // the title sits against the sidebar's trailing edge and toolbar items
-        // stop at the inspector's leading edge. Set here rather than via
-        // .windowToolbarStyle because that modifier is Scene-level and this app is
-        // an AppDelegate hosting SwiftUI, not an App struct — no Scene to hang it
-        // off. On macOS 26 the items pick up Liquid Glass automatically (it keys
-        // off the linked SDK, not the deployment target); on 14 they render as a
-        // conventional unified toolbar.
+        // The titlebar is Wortel's own (see TitleBars.swift): every pane draws
+        // its row of it, and the system draws nothing there but the traffic
+        // lights. Transparent, so clicks reach the rows under it; no title, the
+        // terminal's row shows the session's name itself; no separator, each row
+        // draws its own hairline.
         //
-        // Compact: one line of title, and a titlebar short enough to be chrome
-        // rather than a band of its own above the terminal.
+        // The toolbar stays, empty, for the one thing only it can do: make the
+        // titlebar tall enough for a row of controls and centre the traffic
+        // lights in it. Compact is 40pt, next to the ChatGPT app's 42.
+        window.titlebarSeparatorStyle = .none
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        let toolbar = NSToolbar(identifier: "wortel.main")
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
         window.toolbarStyle = .unifiedCompact
+        // The rows are as tall as the titlebar the system made, measured rather
+        // than assumed: it's the system's number and differs across releases.
+        window.contentView?.superview?.layoutSubtreeIfNeeded()
+        let titlebarHeight = window.frame.height - window.contentLayoutRect.height
+        if titlebarHeight > 20 { Chrome.titlebarHeight = titlebarHeight }
+        let titleBars = TitleBarController(manager: manager, git: gitPanel, processes: processes)
+        self.titleBars = titleBars
         let split = MainSplitViewController(
-            runtime: runtime, manager: manager, git: gitPanel, files: fileTree)
+            runtime: runtime, manager: manager, git: gitPanel, files: fileTree,
+            titleBars: titleBars)
         self.splitController = split
         window.contentViewController = split
-        installToolbar(on: window, splitView: split.splitView)
+        titleBars.start()
         window.setFrameAutosaveName("main")
         if window.frame.height < 320 {
             window.setContentSize(NSSize(width: 1100, height: 700))
@@ -262,28 +271,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// When this launch started, for the uptime bucket on quit.
     private let launchedAt = Date()
 
-    /// The toolbar is retained here because NSWindow doesn't own its delegate.
-    private var toolbarDelegate: MainToolbarDelegate?
-
-    private func installToolbar(on window: NSWindow, splitView: NSSplitView) {
-        let delegate = MainToolbarDelegate(splitView: splitView, git: gitPanel,
-                                           processes: processes)
-        delegate.selectedSession = { [weak self] in self?.manager.selectedID }
-        delegate.sideTerminalTitle = { [weak self] id in self?.manager.selected?.sideTerminalTitles[id] }
-        toolbarDelegate = delegate
-        let toolbar = NSToolbar(identifier: "wortel.main")
-        toolbar.delegate = delegate
-        toolbar.displayMode = .iconOnly
-        toolbar.allowsUserCustomization = false
-        // The running pill sits in the middle of the window, where Xcode keeps
-        // its activity view: status, not a control among controls.
-        toolbar.centeredItemIdentifiers = [.runningJobs]
-        // The delegate inserts and removes the branch item as the panel opens and
-        // closes, so it needs the toolbar it's the delegate of.
-        delegate.toolbar = toolbar
-        window.toolbar = toolbar
-        delegate.startObservingColumn()
-    }
+    /// The window's titlebar rows and what keeps them current.
+    private var titleBars: TitleBarController?
 
     /// The window title used to come from SwiftUI's .navigationTitle, which only
     /// exists inside a NavigationSplitView — gone with the AppKit shell, so drive

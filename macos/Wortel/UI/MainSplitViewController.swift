@@ -3,22 +3,20 @@ import SwiftUI
 import Observation
 
 /// The window's content: three real split panes — session sidebar, terminal,
-/// source-control inspector.
+/// side column — each wrapped with its own titlebar row (TitleBars.swift).
 ///
 /// This is deliberately AppKit rather than SwiftUI's `NavigationSplitView` +
-/// `.inspector`. That pairing gives the same *look* for free (Icon Composer is
-/// built exactly that way), but an inspector is not a split pane: AppKit defines
-/// it as a fixed-thickness auxiliary panel that holds its width and resizes the
-/// *window* instead of its siblings. That makes the window jump when the panel is
-/// dragged, and folds the terminal's current width into the window's resize
-/// floor. Owning the `NSSplitViewController` buys back `minimumThickness`,
-/// `maximumThickness`, `holdingPriority`, and `collapseBehavior` — which is what
-/// makes all three panes independently resizable — while `.sidebar`/`.inspector`
-/// *behaviors* still supply the system material (Liquid Glass on macOS 26) and
-/// full-height layout automatically.
+/// `.inspector`: an inspector is not a split pane (AppKit defines it as a
+/// fixed-thickness panel that resizes the *window*), and owning the
+/// `NSSplitViewController` buys back `minimumThickness`, `maximumThickness`,
+/// `holdingPriority`, and `collapseBehavior` — which is what makes all three
+/// panes independently resizable.
 ///
-/// Deliberately do NOT add an NSVisualEffectView to either pane: as of macOS 26
-/// that sits on top of the glass and blocks it.
+/// The items are plain ones, not the `.sidebar` / `.inspector` behaviors. Those
+/// supply the system's Liquid Glass material, and the look here is the ChatGPT
+/// app's instead: flat pages in a grey frame, hairlines between them. Each pane
+/// paints its own colour (see ChromePaneController), and collapsing the sidebar
+/// is implemented here because AppKit's only acts on a `.sidebar` item.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
     /// What currently owns the inspector column. One per pane, because width is
@@ -111,13 +109,23 @@ final class MainSplitViewController: NSSplitViewController {
     /// The pending "the drag has settled, keep this width" commit.
     private var widthCaptureWork: DispatchWorkItem?
 
+    private let titleBars: TitleBarController
+    private var sidebarItem: NSSplitViewItem!
+
     init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
-         files: FileTreeModel) {
+         files: FileTreeModel, titleBars: TitleBarController) {
         self.runtime = runtime
         self.manager = manager
         self.git = git
         self.files = files
+        self.titleBars = titleBars
         super.init(nibName: nil, bundle: nil)
+        // Before the view loads: the split view is the controller's to replace
+        // only until it's been used. Hairline dividers in the chrome's colour.
+        let split = ChromeSplitView()
+        split.isVertical = true
+        split.dividerStyle = .thin
+        splitView = split
     }
 
     @available(*, unavailable)
@@ -126,14 +134,23 @@ final class MainSplitViewController: NSSplitViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // Sidebar. `.sidebar` behavior supplies the material and full-height
-        // layout (paired with the window's .fullSizeContentView).
+        // Every pane is a plain split item wrapped with its own titlebar row
+        // (see TitleBars.swift). Not the `.sidebar` / `.inspector` behaviors:
+        // those bring the system's Liquid Glass material, and the look here is
+        // flat pages in a grey frame. What they did for sizing and collapsing is
+        // stated on the items directly.
+        //
         // NSSplitView takes each pane's starting width from its view's frame, so
         // the frame is the only place to state a default (the autosave below wins
         // on every launch after the first drag).
-        let sidebar = NSHostingController(rootView: SidebarPane(manager: manager))
+        let sidebar = ChromePaneController(
+            bar: titleBars.sidebarBar,
+            content: NSHostingController(rootView: SidebarPane(manager: manager)),
+            background: Chrome.sidebar)
         sidebar.view.setFrameSize(NSSize(width: 220, height: sidebar.view.frame.height))
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        let sidebarItem = NSSplitViewItem(viewController: sidebar)
+        sidebarItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
+        self.sidebarItem = sidebarItem
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 400
         sidebarItem.canCollapse = true
@@ -144,24 +161,29 @@ final class MainSplitViewController: NSSplitViewController {
         // their width, the terminal gives. An 80pt floor keeps the window
         // shrinkable; ghostty reflows to whatever width it gets, so a narrow
         // terminal is cramped rather than broken.
-        let detail = NSHostingController(rootView: DetailPane(runtime: runtime, manager: manager, git: git, files: files))
+        let detail = ChromePaneController(
+            bar: titleBars.mainBar,
+            content: NSHostingController(rootView: DetailPane(
+                runtime: runtime, manager: manager, git: git, files: files)),
+            background: Chrome.content)
         let contentItem = NSSplitViewItem(viewController: detail)
         contentItem.minimumThickness = 80
         contentItem.holdingPriority = NSLayoutConstraint.Priority(250)
         addSplitViewItem(contentItem)
 
-        // Inspector. `inspector(viewController:)` hard-codes a non-resizable 270pt
-        // thickness, so min/max are overridden right after to make it draggable.
-        // collapseBehavior keeps the *window* still when the panel opens/closes,
-        // resizing the terminal instead.
-        let inspector = NSHostingController(rootView: InspectorContainer(
-            runtime: runtime, manager: manager, git: git, files: files))
+        // The side column. collapseBehavior keeps the *window* still when the
+        // column opens/closes, resizing the terminal instead.
+        let inspector = ChromePaneController(
+            bar: titleBars.sideBar,
+            content: NSHostingController(rootView: InspectorContainer(
+                runtime: runtime, manager: manager, git: git, files: files)),
+            background: Chrome.content)
         let occupant = InspectorOccupant(git: git)
         let width = InspectorWidthStore.width(for: occupant)
         inspector.view.setFrameSize(NSSize(width: width, height: inspector.view.frame.height))
         lastOccupant = occupant
         lastAppliedWidth = width
-        let item = NSSplitViewItem(inspectorWithViewController: inspector)
+        let item = NSSplitViewItem(viewController: inspector)
         item.minimumThickness = occupant.minimumThickness
         item.maximumThickness = 680
         item.canCollapse = true
@@ -178,6 +200,7 @@ final class MainSplitViewController: NSSplitViewController {
         // sidebar's width; the inspector's it also carries but does not get to
         // decide, because that one is per occupant (see `viewDidLayout`).
         splitView.autosaveName = "main-split"
+        titleBars.mainBar.setSidebarCollapsed(sidebarItem.isCollapsed)
 
         observeInspector()
     }
@@ -338,9 +361,41 @@ final class MainSplitViewController: NSSplitViewController {
         lastSplitWidth = total
         captureInspectorWidth(windowResized: windowResized)
 
+        titleBars.mainBar.setSidebarCollapsed(sidebarItem?.isCollapsed ?? false)
+
         guard !syncingInspector, let inspectorItem else { return }
         let visible = !inspectorItem.isCollapsed
         guard visible != git.isVisible else { return }
         git.isPresented = visible
+    }
+
+    // MARK: - Sidebar and dividers
+
+    /// ⌘⌥S and the titlebar's sidebar buttons. NSSplitViewController's own
+    /// implementation only acts on an item with the `.sidebar` behavior, which
+    /// this one deliberately isn't (see `viewDidLoad`).
+    override func toggleSidebar(_ sender: Any?) {
+        guard let sidebarItem else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.allowsImplicitAnimation = true
+            sidebarItem.animator().isCollapsed.toggle()
+        }
+    }
+
+    /// NSSplitViewController disables its own sidebar command when no item has
+    /// the `.sidebar` behavior, which would grey out ⌘⌥S here.
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(toggleSidebar(_:)) { return true }
+        return super.validateUserInterfaceItem(item)
+    }
+
+    /// A one-point divider is hard to hit, so the grab area is wider than what's
+    /// drawn: 4pt either side, the ChatGPT app's 16px handle in points.
+    override func splitView(_ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect,
+                            forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int) -> NSRect {
+        let rect = super.splitView(splitView, effectiveRect: proposedEffectiveRect,
+                                   forDrawnRect: drawnRect, ofDividerAt: dividerIndex)
+        return rect.insetBy(dx: -4, dy: 0)
     }
 }

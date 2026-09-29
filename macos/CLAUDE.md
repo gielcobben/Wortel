@@ -183,9 +183,13 @@ the branch for a worktree session). Worktree sessions are named for their task
 and carry the branch on a second row line. See `docs/session-naming.md` for
 the reasoning, the privacy scoping of the tap, and what the other tools do.
 
-**UI shell** (`Wortel/UI/`) — `ContentView` is a SwiftUI `NavigationSplitView`
-(sidebar list + terminal detail) hosted inside an AppKit window
-(`AppDelegate`). Selection is drawn as a custom accent "pill" rather than
+**UI shell** (`Wortel/UI/`) — three AppKit split panes (`MainSplitViewController`)
+hosting SwiftUI content, in an AppKit window (`AppDelegate`). The titlebar is
+Wortel's own (`TitleBars.swift`): the window keeps an *empty* toolbar only for
+its height and the centred traffic lights, the titlebar is transparent, and each
+pane draws its row of a flat grey band (the ChatGPT app's look). The reason is
+that on macOS 26+ every toolbar item, custom views included, sits on a Liquid
+Glass capsule, and AppKit has no switch to stop that. Selection is drawn as a custom accent "pill" rather than
 `List(selection:)` because the sidebar never holds keyboard focus (the terminal
 does). `TerminalHostViewController` is the key trick: it keeps **every**
 session's `SurfaceView` in the hierarchy and switches via
@@ -307,9 +311,10 @@ inspector's width it saves but does not get to decide (see `viewDidLayout`).
 **Side column tabs** (`SideTab`, `GitPanelModel`, `Wortel/UI/SideTabStrip.swift`,
 `Wortel/Markdown/InspectorContainer.swift`) — the column is a strip of tabs per
 session: Changes, History and Files, plus **side terminals**, a second shell
-beside the session's own (⌃`). The strip sits in the titlebar over the column
-(the ChatGPT app's arrangement); the branch and the fetch/pull/push menu moved
-from the toolbar into `RepoHeader`, inside the source-control tabs. Rules:
+beside the session's own (⌃`). The strip sits in the column's titlebar row
+(the ChatGPT app's arrangement), with "+" and the column toggle at its trailing
+end; the branch and the fetch/pull/push menu live in `RepoHeader`, inside the
+source-control tabs. Rules:
 opening a tab opens the column, closing the last closes it (instantly), hiding
 it keeps the tabs; ⌘W closes a side terminal that has the keyboard, ⌃Tab walks
 the strip. A side terminal is a `SurfaceView` owned by its `Session`

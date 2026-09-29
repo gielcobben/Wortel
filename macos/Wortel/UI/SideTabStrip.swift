@@ -1,18 +1,18 @@
 import AppKit
 
-/// The side column's tabs, drawn in the titlebar over the column.
+/// The side column's tabs, drawn in the column's own titlebar row.
 ///
-/// Modelled on the ChatGPT app's workspace tabs, measured from its bundle: the
-/// tab in front is a raised surface with a hairline edge, the rest are bare text
-/// in a quieter grey that fills on hover, a close button shows only on the tab in
-/// front and the one under the pointer, and a "+" ends the row. Tabs share the
-/// room there is: each fits its title up to `maxTabWidth`, and when the row is
-/// too long they shrink together towards `minTabWidth` rather than one of them
-/// disappearing.
+/// Modelled on the ChatGPT app's workspace tabs, measured from its bundle and
+/// its screen: the tab in front is a raised pill in the content's own colour
+/// (white on the grey band, so it reads as the top of the page under it), with
+/// a hairline edge and a soft shadow; the rest are just a glyph and grey text
+/// that fill lightly on hover. A close button shows on the tab in front and the
+/// one under the pointer. Each tab is as wide as its title wants, between
+/// `minTabWidth` and `maxTabWidth`, and when the row runs out of room they
+/// shrink together rather than one of them disappearing.
 ///
-/// AppKit rather than a hosted SwiftUI view because it lives in a toolbar item,
-/// where a hosting view's hit testing and sizing both fight the toolbar, and
-/// because middle-click and right-click want real events.
+/// The "+" is not part of the strip: it sits at the row's trailing end, where
+/// ChatGPT keeps it, so it doesn't move as tabs open and close.
 @MainActor
 final class SideTabStrip: NSView {
     struct Item: Equatable {
@@ -24,36 +24,23 @@ final class SideTabStrip: NSView {
     var onSelect: (SideTab) -> Void = { _ in }
     var onClose: (SideTab) -> Void = { _ in }
     var onCloseOthers: (SideTab) -> Void = { _ in }
-    /// The "+" was pressed; show the new-tab menu from this view.
-    var onAdd: (NSView) -> Void = { _ in }
 
     static let tabHeight: CGFloat = 28
-    static let minTabWidth: CGFloat = 76
-    static let maxTabWidth: CGFloat = 200
-    private static let gap: CGFloat = 2
-    private static let addSize: CGFloat = 28
+    static let minTabWidth: CGFloat = 90
+    static let maxTabWidth: CGFloat = 240
+    private static let gap: CGFloat = 4
 
     private var items: [Item] = []
     private var active: SideTab?
     private var tabViews: [SideTabView] = []
-    private let addButton = SideTabStrip.makeAddButton()
-    /// The widest the strip may draw, which the toolbar learns from the column.
-    private var availableWidth: CGFloat = 400
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        addButton.target = self
-        addButton.action = #selector(addPressed)
-        addSubview(addButton)
-    }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { true }
 
-    func update(items: [Item], active: SideTab?, availableWidth: CGFloat) {
-        let widthChanged = abs(availableWidth - self.availableWidth) > 0.5
-        guard items != self.items || active != self.active || widthChanged else { return }
-        self.availableWidth = availableWidth
+    /// Empty space in the strip is titlebar: it drags the window.
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    func update(items: [Item], active: SideTab?) {
+        guard items != self.items || active != self.active else { return }
         if items.map(\.tab) != self.items.map(\.tab) {
             tabViews.forEach { $0.removeFromSuperview() }
             tabViews = items.map { item in
@@ -61,7 +48,7 @@ final class SideTabStrip: NSView {
                 view.onSelect = { [weak self] in self?.onSelect(item.tab) }
                 view.onClose = { [weak self] in self?.onClose(item.tab) }
                 view.onCloseOthers = { [weak self] in self?.onCloseOthers(item.tab) }
-                addSubview(view, positioned: .below, relativeTo: addButton)
+                addSubview(view)
                 return view
             }
         }
@@ -70,57 +57,45 @@ final class SideTabStrip: NSView {
         for (view, item) in zip(tabViews, items) {
             view.configure(title: item.title, symbol: item.symbol, isActive: item.tab == active)
         }
-        // The tab to the left of the one in front, and the one in front, draw no
-        // divider: the raised tab is its own edge.
+        // A divider between two quiet tabs only; the raised one is its own edge.
         for (index, view) in tabViews.enumerated() {
             let next = index + 1 < items.count ? items[index + 1].tab : nil
             view.showsTrailingDivider = next != nil && items[index].tab != active && next != active
         }
-        invalidateIntrinsicContentSize()
         needsLayout = true
     }
 
     /// Each tab's width: what its title wants, clamped, then shrunk evenly when
-    /// the row would run past what the column has room for.
+    /// the row would run past the strip.
     private func tabWidths() -> [CGFloat] {
         let wanted = tabViews.map { min(max($0.fittingWidth, Self.minTabWidth), Self.maxTabWidth) }
-        let room = availableWidth - Self.addSize - Self.gap * CGFloat(tabViews.count)
+        let room = bounds.width - Self.gap * CGFloat(max(tabViews.count - 1, 0))
         let total = wanted.reduce(0, +)
-        guard total > room, !wanted.isEmpty else { return wanted }
-        let scale = max(room, Self.minTabWidth * CGFloat(wanted.count)) / total
-        return wanted.map { max(Self.minTabWidth, ($0 * scale).rounded(.down)) }
-    }
-
-    override var intrinsicContentSize: NSSize {
-        let widths = tabWidths()
-        let width = widths.reduce(0, +) + Self.gap * CGFloat(widths.count) + Self.addSize
-        return NSSize(width: min(width, max(availableWidth, Self.addSize)), height: Self.tabHeight)
+        guard total > room, !wanted.isEmpty, room > 0 else { return wanted }
+        let floor: CGFloat = 44
+        let scale = room / total
+        return wanted.map { max(floor, ($0 * scale).rounded(.down)) }
     }
 
     override func layout() {
         super.layout()
         var x: CGFloat = 0
-        let y = (bounds.height - Self.tabHeight) / 2
+        let y = ((bounds.height - Self.tabHeight) / 2).rounded()
         for (view, width) in zip(tabViews, tabWidths()) {
             view.frame = NSRect(x: x, y: y, width: width, height: Self.tabHeight)
             x += width + Self.gap
         }
-        addButton.frame = NSRect(x: x, y: y, width: Self.addSize, height: Self.addSize)
     }
 
-    @objc private func addPressed() { onAdd(addButton) }
-
-    private static func makeAddButton() -> NSButton {
-        let button = HoverFillButton()
-        button.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Tab")?
-            .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
-        button.toolTip = "New Tab"
-        return button
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        super.resizeSubviews(withOldSize: oldSize)
+        needsLayout = true
     }
 }
 
-/// One tab: symbol, title, and the close button that appears on the tab in
-/// front and on hover.
+/// One tab: glyph, title, and the close button that appears on the tab in
+/// front and on hover. Layer-drawn so the raised tab's shadow can fall outside
+/// its bounds.
 @MainActor
 private final class SideTabView: NSView {
     let tab: SideTab
@@ -128,18 +103,16 @@ private final class SideTabView: NSView {
     var onClose: () -> Void = {}
     var onCloseOthers: () -> Void = {}
     var showsTrailingDivider = false {
-        didSet { if showsTrailingDivider != oldValue { needsDisplay = true } }
+        didSet { divider.isHidden = !showsTrailingDivider }
     }
 
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private let closeButton = HoverFillButton()
+    private let divider = FilledView(color: Chrome.hairlineStrong)
     private var isActive = false
     private var hovering = false {
-        didSet {
-            guard hovering != oldValue else { return }
-            applyState()
-        }
+        didSet { if hovering != oldValue { applyState() } }
     }
 
     init(tab: SideTab) {
@@ -148,26 +121,27 @@ private final class SideTabView: NSView {
         wantsLayer = true
         layer?.cornerRadius = 8
         layer?.cornerCurve = .continuous
+        layer?.masksToBounds = false
 
         icon.symbolConfiguration = .init(pointSize: 12, weight: .regular)
         label.font = .systemFont(ofSize: 13)
         label.lineBreakMode = .byTruncatingTail
-        label.cell?.truncatesLastVisibleLine = true
         label.maximumNumberOfLines = 1
         closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Tab")?
             .withSymbolConfiguration(.init(pointSize: 9, weight: .semibold))
         closeButton.toolTip = "Close Tab"
         closeButton.target = self
         closeButton.action = #selector(closePressed)
-        [icon, label, closeButton].forEach(addSubview)
+        divider.isHidden = true
+        [icon, label, closeButton, divider].forEach(addSubview)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { true }
 
-    /// What the tab would like to be: padding, symbol, title, close button.
+    /// What the tab would like to be: inset, glyph, title, close button.
     var fittingWidth: CGFloat {
-        10 + 16 + 6 + ceil(label.attributedStringValue.size().width) + 4 + 18 + 6
+        12 + 16 + 7 + ceil(label.intrinsicContentSize.width) + 6 + 18 + 6
     }
 
     func configure(title: String, symbol: String, isActive: Bool) {
@@ -181,51 +155,44 @@ private final class SideTabView: NSView {
     override func layout() {
         super.layout()
         let h = bounds.height
-        icon.frame = NSRect(x: 10, y: (h - 16) / 2, width: 16, height: 16)
+        icon.frame = NSRect(x: 12, y: (h - 16) / 2, width: 16, height: 16)
         let closeX = bounds.width - 6 - 18
         closeButton.frame = NSRect(x: closeX, y: (h - 18) / 2, width: 18, height: 18)
-        let labelX: CGFloat = 10 + 16 + 6
+        let labelX: CGFloat = 12 + 16 + 7
         let labelHeight = ceil(label.intrinsicContentSize.height)
         // The title keeps the close button's room whether or not it shows, so
         // hovering a tab never moves its text.
-        label.frame = NSRect(x: labelX, y: (h - labelHeight) / 2,
-                             width: max(0, closeX - 4 - labelX), height: labelHeight)
+        label.frame = NSRect(x: labelX, y: ((h - labelHeight) / 2).rounded(),
+                             width: max(0, closeX - 6 - labelX), height: labelHeight)
+        divider.frame = NSRect(x: bounds.width + 1.5, y: (h - 14) / 2, width: 1, height: 14)
     }
 
     private func applyState() {
         closeButton.isHidden = !(isActive || hovering)
         label.textColor = isActive ? .labelColor : .secondaryLabelColor
-        icon.contentTintColor = isActive ? .secondaryLabelColor : .tertiaryLabelColor
+        icon.contentTintColor = isActive ? .labelColor : .secondaryLabelColor
         needsDisplay = true
     }
 
-    override var wantsUpdateLayer: Bool { false }
+    override var wantsUpdateLayer: Bool { true }
 
-    override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds
-        if isActive {
-            // A raised surface with a hairline edge: the tab in front reads as the
-            // top of the page underneath it.
-            let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
-            Self.activeFill.setFill()
-            path.fill()
-            NSColor.labelColor.withAlphaComponent(0.10).setStroke()
-            path.lineWidth = 0.5
-            path.stroke()
-        } else if hovering {
-            NSColor.labelColor.withAlphaComponent(0.05).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill()
-        } else if showsTrailingDivider {
-            NSColor.labelColor.withAlphaComponent(0.12).setFill()
-            NSRect(x: rect.maxX - 1, y: rect.midY - 6, width: 1, height: 12).fill()
+    override func updateLayer() {
+        guard let layer else { return }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            if isActive {
+                layer.backgroundColor = Chrome.raised.cgColor
+                layer.borderWidth = 0.5
+                layer.borderColor = Chrome.hairlineStrong.cgColor
+                layer.shadowColor = NSColor.black.cgColor
+                layer.shadowOpacity = 0.06
+                layer.shadowRadius = 1.5
+                layer.shadowOffset = CGSize(width: 0, height: -1)
+            } else {
+                layer.backgroundColor = hovering ? Chrome.hoverFill.cgColor : nil
+                layer.borderWidth = 0
+                layer.shadowOpacity = 0
+            }
         }
-    }
-
-    /// White in light mode, a lifted grey in dark: the elevated surface.
-    private static let activeFill = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor.white.withAlphaComponent(0.10)
-            : NSColor.white.withAlphaComponent(0.92)
     }
 
     // MARK: Mouse
@@ -259,51 +226,8 @@ private final class SideTabView: NSView {
         return menu
     }
 
-    /// The toolbar would otherwise read a drag on the tab as a window drag.
+    /// A tab is a control, not titlebar: dragging it must not move the window.
     override var mouseDownCanMoveWindow: Bool { false }
 
     @objc private func closePressed() { onClose() }
-}
-
-/// A borderless icon button that fills lightly under the pointer.
-@MainActor
-final class HoverFillButton: NSButton {
-    private var hovering = false {
-        didSet { if hovering != oldValue { needsDisplay = true } }
-    }
-    private var trackingArea: NSTrackingArea?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        isBordered = false
-        imagePosition = .imageOnly
-        contentTintColor = .secondaryLabelColor
-        refusesFirstResponder = true
-    }
-    convenience init() { self.init(frame: .zero) }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: .zero,
-                                  options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
-                                  owner: self, userInfo: nil)
-        addTrackingArea(area)
-        trackingArea = area
-    }
-
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        if hovering || isHighlighted {
-            NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.10 : 0.06).setFill()
-            let radius = min(bounds.width, bounds.height) / 2 > 10 ? 7 : bounds.height / 2
-            NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
-        }
-        super.draw(dirtyRect)
-    }
-
-    override var mouseDownCanMoveWindow: Bool { false }
 }

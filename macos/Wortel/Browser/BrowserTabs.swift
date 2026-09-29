@@ -4,8 +4,9 @@ import SwiftUI
 import WebKit
 
 /// Browsers in tabs: the dev server beside the agent editing it, docs beside
-/// the terminal. A browser is a tab like any other: "+" opens one, it moves
-/// between rows, a session can have several, and it can become a window.
+/// the terminal. A browser is a tab like any other: "+" or ⇧⌘L opens one, it
+/// moves between rows, and a session can have several. There's no window of
+/// its own: the way out is your browser, which is better at being one.
 ///
 /// One live page per tab, kept here rather than in the view, for the same
 /// reason terminals live in their keepers: a tab moves between rows and
@@ -22,14 +23,11 @@ final class BrowserTabs {
     static let shared = BrowserTabs()
 
     private var pages: [UUID: BrowserPage] = [:]
-    @ObservationIgnored private var windows: [BrowserWindowController] = []
 
     /// Where a browser tab is, from its session.
     @ObservationIgnored var address: (UUID) -> URL? = { _ in nil }
     /// A browser tab went somewhere: record it on its session.
     @ObservationIgnored var onNavigate: (UUID, URL) -> Void = { _, _ in }
-    /// A tab became a window: take the tab away.
-    @ObservationIgnored var onMovedToWindow: (UUID) -> Void = { _ in }
     /// What's serving on this Mac, the selected session's first: what an
     /// address field offers.
     @ObservationIgnored var servers: () -> [BrowserServer] = { [] }
@@ -49,20 +47,6 @@ final class BrowserTabs {
     /// A tab closed: let its page go.
     func forget(_ id: UUID) {
         pages.removeValue(forKey: id)?.close()
-    }
-
-    /// Turn a tab into a window, the same page and all, as a file tab can.
-    func openInWindow(_ id: UUID) {
-        let page = self.page(for: id)
-        pages[id] = nil
-        let controller = BrowserWindowController(page: page)
-        controller.onClose = { [weak self, weak controller] in
-            page.close()
-            self?.windows.removeAll { $0 === controller }
-        }
-        windows.append(controller)
-        controller.showWindow(nil)
-        onMovedToWindow(id)
     }
 }
 
@@ -242,34 +226,34 @@ struct BrowserServer: Identifiable, Equatable {
     var id: URL { url }
 }
 
-/// A browser: a slim header and the page. The same view in a tab and in a
-/// window; only the tab offers to become a window.
+/// A browser: a slim header and the page.
 ///
 /// The address field suggests what's serving: every running server while
 /// it's empty or untouched, the ones matching what you type after that. A
 /// new browser, with nowhere to be yet, shows the same list as its page.
 struct BrowserTab: View {
     let page: BrowserPage
-    /// Turn the tab into a window; nil in a window.
-    var openInWindow: (() -> Void)?
 
     @State private var typed = ""
     /// Whether what's in the field is the user's rather than the page's.
     @State private var edited = false
     @State private var highlighted: URL?
     @FocusState private var editing: Bool
+    /// Where the address field is, so the suggestions hang from its edges.
+    @State private var field: CGRect = .zero
 
     var body: some View {
         let servers = BrowserTabs.shared.servers()
         let suggestions = matching(servers)
         VStack(spacing: 0) {
-            BrowserHeader(page: page, openInWindow: openInWindow, typed: $typed, edited: $edited,
+            BrowserHeader(page: page, typed: $typed, edited: $edited,
                           editing: $editing, suggestions: suggestions, highlighted: $highlighted,
                           go: go)
+                .onPreferenceChange(AddressFieldFrame.self) { field = $0 }
             Rectangle()
                 .fill(Color(nsColor: Chrome.hairline))
                 .frame(height: 1)
-            ZStack(alignment: .top) {
+            ZStack(alignment: .topLeading) {
                 WebViewHost(page: page)
                 if page.location == nil {
                     // Nowhere yet: the page is what you could open.
@@ -280,14 +264,17 @@ struct BrowserTab: View {
                     PageNotice(spinner: false, text: failure)
                 }
                 if editing, page.location != nil, !suggestions.isEmpty {
+                    // Hung from the field: its left edge, its width, just
+                    // under the header's line.
                     SuggestionList(servers: suggestions, highlighted: highlighted, pick: go)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 6)
+                        .frame(width: max(field.width, 260))
+                        .offset(x: field.minX, y: 3)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: Chrome.content))
+        .coordinateSpace(.named(AddressFieldFrame.space))
         // Another browser in the same row is another web view to borrow.
         .id(ObjectIdentifier(page))
     }
@@ -309,11 +296,17 @@ struct BrowserTab: View {
     }
 }
 
-/// Back, forward, reload, the address, and the ways out: a window, or your
-/// browser. Laid out like a file tab's header.
+/// Where the address field sits in its browser.
+private struct AddressFieldFrame: PreferenceKey {
+    static let space = "browser"
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
+/// Back, forward, reload, the address, and the way out to your browser.
+/// Laid out like a file tab's header.
 private struct BrowserHeader: View {
     let page: BrowserPage
-    let openInWindow: (() -> Void)?
     @Binding var typed: String
     @Binding var edited: Bool
     var editing: FocusState<Bool>.Binding
@@ -350,11 +343,12 @@ private struct BrowserHeader: View {
                 .frame(height: 24)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(nsColor: editing.wrappedValue ? Chrome.hoverFill : .clear)))
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: AddressFieldFrame.self,
+                                           value: proxy.frame(in: .named(AddressFieldFrame.space)))
+                })
                 .padding(.leading, 4)
-            if let openInWindow {
-                button("macwindow.badge.plus", "Open in New Window", action: openInWindow)
-            }
-            button("arrow.up.forward.square", "Open in Browser", action: page.openInBrowser)
+            button("arrow.up.forward.square", "Open in Your Browser", action: page.openInBrowser)
                 .disabled(page.location == nil)
         }
         .padding(.horizontal, 8)
@@ -429,17 +423,16 @@ private struct SuggestionList: View {
             }
         }
         .padding(4)
-        .frame(maxWidth: 420, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color(nsColor: Chrome.raised))
             .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Color(nsColor: Chrome.hairlineStrong), lineWidth: 0.5)))
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// A new browser's page: what's running to open, or how to get somewhere.
+/// A new browser's page: what's running to open, or how to get somewhere,
+/// in the middle of the page as an empty state is.
 private struct BlankPage: View {
     let servers: [BrowserServer]
     let highlighted: URL?
@@ -451,8 +444,8 @@ private struct BlankPage: View {
                 Text("Nothing is serving yet. Type an address, or just a port like 3000.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 80)
             } else {
                 Text("Running")
                     .font(.system(size: 12, weight: .medium))
@@ -468,9 +461,10 @@ private struct BlankPage: View {
             }
         }
         .frame(maxWidth: 460, alignment: .leading)
-        .padding(.top, 40)
         .padding(.horizontal, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // A little above the middle, where the eye puts "the middle".
+        .padding(.bottom, 40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: Chrome.content))
     }
 }
@@ -567,42 +561,5 @@ private struct WebViewHost: NSViewRepresentable {
         guard webView.superview !== container else { return }
         webView.frame = container.bounds
         container.addSubview(webView)
-    }
-}
-
-/// A browser tab turned into a window: the same page, titled by it.
-@MainActor
-private final class BrowserWindowController: NSWindowController, NSWindowDelegate {
-    var onClose: () -> Void = {}
-    private let page: BrowserPage
-
-    init(page: BrowserPage) {
-        self.page = page
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered, defer: false)
-        window.contentViewController = NSHostingController(rootView: BrowserTab(page: page))
-        window.setContentSize(NSSize(width: 1100, height: 760))
-        window.isReleasedWhenClosed = false
-        window.setFrameAutosaveName("BrowserWindow")
-        window.center()
-        super.init(window: window)
-        window.delegate = self
-        followTitle()
-    }
-
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-
-    private func followTitle() {
-        withObservationTracking {
-            window?.title = page.tabTitle
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.followTitle() }
-        }
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        onClose()
     }
 }

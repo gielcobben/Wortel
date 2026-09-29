@@ -372,6 +372,15 @@ enum MainMenu {
         let newTerminal = viewMenu.addItem(withTitle: "New Terminal Tab", action: #selector(AppDelegate.newTerminalHere(_:)), keyEquivalent: "t")
         newTerminal.keyEquivalentModifierMask = [.command]
         newTerminal.image = NSImage(systemSymbolName: "apple.terminal", accessibilityDescription: nil)
+        // ⇧⌘L: a browser in the row you're in, as cmux opens its browser. ⌘L,
+        // as in Safari and Chrome, puts you in the address field of the
+        // browser in front; with none, the item is disabled and ⌘L goes on to
+        // the terminal.
+        let newBrowser = viewMenu.addItem(withTitle: "New Browser Tab", action: #selector(AppDelegate.newBrowserHere(_:)), keyEquivalent: "l")
+        newBrowser.keyEquivalentModifierMask = [.command, .shift]
+        newBrowser.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+        let openLocation = viewMenu.addItem(withTitle: "Open Location", action: #selector(AppDelegate.openBrowserLocation(_:)), keyEquivalent: "l")
+        openLocation.keyEquivalentModifierMask = [.command]
         let newBottom = viewMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "`")
         newBottom.keyEquivalentModifierMask = [.control, .shift]
         let reopen = viewMenu.addItem(withTitle: "Reopen Closed Tab", action: #selector(AppDelegate.reopenClosedTab(_:)), keyEquivalent: "t")

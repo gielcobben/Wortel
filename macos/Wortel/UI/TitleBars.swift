@@ -530,6 +530,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             self?.git.openBrowser(at: nil, in: region)
         }
         Self.setGlyph("globe", on: browser)
+        browser.keyEquivalent = "l"
+        browser.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(browser)
 
         menu.addItem(.separator())
@@ -572,6 +574,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             self?.git.openBrowser(at: nil, in: .main)
         }
         Self.setGlyph("globe", on: browser)
+        browser.keyEquivalent = "l"
+        browser.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(browser)
         let strip = ClosureMenuItem(title: git.bottomVisible ? "Hide Strip" : "Show Strip") { [weak self] in
             self?.git.toggleBottom()

@@ -324,8 +324,7 @@ Besides panes and terminals, a tab can be a previewed file (`SideTab.file`) or
 a browser (`SideTab.browser(id)`, `Wortel/Browser/`), opened blank from "+" or
 on a server from the running-jobs popover. A browser's address lives on its
 session (`browserAddresses`, persisted) and its live web view in
-`BrowserTabs`, not in the view, so moving the tab or making it a window
-doesn't reload it.
+`BrowserTabs`, not in the view, so moving the tab doesn't reload it.
 
 A tab is in exactly one row; the one in front fills its area. Any tab goes in
 any row, except the session's terminal, which never leaves the

@@ -40,6 +40,8 @@ in, or moved to with ⌘] / ⌘[.
 |---|---|---|
 | New terminal tab here | ⌘T | everyone (new tab); in a terminal, a new shell where you are |
 | New terminal in the bottom strip | ⌃⇧` | VS Code, Zed |
+| New browser tab here | ⇧⌘L | cmux |
+| Go to the address field of the browser in front | ⌘L | Safari, Chrome |
 | Close tab | ⌘W | everyone |
 | Reopen closed tab | ⇧⌘T | Safari, VS Code, Zed, iTerm, Ghostty, ChatGPT |
 | Next / previous tab | ⌃Tab / ⌃⇧Tab, ⌥⌘→ / ⌥⌘← | Safari, Terminal, Ghostty; VS Code, Zed, ChatGPT |
@@ -49,6 +51,7 @@ in, or moved to with ⌘] / ⌘[.
 
 ⌘W closes what you're in. With your session's own terminal in front, that is the
 session, the same as closing a tab in any other terminal ends its shell.
+With no browser in front, ⌘L is left to the terminal.
 
 ## Files
 

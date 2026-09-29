@@ -210,9 +210,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     return BrowserServer(url: url, label: job.label, session: session)
                 }
         }
-        BrowserTabs.shared.onMovedToWindow = { [weak self] id in
-            self?.gitPanel.close(.browser(id))
-        }
         gitPanel.onTabClosed = { [weak self] tab in
             if let path = tab.filePath { self?.previewTabs.forget(path) }
             if let id = tab.browserID { BrowserTabs.shared.forget(id) }
@@ -800,6 +797,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// ⇧⌘L: a new browser in the row you're in.
+    @objc func newBrowserHere(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.openBrowser(at: nil, in: focusedRegion())
+    }
+
+    /// ⌘L: the address field of the browser in front, the area you're in
+    /// first.
+    @objc func openBrowserLocation(_ sender: Any?) {
+        guard let id = frontBrowser() else { return }
+        BrowserTabs.shared.page(for: id).focusAddress()
+    }
+
+    private func frontBrowser() -> UUID? {
+        let regions: [TabRegion] = [focusedRegion(), .side, .main, .bottom]
+        let visible = regions.filter { region in
+            switch region {
+            case .main: return true
+            case .side: return gitPanel.isVisible
+            case .bottom: return gitPanel.bottomVisible
+            }
+        }
+        return visible.lazy.compactMap { self.gitPanel.activeTab(in: $0)?.browserID }.first
+    }
+
     @objc func newBottomTerminal(_ sender: Any?) {
         focusMainWindow()
         gitPanel.openBottomTerminal()
@@ -1007,6 +1029,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(showPreviewFind(_:)) {
             return findableFileTab() != nil
+        }
+        if menuItem.action == #selector(openBrowserLocation(_:)) {
+            return frontBrowser() != nil
         }
         if menuItem.action == #selector(reopenClosedTab(_:)) {
             return gitPanel.canReopenClosedTab

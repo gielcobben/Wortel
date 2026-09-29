@@ -279,9 +279,10 @@ enum MainMenu {
         let selectAll = editMenu.addItem(withTitle: "Select All", action: #selector(SurfaceView.selectAll(_:)), keyEquivalent: "a")
         selectAll.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
-        // A preview window answers it for its file; in the main window
-        // AppDelegate does, for the file or terminal in front of the area
-        // you're in (a terminal's scrollback, through libghostty's search).
+        // Only ever enabled while a preview window is key: it resolves through
+        // the responder chain to PreviewWindowController, and nothing in the
+        // main window implements it. That's what lets ⌘F live in the menu
+        // without taking it away from the shell, where ⌘F is the terminal's.
         editMenu.addItem(withTitle: "Find",
                          action: #selector(PreviewWindowController.showPreviewFind(_:)),
                          keyEquivalent: "f")

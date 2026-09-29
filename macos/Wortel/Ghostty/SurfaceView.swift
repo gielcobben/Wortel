@@ -45,23 +45,6 @@ final class SurfaceView: NSView {
     private(set) var pwd: String?
     private(set) var focused: Bool = false
 
-    /// The find bar while a search is open (⌘F). Not a subview: libghostty
-    /// owns this view's layer. It sits beside it and follows it; see
-    /// TerminalFindBar.
-    var findBar: TerminalFindBar?
-    /// The keeper session this terminal is (its tab's id for a side terminal):
-    /// what its recorded modes are filed under.
-    let sessionID: UUID?
-
-    override var isHidden: Bool {
-        didSet { findBar?.isHidden = isHidden }
-    }
-
-    override func viewDidMoveToSuperview() {
-        super.viewDidMoveToSuperview()
-        attachFindBar()
-    }
-
     // IME / preedit state (see keyDown for the dance).
     private var markedText = NSMutableAttributedString()
     private var keyTextAccumulator: [String]? = nil
@@ -139,7 +122,6 @@ final class SurfaceView: NSView {
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
          sessionID: UUID? = nil, initialInput: String? = nil, fontSize: Float = 0) {
         self.runtime = runtime
-        self.sessionID = sessionID
 
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -456,7 +438,7 @@ final class SurfaceView: NSView {
     }
 
     @discardableResult
-    func performBinding(_ action: String) -> Bool {
+    private func performBinding(_ action: String) -> Bool {
         guard let surface else { return false }
         onUserInput?()
         return action.withCString { ptr in

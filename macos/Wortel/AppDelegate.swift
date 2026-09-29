@@ -889,37 +889,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func moveTabDown(_ sender: Any?) { moveFocusedTab(.minY) }
     @objc func moveTabUp(_ sender: Any?) { moveFocusedTab(.maxY) }
 
-    /// ⌘F: find in what's in front of the area you're in. A file tab gets
-    /// its find bar, as a preview window's; a terminal gets its scrollback
-    /// searched (TerminalFindBar). Anything else (a pane, a browser), then
-    /// the first file or terminal in front anywhere.
+    /// ⌘F with a file tab showing: that file's find bar, as a preview window's.
+    /// The tab in front of the area you're in first, then any area's. With no
+    /// searchable file on screen the item is disabled and ⌘F goes on to the
+    /// terminal, as it always has.
     @objc func showPreviewFind(_ sender: Any?) {
-        switch findTarget() {
-        case .file(let path)?: previewTabs.document(for: path).find.isPresented = true
-        case .terminal(let surface)?: surface.startSearch()
-        case nil: break
-        }
+        guard let path = findableFileTab() else { return }
+        previewTabs.document(for: path).find.isPresented = true
     }
 
-    private enum FindTarget {
-        case file(String)
-        case terminal(SurfaceView)
-    }
-
-    private func findTarget() -> FindTarget? {
-        let session = manager.selected
-        for region in [focusedRegion(), .main, .side, .bottom] {
-            switch gitPanel.activeTab(in: region) {
-            case .file(let path)?:
-                let document = previewTabs.document(for: path).document
-                if document.mode != .rendered, !document.isBinary { return .file(path) }
-            case .terminal(let id)?:
-                if let surface = session?.sideSurfaces[id] { return .terminal(surface) }
-            case .session?:
-                if let surface = session?.surfaceView { return .terminal(surface) }
-            default:
-                continue
-            }
+    private func findableFileTab() -> String? {
+        let fronts = [focusedRegion(), .side, .main, .bottom].map { gitPanel.activeTab(in: $0) }
+        for case let path? in fronts.map({ $0?.filePath }) {
+            let document = previewTabs.document(for: path).document
+            if document.mode != .rendered, !document.isBinary { return path }
         }
         return nil
     }
@@ -1063,7 +1046,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         if menuItem.action == #selector(showPreviewFind(_:)) {
-            return findTarget() != nil
+            return findableFileTab() != nil
         }
         if menuItem.action == #selector(openBrowserLocation(_:)) {
             return frontBrowser() != nil

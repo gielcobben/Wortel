@@ -57,11 +57,10 @@ With no browser in front, ⌘L is left to the terminal.
 
 | Action | Shortcut |
 |---|---|
-| Find in the file or terminal in front | ⌘F |
-| Next / previous match | Return / ⇧Return |
+| Find in the file tab in front | ⌘F |
 | Open a file or server in the main area, this once | ⌥-click |
 
-In a terminal, ⌘F searches its scrollback; Escape closes the bar.
+With no file tab showing, ⌘F is left to the terminal.
 
 Files and browsers open in the column until you move one somewhere else; after
 that, that kind opens where you last moved one, per session.

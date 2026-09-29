@@ -202,6 +202,12 @@ final class GitPanelModel {
     /// Read every checkout of the shown repo and what's in each.
     func loadCheckouts() async {
         guard let repo else { checkouts = []; return }
+        // The newest read wins, for the session it was read for: ⌃Tab held
+        // down starts one per tab, and a slow one finishing last, or one for
+        // the session you just left, must not write over it.
+        checkoutGeneration += 1
+        let generation = checkoutGeneration
+        let owner = session
         let root = repo.root
         let cwd = session?.cwd
         var terminal: String? = root
@@ -211,7 +217,11 @@ final class GitPanelModel {
         }
         let worktrees = await GitService.worktrees(root: root)
         guard worktrees.count > 1 else {
-            if repo === self.repo { checkouts = []; terminalCheckout = terminal }
+            if generation == checkoutGeneration, repo === self.repo, owner === session {
+                checkouts = []
+                terminalCheckout = terminal
+                checkoutsRead = (Self.checkoutsKey(root: root, pinned: pinnedCheckout), Date())
+            }
             return
         }
         let head = repo.status.head
@@ -225,10 +235,27 @@ final class GitPanelModel {
             found.append(Checkout(path: worktree.path, branch: worktree.branch,
                                   changes: status.changes.count, ahead: ahead))
         }
-        // Only if the repo didn't change underneath.
-        guard repo === self.repo else { return }
+        guard generation == checkoutGeneration, repo === self.repo, owner === session else { return }
         terminalCheckout = terminal
         if found != checkouts { checkouts = found }
+        checkoutsRead = (Self.checkoutsKey(root: root, pinned: pinnedCheckout), Date())
+    }
+
+    @ObservationIgnored private var checkoutGeneration = 0
+    /// What the checkouts were last read for, and when: they're read again
+    /// when the repo or the pin changes, or when they're a while old, not on
+    /// every tab pick (each read is a `git status` per worktree).
+    @ObservationIgnored private var checkoutsRead: (key: String, at: Date)?
+    private static let checkoutsMaxAge: TimeInterval = 30
+
+    private static func checkoutsKey(root: String, pinned: String?) -> String {
+        root + "\u{0}" + (pinned ?? "")
+    }
+
+    private func checkoutsAreCurrent(for root: String) -> Bool {
+        guard let read = checkoutsRead else { return false }
+        return read.key == Self.checkoutsKey(root: root, pinned: pinnedCheckout)
+            && Date().timeIntervalSince(read.at) < Self.checkoutsMaxAge
     }
 
     /// True once a cwd has been resolved and it turned out not to be a repo — so
@@ -824,6 +851,17 @@ final class GitPanelModel {
         guard let root = await GitService.repoRoot(for: cwd) else {
             // The user may have switched away while we awaited.
             guard currentCwd == cwd else { return }
+            // The checkout this session was pointed at is gone (a worktree
+            // removed): back to the terminal's, rather than a panel reading
+            // "not a git repository" with no way out of it.
+            if let session, cwd == session.gitCheckout {
+                session.gitCheckout = nil
+                pinnedCheckout = nil
+                onStateChanged?()
+                currentCwd = session.cwd
+                await resolve(cwd: session.cwd)
+                return
+            }
             repo = nil
             resolvedNonRepo = true
             return
@@ -844,6 +882,6 @@ final class GitPanelModel {
             resolvedNonRepo = false
             await model.refresh()
         }
-        await loadCheckouts()
+        if !checkoutsAreCurrent(for: root) { await loadCheckouts() }
     }
 }

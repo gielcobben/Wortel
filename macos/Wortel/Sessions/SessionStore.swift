@@ -65,6 +65,8 @@ struct PersistedSession: Codable {
     let bottomTabs: [UUID]?
     let activeBottomTab: UUID?
     let bottomVisible: Bool?
+    /// What ⌘⇧T can bring back, as `ClosedTab` raw values, newest last.
+    let closedTabs: [String]?
 
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
@@ -91,7 +93,7 @@ struct PersistedSession: Codable {
     enum CodingKeys: String, CodingKey {
         case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
-        case bottomTabs, activeBottomTab, bottomVisible
+        case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case runningAgent, runningModel, runningArgv, runningConversationID
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
@@ -105,6 +107,7 @@ struct PersistedSession: Codable {
          sideTabs: [String]? = nil, activeSideTab: String? = nil,
          sideColumnWidth: Double? = nil,
          bottomTabs: [UUID]? = nil, activeBottomTab: UUID? = nil, bottomVisible: Bool? = nil,
+         closedTabs: [String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
@@ -119,6 +122,7 @@ struct PersistedSession: Codable {
         self.bottomTabs = bottomTabs
         self.activeBottomTab = activeBottomTab
         self.bottomVisible = bottomVisible
+        self.closedTabs = closedTabs
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -165,6 +169,7 @@ struct PersistedSession: Codable {
         bottomTabs = try c.decodeIfPresent([UUID].self, forKey: .bottomTabs)
         activeBottomTab = try c.decodeIfPresent(UUID.self, forKey: .activeBottomTab)
         bottomVisible = try c.decodeIfPresent(Bool.self, forKey: .bottomVisible)
+        closedTabs = try c.decodeIfPresent([String].self, forKey: .closedTabs)
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.

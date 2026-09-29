@@ -83,8 +83,8 @@ final class Session: Identifiable {
     var bottomTabs: [UUID] = []
     var activeBottomTab: UUID?
     var bottomVisible = false
-    /// Tabs closed in this session, newest last, for ⌘⇧T. Not persisted: a
-    /// relaunch is not an undo boundary anyone expects to reach across.
+    /// Tabs closed in this session, newest last, for ⌘⇧T. Persisted, so a
+    /// relaunch (an update, a crash) doesn't quietly empty it.
     @ObservationIgnored var closedTabs: [ClosedTab] = []
 
     /// Every terminal tab id the session holds, wherever it sits.

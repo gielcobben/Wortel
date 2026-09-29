@@ -126,8 +126,14 @@ final class SideTabStrip: NSView {
 /// One tab: glyph, title, and the close button that appears on the tab in
 /// front and on hover. Layer-drawn so the raised tab's shadow can fall outside
 /// its bounds.
+///
+/// An NSControl, not a plain view, and that is the fix for dragging it. In a
+/// transparent titlebar the window server moves the window from anywhere that
+/// isn't a control (buttons are, which is why the titlebar's own buttons always
+/// worked); `mouseDownCanMoveWindow` only speaks for AppKit's half of that
+/// decision, so a plain view that says no still let the window take the drag.
 @MainActor
-private final class SideTabView: NSView {
+private final class SideTabView: NSControl {
     let tab: SideTab
     var onSelect: () -> Void = {}
     var onClose: () -> Void = {}
@@ -151,6 +157,8 @@ private final class SideTabView: NSView {
     init(tab: SideTab) {
         self.tab = tab
         super.init(frame: .zero)
+        // A tab takes clicks, never the keyboard: that stays in the terminal.
+        refusesFirstResponder = true
         wantsLayer = true
         layer?.cornerRadius = 8
         layer?.cornerCurve = .continuous

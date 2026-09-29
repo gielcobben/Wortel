@@ -356,6 +356,23 @@ struct ClosedTab: Sendable {
     let tab: SideTab
     let region: TabRegion
     let index: Int
+
+    /// `side:2:changes`, the form it's saved in: a relaunch shouldn't empty
+    /// the list of what ⌘⇧T can bring back.
+    var rawValue: String { "\(region.rawValue):\(index):\(tab.rawValue)" }
+
+    init(tab: SideTab, region: TabRegion, index: Int) {
+        self.tab = tab
+        self.region = region
+        self.index = index
+    }
+
+    init?(rawValue: String) {
+        let parts = rawValue.split(separator: ":", maxSplits: 2).map(String.init)
+        guard parts.count == 3, let region = TabRegion(rawValue: parts[0]),
+              let index = Int(parts[1]), let tab = SideTab(rawValue: parts[2]) else { return nil }
+        self.init(tab: tab, region: region, index: index)
+    }
 }
 
 /// How a diff line renders: drives its gutter numbers, sign, and tint.

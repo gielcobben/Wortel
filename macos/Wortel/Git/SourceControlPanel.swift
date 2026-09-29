@@ -6,10 +6,13 @@ import SwiftUI
 /// `GitPanelModel`, which points it at the selected session's repo.
 struct SourceControlPanel: View {
     @Bindable var panel: GitPanelModel
+    /// Which of the two panes, when the caller knows: a row shows its own tab,
+    /// and with two rows the model's last-chosen pane can be the other one.
+    var pane: InspectorPane? = nil
 
     var body: some View {
         Group {
-            switch panel.pane {
+            switch pane ?? panel.pane {
             case .changes:
                 if let repo = panel.repo {
                     VStack(spacing: 0) {

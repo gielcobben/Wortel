@@ -30,7 +30,9 @@ struct InspectorContainer: View {
             switch git.activeTab {
             case .pane(.files)?:
                 FileTreePanel(model: files, focusRequest: git.listFocusRequest)
-            case .pane?, nil:
+            case .pane(let pane)?:
+                SourceControlPanel(panel: git, pane: pane)
+            case nil:
                 SourceControlPanel(panel: git)
             case .terminal?, .session?:
                 EmptyView()

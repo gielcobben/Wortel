@@ -220,7 +220,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.confirmCloseSideTerminal(proceed)
         }
         gitPanel.onFocusMainTerminal = { [weak self] in
-            guard let self, let view = self.manager.selected?.surfaceView else { return }
+            // Not while a tab in the main area's row covers the terminal.
+            guard let self, self.gitPanel.activeMainTab == nil,
+                  let view = self.manager.selected?.surfaceView else { return }
             self.window?.makeFirstResponder(view)
         }
 
@@ -651,6 +653,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             gitPanel.requestClose(tab)
             return
         }
+        // A tab in front in the main area covers the session's terminal; ⌘W
+        // closes that tab, never the session hidden behind it.
+        if let active = gitPanel.activeMainTab {
+            gitPanel.requestClose(active)
+            return
+        }
         manager.requestCloseSelected()
     }
 
@@ -664,11 +672,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func toggleBottomStrip(_ sender: Any?) {
         focusMainWindow()
         gitPanel.toggleBottom()
-    }
-
-    @objc func toggleFullView(_ sender: Any?) {
-        focusMainWindow()
-        gitPanel.toggleFullView()
     }
 
     @objc func toggleColumnSide(_ sender: Any?) {
@@ -809,10 +812,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(reopenClosedTab(_:)) {
             return gitPanel.canReopenClosedTab
-        }
-        if menuItem.action == #selector(toggleFullView(_:)) {
-            menuItem.title = gitPanel.isFullView ? "Exit Full View" : "Enter Full View"
-            return true
         }
         if menuItem.action == #selector(toggleColumnSide(_:)) {
             menuItem.title = gitPanel.columnLeading

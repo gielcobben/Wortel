@@ -57,11 +57,24 @@ final class GitPanelModel {
     /// Whether the pending `bottomVisible` change should animate; false when a
     /// session switch drove it, for the same reason as the column's.
     @ObservationIgnored private(set) var animatesBottomChange = false
-    /// Mirrors of the focused session's full view (only ever true while the
-    /// column is up) and which side the column is on.
-    private(set) var isFullView = false
-    private(set) var fullViewShowsTerminal = false
+    /// Mirrors the main area's tab row: the tabs after the session's terminal,
+    /// and the one in front (nil: the terminal).
+    private(set) var mainTabs: [SideTab] = []
+    private(set) var activeMainTab: SideTab?
+    /// Bumped when a terminal in the main area's row should take the keyboard.
+    private(set) var mainFocusRequest = 0
+    /// Which side the column is on.
     private(set) var columnLeading = false
+
+    /// Whether the Files pane is on screen, in either row: the one thing the
+    /// file tree's upkeep is for.
+    var showsFiles: Bool {
+        (isVisible && activeTab == .pane(.files)) || activeMainTab == .pane(.files)
+    }
+
+    /// Whether a repo view could be on screen anywhere, which is when resolving
+    /// and refreshing the repo is worth doing.
+    private var needsRepo: Bool { isVisible || activeMainTab?.pane != nil }
 
     /// Tabs closed in this session and not reopened yet, for the menu item.
     var canReopenClosedTab: Bool { !(session?.closedTabs.isEmpty ?? true) }
@@ -159,10 +172,10 @@ final class GitPanelModel {
             animatesVisibilityChange = animated
             isVisible = visible
         }
-        let full = visible && (session?.sideFullView ?? false)
-        if full != isFullView { isFullView = full }
-        let showsTerminal = full && (session?.fullViewShowsTerminal ?? false)
-        if showsTerminal != fullViewShowsTerminal { fullViewShowsTerminal = showsTerminal }
+        let main = session?.mainTabs ?? []
+        if main != mainTabs { mainTabs = main }
+        let activeMain = session?.activeMainTab
+        if activeMain != activeMainTab { activeMainTab = activeMain }
         let leading = session?.sideColumnLeading ?? false
         if leading != columnLeading { columnLeading = leading }
         let bottom = session?.bottomTabs ?? []
@@ -187,6 +200,11 @@ final class GitPanelModel {
     /// The single implementation behind both the toolbar and the menu, so ⌘⌥G,
     /// ⌘⌥E and the segments can't drift apart.
     func activate(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
+        // In the main area's row: the same toggle, against the terminal.
+        if mainTabs.contains(.pane(requested)) {
+            selectMain(activeMainTab == .pane(requested) ? .session : .pane(requested))
+            return
+        }
         if isVisible && activeTab == .pane(requested) {
             setVisible(false)
             resolveCurrent()
@@ -228,6 +246,11 @@ final class GitPanelModel {
     /// column opens with it: asking for a tab means wanting to see it.
     func open(_ tab: SideTab) {
         guard let session else { return }
+        // Already open in the main area's row: that's where it is.
+        if session.mainTabs.contains(tab) {
+            selectMain(tab)
+            return
+        }
         if !session.sideTabs.contains(tab) {
             session.sideTabs.append(tab)
         }
@@ -243,7 +266,6 @@ final class GitPanelModel {
     func select(_ tab: SideTab) {
         guard let session, session.sideTabs.contains(tab) else { return }
         session.activeSideTab = tab
-        session.fullViewShowsTerminal = false
         if let pane = tab.pane { setPane(pane) }
         let wasVisible = isVisible
         session.gitPanelVisible = true
@@ -289,6 +311,8 @@ final class GitPanelModel {
         // another terminal took its place there; otherwise hand it back.
         if region == .side, isVisible, activeTab?.terminalID != nil {
             terminalFocusRequest += 1
+        } else if region == .main, activeMainTab?.terminalID != nil {
+            mainFocusRequest += 1
         } else if region == .bottom, bottomVisible, activeBottomTab != nil {
             bottomFocusRequest += 1
         } else {
@@ -310,11 +334,17 @@ final class GitPanelModel {
                     ? nil : owner.sideTabs[min(index, owner.sideTabs.count - 1)]
                 if let pane = owner.activeSideTab?.pane { owner.inspectorPane = pane }
             }
-            if owner.sideTabs.isEmpty {
-                owner.gitPanelVisible = false
-                owner.sideFullView = false
-            }
+            if owner.sideTabs.isEmpty { owner.gitPanelVisible = false }
             return (.side, index)
+        }
+        if let index = owner.mainTabs.firstIndex(of: tab) {
+            owner.mainTabs.remove(at: index)
+            if owner.activeMainTab == tab {
+                // Its neighbour, or the terminal when it was the only one.
+                owner.activeMainTab = owner.mainTabs.isEmpty
+                    ? nil : owner.mainTabs[min(index, owner.mainTabs.count - 1)]
+            }
+            return (.main, index)
         }
         if let id = tab.terminalID, let index = owner.bottomTabs.firstIndex(of: id) {
             owner.bottomTabs.remove(at: index)
@@ -392,6 +422,10 @@ final class GitPanelModel {
             let at = min(max(index, 0), session.sideTabs.count)
             session.sideTabs.insert(tab, at: at)
             select(tab)
+        case .main:
+            let at = min(max(index, 0), session.mainTabs.count)
+            session.mainTabs.insert(tab, at: at)
+            selectMain(tab)
         case .bottom:
             guard let id = tab.terminalID else { return }
             let at = min(max(index, 0), session.bottomTabs.count)
@@ -404,35 +438,51 @@ final class GitPanelModel {
         onStateChanged?()
     }
 
-    // MARK: - Full view and sides
+    // MARK: - The main area's row
 
-    /// Full view on or off. Turning it on needs a column with something in
-    /// it; it opens with the column's tab in front. ⌘⇧F.
-    func setFullView(_ on: Bool) {
+    /// Bring a tab of the main area's row to the front; `.session` is the
+    /// session's own terminal.
+    func selectMain(_ tab: SideTab) {
         guard let session else { return }
-        if on, session.sideTabs.isEmpty { open(.pane(Self.defaultPane)) }
-        session.sideFullView = on && !session.sideTabs.isEmpty
-        session.fullViewShowsTerminal = false
-        if on { session.gitPanelVisible = true }
+        if tab == .session {
+            session.activeMainTab = nil
+        } else {
+            guard session.mainTabs.contains(tab) else { return }
+            session.activeMainTab = tab
+            if let pane = tab.pane { setPane(pane) }
+        }
         mirror(session, animated: false)
         onStateChanged?()
         resolveCurrent()
-        if on, activeTab?.terminalID != nil {
-            terminalFocusRequest += 1
-        } else if !on {
+        if tab == .session {
             onFocusMainTerminal?()
+        } else if tab.terminalID != nil {
+            mainFocusRequest += 1
         }
     }
 
-    func toggleFullView() { setFullView(!isFullView) }
+    /// Open `tab` in `region`'s row: to the front if it's there already,
+    /// moved over if it's in the other row, added at the end otherwise. What
+    /// "+" in a row means: here.
+    func open(_ tab: SideTab, in region: TabRegion) {
+        guard let session else { return }
+        let here = region == .main ? session.mainTabs.contains(tab) : session.sideTabs.contains(tab)
+        let elsewhere = session.mainTabs.contains(tab) || session.sideTabs.contains(tab)
+        if here {
+            region == .main ? selectMain(tab) : select(tab)
+        } else if elsewhere {
+            move(tab, to: region, at: .max)
+        } else {
+            insert(tab, into: region, at: .max, in: session)
+        }
+    }
 
-    /// The pinned session tab in full view: the session's terminal in front.
-    func showSessionTerminal() {
-        guard let session, isFullView else { return }
-        session.fullViewShowsTerminal = true
-        mirror(session, animated: false)
-        onStateChanged?()
-        onFocusMainTerminal?()
+    /// A new shell in the main area's row.
+    func openMainTerminal() {
+        guard let session else { return }
+        let tab = SideTab.terminal(UUID())
+        session.mainTabs.append(tab)
+        selectMain(tab)
     }
 
     /// Put the column on the terminal's leading or trailing side.
@@ -545,9 +595,9 @@ final class GitPanelModel {
         onStateChanged?()
     }
 
-    /// Resolve the current cwd to a repo, if the panel is actually up.
+    /// Resolve the current cwd to a repo, if a repo view could be on screen.
     private func resolveCurrent() {
-        guard isVisible else { return }
+        guard needsRepo else { return }
         let cwd = currentCwd
         Task { await resolve(cwd: cwd) }
     }
@@ -555,7 +605,7 @@ final class GitPanelModel {
     /// A command finished in the shown repo's session — the work tree may have
     /// changed. Debounced so a chatty run collapses to a single refresh.
     func refreshCurrent() {
-        guard isVisible, let repo else { return }
+        guard needsRepo, let repo else { return }
         refreshWorkItem?.cancel()
         let item = DispatchWorkItem { Task { await repo.refresh() } }
         refreshWorkItem = item

@@ -339,10 +339,6 @@ enum MainMenu {
         let bottomStrip = viewMenu.addItem(withTitle: "Show Bottom Strip", action: #selector(AppDelegate.toggleBottomStrip(_:)), keyEquivalent: "j")
         bottomStrip.keyEquivalentModifierMask = [.command]
         bottomStrip.image = NSImage(systemSymbolName: "rectangle.bottomthird.inset.filled", accessibilityDescription: nil)
-        // ⌘⇧F: the column's tab takes the window, as ChatGPT's full view.
-        let fullView = viewMenu.addItem(withTitle: "Enter Full View", action: #selector(AppDelegate.toggleFullView(_:)), keyEquivalent: "f")
-        fullView.keyEquivalentModifierMask = [.command, .shift]
-        fullView.image = NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: nil)
         viewMenu.addItem(withTitle: "Move Side Column to the Left", action: #selector(AppDelegate.toggleColumnSide(_:)), keyEquivalent: "")
         let reopen = viewMenu.addItem(withTitle: "Reopen Closed Tab", action: #selector(AppDelegate.reopenClosedTab(_:)), keyEquivalent: "t")
         reopen.keyEquivalentModifierMask = [.command, .shift]

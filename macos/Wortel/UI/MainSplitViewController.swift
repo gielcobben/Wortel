@@ -80,9 +80,6 @@ final class MainSplitViewController: NSSplitViewController {
     private let titleBars: TitleBarController
     private var sidebarItem: NSSplitViewItem!
     private var contentItem: NSSplitViewItem!
-    /// Whether the last apply left the window in full view, so leaving it can
-    /// put the column back at its width.
-    private var wasFullView = false
 
     init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
          files: FileTreeModel, titleBars: TitleBarController) {
@@ -134,17 +131,16 @@ final class MainSplitViewController: NSSplitViewController {
         // shrinkable; ghostty reflows to whatever width it gets, so a narrow
         // terminal is cramped rather than broken.
         let bottomPane = BottomPaneController(runtime: runtime, manager: manager, git: git)
-        let workspace = TerminalWorkspaceController(
-            top: NSHostingController(rootView: DetailPane(
+        let mainArea = MainAreaController(
+            terminal: NSHostingController(rootView: DetailPane(
                 runtime: runtime, manager: manager, git: git, files: files)),
-            bottom: bottomPane, git: git)
+            runtime: runtime, manager: manager, git: git, files: files)
+        let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
         let detail = ChromePaneController(
             bar: titleBars.mainBar, content: workspace, bodyColor: Chrome.content)
         let contentItem = NSSplitViewItem(viewController: detail)
         contentItem.minimumThickness = 80
         contentItem.holdingPriority = NSLayoutConstraint.Priority(250)
-        // Collapsible so full view can put it away; see `applyFullView`.
-        contentItem.canCollapse = true
         self.contentItem = contentItem
         addSplitViewItem(contentItem)
 
@@ -168,7 +164,10 @@ final class MainSplitViewController: NSSplitViewController {
         addSplitViewItem(item)
         inspectorItem = item
 
-        sidebarItem.holdingPriority = NSLayoutConstraint.Priority(260)
+        // The highest of the three: whatever else moves (the column opening,
+        // moving sides, a window resize), the sidebar keeps its width. At the
+        // column's own priority it would sometimes absorb part of a change.
+        sidebarItem.holdingPriority = NSLayoutConstraint.Priority(270)
 
         // Set last: NSSplitView restores saved divider positions the moment the
         // name is assigned, so every item has to exist by then. It carries the
@@ -183,7 +182,7 @@ final class MainSplitViewController: NSSplitViewController {
         let drag = TabDragController()
         drag.strips = [
             .init(strip: titleBars.sideBar.strip, region: .side),
-            .init(strip: titleBars.mainBar.strip, region: .side),
+            .init(strip: titleBars.mainBar.strip, region: .main),
             .init(strip: bottomPane.bar.strip, region: .bottom),
         ]
         drag.terminalArea = { [weak workspace] in
@@ -192,10 +191,6 @@ final class MainSplitViewController: NSSplitViewController {
             return view.convert(view.bounds, to: nil)
         }
         drag.columnLeading = { [weak self] in self?.git.columnLeading ?? false }
-        drag.onFullView = { [weak self] tab in
-            self?.bringIntoColumn(tab)
-            self?.git.setFullView(true)
-        }
         drag.onSwap = { [weak self] tab, leading in
             self?.bringIntoColumn(tab)
             self?.git.setColumnLeading(leading)
@@ -267,8 +262,6 @@ final class MainSplitViewController: NSSplitViewController {
             // The width is the session's, so a session switch has to reach here
             // even when the column stays up on both sides of it.
             _ = manager.selectedID
-            _ = git.isFullView
-            _ = git.fullViewShowsTerminal
             _ = git.columnLeading
         } onChange: { [weak self] in
             Task { @MainActor in
@@ -280,50 +273,11 @@ final class MainSplitViewController: NSSplitViewController {
     }
 
     /// Everything about the column's place in the window: which side it's on,
-    /// full view, and otherwise whether it's up and how wide.
+    /// whether it's up, and how wide.
     private func applyLayout() {
         applySide()
-        if git.isFullView {
-            applyFullView()
-            wasFullView = true
-            updateLeadingInsets()
-            return
-        }
-        if wasFullView {
-            wasFullView = false
-            syncingInspector = true
-            suspendWidthCapture = true
-            inspectorItem.maximumThickness = ColumnWidth.maximum
-            contentItem.isCollapsed = false
-            syncingInspector = false
-            applyInspectorVisibility()
-            // A turn later: the terminal has to be laid out again before the
-            // column can be given its width back beside it.
-            DispatchQueue.main.async { [weak self] in
-                self?.applyInspectorWidth()
-                self?.suspendWidthCapture = false
-            }
-        } else {
-            applyInspectorVisibility()
-        }
+        applyInspectorVisibility()
         updateLeadingInsets()
-    }
-
-    /// Full view: one of the two panes has the whole window, the other is put
-    /// away. The column, unless the pinned session tab is in front.
-    private func applyFullView() {
-        syncingInspector = true
-        suspendWidthCapture = true
-        inspectorItem.maximumThickness = NSSplitViewItem.unspecifiedDimension
-        if git.fullViewShowsTerminal {
-            contentItem.isCollapsed = false
-            inspectorItem.isCollapsed = true
-        } else {
-            inspectorItem.isCollapsed = false
-            contentItem.isCollapsed = true
-        }
-        syncingInspector = false
-        DispatchQueue.main.async { [weak self] in self?.suspendWidthCapture = false }
     }
 
     /// Put the column on the side the session wants it: re-inserted at index 1
@@ -444,8 +398,7 @@ final class MainSplitViewController: NSSplitViewController {
     /// the last width before it goes is the minimum — saving that would reopen
     /// the column pinned shut. A drag that ends collapsed records nothing.
     private func captureInspectorWidth(windowResized: Bool) {
-        // Full view's width is the window's, not a width anyone chose.
-        guard !windowResized, !suspendWidthCapture, !git.isFullView,
+        guard !windowResized, !suspendWidthCapture,
               let inspectorItem, !inspectorItem.isCollapsed else { return }
         let width = inspectorItem.viewController.view.frame.width
         guard width > 1, abs(width - lastAppliedWidth) > 1 else { return }
@@ -477,14 +430,7 @@ final class MainSplitViewController: NSSplitViewController {
 
         updateLeadingInsets()
 
-        guard !syncingInspector, !git.isFullView, let inspectorItem else { return }
-        // The terminal dragged shut by its divider: the column wanted the whole
-        // window, which is full view. (ChatGPT does the same when the chat is
-        // squeezed out.)
-        if contentItem?.isCollapsed == true, git.isVisible {
-            git.setFullView(true)
-            return
-        }
+        guard !syncingInspector, let inspectorItem else { return }
         let visible = !inspectorItem.isCollapsed
         guard visible != git.isVisible else { return }
         git.isPresented = visible

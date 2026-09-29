@@ -321,17 +321,15 @@ final class SidebarBar: ChromeBarView {
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 }
 
-/// Over the terminal: the session's name, and at the trailing end what the
-/// session is running and the side column's toggle while the column is hidden.
-/// With the sidebar collapsed it takes over the sidebar row's job too: room
-/// for the traffic lights, and a way to bring the sidebar back.
+/// Over the main area: its tab row (the session's own terminal pinned first,
+/// by name, then anything dragged or opened here), "+", and at the trailing end
+/// what the session is running and the toggles for the strip and the column.
+/// With the sidebar collapsed it takes over the sidebar row's job too: room for
+/// the traffic lights, and a way to bring the sidebar back.
 @MainActor
 final class MainBar: ChromeBarView {
-    let title = PassthroughLabel(labelWithString: "")
-    /// Full view with the session's terminal in front: the column's tab row,
-    /// pinned session tab first, where the title was.
     let strip = SideTabStrip()
-    let fullView = HoverFillButton.glyph("arrow.down.right.and.arrow.up.left", "Exit Full View")
+    let add = HoverFillButton.glyph("plus", "New Tab")
     let running = RunningJobsPill()
     let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column")
     let bottomToggle = HoverFillButton.glyph("rectangle.bottomthird.inset.filled", "Bottom Strip")
@@ -347,29 +345,20 @@ final class MainBar: ChromeBarView {
         sidebarControls.spacing = 2
         super.init()
 
-        title.font = .systemFont(ofSize: 13, weight: .medium)
-        title.textColor = .labelColor
-        title.lineBreakMode = .byTruncatingTail
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let trailing = NSStackView(views: [running, bottomToggle, fullView, sideToggle])
-        fullView.isSelected = true
-        fullView.isHidden = true
-        strip.isHidden = true
+        strip.region = .main
         strip.setContentHuggingPriority(.init(1), for: .horizontal)
+        strip.setContentCompressionResistancePriority(.init(1), for: .horizontal)
         strip.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        let trailing = NSStackView(views: [add, running, bottomToggle, sideToggle])
         trailing.spacing = 4
-        let spacer = NSView()
-        spacer.setContentHuggingPriority(.init(1), for: .horizontal)
-        let row = NSStackView(views: [sidebarControls, title, strip, spacer, trailing])
+        let row = NSStackView(views: [sidebarControls, strip, trailing])
         row.spacing = 8
         row.alignment = .centerY
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
-        leading = row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16)
+        leading = row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         NSLayoutConstraint.activate([
             leading,
-            row.heightAnchor.constraint(equalToConstant: 28),
             row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             row.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -379,14 +368,7 @@ final class MainBar: ChromeBarView {
 
     func setSidebarCollapsed(_ collapsed: Bool) {
         sidebarControls.isHidden = !collapsed
-        leading.constant = collapsed ? Chrome.trafficLightInset : 16
-    }
-
-    /// Full view with the terminal in front: tabs instead of the title.
-    func setShowsTabs(_ shows: Bool) {
-        strip.isHidden = !shows
-        title.isHidden = shows
-        fullView.isHidden = !shows
+        leading.constant = collapsed ? Chrome.trafficLightInset : 8
     }
 }
 
@@ -396,10 +378,9 @@ final class MainBar: ChromeBarView {
 final class SideColumnBar: ChromeBarView {
     let strip = SideTabStrip()
     let add = HoverFillButton.glyph("plus", "New Tab")
-    let fullView = HoverFillButton.glyph("arrow.up.left.and.arrow.down.right", "Full View")
     let toggle = HoverFillButton.glyph("sidebar.right", "Hide Side Column")
     /// Shown when this row is the leftmost with the sidebar collapsed: the
-    /// way back to the sidebar, where the terminal's row would carry it.
+    /// way back to the sidebar, where the main area's row would carry it.
     let sidebarToggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar")
     private var stripLeading: NSLayoutConstraint!
 
@@ -410,7 +391,7 @@ final class SideColumnBar: ChromeBarView {
         sidebarToggle.isHidden = true
         sidebarToggle.translatesAutoresizingMaskIntoConstraints = false
         strip.translatesAutoresizingMaskIntoConstraints = false
-        let trailing = NSStackView(views: [add, fullView, toggle])
+        let trailing = NSStackView(views: [add, toggle])
         trailing.spacing = 4
         trailing.translatesAutoresizingMaskIntoConstraints = false
         addSubview(sidebarToggle)
@@ -433,14 +414,6 @@ final class SideColumnBar: ChromeBarView {
     func setSidebarCollapsed(_ collapsed: Bool) {
         sidebarToggle.isHidden = !collapsed
         stripLeading.constant = collapsed ? Chrome.trafficLightInset + 34 : 8
-    }
-
-    /// In full view the column has the window: the full-view button reads as
-    /// on, and hiding the column (which would end it) steps aside for it.
-    func setFullView(_ on: Bool) {
-        fullView.isSelected = on
-        fullView.toolTip = on ? "Exit Full View" : "Full View"
-        toggle.isHidden = on
     }
 }
 
@@ -554,42 +527,33 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         sideBar.toggle.action = #selector(toggleSideColumn)
         sideBar.add.target = self
         sideBar.add.action = #selector(presentNewTabMenu(_:))
-        sideBar.fullView.target = self
-        sideBar.fullView.action = #selector(toggleFullView)
-        mainBar.fullView.target = self
-        mainBar.fullView.action = #selector(toggleFullView)
+        mainBar.add.target = self
+        mainBar.add.action = #selector(presentNewTabMenu(_:))
         mainBar.running.target = self
         mainBar.running.action = #selector(openRunningJobs(_:))
 
-        // The column's tab row, and the same row over the terminal in full view.
-        for strip in [sideBar.strip, mainBar.strip] {
-            strip.onSelect = { [weak self] tab in
-                if tab == .session { self?.git.showSessionTerminal() } else { self?.git.select(tab) }
-            }
-            strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-            strip.onCloseOthers = { [weak self] keep in
-                guard let self else { return }
-                self.git.select(keep)
-                for tab in self.git.tabs where tab != keep { self.git.requestClose(tab) }
-            }
-            strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
+        // The column's tab row.
+        sideBar.strip.onSelect = { [weak self] tab in self?.git.select(tab) }
+        sideBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
+        sideBar.strip.onCloseOthers = { [weak self] keep in
+            guard let self else { return }
+            self.git.select(keep)
+            for tab in self.git.tabs where tab != keep { self.git.requestClose(tab) }
         }
+        sideBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
+        // The main area's row.
+        mainBar.strip.onSelect = { [weak self] tab in self?.git.selectMain(tab) }
+        mainBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
+        mainBar.strip.onCloseOthers = { [weak self] keep in
+            guard let self else { return }
+            for tab in self.git.mainTabs where tab != keep { self.git.requestClose(tab) }
+        }
+        mainBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
     }
 
     func start() {
-        observeTitle()
         observeColumn()
         observeProcesses()
-    }
-
-    // MARK: Title
-
-    private func observeTitle() {
-        withObservationTracking {
-            mainBar.title.stringValue = manager.selected?.name ?? "Wortel"
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeTitle() }
-        }
     }
 
     // MARK: Side column
@@ -607,27 +571,21 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         mainBar.bottomToggle.isSelected = git.bottomVisible
         mainBar.bottomToggle.toolTip = git.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip"
         let titles = manager.selected?.sideTerminalTitles ?? [:]
-        var items = git.tabs.map { tab -> SideTabStrip.Item in
+        func item(_ tab: SideTab) -> SideTabStrip.Item {
             switch tab {
             case .pane(let pane):
                 return .init(tab: tab, title: pane.title, symbol: pane.symbol)
             case .terminal(let id):
                 return .init(tab: tab, title: Self.terminalTitle(titles[id]), symbol: "apple.terminal")
             case .session:
-                return .init(tab: tab, title: "Terminal", symbol: "apple.terminal")
+                // The session's own terminal: pinned first, by the session's name.
+                let name = manager.selected.map { SessionName.leaf(of: $0.name) } ?? "Terminal"
+                return .init(tab: tab, title: name, symbol: "terminal", pinned: true)
             }
         }
-        // Full view: the session's own terminal is the pinned first tab.
-        if git.isFullView {
-            let name = manager.selected.map { SessionName.leaf(of: $0.name) } ?? "Terminal"
-            items.insert(.init(tab: .session, title: name, symbol: "terminal", pinned: true), at: 0)
-        }
-        let active: SideTab? = git.fullViewShowsTerminal ? .session : git.activeTab
-        sideBar.strip.update(items: items, active: active)
-        mainBar.strip.update(items: items, active: active)
-        mainBar.setShowsTabs(git.fullViewShowsTerminal)
-        sideBar.setFullView(git.isFullView)
-        mainBar.bottomToggle.isHidden = git.isFullView && !git.fullViewShowsTerminal
+        sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)
+        mainBar.strip.update(items: ([.session] + git.mainTabs).map(item),
+                             active: git.activeMainTab ?? .session)
     }
 
     /// What a shell titled itself, trimmed to what fits on a tab. Shells title a
@@ -649,10 +607,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         git.toggle()
     }
 
-    @objc private func toggleFullView() {
-        git.toggleFullView()
-    }
-
     @objc private func toggleBottom() {
         git.toggleBottom()
     }
@@ -667,28 +621,30 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     /// Right-aligned under the button, so it opens into the window rather than
     /// off its side.
     @objc private func presentNewTabMenu(_ sender: NSView) {
+        // "+" means here: the row whose button it is.
+        let region: TabRegion = sender === mainBar.add ? .main : .side
         let menu = NSMenu()
         menu.autoenablesItems = false
 
         let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
-            self?.git.openTerminal()
+            if region == .main { self?.git.openMainTerminal() } else { self?.git.openTerminal() }
         }
         Self.setGlyph("apple.terminal", on: terminal)
-        terminal.keyEquivalent = "`"
-        terminal.keyEquivalentModifierMask = [.control]
+        if region == .side {
+            terminal.keyEquivalent = "`"
+            terminal.keyEquivalentModifierMask = [.control]
+        }
         menu.addItem(terminal)
 
         menu.addItem(.separator())
         for pane in InspectorPane.allCases {
-            let item = ClosureMenuItem(title: pane.title) { [weak self] in self?.git.show(pane) }
+            let item = ClosureMenuItem(title: pane.title) { [weak self] in
+                self?.git.open(.pane(pane), in: region)
+            }
             Self.setGlyph(pane.symbol, on: item)
             // How much is waiting in Changes, as a native count badge.
             if pane == .changes, let count = git.repo?.status.changes.count, count > 0 {
                 item.badge = NSMenuItemBadge(count: count)
-            }
-            if pane == .files {
-                item.keyEquivalent = "e"
-                item.keyEquivalentModifierMask = [.command, .option]
             }
             menu.addItem(item)
         }
@@ -710,9 +666,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.bounds.height + 4), in: sender)
     }
 
-    /// A glyph that actually shows. macOS 27 decides for itself whether a menu
-    /// item's image is drawn and "will typically hide" it (NSMenuItem.h); an
-    /// item has to ask for `.visible` to keep the one it was given.
     private static func setGlyph(_ symbol: String, on item: NSMenuItem) {
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))

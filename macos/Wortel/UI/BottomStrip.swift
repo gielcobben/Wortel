@@ -297,8 +297,6 @@ final class TabDragController {
     private enum Target: Equatable {
         case strip(TabRegion, index: Int, marker: NSRect)
         case zone(TabRegion, area: NSRect)
-        /// The middle of the terminal: open the tab in full view.
-        case fullView(area: NSRect)
         /// The terminal's edge away from the column: the column moves there.
         case swap(leading: Bool, area: NSRect)
     }
@@ -311,7 +309,6 @@ final class TabDragController {
     var onDrop: (SideTab, TabRegion, Int) -> Void = { _, _, _ in }
     /// Which side the column is on now.
     var columnLeading: () -> Bool = { false }
-    var onFullView: (SideTab) -> Void = { _ in }
     var onSwap: (SideTab, Bool) -> Void = { _, _ in }
 
     private var overlay: TabDragOverlay?
@@ -340,7 +337,6 @@ final class TabDragController {
             switch landing {
             case .strip(let region, let index, _): onDrop(tab, region, index)
             case .zone(let region, _): onDrop(tab, region, .max)
-            case .fullView: onFullView(tab)
             case .swap(let leading, _): onSwap(tab, leading)
             case nil: break
             }
@@ -360,13 +356,17 @@ final class TabDragController {
         case .zone(let region, let area):
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
-            overlay.zoneLabel = region == .bottom ? "Move to Bottom" : "Move to Side Column"
-            overlay.zoneEdge = region == .bottom ? .maxY : (columnLeading() ? .maxX : .minX)
-        case .fullView(let area):
-            overlay.marker = nil
-            overlay.zone = overlay.convert(area, from: nil)
-            overlay.zoneLabel = "Open in Full View"
-            overlay.zoneEdge = .minY
+            switch region {
+            case .bottom:
+                overlay.zoneLabel = "Move to Bottom"
+                overlay.zoneEdge = .maxY
+            case .side:
+                overlay.zoneLabel = "Move to Side Column"
+                overlay.zoneEdge = columnLeading() ? .maxX : .minX
+            case .main:
+                overlay.zoneLabel = "Move Here"
+                overlay.zoneEdge = .minY
+            }
         case .swap(let leading, let area):
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
@@ -403,9 +403,10 @@ final class TabDragController {
             return .zone(.side, area: column)
         }
         guard let area = terminalArea() else { return nil }
-        // The terminal's two edges, a quarter of it each: the one on the
+        // The main area's two edges, a quarter of it each: the one on the
         // column's side opens the column (when it's hidden), the far one moves
-        // the column over to it. What's left in the middle is full view.
+        // the column over to it. What's left in the middle is the main area
+        // itself, and the overlay covers only it.
         let leading = columnLeading()
         let edge = area.width / 4
         let width = min(MainSplitViewController.ColumnWidth.lastChosen, area.width / 2)
@@ -421,8 +422,8 @@ final class TabDragController {
             return leading ? .swap(leading: false, area: rightPane)
                            : (column == nil ? .zone(.side, area: rightPane) : nil)
         }
-        if area.contains(point) {
-            return .fullView(area: area.union(column ?? area))
+        if area.contains(point), tab.fits(.main) {
+            return .zone(.main, area: area)
         }
         return nil
     }

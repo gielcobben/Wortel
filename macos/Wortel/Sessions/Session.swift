@@ -80,11 +80,11 @@ final class Session: Identifiable {
     /// The strip under the session's terminal: its terminals in order, the one
     /// in front, and whether it's showing. Hiding keeps them, closing the last
     /// one hides it. Persisted.
-    /// Full view: the side column takes the whole window, and the session's
-    /// terminal becomes the pinned first tab of its strip. `fullViewShowsTerminal`
-    /// is which of the two is in front. Persisted.
-    var sideFullView = false
-    var fullViewShowsTerminal = false
+    /// The main area's tabs after the session's own terminal (which is always
+    /// first and isn't stored), and the one in front: nil is the terminal.
+    /// Persisted.
+    var mainTabs: [SideTab] = []
+    var activeMainTab: SideTab?
     /// The side column on the terminal's leading side rather than its trailing
     /// one. Persisted.
     var sideColumnLeading = false
@@ -96,7 +96,9 @@ final class Session: Identifiable {
     @ObservationIgnored var closedTabs: [ClosedTab] = []
 
     /// Every terminal tab id the session holds, wherever it sits.
-    var terminalTabIDs: [UUID] { sideTabs.compactMap(\.terminalID) + bottomTabs }
+    var terminalTabIDs: [UUID] {
+        sideTabs.compactMap(\.terminalID) + mainTabs.compactMap(\.terminalID) + bottomTabs
+    }
     /// Full title reported by the shell (user@host:cwd, or the running
     /// program). Kept for reference; not currently shown.
     var title: String

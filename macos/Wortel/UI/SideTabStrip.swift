@@ -39,9 +39,11 @@ final class SideTabStrip: NSView {
     var onDrag: (DragPhase, SideTab, NSView, NSPoint) -> Void = { _, _, _, _ in }
 
     static let tabHeight: CGFloat = Chrome.controlSize
-    /// Wide enough for a dozen characters of title beside the glyph and the
-    /// close button's room: past that a row scrolls rather than shrinking
-    /// tabs into initials.
+    /// How far a long title's tab gives way when the row is short of room:
+    /// about a dozen characters of it still showing. A tab whose whole title
+    /// fits in less (Files, History) is never widened to it or cut below its
+    /// own width; past that, the row scrolls rather than shrinking tabs into
+    /// initials.
     static let minTabWidth: CGFloat = 130
     static let maxTabWidth: CGFloat = 240
     private static let gap: CGFloat = 4
@@ -173,13 +175,22 @@ final class SideTabStrip: NSView {
     private func plan() -> Plan {
         let room = max(0, bounds.width - accessoryWidth)
         let gaps = Self.gap * CGFloat(max(tabViews.count - 1, 0))
-        var widths = tabViews.map { min(max($0.fittingWidth, Self.minTabWidth), Self.maxTabWidth) }
-        let wanted = widths.reduce(0, +)
-        // Shrink together first, never below the readable minimum; past that,
-        // the row scrolls.
-        if wanted + gaps > room, wanted > 0 {
-            let scale = max(0, room - gaps) / wanted
-            widths = widths.map { max(Self.minTabWidth, ($0 * scale).rounded(.down)) }
+        // Each tab as wide as its title, up to the maximum, and never
+        // narrower than that title or the readable minimum, whichever is less.
+        let natural = tabViews.map { min(ceil($0.fittingWidth), Self.maxTabWidth) }
+        let floors = natural.map { min($0, Self.minTabWidth) }
+        var widths = natural
+        // Short of room, the tabs that can give way shrink together; one that
+        // reaches its floor stays there and the rest take up the difference.
+        // Once they're all at their floors, the row scrolls.
+        let available = max(0, room - gaps)
+        for _ in widths.indices where widths.reduce(0, +) > available {
+            let giving = widths.indices.filter { widths[$0] > floors[$0] }
+            let fixed = widths.indices.filter { widths[$0] <= floors[$0] }.map { widths[$0] }.reduce(0, +)
+            let flexible = giving.map { widths[$0] }.reduce(0, +)
+            guard flexible > 0 else { break }
+            let scale = max(0, available - fixed) / flexible
+            for i in giving { widths[i] = max(floors[i], (widths[i] * scale).rounded(.down)) }
         }
         var x: CGFloat = 0
         let y = ((bounds.height - Self.tabHeight) / 2).rounded()

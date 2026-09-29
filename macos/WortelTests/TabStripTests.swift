@@ -48,10 +48,16 @@ final class TabStripTests: XCTestCase {
         super.tearDown()
     }
 
+    @discardableResult
     private func show(_ count: Int, active: Int = 0) -> [SideTab] {
-        let tabs = (0..<count).map { _ in SideTab.terminal(UUID()) }
-        let items = tabs.enumerated().map {
-            SideTabStrip.Item(tab: $0.element, title: "Terminal \($0.offset)", symbol: "apple.terminal")
+        show(titles: (0..<count).map { "Terminal \($0)" }, active: active)
+    }
+
+    @discardableResult
+    private func show(titles: [String], active: Int = 0) -> [SideTab] {
+        let tabs = titles.map { _ in SideTab.terminal(UUID()) }
+        let items = zip(tabs, titles).map {
+            SideTabStrip.Item(tab: $0.0, title: $0.1, symbol: "apple.terminal")
         }
         strip.update(items: items, active: tabs[active])
         strip.needsLayout = true
@@ -115,7 +121,7 @@ final class TabStripTests: XCTestCase {
     /// Too many tabs: each stays readable, the row scrolls, and "+" stays in
     /// view just past the visible end.
     func testAnOverflowingRowKeepsTabsReadableAndPlusInView() {
-        show(12)
+        show(titles: (0..<12).map { "A long running terminal \($0)" })
         for tab in tabViews {
             XCTAssertGreaterThanOrEqual(tab.frame.width, SideTabStrip.minTabWidth)
         }
@@ -126,10 +132,34 @@ final class TabStripTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(plus.frame.minX, visible, "+ is past the visible tabs")
     }
 
+    /// Short titles aren't padded to the minimum: Changes, History and Files
+    /// fit side by side in a row too narrow for three minimum-width tabs.
+    func testShortTitlesKeepTheirOwnWidth() {
+        strip.frame.size.width = 380
+        show(titles: ["Changes", "History", "Files"])
+        XCTAssertEqual(strip.scroll.documentView?.frame.width ?? 0, strip.scroll.frame.width,
+                       accuracy: 0.5, "all three fit, nothing to scroll")
+        XCTAssertLessThan(tabViews.last?.frame.width ?? .infinity, SideTabStrip.minTabWidth)
+    }
+
+    /// Short of room, a long title gives way down to the minimum while a short
+    /// one keeps its whole title.
+    func testLongTitlesGiveWayBeforeShortOnes() {
+        strip.frame.size.width = 360
+        show(titles: ["Files", "npm run dev in the web folder of this repo"])
+        let squeezed = (short: tabViews[0].frame.width, long: tabViews[1].frame.width)
+        XCTAssertGreaterThanOrEqual(squeezed.long, SideTabStrip.minTabWidth)
+        XCTAssertLessThan(squeezed.long, SideTabStrip.maxTabWidth, "it gave way")
+        strip.frame.size.width = 900
+        strip.needsLayout = true
+        strip.layoutSubtreeIfNeeded()
+        XCTAssertEqual(tabViews[0].frame.width, squeezed.short, "Files didn't shrink")
+        XCTAssertEqual(tabViews[1].frame.width, SideTabStrip.maxTabWidth, "with room, it's back")
+    }
+
     /// The tab in front is scrolled into view when it's past the edge.
     func testTheTabInFrontIsScrolledIntoView() {
-        let tabs = show(12, active: 11)
-        _ = tabs
+        show(12, active: 11)
         let last = try! XCTUnwrap(tabViews.last)
         let visible = strip.scroll.contentView.bounds
         XCTAssertLessThanOrEqual(last.frame.maxX, visible.maxX + 0.5)

@@ -161,8 +161,10 @@ final class TabHoverCard {
         case .text(let text)?:
             previewImage.isHidden = true
             previewText.isHidden = false
-            previewText.stringValue = text
-            let lines = max(1, text.split(separator: "\n", omittingEmptySubsequences: false).count)
+            let (fitted, size) = Self.fit(text, width: width - 16)
+            previewText.font = .monospacedSystemFont(ofSize: size, weight: .regular)
+            previewText.stringValue = fitted
+            let lines = max(1, fitted.split(separator: "\n", omittingEmptySubsequences: false).count)
             let lineHeight = ceil((previewText.font?.boundingRectForFont.height ?? 11))
             let height = min(Self.previewMaxHeight, CGFloat(lines) * lineHeight + 12)
             previewText.frame = NSRect(x: 8, y: 6, width: width - 16, height: height - 12)
@@ -176,6 +178,26 @@ final class TabHoverCard {
             previewImage.frame = NSRect(x: 0, y: 0, width: width, height: height)
             return height
         }
+    }
+
+    /// Text made to fit `width`: the indent every line shares taken off, and
+    /// the font as large as fits the widest line, between 6 and 9pt. A rule
+    /// drawn across the whole screen (`────`) doesn't count as a line to fit:
+    /// clipped, it's still a rule.
+    static func fit(_ text: String, width: CGFloat) -> (String, CGFloat) {
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let indent = lines.filter { !$0.allSatisfy(\.isWhitespace) }
+            .map { $0.prefix { $0 == " " }.count }.min() ?? 0
+        if indent > 0 { lines = lines.map { String($0.dropFirst(min(indent, $0.prefix { $0 == " " }.count))) } }
+        let ruleCharacters = Set("-=_~─━═┄┈╌")
+        let isRule = { (line: String) in
+            let ink = line.filter { !$0.isWhitespace }
+            return ink.count > 8 && ink.allSatisfy(ruleCharacters.contains)
+        }
+        let columns = lines.filter { !isRule($0) }.map(\.count).max() ?? 1
+        let unit = ("M" as NSString).size(withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)]).width / 10
+        let size = min(9, max(6, (width / (CGFloat(max(columns, 1)) * unit)).rounded(.down)))
+        return (lines.joined(separator: "\n"), size)
     }
 
     /// The title as the tab shows it, to tell whether it was cut short.

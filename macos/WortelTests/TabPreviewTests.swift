@@ -26,6 +26,22 @@ final class TabPreviewTests: XCTestCase {
         XCTAssertNil(TabPreview.terminal(nil))
     }
 
+    /// The text shrinks to fit its widest line, down to a floor, after the
+    /// shared indent is gone; a full-width rule doesn't set the width.
+    @MainActor
+    func testAPreviewFitsItsWidestLine() {
+        let (short, shortSize) = TabHoverCard.fit("  ab\n  cd", width: 284)
+        XCTAssertEqual(short, "ab\ncd")
+        XCTAssertEqual(shortSize, 9, "short lines stay at the largest size")
+
+        let wide = String(repeating: "x", count: 70)
+        XCTAssertLessThan(TabHoverCard.fit(wide, width: 284).1, 9)
+        XCTAssertEqual(TabHoverCard.fit(String(repeating: "x", count: 400), width: 284).1, 6, "never below 6")
+
+        let rule = String(repeating: "─", count: 200)
+        XCTAssertEqual(TabHoverCard.fit("$ ls\n\(rule)", width: 284).1, 9)
+    }
+
     func testAFilePreviewIsItsTop() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("preview-\(UUID()).md")
         try "# Title\n\tindented\nthird\nfourth\n".write(to: url, atomically: true, encoding: .utf8)

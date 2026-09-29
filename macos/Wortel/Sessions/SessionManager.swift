@@ -515,8 +515,10 @@ final class SessionManager {
                 .flatMap { session.bottomTabs.contains($0) ? $0 : nil } ?? session.bottomTabs.first
             session.bottomVisible = (entry.bottomVisible ?? false) && !session.bottomTabs.isEmpty
             session.closedTabs = (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:))
-            session.mainTabs = (entry.mainTabs ?? []).compactMap(SideTab.init(rawValue:))
-                .filter { $0 != .session }
+            var mainTabs = (entry.mainTabs ?? []).compactMap(SideTab.init(rawValue:))
+            // The session's terminal, exactly once: first when the file had none.
+            if !mainTabs.contains(.session) { mainTabs.insert(.session, at: 0) }
+            session.mainTabs = mainTabs
             session.activeMainTab = entry.activeMainTab.flatMap(SideTab.init(rawValue:))
                 .flatMap { session.mainTabs.contains($0) ? $0 : nil }
             session.sideColumnLeading = entry.sideColumnLeading ?? false

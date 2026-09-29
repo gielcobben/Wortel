@@ -172,7 +172,7 @@ final class GitPanelModel {
             animatesVisibilityChange = animated
             isVisible = visible
         }
-        let main = session?.mainTabs ?? []
+        let main = session?.mainTabs ?? [.session]
         if main != mainTabs { mainTabs = main }
         let activeMain = session?.activeMainTab
         if activeMain != activeMainTab { activeMainTab = activeMain }
@@ -233,7 +233,7 @@ final class GitPanelModel {
     /// something to show.
     func toggle() {
         if !isVisible, tabs.isEmpty {
-            open(.pane(Self.defaultPane))
+            fillEmptyColumn()
             return
         }
         setVisible(!isVisible)
@@ -295,7 +295,7 @@ final class GitPanelModel {
     /// `target` is for a tab closing in a session that isn't the focused one,
     /// which is what a side shell exiting in the background looks like.
     func close(_ tab: SideTab, in target: Session? = nil) {
-        guard let owner = target ?? session,
+        guard tab != .session, let owner = target ?? session,
               let (region, index) = detach(tab, from: owner) else { return }
         if let id = tab.terminalID { owner.closeSideSurface(id) }
         owner.closedTabs.append(ClosedTab(tab: tab, region: region, index: index))
@@ -361,7 +361,7 @@ final class GitPanelModel {
     /// A close the user asked for: the × on a tab, ⌘W in a side terminal. A
     /// terminal still running a program asks first; everything else just goes.
     func requestClose(_ tab: SideTab) {
-        guard let session else { return }
+        guard tab != .session, let session else { return }
         if let id = tab.terminalID, session.sideSurfaces[id]?.needsConfirmClose == true,
            let confirmCloseTerminal {
             confirmCloseTerminal { [weak self, weak session] in
@@ -446,6 +446,7 @@ final class GitPanelModel {
         guard let session else { return }
         if tab == .session {
             session.activeMainTab = nil
+            if !session.mainTabs.contains(.session) { session.mainTabs.insert(.session, at: 0) }
         } else {
             guard session.mainTabs.contains(tab) else { return }
             session.activeMainTab = tab
@@ -474,6 +475,20 @@ final class GitPanelModel {
             move(tab, to: region, at: .max)
         } else {
             insert(tab, into: region, at: .max, in: session)
+        }
+    }
+
+    /// Give an empty column something to show, when it's asked to open. The
+    /// pane last chosen, unless that one is in the main area's row (opening it
+    /// would only bring it forward there, and the column would stay shut): then
+    /// the first pane that isn't, and a terminal when all of them are.
+    private func fillEmptyColumn() {
+        guard let session else { return }
+        let panes = [Self.defaultPane] + InspectorPane.allCases
+        if let pane = panes.first(where: { !session.mainTabs.contains(.pane($0)) }) {
+            insert(.pane(pane), into: .side, at: .max, in: session)
+        } else {
+            openTerminal()
         }
     }
 
@@ -568,7 +583,7 @@ final class GitPanelModel {
         // An empty column has nothing to show; opening one goes through `open`.
         if visible, tabs.isEmpty {
             if let session, session.sideTabs.isEmpty {
-                open(.pane(Self.defaultPane))
+                fillEmptyColumn()
             }
             return
         }

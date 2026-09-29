@@ -80,10 +80,10 @@ final class Session: Identifiable {
     /// The strip under the session's terminal: its terminals in order, the one
     /// in front, and whether it's showing. Hiding keeps them, closing the last
     /// one hides it. Persisted.
-    /// The main area's tabs after the session's own terminal (which is always
-    /// first and isn't stored), and the one in front: nil is the terminal.
+    /// The main area's tabs, the session's own terminal (`.session`) among
+    /// them, always exactly once; and the one in front: nil is the terminal.
     /// Persisted.
-    var mainTabs: [SideTab] = []
+    var mainTabs: [SideTab] = [.session]
     var activeMainTab: SideTab?
     /// The side column on the terminal's leading side rather than its trailing
     /// one. Persisted.

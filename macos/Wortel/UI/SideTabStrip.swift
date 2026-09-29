@@ -19,7 +19,8 @@ final class SideTabStrip: NSView {
         let tab: SideTab
         let title: String
         let symbol: String
-        /// Full view's session tab: always first, never closed or dragged.
+        /// The session's own tab: never closed, no menu. It can still be dragged
+        /// within its row.
         var pinned = false
     }
 
@@ -110,9 +111,7 @@ final class SideTabStrip: NSView {
     /// index among this strip's tabs, decided by which side of a tab's middle
     /// the pointer is on, and the x (window coordinates) to draw the marker at.
     func insertion(atWindowX x: CGFloat) -> (index: Int, markerX: CGFloat) {
-        // Over the tabs that can move: a pinned tab holds its place and isn't
-        // counted, so the index is one into the column's own list.
-        let movable = tabViews.filter { !$0.pinned }
+        let movable = tabViews
         let local = convert(NSPoint(x: x, y: 0), from: nil).x
         for (index, view) in movable.enumerated() where local < view.frame.midX {
             let gapX = view.frame.minX - Self.gap / 2
@@ -284,7 +283,7 @@ private final class SideTabView: NSControl {
     /// handed on as it goes; released before that, it was just the pick.
     override func mouseDown(with event: NSEvent) {
         onSelect()
-        guard !pinned, let window else { return }
+        guard let window else { return }
         let start = event.locationInWindow
         var dragging = false
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {

@@ -304,6 +304,8 @@ final class TabDragController {
     var strips: [StripTarget] = []
     /// The session terminal's area, in window coordinates.
     var terminalArea: () -> NSRect? = { nil }
+    /// The bottom strip, bar and all, while it's showing, in window coordinates.
+    var bottomArea: () -> NSRect? = { nil }
     /// The side column's content area when it's showing, in window coordinates.
     var columnArea: () -> NSRect? = { nil }
     var onDrop: (SideTab, TabRegion, Int) -> Void = { _, _, _ in }
@@ -383,13 +385,20 @@ final class TabDragController {
         for entry in strips {
             guard let strip = entry.strip, strip.window != nil, !strip.isHiddenOrHasHiddenAncestor,
                   tab.fits(entry.region) else { continue }
-            let rect = strip.convert(strip.bounds, to: nil).insetBy(dx: 0, dy: -8)
+            // Wider than the tabs: aiming for the first or last place, the
+            // pointer runs past the row's end, and that still means "here".
+            let rect = strip.convert(strip.bounds, to: nil).insetBy(dx: -16, dy: -8)
             guard rect.contains(point) else { continue }
             let (index, x) = strip.insertion(atWindowX: point.x)
             let marker = NSRect(x: x - 1, y: rect.midY - 11, width: 2, height: 22)
             return .strip(entry.region, index: index, marker: marker)
         }
-        if tab.fits(.bottom), let area = terminalArea() {
+        // The session's tab only ever reorders in its own row.
+        guard tab != .session else { return nil }
+        if tab.fits(.bottom), let bottom = bottomArea(), bottom.contains(point) {
+            return .zone(.bottom, area: bottom)
+        }
+        if tab.fits(.bottom), bottomArea() == nil, let area = terminalArea() {
             let zone = NSRect(x: area.minX, y: area.minY, width: area.width, height: area.height / 4)
             if zone.contains(point) {
                 let height = min(TerminalWorkspaceController.Height.chosen, area.height * 0.6)

@@ -191,6 +191,12 @@ final class MainSplitViewController: NSSplitViewController {
             return view.convert(view.bounds, to: nil)
         }
         drag.columnLeading = { [weak self] in self?.git.columnLeading ?? false }
+        drag.bottomArea = { [weak self, weak bottomPane] in
+            guard let self, self.git.bottomVisible, let view = bottomPane?.view,
+                  view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+                  view.bounds.height > 1 else { return nil }
+            return view.convert(view.bounds, to: nil)
+        }
         drag.onSwap = { [weak self] tab, leading in
             self?.bringIntoColumn(tab)
             self?.git.setColumnLeading(leading)

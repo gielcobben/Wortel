@@ -546,7 +546,9 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         mainBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
         mainBar.strip.onCloseOthers = { [weak self] keep in
             guard let self else { return }
-            for tab in self.git.mainTabs where tab != keep { self.git.requestClose(tab) }
+            for tab in self.git.mainTabs where tab != keep && tab != .session {
+                self.git.requestClose(tab)
+            }
         }
         mainBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
     }
@@ -584,8 +586,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             }
         }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)
-        mainBar.strip.update(items: ([.session] + git.mainTabs).map(item),
-                             active: git.activeMainTab ?? .session)
+        mainBar.strip.update(items: git.mainTabs.map(item), active: git.activeMainTab ?? .session)
     }
 
     /// What a shell titled itself, trimmed to what fits on a tab. Shells title a

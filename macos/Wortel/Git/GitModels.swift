@@ -303,9 +303,9 @@ enum InspectorPane: String, CaseIterable, Identifiable {
 enum SideTab: Hashable, Sendable {
     case pane(InspectorPane)
     case terminal(UUID)
-    /// The session's own terminal, as the pinned first tab of the main area's
-    /// row. Never stored in a strip, never persisted, never dragged or closed:
-    /// it is what the main area goes back to.
+    /// The session's own terminal, as a tab of the main area's row. It can be
+    /// reordered there but never closed, and never leaves that row: it is what
+    /// the main area goes back to.
     case session
 
     private static let terminalPrefix = "terminal:"
@@ -353,7 +353,7 @@ enum TabRegion: String, Sendable {
 extension SideTab {
     /// Whether this tab may be put in `region`.
     func fits(_ region: TabRegion) -> Bool {
-        guard self != .session else { return false }
+        if self == .session { return region == .main }
         return region != .bottom || terminalID != nil
     }
 }

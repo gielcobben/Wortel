@@ -311,6 +311,7 @@ final class TabDragController {
     private weak var source: NSView?
 
     func handle(_ phase: SideTabStrip.DragPhase, tab: SideTab, view: NSView, point: NSPoint) {
+        tabsDebugLog.notice("drag \(String(describing: phase), privacy: .public) target=\(String(describing: self.target), privacy: .public)")
         switch phase {
         case .began:
             guard let window = view.window, let content = window.contentView else { return }

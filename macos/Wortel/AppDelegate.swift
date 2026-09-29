@@ -85,6 +85,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // lights in it. Compact is 40pt, next to the ChatGPT app's 42.
         window.titlebarSeparatorStyle = .none
         window.titlebarAppearsTransparent = true
+        // The window server's own titlebar dragging is off, and the rows start
+        // window moves themselves from their empty space (`performWindowDrag`,
+        // ChromeBarView). Left on, it moved the window from *anywhere* in the
+        // titlebar, tabs included, whatever the view under the pointer said:
+        // a tab drag carried the whole window along under the cursor, so the
+        // tab never moved relative to anything. This is how Electron apps, the
+        // ChatGPT app among them, give their titlebars draggable tabs. Moves
+        // started this way still snap, tile and cross Spaces like any other.
+        window.isMovable = false
         window.titleVisibility = .hidden
         let toolbar = NSToolbar(identifier: "wortel.main")
         toolbar.allowsUserCustomization = false
@@ -789,6 +798,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         if menuItem.action == #selector(reopenClosedTab(_:)) {
+            tabsDebugLog.notice("validate reopen -> \(self.gitPanel.canReopenClosedTab)")
             return gitPanel.canReopenClosedTab
         }
         if menuItem.action == #selector(toggleSideColumn(_:)) {

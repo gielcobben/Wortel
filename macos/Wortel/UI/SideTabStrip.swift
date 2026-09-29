@@ -276,6 +276,7 @@ private final class SideTabView: NSControl {
     /// track the mouse ourselves: past 6pt it's a drag (ChatGPT's threshold),
     /// handed on as it goes; released before that, it was just the pick.
     override func mouseDown(with event: NSEvent) {
+        tabsDebugLog.notice("tab mouseDown \(self.tab.rawValue, privacy: .public) region=\(self.stripRegion().rawValue, privacy: .public)")
         onSelect()
         guard let window else { return }
         let start = event.locationInWindow
@@ -283,10 +284,12 @@ private final class SideTabView: NSControl {
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             let point = next.locationInWindow
             if next.type == .leftMouseUp {
+                tabsDebugLog.notice("tab mouseUp dragging=\(dragging)")
                 if dragging { onDrag(.ended, point) }
                 return
             }
             if !dragging, hypot(point.x - start.x, point.y - start.y) >= 6 {
+                tabsDebugLog.notice("tab drag began")
                 dragging = true
                 onDrag(.began, start)
             }

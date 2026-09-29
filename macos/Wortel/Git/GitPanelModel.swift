@@ -264,6 +264,7 @@ final class GitPanelModel {
               let (region, index) = detach(tab, from: owner) else { return }
         if let id = tab.terminalID { owner.closeSideSurface(id) }
         owner.closedTabs.append(ClosedTab(tab: tab, region: region, index: index))
+        tabsDebugLog.notice("close \(tab.rawValue, privacy: .public) region=\(region.rawValue, privacy: .public) stack=\(owner.closedTabs.count) focusedSession=\(owner === self.session)")
         if owner.closedTabs.count > Self.closedTabLimit {
             owner.closedTabs.removeFirst(owner.closedTabs.count - Self.closedTabLimit)
         }
@@ -343,6 +344,7 @@ final class GitPanelModel {
     /// plain "last closed" stack felt random once tabs close in two places: the
     /// same key put things back in whichever one you'd happened to close last.
     func reopenClosedTab(in region: TabRegion) {
+        tabsDebugLog.notice("reopen region=\(region.rawValue, privacy: .public) hasSession=\(self.session != nil) stack=\(self.session?.closedTabs.count ?? -1)")
         guard let session, !session.closedTabs.isEmpty else { return }
         let index = session.closedTabs.lastIndex { $0.region == region }
             ?? session.closedTabs.count - 1

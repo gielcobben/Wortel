@@ -162,6 +162,12 @@ class HoverFillButton: NSButton {
     override var mouseDownCanMoveWindow: Bool { false }
 }
 
+/// A label that takes no clicks, so a press on the session's name falls
+/// through to the row and moves the window, as a title does.
+final class PassthroughLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 /// One pane's titlebar row: the band colour, a hairline along its bottom where
 /// the page starts, and titlebar behaviour for whatever of it is empty: drag
 /// moves the window, double-click does what the Mac is set to do.
@@ -187,6 +193,7 @@ class ChromeBarView: FilledView {
     /// Handled here rather than left to `mouseDownCanMoveWindow`, because a
     /// window-server drag never delivers the second click of a double-click.
     override func mouseDown(with event: NSEvent) {
+        tabsDebugLog.notice("bar mouseDown \(String(describing: type(of: self)), privacy: .public)")
         guard let window else { return }
         if event.clickCount == 2 {
             switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
@@ -321,7 +328,7 @@ final class SidebarBar: ChromeBarView {
 /// for the traffic lights, and a way to bring the sidebar back.
 @MainActor
 final class MainBar: ChromeBarView {
-    let title = NSTextField(labelWithString: "")
+    let title = PassthroughLabel(labelWithString: "")
     let running = RunningJobsPill()
     let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column")
     let bottomToggle = HoverFillButton.glyph("rectangle.bottomthird.inset.filled", "Bottom Strip")

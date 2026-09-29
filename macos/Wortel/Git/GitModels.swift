@@ -335,6 +335,10 @@ enum SideTab: Hashable, Sendable {
     }
 }
 
+import os
+/// Temporary: tracing tab drags and reopen while they're being debugged.
+let tabsDebugLog = Logger(subsystem: "com.gielcobben.Wortel", category: "tabs-debug")
+
 /// Where a tab can live: the side column, or the strip under the session's
 /// terminal. Panes only ever go in the column (a diff or a tree in a short,
 /// full-width strip is useless); terminals go in either.

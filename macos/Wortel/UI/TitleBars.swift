@@ -231,10 +231,6 @@ final class MainBar: ChromeBarView {
         strip.isHidden = true
         strip.setContentHuggingPriority(.init(1), for: .horizontal)
         strip.setContentCompressionResistancePriority(.init(1), for: .horizontal)
-        // The full row, as the other two rows' strips: a strip of a fixed
-        // height centred in a row whose height is measured at launch sat half
-        // a point off whenever the two differed by an odd amount.
-        strip.heightAnchor.constraint(equalTo: heightAnchor).isActive = true
 
         let trailing = NSStackView(views: [more, running, sideDivider, sideToggle])
         trailing.spacing = 4
@@ -245,6 +241,13 @@ final class MainBar: ChromeBarView {
         addSubview(row)
         leading = row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16)
         NSLayoutConstraint.activate([
+            // The full row, as the other two rows' strips: a strip of a fixed
+            // height centred in a row whose height is measured at launch sat
+            // half a point off whenever the two differed by an odd amount.
+            // Here, not where the strip is set up: a constraint between views
+            // that don't share a superview yet throws, and at launch that
+            // left the app with no window.
+            strip.heightAnchor.constraint(equalTo: heightAnchor),
             leading,
             row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             row.centerYAnchor.constraint(equalTo: centerYAnchor),

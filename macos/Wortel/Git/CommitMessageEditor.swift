@@ -64,6 +64,14 @@ struct CommitMessageEditor: NSViewRepresentable {
             textView.string = text
             context.coordinator.recomputeHeight()
         }
+        // The floor moved (the box opening up as you start writing, or back
+        // to a line): eased, and after this update, since it sets state.
+        if context.coordinator.lastMinHeight != minHeight {
+            context.coordinator.lastMinHeight = minHeight
+            DispatchQueue.main.async {
+                withAnimation(.easeOut(duration: 0.15)) { context.coordinator.recomputeHeight() }
+            }
+        }
         // Honour a tap-to-focus request from the surrounding padding.
         if context.coordinator.lastFocusRequest != focusRequest {
             context.coordinator.lastFocusRequest = focusRequest
@@ -77,6 +85,7 @@ struct CommitMessageEditor: NSViewRepresentable {
         var parent: CommitMessageEditor
         weak var textView: CommitTextView?
         var lastFocusRequest: Int
+        var lastMinHeight: CGFloat
         /// This editor's own undo stack, and the reason it exists is a crash.
         ///
         /// `NSResponder.undoManager` walks to the *window's* manager, so with
@@ -103,6 +112,7 @@ struct CommitMessageEditor: NSViewRepresentable {
         init(_ parent: CommitMessageEditor) {
             self.parent = parent
             self.lastFocusRequest = parent.focusRequest
+            self.lastMinHeight = parent.minHeight
         }
 
         func textDidChange(_ notification: Notification) {

@@ -60,7 +60,8 @@ struct SidebarPane: View {
             snapshot: manager.sidebarGroups.map {
                 SidebarSnapshotGroup(
                     folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
-                    tallIDs: Set($0.sessions.filter(\.showsBranchLine).map(\.id)))
+                    tallIDs: Set($0.sessions.filter(\.hasSecondLine).map(\.id)),
+                    isPinned: $0.isPinned)
             })
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 2) {
@@ -77,7 +78,7 @@ struct SidebarPane: View {
                         Button("New Session at Home") { manager.newHomeSession() }
                         // Its own branch and its own files: what makes running
                         // two agents in one repository safe.
-                        Button("New Session on Branch…") { newSessionOnBranch(manager) }
+                        Button("Fork…") { newSessionOnBranch(manager) }
                         Divider()
                         Button("New Folder…") {
                             if let name = promptFolderName(title: "New Folder", confirm: "Create") {
@@ -148,25 +149,42 @@ struct SidebarRowContent: View {
     let manager: SessionManager
     let session: Session
 
+    /// Whether the row's trailing status indicator shows anything: the
+    /// same conditions SessionStatusIndicator draws under.
+    private var showsStatus: Bool {
+        let selected = manager.selectedID == session.id
+        return session.attention != nil || session.isBusy
+            || (session.unread != nil && (!selected || session.markedUnread))
+    }
+
     var body: some View {
         SessionRow(
             session: session,
             isSelected: manager.selectedID == session.id,
             isEditing: manager.editingID == session.id,
             isInWorktree: session.isInOwnWorktree,
+            isHovered: manager.hoveredRowID == session.id,
+            waiting: session.attention.map { kind in
+                let note = manager.attentionNote(for: session)
+                return SessionRow.Waiting(kind: kind, message: note.message, since: note.since)
+            },
+            // Only this row's rename: a late end of this field's edit, after
+            // another row's has begun, must not end that one too.
             commit: { newName in
                 manager.rename(session, to: newName)
-                manager.editingID = nil
+                if manager.editingID == session.id { manager.editingID = nil }
             },
-            cancel: { manager.editingID = nil })
+            cancel: { if manager.editingID == session.id { manager.editingID = nil } })
             // The selection pill is drawn by the row view (SidebarPillRowView),
-            // full row width — this content just sits on top of it.
-            .padding(.leading, 12)
-            // Keeps a long name clear of the trailing slot, which the row view
-            // owns (status indicator, or the close button while hovered). Only
-            // decides where the name truncates, so it's deliberately generous
-            // rather than measured against the cell's inset.
-            .padding(.trailing, 24)
+            // full row width — this content just sits on top of it. 10pt into
+            // the pill, which is 10pt in from the row (its inset).
+            .padding(.leading, 20)
+            // Keeps a long name clear of the trailing slot the row view owns:
+            // "…" and × while the row is hovered, the status dot at rest when
+            // there is one, and otherwise only the pill's own edge. Room for
+            // what's actually there, so a name isn't cut short for a dot or
+            // buttons that aren't.
+            .padding(.trailing, manager.hoveredRowID == session.id ? 52 : (showsStatus ? 34 : 12))
             // Fill the row height and center vertically — otherwise the short
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.
@@ -186,22 +204,113 @@ struct SidebarRowContent: View {
 
     /// Build the native right-click menu, freshly each time it opens.
     private func makeContextMenu() -> NSMenu {
+        SessionActions.menu(for: session, manager: manager)
+    }
+}
+
+/// A fixed section's header (Pinned, Sessions): its title in the folder
+/// headers' style, and nothing to click or drag.
+struct SidebarSectionHeaderContent: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 13))
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            // Placed exactly as a folder's title is.
+            .padding(.leading, 20)
+            .padding(.trailing, 36)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+}
+
+extension NSMenuItem {
+    /// A glyph beside the title, as every menu in the chrome has: one size
+    /// and weight everywhere, and shown on macOS 27, which otherwise hides a
+    /// menu item's image.
+    func setGlyph(_ symbol: String) {
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(Chrome.menuGlyph)
+        if #available(macOS 27.0, *) {
+            preferredImageVisibility = .visible
+        }
+    }
+}
+
+/// What can be done to one session: the row's right-click menu, its hover
+/// "…", the titlebar's "…" (under that row's own items), and, through the
+/// Session menu, the ⌘P palette. One place, so the names, glyphs and order
+/// can't drift apart between them.
+@MainActor
+enum SessionActions {
+    static func menu(for session: Session, manager: SessionManager) -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(ClosureMenuItem(title: "Rename") { manager.editingID = session.id })
-        if let moveTo = moveToMenuItem() { menu.addItem(moveTo) }
+        // Shortcuts act on the selected session, so they're shown only on its
+        // menu: on another row's they'd promise to act on that one.
+        let selected = manager.selectedID == session.id
+        func item(_ title: String, _ glyph: String, key: String = "",
+                  _ modifiers: NSEvent.ModifierFlags = [.command],
+                  _ handler: @escaping () -> Void) -> NSMenuItem {
+            let item = ClosureMenuItem(title: title, handler: handler)
+            item.setGlyph(glyph)
+            if selected, !key.isEmpty {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = modifiers
+            }
+            menu.addItem(item)
+            return item
+        }
+
+        // ⌥⌘R, as in the Session menu: plain ⌘R is a browser's Reload.
+        _ = item("Rename", "pencil", key: "r", [.command, .option]) { manager.editingID = session.id }
+        if let moveTo = moveToMenu(for: session, manager: manager) {
+            let move = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
+            move.setGlyph("folder")
+            move.submenu = moveTo
+            menu.addItem(move)
+        }
+        let pinned = manager.isPinned(session)
+        _ = item(pinned ? "Unpin" : "Pin", pinned ? "pin.slash" : "pin", key: "p", [.command, .option]) {
+            manager.setPinned(session, !pinned)
+        }
+        _ = item("Mark as Unread", "circle.dashed", key: "u", [.command, .shift]) {
+            manager.markUnread(session)
+        }
+
+        menu.addItem(.separator())
+        // Its own branch in its own worktree, from this session's repository.
+        // `newSessionOnBranch` reads the selected session's repository: from
+        // another row's "…" (which doesn't select it), select that row first.
+        _ = item("Fork\u{2026}", "arrow.triangle.branch") {
+            manager.selectedID = session.id
+            newSessionOnBranch(manager, inFolder: session.folderPath)
+        }
+        if let cwd = session.cwd {
+            _ = item("Show in Finder", "folder.badge.gearshape") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
+            }
+            _ = item("Copy Path", "doc.on.doc") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(cwd, forType: .string)
+            }
+        }
+
         menu.addItem(.separator())
         // Only for a worktree Wortel made, and it closes the session with it —
         // the directory is what the session *is*. git refuses while there are
         // uncommitted changes, and that refusal is shown rather than overridden:
         // a worktree is where work lives.
         if session.isInOwnWorktree {
-            menu.addItem(ClosureMenuItem(title: "Remove Worktree\u{2026}") { removeWorktree() })
+            _ = item("Remove Worktree\u{2026}", "trash") { removeWorktree(session, manager: manager) }
         }
-        menu.addItem(ClosureMenuItem(title: "Close Session") { manager.requestClose(session) })
+        _ = item("Close Session", "xmark.square", key: "w", [.command, .shift]) {
+            manager.requestClose(session)
+        }
         return menu
     }
 
-    private func removeWorktree() {
+    static func removeWorktree(_ session: Session, manager: SessionManager) {
         let confirm = NSAlert()
         confirm.messageText =
             "Remove the worktree for \u{201c}\(session.worktreeLabel ?? session.leafName)\u{201d}?"
@@ -221,26 +330,28 @@ struct SidebarRowContent: View {
         }
     }
 
-    /// "Move To" submenu: top level plus every other folder — the no-drag way
-    /// to refile. Nil when there's nowhere to move to.
-    private func moveToMenuItem() -> NSMenuItem? {
+    /// "Move To": top level plus every other folder, the no-drag way to
+    /// refile. Nil when there's nowhere to move to.
+    static func moveToMenu(for session: Session, manager: SessionManager) -> NSMenu? {
         let destinations = manager.folderNames.filter { $0 != session.folderPath }
         guard session.folderPath != nil || !destinations.isEmpty else { return nil }
+        let submenu = NSMenu(title: "Move To")
+        fillMoveTo(submenu, for: session, manager: manager)
+        return submenu
+    }
 
-        let submenu = NSMenu()
+    static func fillMoveTo(_ submenu: NSMenu, for session: Session, manager: SessionManager) {
+        submenu.removeAllItems()
         if session.folderPath != nil {
             submenu.addItem(ClosureMenuItem(title: "Top Level") {
                 manager.moveSession(id: session.id, toFolder: nil, at: .max)
             })
         }
-        for folder in destinations {
+        for folder in manager.folderNames where folder != session.folderPath {
             submenu.addItem(ClosureMenuItem(title: folder) {
                 manager.moveSession(id: session.id, toFolder: folder, at: .max)
             })
         }
-        let item = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
-        item.submenu = submenu
-        return item
     }
 }
 
@@ -361,6 +472,14 @@ struct SidebarHeaderContent: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
+            // Open or collapsed, after the name rather than as a triangle in
+            // front of it: down when open, turned to point at the name's end
+            // when collapsed. The whole header is the button (SidebarOutline).
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(manager.isFolderCollapsed(folder) ? -90 : 0))
+                .animation(.easeOut(duration: 0.15), value: manager.isFolderCollapsed(folder))
             // What the folder is hiding. Same dot as a session row's, so it
             // reads as the same fact rather than as a new kind of badge — and
             // it pulses for the same reason, because a blocked agent you can't
@@ -370,24 +489,16 @@ struct SidebarHeaderContent: View {
                              motion: kind == .needsInput ? .pulse : .still)
             }
             Spacer(minLength: 4)
-            // The directory the folder stands for, and the point of showing it
-            // is that it's the difference between a project and a label: a
-            // folder with a path here is one where a new session starts
-            // somewhere you can predict. Truncated from the head, so what
-            // survives is the end of the path — the part that names the
-            // project — and the full one is on the tooltip.
-            if let root {
-                Text(root)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .layoutPriority(-1)
-                    .help(root)
-            }
         }
-            .padding(.leading, 12)
-            .padding(.trailing, 8)
+            // The directory the folder stands for (where a new session in it
+            // starts) is on hover, not on the header: a path on every header
+            // was grey noise for something you rarely need to see. The "+" says
+            // it too, and right-click sets or clears it.
+            .help(root ?? "")
+            // Where the rows' names start, so the two line up.
+            .padding(.leading, 20)
+            // Clear of the "…" and "+" that appear on hover (SidebarPillRowView).
+            .padding(.trailing, 56)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             // Native right-click, instant on rightMouseDown — same reasoning as
@@ -397,38 +508,56 @@ struct SidebarHeaderContent: View {
 
     /// Build the native right-click menu, freshly each time it opens.
     private func makeContextMenu() -> NSMenu {
+        FolderActions.menu(for: folder, manager: manager)
+    }
+}
+
+/// What can be done to a folder: its header's right-click menu and its hover
+/// "…". Named and drawn as the session menus are (SessionActions), so "Fork…"
+/// is one thing wherever it appears.
+@MainActor
+enum FolderActions {
+    static func menu(for folder: String, manager: SessionManager) -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(ClosureMenuItem(title: "New Session in “\(folder)”") {
-            manager.newSession(inFolder: folder)
-        })
-        menu.addItem(ClosureMenuItem(title: "New Session on Branch…") {
-            newSessionOnBranch(manager, inFolder: folder)
-        })
-        menu.addItem(ClosureMenuItem(title: "Rename Folder…") {
+        func item(_ title: String, _ glyph: String, _ handler: @escaping () -> Void) {
+            let item = ClosureMenuItem(title: title, handler: handler)
+            item.setGlyph(glyph)
+            menu.addItem(item)
+        }
+        // "New Session", as in the Session menu: the menu is the folder's, so
+        // naming the folder again only made it the widest item.
+        item("New Session", "plus.square") { manager.newSession(inFolder: folder) }
+        item("Fork\u{2026}", "arrow.triangle.branch") { newSessionOnBranch(manager, inFolder: folder) }
+        item("Rename\u{2026}", "pencil") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
                 manager.renameFolder(folder, to: name)
             }
-        })
+        }
         menu.addItem(.separator())
-        // What makes the first item above mean this folder. Worded as "Set"
-        // rather than "Choose" because it is a property of the folder, not a
-        // one-off open — ⌘O is the one-off.
-        menu.addItem(ClosureMenuItem(title: "Set Directory\u{2026}") {
+        // What makes the first item above mean this folder: where its new
+        // sessions start. A link to a directory, never the directory itself,
+        // so none of these words may sound like touching what's on disk.
+        item("Choose Directory\u{2026}", "folder") {
             guard let path = chooseDirectory(
                 title: "Set the directory for \u{201c}\(folder)\u{201d}",
                 startingAt: manager.root(ofFolder: folder)) else { return }
             manager.setRoot(path, ofFolder: folder)
-        })
+        }
         // Only offered when there is one, and it turns the folder back into a
-        // plain label rather than deleting anything.
+        // plain label rather than deleting anything: "Forget", as macOS forgets
+        // a network, not "Clear", which reads as emptying it.
         if manager.root(ofFolder: folder) != nil {
-            menu.addItem(ClosureMenuItem(title: "Clear Directory") {
-                manager.setRoot(nil, ofFolder: folder)
-            })
+            item("Forget Directory", "folder.badge.minus") { manager.setRoot(nil, ofFolder: folder) }
         }
         menu.addItem(.separator())
-        // Non-destructive: the sessions drop to the top level, they're not closed.
-        menu.addItem(ClosureMenuItem(title: "Delete Folder") { manager.deleteFolder(folder) })
+        // Non-destructive: the sessions drop to the top level, they're not
+        // closed, and nothing on disk is touched. Named for what happens, since
+        // "Delete Folder" in a Mac app reads as deleting one from the disk.
+        let hasSessions = manager.sessions.contains { $0.folderPath == folder }
+        item(hasSessions ? "Ungroup Sessions" : "Remove from Sidebar",
+             hasSessions ? "rectangle.stack.badge.minus" : "minus.circle") {
+            manager.deleteFolder(folder)
+        }
         return menu
     }
 }
@@ -450,12 +579,21 @@ struct SessionRow: View {
     /// still *is* the branch, as a leading glyph — without which it sits in the
     /// list looking exactly like a session that's just a shell in a directory.
     let isInWorktree: Bool
+    /// The pointer is on the row: a name too long for it slides to show the
+    /// rest (MarqueeName).
+    let isHovered: Bool
+    /// What the session is waiting on you for, while it is: shown as the
+    /// row's second line, in place of the branch.
+    let waiting: Waiting?
     let commit: (String) -> Void
     let cancel: () -> Void
 
-    @State private var draft = ""
-    @State private var cancelling = false
-    @FocusState private var fieldFocused: Bool
+    struct Waiting {
+        let kind: AttentionKind
+        /// What it said: the body of its notification.
+        let message: String?
+        let since: Date?
+    }
 
     var body: some View {
         // Content padded inside an inset pill (~6pt from the cell edges, so
@@ -472,51 +610,30 @@ struct SessionRow: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
-                    TextField("Name", text: $draft)
-                        .textFieldStyle(.plain)
-                        .focused($fieldFocused)
-                        // Route *every* way of ending an edit — Return, Escape,
-                        // and clicking away — through one focus-resignation
-                        // path. If the field is torn out of the tree (editingID
-                        // = nil) while it's still first responder, AppKit's
-                        // field editor is left dangling and the sidebar stops
-                        // receiving clicks. Dropping focus first, then letting
-                        // onChange commit/cancel, avoids that.
-                        .onSubmit { fieldFocused = false }
-                        .onExitCommand {
-                            cancelling = true
-                            fieldFocused = false
-                        }
-                        .onChange(of: fieldFocused) { _, focused in
-                            // While the field holds focus, ⌘A means select-all
-                            // here (not the terminal's clear-line keybind).
-                            MainMenu.setTextEditing(focused)
-                            guard !focused else { return }
-                            if cancelling { cancel() } else { commit(draft) }
-                        }
-                        .task {
-                            cancelling = false
-                            draft = session.name
-                            fieldFocused = true
-                            await selectLeafName()
-                        }
-                        // Backstop: if the field is torn out of the tree before
-                        // focus resigns, still restore ⌘A to the terminal.
-                        .onDisappear { MainMenu.setTextEditing(false) }
+                    SidebarRenameField(name: session.name, commit: commit, cancel: cancel)
+                        // The editor sets its text 2pt in (its line padding),
+                        // measured: back by that, the text is where the name was.
+                        .padding(.leading, -2)
                 } else {
                     // The folder prefix lives in the section header, so the row
                     // shows just the leaf ("giel/hello" -> "hello"). The rename
-                    // field (draft = session.name) still edits the full name, so
+                    // field still edits the full name (SidebarRenameField), so
                     // retyping the prefix is how you move between folders — but
-                    // it opens with only the leaf selected (`selectLeafName`).
-                    // An AppKit label rather than Text, for the native
-                    // hover-to-expand on a name the row had to cut short.
-                    TruncatingLabel(text: session.leafName, color: .labelColor)
+                    // it opens with only the leaf selected.
+                    // An ellipsis at rest; on hover, a name that doesn't fit
+                    // slides to show the rest, as the ChatGPT app's do.
+                    MarqueeName(text: session.leafName, active: isHovered)
                 }
-                // Where the work lives, under what the work is. Only for a
-                // worktree session whose name has moved on from the branch;
-                // the row height follows `showsBranchLine` (SidebarOutlineView).
-                if session.showsBranchLine, let branch = session.worktreeLabel {
+                // What it's waiting on, while it is: the useful half of a
+                // notification, where the session already is. The row grows
+                // for it and shrinks back once you've looked (SidebarOutlineView
+                // eases the height).
+                if let waiting, !isEditing {
+                    WaitingLine(waiting: waiting)
+                } else if session.showsBranchLine, let branch = session.worktreeLabel {
+                    // Where the work lives, under what the work is. Only for a
+                    // worktree session whose name has moved on from the branch;
+                    // the row height follows `hasSecondLine` (SidebarOutlineView).
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.triangle.branch")
                             .font(.system(size: 9))
@@ -530,37 +647,184 @@ struct SessionRow: View {
         }
         .padding(.vertical, 6)
     }
+}
 
-    /// Narrow the rename selection to the leaf, so "Wakker/Worker" opens with
-    /// only "Worker" selected.
-    ///
-    /// Making a text field first responder programmatically has AppKit's field
-    /// editor select the whole string, and the draft is the *full* name — so on
-    /// a foldered session the first keystroke took the prefix with it and the
-    /// session silently jumped to the top level. The prefix stays visible and
-    /// editable: retyping it is still how you move between folders.
-    ///
-    /// SwiftUI's TextField exposes no selection API, hence going through the
-    /// field editor. Focus lands on it a runloop turn or two after
-    /// `fieldFocused = true`, so poll for it rather than guessing a delay, and
-    /// match on the string to be sure it's *this* row's editor and not some
-    /// other field that happens to hold focus — and that SwiftUI has pushed the
-    /// draft into it, since selecting before that would be overwritten.
-    ///
-    /// Failing to find it just leaves the whole name selected, i.e. the old
-    /// behaviour, which is why this gives up quietly rather than retrying hard.
-    @MainActor
-    private func selectLeafName() async {
-        let name = session.name
-        guard let leaf = SessionName.leafRange(of: name) else { return }
+/// A session's name in its row: cut short with an ellipsis at rest, and on
+/// hover, when it doesn't fit, a marquee: after the pointer has rested a
+/// moment it slides slowly left to show the rest, between soft edges, and
+/// stops with the name's end by the row's buttons, as the ChatGPT app's rows
+/// do. Leaving the row puts it back.
+///
+/// Driven frame by frame from when the hover began (TimelineView), not by a
+/// SwiftUI animation: the sliding text appears in the same update the hover
+/// does, and an animation started there was skipped, the name jumping
+/// straight to its end.
+private struct MarqueeName: View {
+    let text: String
+    let active: Bool
 
-        for _ in 0..<10 {
-            if let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
-               editor.string == name {
-                editor.selectedRange = leaf
-                return
+    @State private var textWidth: CGFloat = 0
+    @State private var boxWidth: CGFloat = 0
+    /// When the pointer came onto the row.
+    @State private var hoverStart: Date?
+    /// The slide has reached its end: stop redrawing.
+    @State private var settled = false
+
+    private static let font = Font.system(size: 13)
+    /// Points a second: slow enough to read along.
+    static let speed: CGFloat = 24
+    /// How long the pointer rests on the row before it moves: passing over a
+    /// row on the way somewhere doesn't set it going.
+    static let delay: TimeInterval = 1.0
+    /// The soft edges: wider where the text has come from than where it's
+    /// going, so the end of the name sits close to the row's buttons.
+    private static let leadingFade: CGFloat = 24
+    private static let trailingFade: CGFloat = 16
+    /// How far the sliding text may run past its box to the left: the
+    /// pill's padding, so it slides out at the pill's edge.
+    private static let bleed: CGFloat = 10
+
+    private var overflow: CGFloat { max(0, textWidth - boxWidth) }
+    /// To the name's end exactly: the trailing fade shrinks away as the end
+    /// arrives, so the last letter lands by the buttons unfaded.
+    private var distance: CGFloat { overflow }
+    private var sliding: Bool { active && overflow > 0.5 }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            if sliding, let hoverStart {
+                // Hung from an empty box's leading edge: a view wider than its
+                // container is otherwise centred in it, and the name jumped
+                // left by half its overflow on hover and ended that far off.
+                // (A flexible frame's `.leading` didn't hold it; measured.)
+                TimelineView(.animation(minimumInterval: nil, paused: settled)) { context in
+                    let slid = Self.offset(after: context.date.timeIntervalSince(hoverStart), distance: distance)
+                    Color.clear
+                        .frame(height: 16)
+                        .overlay(alignment: .leading) {
+                            Text(text)
+                                .font(Self.font)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .offset(x: -slid)
+                                // Where it sits at rest, inside the widened box.
+                                .padding(.leading, Self.bleed)
+                        }
+                        .clipped()
+                        // No fade on the left until there's something past the
+                        // edge to fade: it grows with the slide, up to its full
+                        // width once that much has gone by.
+                        // And on the right, only while there's text still
+                        // hidden there: it shrinks away as the end arrives.
+                        .mask(edges(leading: min(Self.leadingFade, slid),
+                                    trailing: min(Self.trailingFade, max(0, distance - slid)),
+                                    width: boxWidth + Self.bleed))
+                        // Out to the pill's edge while it slides, so the text
+                        // fades away there rather than vanishing 10pt short of it.
+                        .padding(.leading, -Self.bleed)
+                }
+            } else {
+                Text(text)
+                    .font(Self.font)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if (try? await Task.sleep(for: .milliseconds(16))) == nil { return }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { boxWidth = $0 }
+        // The name's full width, measured off to the side.
+        .background(
+            Text(text).font(Self.font).lineLimit(1).fixedSize().hidden()
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 },
+            alignment: .leading)
+        .onChange(of: active) { _, now in begin(now) }
+        .onAppear { begin(active) }
+        .accessibilityLabel(text)
+    }
+
+    private func begin(_ hovering: Bool) {
+        settled = false
+        hoverStart = hovering ? Date() : nil
+        guard hovering else { return }
+        // Stop redrawing once it has arrived.
+        let total = Self.delay + Self.duration(for: distance)
+        let started = hoverStart
+        DispatchQueue.main.asyncAfter(deadline: .now() + total + 0.05) {
+            if hoverStart == started { settled = true }
+        }
+    }
+
+    /// Faded at the ends: on the left by `leading` points (what has slid past
+    /// the edge), and on the right, where the rest of the name is still to
+    /// come.
+    ///
+    /// The left one is eased (smoothstep through a few stops) rather than a
+    /// straight ramp, which read as a hard line.
+    private func edges(leading leadingFade: CGFloat, trailing trailingFade: CGFloat,
+                       width: CGFloat) -> some View {
+        let leading = width > 0 ? leadingFade / width : 0
+        let trailing = width > 0 ? trailingFade / width : 0
+        let steps = Array(stride(from: 0.0, through: 1.0, by: 0.2))
+        func eased(_ step: Double) -> Double { step * step * (3 - 2 * step) }
+        // In from the left, eased...
+        var stops: [Gradient.Stop] = steps.map {
+            .init(color: .black.opacity(eased($0)), location: leading * $0)
+        }
+        // ...and out to the right, eased the same way.
+        stops += steps.reversed().map {
+            .init(color: .black.opacity(eased($0)), location: 1 - trailing * $0)
+        }
+        return LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
+    }
+
+    static func duration(for distance: CGFloat) -> TimeInterval {
+        TimeInterval(distance / speed)
+    }
+
+    /// How far the name has slid `elapsed` seconds into the hover: nothing
+    /// during the delay, then eased in and out over the distance, then there.
+    static func offset(after elapsed: TimeInterval, distance: CGFloat) -> CGFloat {
+        let duration = self.duration(for: distance)
+        guard elapsed > delay, duration > 0 else { return 0 }
+        let t = min(1, (elapsed - delay) / duration)
+        let eased = t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
+        return distance * CGFloat(eased)
+    }
+}
+
+/// A waiting session's second line: what it said, or what kind of wait it is,
+/// and for how long. "Allow edit to App.swift? · 4m", "Finished its turn · now".
+private struct WaitingLine: View {
+    let waiting: SessionRow.Waiting
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            TruncatingLabel(text: text(at: context.date), font: .systemFont(ofSize: 11),
+                            color: .secondaryLabelColor)
+        }
+    }
+
+    private func text(at now: Date) -> String {
+        let what = waiting.message ?? {
+            switch waiting.kind {
+            case .needsInput: return "Waiting on you"
+            case .failed: return "A command failed"
+            case .turnDone: return "Finished its turn"
+            case .finished: return "A command finished"
+            }
+        }()
+        guard let since = waiting.since else { return what }
+        return "\(what) · \(Self.elapsed(from: since, to: now))"
+    }
+
+    /// "now", "4m", "2h", "3d".
+    static func elapsed(from start: Date, to now: Date) -> String {
+        let seconds = max(0, now.timeIntervalSince(start))
+        switch seconds {
+        case ..<60: return "now"
+        case ..<3600: return "\(Int(seconds / 60))m"
+        case ..<86400: return "\(Int(seconds / 3600))h"
+        default: return "\(Int(seconds / 86400))d"
         }
     }
 }
@@ -593,7 +857,9 @@ struct SessionStatusIndicator: View {
             // a session that failed and is already working again still says so.
             // Hidden while a loud dot is up (the dot outranks it) and on the
             // selected row (you're on it, the dwell clock is running).
-            if let kind = session.unread, !isSelected, session.attention == nil {
+            // Marked unread by hand shows even on the selected row: you asked
+            // for it, and a flag you can't see looks like it didn't take.
+            if let kind = session.unread, !isSelected || session.markedUnread, session.attention == nil {
                 // Quiet "you haven't caught up here" trail: a hollow ring in the
                 // kind's colour, no pulse.
                 Circle()
@@ -833,6 +1099,140 @@ private struct TerminalContainer: NSViewControllerRepresentable {
     func updateNSViewController(_ controller: TerminalHostViewController, context: Context) {
         if let session {
             controller.show(session, runtime: runtime)
+        }
+    }
+}
+
+/// The rename field in a session's row: AppKit rather than a SwiftUI
+/// TextField, for the one thing SwiftUI's couldn't do, which is not be a
+/// white box. It draws nothing of its own: the row draws its pill with an
+/// accent edge (SidebarPillRowView.showsEditing), and the text sits on it
+/// exactly where the name sat, in the name's font.
+///
+/// Every way out ends editing first and acts after: Return and a click
+/// elsewhere save, Escape cancels. Tearing the field out while it still had
+/// the keyboard left AppKit's field editor dangling, and the sidebar stopped
+/// taking clicks.
+///
+/// It opens with the leaf selected ("Worker" in "Wakker/Worker"): the name it
+/// edits is the full one, and a first keystroke taking the folder with it
+/// moved the session out of its folder without saying so. Retyping the prefix
+/// is still how you move one between folders.
+private struct SidebarRenameField: NSViewRepresentable {
+    let name: String
+    let commit: (String) -> Void
+    let cancel: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    /// A field in a source-list table is given a white background when it
+    /// starts editing, by the table: this one keeps none, whoever asks. And
+    /// no alignment insets, so SwiftUI puts its frame where the name's was.
+    final class Field: NSTextField {
+        override var drawsBackground: Bool {
+            get { false }
+            set {}
+        }
+        override var isBezeled: Bool {
+            get { false }
+            set {}
+        }
+        override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = Field(frame: .zero)
+        field.cell = CenteredTextFieldCell(textCell: name)
+        field.isEditable = true
+        field.isSelectable = true
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 13)
+        field.cell?.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.lineBreakMode = .byClipping
+        field.delegate = context.coordinator
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        context.coordinator.focus(field, attemptsLeft: 20)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    /// Removed without being left (another row's Rename, a session switch, the
+    /// row closed): the edit ends here, while the field is still in its window,
+    /// so AppKit's field editor isn't left behind holding the keyboard, and the
+    /// rename is dropped rather than saved, as the move away meant.
+    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+        coordinator.abandon()
+        if field.currentEditor() != nil {
+            field.abortEditing()
+            if let window = field.window, window.firstResponder is NSTextView {
+                window.makeFirstResponder(nil)
+            }
+        }
+        MainMenu.setTextEditing(false)
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: SidebarRenameField
+        private var cancelling = false
+        private var ended = false
+
+        init(_ parent: SidebarRenameField) { self.parent = parent }
+
+        /// The field is going away: whatever ends its edit now does nothing.
+        func abandon() { ended = true }
+
+        /// Into the field once it's in a key window, then the leaf selected.
+        func focus(_ field: NSTextField, attemptsLeft: Int) {
+            DispatchQueue.main.async { [weak self, weak field] in
+                guard let self, let field else { return }
+                guard let window = field.window, window.isKeyWindow else {
+                    if attemptsLeft > 0 { self.focus(field, attemptsLeft: attemptsLeft - 1) }
+                    return
+                }
+                window.makeFirstResponder(field)
+                MainMenu.setTextEditing(true)
+                let name = field.stringValue
+                if let leaf = SessionName.leafRange(of: name) {
+                    field.currentEditor()?.selectedRange = leaf
+                } else {
+                    field.currentEditor()?.selectAll(nil)
+                }
+            }
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            switch selector {
+            case #selector(NSResponder.insertNewline(_:)):
+                control.window?.makeFirstResponder(nil)
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                cancelling = true
+                control.window?.makeFirstResponder(nil)
+                return true
+            default:
+                return false
+            }
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard !ended, let field = notification.object as? NSTextField else { return }
+            ended = true
+            MainMenu.setTextEditing(false)
+            let text = field.stringValue
+            // After this event: the row goes away with the edit, and it
+            // mustn't while AppKit is still finishing it.
+            DispatchQueue.main.async { [parent, cancelling] in
+                if cancelling { parent.cancel() } else { parent.commit(text) }
+            }
         }
     }
 }

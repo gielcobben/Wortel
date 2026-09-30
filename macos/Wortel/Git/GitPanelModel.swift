@@ -255,6 +255,27 @@ final class GitPanelModel {
         [root, pinned ?? "", cwd ?? ""].joined(separator: "\u{0}")
     }
 
+    /// Re-read the checkouts if the last read is stale: the repo header asks
+    /// every little while it's on screen, so its "work is over there" hint
+    /// follows an agent that starts or finishes in another worktree.
+    func refreshCheckoutsIfStale() async {
+        guard let repo, !checkoutsAreCurrent(for: repo.root) else { return }
+        await loadCheckouts()
+    }
+
+    /// Where the work is when it isn't here: another checkout of the repo with
+    /// uncommitted changes (the one with the most), most likely an agent in
+    /// this session working in a worktree. Only while the panes follow the
+    /// terminal: a checkout chosen by hand is where you asked to be. Commits
+    /// alone don't count, or every old worktree with unmerged work would be
+    /// pointed at forever.
+    var workElsewhere: Checkout? {
+        guard pinnedCheckout == nil, let root = repo?.root else { return nil }
+        return checkouts
+            .filter { $0.path != root && $0.changes > 0 }
+            .max { $0.changes < $1.changes }
+    }
+
     private func checkoutsAreCurrent(for root: String) -> Bool {
         guard let read = checkoutsRead else { return false }
         return read.key == Self.checkoutsKey(root: root, pinned: pinnedCheckout, cwd: session?.cwd)
@@ -720,7 +741,13 @@ final class GitPanelModel {
     func focus(_ region: TabRegion) {
         lastRegion = region
         focusFront(of: region)
+        onAreaFocused?(region)
     }
+
+    /// The keyboard was sent to an area by a command (⌘] / ⌘[, ⌘⌥L): the
+    /// window blinks its edge, so a move you didn't make with the pointer is
+    /// seen (MainSplitViewController.blink).
+    @ObservationIgnored var onAreaFocused: ((TabRegion) -> Void)?
 
     /// Give the keyboard to what's in front of `region` without making it the
     /// area you're in: for handing the keyboard back from a terminal that was
@@ -823,6 +850,7 @@ final class GitPanelModel {
         }
         lastRegion = region ?? .side
         requestListFocus(in: lastRegion)
+        onAreaFocused?(lastRegion)
     }
 
     /// The user showed or hid the panel — record it on the session it was done

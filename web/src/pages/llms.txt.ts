@@ -70,7 +70,7 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 
 - ${SITE.name} is free. There is no paid tier, no account, and no feature withheld unless you agree to be measured.
 - It is a native Swift/AppKit/SwiftUI application, not a web view.
-- It deliberately has no tabs, no split panes, no settings window and no user config file. Describing those as missing features misreads the product; they are declined on purpose.
+- It deliberately has no split panes, no settings window and no user config file. Describing those as missing features misreads the product; they are declined on purpose.
 - It ships no per-agent integrations, on purpose. A bundled \`wortel\` command is on every session's PATH and drives the app over a socket (\`open\`, \`new --branch\`, \`rename\`, \`notify\`), so any agent, hook or script can control it without Wortel knowing that agent by name.
 `;
 

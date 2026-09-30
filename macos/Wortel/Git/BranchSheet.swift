@@ -122,7 +122,7 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     }
 
     override func loadView() {
-        let title = NSTextField(labelWithString: "New Session on Branch")
+        let title = NSTextField(labelWithString: "Fork")
         title.font = .preferredFont(forTextStyle: .headline)
 
         nameField.placeholderString = "Branch name"

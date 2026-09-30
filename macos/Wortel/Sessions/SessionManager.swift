@@ -18,12 +18,18 @@ final class SessionManager {
     var selectedID: Session.ID? {
         didSet {
             guard selectedID != oldValue, let session = selected else { return }
+            // Most recent first, for ⌘P's list.
+            recentSessionIDs.removeAll { $0 == session.id }
+            recentSessionIDs.insert(session.id, at: 0)
             // Switching into a waiting session: flash a ring in the detail view
             // to orient the eye before the dot clears.
             if let kind = session.attention {
                 attentionFlash = AttentionFlash(kind: kind)
             }
             clearAttention(session)
+            // Coming back to a session marked unread: that's the "later" it was
+            // marked for, so it clears the usual way from here.
+            session.markedUnread = false
             // Left the previous session before it could count as read; start the
             // caught-up clock on the one you just landed on.
             cancelCaughtUp(oldValue)
@@ -33,6 +39,10 @@ final class SessionManager {
         }
     }
 
+    /// Sessions in the order they were last selected, most recent first: what
+    /// ⌘P lists before you type (SessionSwitcherMatch).
+    @ObservationIgnored private(set) var recentSessionIDs: [Session.ID] = []
+
     /// The most recent "switched into a waiting session" event; the detail view
     /// flashes an orienting ring on each fresh value. Never cleared — at rest
     /// the overlay is simply invisible.
@@ -41,6 +51,10 @@ final class SessionManager {
     /// The session whose name is being edited inline (nil = none). Observed by
     /// the sidebar so double-click, the context menu, and ⌘R all drive one path.
     var editingID: Session.ID?
+
+    /// The sidebar row under the pointer: its name makes room for the row's
+    /// "…" and × only then (SidebarRowContent), rather than always.
+    var hoveredRowID: Session.ID?
 
     /// Called when the last session closes (the window should close).
     @ObservationIgnored var onAllClosed: (() -> Void)?
@@ -216,6 +230,33 @@ final class SessionManager {
     }
     @ObservationIgnored private static let folderRootsKey = "WortelFolderRoots"
 
+    /// Pinned sessions, in the order they're shown: a section of their own at
+    /// the top of the sidebar, as the ChatGPT app pins chats. A pinned session
+    /// keeps its folder (it's in its name), so unpinning puts it back there.
+    /// View state about the sidebar, so UserDefaults like the folders'.
+    private(set) var pinnedIDs: [Session.ID] = [] {
+        didSet { UserDefaults.standard.set(pinnedIDs.map(\.uuidString), forKey: Self.pinnedKey) }
+    }
+    @ObservationIgnored private static let pinnedKey = "WortelPinnedSessions"
+
+    func isPinned(_ session: Session) -> Bool { pinnedIDs.contains(session.id) }
+
+    /// Pin (at `position` among the pinned, clamped) or unpin a session.
+    func setPinned(_ session: Session, _ pinned: Bool, at position: Int = .max) {
+        var ids = pinnedIDs
+        let current = ids.firstIndex(of: session.id)
+        if let current { ids.remove(at: current) }
+        if pinned {
+            // A drop index counts the row's own old place, as moveSession's do.
+            var target = position
+            if let current, current < target, target != .max { target -= 1 }
+            ids.insert(session.id, at: max(0, min(target, ids.count)))
+        }
+        guard ids != pinnedIDs else { return }
+        pinnedIDs = ids
+        normalizeOrder()
+        scheduleSave()
+    }
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
         collapsedFolders = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedFoldersKey) ?? [])
@@ -223,6 +264,8 @@ final class SessionManager {
         folderOrder = UserDefaults.standard.stringArray(forKey: Self.folderOrderKey) ?? []
         folderRoots = UserDefaults.standard.dictionary(forKey: Self.folderRootsKey)
             as? [String: String] ?? [:]
+        pinnedIDs = (UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? [])
+            .compactMap(UUID.init(uuidString:))
     }
 
     // MARK: - Sidebar folders (derived from session names)
@@ -234,19 +277,29 @@ final class SessionManager {
     /// ever dropped. Sessions keep their array order within a group. Purely a
     /// view of `sessions` + folder state — nothing here is stored.
     var sidebarGroups: [SidebarGroup] {
+        // Pinned sessions are shown in their own section, first, and not in
+        // their folders as well.
+        let pinned = pinnedIDs.compactMap { id in sessions.first { $0.id == id } }
+        let pinnedSet = Set(pinned.map(\.id))
         var byKey: [String: [Session]] = [:]
-        for session in sessions {
+        for session in sessions where !pinnedSet.contains(session.id) {
             byKey[session.folderPath ?? "", default: []].append(session)
         }
+        // A folder whose sessions are all pinned stays, empty, to come back to.
+        let pinnedFolders = Set(pinned.compactMap(\.folderPath))
 
         var groups: [SidebarGroup] = []
+        if !pinned.isEmpty {
+            groups.append(SidebarGroup(folder: nil, sessions: pinned, isPinned: true))
+        }
         if let top = byKey[""], !top.isEmpty {
             groups.append(SidebarGroup(folder: nil, sessions: top))
         }
         var emitted = Set<String>()
         func emit(_ folder: String) {
             guard !emitted.contains(folder),
-                  byKey[folder] != nil || declaredFolders.contains(folder) else { return }
+                  byKey[folder] != nil || declaredFolders.contains(folder)
+                    || pinnedFolders.contains(folder) else { return }
             emitted.insert(folder)
             groups.append(SidebarGroup(folder: folder, sessions: byKey[folder] ?? []))
         }
@@ -389,7 +442,7 @@ final class SessionManager {
         if session.folderPath == folder {
             // Drop indices are as rendered mid-drag, i.e. they still count the
             // row's own old position — compensate after it's removed.
-            let group = sessions.filter { $0.folderPath == folder }
+            let group = sessions.filter { $0.folderPath == folder && !isPinned($0) }
             if let current = group.firstIndex(where: { $0.id == id }), current < target {
                 target -= 1
             }
@@ -397,7 +450,8 @@ final class SessionManager {
             session.name = folder.map { "\($0)/\(session.leafName)" } ?? session.leafName
         }
         sessions.remove(at: fromIdx)
-        let members = sessions.indices.filter { sessions[$0].folderPath == folder }
+        // As the folder is shown: its pinned sessions are up in Pinned.
+        let members = sessions.indices.filter { sessions[$0].folderPath == folder && !isPinned(sessions[$0]) }
         let clamped = max(0, min(target, members.count))
         let flatIdx = clamped < members.count
             ? members[clamped]
@@ -1406,6 +1460,8 @@ final class SessionManager {
         screenInferredBusy.remove(session.id)
         explicitSignalAt.removeValue(forKey: session.id)
         autoNameState.removeValue(forKey: session.id)
+        attentionSince.removeValue(forKey: session.id)
+        pinnedIDs.removeAll { $0 == session.id }
         endPromptCapture(session)
         // The killed shell never reaches its prompt to clear its own agent
         // marker; drop it so a closed session isn't resumed on next launch.
@@ -1563,7 +1619,7 @@ final class SessionManager {
     /// Whether a session has a row in the sidebar right now — i.e. it isn't
     /// tucked inside a collapsed folder.
     private func isVisibleInSidebar(_ session: Session) -> Bool {
-        guard let folder = session.folderPath else { return true }
+        guard !isPinned(session), let folder = session.folderPath else { return true }
         return !isFolderCollapsed(folder)
     }
 
@@ -1775,6 +1831,7 @@ final class SessionManager {
         guard session.attention != nil else { return }
         session.attention = nil
         attentionContent[session.id] = nil
+        attentionSince[session.id] = nil
         refreshDockBadge()
         onAttentionCleared?(session)
     }
@@ -1785,6 +1842,19 @@ final class SessionManager {
     @ObservationIgnored
     private var attentionContent:
         [UUID: (kind: AttentionKind, title: String?, body: String, postedAt: Date)] = [:]
+    /// When each session's current episode began: its first signal, not its
+    /// latest (an agent that re-emits per tool call would otherwise always
+    /// read "now"). What "waiting 4m" counts from.
+    @ObservationIgnored private var attentionSince: [UUID: Date] = [:]
+
+    /// What a waiting session said (the body of its notification, else its
+    /// title when that isn't just the session's name), and since when.
+    func attentionNote(for session: Session) -> (message: String?, since: Date?) {
+        let content = attentionContent[session.id]
+        let body = content?.body.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let message = body.isEmpty ? content?.title : body
+        return (message, attentionSince[session.id])
+    }
 
     /// How late a rename may still rewrite a banner.
     ///
@@ -1862,6 +1932,7 @@ final class SessionManager {
         // (some agents fire a notification per tool call) updates the banner
         // text silently instead of spamming dings.
         let alert = current.map { kind.priority > $0.priority } ?? true
+        if current == nil { attentionSince[session.id] = Date() }
         session.attention = kind // observed → sidebar dot
         // The quieter tier: mark it unread too, at the highest kind seen, so the
         // trail survives past the loud dot until you've actually engaged.
@@ -1884,8 +1955,21 @@ final class SessionManager {
     /// for the dwell window, drop its unread mark. A glance shorter than the
     /// dwell (or navigating away) leaves the mark in place. Safe to call
     /// repeatedly — it restarts the clock.
+    /// A "come back to this" flag: the quiet unread ring, set by hand. It
+    /// holds while you're in the session (its caught-up clock is stopped) and
+    /// clears the usual way, once you've spent time in it after coming back.
+    func markUnread(_ session: Session) {
+        if session.unread == nil { session.unread = .finished }
+        session.markedUnread = true
+        cancelCaughtUp(session.id)
+    }
+
     private func scheduleCaughtUp(_ session: Session) {
         unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
+        // Marked by hand: held until you come back to it (see `selectedID`),
+        // not cleared by a menu closing or the app coming forward while you're
+        // still in it.
+        guard !session.markedUnread else { return }
         guard session.unread != nil, isActivelyViewing(session) else { return }
         let id = session.id
         let work = DispatchWorkItem { [weak self, weak session] in

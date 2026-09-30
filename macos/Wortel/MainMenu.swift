@@ -109,6 +109,11 @@ enum MainMenu {
         return item
     }
 
+    /// Fills the Session menu's "Move To" for the selected session each time
+    /// it opens (and when the palette reads the menus). Set by AppDelegate.
+    static var fillMoveTo: (NSMenu) -> Void = { _ in }
+    private static let moveToFiller = MenuFiller { MainMenu.fillMoveTo($0) }
+
     private static func arrow(_ key: Int) -> String {
         String(UnicodeScalar(UInt16(key))!)
     }
@@ -200,6 +205,9 @@ enum MainMenu {
         // on the same day. Free of a wortel.conf keybind (alt+n isn't bound).
         let newHome = sessionMenu.addItem(withTitle: "New Session at Home", action: #selector(AppDelegate.newHomeSession(_:)), keyEquivalent: "n")
         newHome.keyEquivalentModifierMask = [.command, .option]
+        // The selected session's repository, on a branch of its own in its own
+        // worktree: named as it is on the session's "…" and the folders'.
+        sessionMenu.addItem(withTitle: "Fork\u{2026}", action: #selector(AppDelegate.forkSession(_:)), keyEquivalent: "")
 
         // -- Folders -----------------------------------------------------------
         // The two folder verbs, adjacent because that's how they read: make an
@@ -222,11 +230,32 @@ enum MainMenu {
         // Acting on the selected session, as opposed to making one. No ellipsis
         // on Rename: it starts an inline edit in the sidebar, not a dialog.
         sessionMenu.addItem(.separator())
+        // ⌘P, as VS Code, Cursor and Zed open a file by name: here, a session.
+        let goTo = sessionMenu.addItem(withTitle: "Go to Session\u{2026}", action: #selector(AppDelegate.showSessionSwitcher(_:)), keyEquivalent: "p")
+        goTo.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+        // ⇧⌘P, VS Code's command palette: every command in these menus.
+        let palette = sessionMenu.addItem(withTitle: "Commands\u{2026}", action: #selector(AppDelegate.showCommandPalette(_:)), keyEquivalent: "p")
+        palette.keyEquivalentModifierMask = [.command, .shift]
+        palette.image = NSImage(systemSymbolName: "command", accessibilityDescription: nil)
         // ⌥⌘R, as Codex renames a chat. Plain ⌘R is a browser's Reload; with
         // no browser in front it still renames (`syncReload`), as it always did.
         let rename = sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
         rename.keyEquivalentModifierMask = [.command, .option]
         renameAliasItem = addHidden(sessionMenu, "Rename Session", #selector(AppDelegate.renameSession(_:)), "", [.command])
+        // The selected session's own actions, also on its row's "…" and
+        // right-click (SessionActions), and so in the ⌘P palette.
+        let moveTo = sessionMenu.addItem(withTitle: "Move To", action: nil, keyEquivalent: "")
+        let moveToMenu = NSMenu(title: "Move To")
+        moveToMenu.delegate = moveToFiller
+        moveTo.submenu = moveToMenu
+        // ⌥⌘P, the ChatGPT app's: to the Pinned section at the top of the
+        // sidebar, and back. Title flips in AppDelegate.validateMenuItem.
+        let pin = sessionMenu.addItem(withTitle: "Pin Session", action: #selector(AppDelegate.togglePinSession(_:)), keyEquivalent: "p")
+        pin.keyEquivalentModifierMask = [.command, .option]
+        // ⇧⌘U, the ChatGPT app's: a "come back to this" flag.
+        let unread = sessionMenu.addItem(withTitle: "Mark as Unread", action: #selector(AppDelegate.markSessionUnread(_:)), keyEquivalent: "u")
+        unread.keyEquivalentModifierMask = [.command, .shift]
+        sessionMenu.addItem(withTitle: "Remove Worktree\u{2026}", action: #selector(AppDelegate.removeSessionWorktree(_:)), keyEquivalent: "")
         // ⌘W closes what you're in: a tab, or the session when its own terminal
         // is in front (as closing a tab in any other terminal ends its shell).
         // ⇧⌘W always means the whole session, as in iTerm and Ghostty.
@@ -546,4 +575,11 @@ enum MainMenu {
 
         return main
     }
+}
+
+/// A menu delegate that fills its menu from a closure just before it opens.
+final class MenuFiller: NSObject, NSMenuDelegate {
+    private let fill: (NSMenu) -> Void
+    init(_ fill: @escaping (NSMenu) -> Void) { self.fill = fill }
+    func menuNeedsUpdate(_ menu: NSMenu) { fill(menu) }
 }

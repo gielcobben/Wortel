@@ -86,7 +86,7 @@ export const SECTIONS: Section[] = [
     lead: 'One window. A sidebar of names. Several agents, none of them in each other’s way.',
     blocks: [
       {
-        p: 'Wortel is a fully native macOS terminal built on Ghostty’s engine: Swift and AppKit, no web view. Open it and the work is where you left it, every session still named and still in its own directory. No tabs to count, no panes to tile.',
+        p: 'Wortel is a fully native macOS terminal built on Ghostty’s engine: Swift and AppKit, no web view. Open it and the work is where you left it, every session still named and still in its own directory. No grid of panes to tile.',
       },
       {
         p: 'Point it at a repository and each agent gets its own branch and its own files, with the diff of what they did beside them. None of it stops when you quit.',
@@ -365,7 +365,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'How is Wortel different from iTerm2, Warp, Kitty or Alacritty?',
-    a: 'Wortel has no settings UI, no plugin system, no AI chat box, no tabs and no splits. What it has instead is built around running coding agents: named shells that survive a restart and switch in one frame, a git worktree per session so several agents can work one repository at once, shells that keep running after you quit the app, a git and files inspector beside the terminal, and detection of which background agent has stopped and is waiting on you.',
+    a: 'Wortel has no settings UI, no plugin system, no AI chat box and no splits. What it has instead is built around running coding agents: named shells that survive a restart and switch in one frame, a git worktree per session so several agents can work one repository at once, shells that keep running after you quit the app, a git and files inspector beside the terminal, and detection of which background agent has stopped and is waiting on you.',
   },
   {
     q: 'How is Wortel different from Conductor, Emdash or Superset?',
@@ -377,7 +377,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel have tabs or split panes?',
-    a: 'No, and that is intentional. One window holds a sidebar of named sessions; switching between them is instant, so the arranging a tab bar or a split layout exists to support is not needed. Requests for tabs, splits and the command palette are declined by the app rather than partially implemented.',
+    a: 'Tabs, yes; splits, no. Each session has three rows of tabs: the main area with its terminal, a side column, and a strip under the terminal, and any tab (a terminal, a browser, a file, the git panes) can be dragged between them. What Wortel does not do is split a terminal into a grid of panes: the sidebar of named sessions is where you switch work, and ⌘P finds any of them by name.',
   },
   {
     q: 'Can I configure Wortel’s fonts, colours and keybinds?',

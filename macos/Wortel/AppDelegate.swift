@@ -292,6 +292,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if self.gitPanel.lastRegion != region { self.gitPanel.lastRegion = region }
             return event
         }
+        MainMenu.fillMoveTo = { [weak self] menu in
+            guard let self, let session = self.manager.selected else { return menu.removeAllItems() }
+            SessionActions.fillMoveTo(menu, for: session, manager: self.manager)
+        }
+        gitPanel.onAreaFocused = { [weak self] region in
+            // A turn later: an area the command brought forward has its frame then.
+            DispatchQueue.main.async { self?.splitController.blink(region) }
+        }
         gitPanel.onClearKeyboard = { [weak self] in
             guard let window = self?.window, window.firstResponder is SurfaceView else { return }
             window.makeFirstResponder(nil)
@@ -724,6 +732,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.newHomeSession()
     }
 
+    @objc func forkSession(_ sender: Any?) {
+        focusMainWindow()
+        newSessionOnBranch(manager, inFolder: manager.selected?.folderPath)
+    }
+
     /// Bring the window forward *before* the panel, not after: the open panel is
     /// modal, so ordering the window front once it's up does nothing until it
     /// closes, and the sidebar the new session appears in would be behind
@@ -1042,6 +1055,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    private lazy var sessionSwitcher = SessionSwitcher(manager: manager)
+
+    /// ⌘P: go to a session by name, folder, branch or directory.
+    @objc func showSessionSwitcher(_ sender: Any?) {
+        // ⌘P again puts it away. Before focusing the window: that would take
+        // the keyboard from the switcher, which closes it, and this would open
+        // a new one.
+        if sessionSwitcher.isShown { return sessionSwitcher.close() }
+        focusMainWindow()
+        guard let window else { return }
+        sessionSwitcher.toggle(over: window)
+    }
+
+    /// ⇧⌘P: the palette with only the menus' commands.
+    @objc func showCommandPalette(_ sender: Any?) {
+        if sessionSwitcher.isShown { return sessionSwitcher.close() }
+        focusMainWindow()
+        guard let window else { return }
+        sessionSwitcher.toggle(over: window, commandsOnly: true)
+    }
+
+    /// ⌥⌘P: pin the selected session to the top of the sidebar, or unpin it.
+    @objc func togglePinSession(_ sender: Any?) {
+        focusMainWindow()
+        guard let session = manager.selected else { return }
+        manager.setPinned(session, !manager.isPinned(session))
+    }
+
+    /// ⇧⌘U: the "not caught up" ring on the selected session, until you've
+    /// spent time in it again.
+    @objc func markSessionUnread(_ sender: Any?) {
+        guard let session = manager.selected else { return }
+        manager.markUnread(session)
+    }
+
+    @objc func removeSessionWorktree(_ sender: Any?) {
+        focusMainWindow()
+        guard let session = manager.selected, session.isInOwnWorktree else { return }
+        SessionActions.removeWorktree(session, manager: manager)
+    }
+
     @objc func renameSession(_ sender: Any?) {
         focusMainWindow()
         manager.beginRenameSelected()
@@ -1111,6 +1165,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Grey out "Check for Updates…" while a check is already in flight (Sparkle
     /// drops `canCheckForUpdates` to false for the duration).
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(removeSessionWorktree(_:)) {
+            return manager.selected?.isInOwnWorktree == true
+        }
+        if menuItem.action == #selector(markSessionUnread(_:)) {
+            return manager.selected != nil
+        }
+        if menuItem.action == #selector(togglePinSession(_:)) {
+            menuItem.title = manager.selected.map(manager.isPinned) == true ? "Unpin Session" : "Pin Session"
+            return manager.selected != nil
+        }
         if menuItem.action == #selector(checkForUpdates(_:)) {
             return updater.canCheckForUpdates
         }

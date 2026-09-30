@@ -163,6 +163,9 @@ final class Session: Identifiable {
     /// dwelled on the session. Drives a small hollow "unread" dot so a quick
     /// click-through to triage doesn't lose track of what you skipped past.
     var unread: AttentionKind?
+    /// Marked unread by hand (⇧⌘U): the ring shows even on the selected row,
+    /// and nothing clears it until you've left the session and come back.
+    var markedUnread = false
     /// Convenience for the count-based Dock badge and close bookkeeping.
     var needsAttention: Bool { attention != nil }
     /// A foreground command is currently running in this session. Debounced by
@@ -242,6 +245,11 @@ final class Session: Identifiable {
 
     /// The name with any folder prefix stripped — what the sidebar row shows.
     var leafName: String { SessionName.leaf(of: name) }
+
+    /// Whether the sidebar row is two lines tall: it's waiting on you (what
+    /// for, under the name), or it's a worktree session named for its task
+    /// (its branch, under the name).
+    var hasSecondLine: Bool { attention != nil || showsBranchLine }
 
     /// Short, Finder-like label: the working directory's last path component
     /// (~ for home). Falls back to the shell title.
@@ -372,6 +380,10 @@ final class Session: Identifiable {
 struct SidebarGroup: Identifiable {
     let folder: String?
     let sessions: [Session]
-    /// Stable across renders; "" is safe because a real folder is never empty.
-    var id: String { folder ?? "" }
+    /// The Pinned section at the top: folder nil like the top level, but a
+    /// section with a header of its own.
+    var isPinned = false
+    /// Stable across renders; "" is safe because a real folder is never empty,
+    /// and the pinned section's can't be a folder name (it starts with NUL).
+    var id: String { isPinned ? "\u{0}pinned" : folder ?? "" }
 }

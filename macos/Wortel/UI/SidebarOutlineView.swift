@@ -5,11 +5,13 @@ import SwiftUI
 /// Row view that draws the neutral selection pill at the *row* level, so
 /// it spans the full sidebar width — across the chevron gutter and indentation
 /// — like Mail's and Icon Composer's selection, instead of hugging the cell.
-final class SidebarPillRowView: NSTableRowView {
+final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     /// How far the pill is inset from the row. Also what the close button keeps
     /// clear of the pill's edges, so its padding reads the same on all three
     /// sides it touches.
-    private static let pillInset = NSSize(width: 10, height: 2)
+    private static let pillInset = NSSize(width: 10, height: 1)
+    /// The pill's corners: a tab's and a titlebar button's.
+    private static let pillRadius: CGFloat = 8
     /// The selected row's fill, and the hover's, over the sidebar material. The
     /// hover has to stay visibly lighter than the selection it isn't.
     private static let pillAlpha: CGFloat = 0.08
@@ -21,6 +23,12 @@ final class SidebarPillRowView: NSTableRowView {
             needsDisplay = true
         }
     }
+    /// Its name is being edited: the pill, with a thin accent edge, and the
+    /// field transparent on it (SidebarRowContent). Not a white text box
+    /// dropped into the list.
+    var showsEditing = false {
+        didSet { if showsEditing != oldValue { needsDisplay = true } }
+    }
     /// A dragged session is hovering this folder header (drop-on / append).
     var showsDropHighlight = false {
         didSet { if showsDropHighlight != oldValue { needsDisplay = true } }
@@ -31,28 +39,50 @@ final class SidebarPillRowView: NSTableRowView {
     private var showsHover = false {
         didSet { if showsHover != oldValue { needsDisplay = true } }
     }
+    /// Its menu is open (right-click or "…"): lit as under the pointer, the
+    /// header included, so it's clear which row the menu is about.
+    private var showsMenuOpen = false {
+        didSet { if showsMenuOpen != oldValue { needsDisplay = true } }
+    }
+
+    /// Room above a section header, so sections stand apart while the rows
+    /// inside one sit close. Kept out of the pill, the hover and the "+".
+    var sectionGap: CGFloat = 0 {
+        didSet { if sectionGap != oldValue { needsLayout = true; needsDisplay = true } }
+    }
 
     /// The pill, and the box the close button is laid out against.
     private var pillRect: NSRect {
-        bounds.insetBy(dx: Self.pillInset.width, dy: Self.pillInset.height)
+        var rect = bounds
+        rect.size.height -= sectionGap
+        if isFlipped { rect.origin.y += sectionGap }
+        return rect.insetBy(dx: Self.pillInset.width, dy: Self.pillInset.height)
     }
 
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
         let rect = pillRect
-        if showsPill {
+        if showsEditing {
+            NSColor.labelColor.withAlphaComponent(Self.pillAlpha).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
+            NSColor.controlAccentColor.withAlphaComponent(0.55).setStroke()
+            let edge = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
+                                    xRadius: Self.pillRadius - 0.5, yRadius: Self.pillRadius - 0.5)
+            edge.lineWidth = 1
+            edge.stroke()
+        } else if showsPill {
             // Grey, not accent. The sidebar never holds focus, so this is the
             // same situation as an unfocused source list, and the accent pill was
             // the loudest thing in the window: it drowned out the attention dots,
             // which are the colour in this list that actually means something.
             NSColor.labelColor.withAlphaComponent(Self.pillAlpha).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
         } else if showsDropHighlight {
             NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
-        } else if showsHover {
+            NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
+        } else if showsHover || showsMenuOpen {
             NSColor.labelColor.withAlphaComponent(Self.hoverAlpha).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
         }
     }
 
@@ -64,6 +94,17 @@ final class SidebarPillRowView: NSTableRowView {
     // pill's right edge — and a cell can't be clicked outside its own bounds.
 
     private let closeButton = SidebarCloseButton()
+    /// "…": the session's menu (Rename, Move To, Mark as Unread…), the one
+    /// right-click opens, for when you don't think to right-click. Beside the
+    /// ×, on hover, as the ChatGPT app's rows have theirs.
+    private let moreButton = SidebarCloseButton(symbol: "ellipsis", label: "More", pointSize: 10)
+    /// "+" on a folder header: a new session in that folder.
+    private let addButton = SidebarCloseButton(symbol: "plus", label: "New Session in Folder", pointSize: 10)
+    private var makeMoreMenu: (() -> NSMenu)?
+    /// The pointer came onto the row or left it.
+    var onHoverChanged: (Bool) -> Void = { _ in }
+    /// Whether this row is a folder header with a "+".
+    private var addable = false
     /// The status dot / spinner, hosted here rather than in the row's SwiftUI
     /// content so it can share the button's slot exactly. Trailing-aligning it
     /// inside the cell instead left it further from the pill's edge than the
@@ -79,6 +120,11 @@ final class SidebarPillRowView: NSTableRowView {
         addSubview(statusHost)
         closeButton.isHidden = true
         addSubview(closeButton)
+        moreButton.isHidden = true
+        moreButton.onClick = { [weak self] in self?.showMoreMenu() }
+        addSubview(moreButton)
+        addButton.isHidden = true
+        addSubview(addButton)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
@@ -86,6 +132,34 @@ final class SidebarPillRowView: NSTableRowView {
     func setCloseAction(_ handler: @escaping () -> Void) {
         closeButton.onClick = handler
         closable = true
+    }
+
+    /// The menu "…" opens: the session's, or a folder header's.
+    func setMoreMenu(_ make: @escaping () -> NSMenu) { makeMoreMenu = make }
+
+    /// What "+" does, and where it starts the session. Folder headers set this.
+    func setAddAction(directory: String?, _ handler: @escaping () -> Void) {
+        addButton.onClick = handler
+        addButton.toolTip = directory.map { "New Session in \($0)" } ?? "New Session in Folder"
+        addable = true
+    }
+
+    private func showMoreMenu() {
+        guard let menu = makeMoreMenu?() else { return }
+        // Its right edge on the button's, opening into the sidebar rather than
+        // off across the terminal, as the titlebar's menus do.
+        let x = moreButton.bounds.width - menu.size.width
+        contextMenu(isOpen: true)
+        menu.popUp(positioning: nil, at: NSPoint(x: x, y: moreButton.bounds.maxY + 4), in: moreButton)
+        contextMenu(isOpen: false)
+    }
+
+    func contextMenu(isOpen: Bool) {
+        showsMenuOpen = isOpen
+        // The pointer may have left while the menu had it, and the row never
+        // heard: settle the hover on where it is now.
+        guard !isOpen, let window else { return }
+        setRowHovered(bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)))
     }
 
     /// The SwiftUI status indicator for this row. Session rows set one; folder
@@ -108,6 +182,8 @@ final class SidebarPillRowView: NSTableRowView {
         // One rect for both, so hovering swaps the glyph without moving it.
         closeButton.frame = slot
         statusHost.frame = slot
+        moreButton.frame = slot.offsetBy(dx: -(size + 2), dy: 0)
+        addButton.frame = slot
     }
 
     /// AppKit inserts the cell view after ours, which would bury them. Keep both
@@ -115,12 +191,10 @@ final class SidebarPillRowView: NSTableRowView {
     /// isn't drawn behind the row's content.
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
-        guard subview !== closeButton, subview !== statusHost else { return }
-        if statusHost.superview === self {
-            addSubview(statusHost, positioned: .above, relativeTo: nil)
-        }
-        if closeButton.superview === self {
-            addSubview(closeButton, positioned: .above, relativeTo: nil)
+        let ours: [NSView] = [statusHost, closeButton, moreButton, addButton]
+        guard !ours.contains(where: { $0 === subview }) else { return }
+        for view in ours where view.superview === self {
+            addSubview(view, positioned: .above, relativeTo: nil)
         }
     }
 
@@ -154,14 +228,23 @@ final class SidebarPillRowView: NSTableRowView {
         // loop, so the highlight and button track the pointer without a runloop
         // turn of lag. Folder headers aren't closable and stay flat: the cue is
         // about which session you might close.
+        onHoverChanged(hovered)
+        // A folder header shows its "…" and "+", and stays flat otherwise.
+        addButton.isHidden = !(hovered && addable)
+        if !hovered { addButton.setHovering(false) }
         let shows = hovered && closable
         showsHover = shows
+        moreButton.isHidden = !(hovered && (closable || addable)) || makeMoreMenu == nil
+        if moreButton.isHidden { moreButton.setHovering(false) }
         guard closeButton.isHidden == shows else { return }
         closeButton.isHidden = !shows
         // The two share one rect, so the indicator has to give it up rather than
         // sit under the button.
         statusHost.isHidden = shows
-        if !shows { closeButton.setHovering(false) }
+        if !shows {
+            closeButton.setHovering(false)
+            moreButton.setHovering(false)
+        }
     }
 }
 
@@ -190,20 +273,21 @@ final class SidebarCloseButton: NSButton {
     private var hovering = false
     private var hoverArea: NSTrackingArea?
 
-    init() {
+    /// A row's small round button: "×" by default; "…" and "+" too.
+    init(symbol: String = "xmark", label: String = "Close Session", pointSize: CGFloat = 9) {
         super.init(frame: .zero)
         isBordered = false
         imagePosition = .imageOnly
-        image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Session")?
-            .withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .bold))
         contentTintColor = .secondaryLabelColor
-        toolTip = "Close Session"
+        toolTip = label
         target = self
         action = #selector(fire)
         // The terminal owns keyboard focus; closing a session must not take it.
         refusesFirstResponder = true
         wantsLayer = true
-        setAccessibilityLabel("Close Session")
+        setAccessibilityLabel(label)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
@@ -360,7 +444,10 @@ final class SidebarOutline: NSOutlineView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let row = self.row(at: point)
-        if row >= 0, let item = item(atRow: row),
+        // A press on a row's button ("+", "…", "×") is the button's, not a
+        // header toggle.
+        let onButton = window?.contentView?.hitTest(event.locationInWindow) is SidebarCloseButton
+        if row >= 0, !onButton, let item = item(atRow: row),
            !frameOfOutlineCell(atRow: row).contains(point) {
             onHeaderPressed?(item)
         }
@@ -370,6 +457,19 @@ final class SidebarOutline: NSOutlineView {
     /// Let a row's close button keep its own clicks. NSTableView claims every
     /// click over a cell for selection and drag-to-reorder unless this says
     /// otherwise; the default answer for anything inside a cell view is no.
+    /// No disclosure triangle on the left: the header draws its own chevron
+    /// after the folder's name (SidebarHeaderContent), and a press anywhere on
+    /// the header toggles it (`mouseDown`).
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect { .zero }
+
+    /// Every cell the full width of its row, so where text starts is the
+    /// content's padding alone (SidebarRowContent, SidebarHeaderContent), not
+    /// that plus the source list's inset plus the triangle's old gutter.
+    /// Headers and rows then line up, as the ChatGPT app's do.
+    override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
+        rect(ofRow: row)
+    }
+
     override func validateProposedFirstResponder(_ responder: NSResponder,
                                                  for event: NSEvent?) -> Bool {
         if responder is SidebarCloseButton { return true }
@@ -401,6 +501,8 @@ struct SidebarSnapshotGroup: Equatable {
     let folder: String?
     let sessionIDs: [UUID]
     let tallIDs: Set<UUID>
+    /// The Pinned section (see `SidebarGroup.isPinned`).
+    var isPinned = false
 }
 
 /// The sidebar's session list as a native `NSOutlineView` — the same machinery
@@ -485,6 +587,18 @@ struct SidebarOutlineView: NSViewRepresentable {
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
+        // Tell the titlebar row whether rows are under it (SidebarBar).
+        scroll.contentView.postsBoundsChangedNotifications = true
+        context.coordinator.scrollObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main
+        ) { [weak scroll] _ in
+            MainActor.assumeIsolated {
+                guard let scroll else { return }
+                NotificationCenter.default.post(
+                    name: SidebarBar.scrolledNotification, object: scroll.window,
+                    userInfo: ["scrolled": scroll.documentVisibleRect.minY > 0.5])
+            }
+        }
         context.coordinator.apply(snapshot)
         return scroll
     }
@@ -506,6 +620,15 @@ struct SidebarOutlineView: NSViewRepresentable {
             let name: String
             init(name: String) { self.name = name }
         }
+        /// The Pinned section's header: first at the root while anything is
+        /// pinned. Always open, never dragged, no menu.
+        final class PinnedItem {}
+        /// The header over the sessions in no folder, so they read as a
+        /// section of their own rather than stray rows between Pinned and the
+        /// folders. There while any such session is. A label only: never
+        /// dragged, no menu, nothing to fold (the sessions stay root rows).
+        final class LooseHeaderItem {}
+
         final class SessionItem {
             let session: Session
             var id: Session.ID { session.id }
@@ -514,9 +637,17 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         let manager: SessionManager
         weak var outline: NSOutlineView?
+        var scrollObserver: NSObjectProtocol?
         weak var insertionLine: SidebarInsertionLine?
 
         private var snapshot: [SidebarSnapshotGroup] = []
+        private let pinnedItem = PinnedItem()
+        private var pinnedItems: [SessionItem] = []
+        private let looseHeader = LooseHeaderItem()
+        /// The root starts with the Pinned header (while anything is pinned)
+        /// and the Sessions header (while any session is in no folder), and
+        /// every root index (a drop's, an insertion line's) is past them.
+        private var rootOffset: Int { (pinnedItems.isEmpty ? 0 : 1) + (looseItems.isEmpty ? 0 : 1) }
         private var looseItems: [SessionItem] = []
         private var folderItems: [FolderItem] = []          // ordered, as rendered
         private var childrenByFolder: [String: [SessionItem]] = [:]
@@ -535,6 +666,23 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         func apply(_ new: [SidebarSnapshotGroup]) {
             guard let outline else { return }
+            // Only rows growing or shrinking a line (a session starting or
+            // stopping waiting): ease the heights instead of reloading, so the
+            // row opens and closes rather than the list jumping.
+            if new != snapshot, Self.sameStructure(new, snapshot) {
+                let changed = Set(new.flatMap(\.tallIDs)).symmetricDifference(snapshot.flatMap(\.tallIDs))
+                snapshot = new
+                let rows = IndexSet(changed.compactMap { id in
+                    sessionCache[id].map { outline.row(forItem: $0) }.flatMap { $0 >= 0 ? $0 : nil }
+                })
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = Motion.tabs
+                    context.timingFunction = Motion.curve
+                    outline.noteHeightOfRows(withIndexesChanged: rows)
+                }
+                syncExpansion()
+                return
+            }
             if new != snapshot {
                 snapshot = new
                 rebuildItems()
@@ -545,8 +693,19 @@ struct SidebarOutlineView: NSViewRepresentable {
             syncExpansion()
         }
 
+        /// The same groups holding the same sessions in the same order: only
+        /// which rows are two lines tall differs.
+        private static func sameStructure(_ a: [SidebarSnapshotGroup], _ b: [SidebarSnapshotGroup]) -> Bool {
+            // Pinned is a group with no folder, like the loose sessions: pinning
+            // the only loose session changes nothing else, and must still reload.
+            a.count == b.count && zip(a, b).allSatisfy {
+                $0.folder == $1.folder && $0.isPinned == $1.isPinned && $0.sessionIDs == $1.sessionIDs
+            }
+        }
+
         private func rebuildItems() {
             let byID = Dictionary(uniqueKeysWithValues: manager.sessions.map { ($0.id, $0) })
+            pinnedItems = []
             looseItems = []
             folderItems = []
             childrenByFolder = [:]
@@ -558,7 +717,9 @@ struct SidebarOutlineView: NSViewRepresentable {
                     sessionCache[id] = item
                     return item
                 }
-                if let folder = group.folder {
+                if group.isPinned {
+                    pinnedItems = items
+                } else if let folder = group.folder {
                     let item = folderCache[folder] ?? {
                         let item = FolderItem(name: folder)
                         folderCache[folder] = item
@@ -582,6 +743,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         private func syncExpansion() {
             guard let outline else { return }
             isSyncing = true
+            if !pinnedItems.isEmpty, !outline.isItemExpanded(pinnedItem) { outline.expandItem(pinnedItem) }
             for item in folderItems {
                 let shouldBeExpanded = !manager.isFolderCollapsed(item.name)
                 if shouldBeExpanded, !outline.isItemExpanded(item) {
@@ -596,23 +758,32 @@ struct SidebarOutlineView: NSViewRepresentable {
         // MARK: Data source
 
         func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-            if item == nil { return looseItems.count + folderItems.count }
+            if item == nil { return rootOffset + looseItems.count + folderItems.count }
+            if item is PinnedItem { return pinnedItems.count }
             if let folder = item as? FolderItem { return childrenByFolder[folder.name]?.count ?? 0 }
             return 0
         }
 
         func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
             if item == nil {
+                if index < rootOffset { return index == 0 && !pinnedItems.isEmpty ? pinnedItem : looseHeader }
+                let index = index - rootOffset
                 return index < looseItems.count
                     ? looseItems[index]
                     : folderItems[index - looseItems.count]
             }
+            if item is PinnedItem { return pinnedItems[index] }
             let folder = item as! FolderItem
             return childrenByFolder[folder.name]![index]
         }
 
         func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
-            item is FolderItem
+            item is FolderItem || item is PinnedItem
+        }
+
+        /// Pinned is what you pinned to see: it doesn't fold away.
+        func outlineView(_ outlineView: NSOutlineView, shouldCollapseItem item: Any) -> Bool {
+            !(item is PinnedItem)
         }
 
         // MARK: Rows
@@ -626,8 +797,14 @@ struct SidebarOutlineView: NSViewRepresentable {
                 cell.dragTitle = session.session.leafName
                 let path = session.session.abbreviatedPath
                 cell.dragSubtitle = path.isEmpty ? nil : path
+            } else if item is PinnedItem || item is LooseHeaderItem {
+                content = AnyView(SidebarSectionHeaderContent(title: item is PinnedItem ? "Pinned" : "Sessions")
+                    .padding(.top, sectionGap(item)))
+                cell = SidebarCellView(content: content)
+                return cell
             } else if let folder = item as? FolderItem {
-                content = AnyView(SidebarHeaderContent(manager: manager, folder: folder.name))
+                content = AnyView(SidebarHeaderContent(manager: manager, folder: folder.name)
+                    .padding(.top, sectionGap(item)))
                 cell = SidebarCellView(content: content)
                 cell.dragTitle = folder.name
                 cell.dragIsHeader = true
@@ -642,9 +819,24 @@ struct SidebarOutlineView: NSViewRepresentable {
             // title (content bottom-aligns, see SidebarHeaderContent). A
             // worktree session named for its task carries its branch on a
             // second line (see `Session.showsBranchLine`).
-            if item is FolderItem { return 32 }
-            if let session = (item as? SessionItem)?.session, session.showsBranchLine { return 42 }
+            // Roomier than a Finder list, as the ChatGPT app's is: a session
+            // row is something you read and pick all day, not scan past.
+            // Sections apart, rows close, as the ChatGPT app's are: the gap
+            // goes above a header, and a row's pill nearly touches the next.
+            if item is FolderItem || item is PinnedItem || item is LooseHeaderItem { return 30 + sectionGap(item) }
+            if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 44 }
             return 30
+        }
+
+        /// The room above a section header: none for the first, which the
+        /// sidebar's own top margin already sets apart.
+        private func sectionGap(_ item: Any) -> CGFloat {
+            guard item is FolderItem || item is PinnedItem || item is LooseHeaderItem else { return 0 }
+            let first: AnyObject?
+            if !pinnedItems.isEmpty { first = pinnedItem }
+            else if !looseItems.isEmpty { first = looseHeader }
+            else { first = folderItems.first }
+            return first === (item as AnyObject) ? 0 : 14
         }
 
         /// Row views draw the selection pill (full row width, across the
@@ -654,10 +846,27 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
             let rowView = SidebarPillRowView()
             rowView.showsPill = showsPill(item)
+            rowView.showsEditing = showsEditing(item)
+            rowView.sectionGap = sectionGap(item)
+            if let folder = item as? FolderItem {
+                let manager = self.manager, name = folder.name
+                let directory = manager.root(ofFolder: name).map { ($0 as NSString).abbreviatingWithTildeInPath }
+                rowView.setAddAction(directory: directory) { manager.newSession(inFolder: name) }
+                rowView.setMoreMenu { FolderActions.menu(for: name, manager: manager) }
+            }
             guard let session = item as? SessionItem else { return rowView }
 
             let manager = self.manager, target = session.session
             rowView.setCloseAction { manager.requestClose(target) }
+            rowView.setMoreMenu { SessionActions.menu(for: target, manager: manager) }
+            let id = target.id
+            rowView.onHoverChanged = { hovered in
+                if hovered {
+                    if manager.hoveredRowID != id { manager.hoveredRowID = id }
+                } else if manager.hoveredRowID == id {
+                    manager.hoveredRowID = nil
+                }
+            }
             rowView.setStatusContent(
                 AnyView(SessionStatusIndicator(manager: manager, session: target)))
             return rowView
@@ -665,9 +874,13 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         private func showsPill(_ item: Any) -> Bool {
             guard let session = item as? SessionItem else { return false }
-            // Suppressed while renaming so the edit field sits on a normal
-            // background.
+            // While renaming, the row draws its editing pill instead.
             return manager.selectedID == session.id && manager.editingID != session.id
+        }
+
+        private func showsEditing(_ item: Any) -> Bool {
+            guard let session = item as? SessionItem else { return false }
+            return manager.editingID == session.id
         }
 
         /// Re-render the selection pill whenever selection or rename state
@@ -693,6 +906,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                         as? SidebarPillRowView,
                       let item = outline.item(atRow: row) else { continue }
                 rowView.showsPill = showsPill(item)
+                rowView.showsEditing = showsEditing(item)
             }
         }
 
@@ -815,7 +1029,9 @@ struct SidebarOutlineView: NSViewRepresentable {
                 } else {
                     clearDropHighlight()
                     outline.setDropItem(drop.parent, dropChildIndex: drop.index)
-                    showInsertion(parent: drop.parent, index: drop.index)
+                    // Into the Sessions section: inset as in any section.
+                    showInsertion(parent: drop.parent, index: drop.index,
+                                  nested: drop.parent != nil || !looseItems.isEmpty)
                 }
                 return .move
             }
@@ -831,16 +1047,33 @@ struct SidebarOutlineView: NSViewRepresentable {
 
             if let folder = pb.string(forType: Self.folderDragType) {
                 guard item == nil else { return false }
-                manager.moveFolder(folder, toFolderIndex: max(0, index - loose))
+                manager.moveFolder(folder, toFolderIndex: max(0, index - rootOffset - loose))
                 return true
             }
             if let idString = pb.string(forType: Self.sessionDragType),
-               let id = UUID(uuidString: idString) {
+               let id = UUID(uuidString: idString),
+               let session = manager.sessions.first(where: { $0.id == id }) {
+                // Into Pinned: pinned there, folder kept.
+                if item is PinnedItem {
+                    manager.setPinned(session, true, at: index == NSOutlineViewDropOnItemIndex ? .max : index)
+                    return true
+                }
+                // Anywhere else: out of Pinned first, then where it was dropped.
+                let rootIndex = index - rootOffset
+                let wasPinned = manager.isPinned(session)
+                if wasPinned { manager.setPinned(session, false) }
+                // Back into its own group from Pinned: the drop index is as the
+                // group was drawn, without it, but unpinning puts it first in
+                // the group, and `moveSession` then discounts a place above
+                // the drop it never had. One more, so it lands on the line.
+                let home = wasPinned ? 1 : 0
                 if let folder = item as? FolderItem {
-                    manager.moveSession(id: id, toFolder: folder.name,
-                                        at: index == NSOutlineViewDropOnItemIndex ? .max : index)
+                    let at = index == NSOutlineViewDropOnItemIndex ? Int.max
+                        : index + (folder.name == session.folderPath ? home : 0)
+                    manager.moveSession(id: id, toFolder: folder.name, at: at)
                 } else if item == nil {
-                    manager.moveSession(id: id, toFolder: nil, at: max(0, index))
+                    let at = max(0, rootIndex) + (session.folderPath == nil ? home : 0)
+                    manager.moveSession(id: id, toFolder: nil, at: at)
                 } else {
                     return false
                 }
@@ -853,7 +1086,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// `[loose, loose+folders]`. Folders always render after the loose band.
         private func folderDropTarget(at point: NSPoint) -> Int {
             guard let outline else { return 0 }
-            let loose = looseItems.count, folders = folderItems.count
+            // Root indices, past the Pinned header when there is one: a folder
+            // never goes above Pinned.
+            let loose = rootOffset + looseItems.count, folders = folderItems.count
             guard folders > 0 else { return loose }
             var boundaries: [(y: CGFloat, target: Int)] = []
             for (i, item) in folderItems.enumerated() {
@@ -872,19 +1107,28 @@ struct SidebarOutlineView: NSViewRepresentable {
             let hovered = outline.row(at: point)
             // Below the last row → append after the last row's context.
             let row = hovered >= 0 ? hovered : outline.numberOfRows - 1
-            guard let item = outline.item(atRow: row) else { return (nil, looseItems.count, nil) }
+            let topLevelEnd = rootOffset + looseItems.count
+            guard let item = outline.item(atRow: row) else { return (nil, topLevelEnd, nil) }
             let rect = outline.rect(ofRow: row)
             let topHalf = hovered >= 0 && point.y < rect.midY
 
+            // Onto the Pinned header: pinned, at the end of the pinned.
+            if item is PinnedItem { return (pinnedItem, pinnedItems.count, nil) }
+            // Onto the Sessions header: out of any folder, at the end.
+            if item is LooseHeaderItem { return (nil, topLevelEnd, nil) }
             if let folder = item as? FolderItem {
                 // The top edge of the very first section is the "move to top
                 // level" zone — the top-level band renders above the folders but
                 // has no row to aim at when it's empty. Dropping here inserts
                 // the session above the first folder (at top level).
-                if row == looseItems.count, point.y < rect.minY + rect.height * 0.34 {
-                    return (nil, looseItems.count, nil)
+                if folder === folderItems.first, point.y < rect.minY + rect.height * 0.34 {
+                    return (nil, topLevelEnd, nil)
                 }
                 return (nil, 0, folder) // onto the header → append into the folder
+            }
+            if let session = item as? SessionItem,
+               let i = pinnedItems.firstIndex(where: { $0 === session }) {
+                return (pinnedItem, topHalf ? i : i + 1, nil)
             }
             if let session = item as? SessionItem {
                 if let parent = session.session.folderPath, let parentItem = folderCache[parent] {
@@ -892,9 +1136,9 @@ struct SidebarOutlineView: NSViewRepresentable {
                     return (parentItem, topHalf ? i : i + 1, nil)
                 }
                 let i = looseItems.firstIndex { $0 === session } ?? 0
-                return (nil, topHalf ? i : i + 1, nil)
+                return (nil, rootOffset + (topHalf ? i : i + 1), nil)
             }
-            return (nil, looseItems.count, nil)
+            return (nil, topLevelEnd, nil)
         }
 
         // MARK: Drop highlight
@@ -917,10 +1161,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// A `nil` parent is a top-level / between-sections drop (shallow inset);
         /// a folder parent is one level deep (extra inset), so the line makes the
         /// target level obvious.
-        private func showInsertion(parent: Any?, index: Int) {
+        private func showInsertion(parent: Any?, index: Int, nested: Bool = false) {
             guard let outline, let line = insertionLine else { return }
-            let inFolder = parent is FolderItem
-            let leading: CGFloat = inFolder ? 28 : 12
+            let leading: CGFloat = nested ? 28 : 12
             let width = max(0, outline.bounds.width - leading - 10)
             let height: CGFloat = 3
             // Clamp to at least y=1 so a top-of-list line is never clipped.
@@ -940,6 +1183,11 @@ struct SidebarOutlineView: NSViewRepresentable {
             func topOfRow(_ row: Int) -> CGFloat { outline.rect(ofRow: row).minY }
             func bottomOfRow(_ row: Int) -> CGFloat { outline.rect(ofRow: row).maxY }
 
+            if parent is PinnedItem {
+                if index < pinnedItems.count { return topOfRow(outline.row(forItem: pinnedItems[index])) }
+                if let last = pinnedItems.last { return bottomOfRow(outline.row(forItem: last)) }
+                return bottomOfRow(outline.row(forItem: pinnedItem))
+            }
             if let folder = parent as? FolderItem {
                 let children = childrenByFolder[folder.name] ?? []
                 if index < children.count {
@@ -950,13 +1198,15 @@ struct SidebarOutlineView: NSViewRepresentable {
                 }
                 return bottomOfRow(outline.row(forItem: folder)) // empty folder
             }
-            // Top-level: root children are loose items then folders.
+            // Top-level: root children are the Pinned header (when there is
+            // one), then loose items, then folders.
+            let index = index - rootOffset
             let loose = looseItems.count
-            if index < loose {
+            if index < loose, index >= 0 {
                 return topOfRow(outline.row(forItem: looseItems[index]))
             }
             let folderIdx = index - loose
-            if folderIdx < folderItems.count {
+            if folderIdx >= 0, folderIdx < folderItems.count {
                 return topOfRow(outline.row(forItem: folderItems[folderIdx]))
             }
             let lastRow = outline.numberOfRows - 1

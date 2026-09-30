@@ -32,7 +32,11 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | Next / previous session | ⇧⌘] / ⇧⌘[, ⌥⌘↓ / ⌥⌘↑ | Codex, Claude |
 | Session 1 to 9 | ⌘1 to ⌘9 | Codex, cmux |
 | Next waiting session | ⌥⌘] | |
+| Go to a session, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |
+| Run a command (the palette, commands only) | ⇧⌘P | VS Code (command palette) |
 | Rename session | ⌥⌘R | Codex |
+| Mark session as unread (come back to it) | ⇧⌘U | ChatGPT |
+| Pin / unpin session (a Pinned section at the top) | ⌥⌘P | ChatGPT |
 
 ⌘R still renames while no browser is showing, as it always did.
 
@@ -130,8 +134,9 @@ that, that kind opens where you last moved one, per session.
   preview, ⌘A is Select All as usual.
 - **⌘1 to ⌘9 are sessions, not tabs.** Sessions are what you switch between all
   day, which is also how Codex and cmux spend those keys.
-- **No command palette (⇧⌘P) and no settings (⌘,).** Wortel has neither. The
-  Help menu's search field finds any command.
+- **No settings (⌘,).** Wortel has none; `wortel.conf` is the settings. ⌘P
+  finds any session or command, ⇧⌘P commands only, and so does the Help
+  menu's search field.
 
 ## Deliberately not used
 

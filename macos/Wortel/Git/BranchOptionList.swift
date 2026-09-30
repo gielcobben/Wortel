@@ -16,6 +16,17 @@ import SwiftUI
 /// two copies of the same code that had drifted apart in the one way that
 /// mattered: only one of them listed remote branches.
 struct BranchOptionList: View {
+    /// Another checkout of the repo, for the switcher's Checkouts section.
+    struct CheckoutOption: Identifiable {
+        /// Its path.
+        let id: String
+        let name: String
+        /// "terminal · 3 changes", "clean".
+        let detail: String
+        /// The one the panes show.
+        let isShown: Bool
+    }
+
     @Binding var query: String
     let local: [GitBranch]
     let remote: [GitBranch]
@@ -37,6 +48,10 @@ struct BranchOptionList: View {
     /// have moved away from it, next to the checkmark on the branch that is
     /// actually current.
     var hoverSelects: Bool = true
+    /// The repo's checkouts, as a section above the branches in the same rows:
+    /// only the switcher passes any. Pointer only, like the rest of it.
+    var checkouts: [CheckoutOption] = []
+    var chooseCheckout: (CheckoutOption) -> Void = { _ in }
     let activate: (GitBranch) -> Void
 
     @FocusState private var filterFocused: Bool
@@ -45,6 +60,7 @@ struct BranchOptionList: View {
     /// preference to the selection while it lasts, so the pointer wins over the
     /// keyboard for as long as it is actually over a row.
     @State private var hovered: Int?
+    @State private var hoveredCheckout: String?
 
     /// Roughly eight rows. Tall enough to browse, short enough not to become
     /// the tallest thing on screen.
@@ -69,6 +85,9 @@ struct BranchOptionList: View {
     /// intrinsic height and the popover hosting it can be sized from it.
     private var listHeight: CGFloat {
         var height = Self.listPadding
+        if !checkouts.isEmpty {
+            height += Self.headerHeight + CGFloat(checkouts.count) * Self.rowHeight
+        }
         if !local.isEmpty {
             height += Self.headerHeight + CGFloat(local.count) * Self.rowHeight
         }
@@ -87,7 +106,7 @@ struct BranchOptionList: View {
 
             Divider()
 
-            if rows.isEmpty {
+            if rows.isEmpty && checkouts.isEmpty {
                 Text(hasAnyBranch ? "No matches" : "No branches")
                     .font(.callout)
                     .foregroundStyle(.tertiary)
@@ -96,6 +115,7 @@ struct BranchOptionList: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
+                        checkoutSection
                         section("Local", local, from: 0)
                         section("Remote", remote, from: local.count)
                     }
@@ -136,20 +156,49 @@ struct BranchOptionList: View {
         .onChange(of: selection) { hovered = nil }
     }
 
+    private func heading(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
+    }
+
+    @ViewBuilder
+    private var checkoutSection: some View {
+        if !checkouts.isEmpty {
+            heading("Checkouts")
+            ForEach(checkouts) { checkout in
+                OptionRow(glyph: checkout.isShown ? "checkmark" : "folder",
+                          title: checkout.name, isCurrent: checkout.isShown,
+                          trailing: checkout.detail,
+                          isSelected: hoveredCheckout == checkout.id,
+                          action: { chooseCheckout(checkout) },
+                          hover: { inside in
+                              if inside {
+                                  hovered = nil
+                                  hoveredCheckout = checkout.id
+                              } else if hoveredCheckout == checkout.id {
+                                  hoveredCheckout = nil
+                              }
+                          })
+                    .help(checkout.id)
+            }
+        }
+    }
+
     @ViewBuilder
     private func section(_ title: String, _ branches: [GitBranch], from start: Int) -> some View {
         if !branches.isEmpty {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 12)
-                .padding(.top, 6)
-                .padding(.bottom, 2)
+            heading(title)
             ForEach(Array(branches.enumerated()), id: \.element.id) { offset, branch in
                 let row = start + offset
-                BranchOptionRow(
-                    branch: branch, note: note(branch),
-                    isSelected: row == (hovered ?? selection),
+                OptionRow(
+                    glyph: branch.isCurrent ? "checkmark" : "arrow.triangle.branch",
+                    title: branch.name, isCurrent: branch.isCurrent,
+                    trailing: note(branch) ?? branch.upstream,
+                    isSelected: hoveredCheckout == nil && row == (hovered ?? selection),
                     action: { activate(branch) },
                     hover: { inside in
                         if inside {
@@ -172,11 +221,14 @@ struct BranchOptionList: View {
     }
 }
 
-/// One row. The metrics here are the thing the two lists used to keep in step
-/// by hand.
-private struct BranchOptionRow: View {
-    let branch: GitBranch
-    let note: String?
+/// One row, a branch's or a checkout's. The metrics here are the thing the two
+/// lists used to keep in step by hand, and what the Checkouts section shares
+/// so it reads as one more section rather than a second design.
+private struct OptionRow: View {
+    let glyph: String
+    let title: String
+    let isCurrent: Bool
+    let trailing: String?
     let isSelected: Bool
     let action: () -> Void
     let hover: (Bool) -> Void
@@ -184,21 +236,21 @@ private struct BranchOptionRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: branch.isCurrent ? "checkmark" : "arrow.triangle.branch")
-                    .font(.caption)
+                Image(systemName: glyph)
+                    .font(.system(size: 12))
                     .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.tertiary))
-                    .frame(width: 12)
-                Text(branch.name)
+                    .frame(width: 16)
+                Text(title)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .fontWeight(branch.isCurrent ? .medium : .regular)
+                    .fontWeight(isCurrent ? .medium : .regular)
                     // The name is the row. Without this SwiftUI splits the
                     // width between the two labels and shortens both, so
                     // `copy-and-docs` came out `c…cs` next to an `origi…` that
                     // told you nothing either. The note gives way first.
                     .layoutPriority(1)
                 Spacer(minLength: 8)
-                if let trailing = note ?? branch.upstream {
+                if let trailing {
                     Text(trailing)
                         .font(.caption)
                         .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.8))

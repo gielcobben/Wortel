@@ -5,9 +5,12 @@ import SwiftUI
 /// A list claims the keyboard only once it is explicitly focused — by a click on
 /// one of its rows, or by the Focus List command — because the terminal is where
 /// typing normally goes and it keeps its arrow keys until you ask otherwise.
-/// That's also why the system focus ring is replaced by a border around the
-/// whole list: the row pill is accent-filled whether or not the list has focus,
-/// so it can't be the thing that tells you where the arrows will land.
+///
+/// Where the arrows will land is said the Mac's way, by the selection: blue
+/// while the list has the keyboard, grey while it doesn't, as in Finder and
+/// Mail (rows read `listHasFocus`). It used to be a blue border around the
+/// whole list, the only such border in the app; that the keyboard just moved
+/// is the focus blink's job (FocusBlink), for every area alike.
 ///
 /// `extendMove` and `selectAll` are optional because only a list that *has* a
 /// multi-row selection has anything to say about ⇧↑/⇧↓ and ⌘A; History's rows
@@ -43,12 +46,14 @@ struct KeyboardNavigableList: ViewModifier {
                 selectAll()
                 return .handled
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(
-                        focused ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 2))
-            .background(.clear)
+            .environment(\.listHasFocus, focused)
     }
+}
+
+extension EnvironmentValues {
+    /// Whether the list a row is in has the keyboard: its selection is drawn
+    /// on the accent then, and in grey otherwise.
+    @Entry var listHasFocus = true
 }
 
 extension View {

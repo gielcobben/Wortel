@@ -589,10 +589,6 @@ struct SessionRow: View {
         let since: Date?
     }
 
-    @State private var draft = ""
-    @State private var cancelling = false
-    @FocusState private var fieldFocused: Bool
-
     var body: some View {
         // Content padded inside an inset pill (~6pt from the cell edges, so
         // it's not edge-to-edge).
@@ -608,43 +604,16 @@ struct SessionRow: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
-                    TextField("Name", text: $draft)
-                        .textFieldStyle(.plain)
-                        .focused($fieldFocused)
-                        // Route *every* way of ending an edit — Return, Escape,
-                        // and clicking away — through one focus-resignation
-                        // path. If the field is torn out of the tree (editingID
-                        // = nil) while it's still first responder, AppKit's
-                        // field editor is left dangling and the sidebar stops
-                        // receiving clicks. Dropping focus first, then letting
-                        // onChange commit/cancel, avoids that.
-                        .onSubmit { fieldFocused = false }
-                        .onExitCommand {
-                            cancelling = true
-                            fieldFocused = false
-                        }
-                        .onChange(of: fieldFocused) { _, focused in
-                            // While the field holds focus, ⌘A means select-all
-                            // here (not the terminal's clear-line keybind).
-                            MainMenu.setTextEditing(focused)
-                            guard !focused else { return }
-                            if cancelling { cancel() } else { commit(draft) }
-                        }
-                        .task {
-                            cancelling = false
-                            draft = session.name
-                            fieldFocused = true
-                            await selectLeafName()
-                        }
-                        // Backstop: if the field is torn out of the tree before
-                        // focus resigns, still restore ⌘A to the terminal.
-                        .onDisappear { MainMenu.setTextEditing(false) }
+                    SidebarRenameField(name: session.name, commit: commit, cancel: cancel)
+                        // The editor sets its text 2pt in (its line padding),
+                        // measured: back by that, the text is where the name was.
+                        .padding(.leading, -2)
                 } else {
                     // The folder prefix lives in the section header, so the row
                     // shows just the leaf ("giel/hello" -> "hello"). The rename
-                    // field (draft = session.name) still edits the full name, so
+                    // field still edits the full name (SidebarRenameField), so
                     // retyping the prefix is how you move between folders — but
-                    // it opens with only the leaf selected (`selectLeafName`).
+                    // it opens with only the leaf selected.
                     // An ellipsis at rest; on hover, a name that doesn't fit
                     // slides to show the rest, as the ChatGPT app's do.
                     MarqueeName(text: session.leafName, active: isHovered)
@@ -671,39 +640,6 @@ struct SessionRow: View {
             Spacer(minLength: 4)
         }
         .padding(.vertical, 6)
-    }
-
-    /// Narrow the rename selection to the leaf, so "Wakker/Worker" opens with
-    /// only "Worker" selected.
-    ///
-    /// Making a text field first responder programmatically has AppKit's field
-    /// editor select the whole string, and the draft is the *full* name — so on
-    /// a foldered session the first keystroke took the prefix with it and the
-    /// session silently jumped to the top level. The prefix stays visible and
-    /// editable: retyping it is still how you move between folders.
-    ///
-    /// SwiftUI's TextField exposes no selection API, hence going through the
-    /// field editor. Focus lands on it a runloop turn or two after
-    /// `fieldFocused = true`, so poll for it rather than guessing a delay, and
-    /// match on the string to be sure it's *this* row's editor and not some
-    /// other field that happens to hold focus — and that SwiftUI has pushed the
-    /// draft into it, since selecting before that would be overwritten.
-    ///
-    /// Failing to find it just leaves the whole name selected, i.e. the old
-    /// behaviour, which is why this gives up quietly rather than retrying hard.
-    @MainActor
-    private func selectLeafName() async {
-        let name = session.name
-        guard let leaf = SessionName.leafRange(of: name) else { return }
-
-        for _ in 0..<10 {
-            if let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
-               editor.string == name {
-                editor.selectedRange = leaf
-                return
-            }
-            if (try? await Task.sleep(for: .milliseconds(16))) == nil { return }
-        }
     }
 }
 
@@ -1157,6 +1093,126 @@ private struct TerminalContainer: NSViewControllerRepresentable {
     func updateNSViewController(_ controller: TerminalHostViewController, context: Context) {
         if let session {
             controller.show(session, runtime: runtime)
+        }
+    }
+}
+
+/// The rename field in a session's row: AppKit rather than a SwiftUI
+/// TextField, for the one thing SwiftUI's couldn't do, which is not be a
+/// white box. It draws nothing of its own: the row draws its pill with an
+/// accent edge (SidebarPillRowView.showsEditing), and the text sits on it
+/// exactly where the name sat, in the name's font.
+///
+/// Every way out ends editing first and acts after: Return and a click
+/// elsewhere save, Escape cancels. Tearing the field out while it still had
+/// the keyboard left AppKit's field editor dangling, and the sidebar stopped
+/// taking clicks.
+///
+/// It opens with the leaf selected ("Worker" in "Wakker/Worker"): the name it
+/// edits is the full one, and a first keystroke taking the folder with it
+/// moved the session out of its folder without saying so. Retyping the prefix
+/// is still how you move one between folders.
+private struct SidebarRenameField: NSViewRepresentable {
+    let name: String
+    let commit: (String) -> Void
+    let cancel: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    /// A field in a source-list table is given a white background when it
+    /// starts editing, by the table: this one keeps none, whoever asks. And
+    /// no alignment insets, so SwiftUI puts its frame where the name's was.
+    final class Field: NSTextField {
+        override var drawsBackground: Bool {
+            get { false }
+            set {}
+        }
+        override var isBezeled: Bool {
+            get { false }
+            set {}
+        }
+        override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = Field(frame: .zero)
+        field.cell = CenteredTextFieldCell(textCell: name)
+        field.isEditable = true
+        field.isSelectable = true
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 13)
+        field.cell?.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.lineBreakMode = .byClipping
+        field.delegate = context.coordinator
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        context.coordinator.focus(field, attemptsLeft: 20)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+        MainMenu.setTextEditing(false)
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: SidebarRenameField
+        private var cancelling = false
+        private var ended = false
+
+        init(_ parent: SidebarRenameField) { self.parent = parent }
+
+        /// Into the field once it's in a key window, then the leaf selected.
+        func focus(_ field: NSTextField, attemptsLeft: Int) {
+            DispatchQueue.main.async { [weak self, weak field] in
+                guard let self, let field else { return }
+                guard let window = field.window, window.isKeyWindow else {
+                    if attemptsLeft > 0 { self.focus(field, attemptsLeft: attemptsLeft - 1) }
+                    return
+                }
+                window.makeFirstResponder(field)
+                MainMenu.setTextEditing(true)
+                let name = field.stringValue
+                if let leaf = SessionName.leafRange(of: name) {
+                    field.currentEditor()?.selectedRange = leaf
+                } else {
+                    field.currentEditor()?.selectAll(nil)
+                }
+            }
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            switch selector {
+            case #selector(NSResponder.insertNewline(_:)):
+                control.window?.makeFirstResponder(nil)
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                cancelling = true
+                control.window?.makeFirstResponder(nil)
+                return true
+            default:
+                return false
+            }
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard !ended, let field = notification.object as? NSTextField else { return }
+            ended = true
+            MainMenu.setTextEditing(false)
+            let text = field.stringValue
+            // After this event: the row goes away with the edit, and it
+            // mustn't while AppKit is still finishing it.
+            DispatchQueue.main.async { [parent, cancelling] in
+                if cancelling { parent.cancel() } else { parent.commit(text) }
+            }
         }
     }
 }

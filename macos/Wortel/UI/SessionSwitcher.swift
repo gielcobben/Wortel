@@ -553,7 +553,25 @@ private struct PaletteField: NSViewRepresentable {
 /// A text cell whose text is centred vertically, and in the same place when
 /// the field editor takes over for editing: the default draws the idle text
 /// and the editor's at slightly different heights, and the text jumps.
-private final class CenteredTextFieldCell: NSTextFieldCell {
+///
+/// Its editor draws no background either. AppKit's shared field editor paints
+/// white while it edits, which on a field over the sidebar's material (the
+/// rename) is a white box, and set up here it's clear from the first frame
+/// rather than cleared a frame or two in.
+final class CenteredTextFieldCell: NSTextFieldCell {
+    override func setUpFieldEditorAttributes(_ textObj: NSText) -> NSText {
+        let editor = super.setUpFieldEditorAttributes(textObj)
+        editor.drawsBackground = false
+        return editor
+    }
+
+    /// The clip view AppKit wraps a scrolling field's editor in paints a
+    /// background of its own, too.
+    private func clearEditorBackground(_ textObj: NSText) {
+        textObj.drawsBackground = false
+        (textObj.superview as? NSClipView)?.drawsBackground = false
+    }
+
     private func centred(_ rect: NSRect) -> NSRect {
         let height = cellSize(forBounds: rect).height
         guard height < rect.height else { return rect }
@@ -568,11 +586,13 @@ private final class CenteredTextFieldCell: NSTextFieldCell {
     override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
                        delegate: Any?, event: NSEvent?) {
         super.edit(withFrame: centred(rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+        clearEditorBackground(textObj)
     }
 
     override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
                          delegate: Any?, start selStart: Int, length selLength: Int) {
         super.select(withFrame: centred(rect), in: controlView, editor: textObj, delegate: delegate,
                      start: selStart, length: selLength)
+        clearEditorBackground(textObj)
     }
 }

@@ -23,6 +23,12 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
             needsDisplay = true
         }
     }
+    /// Its name is being edited: the pill, with a thin accent edge, and the
+    /// field transparent on it (SidebarRowContent). Not a white text box
+    /// dropped into the list.
+    var showsEditing = false {
+        didSet { if showsEditing != oldValue { needsDisplay = true } }
+    }
     /// A dragged session is hovering this folder header (drop-on / append).
     var showsDropHighlight = false {
         didSet { if showsDropHighlight != oldValue { needsDisplay = true } }
@@ -56,7 +62,15 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
         let rect = pillRect
-        if showsPill {
+        if showsEditing {
+            NSColor.labelColor.withAlphaComponent(Self.pillAlpha).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
+            NSColor.controlAccentColor.withAlphaComponent(0.55).setStroke()
+            let edge = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
+                                    xRadius: Self.pillRadius - 0.5, yRadius: Self.pillRadius - 0.5)
+            edge.lineWidth = 1
+            edge.stroke()
+        } else if showsPill {
             // Grey, not accent. The sidebar never holds focus, so this is the
             // same situation as an unfocused source list, and the accent pill was
             // the loudest thing in the window: it drowned out the attention dots,
@@ -828,6 +842,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
             let rowView = SidebarPillRowView()
             rowView.showsPill = showsPill(item)
+            rowView.showsEditing = showsEditing(item)
             rowView.sectionGap = sectionGap(item)
             if let folder = item as? FolderItem {
                 let manager = self.manager, name = folder.name
@@ -855,9 +870,13 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         private func showsPill(_ item: Any) -> Bool {
             guard let session = item as? SessionItem else { return false }
-            // Suppressed while renaming so the edit field sits on a normal
-            // background.
+            // While renaming, the row draws its editing pill instead.
             return manager.selectedID == session.id && manager.editingID != session.id
+        }
+
+        private func showsEditing(_ item: Any) -> Bool {
+            guard let session = item as? SessionItem else { return false }
+            return manager.editingID == session.id
         }
 
         /// Re-render the selection pill whenever selection or rename state
@@ -883,6 +902,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                         as? SidebarPillRowView,
                       let item = outline.item(atRow: row) else { continue }
                 rowView.showsPill = showsPill(item)
+                rowView.showsEditing = showsEditing(item)
             }
         }
 

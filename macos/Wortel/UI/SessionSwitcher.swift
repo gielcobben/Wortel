@@ -76,6 +76,12 @@ final class SessionSwitcher {
         top = frame.maxY - 84
         panel.setFrame(NSRect(x: frame.midX - SwitcherView.width / 2, y: top - SwitcherView.fieldHeight,
                               width: SwitcherView.width, height: SwitcherView.fieldHeight), display: false)
+        // Before it's shown: showing it lays the card out, and the card's first
+        // report of its height arrives then. With the panel not yet set that
+        // report was dropped, and never repeated, since the height didn't
+        // change again: the window stayed at the field's height, the card cut
+        // off inside it.
+        self.panel = panel
         window.addChildWindow(panel, ordered: .above)
 
         // In with a quick fade, as Spotlight comes in.
@@ -86,11 +92,15 @@ final class SessionSwitcher {
             context.timingFunction = Motion.curve
             panel.animator().alphaValue = 1
         }
-        self.panel = panel
+        if let height = pendingHeight { resize(to: height) }
     }
+
+    /// A height reported before there was a panel to give it to.
+    private var pendingHeight: CGFloat?
 
     /// The card's height changed with the list: grow or shrink from the top.
     private func resize(to height: CGFloat) {
+        pendingHeight = height
         guard let panel, abs(panel.frame.height - height) > 0.5 else { return }
         panel.setFrame(NSRect(x: panel.frame.minX, y: top - height,
                               width: panel.frame.width, height: height), display: true)

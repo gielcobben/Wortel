@@ -164,20 +164,6 @@ private struct SwitcherView: View {
                                          current: manager.selectedID)
     }
 
-    /// The card's height for `count` matches, worked out rather than measured,
-    /// so the window is the right size from the first frame.
-    private func height(for count: Int) -> CGFloat {
-        var height = Self.fieldHeight
-        if count > 0 {
-            height += 1 + (query.isEmpty ? Self.headerHeight : 0)
-                + CGFloat(min(count, Self.visibleRows)) * Self.rowHeight + Self.listPadding * 2
-                + Self.footerHeight
-        } else if !query.isEmpty {
-            height += 1 + Self.emptyHeight
-        }
-        return height
-    }
-
     var body: some View {
         let matches = self.matches
         VStack(spacing: 0) {
@@ -238,16 +224,16 @@ private struct SwitcherView: View {
                     .frame(height: Self.emptyHeight)
             }
         }
-        .frame(width: Self.width, alignment: .top)
+        .frame(width: Self.width)
+        // Its own height, whatever the window's, measured once laid out and
+        // handed to the window: the window follows the card, never the other
+        // way round. (Worked out from row counts, the two disagreed, and the
+        // card's top was cut off above a gap under it.)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resize($0) }
         .frame(maxHeight: .infinity, alignment: .top)
-        .onAppear {
-            focused = true
-            resize(height(for: matches.count))
-        }
-        .onChange(of: query) { _, _ in
-            highlighted = 0
-            resize(height(for: self.matches.count))
-        }
+        .onAppear { focused = true }
+        .onChange(of: query) { _, _ in highlighted = 0 }
     }
 
     private func move(_ offset: Int, in count: Int) -> KeyPress.Result {

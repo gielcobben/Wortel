@@ -107,6 +107,16 @@ final class BrowserPage: NSObject {
     @ObservationIgnored private var reloadWhenShown = false
     @ObservationIgnored private var snapshotTimer: Timer?
 
+    /// What Safari adds to WebKit's user agent, which a bare web view leaves
+    /// out. Without it Google won't sign you in ("this browser or app may not
+    /// be secure") and some sites call the browser unsupported. The version is
+    /// the Safari on this Mac, the engine the page is actually getting.
+    private static let safariUserAgent: String = {
+        let safari = Bundle(path: "/Applications/Safari.app")?
+            .infoDictionary?["CFBundleShortVersionString"] as? String
+        return "Version/\(safari ?? "26.0") Safari/605.1.15"
+    }()
+
     /// How often a page whose local server is down tries again.
     private static let retryInterval: Duration = .seconds(1)
 
@@ -114,12 +124,19 @@ final class BrowserPage: NSObject {
         self.address = address
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        configuration.applicationNameForUserAgent = Self.safariUserAgent
+        webView = BrowserWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.navigationDelegate = self
         webView.uiDelegate = self
         // Inspect Element in the context menu.
         webView.isInspectable = true
+        // What `toggleInspector` needs: without it the inspector never
+        // connects, and the private call it makes silently does nothing.
+        let preferences = configuration.preferences
+        if preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
+            preferences.setValue(true, forKey: "developerExtrasEnabled")
+        }
         webView.allowsBackForwardNavigationGestures = true
         webView.autoresizingMask = [.width, .height]
         observations = [
@@ -201,6 +218,35 @@ final class BrowserPage: NSObject {
     }
 
     func focusAddress() { addressFocusRequest += 1 }
+
+    /// Web Inspector, docked under the page, and away again: ⌥⌘I, as in
+    /// Safari. WebKit has no public call for it, only the context menu's
+    /// Inspect Element (`isInspectable`), so this is its private `_inspector`.
+    /// If a macOS release takes that away the shortcut does nothing, and
+    /// Inspect Element is still there.
+    func toggleInspector() {
+        guard let inspector else { return }
+        let action = NSSelectorFromString(isInspectorVisible ? "hide" : "show")
+        if inspector.responds(to: action) { inspector.perform(action) }
+    }
+
+    var isInspectorVisible: Bool {
+        guard let inspector, inspector.responds(to: NSSelectorFromString("isVisible")) else { return false }
+        return inspector.value(forKey: "isVisible") as? Bool ?? false
+    }
+
+    /// The inspector docks into the view the page is in, so it's put away
+    /// before the page moves to another one, rather than left behind.
+    fileprivate func hideInspector() {
+        guard isInspectorVisible, let inspector else { return }
+        inspector.perform(NSSelectorFromString("hide"))
+    }
+
+    private var inspector: NSObject? {
+        let getter = NSSelectorFromString("_inspector")
+        guard webView.responds(to: getter) else { return nil }
+        return webView.perform(getter)?.takeUnretainedValue() as? NSObject
+    }
 
     /// The keyboard to the page itself. ⌘] onto a browser.
     func focusPage() {
@@ -348,13 +394,20 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         if webView.window != nil { reload() } else { reloadWhenShown = true }
     }
 
-    /// `target="_blank"` and `window.open`: in this tab. There's no second
-    /// window to give it. An empty popup (`window.open('')`) is ignored rather
-    /// than blanking the page.
+    /// A `target="_blank"` link: in this tab, as there's no second tab to
+    /// give it. An empty one is ignored rather than blanking the page.
+    ///
+    /// A page's own `window.open` gets a window (`BrowserPopup`). What a page
+    /// opens itself is usually a sign-in ("Sign in with Google") that reports
+    /// back through `window.opener` and closes, and loaded in this tab it had
+    /// no opener to report to: the sign-in went nowhere.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url, url.absoluteString != "about:blank" { webView.load(action.request) }
-        return nil
+        guard action.navigationType != .linkActivated else {
+            if let url = action.request.url, url.absoluteString != "about:blank" { webView.load(action.request) }
+            return nil
+        }
+        return BrowserPopup.open(configuration: configuration, features: windowFeatures, over: webView.window)
     }
 
     // The page's own dialogs, as sheets on the window: the app being tested
@@ -795,7 +848,7 @@ private struct WebViewHost: NSViewRepresentable {
     let page: BrowserPage
 
     func makeNSView(context: Context) -> NSView {
-        let container = NSView()
+        let container = WebViewContainer()
         page.host = container
         attach(to: container)
         return container
@@ -810,13 +863,63 @@ private struct WebViewHost: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ container: NSView, coordinator: ()) {
+        // The inspector docked in here goes too. A move usually hides it in
+        // `attach`, but only if the new place attaches before this one goes.
+        for case let webView as WKWebView in container.subviews {
+            BrowserTabs.shared.page(holding: webView)?.hideInspector()
+        }
         container.subviews.forEach { $0.removeFromSuperview() }
     }
 
     private func attach(to container: NSView) {
         let webView = page.webView
         guard webView.superview !== container else { return }
+        if webView.superview != nil { page.hideInspector() }
         webView.frame = container.bounds
         container.addSubview(webView)
     }
+}
+
+/// A page's web view, with a few of the app's shortcuts kept from the page.
+///
+/// A page gets every ⌘ key first, and the menu only what it lets go of: the
+/// order Safari and Chrome use, and what lets a web app have its ⌘K. Like
+/// Chrome, a short list skips the page, so no page can keep you in it: quit,
+/// close, a new session, and moving between sessions.
+private final class BrowserWebView: WKWebView {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, window?.firstResponder === self, Self.isReserved(event),
+           let menu = NSApp.mainMenu, menu.performKeyEquivalent(with: event) {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private static let arrowUp = String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!)
+    private static let arrowDown = String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!)
+
+    /// The keys, as the menu has them. "{" and "}" because ⇧⌘[ arrives as
+    /// either shape (see MainMenu's hidden twins).
+    private static let reserved: [(NSEvent.ModifierFlags, Set<String>)] = [
+        ([.command], ["q", "w", "n"]),
+        ([.command, .shift], ["w", "[", "]", "{", "}"]),
+        ([.command, .option], ["]", arrowUp, arrowDown]),
+    ]
+
+    private static func isReserved(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
+        return reserved.contains { $0.0 == modifiers && $0.1.contains(key) }
+    }
+}
+
+/// Where a web view sits: the next stop for a key its page didn't want.
+///
+/// WebKit hands a key the page passed on back to AppKit. A ⌘ key has had
+/// the menu by then; anything else climbs the responder chain to the window,
+/// which beeps. A canvas that pans on a held space claims the first press
+/// and lets the repeats go, so holding space beeped. A browser doesn't beep
+/// at a key a page ignored, so this ends the climb here.
+final class WebViewContainer: NSView {
+    override func keyDown(with event: NSEvent) {}
 }

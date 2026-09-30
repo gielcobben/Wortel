@@ -105,6 +105,7 @@ session, the same as closing a tab in any other terminal ends its shell.
 | Reload, ignoring the cache | ⇧⌘R | Chrome, Codex, cmux |
 | Back / forward | ⌘[ / ⌘] | Safari, Chrome, cmux |
 | Zoom in / out / actual size | ⌘+ / ⌘- / ⌘0 | Safari, Chrome |
+| Web Inspector | ⌥⌘I | Safari, Chrome |
 
 ⌘L, ⌘R and ⇧⌘R reach the browser in front from anywhere, the terminal included:
 change something, ⌘R, look. With no browser showing they are left to the

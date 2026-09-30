@@ -902,6 +902,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         BrowserTabs.shared.page(for: id).reloadFromOrigin()
     }
 
+    /// ⌥⌘I: Web Inspector for the browser in front, or away again.
+    @objc func showWebInspector(_ sender: Any?) {
+        guard let id = frontBrowser() else { return }
+        BrowserTabs.shared.page(for: id).toggleInspector()
+    }
+
     /// ⌘+ / ⌘- / ⌘0 with the keyboard in a browser's page zoom the page. The
     /// same selectors a terminal answers for its font size: the responder
     /// chain reaches a focused terminal first, and gets here only when there
@@ -1205,6 +1211,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(previewFindNext(_:))
             || menuItem.action == #selector(previewFindPrevious(_:)) {
             return openFind()?.matches.isEmpty == false
+        }
+        if menuItem.action == #selector(showWebInspector(_:)) {
+            let page = frontBrowser().flatMap { BrowserTabs.shared.existingPage(for: $0) }
+            menuItem.title = page?.isInspectorVisible == true ? "Hide Web Inspector" : "Show Web Inspector"
+            return page != nil
         }
         if menuItem.action == #selector(openBrowserLocation(_:))
             || menuItem.action == #selector(reloadBrowserPage(_:))

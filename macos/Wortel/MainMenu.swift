@@ -483,6 +483,10 @@ enum MainMenu {
         reloadItem = viewMenu.addItem(withTitle: "Reload Page", action: #selector(AppDelegate.reloadBrowserPage(_:)), keyEquivalent: "")
         let forceReload = viewMenu.addItem(withTitle: "Force Reload Page", action: #selector(AppDelegate.forceReloadBrowserPage(_:)), keyEquivalent: "r")
         forceReload.keyEquivalentModifierMask = [.command, .shift]
+        // ⌥⌘I, as Safari and Chrome open their inspector. Disabled with no
+        // browser in front, so it goes on to the terminal.
+        let inspector = viewMenu.addItem(withTitle: "Show Web Inspector", action: #selector(AppDelegate.showWebInspector(_:)), keyEquivalent: "i")
+        inspector.keyEquivalentModifierMask = [.command, .option]
         // ⌘D / ⇧⌘D: every terminal's split right and split down (iTerm,
         // Ghostty, Warp, cmux, Terminal). Wortel's layout is fixed, so they
         // are a terminal beside the one you're in and one under it.

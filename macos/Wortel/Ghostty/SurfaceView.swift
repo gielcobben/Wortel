@@ -55,6 +55,15 @@ final class SurfaceView: NSView {
     private var cursor: NSCursor = .iBeam
     private var cursorVisible: Bool = true
 
+    /// A tab is laid over this terminal in the main area (MainAreaController),
+    /// which keeps it mounted and visible underneath. A covered terminal
+    /// claims no cursor: its cursor rect would still apply under the cover,
+    /// and WebKit shows no page cursor (a link's hand, Figma's grab) while the
+    /// mouse is in anyone's cursor rect.
+    var isCovered = false {
+        didSet { if isCovered != oldValue { window?.invalidateCursorRects(for: self) } }
+    }
+
     /// Cell size in points, updated via GHOSTTY_ACTION_CELL_SIZE. Used for
     /// the IME candidate window position.
     private(set) var cellSize: NSSize = .init(width: 8, height: 16)
@@ -367,7 +376,7 @@ final class SurfaceView: NSView {
         default: cursor = .arrow
         }
         window?.invalidateCursorRects(for: self)
-        cursor.set()
+        if !isCovered { cursor.set() }
     }
 
     func setCursorVisibility(_ visibility: ghostty_action_mouse_visibility_e) {
@@ -380,6 +389,7 @@ final class SurfaceView: NSView {
     }
 
     override func resetCursorRects() {
+        guard !isCovered else { return }
         addCursorRect(bounds, cursor: cursor)
     }
 

@@ -67,6 +67,8 @@ final class MainAreaController: NSViewController {
         tabHost.show(surface, focusRequest: git.mainFocusRequest, handBack: { [weak git] in git?.focusFront(of: .main) })
         // Out of the way of clicks when it has nothing to show.
         tabHost.view.isHidden = surface == nil
+        // Nor does its cursor show through what covers it.
+        session?.surfaceView?.isCovered = active != nil
         // After this turn: a session switch focuses the session's terminal in
         // the same update, and the check has to come after that.
         DispatchQueue.main.async { [weak self] in self?.keepKeyboardOffCoveredTerminal() }

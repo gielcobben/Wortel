@@ -163,6 +163,9 @@ final class Session: Identifiable {
     /// dwelled on the session. Drives a small hollow "unread" dot so a quick
     /// click-through to triage doesn't lose track of what you skipped past.
     var unread: AttentionKind?
+    /// Marked unread by hand (⇧⌘U): the ring shows even on the selected row,
+    /// and nothing clears it until you've left the session and come back.
+    var markedUnread = false
     /// Convenience for the count-based Dock badge and close bookkeeping.
     var needsAttention: Bool { attention != nil }
     /// A foreground command is currently running in this session. Debounced by

@@ -670,7 +670,9 @@ struct SessionStatusIndicator: View {
             // a session that failed and is already working again still says so.
             // Hidden while a loud dot is up (the dot outranks it) and on the
             // selected row (you're on it, the dwell clock is running).
-            if let kind = session.unread, !isSelected, session.attention == nil {
+            // Marked unread by hand shows even on the selected row: you asked
+            // for it, and a flag you can't see looks like it didn't take.
+            if let kind = session.unread, !isSelected || session.markedUnread, session.attention == nil {
                 // Quiet "you haven't caught up here" trail: a hollow ring in the
                 // kind's colour, no pulse.
                 Circle()

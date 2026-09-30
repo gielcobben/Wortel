@@ -27,6 +27,9 @@ final class SessionManager {
                 attentionFlash = AttentionFlash(kind: kind)
             }
             clearAttention(session)
+            // Coming back to a session marked unread: that's the "later" it was
+            // marked for, so it clears the usual way from here.
+            session.markedUnread = false
             // Left the previous session before it could count as read; start the
             // caught-up clock on the one you just landed on.
             cancelCaughtUp(oldValue)
@@ -1912,11 +1915,16 @@ final class SessionManager {
     /// clears the usual way, once you've spent time in it after coming back.
     func markUnread(_ session: Session) {
         if session.unread == nil { session.unread = .finished }
+        session.markedUnread = true
         cancelCaughtUp(session.id)
     }
 
     private func scheduleCaughtUp(_ session: Session) {
         unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
+        // Marked by hand: held until you come back to it (see `selectedID`),
+        // not cleared by a menu closing or the app coming forward while you're
+        // still in it.
+        guard !session.markedUnread else { return }
         guard session.unread != nil, isActivelyViewing(session) else { return }
         let id = session.id
         let work = DispatchWorkItem { [weak self, weak session] in

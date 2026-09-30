@@ -13,11 +13,12 @@ import SwiftUI
 /// session, so they have no place in a list that is about one, and they only
 /// come from before servers were bound to their sessions (or from a `setsid`).
 ///
-/// Laid out with room, the way Proxyman's and Xcode's status popovers are: a
-/// header, two-line rows whose second line is the address, and controls that
-/// are always where you expect them. The first cut borrowed the branch
-/// switcher's dense single-line rows, and a list of two servers read as cramped
-/// rather than calm.
+/// Laid out as the rest of the chrome is: a small grey heading, rows with the
+/// name over its address and memory in grey, and the row's buttons only under
+/// the pointer, as a sidebar row's "…" and "×" are. Sized close to a menu
+/// (12pt names, 11pt detail), because that's how it's used: open, pick, gone.
+/// (It was a roomy list at 13pt with a bold title, after Proxyman's and Xcode's
+/// popovers, which read as a different app.)
 struct RunningJobsList: View {
     let monitor: ProcessMonitor
     /// The session this popover is about.
@@ -26,13 +27,16 @@ struct RunningJobsList: View {
     let openInTab: (URL) -> Void
     let dismiss: () -> Void
 
-    static let width: CGFloat = 360
+    static let width: CGFloat = 280
 
     /// About five rows before it scrolls.
     static let maxListHeight: CGFloat = 300
 
-    /// The outer margin everything lines up on: header, rows' content, footer.
-    static let inset: CGFloat = 16
+    /// The card's margin around the rows; their pills sit this far in.
+    static let margin: CGFloat = 5
+    /// Where text starts inside a row's pill, which the heading and the
+    /// footer line up on too.
+    static let textInset: CGFloat = 10
 
     /// The row under the pointer, by job id.
     ///
@@ -53,39 +57,35 @@ struct RunningJobsList: View {
 
             if rows.isEmpty {
                 Text("Nothing running in this session")
-                    .font(.callout)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
+                    .padding(.vertical, 12)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 0) {
                         let (servers, others) = RunningJobs.partitioned(rows)
                         ForEach(servers) { job in row(job) }
                         if !servers.isEmpty, !others.isEmpty {
                             // A heading only when there are two kinds to tell
                             // apart; a list of one kind is its own heading.
-                            Text("Other processes")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.tertiary)
-                                .padding(.horizontal, 10)
-                                .padding(.top, 10)
-                                .padding(.bottom, 2)
+                            heading("Other processes")
+                                .padding(.top, 6)
                         }
                         ForEach(others) { job in row(job) }
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.bottom, 8)
                 }
                 .frame(maxHeight: Self.maxListHeight)
             }
 
             if !snapshot.agents.isEmpty {
                 Divider()
-                    .padding(.horizontal, Self.inset)
+                    .padding(.horizontal, Self.textInset)
+                    .padding(.vertical, 3)
                 agentFooter
             }
         }
+        .padding(Self.margin)
         .frame(width: Self.width)
     }
 
@@ -109,21 +109,30 @@ struct RunningJobsList: View {
                })
     }
 
-    /// What this is and what it costs, before the detail.
+    /// What this is and what it costs, before the detail. A heading in the
+    /// grey the sidebar's and the new page's are, not a bold title.
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(verbatim: headline)
-                .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 8)
             if !rows.isEmpty {
                 Text(verbatim: RunningJobsList.size(rows.reduce(0) { $0 + $1.footprint }))
-                    .font(.system(size: 12).monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
         }
-        .padding(.horizontal, Self.inset)
-        .padding(.top, 14)
-        .padding(.bottom, 8)
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, Self.textInset)
+        .padding(.top, 4)
+        .padding(.bottom, 3)
+    }
+
+    private func heading(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, Self.textInset)
+            .padding(.vertical, 3)
     }
 
     private var headline: String {
@@ -145,8 +154,8 @@ struct RunningJobsList: View {
     private var agentFooter: some View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 10))
+                .frame(width: 8)
                 .accessibilityHidden(true)
             Text(verbatim: snapshot.agents.count == 1
                  ? "Agent" : "\(snapshot.agents.count) agents")
@@ -154,10 +163,10 @@ struct RunningJobsList: View {
             Text(verbatim: RunningJobsList.size(snapshot.agentFootprint))
                 .monospacedDigit()
         }
-        .font(.system(size: 12))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, Self.inset)
-        .padding(.vertical, 11)
+        .font(.system(size: 11))
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, Self.textInset)
+        .frame(height: 22)
     }
 
     /// Show the address as a tab and get out of the way: you clicked
@@ -195,59 +204,64 @@ private struct JobRow: View {
     private var isOpenable: Bool { job.localURL != nil }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            // Serving something, or merely running. The one bit of state worth a
-            // glyph: a build and a web server look identical in a list of names.
-            Circle()
-                .fill(job.primaryPort != nil
-                      ? AnyShapeStyle(Color(nsColor: .systemGreen))
-                      : AnyShapeStyle(.quaternary))
-                .frame(width: 8, height: 8)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                // Tail, not middle: a command reads from the left, and middle
-                // truncation turned `quick.js serve dist --dir …` into
-                // `quick.js serve di…-chat-prototype`, which names nothing.
-                Text(verbatim: job.label)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                // The dot in the name's line, so it centres on the name rather
+                // than on the two lines; the detail hangs under the name.
+                HStack(spacing: 8) {
+                    // Serving something, or merely running. The one bit of state
+                    // worth a glyph: a build and a web server look identical in
+                    // a list of names.
+                    Circle()
+                        .fill(job.primaryPort != nil
+                              ? AnyShapeStyle(Color(nsColor: .systemGreen))
+                              : AnyShapeStyle(.quaternary))
+                        .frame(width: 6, height: 6)
+                        .frame(width: 8)
+                        .accessibilityHidden(true)
+                    // Tail, not middle: a command reads from the left, and
+                    // middle truncation turned `quick.js serve dist --dir …`
+                    // into `quick.js serve di…-chat-prototype`, which names
+                    // nothing.
+                    Text(verbatim: job.label)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
                 subtitle
+                    .padding(.leading, 16)
             }
-            // **No layout priority.** The name is the only thing here that can
-            // usefully shrink, so it is the one that gives way.
             .frame(maxWidth: .infinity, alignment: .leading)
-            // One sentence for VoiceOver rather than a name, an address, a size
-            // and two middle dots read out as separate fragments. The buttons
-            // stay their own elements beside it.
+            // One sentence for VoiceOver rather than a name, an address and a
+            // size read out as separate fragments. The buttons stay their own
+            // elements beside it.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(spokenDescription)
             .accessibilityAddTraits(isOpenable ? .isButton : [])
             .accessibilityHint(isOpenable ? "Opens in a tab" : "")
             .accessibilityAction { if isOpenable { open() } }
 
-            HStack(spacing: 2) {
-                if let address = job.localAddress {
+            // Under the pointer only, as a sidebar row's "…" and "×" are.
+            HStack(spacing: 0) {
+                if job.localAddress != nil {
                     RowIconButton(symbol: copied ? "checkmark" : "doc.on.doc",
-                                  label: "Copy \(address)") { copy(address) }
+                                  label: "Copy \(job.localAddress ?? "")") { copy() }
                 }
                 if job.isKillable {
                     RowIconButton(symbol: "stop.fill", label: "Stop \(job.label)",
                                   isDestructive: true, action: quit)
                 }
             }
-            // Quiet at rest, full strength under the pointer. Present either way,
-            // so nothing shifts as the pointer moves down the list.
-            .opacity(isHighlighted ? 1 : 0.35)
+            .opacity(isHighlighted ? 1 : 0)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .padding(.leading, RunningJobsList.textInset)
+        .padding(.trailing, 4)
+        .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .background {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.primary.opacity(isHighlighted ? 0.06 : 0))
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color(nsColor: isHighlighted ? Chrome.hoverFill : .clear))
         }
         .animation(.easeOut(duration: 0.12), value: isHighlighted)
         // No cursor change. A pointing hand over a list row is a web idiom:
@@ -261,20 +275,25 @@ private struct JobRow: View {
         .help(tooltip)
     }
 
+    /// "localhost:3000", with any further ports it holds: ":3000 :3001".
+    /// Verbatim, because `Text(":\(port)")` formats the number for the locale,
+    /// which is how :3000 came out as ":3,000".
+    private var address: String? {
+        guard let address = job.localAddress else { return nil }
+        let extra = job.shownPorts.filter { $0 != job.primaryPort }
+        return ([address] + extra.map { ":\($0)" }).joined(separator: " ")
+    }
+
     /// Where it is, what it costs, and whether it has left the shell.
     private var subtitle: some View {
-        HStack(spacing: 5) {
-            if let address = job.localAddress {
+        HStack(spacing: 4) {
+            if let address {
                 // Every port it holds, not just the lowest: one row can serve
                 // several, and naming one of them hid the others.
-                //
-                // Verbatim, because `Text(":\(port)")` formats the number for
-                // the locale, which is how :3000 came out as ":3,000".
-                let extra = job.shownPorts.filter { $0 != job.primaryPort }
-                Text(verbatim: ([address] + extra.map { ":\($0)" }).joined(separator: " "))
+                Text(verbatim: address)
                     .foregroundStyle(isHighlighted && isOpenable
                                      ? AnyShapeStyle(Color.accentColor)
-                                     : AnyShapeStyle(.secondary))
+                                     : AnyShapeStyle(.tertiary))
                     // An address is indivisible: it takes its width first.
                     .fixedSize()
                     .layoutPriority(1)
@@ -287,8 +306,12 @@ private struct JobRow: View {
                     .lineLimit(1)
             }
         }
-        .font(.system(size: 11.5).monospacedDigit())
+        .font(.system(size: 11).monospacedDigit())
         .foregroundStyle(.tertiary)
+    }
+
+    private var dot: some View {
+        Text(verbatim: "\u{00B7}").accessibilityHidden(true)
     }
 
     /// "vite dev, port 3000, 14.8 MB, detached from the shell." Ports spelled
@@ -303,10 +326,6 @@ private struct JobRow: View {
         parts.append(RunningJobsList.size(job.footprint))
         if job.detached || job.lastSessionID != nil { parts.append("detached from the shell") }
         return parts.joined(separator: ", ")
-    }
-
-    private var dot: some View {
-        Text(verbatim: "\u{00B7}").accessibilityHidden(true)
     }
 
     /// Everything you might want to do with a listening process, including the
@@ -346,7 +365,8 @@ private struct JobRow: View {
         return menu
     }
 
-    private func copy(_ address: String) {
+    private func copy() {
+        guard let address = job.localAddress else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(address, forType: .string)
         copied = true
@@ -377,13 +397,14 @@ private struct RowIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(isHovered && isDestructive
                                  ? AnyShapeStyle(Color(nsColor: .systemRed))
                                  : AnyShapeStyle(.secondary))
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(Color.primary.opacity(isHovered ? 0.09 : 0)))
-                .contentShape(Circle())
+                .frame(width: 20, height: 20)
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color(nsColor: isHovered ? Chrome.selectedFill : .clear)))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }

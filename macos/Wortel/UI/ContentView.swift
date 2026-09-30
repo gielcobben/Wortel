@@ -167,11 +167,11 @@ struct SidebarRowContent: View {
             // full row width — this content just sits on top of it. 10pt into
             // the pill, which is 10pt in from the row (its inset).
             .padding(.leading, 20)
-            // Keeps a long name clear of the trailing slot, which the row view
-            // owns (status indicator, or "…" and × while hovered). Only
-            // decides where the name truncates, so it's deliberately generous
-            // rather than measured against the cell's inset.
-            .padding(.trailing, 56)
+            // Keeps a long name clear of the trailing slot the row view owns:
+            // the status dot at rest, and "…" and × while the row is hovered.
+            // Room for the buttons only then, as Finder does, so a name isn't
+            // cut short all the time for buttons that aren't there.
+            .padding(.trailing, manager.hoveredRowID == session.id ? 56 : 34)
             // Fill the row height and center vertically — otherwise the short
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.

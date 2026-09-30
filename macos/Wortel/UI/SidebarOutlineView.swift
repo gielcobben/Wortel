@@ -73,6 +73,8 @@ final class SidebarPillRowView: NSTableRowView {
     /// "+" on a folder header: a new session in that folder.
     private let addButton = SidebarCloseButton(symbol: "plus", label: "New Session in Folder", pointSize: 10)
     private var makeMoreMenu: (() -> NSMenu)?
+    /// The pointer came onto the row or left it.
+    var onHoverChanged: (Bool) -> Void = { _ in }
     /// Whether this row is a folder header with a "+".
     private var addable = false
     /// The status dot / spinner, hosted here rather than in the row's SwiftUI
@@ -188,6 +190,7 @@ final class SidebarPillRowView: NSTableRowView {
         // loop, so the highlight and button track the pointer without a runloop
         // turn of lag. Folder headers aren't closable and stay flat: the cue is
         // about which session you might close.
+        onHoverChanged(hovered)
         // A folder header shows its "+", and stays flat otherwise.
         addButton.isHidden = !(hovered && addable)
         if !hovered { addButton.setHovering(false) }
@@ -747,6 +750,14 @@ struct SidebarOutlineView: NSViewRepresentable {
             let manager = self.manager, target = session.session
             rowView.setCloseAction { manager.requestClose(target) }
             rowView.setMoreMenu { SessionActions.menu(for: target, manager: manager) }
+            let id = target.id
+            rowView.onHoverChanged = { hovered in
+                if hovered {
+                    if manager.hoveredRowID != id { manager.hoveredRowID = id }
+                } else if manager.hoveredRowID == id {
+                    manager.hoveredRowID = nil
+                }
+            }
             rowView.setStatusContent(
                 AnyView(SessionStatusIndicator(manager: manager, session: target)))
             return rowView

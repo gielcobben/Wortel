@@ -52,6 +52,10 @@ final class SessionManager {
     /// the sidebar so double-click, the context menu, and ⌘R all drive one path.
     var editingID: Session.ID?
 
+    /// The sidebar row under the pointer: its name makes room for the row's
+    /// "…" and × only then (SidebarRowContent), rather than always.
+    var hoveredRowID: Session.ID?
+
     /// Called when the last session closes (the window should close).
     @ObservationIgnored var onAllClosed: (() -> Void)?
 

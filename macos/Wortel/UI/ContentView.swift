@@ -428,31 +428,37 @@ struct SidebarHeaderContent: View {
         menu.addItem(ClosureMenuItem(title: "New Session on Branch…") {
             newSessionOnBranch(manager, inFolder: folder)
         })
-        menu.addItem(ClosureMenuItem(title: "Rename Folder…") {
+        menu.addItem(ClosureMenuItem(title: "Rename\u{2026}") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
                 manager.renameFolder(folder, to: name)
             }
         })
         menu.addItem(.separator())
-        // What makes the first item above mean this folder. Worded as "Set"
-        // rather than "Choose" because it is a property of the folder, not a
-        // one-off open — ⌘O is the one-off.
-        menu.addItem(ClosureMenuItem(title: "Set Directory\u{2026}") {
+        // What makes the first item above mean this folder: where its new
+        // sessions start. A link to a directory, never the directory itself,
+        // so none of these words may sound like touching what's on disk.
+        menu.addItem(ClosureMenuItem(title: "Choose Directory\u{2026}") {
             guard let path = chooseDirectory(
                 title: "Set the directory for \u{201c}\(folder)\u{201d}",
                 startingAt: manager.root(ofFolder: folder)) else { return }
             manager.setRoot(path, ofFolder: folder)
         })
         // Only offered when there is one, and it turns the folder back into a
-        // plain label rather than deleting anything.
+        // plain label rather than deleting anything: "Forget", as macOS forgets
+        // a network, not "Clear", which reads as emptying it.
         if manager.root(ofFolder: folder) != nil {
-            menu.addItem(ClosureMenuItem(title: "Clear Directory") {
+            menu.addItem(ClosureMenuItem(title: "Forget Directory") {
                 manager.setRoot(nil, ofFolder: folder)
             })
         }
         menu.addItem(.separator())
-        // Non-destructive: the sessions drop to the top level, they're not closed.
-        menu.addItem(ClosureMenuItem(title: "Delete Folder") { manager.deleteFolder(folder) })
+        // Non-destructive: the sessions drop to the top level, they're not
+        // closed, and nothing on disk is touched. Named for what happens, since
+        // "Delete Folder" in a Mac app reads as deleting one from the disk.
+        let hasSessions = manager.sessions.contains { $0.folderPath == folder }
+        menu.addItem(ClosureMenuItem(title: hasSessions ? "Ungroup Sessions" : "Remove from Sidebar") {
+            manager.deleteFolder(folder)
+        })
         return menu
     }
 }

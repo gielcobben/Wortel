@@ -181,7 +181,7 @@ struct SidebarRowContent: View {
             // there is one, and otherwise only the pill's own edge. Room for
             // what's actually there, so a name isn't cut short for a dot or
             // buttons that aren't.
-            .padding(.trailing, manager.hoveredRowID == session.id ? 56 : (showsStatus ? 34 : 12))
+            .padding(.trailing, manager.hoveredRowID == session.id ? 52 : (showsStatus ? 34 : 12))
             // Fill the row height and center vertically — otherwise the short
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.
@@ -637,8 +637,14 @@ private struct MarqueeName: View {
 
     private static let font = Font.system(size: 13)
     /// Points a second: slow enough to read along.
-    private static let speed: CGFloat = 40
-    private static let fade: CGFloat = 12
+    private static let speed: CGFloat = 24
+    /// How long the pointer rests on the row before it starts: passing over
+    /// a row on the way somewhere doesn't set it moving.
+    private static let delay: TimeInterval = 1.0
+    /// The soft edges: wider where the text has come from than where it's
+    /// going, so the end of the name sits close to the row's buttons.
+    private static let leadingFade: CGFloat = 12
+    private static let trailingFade: CGFloat = 5
 
     private var overflow: CGFloat { max(0, textWidth - boxWidth) }
     private var sliding: Bool { active && overflow > 0.5 }
@@ -676,11 +682,12 @@ private struct MarqueeName: View {
     /// Faded in at both ends while it slides: where it's come from on the
     /// left, and what's still to come on the right.
     private var edges: some View {
-        let fade = boxWidth > 0 ? Self.fade / boxWidth : 0
+        let leading = boxWidth > 0 ? Self.leadingFade / boxWidth : 0
+        let trailing = boxWidth > 0 ? Self.trailingFade / boxWidth : 0
         return LinearGradient(stops: [
             .init(color: .black.opacity(0), location: 0),
-            .init(color: .black, location: fade),
-            .init(color: .black, location: 1 - fade),
+            .init(color: .black, location: leading),
+            .init(color: .black, location: 1 - trailing),
             .init(color: .black.opacity(0), location: 1),
         ], startPoint: .leading, endPoint: .trailing)
     }
@@ -688,8 +695,11 @@ private struct MarqueeName: View {
     private func slide(_ now: Bool) {
         if now {
             offset = 0
-            withAnimation(.linear(duration: Double((overflow + Self.fade) / Self.speed)).delay(0.35)) {
-                offset = -(overflow + Self.fade)
+            // Just clear of the trailing fade at the end, the name's last
+            // letter beside the buttons.
+            let distance = overflow + Self.trailingFade
+            withAnimation(.easeInOut(duration: Double(distance / Self.speed)).delay(Self.delay)) {
+                offset = -distance
             }
         } else {
             withAnimation(.easeOut(duration: 0.2)) { offset = 0 }

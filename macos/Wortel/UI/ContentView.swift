@@ -667,20 +667,23 @@ private struct MarqueeName: View {
                 // container is otherwise centred in it, and the name jumped
                 // left by half its overflow on hover and ended that far off.
                 // (A flexible frame's `.leading` didn't hold it; measured.)
-                Color.clear
-                    .frame(height: 16)
-                    .overlay(alignment: .leading) {
-                        TimelineView(.animation(minimumInterval: nil, paused: settled)) { context in
+                TimelineView(.animation(minimumInterval: nil, paused: settled)) { context in
+                    let slid = Self.offset(after: context.date.timeIntervalSince(hoverStart), distance: distance)
+                    Color.clear
+                        .frame(height: 16)
+                        .overlay(alignment: .leading) {
                             Text(text)
                                 .font(Self.font)
                                 .lineLimit(1)
                                 .fixedSize()
-                                .offset(x: -Self.offset(after: context.date.timeIntervalSince(hoverStart),
-                                                        distance: distance))
+                                .offset(x: -slid)
                         }
-                    }
-                    .clipped()
-                .mask(edges(scrolled: true))
+                        .clipped()
+                        // No fade on the left until there's something past the
+                        // edge to fade: it grows with the slide, up to its full
+                        // width once that much has gone by.
+                        .mask(edges(leading: min(Self.leadingFade, slid)))
+                }
             } else {
                 Text(text)
                     .font(Self.font)
@@ -712,10 +715,11 @@ private struct MarqueeName: View {
         }
     }
 
-    /// Faded in at both ends: where it's come from on the left, and what's
-    /// still to come on the right.
-    private func edges(scrolled: Bool) -> some View {
-        let leading = boxWidth > 0 ? Self.leadingFade / boxWidth : 0
+    /// Faded at the ends: on the left by `leading` points (what has slid past
+    /// the edge), and on the right, where the rest of the name is still to
+    /// come.
+    private func edges(leading leadingFade: CGFloat) -> some View {
+        let leading = boxWidth > 0 ? leadingFade / boxWidth : 0
         let trailing = boxWidth > 0 ? Self.trailingFade / boxWidth : 0
         return LinearGradient(stops: [
             .init(color: .black.opacity(0), location: 0),

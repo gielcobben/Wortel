@@ -35,7 +35,10 @@ final class SessionSwitcher {
         close()
         let panel = SwitcherPanel(
             contentRect: NSRect(x: 0, y: 0, width: SwitcherView.width, height: SwitcherView.fieldHeight),
-            styleMask: [.borderless, .fullSizeContentView],
+            // Borderless and nothing else: with `.fullSizeContentView` the
+            // hosted card was given a titlebar's worth of safe area it
+            // doesn't have, and sat 28pt too high, its field clipped.
+            styleMask: [.borderless],
             backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -61,15 +64,15 @@ final class SessionSwitcher {
             cancel: { [weak self] in self?.close() },
             resize: { [weak self] height in self?.resize(to: height) }))
         host.sizingOptions = []
-        host.translatesAutoresizingMaskIntoConstraints = false
-        background.addSubview(host)
-        NSLayoutConstraint.activate([
-            host.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-            host.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            host.topAnchor.constraint(equalTo: background.topAnchor),
-            host.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-        ])
+        host.safeAreaRegions = []
         panel.contentView = background
+        // Resized with the window, not pinned by constraints: pinned, the
+        // views kept an older, taller height when the window shrank, and the
+        // window showed their bottom part, the card's top cut off above a gap.
+        // (Reproduced and checked offscreen: host and card now match the window.)
+        host.frame = background.bounds
+        host.autoresizingMask = [.width, .height]
+        background.addSubview(host)
 
         // A little below the top of the window, centred on it.
         let frame = window.frame
@@ -242,6 +245,7 @@ private struct SwitcherView: View {
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resize($0) }
         .frame(maxHeight: .infinity, alignment: .top)
+        .ignoresSafeArea()
         .onAppear { focused = true }
         .onChange(of: query) { _, _ in highlighted = 0 }
     }

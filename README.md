@@ -221,12 +221,14 @@ numbers.
 These are not gaps waiting to be filled. Returning "unhandled" for them is how
 the design is enforced, and pull requests adding them are unlikely to land.
 
-- **No tabs, no splits, no panes.** The sidebar of named sessions is the answer.
+- **No splits.** A session has tabs in three rows (the main area, a side
+  column, a strip under the terminal), not a grid of panes; the sidebar of
+  named sessions is where you switch work.
 - **No settings UI, and no user config.** Wortel is zero-config: the entire
   configuration is the bundled read-only `macos/Resources/wortel.conf`, and your
   real `~/.config/ghostty` is never read. To change fonts, theme or keybinds,
   edit that file and rebuild.
-- **No command palette, no inspector, no built-in search UI.**
+- **No inspector, and no search UI in the terminal.**
 - **No per-agent integrations.** The `wortel` command is the whole interface, so
   anything that can run a command can drive the app.
 

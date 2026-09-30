@@ -134,8 +134,9 @@ that, that kind opens where you last moved one, per session.
   preview, ⌘A is Select All as usual.
 - **⌘1 to ⌘9 are sessions, not tabs.** Sessions are what you switch between all
   day, which is also how Codex and cmux spend those keys.
-- **No command palette (⇧⌘P) and no settings (⌘,).** Wortel has neither. The
-  Help menu's search field finds any command.
+- **No settings (⌘,).** Wortel has none; `wortel.conf` is the settings. ⌘P
+  finds any session or command, ⇧⌘P commands only, and so does the Help
+  menu's search field.
 
 ## Deliberately not used
 

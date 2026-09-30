@@ -260,7 +260,8 @@ enum SessionActions {
             return item
         }
 
-        _ = item("Rename", "pencil", key: "r") { manager.editingID = session.id }
+        // ⌥⌘R, as in the Session menu: plain ⌘R is a browser's Reload.
+        _ = item("Rename", "pencil", key: "r", [.command, .option]) { manager.editingID = session.id }
         if let moveTo = moveToMenu(for: session, manager: manager) {
             let move = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
             move.setGlyph("folder")

@@ -115,7 +115,10 @@ final class SidebarPillRowView: NSTableRowView {
 
     private func showMoreMenu() {
         guard let menu = makeMoreMenu?() else { return }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: moreButton.bounds.maxY + 4), in: moreButton)
+        // Its right edge on the button's, opening into the sidebar rather than
+        // off across the terminal, as the titlebar's menus do.
+        let x = moreButton.bounds.width - menu.size.width
+        menu.popUp(positioning: nil, at: NSPoint(x: x, y: moreButton.bounds.maxY + 4), in: moreButton)
     }
 
     /// The SwiftUI status indicator for this row. Session rows set one; folder

@@ -572,6 +572,11 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// The Pinned section's header: first at the root while anything is
         /// pinned. Always open, never dragged, no menu.
         final class PinnedItem {}
+        /// The header over the sessions in no folder, so they read as a
+        /// section of their own rather than stray rows between Pinned and the
+        /// folders. There while any such session is. A label only: never
+        /// dragged, no menu, nothing to fold (the sessions stay root rows).
+        final class LooseHeaderItem {}
 
         final class SessionItem {
             let session: Session
@@ -586,9 +591,11 @@ struct SidebarOutlineView: NSViewRepresentable {
         private var snapshot: [SidebarSnapshotGroup] = []
         private let pinnedItem = PinnedItem()
         private var pinnedItems: [SessionItem] = []
-        /// The Pinned header comes first at the root while anything is pinned,
-        /// and every root index (a drop's, an insertion line's) is past it.
-        private var rootOffset: Int { pinnedItems.isEmpty ? 0 : 1 }
+        private let looseHeader = LooseHeaderItem()
+        /// The root starts with the Pinned header (while anything is pinned)
+        /// and the Sessions header (while any session is in no folder), and
+        /// every root index (a drop's, an insertion line's) is past them.
+        private var rootOffset: Int { (pinnedItems.isEmpty ? 0 : 1) + (looseItems.isEmpty ? 0 : 1) }
         private var looseItems: [SessionItem] = []
         private var folderItems: [FolderItem] = []          // ordered, as rendered
         private var childrenByFolder: [String: [SessionItem]] = [:]
@@ -703,7 +710,7 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
             if item == nil {
-                if index < rootOffset { return pinnedItem }
+                if index < rootOffset { return index == 0 && !pinnedItems.isEmpty ? pinnedItem : looseHeader }
                 let index = index - rootOffset
                 return index < looseItems.count
                     ? looseItems[index]
@@ -734,8 +741,8 @@ struct SidebarOutlineView: NSViewRepresentable {
                 cell.dragTitle = session.session.leafName
                 let path = session.session.abbreviatedPath
                 cell.dragSubtitle = path.isEmpty ? nil : path
-            } else if item is PinnedItem {
-                content = AnyView(SidebarPinnedHeaderContent())
+            } else if item is PinnedItem || item is LooseHeaderItem {
+                content = AnyView(SidebarSectionHeaderContent(title: item is PinnedItem ? "Pinned" : "Sessions"))
                 cell = SidebarCellView(content: content)
                 return cell
             } else if let folder = item as? FolderItem {
@@ -756,7 +763,7 @@ struct SidebarOutlineView: NSViewRepresentable {
             // second line (see `Session.showsBranchLine`).
             // Roomier than a Finder list, as the ChatGPT app's is: a session
             // row is something you read and pick all day, not scan past.
-            if item is FolderItem || item is PinnedItem { return 36 }
+            if item is FolderItem || item is PinnedItem || item is LooseHeaderItem { return 36 }
             if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 48 }
             return 34
         }
@@ -943,7 +950,9 @@ struct SidebarOutlineView: NSViewRepresentable {
                 } else {
                     clearDropHighlight()
                     outline.setDropItem(drop.parent, dropChildIndex: drop.index)
-                    showInsertion(parent: drop.parent, index: drop.index)
+                    // Into the Sessions section: inset as in any section.
+                    showInsertion(parent: drop.parent, index: drop.index,
+                                  nested: drop.parent != nil || !looseItems.isEmpty)
                 }
                 return .move
             }
@@ -1018,6 +1027,8 @@ struct SidebarOutlineView: NSViewRepresentable {
 
             // Onto the Pinned header: pinned, at the end of the pinned.
             if item is PinnedItem { return (pinnedItem, pinnedItems.count, nil) }
+            // Onto the Sessions header: out of any folder, at the end.
+            if item is LooseHeaderItem { return (nil, topLevelEnd, nil) }
             if let folder = item as? FolderItem {
                 // The top edge of the very first section is the "move to top
                 // level" zone — the top-level band renders above the folders but
@@ -1063,10 +1074,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// A `nil` parent is a top-level / between-sections drop (shallow inset);
         /// a folder parent is one level deep (extra inset), so the line makes the
         /// target level obvious.
-        private func showInsertion(parent: Any?, index: Int) {
+        private func showInsertion(parent: Any?, index: Int, nested: Bool = false) {
             guard let outline, let line = insertionLine else { return }
-            let inFolder = parent is FolderItem || parent is PinnedItem
-            let leading: CGFloat = inFolder ? 28 : 12
+            let leading: CGFloat = nested ? 28 : 12
             let width = max(0, outline.bounds.width - leading - 10)
             let height: CGFloat = 3
             // Clamp to at least y=1 so a top-of-list line is never clipped.

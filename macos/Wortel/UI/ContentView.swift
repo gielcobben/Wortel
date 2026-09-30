@@ -206,11 +206,13 @@ struct SidebarRowContent: View {
     }
 }
 
-/// The Pinned section's header: its title in the folder headers' style, and
-/// nothing to click or drag.
-struct SidebarPinnedHeaderContent: View {
+/// A fixed section's header (Pinned, Sessions): its title in the folder
+/// headers' style, and nothing to click or drag.
+struct SidebarSectionHeaderContent: View {
+    let title: String
+
     var body: some View {
-        Text("Pinned")
+        Text(title)
             .font(.system(size: 13))
             .foregroundStyle(.tertiary)
             .lineLimit(1)

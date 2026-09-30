@@ -2,8 +2,10 @@ import AppKit
 import SwiftUI
 
 /// ⌘P: go to a session by typing a few letters of its name, its folder, its
-/// branch or its directory. VS Code's, Cursor's and Zed's quick open; ⌘K, the
-/// ChatGPT app's, is "clear screen" in a terminal.
+/// branch or its directory, or run any command in the menus. VS Code's,
+/// Cursor's and Zed's quick open with cmdk's commands mixed in; ⌘K, the
+/// ChatGPT app's, is "clear screen" in a terminal. ⇧⌘P: commands only, as
+/// VS Code's command palette.
 ///
 /// A card over the top of the window, as Spotlight and Xcode's Open Quickly
 /// are: a field, the matches under it (SessionSwitcherMatch), arrows and
@@ -27,12 +29,15 @@ final class SessionSwitcher {
 
     var isShown: Bool { panel?.isVisible ?? false }
 
-    func toggle(over window: NSWindow) {
-        if isShown { close() } else { show(over: window) }
+    func toggle(over window: NSWindow, commandsOnly: Bool = false) {
+        if isShown { close() } else { show(over: window, commandsOnly: commandsOnly) }
     }
 
-    func show(over window: NSWindow) {
+    /// `commandsOnly`: ⇧⌘P, the menus' commands and no sessions.
+    func show(over window: NSWindow, commandsOnly: Bool = false) {
         close()
+        // Read now, while the window is key: validated for it, not the panel.
+        let commands = PaletteCommands.all()
         let panel = SwitcherPanel(
             contentRect: NSRect(x: 0, y: 0, width: SwitcherView.width, height: SwitcherView.fieldHeight),
             // Borderless and nothing else: with `.fullSizeContentView` the
@@ -57,9 +62,17 @@ final class SessionSwitcher {
         background.maskImage = Self.roundedMask(radius: SwitcherView.cornerRadius)
         let host = NSHostingView(rootView: SwitcherView(
             manager: manager,
+            commands: commands,
+            commandsOnly: commandsOnly,
             pick: { [weak self] id in
                 self?.close()
                 self?.manager.selectedID = id
+            },
+            run: { [weak self] command in
+                self?.close()
+                // Once the window has the keyboard back: commands act on the
+                // key window's responder chain, as from the menu.
+                DispatchQueue.main.async { command.perform() }
             },
             cancel: { [weak self] in self?.close() },
             resize: { [weak self] height in self?.resize(to: height) }))
@@ -146,7 +159,7 @@ private final class SwitcherPanel: NSPanel {
     }
 }
 
-/// The field, the matches, and a line of keys.
+/// The field, the matches (sessions, then commands), and a line of keys.
 private struct SwitcherView: View {
     static let width: CGFloat = 560
     static let cornerRadius: CGFloat = 16
@@ -159,7 +172,10 @@ private struct SwitcherView: View {
     private static let emptyHeight: CGFloat = 64
 
     let manager: SessionManager
+    let commands: [PaletteCommand]
+    let commandsOnly: Bool
     let pick: (UUID) -> Void
+    let run: (PaletteCommand) -> Void
     let cancel: () -> Void
     let resize: (CGFloat) -> Void
 
@@ -167,70 +183,84 @@ private struct SwitcherView: View {
     @State private var highlighted = 0
     @FocusState private var focused: Bool
 
-    private var matches: [SessionSwitcherMatch.Candidate] {
+    enum Row: Identifiable {
+        case session(SessionSwitcherMatch.Candidate)
+        case command(PaletteCommand)
+        var id: UUID {
+            switch self {
+            case .session(let c): return c.id
+            case .command(let c): return c.id
+            }
+        }
+    }
+
+    private var sessionRows: [Row] {
+        guard !commandsOnly else { return [] }
         let candidates = manager.sessions.map { session in
             SessionSwitcherMatch.Candidate(
                 id: session.id, name: session.leafName, folder: session.folderPath,
                 branch: session.worktreeLabel, path: session.abbreviatedPath)
         }
         return SessionSwitcherMatch.rank(query, candidates, recent: manager.recentSessionIDs,
-                                         current: manager.selectedID)
+                                         current: manager.selectedID).map(Row.session)
+    }
+
+    /// Commands ranked by the same rules as sessions: the title as the name,
+    /// its menus as the folder ("session move" finds Session › Move To).
+    private var commandRows: [Row] {
+        let byID = Dictionary(uniqueKeysWithValues: commands.map { ($0.id, $0) })
+        let candidates = commands.map {
+            SessionSwitcherMatch.Candidate(id: $0.id, name: $0.title, folder: $0.path.joined(separator: " "),
+                                           branch: nil, path: "")
+        }
+        return SessionSwitcherMatch.rank(query, candidates, recent: [], current: nil)
+            .compactMap { byID[$0.id] }.map(Row.command)
     }
 
     var body: some View {
-        let matches = self.matches
+        let sessions = sessionRows
+        let commands = commandRows
+        let rows = sessions + commands
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
+                Image(systemName: commandsOnly ? "command" : "magnifyingglass")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.secondary)
-                TextField("Go to session", text: $query)
+                TextField(commandsOnly ? "Run a command" : "Go to a session or run a command", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 20))
                     .focused($focused)
-                    .onSubmit { if matches.indices.contains(highlighted) { pick(matches[highlighted].id) } }
+                    .onSubmit { activate(rows) }
                     .onExitCommand(perform: cancel)
-                    .onKeyPress(.downArrow) { move(1, in: matches.count) }
-                    .onKeyPress(.upArrow) { move(-1, in: matches.count) }
+                    .onKeyPress(.downArrow) { move(1, in: rows.count) }
+                    .onKeyPress(.upArrow) { move(-1, in: rows.count) }
             }
             .padding(.horizontal, 18)
             .frame(height: Self.fieldHeight)
 
-            if !matches.isEmpty {
+            if !rows.isEmpty {
                 Divider().opacity(0.6)
-                if query.isEmpty {
-                    Text("Recent")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 18)
-                        .frame(height: Self.headerHeight, alignment: .bottom)
-                }
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 0) {
-                            ForEach(Array(matches.enumerated()), id: \.element.id) { index, match in
-                                SwitcherRow(candidate: match,
-                                            session: manager.sessions.first { $0.id == match.id },
-                                            isHighlighted: index == highlighted,
-                                            isCurrent: match.id == manager.selectedID)
-                                    .id(index)
-                                    .onTapGesture { pick(match.id) }
-                                    .onHover { if $0 { highlighted = index } }
-                            }
+                            section(sessions.isEmpty ? nil : (query.isEmpty ? "Recent" : "Sessions"),
+                                    rows: sessions, offset: 0)
+                            section(commands.isEmpty || commandsOnly ? nil : "Commands",
+                                    rows: commands, offset: sessions.count)
                         }
                         .padding(Self.listPadding)
                     }
                     .scrollIndicators(.never)
-                    .frame(height: CGFloat(min(matches.count, Self.visibleRows)) * Self.rowHeight
-                           + Self.listPadding * 2)
-                    .onChange(of: highlighted) { _, index in proxy.scrollTo(index) }
+                    .frame(height: listHeight(sessions: sessions.count, commands: commands.count))
+                    .onChange(of: highlighted) { _, index in
+                        withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(rows[safe: index]?.id) }
+                    }
                 }
                 SwitcherFooter()
                     .frame(height: Self.footerHeight)
             } else if !query.isEmpty {
                 Divider().opacity(0.6)
-                Text("No session matches \u{201c}\(query)\u{201d}")
+                Text("Nothing matches \u{201c}\(query)\u{201d}")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
@@ -240,8 +270,7 @@ private struct SwitcherView: View {
         .frame(width: Self.width)
         // Its own height, whatever the window's, measured once laid out and
         // handed to the window: the window follows the card, never the other
-        // way round. (Worked out from row counts, the two disagreed, and the
-        // card's top was cut off above a gap under it.)
+        // way round.
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resize($0) }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -250,10 +279,112 @@ private struct SwitcherView: View {
         .onChange(of: query) { _, _ in highlighted = 0 }
     }
 
+    /// A titled group of rows; `offset` is where its rows start in the one
+    /// list the keys walk.
+    @ViewBuilder
+    private func section(_ title: String?, rows: [Row], offset: Int) -> some View {
+        if let title {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .frame(height: Self.headerHeight, alignment: .bottom)
+                .padding(.bottom, 2)
+        }
+        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+            let position = offset + index
+            Group {
+                switch row {
+                case .session(let candidate):
+                    SwitcherRow(candidate: candidate,
+                                session: manager.sessions.first { $0.id == candidate.id },
+                                isHighlighted: position == highlighted,
+                                isCurrent: candidate.id == manager.selectedID)
+                case .command(let command):
+                    CommandRow(command: command, isHighlighted: position == highlighted)
+                }
+            }
+            .id(row.id)
+            .onTapGesture { activateRow(row) }
+            .onHover { if $0 { highlighted = position } }
+        }
+    }
+
+    /// Room for up to eight rows, and the section titles among them.
+    private func listHeight(sessions: Int, commands: Int) -> CGFloat {
+        let headers = (sessions > 0 ? 1 : 0) + (commands > 0 && !commandsOnly ? 1 : 0)
+        let rows = min(sessions + commands, Self.visibleRows)
+        return CGFloat(rows) * Self.rowHeight + CGFloat(headers) * (Self.headerHeight + 2) + Self.listPadding * 2
+    }
+
+    private func activate(_ rows: [Row]) {
+        guard let row = rows[safe: highlighted] else { return }
+        activateRow(row)
+    }
+
+    private func activateRow(_ row: Row) {
+        switch row {
+        case .session(let candidate): pick(candidate.id)
+        case .command(let command): run(command)
+        }
+    }
+
     private func move(_ offset: Int, in count: Int) -> KeyPress.Result {
         guard count > 0 else { return .ignored }
         highlighted = (highlighted + offset + count) % count
         return .handled
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
+}
+
+/// One command: its menu's icon, its title and the menus it's in, and its
+/// shortcut, so the palette teaches the keys as it's used.
+private struct CommandRow: View {
+    let command: PaletteCommand
+    let isHighlighted: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHighlighted ? Color.white.opacity(0.22) : Color.primary.opacity(0.07))
+                Group {
+                    if let image = command.image {
+                        Image(nsImage: image).renderingMode(.template)
+                    } else {
+                        Image(systemName: "command")
+                    }
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            }
+            .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(command.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                    .lineLimit(1)
+                Text(command.path.joined(separator: " \u{203A} "))
+                    .font(.system(size: 11))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            if let shortcut = command.shortcut {
+                Text(shortcut)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.9)) : AnyShapeStyle(.tertiary))
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 44)
+        .contentShape(Rectangle())
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(isHighlighted ? Color.accentColor : .clear))
     }
 }
 

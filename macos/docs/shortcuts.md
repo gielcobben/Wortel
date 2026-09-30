@@ -19,7 +19,8 @@ what people reach for to move between shells; ⌘T opens a tab in the session yo
 | Next / previous session | ⇧⌘] / ⇧⌘[, ⌥⌘↓ / ⌥⌘↑ | Safari, Terminal, iTerm, Ghostty |
 | Session 1 to 9 | ⌘1 to ⌘9 | Safari, iTerm, Ghostty |
 | Next waiting session | ⌥⌘] | |
-| Go to a session by name, folder or branch | ⌘P | VS Code, Cursor, Zed (quick open) |
+| Go to a session, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |
+| Run a command (the palette, commands only) | ⇧⌘P | VS Code (command palette) |
 | Rename session | ⌘R | |
 
 ## The layout

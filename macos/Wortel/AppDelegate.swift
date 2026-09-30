@@ -1000,6 +1000,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sessionSwitcher.toggle(over: window)
     }
 
+    /// ⇧⌘P: the palette with only the menus' commands.
+    @objc func showCommandPalette(_ sender: Any?) {
+        if sessionSwitcher.isShown { return sessionSwitcher.close() }
+        focusMainWindow()
+        guard let window else { return }
+        sessionSwitcher.toggle(over: window, commandsOnly: true)
+    }
+
     @objc func renameSession(_ sender: Any?) {
         focusMainWindow()
         manager.beginRenameSelected()

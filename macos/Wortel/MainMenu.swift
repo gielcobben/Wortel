@@ -206,6 +206,10 @@ enum MainMenu {
         // ⌘P, as VS Code, Cursor and Zed open a file by name: here, a session.
         let goTo = sessionMenu.addItem(withTitle: "Go to Session\u{2026}", action: #selector(AppDelegate.showSessionSwitcher(_:)), keyEquivalent: "p")
         goTo.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+        // ⇧⌘P, VS Code's command palette: every command in these menus.
+        let palette = sessionMenu.addItem(withTitle: "Commands\u{2026}", action: #selector(AppDelegate.showCommandPalette(_:)), keyEquivalent: "p")
+        palette.keyEquivalentModifierMask = [.command, .shift]
+        palette.image = NSImage(systemSymbolName: "command", accessibilityDescription: nil)
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
         // ⌘W closes what you're in: a tab, or the session when its own terminal
         // is in front (as closing a tab in any other terminal ends its shell).

@@ -625,41 +625,55 @@ struct SessionRow: View {
 }
 
 /// A session's name in its row: cut short with an ellipsis at rest, and on
-/// hover, when it doesn't fit, sliding along to show the rest between soft
-/// edges, then back when the pointer leaves, as the ChatGPT app's rows do.
+/// hover, when it doesn't fit, a marquee: after the pointer has rested a
+/// moment it slides slowly left to show the rest, between soft edges, and
+/// stops with the name's end by the row's buttons, as the ChatGPT app's rows
+/// do. Leaving the row puts it back.
+///
+/// Driven frame by frame from when the hover began (TimelineView), not by a
+/// SwiftUI animation: the sliding text appears in the same update the hover
+/// does, and an animation started there was skipped, the name jumping
+/// straight to its end.
 private struct MarqueeName: View {
     let text: String
     let active: Bool
 
     @State private var textWidth: CGFloat = 0
     @State private var boxWidth: CGFloat = 0
-    @State private var offset: CGFloat = 0
+    /// When the pointer came onto the row.
+    @State private var hoverStart: Date?
+    /// The slide has reached its end: stop redrawing.
+    @State private var settled = false
 
     private static let font = Font.system(size: 13)
     /// Points a second: slow enough to read along.
-    private static let speed: CGFloat = 24
-    /// How long the pointer rests on the row before it starts: passing over
-    /// a row on the way somewhere doesn't set it moving.
-    private static let delay: TimeInterval = 1.0
+    static let speed: CGFloat = 24
+    /// How long the pointer rests on the row before it moves: passing over a
+    /// row on the way somewhere doesn't set it going.
+    static let delay: TimeInterval = 1.0
     /// The soft edges: wider where the text has come from than where it's
     /// going, so the end of the name sits close to the row's buttons.
     private static let leadingFade: CGFloat = 12
     private static let trailingFade: CGFloat = 5
 
     private var overflow: CGFloat { max(0, textWidth - boxWidth) }
+    private var distance: CGFloat { overflow + Self.trailingFade }
     private var sliding: Bool { active && overflow > 0.5 }
 
     var body: some View {
         ZStack(alignment: .leading) {
-            if sliding {
-                Text(text)
-                    .font(Self.font)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .offset(x: offset)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .clipped()
-                    .mask(edges)
+            if sliding, let hoverStart {
+                TimelineView(.animation(minimumInterval: nil, paused: settled)) { context in
+                    Text(text)
+                        .font(Self.font)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .offset(x: -Self.offset(after: context.date.timeIntervalSince(hoverStart),
+                                                distance: distance))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
+                .mask(edges(scrolled: true))
             } else {
                 Text(text)
                     .font(Self.font)
@@ -674,14 +688,26 @@ private struct MarqueeName: View {
             Text(text).font(Self.font).lineLimit(1).fixedSize().hidden()
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 },
             alignment: .leading)
-        .onChange(of: sliding) { _, now in slide(now) }
-        .onAppear { slide(sliding) }
+        .onChange(of: active) { _, now in begin(now) }
+        .onAppear { begin(active) }
         .accessibilityLabel(text)
     }
 
-    /// Faded in at both ends while it slides: where it's come from on the
-    /// left, and what's still to come on the right.
-    private var edges: some View {
+    private func begin(_ hovering: Bool) {
+        settled = false
+        hoverStart = hovering ? Date() : nil
+        guard hovering else { return }
+        // Stop redrawing once it has arrived.
+        let total = Self.delay + Self.duration(for: distance)
+        let started = hoverStart
+        DispatchQueue.main.asyncAfter(deadline: .now() + total + 0.05) {
+            if hoverStart == started { settled = true }
+        }
+    }
+
+    /// Faded in at both ends: where it's come from on the left, and what's
+    /// still to come on the right.
+    private func edges(scrolled: Bool) -> some View {
         let leading = boxWidth > 0 ? Self.leadingFade / boxWidth : 0
         let trailing = boxWidth > 0 ? Self.trailingFade / boxWidth : 0
         return LinearGradient(stops: [
@@ -692,18 +718,18 @@ private struct MarqueeName: View {
         ], startPoint: .leading, endPoint: .trailing)
     }
 
-    private func slide(_ now: Bool) {
-        if now {
-            offset = 0
-            // Just clear of the trailing fade at the end, the name's last
-            // letter beside the buttons.
-            let distance = overflow + Self.trailingFade
-            withAnimation(.easeInOut(duration: Double(distance / Self.speed)).delay(Self.delay)) {
-                offset = -distance
-            }
-        } else {
-            withAnimation(.easeOut(duration: 0.2)) { offset = 0 }
-        }
+    static func duration(for distance: CGFloat) -> TimeInterval {
+        TimeInterval(distance / speed)
+    }
+
+    /// How far the name has slid `elapsed` seconds into the hover: nothing
+    /// during the delay, then eased in and out over the distance, then there.
+    static func offset(after elapsed: TimeInterval, distance: CGFloat) -> CGFloat {
+        let duration = self.duration(for: distance)
+        guard elapsed > delay, duration > 0 else { return 0 }
+        let t = min(1, (elapsed - delay) / duration)
+        let eased = t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
+        return distance * CGFloat(eased)
     }
 }
 

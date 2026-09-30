@@ -582,8 +582,7 @@ struct SessionRow: View {
     /// The pointer is on the row: a name too long for it slides to show the
     /// rest (MarqueeName).
     let isHovered: Bool
-    /// What the session is waiting on you for, while it is: shown as the
-    /// row's second line, in place of the branch.
+    /// What the session is waiting on you for, while it is: the row's tooltip.
     let waiting: Waiting?
     let commit: (String) -> Void
     let cancel: () -> Void
@@ -624,13 +623,7 @@ struct SessionRow: View {
                     // slides to show the rest, as the ChatGPT app's do.
                     MarqueeName(text: session.leafName, active: isHovered)
                 }
-                // What it's waiting on, while it is: the useful half of a
-                // notification, where the session already is. The row grows
-                // for it and shrinks back once you've looked (SidebarOutlineView
-                // eases the height).
-                if let waiting, !isEditing {
-                    WaitingLine(waiting: waiting)
-                } else if session.showsBranchLine, let branch = session.worktreeLabel {
+                if session.showsBranchLine, let branch = session.worktreeLabel {
                     // Where the work lives, under what the work is. Only for a
                     // worktree session whose name has moved on from the branch;
                     // the row height follows `hasSecondLine` (SidebarOutlineView).
@@ -646,6 +639,12 @@ struct SessionRow: View {
             Spacer(minLength: 4)
         }
         .padding(.vertical, 6)
+        // What a waiting session said, and for how long, on hover. It used to
+        // be a second line under the name, but the dot already says a session
+        // wants you and opening it shows the question itself; the line only
+        // made rows grow and shrink each time an agent finished. The row
+        // redraws when the pointer comes onto it, so "4m" is current.
+        .help(waiting.map { $0.text(at: .now) } ?? "")
     }
 }
 
@@ -792,28 +791,19 @@ private struct MarqueeName: View {
     }
 }
 
-/// A waiting session's second line: what it said, or what kind of wait it is,
-/// and for how long. "Allow edit to App.swift? · 4m", "Finished its turn · now".
-private struct WaitingLine: View {
-    let waiting: SessionRow.Waiting
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            TruncatingLabel(text: text(at: context.date), font: .systemFont(ofSize: 11),
-                            color: .secondaryLabelColor)
-        }
-    }
-
-    private func text(at now: Date) -> String {
-        let what = waiting.message ?? {
-            switch waiting.kind {
+/// What a waiting session said, or what kind of wait it is, and for how long.
+/// "Allow edit to App.swift? · 4m", "Finished its turn · now".
+extension SessionRow.Waiting {
+    func text(at now: Date) -> String {
+        let what = message ?? {
+            switch kind {
             case .needsInput: return "Waiting on you"
             case .failed: return "A command failed"
             case .turnDone: return "Finished its turn"
             case .finished: return "A command finished"
             }
         }()
-        guard let since = waiting.since else { return what }
+        guard let since else { return what }
         return "\(what) · \(Self.elapsed(from: since, to: now))"
     }
 
@@ -876,7 +866,11 @@ struct SessionStatusIndicator: View {
                 // be a spinner: a spinner says *the app* is loading, and three of
                 // them turning at once in a list of agents was the busiest thing
                 // on screen, for the least urgent news in it.
-                AttentionDot(color: .secondaryLabelColor, diameter: 6, motion: .breathe)
+                //
+                // Grey still, but strong enough to find: at the secondary label
+                // colour and a shallow swell it was so faint you had to look for
+                // it to know a session was working.
+                AttentionDot(color: NSColor.labelColor.withAlphaComponent(0.6), motion: .breathe)
             }
         }
         // Centre in whatever slot the row view gives us — the same rect the
@@ -905,7 +899,8 @@ struct AttentionDot: NSViewRepresentable {
     enum Motion: Equatable {
         /// Opacity and a touch of scale, fast enough to catch the eye.
         case pulse
-        /// A slow, shallow opacity swell: present without asking for anything.
+        /// A slower swell than `pulse`, and grey where that one is coloured:
+        /// clearly alive, without asking for anything.
         case breathe
         case still
     }
@@ -992,10 +987,15 @@ struct AttentionDot: NSViewRepresentable {
                 add(group)
             case .breathe:
                 let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = 0.9
-                fade.toValue = 0.3
-                fade.duration = 1.2
-                add(fade)
+                fade.fromValue = 1
+                fade.toValue = 0.2
+                let shrink = CABasicAnimation(keyPath: "transform.scale")
+                shrink.fromValue = 1
+                shrink.toValue = 0.75
+                let group = CAAnimationGroup()
+                group.animations = [fade, shrink]
+                group.duration = 0.9
+                add(group)
             }
         }
 

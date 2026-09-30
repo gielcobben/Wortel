@@ -148,12 +148,21 @@ struct SidebarRowContent: View {
     let manager: SessionManager
     let session: Session
 
+    /// Whether the row's trailing status indicator shows anything: the
+    /// same conditions SessionStatusIndicator draws under.
+    private var showsStatus: Bool {
+        let selected = manager.selectedID == session.id
+        return session.attention != nil || session.isBusy
+            || (session.unread != nil && (!selected || session.markedUnread))
+    }
+
     var body: some View {
         SessionRow(
             session: session,
             isSelected: manager.selectedID == session.id,
             isEditing: manager.editingID == session.id,
             isInWorktree: session.isInOwnWorktree,
+            isHovered: manager.hoveredRowID == session.id,
             waiting: session.attention.map { kind in
                 let note = manager.attentionNote(for: session)
                 return SessionRow.Waiting(kind: kind, message: note.message, since: note.since)
@@ -168,10 +177,11 @@ struct SidebarRowContent: View {
             // the pill, which is 10pt in from the row (its inset).
             .padding(.leading, 20)
             // Keeps a long name clear of the trailing slot the row view owns:
-            // the status dot at rest, and "…" and × while the row is hovered.
-            // Room for the buttons only then, as Finder does, so a name isn't
-            // cut short all the time for buttons that aren't there.
-            .padding(.trailing, manager.hoveredRowID == session.id ? 56 : 34)
+            // "…" and × while the row is hovered, the status dot at rest when
+            // there is one, and otherwise only the pill's own edge. Room for
+            // what's actually there, so a name isn't cut short for a dot or
+            // buttons that aren't.
+            .padding(.trailing, manager.hoveredRowID == session.id ? 56 : (showsStatus ? 34 : 12))
             // Fill the row height and center vertically — otherwise the short
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.
@@ -480,6 +490,9 @@ struct SessionRow: View {
     /// still *is* the branch, as a leading glyph — without which it sits in the
     /// list looking exactly like a session that's just a shell in a directory.
     let isInWorktree: Bool
+    /// The pointer is on the row: a name too long for it slides to show the
+    /// rest (MarqueeName).
+    let isHovered: Bool
     /// What the session is waiting on you for, while it is: shown as the
     /// row's second line, in place of the branch.
     let waiting: Waiting?
@@ -549,9 +562,9 @@ struct SessionRow: View {
                     // field (draft = session.name) still edits the full name, so
                     // retyping the prefix is how you move between folders — but
                     // it opens with only the leaf selected (`selectLeafName`).
-                    // An AppKit label rather than Text, for the native
-                    // hover-to-expand on a name the row had to cut short.
-                    TruncatingLabel(text: session.leafName, color: .labelColor)
+                    // An ellipsis at rest; on hover, a name that doesn't fit
+                    // slides to show the rest, as the ChatGPT app's do.
+                    MarqueeName(text: session.leafName, active: isHovered)
                 }
                 // What it's waiting on, while it is: the useful half of a
                 // notification, where the session already is. The row grows
@@ -607,6 +620,79 @@ struct SessionRow: View {
                 return
             }
             if (try? await Task.sleep(for: .milliseconds(16))) == nil { return }
+        }
+    }
+}
+
+/// A session's name in its row: cut short with an ellipsis at rest, and on
+/// hover, when it doesn't fit, sliding along to show the rest between soft
+/// edges, then back when the pointer leaves, as the ChatGPT app's rows do.
+private struct MarqueeName: View {
+    let text: String
+    let active: Bool
+
+    @State private var textWidth: CGFloat = 0
+    @State private var boxWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+
+    private static let font = Font.system(size: 13)
+    /// Points a second: slow enough to read along.
+    private static let speed: CGFloat = 40
+    private static let fade: CGFloat = 12
+
+    private var overflow: CGFloat { max(0, textWidth - boxWidth) }
+    private var sliding: Bool { active && overflow > 0.5 }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            if sliding {
+                Text(text)
+                    .font(Self.font)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .offset(x: offset)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .clipped()
+                    .mask(edges)
+            } else {
+                Text(text)
+                    .font(Self.font)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { boxWidth = $0 }
+        // The name's full width, measured off to the side.
+        .background(
+            Text(text).font(Self.font).lineLimit(1).fixedSize().hidden()
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 },
+            alignment: .leading)
+        .onChange(of: sliding) { _, now in slide(now) }
+        .onAppear { slide(sliding) }
+        .accessibilityLabel(text)
+    }
+
+    /// Faded in at both ends while it slides: where it's come from on the
+    /// left, and what's still to come on the right.
+    private var edges: some View {
+        let fade = boxWidth > 0 ? Self.fade / boxWidth : 0
+        return LinearGradient(stops: [
+            .init(color: .black.opacity(0), location: 0),
+            .init(color: .black, location: fade),
+            .init(color: .black, location: 1 - fade),
+            .init(color: .black.opacity(0), location: 1),
+        ], startPoint: .leading, endPoint: .trailing)
+    }
+
+    private func slide(_ now: Bool) {
+        if now {
+            offset = 0
+            withAnimation(.linear(duration: Double((overflow + Self.fade) / Self.speed)).delay(0.35)) {
+                offset = -(overflow + Self.fade)
+            }
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { offset = 0 }
         }
     }
 }

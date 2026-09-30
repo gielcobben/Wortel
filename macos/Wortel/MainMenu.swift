@@ -90,6 +90,11 @@ enum MainMenu {
         return item
     }
 
+    /// Fills the Session menu's "Move To" for the selected session each time
+    /// it opens (and when the palette reads the menus). Set by AppDelegate.
+    static var fillMoveTo: (NSMenu) -> Void = { _ in }
+    private static let moveToFiller = MenuFiller { MainMenu.fillMoveTo($0) }
+
     private static func arrow(_ key: Int) -> String {
         String(UnicodeScalar(UInt16(key))!)
     }
@@ -211,6 +216,16 @@ enum MainMenu {
         palette.keyEquivalentModifierMask = [.command, .shift]
         palette.image = NSImage(systemSymbolName: "command", accessibilityDescription: nil)
         sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
+        // The selected session's own actions, also on its row's "…" and
+        // right-click (SessionActions), and so in the ⌘P palette.
+        let moveTo = sessionMenu.addItem(withTitle: "Move To", action: nil, keyEquivalent: "")
+        let moveToMenu = NSMenu(title: "Move To")
+        moveToMenu.delegate = moveToFiller
+        moveTo.submenu = moveToMenu
+        // ⇧⌘U, the ChatGPT app's: a "come back to this" flag.
+        let unread = sessionMenu.addItem(withTitle: "Mark as Unread", action: #selector(AppDelegate.markSessionUnread(_:)), keyEquivalent: "u")
+        unread.keyEquivalentModifierMask = [.command, .shift]
+        sessionMenu.addItem(withTitle: "Remove Worktree\u{2026}", action: #selector(AppDelegate.removeSessionWorktree(_:)), keyEquivalent: "")
         // ⌘W closes what you're in: a tab, or the session when its own terminal
         // is in front (as closing a tab in any other terminal ends its shell).
         // ⇧⌘W always means the whole session, as in iTerm and Ghostty.
@@ -485,4 +500,11 @@ enum MainMenu {
 
         return main
     }
+}
+
+/// A menu delegate that fills its menu from a closure just before it opens.
+final class MenuFiller: NSObject, NSMenuDelegate {
+    private let fill: (NSMenu) -> Void
+    init(_ fill: @escaping (NSMenu) -> Void) { self.fill = fill }
+    func menuNeedsUpdate(_ menu: NSMenu) { fill(menu) }
 }

@@ -22,6 +22,7 @@ what people reach for to move between shells; ⌘T opens a tab in the session yo
 | Go to a session, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |
 | Run a command (the palette, commands only) | ⇧⌘P | VS Code (command palette) |
 | Rename session | ⌘R | |
+| Mark session as unread (come back to it) | ⇧⌘U | ChatGPT |
 
 ## The layout
 

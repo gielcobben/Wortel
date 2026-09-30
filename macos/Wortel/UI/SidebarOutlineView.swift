@@ -66,6 +66,15 @@ final class SidebarPillRowView: NSTableRowView {
     // pill's right edge — and a cell can't be clicked outside its own bounds.
 
     private let closeButton = SidebarCloseButton()
+    /// "…": the session's menu (Rename, Move To, Mark as Unread…), the one
+    /// right-click opens, for when you don't think to right-click. Beside the
+    /// ×, on hover, as the ChatGPT app's rows have theirs.
+    private let moreButton = SidebarCloseButton(symbol: "ellipsis", label: "More", pointSize: 10)
+    /// "+" on a folder header: a new session in that folder.
+    private let addButton = SidebarCloseButton(symbol: "plus", label: "New Session in Folder", pointSize: 10)
+    private var makeMoreMenu: (() -> NSMenu)?
+    /// Whether this row is a folder header with a "+".
+    private var addable = false
     /// The status dot / spinner, hosted here rather than in the row's SwiftUI
     /// content so it can share the button's slot exactly. Trailing-aligning it
     /// inside the cell instead left it further from the pill's edge than the
@@ -81,6 +90,11 @@ final class SidebarPillRowView: NSTableRowView {
         addSubview(statusHost)
         closeButton.isHidden = true
         addSubview(closeButton)
+        moreButton.isHidden = true
+        moreButton.onClick = { [weak self] in self?.showMoreMenu() }
+        addSubview(moreButton)
+        addButton.isHidden = true
+        addSubview(addButton)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
@@ -88,6 +102,20 @@ final class SidebarPillRowView: NSTableRowView {
     func setCloseAction(_ handler: @escaping () -> Void) {
         closeButton.onClick = handler
         closable = true
+    }
+
+    /// The menu "…" opens. Session rows set this.
+    func setMoreMenu(_ make: @escaping () -> NSMenu) { makeMoreMenu = make }
+
+    /// What "+" does. Folder headers set this.
+    func setAddAction(_ handler: @escaping () -> Void) {
+        addButton.onClick = handler
+        addable = true
+    }
+
+    private func showMoreMenu() {
+        guard let menu = makeMoreMenu?() else { return }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: moreButton.bounds.maxY + 4), in: moreButton)
     }
 
     /// The SwiftUI status indicator for this row. Session rows set one; folder
@@ -110,6 +138,8 @@ final class SidebarPillRowView: NSTableRowView {
         // One rect for both, so hovering swaps the glyph without moving it.
         closeButton.frame = slot
         statusHost.frame = slot
+        moreButton.frame = slot.offsetBy(dx: -(size + 2), dy: 0)
+        addButton.frame = slot
     }
 
     /// AppKit inserts the cell view after ours, which would bury them. Keep both
@@ -117,12 +147,10 @@ final class SidebarPillRowView: NSTableRowView {
     /// isn't drawn behind the row's content.
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
-        guard subview !== closeButton, subview !== statusHost else { return }
-        if statusHost.superview === self {
-            addSubview(statusHost, positioned: .above, relativeTo: nil)
-        }
-        if closeButton.superview === self {
-            addSubview(closeButton, positioned: .above, relativeTo: nil)
+        let ours: [NSView] = [statusHost, closeButton, moreButton, addButton]
+        guard !ours.contains(where: { $0 === subview }) else { return }
+        for view in ours where view.superview === self {
+            addSubview(view, positioned: .above, relativeTo: nil)
         }
     }
 
@@ -156,14 +184,21 @@ final class SidebarPillRowView: NSTableRowView {
         // loop, so the highlight and button track the pointer without a runloop
         // turn of lag. Folder headers aren't closable and stay flat: the cue is
         // about which session you might close.
+        // A folder header shows its "+", and stays flat otherwise.
+        addButton.isHidden = !(hovered && addable)
+        if !hovered { addButton.setHovering(false) }
         let shows = hovered && closable
         showsHover = shows
         guard closeButton.isHidden == shows else { return }
         closeButton.isHidden = !shows
+        moreButton.isHidden = !shows || makeMoreMenu == nil
         // The two share one rect, so the indicator has to give it up rather than
         // sit under the button.
         statusHost.isHidden = shows
-        if !shows { closeButton.setHovering(false) }
+        if !shows {
+            closeButton.setHovering(false)
+            moreButton.setHovering(false)
+        }
     }
 }
 
@@ -192,20 +227,21 @@ final class SidebarCloseButton: NSButton {
     private var hovering = false
     private var hoverArea: NSTrackingArea?
 
-    init() {
+    /// A row's small round button: "×" by default; "…" and "+" too.
+    init(symbol: String = "xmark", label: String = "Close Session", pointSize: CGFloat = 9) {
         super.init(frame: .zero)
         isBordered = false
         imagePosition = .imageOnly
-        image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Session")?
-            .withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .bold))
         contentTintColor = .secondaryLabelColor
-        toolTip = "Close Session"
+        toolTip = label
         target = self
         action = #selector(fire)
         // The terminal owns keyboard focus; closing a session must not take it.
         refusesFirstResponder = true
         wantsLayer = true
-        setAccessibilityLabel("Close Session")
+        setAccessibilityLabel(label)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
@@ -362,7 +398,10 @@ final class SidebarOutline: NSOutlineView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let row = self.row(at: point)
-        if row >= 0, let item = item(atRow: row),
+        // A press on a row's button ("+", "…", "×") is the button's, not a
+        // header toggle.
+        let onButton = window?.contentView?.hitTest(event.locationInWindow) is SidebarCloseButton
+        if row >= 0, !onButton, let item = item(atRow: row),
            !frameOfOutlineCell(atRow: row).contains(point) {
             onHeaderPressed?(item)
         }
@@ -681,10 +720,15 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
             let rowView = SidebarPillRowView()
             rowView.showsPill = showsPill(item)
+            if let folder = item as? FolderItem {
+                let manager = self.manager, name = folder.name
+                rowView.setAddAction { manager.newSession(inFolder: name) }
+            }
             guard let session = item as? SessionItem else { return rowView }
 
             let manager = self.manager, target = session.session
             rowView.setCloseAction { manager.requestClose(target) }
+            rowView.setMoreMenu { SessionActions.menu(for: target, manager: manager) }
             rowView.setStatusContent(
                 AnyView(SessionStatusIndicator(manager: manager, session: target)))
             return rowView

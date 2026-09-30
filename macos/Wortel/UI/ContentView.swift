@@ -167,10 +167,10 @@ struct SidebarRowContent: View {
             // full row width — this content just sits on top of it.
             .padding(.leading, 12)
             // Keeps a long name clear of the trailing slot, which the row view
-            // owns (status indicator, or the close button while hovered). Only
+            // owns (status indicator, or "…" and × while hovered). Only
             // decides where the name truncates, so it's deliberately generous
             // rather than measured against the cell's inset.
-            .padding(.trailing, 24)
+            .padding(.trailing, 44)
             // Fill the row height and center vertically — otherwise the short
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.
@@ -190,22 +190,39 @@ struct SidebarRowContent: View {
 
     /// Build the native right-click menu, freshly each time it opens.
     private func makeContextMenu() -> NSMenu {
+        SessionActions.menu(for: session, manager: manager)
+    }
+}
+
+/// What can be done to one session: the row's right-click menu, its hover
+/// "…", and (for the selected session) the Session menu, and so the ⌘P
+/// palette. One place, so the three can't drift apart.
+@MainActor
+enum SessionActions {
+    static func menu(for session: Session, manager: SessionManager) -> NSMenu {
         let menu = NSMenu()
         menu.addItem(ClosureMenuItem(title: "Rename") { manager.editingID = session.id })
-        if let moveTo = moveToMenuItem() { menu.addItem(moveTo) }
+        if let moveTo = moveToMenu(for: session, manager: manager) {
+            let item = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
+            item.submenu = moveTo
+            menu.addItem(item)
+        }
+        menu.addItem(ClosureMenuItem(title: "Mark as Unread") { manager.markUnread(session) })
         menu.addItem(.separator())
         // Only for a worktree Wortel made, and it closes the session with it —
         // the directory is what the session *is*. git refuses while there are
         // uncommitted changes, and that refusal is shown rather than overridden:
         // a worktree is where work lives.
         if session.isInOwnWorktree {
-            menu.addItem(ClosureMenuItem(title: "Remove Worktree\u{2026}") { removeWorktree() })
+            menu.addItem(ClosureMenuItem(title: "Remove Worktree\u{2026}") {
+                removeWorktree(session, manager: manager)
+            })
         }
         menu.addItem(ClosureMenuItem(title: "Close Session") { manager.requestClose(session) })
         return menu
     }
 
-    private func removeWorktree() {
+    static func removeWorktree(_ session: Session, manager: SessionManager) {
         let confirm = NSAlert()
         confirm.messageText =
             "Remove the worktree for \u{201c}\(session.worktreeLabel ?? session.leafName)\u{201d}?"
@@ -225,26 +242,28 @@ struct SidebarRowContent: View {
         }
     }
 
-    /// "Move To" submenu: top level plus every other folder — the no-drag way
-    /// to refile. Nil when there's nowhere to move to.
-    private func moveToMenuItem() -> NSMenuItem? {
+    /// "Move To": top level plus every other folder, the no-drag way to
+    /// refile. Nil when there's nowhere to move to.
+    static func moveToMenu(for session: Session, manager: SessionManager) -> NSMenu? {
         let destinations = manager.folderNames.filter { $0 != session.folderPath }
         guard session.folderPath != nil || !destinations.isEmpty else { return nil }
+        let submenu = NSMenu(title: "Move To")
+        fillMoveTo(submenu, for: session, manager: manager)
+        return submenu
+    }
 
-        let submenu = NSMenu()
+    static func fillMoveTo(_ submenu: NSMenu, for session: Session, manager: SessionManager) {
+        submenu.removeAllItems()
         if session.folderPath != nil {
             submenu.addItem(ClosureMenuItem(title: "Top Level") {
                 manager.moveSession(id: session.id, toFolder: nil, at: .max)
             })
         }
-        for folder in destinations {
+        for folder in manager.folderNames where folder != session.folderPath {
             submenu.addItem(ClosureMenuItem(title: folder) {
                 manager.moveSession(id: session.id, toFolder: folder, at: .max)
             })
         }
-        let item = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
-        item.submenu = submenu
-        return item
     }
 }
 
@@ -391,7 +410,8 @@ struct SidebarHeaderContent: View {
             }
         }
             .padding(.leading, 12)
-            .padding(.trailing, 8)
+            // Clear of the "+" that appears on hover (SidebarPillRowView).
+            .padding(.trailing, 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             // Native right-click, instant on rightMouseDown — same reasoning as

@@ -1907,6 +1907,14 @@ final class SessionManager {
     /// for the dwell window, drop its unread mark. A glance shorter than the
     /// dwell (or navigating away) leaves the mark in place. Safe to call
     /// repeatedly — it restarts the clock.
+    /// A "come back to this" flag: the quiet unread ring, set by hand. It
+    /// holds while you're in the session (its caught-up clock is stopped) and
+    /// clears the usual way, once you've spent time in it after coming back.
+    func markUnread(_ session: Session) {
+        if session.unread == nil { session.unread = .finished }
+        cancelCaughtUp(session.id)
+    }
+
     private func scheduleCaughtUp(_ session: Session) {
         unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
         guard session.unread != nil, isActivelyViewing(session) else { return }

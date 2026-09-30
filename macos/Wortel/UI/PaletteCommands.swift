@@ -87,9 +87,13 @@ enum PaletteCommands {
         "moveTabDown:": "arrow.down.to.line",
         "moveTabUp:": "arrow.up.to.line",
         "showPreviewFind:": "magnifyingglass",
+        "markSessionUnread:": "circle.dashed",
+        "removeSessionWorktree:": "trash",
     ]
 
     @MainActor private static func collect(_ menu: NSMenu, path: [String]) -> [PaletteCommand] {
+        // Menus filled as they open (Session › Move To) are filled now.
+        menu.delegate?.menuNeedsUpdate?(menu)
         menu.update()
         var commands: [PaletteCommand] = []
         for (index, item) in menu.items.enumerated() {

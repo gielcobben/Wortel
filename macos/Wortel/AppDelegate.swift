@@ -291,6 +291,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if self.gitPanel.lastRegion != region { self.gitPanel.lastRegion = region }
             return event
         }
+        MainMenu.fillMoveTo = { [weak self] menu in
+            guard let self, let session = self.manager.selected else { return menu.removeAllItems() }
+            SessionActions.fillMoveTo(menu, for: session, manager: self.manager)
+        }
         gitPanel.onClearKeyboard = { [weak self] in
             guard let window = self?.window, window.firstResponder is SurfaceView else { return }
             window.makeFirstResponder(nil)
@@ -1008,6 +1012,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sessionSwitcher.toggle(over: window, commandsOnly: true)
     }
 
+    /// ⇧⌘U: the "not caught up" ring on the selected session, until you've
+    /// spent time in it again.
+    @objc func markSessionUnread(_ sender: Any?) {
+        guard let session = manager.selected else { return }
+        manager.markUnread(session)
+    }
+
+    @objc func removeSessionWorktree(_ sender: Any?) {
+        focusMainWindow()
+        guard let session = manager.selected, session.isInOwnWorktree else { return }
+        SessionActions.removeWorktree(session, manager: manager)
+    }
+
     @objc func renameSession(_ sender: Any?) {
         focusMainWindow()
         manager.beginRenameSelected()
@@ -1077,6 +1094,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Grey out "Check for Updates…" while a check is already in flight (Sparkle
     /// drops `canCheckForUpdates` to false for the duration).
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(removeSessionWorktree(_:)) {
+            return manager.selected?.isInOwnWorktree == true
+        }
+        if menuItem.action == #selector(markSessionUnread(_:)) {
+            return manager.selected != nil
+        }
         if menuItem.action == #selector(checkForUpdates(_:)) {
             return updater.canCheckForUpdates
         }

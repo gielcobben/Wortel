@@ -181,7 +181,6 @@ private struct SwitcherView: View {
 
     @State private var query = ""
     @State private var highlighted = 0
-    @FocusState private var focused: Bool
 
     enum Row: Identifiable {
         case session(SessionSwitcherMatch.Candidate)
@@ -226,14 +225,12 @@ private struct SwitcherView: View {
                 Image(systemName: commandsOnly ? "command" : "magnifyingglass")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.secondary)
-                TextField(commandsOnly ? "Run a command" : "Go to a session or run a command", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 20))
-                    .focused($focused)
-                    .onSubmit { activate(rows) }
-                    .onExitCommand(perform: cancel)
-                    .onKeyPress(.downArrow) { move(1, in: rows.count) }
-                    .onKeyPress(.upArrow) { move(-1, in: rows.count) }
+                PaletteField(text: $query,
+                             placeholder: commandsOnly ? "Run a command" : "Go to a session or run a command",
+                             submit: { activate(rows) },
+                             cancel: cancel,
+                             move: { move($0, in: rows.count) == .handled })
+                    .frame(height: 28)
             }
             .padding(.horizontal, 18)
             .frame(height: Self.fieldHeight)
@@ -275,7 +272,6 @@ private struct SwitcherView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resize($0) }
         .frame(maxHeight: .infinity, alignment: .top)
         .ignoresSafeArea()
-        .onAppear { focused = true }
         .onChange(of: query) { _, _ in highlighted = 0 }
     }
 
@@ -469,5 +465,114 @@ private struct SwitcherFooter: View {
                     .fill(Color.primary.opacity(0.08)))
             Text(label)
         }
+    }
+}
+
+/// The palette's field: an AppKit text field, for the two things SwiftUI's
+/// wouldn't do reliably. It takes the keyboard the moment the palette is on
+/// screen (a `@FocusState` set on appear sometimes asked before the panel was
+/// key, and typing went nowhere), and its text sits in the same place
+/// whether it's being edited or not (SwiftUI's moved a point as editing
+/// began, when the field editor took over from the cell's drawing).
+private struct PaletteField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let submit: () -> Void
+    let cancel: () -> Void
+    /// Up or down a row; true if there was somewhere to go.
+    let move: (Int) -> Bool
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(frame: .zero)
+        field.cell = CenteredTextFieldCell(textCell: "")
+        field.isEditable = true
+        field.isSelectable = true
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 20)
+        field.placeholderString = placeholder
+        field.cell?.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.lineBreakMode = .byClipping
+        field.delegate = context.coordinator
+        field.stringValue = text
+        Self.focus(field, attemptsLeft: 20)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text { field.stringValue = text }
+        if field.placeholderString != placeholder { field.placeholderString = placeholder }
+    }
+
+    /// Into the field as soon as its window can take the keyboard: a few
+    /// turns of patience while the panel comes up.
+    private static func focus(_ field: NSTextField, attemptsLeft: Int) {
+        DispatchQueue.main.async { [weak field] in
+            guard let field else { return }
+            if let window = field.window, window.isKeyWindow {
+                if window.firstResponder !== field.currentEditor() { window.makeFirstResponder(field) }
+                return
+            }
+            guard attemptsLeft > 0 else { return }
+            focus(field, attemptsLeft: attemptsLeft - 1)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: PaletteField
+        init(_ parent: PaletteField) { self.parent = parent }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            switch selector {
+            case #selector(NSResponder.moveDown(_:)): return parent.move(1)
+            case #selector(NSResponder.moveUp(_:)): return parent.move(-1)
+            case #selector(NSResponder.insertNewline(_:)):
+                parent.submit()
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                parent.cancel()
+                return true
+            default:
+                return false
+            }
+        }
+    }
+}
+
+/// A text cell whose text is centred vertically, and in the same place when
+/// the field editor takes over for editing: the default draws the idle text
+/// and the editor's at slightly different heights, and the text jumps.
+private final class CenteredTextFieldCell: NSTextFieldCell {
+    private func centred(_ rect: NSRect) -> NSRect {
+        let height = cellSize(forBounds: rect).height
+        guard height < rect.height else { return rect }
+        return NSRect(x: rect.minX, y: rect.minY + ((rect.height - height) / 2).rounded(),
+                      width: rect.width, height: height)
+    }
+
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        centred(super.drawingRect(forBounds: rect))
+    }
+
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                       delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: centred(rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                         delegate: Any?, start selStart: Int, length selLength: Int) {
+        super.select(withFrame: centred(rect), in: controlView, editor: textObj, delegate: delegate,
+                     start: selStart, length: selLength)
     }
 }

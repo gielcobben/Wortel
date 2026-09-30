@@ -140,10 +140,9 @@ enum AgentLiveness {
 /// See `Resources/ghostty/shell-integration/*` (the `_ghostty_wortel_agent`
 /// path in each shell).
 enum AgentResumeStore {
-    /// Shared with the shell integration, which hard-codes the same path.
-    static let directory: URL = FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Wortel/agents", isDirectory: true)
+    /// Shared with the shell integration, which derives the same path: the
+    /// data folder's `agents`, `WORTEL_DATA_DIR` included.
+    static let directory: URL = DataDirectory.url.appendingPathComponent("agents", isDirectory: true)
 
     /// The command that reopens an agent's most recent conversation for the
     /// current directory, keyed by the agent's basename. Each maps to a

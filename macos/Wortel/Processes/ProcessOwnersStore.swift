@@ -15,8 +15,7 @@ import Foundation
 /// process is gone (`RunningJobs.recordingOwners`).
 enum ProcessOwnersStore {
     private static var fileURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Wortel/process-owners.json")
+        DataDirectory.file("process-owners.json")
     }
 
     /// One record. The start time is stored as `Date`'s own representation,

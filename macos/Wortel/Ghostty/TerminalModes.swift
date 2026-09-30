@@ -240,8 +240,7 @@ struct CSIScanner {
 /// simply "nothing to restore" — the state it had before this existed.
 enum TerminalModeStore {
     private static var fileURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Wortel/terminal-modes.json")
+        DataDirectory.file("terminal-modes.json")
     }
 
     /// One session's record. Modes are a `[String: Bool]` because JSON keys are

@@ -55,9 +55,7 @@ enum WortelCLI {
     /// told. A Unix socket path has to fit `sun_path` (104 bytes on Darwin), and
     /// this one spends about half of that.
     static var socketPath: String {
-        let base = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Wortel/cli.sock").path
+        DataDirectory.file("cli.sock").path
     }
 
     /// The `.app` a binary at `executable` lives in, or nil if it doesn't live

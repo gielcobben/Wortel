@@ -291,7 +291,12 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     # Wortel: directory shared with the app (AgentResumeStore) for agent markers.
     # Global, not local: the event-driven functions below read it at run time,
     # long after this one-shot setup function's locals are gone.
-    set --global _ghostty_wortel_agent_dir "$HOME/Library/Application Support/Wortel/agents"
+    # WORTEL_DATA_DIR when the app runs on a data folder of its own.
+    if set -q WORTEL_DATA_DIR
+        set --global _ghostty_wortel_agent_dir "$WORTEL_DATA_DIR/agents"
+    else
+        set --global _ghostty_wortel_agent_dir "$HOME/Library/Application Support/Wortel/agents"
+    end
 
     # Wortel: echo the agent-CLI basename if the command line launches one (the
     # resumable subset), else nothing. Same launcher/env-assignment skipping as

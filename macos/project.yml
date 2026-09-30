@@ -254,6 +254,8 @@ targets:
       # dropped.
       - path: Wortel/CLI/WortelCommand.swift
       - path: Wortel/CLI/WortelCLIClient.swift
+      # Where the sockets are, which the two ends have to agree on.
+      - path: Wortel/DataDirectory.swift
     settings:
       base:
         PRODUCT_NAME: wortel
@@ -281,6 +283,7 @@ targets:
       - path: Wortel/Ghostty/PtyHost.swift
       - path: Wortel/CLI/WortelCommand.swift
       - path: Wortel/CLI/WortelCLIClient.swift
+      - path: Wortel/DataDirectory.swift
     settings:
       base:
         PRODUCT_NAME: wortel-keeper
@@ -356,6 +359,8 @@ targets:
       # scanner that reads inside a DCS passthrough, or misses a sequence split
       # across two reads, is wrong in exactly the same silent way.
       - path: Wortel/Ghostty/TerminalModes.swift
+      # Where TerminalModes, SessionStore and AgentResumeStore keep their files.
+      - path: Wortel/DataDirectory.swift
       # The font-size clamp, which is a `didSet` that assigns to its own
       # property — correct here, and one edit away from unbounded recursion.
       - path: Wortel/Preview/PreviewSettings.swift

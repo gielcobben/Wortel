@@ -31,6 +31,21 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
 ```
 
 - Release build (used by benchmarks): `-configuration Release`.
+- **One Wortel per data folder.** A second copy launched while one is running
+  (any build, any worktree) brings the running one forward and exits
+  (`InstanceLock`), because two copies sharing `~/Library/Application
+  Support/Wortel` each write their stale view of it back on quit: that is how
+  agents lost their light/dark subscription. To try a build *beside* the one
+  you're working in, give it a folder of its own; it gets its own sessions,
+  keeper and `wortel` socket and never touches the real ones:
+
+  ```sh
+  open -n --env WORTEL_DATA_DIR=/tmp/wortel-try path/to/Wortel.app
+  ```
+
+  Keep the path short (sockets live in it; 104-byte limit). Its keeper keeps
+  its shells after it quits, like the real one; stop it by pid when done.
+  UserDefaults (sidebar width, folder roots) are still shared, by bundle ID.
 - **Proper signed release:** `./scripts/release.sh` builds Release, signs it
   with your Developer ID (auto-detected), installs to `/Applications`, and
   launches it. This is required for anything that needs a real, registered app

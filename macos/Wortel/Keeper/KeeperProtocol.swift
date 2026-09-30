@@ -105,9 +105,7 @@ enum Keeper {
     /// Beside the CLI socket, and for the same reason: it is app state, and both
     /// ends can derive the path without being told.
     static var socketPath: String {
-        let base = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Wortel/keeper.sock").path
+        DataDirectory.file("keeper.sock").path
     }
 
     /// The protocol version. Bumped when the wire changes shape; a keeper that

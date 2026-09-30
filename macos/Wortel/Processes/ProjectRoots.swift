@@ -19,8 +19,7 @@ enum ProjectRoots {
     static let limit = 40
 
     private static var fileURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Wortel/project-roots.json")
+        DataDirectory.file("project-roots.json")
     }
 
     /// Whether a directory is specific enough to attribute a process by.

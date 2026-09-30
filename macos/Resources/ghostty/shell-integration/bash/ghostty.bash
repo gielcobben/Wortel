@@ -378,7 +378,7 @@ function __ghostty_wortel_wrapped_agent() {
 }
 
 # Wortel: directory shared with the app (AgentResumeStore) for agent markers.
-_ghostty_wortel_agent_dir="$HOME/Library/Application Support/Wortel/agents"
+_ghostty_wortel_agent_dir="${WORTEL_DATA_DIR:-$HOME/Library/Application Support/Wortel}/agents"
 
 # Wortel: echo the agent-CLI basename if the command line launches one (the
 # resumable subset), else nothing. Same launcher/env-assignment skipping as

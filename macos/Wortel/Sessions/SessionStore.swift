@@ -229,8 +229,7 @@ final class SessionStore {
     }
 
     private static var fileURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Wortel/sessions.json")
+        DataDirectory.file("sessions.json")
     }
 
     private var pendingSave: DispatchWorkItem?

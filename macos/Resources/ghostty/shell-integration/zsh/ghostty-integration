@@ -388,7 +388,7 @@ _ghostty_deferred_init() {
     }
 
     # Wortel: directory shared with the app (AgentResumeStore) for agent markers.
-    _ghostty_wortel_agent_dir="$HOME/Library/Application Support/Wortel/agents"
+    _ghostty_wortel_agent_dir="${WORTEL_DATA_DIR:-$HOME/Library/Application Support/Wortel}/agents"
 
     # Wortel: clear this session's agent marker. Runs at every prompt (registered
     # into precmd below), so a marker only survives while an agent is actually

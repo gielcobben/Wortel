@@ -325,7 +325,8 @@ private struct FileRow: View {
 
     /// Selected rows are drawn on the accent, so everything on them has to come
     /// off it — the same rule as the changes list and History.
-    private var onAccent: Bool { isSelected }
+    private var onAccent: Bool { isSelected && listHasFocus }
+    @Environment(\.listHasFocus) private var listHasFocus
     /// An ignored entry is still shown (you may well want to drag something out
     /// of `dist/`), but dimmed so it can't be mistaken for part of the project.
     private var isIgnored: Bool { row.node.isIgnored == true }
@@ -401,7 +402,7 @@ private struct FileRow: View {
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.accentColor)
+                    .fill(listHasFocus ? Color.accentColor : Color(nsColor: Chrome.selectedFill))
             }
         }
         .padding(.horizontal, 4)

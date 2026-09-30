@@ -295,6 +295,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let self, let session = self.manager.selected else { return menu.removeAllItems() }
             SessionActions.fillMoveTo(menu, for: session, manager: self.manager)
         }
+        gitPanel.onAreaFocused = { [weak self] region in
+            // A turn later: an area the command brought forward has its frame then.
+            DispatchQueue.main.async { self?.splitController.blink(region) }
+        }
         gitPanel.onClearKeyboard = { [weak self] in
             guard let window = self?.window, window.firstResponder is SurfaceView else { return }
             window.makeFirstResponder(nil)

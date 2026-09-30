@@ -88,6 +88,11 @@ final class MainSplitViewController: NSSplitViewController {
     /// The strip under the terminal, bar and all: an area of its own inside
     /// the content item. See `region(at:)`.
     private weak var bottomAreaView: NSView?
+    /// The main area above the strip, and the column's content: with the
+    /// strip, what `blink` draws around.
+    private weak var terminalAreaView: NSView?
+    private weak var columnContentView: NSView?
+    private weak var blinkView: NSView?
 
     private let previewTabs: PreviewTabs
 
@@ -158,6 +163,7 @@ final class MainSplitViewController: NSSplitViewController {
             runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs)
         let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
         bottomAreaView = bottomPane.view
+        terminalAreaView = workspace.terminalView
         let detail = ChromePaneController(
             bar: titleBars.mainBar, content: workspace, bodyColor: Chrome.content)
         let contentItem = NSSplitViewItem(viewController: detail)
@@ -172,6 +178,7 @@ final class MainSplitViewController: NSSplitViewController {
             runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs))
         let inspector = ChromePaneController(
             bar: titleBars.sideBar, content: inspectorContent, bodyColor: Chrome.content)
+        columnContentView = inspectorContent.view
         let width = ColumnWidth.width(for: manager.selected)
         inspector.view.setFrameSize(NSSize(width: width, height: inspector.view.frame.height))
         lastOwner = manager.selectedID
@@ -518,6 +525,72 @@ extension MainSplitViewController {
     /// What a click anywhere in an area means for the keyboard commands: ⌘W,
     /// ⌘T and the rest act on the area you last clicked or typed in, and a
     /// web page, a pane or the file tree never report typing of their own.
+    /// Where the keyboard just went, said once: a thin accent edge around the
+    /// area that comes up at once and fades over half a second, then nothing
+    /// stays. The one focus treatment every area shares, for moves made from
+    /// the keyboard (a click already shows where you are). A frame rather
+    /// than a fill so nothing under it changes colour, and gone before it could
+    /// be read as a state.
+    ///
+    /// Drawn *inside* the area and sized with it, not over the window at the
+    /// frame it had: ⌘J moves the keyboard as the strip starts to open or
+    /// close, and an edge placed once drew the main area at its old height
+    /// while it grew under it. An area still too small to draw around (the
+    /// strip just starting to open) blinks once it has opened.
+    func blink(_ region: TabRegion, waited: Bool = false) {
+        let target: NSView?
+        switch region {
+        case .main: target = terminalAreaView
+        case .side: target = git.isVisible ? columnContentView : nil
+        case .bottom: target = git.bottomVisible ? bottomAreaView : nil
+        }
+        guard let target, target.window != nil else { return }
+        guard !target.isHiddenOrHasHiddenAncestor,
+              target.bounds.width > 40, target.bounds.height > 40 else {
+            if !waited {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Motion.opening) { [weak self] in
+                    self?.blink(region, waited: true)
+                }
+            }
+            return
+        }
+        blinkView?.removeFromSuperview()
+        // The column's content is SwiftUI's hosting view, which doesn't draw a
+        // view added inside it: that edge goes over it from its container
+        // instead, at its frame and resized with it (the container is a plain
+        // view, not a split view, so the extra subview doesn't become a pane).
+        let hostedColumn = region == .side
+        guard let container = hostedColumn ? target.superview : target else { return }
+        let area = hostedColumn ? target.frame : target.bounds
+        let blink = PassthroughView(frame: area.insetBy(dx: 1, dy: 1))
+        blink.autoresizingMask = [.width, .height]
+        blink.wantsLayer = true
+        guard let layer = blink.layer else { return }
+        layer.borderWidth = 2
+        layer.cornerRadius = 6
+        layer.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor
+        layer.opacity = 0
+        container.addSubview(blink, positioned: .above, relativeTo: nil)
+        blinkView = blink
+
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0, 1, 1, 0]
+        fade.keyTimes = [0, 0.12, 0.3, 1]
+        fade.timingFunctions = [CAMediaTimingFunction(name: .easeOut),
+                                CAMediaTimingFunction(name: .linear),
+                                CAMediaTimingFunction(name: .easeIn)]
+        fade.duration = 0.6
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak blink] in blink?.removeFromSuperview() }
+        layer.add(fade, forKey: "blink")
+        CATransaction.commit()
+    }
+
+    /// Drawn over everything, clicked through.
+    private final class PassthroughView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
     func region(at point: NSPoint) -> TabRegion? {
         func contains(_ view: NSView?) -> Bool {
             guard let view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,

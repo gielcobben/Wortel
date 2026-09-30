@@ -654,13 +654,15 @@ private struct MarqueeName: View {
     /// The soft edges: wider where the text has come from than where it's
     /// going, so the end of the name sits close to the row's buttons.
     private static let leadingFade: CGFloat = 24
-    private static let trailingFade: CGFloat = 5
+    private static let trailingFade: CGFloat = 16
     /// How far the sliding text may run past its box to the left: the
     /// pill's padding, so it slides out at the pill's edge.
     private static let bleed: CGFloat = 10
 
     private var overflow: CGFloat { max(0, textWidth - boxWidth) }
-    private var distance: CGFloat { overflow + Self.trailingFade }
+    /// To the name's end exactly: the trailing fade shrinks away as the end
+    /// arrives, so the last letter lands by the buttons unfaded.
+    private var distance: CGFloat { overflow }
     private var sliding: Bool { active && overflow > 0.5 }
 
     var body: some View {
@@ -687,7 +689,10 @@ private struct MarqueeName: View {
                         // No fade on the left until there's something past the
                         // edge to fade: it grows with the slide, up to its full
                         // width once that much has gone by.
+                        // And on the right, only while there's text still
+                        // hidden there: it shrinks away as the end arrives.
                         .mask(edges(leading: min(Self.leadingFade, slid),
+                                    trailing: min(Self.trailingFade, max(0, distance - slid)),
                                     width: boxWidth + Self.bleed))
                         // Out to the pill's edge while it slides, so the text
                         // fades away there rather than vanishing 10pt short of it.
@@ -730,17 +735,20 @@ private struct MarqueeName: View {
     ///
     /// The left one is eased (smoothstep through a few stops) rather than a
     /// straight ramp, which read as a hard line.
-    private func edges(leading leadingFade: CGFloat, width: CGFloat) -> some View {
+    private func edges(leading leadingFade: CGFloat, trailing trailingFade: CGFloat,
+                       width: CGFloat) -> some View {
         let leading = width > 0 ? leadingFade / width : 0
-        let trailing = width > 0 ? Self.trailingFade / width : 0
-        var stops: [Gradient.Stop] = stride(from: 0.0, through: 1.0, by: 0.2).map { step in
-            let eased = step * step * (3 - 2 * step)
-            return .init(color: .black.opacity(eased), location: leading * step)
+        let trailing = width > 0 ? trailingFade / width : 0
+        let steps = Array(stride(from: 0.0, through: 1.0, by: 0.2))
+        func eased(_ step: Double) -> Double { step * step * (3 - 2 * step) }
+        // In from the left, eased...
+        var stops: [Gradient.Stop] = steps.map {
+            .init(color: .black.opacity(eased($0)), location: leading * $0)
         }
-        stops += [
-            .init(color: .black, location: 1 - trailing),
-            .init(color: .black.opacity(0), location: 1),
-        ]
+        // ...and out to the right, eased the same way.
+        stops += steps.reversed().map {
+            .init(color: .black.opacity(eased($0)), location: 1 - trailing * $0)
+        }
         return LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
     }
 

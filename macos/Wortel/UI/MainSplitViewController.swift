@@ -192,6 +192,7 @@ final class MainSplitViewController: NSSplitViewController {
         item.isCollapsed = !git.isVisible
         addSplitViewItem(item)
         inspectorItem = item
+        observeColumnFront()
 
         // The highest of the three: whatever else moves (the column opening,
         // moving sides, a window resize), the sidebar keeps its width. At the
@@ -309,6 +310,29 @@ final class MainSplitViewController: NSSplitViewController {
                 self.applyLayout()
                 self.observeInspector()
             }
+        }
+    }
+
+    // MARK: - Who takes a window resize
+
+    /// The main area takes a window resize, and the column keeps its width:
+    /// Files, Changes, a diff are tools beside the work, and a wider window is
+    /// for the work. **A browser is the exception.** It's usually what you
+    /// widened the window for, so while one is in front of the column the two
+    /// share the resize, in proportion (equal holding priorities do that). A
+    /// share rather than all of it, so the terminal isn't frozen either.
+    private var columnSharesResize: Bool { git.activeTab?.browserID != nil }
+
+    /// Re-read on every change of the column's front tab. Only the priority
+    /// moves, never the width: a tab switch doesn't relayout the terminal.
+    private func observeColumnFront() {
+        withObservationTracking {
+            let priority = NSLayoutConstraint.Priority(columnSharesResize ? 250 : 260)
+            if let inspectorItem, inspectorItem.holdingPriority != priority {
+                inspectorItem.holdingPriority = priority
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeColumnFront() }
         }
     }
 
@@ -430,12 +454,16 @@ final class MainSplitViewController: NSSplitViewController {
     /// own width, and squeezing the terminal to its floor is the window telling
     /// the inspector what to do, not the user telling us what they want.
     ///
+    /// Except while a browser shares the resize (`columnSharesResize`): then
+    /// widening the window is how you made the page bigger, and a width that
+    /// wasn't kept would snap back narrow on the next session switch.
+    ///
     /// Committed once the drag settles rather than on every frame of it, for one
     /// reason: dragging the divider to the edge is how you close the panel, and
     /// the last width before it goes is the minimum — saving that would reopen
     /// the column pinned shut. A drag that ends collapsed records nothing.
     private func captureInspectorWidth(windowResized: Bool) {
-        guard !windowResized, !suspendWidthCapture,
+        guard !windowResized || columnSharesResize, !suspendWidthCapture,
               let inspectorItem, !inspectorItem.isCollapsed else { return }
         let width = inspectorItem.viewController.view.frame.width
         guard width > 1, abs(width - lastAppliedWidth) > 1 else { return }

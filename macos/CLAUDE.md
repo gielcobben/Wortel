@@ -322,8 +322,9 @@ only a *divider* drag is a preference (a window resize squeezing the terminal to
 its floor is not), and the width is committed once the drag settles, because
 dragging to the edge is how you close the panel and the last width before it goes
 is the minimum. A window resize goes to the main area, except while a browser is
-in front of the column: then the two share it in proportion (equal holding
-priorities), and the width it leaves is kept like a drag's. The split view's `autosaveName` still carries the sidebar; the
+in front of the column: then the column takes all of it (its holding priority
+drops below the main area's) and the terminal holds still, and the width it
+leaves is kept like a drag's. The split view's `autosaveName` still carries the sidebar; the
 inspector's width it saves but does not get to decide (see `viewDidLayout`).
 
 **Tabs and the workspace** (`WorkspaceTabs`, `SideTab`, `GitPanelModel`,

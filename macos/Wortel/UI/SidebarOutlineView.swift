@@ -420,6 +420,14 @@ final class SidebarOutline: NSOutlineView {
     /// the header toggles it (`mouseDown`).
     override func frameOfOutlineCell(atRow row: Int) -> NSRect { .zero }
 
+    /// Every cell the full width of its row, so where text starts is the
+    /// content's padding alone (SidebarRowContent, SidebarHeaderContent), not
+    /// that plus the source list's inset plus the triangle's old gutter.
+    /// Headers and rows then line up, as the ChatGPT app's do.
+    override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
+        rect(ofRow: row)
+    }
+
     override func validateProposedFirstResponder(_ responder: NSResponder,
                                                  for event: NSEvent?) -> Bool {
         if responder is SidebarCloseButton { return true }

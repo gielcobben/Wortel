@@ -164,13 +164,14 @@ struct SidebarRowContent: View {
             },
             cancel: { manager.editingID = nil })
             // The selection pill is drawn by the row view (SidebarPillRowView),
-            // full row width — this content just sits on top of it.
-            .padding(.leading, 12)
+            // full row width — this content just sits on top of it. 10pt into
+            // the pill, which is 10pt in from the row (its inset).
+            .padding(.leading, 20)
             // Keeps a long name clear of the trailing slot, which the row view
             // owns (status indicator, or "…" and × while hovered). Only
             // decides where the name truncates, so it's deliberately generous
             // rather than measured against the cell's inset.
-            .padding(.trailing, 44)
+            .padding(.trailing, 56)
             // Fill the row height and center vertically — otherwise the short
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.
@@ -407,9 +408,10 @@ struct SidebarHeaderContent: View {
             // was grey noise for something you rarely need to see. The "+" says
             // it too, and right-click sets or clears it.
             .help(root ?? "")
-            .padding(.leading, 12)
+            // Where the rows' names start, so the two line up.
+            .padding(.leading, 20)
             // Clear of the "+" that appears on hover (SidebarPillRowView).
-            .padding(.trailing, 28)
+            .padding(.trailing, 36)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             // Native right-click, instant on rightMouseDown — same reasoning as

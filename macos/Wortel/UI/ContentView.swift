@@ -663,16 +663,23 @@ private struct MarqueeName: View {
     var body: some View {
         ZStack(alignment: .leading) {
             if sliding, let hoverStart {
-                TimelineView(.animation(minimumInterval: nil, paused: settled)) { context in
-                    Text(text)
-                        .font(Self.font)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .offset(x: -Self.offset(after: context.date.timeIntervalSince(hoverStart),
-                                                distance: distance))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .clipped()
+                // Hung from an empty box's leading edge: a view wider than its
+                // container is otherwise centred in it, and the name jumped
+                // left by half its overflow on hover and ended that far off.
+                // (A flexible frame's `.leading` didn't hold it; measured.)
+                Color.clear
+                    .frame(height: 16)
+                    .overlay(alignment: .leading) {
+                        TimelineView(.animation(minimumInterval: nil, paused: settled)) { context in
+                            Text(text)
+                                .font(Self.font)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .offset(x: -Self.offset(after: context.date.timeIntervalSince(hoverStart),
+                                                        distance: distance))
+                        }
+                    }
+                    .clipped()
                 .mask(edges(scrolled: true))
             } else {
                 Text(text)

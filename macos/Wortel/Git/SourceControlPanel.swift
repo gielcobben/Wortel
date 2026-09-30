@@ -86,7 +86,7 @@ private struct RepoView: View {
     /// an NSTextView, outside SwiftUI's focus system.
     @State private var messageFocused = false
     /// Grow-to-fit height of the commit editor, and a tap-to-focus token.
-    @State private var messageHeight: CGFloat = 52
+    @State private var messageHeight: CGFloat = 22
     @State private var focusMessageRequest = 0
     @State private var lastHandledFocusRequest = 0
     /// What a confirmed Discard would throw away. One dialog for the pane rather
@@ -376,7 +376,11 @@ private struct RepoView: View {
                     text: $repo.commitMessage,
                     height: $messageHeight,
                     placeholder: "Message (⌘⏎ to commit)",
-                    minHeight: 52,
+                    // One line at rest, like a chat composer's; a few lines'
+                    // room once you're writing in it (focused or holding text),
+                    // since a commit message is more than a line more often
+                    // than not.
+                    minHeight: messageFocused || !repo.commitMessage.isEmpty ? 52 : 22,
                     maxHeight: 160,
                     onFocusChange: { messageFocused = $0 },
                     onCommit: { Task { await repo.commit() } },
@@ -387,7 +391,8 @@ private struct RepoView: View {
                 }
                 commitButton
             }
-            .padding(8)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
             .background(
                 // Tap target sits behind the field/button, so clicking anywhere
                 // in the padding focuses the message without stealing their taps.

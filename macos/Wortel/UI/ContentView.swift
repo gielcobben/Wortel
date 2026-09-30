@@ -60,7 +60,8 @@ struct SidebarPane: View {
             snapshot: manager.sidebarGroups.map {
                 SidebarSnapshotGroup(
                     folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
-                    tallIDs: Set($0.sessions.filter(\.hasSecondLine).map(\.id)))
+                    tallIDs: Set($0.sessions.filter(\.hasSecondLine).map(\.id)),
+                    isPinned: $0.isPinned)
             })
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 2) {
@@ -205,6 +206,21 @@ struct SidebarRowContent: View {
     }
 }
 
+/// The Pinned section's header: its title in the folder headers' style, and
+/// nothing to click or drag.
+struct SidebarPinnedHeaderContent: View {
+    var body: some View {
+        Text("Pinned")
+            .font(.system(size: 13))
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            // Placed exactly as a folder's title is.
+            .padding(.leading, 20)
+            .padding(.trailing, 36)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+}
+
 /// What can be done to one session: the row's right-click menu, its hover
 /// "…", and (for the selected session) the Session menu, and so the ⌘P
 /// palette. One place, so the three can't drift apart.
@@ -218,6 +234,8 @@ enum SessionActions {
             item.submenu = moveTo
             menu.addItem(item)
         }
+        let pinned = manager.isPinned(session)
+        menu.addItem(ClosureMenuItem(title: pinned ? "Unpin" : "Pin") { manager.setPinned(session, !pinned) })
         menu.addItem(ClosureMenuItem(title: "Mark as Unread") { manager.markUnread(session) })
         menu.addItem(.separator())
         // Only for a worktree Wortel made, and it closes the session with it —

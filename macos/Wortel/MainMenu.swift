@@ -222,6 +222,10 @@ enum MainMenu {
         let moveToMenu = NSMenu(title: "Move To")
         moveToMenu.delegate = moveToFiller
         moveTo.submenu = moveToMenu
+        // ⌥⌘P, the ChatGPT app's: to the Pinned section at the top of the
+        // sidebar, and back. Title flips in AppDelegate.validateMenuItem.
+        let pin = sessionMenu.addItem(withTitle: "Pin Session", action: #selector(AppDelegate.togglePinSession(_:)), keyEquivalent: "p")
+        pin.keyEquivalentModifierMask = [.command, .option]
         // ⇧⌘U, the ChatGPT app's: a "come back to this" flag.
         let unread = sessionMenu.addItem(withTitle: "Mark as Unread", action: #selector(AppDelegate.markSessionUnread(_:)), keyEquivalent: "u")
         unread.keyEquivalentModifierMask = [.command, .shift]

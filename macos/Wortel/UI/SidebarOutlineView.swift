@@ -462,6 +462,8 @@ struct SidebarSnapshotGroup: Equatable {
     let folder: String?
     let sessionIDs: [UUID]
     let tallIDs: Set<UUID>
+    /// The Pinned section (see `SidebarGroup.isPinned`).
+    var isPinned = false
 }
 
 /// The sidebar's session list as a native `NSOutlineView` — the same machinery
@@ -567,6 +569,10 @@ struct SidebarOutlineView: NSViewRepresentable {
             let name: String
             init(name: String) { self.name = name }
         }
+        /// The Pinned section's header: first at the root while anything is
+        /// pinned. Always open, never dragged, no menu.
+        final class PinnedItem {}
+
         final class SessionItem {
             let session: Session
             var id: Session.ID { session.id }
@@ -578,6 +584,11 @@ struct SidebarOutlineView: NSViewRepresentable {
         weak var insertionLine: SidebarInsertionLine?
 
         private var snapshot: [SidebarSnapshotGroup] = []
+        private let pinnedItem = PinnedItem()
+        private var pinnedItems: [SessionItem] = []
+        /// The Pinned header comes first at the root while anything is pinned,
+        /// and every root index (a drop's, an insertion line's) is past it.
+        private var rootOffset: Int { pinnedItems.isEmpty ? 0 : 1 }
         private var looseItems: [SessionItem] = []
         private var folderItems: [FolderItem] = []          // ordered, as rendered
         private var childrenByFolder: [String: [SessionItem]] = [:]
@@ -631,6 +642,7 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         private func rebuildItems() {
             let byID = Dictionary(uniqueKeysWithValues: manager.sessions.map { ($0.id, $0) })
+            pinnedItems = []
             looseItems = []
             folderItems = []
             childrenByFolder = [:]
@@ -642,7 +654,9 @@ struct SidebarOutlineView: NSViewRepresentable {
                     sessionCache[id] = item
                     return item
                 }
-                if let folder = group.folder {
+                if group.isPinned {
+                    pinnedItems = items
+                } else if let folder = group.folder {
                     let item = folderCache[folder] ?? {
                         let item = FolderItem(name: folder)
                         folderCache[folder] = item
@@ -666,6 +680,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         private func syncExpansion() {
             guard let outline else { return }
             isSyncing = true
+            if !pinnedItems.isEmpty, !outline.isItemExpanded(pinnedItem) { outline.expandItem(pinnedItem) }
             for item in folderItems {
                 let shouldBeExpanded = !manager.isFolderCollapsed(item.name)
                 if shouldBeExpanded, !outline.isItemExpanded(item) {
@@ -680,23 +695,32 @@ struct SidebarOutlineView: NSViewRepresentable {
         // MARK: Data source
 
         func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-            if item == nil { return looseItems.count + folderItems.count }
+            if item == nil { return rootOffset + looseItems.count + folderItems.count }
+            if item is PinnedItem { return pinnedItems.count }
             if let folder = item as? FolderItem { return childrenByFolder[folder.name]?.count ?? 0 }
             return 0
         }
 
         func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
             if item == nil {
+                if index < rootOffset { return pinnedItem }
+                let index = index - rootOffset
                 return index < looseItems.count
                     ? looseItems[index]
                     : folderItems[index - looseItems.count]
             }
+            if item is PinnedItem { return pinnedItems[index] }
             let folder = item as! FolderItem
             return childrenByFolder[folder.name]![index]
         }
 
         func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
-            item is FolderItem
+            item is FolderItem || item is PinnedItem
+        }
+
+        /// Pinned is what you pinned to see: it doesn't fold away.
+        func outlineView(_ outlineView: NSOutlineView, shouldCollapseItem item: Any) -> Bool {
+            !(item is PinnedItem)
         }
 
         // MARK: Rows
@@ -710,6 +734,10 @@ struct SidebarOutlineView: NSViewRepresentable {
                 cell.dragTitle = session.session.leafName
                 let path = session.session.abbreviatedPath
                 cell.dragSubtitle = path.isEmpty ? nil : path
+            } else if item is PinnedItem {
+                content = AnyView(SidebarPinnedHeaderContent())
+                cell = SidebarCellView(content: content)
+                return cell
             } else if let folder = item as? FolderItem {
                 content = AnyView(SidebarHeaderContent(manager: manager, folder: folder.name))
                 cell = SidebarCellView(content: content)
@@ -728,7 +756,7 @@ struct SidebarOutlineView: NSViewRepresentable {
             // second line (see `Session.showsBranchLine`).
             // Roomier than a Finder list, as the ChatGPT app's is: a session
             // row is something you read and pick all day, not scan past.
-            if item is FolderItem { return 36 }
+            if item is FolderItem || item is PinnedItem { return 36 }
             if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 48 }
             return 34
         }
@@ -931,16 +959,25 @@ struct SidebarOutlineView: NSViewRepresentable {
 
             if let folder = pb.string(forType: Self.folderDragType) {
                 guard item == nil else { return false }
-                manager.moveFolder(folder, toFolderIndex: max(0, index - loose))
+                manager.moveFolder(folder, toFolderIndex: max(0, index - rootOffset - loose))
                 return true
             }
             if let idString = pb.string(forType: Self.sessionDragType),
-               let id = UUID(uuidString: idString) {
+               let id = UUID(uuidString: idString),
+               let session = manager.sessions.first(where: { $0.id == id }) {
+                // Into Pinned: pinned there, folder kept.
+                if item is PinnedItem {
+                    manager.setPinned(session, true, at: index == NSOutlineViewDropOnItemIndex ? .max : index)
+                    return true
+                }
+                // Anywhere else: out of Pinned first, then where it was dropped.
+                let rootIndex = index - rootOffset
+                if manager.isPinned(session) { manager.setPinned(session, false) }
                 if let folder = item as? FolderItem {
                     manager.moveSession(id: id, toFolder: folder.name,
                                         at: index == NSOutlineViewDropOnItemIndex ? .max : index)
                 } else if item == nil {
-                    manager.moveSession(id: id, toFolder: nil, at: max(0, index))
+                    manager.moveSession(id: id, toFolder: nil, at: max(0, rootIndex))
                 } else {
                     return false
                 }
@@ -953,7 +990,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// `[loose, loose+folders]`. Folders always render after the loose band.
         private func folderDropTarget(at point: NSPoint) -> Int {
             guard let outline else { return 0 }
-            let loose = looseItems.count, folders = folderItems.count
+            // Root indices, past the Pinned header when there is one: a folder
+            // never goes above Pinned.
+            let loose = rootOffset + looseItems.count, folders = folderItems.count
             guard folders > 0 else { return loose }
             var boundaries: [(y: CGFloat, target: Int)] = []
             for (i, item) in folderItems.enumerated() {
@@ -972,19 +1011,26 @@ struct SidebarOutlineView: NSViewRepresentable {
             let hovered = outline.row(at: point)
             // Below the last row → append after the last row's context.
             let row = hovered >= 0 ? hovered : outline.numberOfRows - 1
-            guard let item = outline.item(atRow: row) else { return (nil, looseItems.count, nil) }
+            let topLevelEnd = rootOffset + looseItems.count
+            guard let item = outline.item(atRow: row) else { return (nil, topLevelEnd, nil) }
             let rect = outline.rect(ofRow: row)
             let topHalf = hovered >= 0 && point.y < rect.midY
 
+            // Onto the Pinned header: pinned, at the end of the pinned.
+            if item is PinnedItem { return (pinnedItem, pinnedItems.count, nil) }
             if let folder = item as? FolderItem {
                 // The top edge of the very first section is the "move to top
                 // level" zone — the top-level band renders above the folders but
                 // has no row to aim at when it's empty. Dropping here inserts
                 // the session above the first folder (at top level).
-                if row == looseItems.count, point.y < rect.minY + rect.height * 0.34 {
-                    return (nil, looseItems.count, nil)
+                if folder === folderItems.first, point.y < rect.minY + rect.height * 0.34 {
+                    return (nil, topLevelEnd, nil)
                 }
                 return (nil, 0, folder) // onto the header → append into the folder
+            }
+            if let session = item as? SessionItem,
+               let i = pinnedItems.firstIndex(where: { $0 === session }) {
+                return (pinnedItem, topHalf ? i : i + 1, nil)
             }
             if let session = item as? SessionItem {
                 if let parent = session.session.folderPath, let parentItem = folderCache[parent] {
@@ -992,9 +1038,9 @@ struct SidebarOutlineView: NSViewRepresentable {
                     return (parentItem, topHalf ? i : i + 1, nil)
                 }
                 let i = looseItems.firstIndex { $0 === session } ?? 0
-                return (nil, topHalf ? i : i + 1, nil)
+                return (nil, rootOffset + (topHalf ? i : i + 1), nil)
             }
-            return (nil, looseItems.count, nil)
+            return (nil, topLevelEnd, nil)
         }
 
         // MARK: Drop highlight
@@ -1019,7 +1065,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// target level obvious.
         private func showInsertion(parent: Any?, index: Int) {
             guard let outline, let line = insertionLine else { return }
-            let inFolder = parent is FolderItem
+            let inFolder = parent is FolderItem || parent is PinnedItem
             let leading: CGFloat = inFolder ? 28 : 12
             let width = max(0, outline.bounds.width - leading - 10)
             let height: CGFloat = 3
@@ -1040,6 +1086,11 @@ struct SidebarOutlineView: NSViewRepresentable {
             func topOfRow(_ row: Int) -> CGFloat { outline.rect(ofRow: row).minY }
             func bottomOfRow(_ row: Int) -> CGFloat { outline.rect(ofRow: row).maxY }
 
+            if parent is PinnedItem {
+                if index < pinnedItems.count { return topOfRow(outline.row(forItem: pinnedItems[index])) }
+                if let last = pinnedItems.last { return bottomOfRow(outline.row(forItem: last)) }
+                return bottomOfRow(outline.row(forItem: pinnedItem))
+            }
             if let folder = parent as? FolderItem {
                 let children = childrenByFolder[folder.name] ?? []
                 if index < children.count {
@@ -1050,13 +1101,15 @@ struct SidebarOutlineView: NSViewRepresentable {
                 }
                 return bottomOfRow(outline.row(forItem: folder)) // empty folder
             }
-            // Top-level: root children are loose items then folders.
+            // Top-level: root children are the Pinned header (when there is
+            // one), then loose items, then folders.
+            let index = index - rootOffset
             let loose = looseItems.count
-            if index < loose {
+            if index < loose, index >= 0 {
                 return topOfRow(outline.row(forItem: looseItems[index]))
             }
             let folderIdx = index - loose
-            if folderIdx < folderItems.count {
+            if folderIdx >= 0, folderIdx < folderItems.count {
                 return topOfRow(outline.row(forItem: folderItems[folderIdx]))
             }
             let lastRow = outline.numberOfRows - 1

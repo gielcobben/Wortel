@@ -380,6 +380,10 @@ final class Session: Identifiable {
 struct SidebarGroup: Identifiable {
     let folder: String?
     let sessions: [Session]
-    /// Stable across renders; "" is safe because a real folder is never empty.
-    var id: String { folder ?? "" }
+    /// The Pinned section at the top: folder nil like the top level, but a
+    /// section with a header of its own.
+    var isPinned = false
+    /// Stable across renders; "" is safe because a real folder is never empty,
+    /// and the pinned section's can't be a folder name (it starts with NUL).
+    var id: String { isPinned ? "\u{0}pinned" : folder ?? "" }
 }

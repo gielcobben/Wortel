@@ -1012,6 +1012,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sessionSwitcher.toggle(over: window, commandsOnly: true)
     }
 
+    /// ⌥⌘P: pin the selected session to the top of the sidebar, or unpin it.
+    @objc func togglePinSession(_ sender: Any?) {
+        focusMainWindow()
+        guard let session = manager.selected else { return }
+        manager.setPinned(session, !manager.isPinned(session))
+    }
+
     /// ⇧⌘U: the "not caught up" ring on the selected session, until you've
     /// spent time in it again.
     @objc func markSessionUnread(_ sender: Any?) {
@@ -1098,6 +1105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return manager.selected?.isInOwnWorktree == true
         }
         if menuItem.action == #selector(markSessionUnread(_:)) {
+            return manager.selected != nil
+        }
+        if menuItem.action == #selector(togglePinSession(_:)) {
+            menuItem.title = manager.selected.map(manager.isPinned) == true ? "Unpin Session" : "Pin Session"
             return manager.selected != nil
         }
         if menuItem.action == #selector(checkForUpdates(_:)) {

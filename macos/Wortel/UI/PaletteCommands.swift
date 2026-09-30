@@ -88,6 +88,7 @@ enum PaletteCommands {
         "moveTabUp:": "arrow.up.to.line",
         "showPreviewFind:": "magnifyingglass",
         "markSessionUnread:": "circle.dashed",
+        "togglePinSession:": "pin",
         "removeSessionWorktree:": "trash",
     ]
 

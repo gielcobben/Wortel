@@ -230,6 +230,33 @@ final class SessionManager {
     }
     @ObservationIgnored private static let folderRootsKey = "WortelFolderRoots"
 
+    /// Pinned sessions, in the order they're shown: a section of their own at
+    /// the top of the sidebar, as the ChatGPT app pins chats. A pinned session
+    /// keeps its folder (it's in its name), so unpinning puts it back there.
+    /// View state about the sidebar, so UserDefaults like the folders'.
+    private(set) var pinnedIDs: [Session.ID] = [] {
+        didSet { UserDefaults.standard.set(pinnedIDs.map(\.uuidString), forKey: Self.pinnedKey) }
+    }
+    @ObservationIgnored private static let pinnedKey = "WortelPinnedSessions"
+
+    func isPinned(_ session: Session) -> Bool { pinnedIDs.contains(session.id) }
+
+    /// Pin (at `position` among the pinned, clamped) or unpin a session.
+    func setPinned(_ session: Session, _ pinned: Bool, at position: Int = .max) {
+        var ids = pinnedIDs
+        let current = ids.firstIndex(of: session.id)
+        if let current { ids.remove(at: current) }
+        if pinned {
+            // A drop index counts the row's own old place, as moveSession's do.
+            var target = position
+            if let current, current < target, target != .max { target -= 1 }
+            ids.insert(session.id, at: max(0, min(target, ids.count)))
+        }
+        guard ids != pinnedIDs else { return }
+        pinnedIDs = ids
+        normalizeOrder()
+        scheduleSave()
+    }
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
         collapsedFolders = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedFoldersKey) ?? [])
@@ -237,6 +264,8 @@ final class SessionManager {
         folderOrder = UserDefaults.standard.stringArray(forKey: Self.folderOrderKey) ?? []
         folderRoots = UserDefaults.standard.dictionary(forKey: Self.folderRootsKey)
             as? [String: String] ?? [:]
+        pinnedIDs = (UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? [])
+            .compactMap(UUID.init(uuidString:))
     }
 
     // MARK: - Sidebar folders (derived from session names)
@@ -248,19 +277,29 @@ final class SessionManager {
     /// ever dropped. Sessions keep their array order within a group. Purely a
     /// view of `sessions` + folder state — nothing here is stored.
     var sidebarGroups: [SidebarGroup] {
+        // Pinned sessions are shown in their own section, first, and not in
+        // their folders as well.
+        let pinned = pinnedIDs.compactMap { id in sessions.first { $0.id == id } }
+        let pinnedSet = Set(pinned.map(\.id))
         var byKey: [String: [Session]] = [:]
-        for session in sessions {
+        for session in sessions where !pinnedSet.contains(session.id) {
             byKey[session.folderPath ?? "", default: []].append(session)
         }
+        // A folder whose sessions are all pinned stays, empty, to come back to.
+        let pinnedFolders = Set(pinned.compactMap(\.folderPath))
 
         var groups: [SidebarGroup] = []
+        if !pinned.isEmpty {
+            groups.append(SidebarGroup(folder: nil, sessions: pinned, isPinned: true))
+        }
         if let top = byKey[""], !top.isEmpty {
             groups.append(SidebarGroup(folder: nil, sessions: top))
         }
         var emitted = Set<String>()
         func emit(_ folder: String) {
             guard !emitted.contains(folder),
-                  byKey[folder] != nil || declaredFolders.contains(folder) else { return }
+                  byKey[folder] != nil || declaredFolders.contains(folder)
+                    || pinnedFolders.contains(folder) else { return }
             emitted.insert(folder)
             groups.append(SidebarGroup(folder: folder, sessions: byKey[folder] ?? []))
         }
@@ -403,7 +442,7 @@ final class SessionManager {
         if session.folderPath == folder {
             // Drop indices are as rendered mid-drag, i.e. they still count the
             // row's own old position — compensate after it's removed.
-            let group = sessions.filter { $0.folderPath == folder }
+            let group = sessions.filter { $0.folderPath == folder && !isPinned($0) }
             if let current = group.firstIndex(where: { $0.id == id }), current < target {
                 target -= 1
             }
@@ -411,7 +450,8 @@ final class SessionManager {
             session.name = folder.map { "\($0)/\(session.leafName)" } ?? session.leafName
         }
         sessions.remove(at: fromIdx)
-        let members = sessions.indices.filter { sessions[$0].folderPath == folder }
+        // As the folder is shown: its pinned sessions are up in Pinned.
+        let members = sessions.indices.filter { sessions[$0].folderPath == folder && !isPinned(sessions[$0]) }
         let clamped = max(0, min(target, members.count))
         let flatIdx = clamped < members.count
             ? members[clamped]
@@ -1421,6 +1461,7 @@ final class SessionManager {
         explicitSignalAt.removeValue(forKey: session.id)
         autoNameState.removeValue(forKey: session.id)
         attentionSince.removeValue(forKey: session.id)
+        pinnedIDs.removeAll { $0 == session.id }
         endPromptCapture(session)
         // The killed shell never reaches its prompt to clear its own agent
         // marker; drop it so a closed session isn't resumed on next launch.
@@ -1578,7 +1619,7 @@ final class SessionManager {
     /// Whether a session has a row in the sidebar right now — i.e. it isn't
     /// tucked inside a collapsed folder.
     private func isVisibleInSidebar(_ session: Session) -> Bool {
-        guard let folder = session.folderPath else { return true }
+        guard !isPinned(session), let folder = session.folderPath else { return true }
         return !isFolderCollapsed(folder)
     }
 

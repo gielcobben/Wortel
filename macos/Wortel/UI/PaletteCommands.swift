@@ -32,6 +32,13 @@ enum PaletteCommands {
         return collect(main, path: [])
     }
 
+    /// The app menu has no title of its own (the system draws the app's name
+    /// there), and its item's title is the class name: "NSMenuItem".
+    private static var appName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? ProcessInfo.processInfo.processName
+    }
+
     /// What a palette has no business offering: quitting and hiding the app,
     /// text editing (it would act on the palette's own field), the window
     /// list, and the palette itself.
@@ -41,16 +48,55 @@ enum PaletteCommands {
         "makeKeyAndOrderFront:", "orderFrontCharacterPalette:", "startDictation:",
         "showSessionSwitcher:", "showCommandPalette:", "selectSessionAtIndex:",
         "arrangeInFront:", "performMiniaturize:", "performZoom:", "toggleFullScreen:",
+        // The global shortcut's item: from the palette it could only hide the
+        // window you're in.
+        "toggleAppVisibility:",
+    ]
+
+    /// A symbol for commands whose menu item has none, so the list isn't a
+    /// column of identical ⌘ tiles. The menu's own icon wins when it has one.
+    private static let symbols: [String: String] = [
+        "orderFrontStandardAboutPanel:": "info.circle",
+        "checkForUpdates:": "arrow.down.circle",
+        "newSession:": "plus.square",
+        "newHomeSession:": "house",
+        "newFolder:": "folder.badge.plus",
+        "openFolder:": "folder",
+        "renameSession:": "pencil",
+        "closeSession:": "xmark",
+        "closeWholeSession:": "xmark.square",
+        "selectNextAttentionSession:": "bell.badge",
+        "selectNextSession:": "chevron.down",
+        "selectPreviousSession:": "chevron.up",
+        "increaseFontSize:": "textformat.size.larger",
+        "decreaseFontSize:": "textformat.size.smaller",
+        "resetFontSize:": "textformat.size",
+        "toggleSessionSidebar:": "sidebar.left",
+        "toggleSideColumn:": "sidebar.right",
+        "toggleBottomStrip:": "rectangle.bottomthird.inset.filled",
+        "toggleColumnSide:": "arrow.left.arrow.right",
+        "openBrowserLocation:": "link",
+        "newBottomTerminal:": "apple.terminal",
+        "reopenClosedTab:": "arrow.uturn.backward",
+        "selectNextSideTab:": "arrow.right",
+        "selectPreviousSideTab:": "arrow.left",
+        "focusNextArea:": "rectangle.righthalf.inset.filled.arrow.right",
+        "focusPreviousArea:": "rectangle.lefthalf.inset.filled.arrow.left",
+        "moveTabLeft:": "arrow.left.to.line",
+        "moveTabRight:": "arrow.right.to.line",
+        "moveTabDown:": "arrow.down.to.line",
+        "moveTabUp:": "arrow.up.to.line",
+        "showPreviewFind:": "magnifyingglass",
     ]
 
     @MainActor private static func collect(_ menu: NSMenu, path: [String]) -> [PaletteCommand] {
         menu.update()
         var commands: [PaletteCommand] = []
-        for item in menu.items {
+        for (index, item) in menu.items.enumerated() {
             guard !item.isSeparatorItem, !item.isHidden, !item.title.isEmpty else { continue }
             if let submenu = item.submenu {
-                // The app menu's title is the app's name; the rest are theirs.
-                let name = submenu.title.isEmpty ? item.title : submenu.title
+                let name = path.isEmpty && index == 0 ? appName
+                    : submenu.title.isEmpty ? item.title : submenu.title
                 commands += collect(submenu, path: path + [name])
                 continue
             }
@@ -58,7 +104,11 @@ enum PaletteCommands {
                   !skipped.contains(NSStringFromSelector(action)) else { continue }
             commands.append(PaletteCommand(
                 title: item.title.replacingOccurrences(of: "\u{2026}", with: ""),
-                path: path, shortcut: shortcut(of: item), image: item.image, item: item))
+                path: path, shortcut: shortcut(of: item),
+                image: item.image ?? symbols[NSStringFromSelector(action)].flatMap {
+                    NSImage(systemSymbolName: $0, accessibilityDescription: nil)
+                },
+                item: item))
         }
         return commands
     }

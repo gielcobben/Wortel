@@ -331,8 +331,23 @@ private struct FileRow: View {
     /// of `dist/`), but dimmed so it can't be mistaken for part of the project.
     private var isIgnored: Bool { row.node.isIgnored == true }
 
+    /// The row's left mouse: select, double-click to open, drag the file out.
+    private var clicks: RowClickCatcher {
+        RowClickCatcher(onClick: { _ in select() }, onDoubleClick: open, urls: { [row.node.url] })
+    }
+
     var body: some View {
-        HStack(spacing: 4) {
+        // Every point of the row takes the click but the chevron: the indent
+        // in front of it, the gaps beside it, and the full height (the space
+        // between two rows is half of each). The catcher used to cover only
+        // the icon and name, and a click a few points off them, or in the gap
+        // between two rows, did nothing.
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: 8 + CGFloat(row.depth) * 12)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .overlay(clicks)
             // The chevron is the directory's own control, so clicking it opens
             // the folder without also opening the file next to it. The glyph is
             // small; the thing you click is not — it fills the row's height and
@@ -353,7 +368,12 @@ private struct FileRow: View {
                     .contentShape(Rectangle())
                     .overlay(PressCatcher(onPress: toggle))
             } else {
-                Spacer().frame(width: 16)
+                // A file's chevron slot is the row too.
+                Color.clear
+                    .frame(width: 16)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .overlay(clicks)
             }
             // Everything the row's left mouse does — select, double-click to
             // open, drag the file out — belongs to one AppKit view, because
@@ -391,13 +411,12 @@ private struct FileRow: View {
                         .frame(width: 6, height: 6)
                 }
             }
+            .padding(.leading, 4)
+            .padding(.trailing, 8)
+            .padding(.vertical, 3)
             .contentShape(Rectangle())
-            .overlay(RowClickCatcher(onClick: { _ in select() }, onDoubleClick: open,
-                                     urls: { [row.node.url] }))
+            .overlay(clicks)
         }
-        .padding(.leading, CGFloat(row.depth) * 12)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .background {
             if isSelected {

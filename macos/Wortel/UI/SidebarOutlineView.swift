@@ -696,7 +696,11 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// The same groups holding the same sessions in the same order: only
         /// which rows are two lines tall differs.
         private static func sameStructure(_ a: [SidebarSnapshotGroup], _ b: [SidebarSnapshotGroup]) -> Bool {
-            a.count == b.count && zip(a, b).allSatisfy { $0.folder == $1.folder && $0.sessionIDs == $1.sessionIDs }
+            // Pinned is a group with no folder, like the loose sessions: pinning
+            // the only loose session changes nothing else, and must still reload.
+            a.count == b.count && zip(a, b).allSatisfy {
+                $0.folder == $1.folder && $0.isPinned == $1.isPinned && $0.sessionIDs == $1.sessionIDs
+            }
         }
 
         private func rebuildItems() {
@@ -1056,12 +1060,20 @@ struct SidebarOutlineView: NSViewRepresentable {
                 }
                 // Anywhere else: out of Pinned first, then where it was dropped.
                 let rootIndex = index - rootOffset
-                if manager.isPinned(session) { manager.setPinned(session, false) }
+                let wasPinned = manager.isPinned(session)
+                if wasPinned { manager.setPinned(session, false) }
+                // Back into its own group from Pinned: the drop index is as the
+                // group was drawn, without it, but unpinning puts it first in
+                // the group, and `moveSession` then discounts a place above
+                // the drop it never had. One more, so it lands on the line.
+                let home = wasPinned ? 1 : 0
                 if let folder = item as? FolderItem {
-                    manager.moveSession(id: id, toFolder: folder.name,
-                                        at: index == NSOutlineViewDropOnItemIndex ? .max : index)
+                    let at = index == NSOutlineViewDropOnItemIndex ? Int.max
+                        : index + (folder.name == session.folderPath ? home : 0)
+                    manager.moveSession(id: id, toFolder: folder.name, at: at)
                 } else if item == nil {
-                    manager.moveSession(id: id, toFolder: nil, at: max(0, rootIndex))
+                    let at = max(0, rootIndex) + (session.folderPath == nil ? home : 0)
+                    manager.moveSession(id: id, toFolder: nil, at: at)
                 } else {
                     return false
                 }

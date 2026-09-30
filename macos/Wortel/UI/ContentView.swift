@@ -168,11 +168,13 @@ struct SidebarRowContent: View {
                 let note = manager.attentionNote(for: session)
                 return SessionRow.Waiting(kind: kind, message: note.message, since: note.since)
             },
+            // Only this row's rename: a late end of this field's edit, after
+            // another row's has begun, must not end that one too.
             commit: { newName in
                 manager.rename(session, to: newName)
-                manager.editingID = nil
+                if manager.editingID == session.id { manager.editingID = nil }
             },
-            cancel: { manager.editingID = nil })
+            cancel: { if manager.editingID == session.id { manager.editingID = nil } })
             // The selection pill is drawn by the row view (SidebarPillRowView),
             // full row width — this content just sits on top of it. 10pt into
             // the pill, which is 10pt in from the row (its inset).
@@ -278,7 +280,10 @@ enum SessionActions {
 
         menu.addItem(.separator())
         // Its own branch in its own worktree, from this session's repository.
+        // `newSessionOnBranch` reads the selected session's repository: from
+        // another row's "…" (which doesn't select it), select that row first.
         _ = item("Fork\u{2026}", "arrow.triangle.branch") {
+            manager.selectedID = session.id
             newSessionOnBranch(manager, inFolder: session.folderPath)
         }
         if let cwd = session.cwd {
@@ -1160,7 +1165,18 @@ private struct SidebarRenameField: NSViewRepresentable {
         context.coordinator.parent = self
     }
 
+    /// Removed without being left (another row's Rename, a session switch, the
+    /// row closed): the edit ends here, while the field is still in its window,
+    /// so AppKit's field editor isn't left behind holding the keyboard, and the
+    /// rename is dropped rather than saved, as the move away meant.
     static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+        coordinator.abandon()
+        if field.currentEditor() != nil {
+            field.abortEditing()
+            if let window = field.window, window.firstResponder is NSTextView {
+                window.makeFirstResponder(nil)
+            }
+        }
         MainMenu.setTextEditing(false)
     }
 
@@ -1170,6 +1186,9 @@ private struct SidebarRenameField: NSViewRepresentable {
         private var ended = false
 
         init(_ parent: SidebarRenameField) { self.parent = parent }
+
+        /// The field is going away: whatever ends its edit now does nothing.
+        func abandon() { ended = true }
 
         /// Into the field once it's in a key window, then the leaf selected.
         func focus(_ field: NSTextField, attemptsLeft: Int) {

@@ -415,6 +415,11 @@ final class SidebarOutline: NSOutlineView {
     /// Let a row's close button keep its own clicks. NSTableView claims every
     /// click over a cell for selection and drag-to-reorder unless this says
     /// otherwise; the default answer for anything inside a cell view is no.
+    /// No disclosure triangle on the left: the header draws its own chevron
+    /// after the folder's name (SidebarHeaderContent), and a press anywhere on
+    /// the header toggles it (`mouseDown`).
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect { .zero }
+
     override func validateProposedFirstResponder(_ responder: NSResponder,
                                                  for event: NSEvent?) -> Bool {
         if responder is SidebarCloseButton { return true }

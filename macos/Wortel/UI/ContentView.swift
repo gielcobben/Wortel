@@ -384,6 +384,14 @@ struct SidebarHeaderContent: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
+            // Open or collapsed, after the name rather than as a triangle in
+            // front of it: down when open, turned to point at the name's end
+            // when collapsed. The whole header is the button (SidebarOutline).
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(manager.isFolderCollapsed(folder) ? -90 : 0))
+                .animation(.easeOut(duration: 0.15), value: manager.isFolderCollapsed(folder))
             // What the folder is hiding. Same dot as a session row's, so it
             // reads as the same fact rather than as a new kind of badge — and
             // it pulses for the same reason, because a blocked agent you can't

@@ -393,22 +393,12 @@ struct SidebarHeaderContent: View {
                              motion: kind == .needsInput ? .pulse : .still)
             }
             Spacer(minLength: 4)
-            // The directory the folder stands for, and the point of showing it
-            // is that it's the difference between a project and a label: a
-            // folder with a path here is one where a new session starts
-            // somewhere you can predict. Truncated from the head, so what
-            // survives is the end of the path — the part that names the
-            // project — and the full one is on the tooltip.
-            if let root {
-                Text(root)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .layoutPriority(-1)
-                    .help(root)
-            }
         }
+            // The directory the folder stands for (where a new session in it
+            // starts) is on hover, not on the header: a path on every header
+            // was grey noise for something you rarely need to see. The "+" says
+            // it too, and right-click sets or clears it.
+            .help(root ?? "")
             .padding(.leading, 12)
             // Clear of the "+" that appears on hover (SidebarPillRowView).
             .padding(.trailing, 28)

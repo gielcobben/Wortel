@@ -107,9 +107,10 @@ final class SidebarPillRowView: NSTableRowView {
     /// The menu "…" opens. Session rows set this.
     func setMoreMenu(_ make: @escaping () -> NSMenu) { makeMoreMenu = make }
 
-    /// What "+" does. Folder headers set this.
-    func setAddAction(_ handler: @escaping () -> Void) {
+    /// What "+" does, and where it starts the session. Folder headers set this.
+    func setAddAction(directory: String?, _ handler: @escaping () -> Void) {
         addButton.onClick = handler
+        addButton.toolTip = directory.map { "New Session in \($0)" } ?? "New Session in Folder"
         addable = true
     }
 
@@ -725,7 +726,8 @@ struct SidebarOutlineView: NSViewRepresentable {
             rowView.showsPill = showsPill(item)
             if let folder = item as? FolderItem {
                 let manager = self.manager, name = folder.name
-                rowView.setAddAction { manager.newSession(inFolder: name) }
+                let directory = manager.root(ofFolder: name).map { ($0 as NSString).abbreviatingWithTildeInPath }
+                rowView.setAddAction(directory: directory) { manager.newSession(inFolder: name) }
             }
             guard let session = item as? SessionItem else { return rowView }
 

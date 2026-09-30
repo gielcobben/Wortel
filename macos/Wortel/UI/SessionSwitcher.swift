@@ -5,13 +5,21 @@ import SwiftUI
 /// branch or its directory. VS Code's, Cursor's and Zed's quick open; ⌘K, the
 /// ChatGPT app's, is "clear screen" in a terminal.
 ///
-/// A panel over the top of the window, as Xcode's Open Quickly and Spotlight
+/// A card over the top of the window, as Spotlight and Xcode's Open Quickly
 /// are: a field, the matches under it (SessionSwitcherMatch), arrows and
 /// Return, Escape or a click elsewhere to put it away.
+///
+/// The card is the window: a vibrant material with rounded corners, and the
+/// system's own shadow following its shape. The window is exactly as tall as
+/// the card, sized from the rows it shows rather than measured, and grows
+/// and shrinks from its top edge as the list does.
 @MainActor
 final class SessionSwitcher {
     private let manager: SessionManager
     private var panel: SwitcherPanel?
+    /// Where the card's top sits, in screen coordinates: what stays put as
+    /// its height changes.
+    private var top: CGFloat = 0
 
     init(manager: SessionManager) {
         self.manager = manager
@@ -26,36 +34,67 @@ final class SessionSwitcher {
     func show(over window: NSWindow) {
         close()
         let panel = SwitcherPanel(
-            contentRect: NSRect(x: 0, y: 0, width: SwitcherView.width, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: SwitcherView.width, height: SwitcherView.fieldHeight),
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        // The card draws its own shadow: the panel is taller than the card,
-        // and a window shadow would outline the clear part too.
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.isReleasedWhenClosed = false
-        panel.animationBehavior = .utilityWindow
+        panel.animationBehavior = .none
         panel.onResign = { [weak self] in self?.close() }
-        let host = NSHostingView(rootView: SwitcherView(manager: manager, pick: { [weak self] id in
-            self?.close()
-            self?.manager.selectedID = id
-        }, cancel: { [weak self] in self?.close() }))
-        // A fixed height, the card pinned to its top: the panel never has to
-        // resize as the list shortens, and its top stays put. (Sized from the
-        // view's fitting size instead, it opened at no height at all: there,
-        // with the keyboard, and invisible.)
+
+        // The material is the card: behind-window vibrancy, so the window and
+        // the desktop show softly through, masked to the card's corners (which
+        // is also the shape the window's shadow takes).
+        let background = NSVisualEffectView()
+        background.material = .popover
+        background.blendingMode = .behindWindow
+        background.state = .active
+        background.maskImage = Self.roundedMask(radius: SwitcherView.cornerRadius)
+        let host = NSHostingView(rootView: SwitcherView(
+            manager: manager,
+            pick: { [weak self] id in
+                self?.close()
+                self?.manager.selectedID = id
+            },
+            cancel: { [weak self] in self?.close() },
+            resize: { [weak self] height in self?.resize(to: height) }))
         host.sizingOptions = []
-        panel.contentView = host
+        host.translatesAutoresizingMaskIntoConstraints = false
+        background.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            host.topAnchor.constraint(equalTo: background.topAnchor),
+            host.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+        ])
+        panel.contentView = background
+
         // A little below the top of the window, centred on it.
         let frame = window.frame
-        let height = SwitcherView.maximumHeight
-        panel.setFrame(NSRect(x: frame.midX - SwitcherView.width / 2,
-                              y: frame.maxY - 90 - height,
-                              width: SwitcherView.width, height: height), display: false)
+        top = frame.maxY - 84
+        panel.setFrame(NSRect(x: frame.midX - SwitcherView.width / 2, y: top - SwitcherView.fieldHeight,
+                              width: SwitcherView.width, height: SwitcherView.fieldHeight), display: false)
         window.addChildWindow(panel, ordered: .above)
+
+        // In with a quick fade, as Spotlight comes in.
+        panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.14
+            context.timingFunction = Motion.curve
+            panel.animator().alphaValue = 1
+        }
         self.panel = panel
+    }
+
+    /// The card's height changed with the list: grow or shrink from the top.
+    private func resize(to height: CGFloat) {
+        guard let panel, abs(panel.frame.height - height) > 0.5 else { return }
+        panel.setFrame(NSRect(x: panel.frame.minX, y: top - height,
+                              width: panel.frame.width, height: height), display: true)
+        panel.invalidateShadow()
     }
 
     func close() {
@@ -67,6 +106,19 @@ final class SessionSwitcher {
         panel.orderOut(nil)
         // Back to the window it was opened over, and its terminal.
         parent?.makeKey()
+    }
+
+    /// A stretchable rounded rectangle: the card's shape at any height.
+    private static func roundedMask(radius: CGFloat) -> NSImage {
+        let edge = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
 }
 
@@ -81,18 +133,22 @@ private final class SwitcherPanel: NSPanel {
     }
 }
 
-/// The field and the matches.
+/// The field, the matches, and a line of keys.
 private struct SwitcherView: View {
-    static let width: CGFloat = 520
+    static let width: CGFloat = 560
+    static let cornerRadius: CGFloat = 16
+    static let fieldHeight: CGFloat = 56
     private static let visibleRows = 8
     private static let rowHeight: CGFloat = 44
-    private static let fieldHeight: CGFloat = 50
-    /// The card at its tallest: the field and eight rows.
-    static var maximumHeight: CGFloat { fieldHeight + 1 + CGFloat(visibleRows) * rowHeight + 12 + 24 }
+    private static let listPadding: CGFloat = 6
+    private static let headerHeight: CGFloat = 26
+    private static let footerHeight: CGFloat = 32
+    private static let emptyHeight: CGFloat = 64
 
     let manager: SessionManager
     let pick: (UUID) -> Void
     let cancel: () -> Void
+    let resize: (CGFloat) -> Void
 
     @State private var query = ""
     @State private var highlighted = 0
@@ -108,31 +164,55 @@ private struct SwitcherView: View {
                                          current: manager.selectedID)
     }
 
+    /// The card's height for `count` matches, worked out rather than measured,
+    /// so the window is the right size from the first frame.
+    private func height(for count: Int) -> CGFloat {
+        var height = Self.fieldHeight
+        if count > 0 {
+            height += 1 + (query.isEmpty ? Self.headerHeight : 0)
+                + CGFloat(min(count, Self.visibleRows)) * Self.rowHeight + Self.listPadding * 2
+                + Self.footerHeight
+        } else if !query.isEmpty {
+            height += 1 + Self.emptyHeight
+        }
+        return height
+    }
+
     var body: some View {
         let matches = self.matches
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15))
+                    .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.secondary)
                 TextField("Go to session", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 17))
+                    .font(.system(size: 20))
                     .focused($focused)
                     .onSubmit { if matches.indices.contains(highlighted) { pick(matches[highlighted].id) } }
                     .onExitCommand(perform: cancel)
                     .onKeyPress(.downArrow) { move(1, in: matches.count) }
                     .onKeyPress(.upArrow) { move(-1, in: matches.count) }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 18)
             .frame(height: Self.fieldHeight)
+
             if !matches.isEmpty {
-                Divider()
+                Divider().opacity(0.6)
+                if query.isEmpty {
+                    Text("Recent")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 18)
+                        .frame(height: Self.headerHeight, alignment: .bottom)
+                }
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 0) {
                             ForEach(Array(matches.enumerated()), id: \.element.id) { index, match in
-                                SwitcherRow(candidate: match, session: manager.sessions.first { $0.id == match.id },
+                                SwitcherRow(candidate: match,
+                                            session: manager.sessions.first { $0.id == match.id },
                                             isHighlighted: index == highlighted,
                                             isCurrent: match.id == manager.selectedID)
                                     .id(index)
@@ -140,31 +220,34 @@ private struct SwitcherView: View {
                                     .onHover { if $0 { highlighted = index } }
                             }
                         }
-                        .padding(6)
+                        .padding(Self.listPadding)
                     }
-                    .frame(height: min(CGFloat(matches.count), CGFloat(Self.visibleRows)) * Self.rowHeight + 12)
+                    .scrollIndicators(.never)
+                    .frame(height: CGFloat(min(matches.count, Self.visibleRows)) * Self.rowHeight
+                           + Self.listPadding * 2)
                     .onChange(of: highlighted) { _, index in proxy.scrollTo(index) }
                 }
+                SwitcherFooter()
+                    .frame(height: Self.footerHeight)
             } else if !query.isEmpty {
-                Divider()
+                Divider().opacity(0.6)
                 Text("No session matches \u{201c}\(query)\u{201d}")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 56)
+                    .frame(height: Self.emptyHeight)
             }
         }
-        .frame(width: Self.width)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(.regularMaterial))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(Color(nsColor: Chrome.hairlineStrong), lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
-        // Top of a panel that's as tall as the card can get; the rest is clear.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear { focused = true }
-        .onChange(of: query) { _, _ in highlighted = 0 }
+        .frame(width: Self.width, alignment: .top)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .onAppear {
+            focused = true
+            resize(height(for: matches.count))
+        }
+        .onChange(of: query) { _, _ in
+            highlighted = 0
+            resize(height(for: self.matches.count))
+        }
     }
 
     private func move(_ offset: Int, in count: Int) -> KeyPress.Result {
@@ -174,7 +257,8 @@ private struct SwitcherView: View {
     }
 }
 
-/// One session: its status, its name, and where it is.
+/// One session: a tile with its status, its name, and where it is. The one
+/// the keys are on takes the accent, with white text, as Spotlight's does.
 private struct SwitcherRow: View {
     let candidate: SessionSwitcherMatch.Candidate
     let session: Session?
@@ -182,25 +266,28 @@ private struct SwitcherRow: View {
     let isCurrent: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Group {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHighlighted ? Color.white.opacity(0.22) : Color.primary.opacity(0.07))
                 if let kind = session?.attention {
                     AttentionDot(color: SessionStatusIndicator.attentionColor(kind),
                                  motion: kind == .needsInput ? .pulse : .still)
                 } else {
                     Image(systemName: "terminal")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 }
             }
-            .frame(width: 18)
+            .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(candidate.name)
                     .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
                     .lineLimit(1)
-                Text(where_)
+                Text(location)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -208,18 +295,48 @@ private struct SwitcherRow: View {
             if isCurrent {
                 Text("Current")
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary))
             }
         }
         .padding(.horizontal, 10)
         .frame(height: 44)
         .contentShape(Rectangle())
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(isHighlighted ? Color.accentColor.opacity(0.18) : .clear))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(isHighlighted ? Color.accentColor : .clear))
     }
 
     /// "Wortel · ~/Developer/wortel", "networth · worktree/pre-post".
-    private var where_: String {
+    private var location: String {
         [candidate.folder, candidate.branch ?? candidate.path].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// The keys, quietly, along the bottom.
+private struct SwitcherFooter: View {
+    var body: some View {
+        HStack(spacing: 16) {
+            key("↑↓", "to move")
+            key("↩", "to open")
+            key("esc", "to close")
+            Spacer()
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, 18)
+        .frame(maxHeight: .infinity)
+        .background(Color.primary.opacity(0.03))
+        .overlay(alignment: .top) { Divider().opacity(0.6) }
+    }
+
+    private func key(_ symbol: String, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Text(symbol)
+                .font(.system(size: 10, weight: .semibold))
+                .padding(.horizontal, 5)
+                .frame(height: 17)
+                .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.primary.opacity(0.08)))
+            Text(label)
+        }
     }
 }

@@ -251,6 +251,16 @@ final class MainBar: ChromeBarView {
     private let sidebarToggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar (⌘B)")
     private var leading: NSLayoutConstraint!
 
+    /// While the row shows the title rather than tabs: the row, as a place to
+    /// drop a tab, and where the marker goes, just after the title's text (the
+    /// session's tab it will sit beside), in window coordinates.
+    func dropSlot() -> (area: NSRect, markerX: CGFloat)? {
+        guard window != nil, strip.isHidden, !isHiddenOrHasHiddenAncestor else { return nil }
+        let textWidth = min(title.intrinsicContentSize.width, title.bounds.width)
+        let end = title.convert(NSPoint(x: textWidth + 6, y: 0), to: nil).x
+        return (convert(bounds, to: nil), end)
+    }
+
     override init() {
         super.init()
         sidebarToggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
@@ -664,7 +674,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     /// conversation's. Native, small, glyphs that show, shortcuts on the right.
     /// The titles are short on purpose: the longest title decides the menu's
     /// width, and inside a session's own menu "Fork…" needs no more words to
-    /// say it forks this session onto a branch.
+    /// say it forks this session onto a branch. Below its own three items it
+    /// is the sidebar row's menu (SessionActions), so the two always agree.
     @objc private func presentSessionMenu(_ sender: NSView) {
         guard let session = manager.selected else { return }
         let menu = NSMenu()
@@ -695,74 +706,19 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         menu.addItem(strip)
         menu.addItem(.separator())
 
-        let rename = ClosureMenuItem(title: "Rename") { [weak self] in
-            self?.manager.editingID = session.id
+        // The rest is the session's own menu, the one its sidebar row has.
+        let actions = SessionActions.menu(for: session, manager: manager)
+        for item in actions.items {
+            actions.removeItem(item)
+            menu.addItem(item)
         }
-        Self.setGlyph("pencil", on: rename)
-        rename.keyEquivalent = "r"
-        rename.keyEquivalentModifierMask = [.command]
-        menu.addItem(rename)
-
-        let destinations = manager.folderNames.filter { $0 != session.folderPath }
-        if session.folderPath != nil || !destinations.isEmpty {
-            let submenu = NSMenu()
-            if session.folderPath != nil {
-                submenu.addItem(ClosureMenuItem(title: "Top Level") { [weak self] in
-                    self?.manager.moveSession(id: session.id, toFolder: nil, at: .max)
-                })
-            }
-            for folder in destinations {
-                submenu.addItem(ClosureMenuItem(title: folder) { [weak self] in
-                    self?.manager.moveSession(id: session.id, toFolder: folder, at: .max)
-                })
-            }
-            let move = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
-            Self.setGlyph("folder", on: move)
-            move.submenu = submenu
-            menu.addItem(move)
-        }
-
-        menu.addItem(.separator())
-        let branch = ClosureMenuItem(title: "Fork\u{2026}") { [weak self] in
-            guard let self else { return }
-            newSessionOnBranch(self.manager, inFolder: session.folderPath)
-        }
-        Self.setGlyph("arrow.triangle.branch", on: branch)
-        menu.addItem(branch)
-
-        if let cwd = session.cwd {
-            let reveal = ClosureMenuItem(title: "Show in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
-            }
-            Self.setGlyph("folder.badge.gearshape", on: reveal)
-            menu.addItem(reveal)
-            let copy = ClosureMenuItem(title: "Copy Path") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(cwd, forType: .string)
-            }
-            Self.setGlyph("doc.on.doc", on: copy)
-            menu.addItem(copy)
-        }
-
-        menu.addItem(.separator())
-        let close = ClosureMenuItem(title: "Close Session") { [weak self] in
-            self?.manager.requestClose(session)
-        }
-        Self.setGlyph("xmark.square", on: close)
-        close.keyEquivalent = "w"
-        close.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(close)
 
         let x = sender.bounds.width - menu.size.width
         menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.bounds.height + 4), in: sender)
     }
 
     private static func setGlyph(_ symbol: String, on item: NSMenuItem) {
-        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(Chrome.menuGlyph)
-        if #available(macOS 27.0, *) {
-            item.preferredImageVisibility = .visible
-        }
+        item.setGlyph(symbol)
     }
 
     // MARK: Running jobs

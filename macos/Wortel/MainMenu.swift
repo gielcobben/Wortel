@@ -186,6 +186,9 @@ enum MainMenu {
         // on the same day. Free of a wortel.conf keybind (alt+n isn't bound).
         let newHome = sessionMenu.addItem(withTitle: "New Session at Home", action: #selector(AppDelegate.newHomeSession(_:)), keyEquivalent: "n")
         newHome.keyEquivalentModifierMask = [.command, .option]
+        // The selected session's repository, on a branch of its own in its own
+        // worktree: named as it is on the session's "…" and the folders'.
+        sessionMenu.addItem(withTitle: "Fork\u{2026}", action: #selector(AppDelegate.forkSession(_:)), keyEquivalent: "")
 
         // -- Folders -----------------------------------------------------------
         // The two folder verbs, adjacent because that's how they read: make an

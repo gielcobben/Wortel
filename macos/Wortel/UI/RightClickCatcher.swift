@@ -12,6 +12,13 @@ import SwiftUI
 ///
 /// Shared by the git panel's changed-file rows and the sidebar's session/folder
 /// rows.
+/// A view that shows it's the one a context menu is about while the menu is
+/// open (a sidebar row keeps its highlight, as Finder's and Mail's do).
+@MainActor
+protocol ContextMenuHost: AnyObject {
+    func contextMenu(isOpen: Bool)
+}
+
 struct RightClickCatcher: NSViewRepresentable {
     let onRightClick: () -> Void
     let makeMenu: () -> NSMenu
@@ -34,7 +41,11 @@ struct RightClickCatcher: NSViewRepresentable {
 
         override func rightMouseDown(with event: NSEvent) {
             onRightClick()
+            let host = sequence(first: self as NSView, next: { $0.superview })
+                .lazy.compactMap { $0 as? ContextMenuHost }.first
+            host?.contextMenu(isOpen: true)
             NSMenu.popUpContextMenu(makeMenu(), with: event, for: self)
+            host?.contextMenu(isOpen: false)
         }
 
         // Participate only in right-clicks; let clicks and hover fall through to

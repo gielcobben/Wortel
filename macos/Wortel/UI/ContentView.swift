@@ -78,7 +78,7 @@ struct SidebarPane: View {
                         Button("New Session at Home") { manager.newHomeSession() }
                         // Its own branch and its own files: what makes running
                         // two agents in one repository safe.
-                        Button("New Session on Branch…") { newSessionOnBranch(manager) }
+                        Button("Fork…") { newSessionOnBranch(manager) }
                         Divider()
                         Button("New Folder…") {
                             if let name = promptFolderName(title: "New Folder", confirm: "Create") {
@@ -223,33 +223,84 @@ struct SidebarSectionHeaderContent: View {
     }
 }
 
+extension NSMenuItem {
+    /// A glyph beside the title, as every menu in the chrome has: one size
+    /// and weight everywhere, and shown on macOS 27, which otherwise hides a
+    /// menu item's image.
+    func setGlyph(_ symbol: String) {
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(Chrome.menuGlyph)
+        if #available(macOS 27.0, *) {
+            preferredImageVisibility = .visible
+        }
+    }
+}
+
 /// What can be done to one session: the row's right-click menu, its hover
-/// "…", and (for the selected session) the Session menu, and so the ⌘P
-/// palette. One place, so the three can't drift apart.
+/// "…", the titlebar's "…" (under that row's own items), and, through the
+/// Session menu, the ⌘P palette. One place, so the names, glyphs and order
+/// can't drift apart between them.
 @MainActor
 enum SessionActions {
     static func menu(for session: Session, manager: SessionManager) -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(ClosureMenuItem(title: "Rename") { manager.editingID = session.id })
-        if let moveTo = moveToMenu(for: session, manager: manager) {
-            let item = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
-            item.submenu = moveTo
+        // Shortcuts act on the selected session, so they're shown only on its
+        // menu: on another row's they'd promise to act on that one.
+        let selected = manager.selectedID == session.id
+        func item(_ title: String, _ glyph: String, key: String = "",
+                  _ modifiers: NSEvent.ModifierFlags = [.command],
+                  _ handler: @escaping () -> Void) -> NSMenuItem {
+            let item = ClosureMenuItem(title: title, handler: handler)
+            item.setGlyph(glyph)
+            if selected, !key.isEmpty {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = modifiers
+            }
             menu.addItem(item)
+            return item
+        }
+
+        _ = item("Rename", "pencil", key: "r") { manager.editingID = session.id }
+        if let moveTo = moveToMenu(for: session, manager: manager) {
+            let move = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
+            move.setGlyph("folder")
+            move.submenu = moveTo
+            menu.addItem(move)
         }
         let pinned = manager.isPinned(session)
-        menu.addItem(ClosureMenuItem(title: pinned ? "Unpin" : "Pin") { manager.setPinned(session, !pinned) })
-        menu.addItem(ClosureMenuItem(title: "Mark as Unread") { manager.markUnread(session) })
+        _ = item(pinned ? "Unpin" : "Pin", pinned ? "pin.slash" : "pin", key: "p", [.command, .option]) {
+            manager.setPinned(session, !pinned)
+        }
+        _ = item("Mark as Unread", "circle.dashed", key: "u", [.command, .shift]) {
+            manager.markUnread(session)
+        }
+
+        menu.addItem(.separator())
+        // Its own branch in its own worktree, from this session's repository.
+        _ = item("Fork\u{2026}", "arrow.triangle.branch") {
+            newSessionOnBranch(manager, inFolder: session.folderPath)
+        }
+        if let cwd = session.cwd {
+            _ = item("Show in Finder", "folder.badge.gearshape") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
+            }
+            _ = item("Copy Path", "doc.on.doc") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(cwd, forType: .string)
+            }
+        }
+
         menu.addItem(.separator())
         // Only for a worktree Wortel made, and it closes the session with it —
         // the directory is what the session *is*. git refuses while there are
         // uncommitted changes, and that refusal is shown rather than overridden:
         // a worktree is where work lives.
         if session.isInOwnWorktree {
-            menu.addItem(ClosureMenuItem(title: "Remove Worktree\u{2026}") {
-                removeWorktree(session, manager: manager)
-            })
+            _ = item("Remove Worktree\u{2026}", "trash") { removeWorktree(session, manager: manager) }
         }
-        menu.addItem(ClosureMenuItem(title: "Close Session") { manager.requestClose(session) })
+        _ = item("Close Session", "xmark.square", key: "w", [.command, .shift]) {
+            manager.requestClose(session)
+        }
         return menu
     }
 
@@ -440,8 +491,8 @@ struct SidebarHeaderContent: View {
             .help(root ?? "")
             // Where the rows' names start, so the two line up.
             .padding(.leading, 20)
-            // Clear of the "+" that appears on hover (SidebarPillRowView).
-            .padding(.trailing, 36)
+            // Clear of the "…" and "+" that appear on hover (SidebarPillRowView).
+            .padding(.trailing, 56)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             // Native right-click, instant on rightMouseDown — same reasoning as
@@ -451,44 +502,56 @@ struct SidebarHeaderContent: View {
 
     /// Build the native right-click menu, freshly each time it opens.
     private func makeContextMenu() -> NSMenu {
+        FolderActions.menu(for: folder, manager: manager)
+    }
+}
+
+/// What can be done to a folder: its header's right-click menu and its hover
+/// "…". Named and drawn as the session menus are (SessionActions), so "Fork…"
+/// is one thing wherever it appears.
+@MainActor
+enum FolderActions {
+    static func menu(for folder: String, manager: SessionManager) -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(ClosureMenuItem(title: "New Session in “\(folder)”") {
-            manager.newSession(inFolder: folder)
-        })
-        menu.addItem(ClosureMenuItem(title: "New Session on Branch…") {
-            newSessionOnBranch(manager, inFolder: folder)
-        })
-        menu.addItem(ClosureMenuItem(title: "Rename\u{2026}") {
+        func item(_ title: String, _ glyph: String, _ handler: @escaping () -> Void) {
+            let item = ClosureMenuItem(title: title, handler: handler)
+            item.setGlyph(glyph)
+            menu.addItem(item)
+        }
+        // "New Session", as in the Session menu: the menu is the folder's, so
+        // naming the folder again only made it the widest item.
+        item("New Session", "plus.square") { manager.newSession(inFolder: folder) }
+        item("Fork\u{2026}", "arrow.triangle.branch") { newSessionOnBranch(manager, inFolder: folder) }
+        item("Rename\u{2026}", "pencil") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
                 manager.renameFolder(folder, to: name)
             }
-        })
+        }
         menu.addItem(.separator())
         // What makes the first item above mean this folder: where its new
         // sessions start. A link to a directory, never the directory itself,
         // so none of these words may sound like touching what's on disk.
-        menu.addItem(ClosureMenuItem(title: "Choose Directory\u{2026}") {
+        item("Choose Directory\u{2026}", "folder") {
             guard let path = chooseDirectory(
                 title: "Set the directory for \u{201c}\(folder)\u{201d}",
                 startingAt: manager.root(ofFolder: folder)) else { return }
             manager.setRoot(path, ofFolder: folder)
-        })
+        }
         // Only offered when there is one, and it turns the folder back into a
         // plain label rather than deleting anything: "Forget", as macOS forgets
         // a network, not "Clear", which reads as emptying it.
         if manager.root(ofFolder: folder) != nil {
-            menu.addItem(ClosureMenuItem(title: "Forget Directory") {
-                manager.setRoot(nil, ofFolder: folder)
-            })
+            item("Forget Directory", "folder.badge.minus") { manager.setRoot(nil, ofFolder: folder) }
         }
         menu.addItem(.separator())
         // Non-destructive: the sessions drop to the top level, they're not
         // closed, and nothing on disk is touched. Named for what happens, since
         // "Delete Folder" in a Mac app reads as deleting one from the disk.
         let hasSessions = manager.sessions.contains { $0.folderPath == folder }
-        menu.addItem(ClosureMenuItem(title: hasSessions ? "Ungroup Sessions" : "Remove from Sidebar") {
+        item(hasSessions ? "Ungroup Sessions" : "Remove from Sidebar",
+             hasSessions ? "rectangle.stack.badge.minus" : "minus.circle") {
             manager.deleteFolder(folder)
-        })
+        }
         return menu
     }
 }

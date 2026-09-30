@@ -5,7 +5,7 @@ import SwiftUI
 /// Row view that draws the neutral selection pill at the *row* level, so
 /// it spans the full sidebar width — across the chevron gutter and indentation
 /// — like Mail's and Icon Composer's selection, instead of hugging the cell.
-final class SidebarPillRowView: NSTableRowView {
+final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     /// How far the pill is inset from the row. Also what the close button keeps
     /// clear of the pill's edges, so its padding reads the same on all three
     /// sides it touches.
@@ -32,6 +32,11 @@ final class SidebarPillRowView: NSTableRowView {
     /// competing with the pill of the selected one.
     private var showsHover = false {
         didSet { if showsHover != oldValue { needsDisplay = true } }
+    }
+    /// Its menu is open (right-click or "…"): lit as under the pointer, the
+    /// header included, so it's clear which row the menu is about.
+    private var showsMenuOpen = false {
+        didSet { if showsMenuOpen != oldValue { needsDisplay = true } }
     }
 
     /// Room above a section header, so sections stand apart while the rows
@@ -61,7 +66,7 @@ final class SidebarPillRowView: NSTableRowView {
         } else if showsDropHighlight {
             NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
             NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
-        } else if showsHover {
+        } else if showsHover || showsMenuOpen {
             NSColor.labelColor.withAlphaComponent(Self.hoverAlpha).setFill()
             NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
         }
@@ -115,7 +120,7 @@ final class SidebarPillRowView: NSTableRowView {
         closable = true
     }
 
-    /// The menu "…" opens. Session rows set this.
+    /// The menu "…" opens: the session's, or a folder header's.
     func setMoreMenu(_ make: @escaping () -> NSMenu) { makeMoreMenu = make }
 
     /// What "+" does, and where it starts the session. Folder headers set this.
@@ -130,7 +135,17 @@ final class SidebarPillRowView: NSTableRowView {
         // Its right edge on the button's, opening into the sidebar rather than
         // off across the terminal, as the titlebar's menus do.
         let x = moreButton.bounds.width - menu.size.width
+        contextMenu(isOpen: true)
         menu.popUp(positioning: nil, at: NSPoint(x: x, y: moreButton.bounds.maxY + 4), in: moreButton)
+        contextMenu(isOpen: false)
+    }
+
+    func contextMenu(isOpen: Bool) {
+        showsMenuOpen = isOpen
+        // The pointer may have left while the menu had it, and the row never
+        // heard: settle the hover on where it is now.
+        guard !isOpen, let window else { return }
+        setRowHovered(bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)))
     }
 
     /// The SwiftUI status indicator for this row. Session rows set one; folder
@@ -200,14 +215,15 @@ final class SidebarPillRowView: NSTableRowView {
         // turn of lag. Folder headers aren't closable and stay flat: the cue is
         // about which session you might close.
         onHoverChanged(hovered)
-        // A folder header shows its "+", and stays flat otherwise.
+        // A folder header shows its "…" and "+", and stays flat otherwise.
         addButton.isHidden = !(hovered && addable)
         if !hovered { addButton.setHovering(false) }
         let shows = hovered && closable
         showsHover = shows
+        moreButton.isHidden = !(hovered && (closable || addable)) || makeMoreMenu == nil
+        if moreButton.isHidden { moreButton.setHovering(false) }
         guard closeButton.isHidden == shows else { return }
         closeButton.isHidden = !shows
-        moreButton.isHidden = !shows || makeMoreMenu == nil
         // The two share one rect, so the indicator has to give it up rather than
         // sit under the button.
         statusHost.isHidden = shows
@@ -817,6 +833,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                 let manager = self.manager, name = folder.name
                 let directory = manager.root(ofFolder: name).map { ($0 as NSString).abbreviatingWithTildeInPath }
                 rowView.setAddAction(directory: directory) { manager.newSession(inFolder: name) }
+                rowView.setMoreMenu { FolderActions.menu(for: name, manager: manager) }
             }
             guard let session = item as? SessionItem else { return rowView }
 

@@ -204,7 +204,8 @@ final class MainSplitViewController: NSSplitViewController {
         let drag = TabDragController()
         drag.strips = [
             .init(strip: titleBars.sideBar.strip, region: .side),
-            .init(strip: titleBars.mainBar.strip, region: .main),
+            .init(strip: titleBars.mainBar.strip, region: .main,
+                  whenHidden: { [weak titleBars] in titleBars?.mainBar.dropSlot() }),
             .init(strip: bottomPane.bar.strip, region: .bottom),
         ]
         drag.terminalArea = { [weak workspace] in

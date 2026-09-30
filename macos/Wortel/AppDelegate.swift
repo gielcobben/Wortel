@@ -727,6 +727,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.newHomeSession()
     }
 
+    @objc func forkSession(_ sender: Any?) {
+        focusMainWindow()
+        newSessionOnBranch(manager, inFolder: manager.selected?.folderPath)
+    }
+
     /// Bring the window forward *before* the panel, not after: the open panel is
     /// modal, so ordering the window front once it's up does nothing until it
     /// closes, and the sidebar the new session appears in would be behind

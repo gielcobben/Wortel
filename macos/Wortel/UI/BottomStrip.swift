@@ -300,6 +300,11 @@ final class TabDragController {
     struct StripTarget {
         weak var strip: SideTabStrip?
         let region: TabRegion
+        /// Where to drop while the strip is hidden, in window coordinates: the
+        /// main area's row shows the session's title rather than a row of one
+        /// tab, and is still where a tab dragged up there should go (after
+        /// the session). nil, a hidden strip takes no drops.
+        var whenHidden: () -> (area: NSRect, markerX: CGFloat)? = { nil }
     }
 
     private enum Target: Equatable {
@@ -413,8 +418,13 @@ final class TabDragController {
 
     private func landing(tab: SideTab, point: NSPoint) -> Target? {
         for entry in strips {
-            guard let strip = entry.strip, strip.window != nil, !strip.isHiddenOrHasHiddenAncestor,
-                  tab.fits(entry.region) else { continue }
+            guard let strip = entry.strip, strip.window != nil, tab.fits(entry.region) else { continue }
+            if strip.isHiddenOrHasHiddenAncestor {
+                guard let slot = entry.whenHidden(),
+                      slot.area.insetBy(dx: 0, dy: -8).contains(point) else { continue }
+                let marker = NSRect(x: slot.markerX - 1, y: slot.area.midY - 11, width: 2, height: 22)
+                return .strip(entry.region, index: .max, marker: marker)
+            }
             // Wider than the tabs: aiming for the first or last place, the
             // pointer runs past the row's end, and that still means "here".
             let rect = strip.convert(strip.bounds, to: nil).insetBy(dx: -16, dy: -8)

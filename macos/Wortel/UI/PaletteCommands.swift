@@ -60,6 +60,7 @@ enum PaletteCommands {
         "checkForUpdates:": "arrow.down.circle",
         "newSession:": "plus.square",
         "newHomeSession:": "house",
+        "forkSession:": "arrow.triangle.branch",
         "newFolder:": "folder.badge.plus",
         "openFolder:": "folder",
         "renameSession:": "pencil",

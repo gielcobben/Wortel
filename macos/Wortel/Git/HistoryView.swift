@@ -43,7 +43,10 @@ struct HistoryView: View {
                 }
             }
         }
-        .task {
+        // Keyed on the repository, not run once: showing another checkout
+        // hands this same view a different repo, and a plain `.task` never
+        // read that one's log, so History came up empty after a switch.
+        .task(id: ObjectIdentifier(repo)) {
             // Lazy: the log is only read the first time History is actually shown,
             // so opening the panel on Changes costs nothing.
             if !repo.loadedHistory { await repo.loadHistory() }
@@ -543,7 +546,8 @@ private struct CommitRow: View {
     /// what paints the selection pill this dot sits beside.
     private static let unpushedBlue = Color(red: 0.24, green: 0.51, blue: 0.96)
 
-    private var onAccent: Bool { isSelected }
+    private var onAccent: Bool { isSelected && listHasFocus }
+    @Environment(\.listHasFocus) private var listHasFocus
     private var subtleColor: Color { onAccent ? .white.opacity(0.85) : .secondary }
 
     /// Chips take the colour of the lane their commit sits on, which is what ties
@@ -623,7 +627,7 @@ private struct CommitRow: View {
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(Color.accentColor)
+                        .fill(listHasFocus ? Color.accentColor : Color(nsColor: Chrome.selectedFill))
                 }
             }
             .padding(.trailing, 4)

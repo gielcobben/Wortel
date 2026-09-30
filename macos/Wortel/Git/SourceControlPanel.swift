@@ -19,9 +19,7 @@ struct SourceControlPanel: View {
                 if let repo = panel.repo {
                     VStack(spacing: 0) {
                         RepoHeader(repo: repo, panel: panel)
-                        RepoView(repo: repo, focusRequest: panel.listFocusRequest(in: region),
-                                 elsewhere: workElsewhere(than: repo),
-                                 showCheckout: { panel.showCheckout($0) })
+                        RepoView(repo: repo, focusRequest: panel.listFocusRequest(in: region))
                     }
                 } else {
                     emptyState
@@ -49,14 +47,6 @@ struct SourceControlPanel: View {
         // that material and blocks it. Width now comes from .inspectorColumnWidth.
     }
 
-    /// Where the work is, when it isn't here: another checkout of the repo
-    /// with changes or commits this one doesn't have. The one with the most.
-    private func workElsewhere(than repo: GitRepoModel) -> GitPanelModel.Checkout? {
-        panel.checkouts
-            .filter { $0.path != repo.root && ($0.changes > 0 || $0.ahead > 0) }
-            .max { ($0.changes, $0.ahead) < ($1.changes, $1.ahead) }
-    }
-
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: panel.resolvedNonRepo ? "folder" : "arrow.triangle.branch")
@@ -77,9 +67,6 @@ private struct RepoView: View {
     /// Monotonic focus-request token from GitPanelModel (⌘⌥L). A change means
     /// "put keyboard focus in the changes list."
     let focusRequest: Int
-    /// Another checkout with work in it, for a clean pane to point at.
-    var elsewhere: GitPanelModel.Checkout?
-    var showCheckout: (String) -> Void = { _ in }
     @FocusState private var listFocused: Bool
     /// Whether the native commit editor holds focus (drives its border). Driven
     /// by CommitMessageEditor's focus callback, not @FocusState — the editor is
@@ -203,24 +190,9 @@ private struct RepoView: View {
         // of its pane like the diff's does. Sharing `centered` is the point: the
         // two halves of this panel are empty at the same moments, and they
         // should say so the same way.
-        if repo.status.isClean, let elsewhere {
-            // Clean here, busy in another worktree: most likely an agent in
-            // this session working there. Say so rather than just "nothing".
-            VStack(spacing: 10) {
-                Text("No changes")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-                Button {
-                    showCheckout(elsewhere.path)
-                } label: {
-                    Text("Show \(elsewhere.name): \(GitPanelModel.summary(of: elsewhere))")
-                        .font(.callout)
-                }
-                .buttonStyle(.link)
-                .help(elsewhere.path)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if repo.status.isClean {
+        // Work in another worktree is pointed at from the header (RepoHeader),
+        // on both tabs and whether or not this one is clean.
+        if repo.status.isClean {
             centered("No changes")
         } else {
             populatedChangesList
@@ -476,8 +448,10 @@ private struct ChangeRow: View {
     @State private var hovering = false
 
     /// Selected rows are drawn on the accent, so everything on them has to come
-    /// off it — same rule as the History pane's rows.
-    private var onAccent: Bool { isSelected }
+    /// off it — same rule as the History pane's rows. Only while the list has
+    /// the keyboard; otherwise the pill is grey and the row keeps its colours.
+    private var onAccent: Bool { isSelected && listHasFocus }
+    @Environment(\.listHasFocus) private var listHasFocus
 
     var body: some View {
         HStack(spacing: 8) {
@@ -523,7 +497,8 @@ private struct ChangeRow: View {
             // second kind of selection, and a bulk action takes all of them.
             if isSelected {
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.accentColor.opacity(isLead ? 1 : 0.55))
+                    .fill(listHasFocus ? Color.accentColor.opacity(isLead ? 1 : 0.55)
+                                       : Color(nsColor: Chrome.selectedFill).opacity(isLead ? 1 : 0.6))
             }
         }
         .padding(.horizontal, 4)

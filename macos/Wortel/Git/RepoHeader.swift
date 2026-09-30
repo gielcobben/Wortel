@@ -12,7 +12,8 @@ import SwiftUI
 /// tab strip would have covered anyway.
 ///
 /// A session can show another checkout of the repo than its terminal's (an
-/// agent working in a worktree): chosen in the branch menu, and undone by the
+/// agent working in a worktree): chosen in the branch menu, or from the hint
+/// beside the branch when another checkout has changes, and undone by the
 /// arrow that appears beside the branch while it's in effect.
 struct RepoHeader: View {
     @Bindable var repo: GitRepoModel
@@ -70,6 +71,10 @@ struct RepoHeader: View {
                 .help("Back to the terminal's checkout")
             }
 
+            if let elsewhere = panel.workElsewhere {
+                elsewhereHint(elsewhere)
+            }
+
             Spacer(minLength: 4)
 
             // A native menu rather than a SwiftUI one, for two things SwiftUI's
@@ -89,6 +94,41 @@ struct RepoHeader: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
+        // Kept fresh while it's on screen, so the hint comes and goes with the
+        // work (a read is a `git status` per checkout, and only when stale).
+        .task(id: repo.root) {
+            while !Task.isCancelled {
+                await panel.refreshCheckoutsIfStale()
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
+    }
+
+    /// "sidebar has 16 changes  Show": the work is in another checkout, most
+    /// likely an agent's worktree, and one click shows it here. Quiet, in the
+    /// header's grey, and the first thing to give way when the column is
+    /// narrow.
+    private func elsewhereHint(_ checkout: GitPanelModel.Checkout) -> some View {
+        Button {
+            panel.showCheckout(checkout.path)
+        } label: {
+            HStack(spacing: 5) {
+                Text(verbatim: "\(checkout.name) has \(GitPanelModel.summary(of: checkout))")
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("Show")
+                    .foregroundStyle(Color.accentColor)
+                    .fixedSize()
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(HeaderButtonStyle())
+        .layoutPriority(-1)
+        .help(checkout.path)
     }
 
     private var busy: Bool { repo.isFetching || repo.isPulling || repo.isPushing }

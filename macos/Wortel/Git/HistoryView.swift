@@ -15,6 +15,8 @@ struct HistoryView: View {
     let focusRequest: Int
     @FocusState private var listFocused: Bool
     @State private var lastHandledFocusRequest = 0
+    /// The log's width, which decides the trailing columns it has room for.
+    @State private var listWidth: CGFloat = 0
 
     /// Height of the commit list; the diff takes the rest. Separate key from the
     /// Changes pane's split — the panes are read differently, so their splits
@@ -96,7 +98,8 @@ struct HistoryView: View {
                             commit: commit,
                             row: repo.graph.row(for: commit.sha),
                             isSelected: repo.selectedCommitID == commit.id,
-                            isUnpushed: repo.unpushed.contains(commit.sha))
+                            isUnpushed: repo.unpushed.contains(commit.sha),
+                            metadata: CommitRow.Metadata(fitting: listWidth))
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 listFocused = true
@@ -127,6 +130,7 @@ struct HistoryView: View {
                 // the walls makes it feel wedged in.
                 .padding(.horizontal, 6)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { listWidth = $0 }
             // ↑/↓ only — see SourceControlPanel: scrolling a clicked row moves
             // it out from under the pointer mid-double-click.
             .onChange(of: repo.revealRequest) { _, _ in
@@ -520,6 +524,40 @@ private struct CommitRow: View {
     let isSelected: Bool
     /// Not yet on the remote — draws the dot after the gutter.
     let isUnpushed: Bool
+    let metadata: Metadata
+
+    /// Which trailing columns the log has room for. The subject is what a log
+    /// is read by, so as the pane narrows the columns give way before it does:
+    /// the author first (in most repos it's the same name on every row), then
+    /// the SHA, and the age last, which is short and says the most. Decided for
+    /// the whole list from its width, never per row, so the columns that are
+    /// there still line up down the pane. What a row drops is in its tooltip.
+    enum Metadata: Int, Comparable {
+        case none, age, shaAndAge, all
+
+        /// The subject keeps at least this much before a column may stay.
+        private static let subjectMinimum: CGFloat = 180
+        /// Padding, a one-lane gutter, the pill's insets: what every row spends
+        /// before its text starts.
+        private static let overhead: CGFloat = 50
+
+        init(fitting width: CGFloat) {
+            // Not measured yet: everything, as before, rather than a flash of
+            // bare rows on the first frame.
+            guard width > 0 else { self = .all; return }
+            let room = width - Self.overhead - Self.subjectMinimum
+            let column = { (width: CGFloat) in width + 6 }
+            let age = column(CommitRow.ageWidth)
+            let sha = column(CommitRow.shaWidth)
+            let author = column(CommitRow.authorWidth)
+            if room >= age + sha + author { self = .all }
+            else if room >= age + sha { self = .shaAndAge }
+            else if room >= age { self = .age }
+            else { self = .none }
+        }
+
+        static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
 
     /// This row's own gutter width. A row with no graph slice still reserves one
     /// column, so a log with no merges doesn't sit flush against the edge.
@@ -530,9 +568,9 @@ private struct CommitRow: View {
     /// heights would bend the same merge at visibly different angles.
     static let height: CGFloat = 22
 
-    private static let authorWidth: CGFloat = 64
-    private static let shaWidth: CGFloat = 52
-    private static let ageWidth: CGFloat = 26
+    fileprivate static let authorWidth: CGFloat = 64
+    fileprivate static let shaWidth: CGFloat = 52
+    fileprivate static let ageWidth: CGFloat = 26
     /// Gap on each side of the unpushed dot — after the graph, and before the
     /// content. The row's content is deliberately *not* aligned across rows: a
     /// dotted row is indented by the dot it carries.
@@ -610,15 +648,21 @@ private struct CommitRow: View {
                 }
                 subject
                 Spacer(minLength: 4)
-                Text(commit.author)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(width: Self.authorWidth, alignment: .leading)
-                Text(commit.shortSHA)
-                    .font(.system(size: 12, design: .monospaced))
-                    .frame(width: Self.shaWidth, alignment: .trailing)
-                Text(commit.age())
-                    .frame(width: Self.ageWidth, alignment: .trailing)
+                if metadata >= .all {
+                    Text(commit.author)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(width: Self.authorWidth, alignment: .leading)
+                }
+                if metadata >= .shaAndAge {
+                    Text(commit.shortSHA)
+                        .font(.system(size: 12, design: .monospaced))
+                        .frame(width: Self.shaWidth, alignment: .trailing)
+                }
+                if metadata >= .age {
+                    Text(commit.age())
+                        .frame(width: Self.ageWidth, alignment: .trailing)
+                }
             }
             .font(.callout)
             .foregroundStyle(subtleColor)
@@ -636,7 +680,17 @@ private struct CommitRow: View {
         // — the subject in full, and the body under it. On the whole row rather
         // than the text, so it's a forgiving target; the unpushed dot keeps its
         // own tooltip, since the narrower one wins.
-        .help(commit.fullMessage)
+        .help(tooltip)
+    }
+
+    /// The message in full, and whatever columns the row had no room for.
+    private var tooltip: String {
+        var hidden: [String] = []
+        if metadata < .all { hidden.append(commit.author) }
+        if metadata < .shaAndAge { hidden.append(commit.shortSHA) }
+        if metadata < .age { hidden.append(commit.age()) }
+        guard !hidden.isEmpty else { return commit.fullMessage }
+        return commit.fullMessage + "\n\n" + hidden.joined(separator: " · ")
     }
 }
 

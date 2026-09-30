@@ -53,6 +53,19 @@ final class BrowserTabs {
         return pages[id]
     }
 
+    /// The page whose web view `responder` is, or is inside: the browser that
+    /// has the keyboard.
+    func page(holding responder: NSResponder?) -> BrowserPage? {
+        var view = responder as? NSView
+        while let current = view {
+            if let webView = current as? WKWebView {
+                return pages.values.first { $0.webView === webView }
+            }
+            view = current.superview
+        }
+        return nil
+    }
+
     /// A tab closed: let its page go.
     func forget(_ id: UUID) {
         pages.removeValue(forKey: id)?.close()
@@ -163,6 +176,22 @@ final class BrowserPage: NSObject {
         } else {
             webView.reload()
         }
+    }
+
+    /// Reload past the cache. ⇧⌘R.
+    func reloadFromOrigin() {
+        if isWaiting || failure != nil || webView.url == nil {
+            reload()
+        } else {
+            webView.reloadFromOrigin()
+        }
+    }
+
+    /// One step in (1) or out (-1), or back to actual size (0). ⌘+ / ⌘- / ⌘0.
+    func zoom(by step: Int) {
+        guard step != 0 else { webView.pageZoom = 1; return }
+        let zoomed = webView.pageZoom * (step > 0 ? 1.1 : 1 / 1.1)
+        webView.pageZoom = min(max(zoomed, 0.5), 3)
     }
 
     func stop() { webView.stopLoading() }

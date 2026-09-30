@@ -206,6 +206,10 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         find.isPresented = true
     }
 
+    /// Edit ▸ Find Next / Find Previous (⌘G / ⇧⌘G), while the find bar is up.
+    @objc func previewFindNext(_ sender: Any?) { find.next() }
+    @objc func previewFindPrevious(_ sender: Any?) { find.previous() }
+
     /// View ▸ Preview ▸ Diff / Source / Rendered, and the ⌘1…⌘3 that `MainMenu`
     /// lends those items while a preview is key.
     @objc func showPreviewMode(_ sender: NSMenuItem) {
@@ -221,6 +225,10 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
             // same thing, but only the menu can say it while it's open.
             menuItem.state = file.mode == mode ? .on : .off
             return !file.isBinary && file.availableModes.contains(mode)
+        }
+        if menuItem.action == #selector(previewFindNext(_:))
+            || menuItem.action == #selector(previewFindPrevious(_:)) {
+            return find.isPresented && !find.matches.isEmpty
         }
         guard menuItem.action == #selector(showPreviewFind(_:)) else { return true }
         // Nothing to search in a rendered document or a Quick Look preview.

@@ -666,7 +666,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         }
         Self.setGlyph("pencil", on: rename)
         rename.keyEquivalent = "r"
-        rename.keyEquivalentModifierMask = [.command]
+        rename.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(rename)
 
         let destinations = manager.folderNames.filter { $0 != session.folderPath }

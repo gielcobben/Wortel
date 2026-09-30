@@ -236,23 +236,33 @@ the design is enforced, and pull requests adding them are unlikely to land.
 
 | Keys | Action |
 | --- | --- |
-| `⌘N` / `⌘T` | New session |
-| `⌘⇧N` | New section |
-| `⌘R` | Rename session |
-| `⌘W` | Close the session, or the preview window if that is what is in front |
+| `⌘N` | New session (`⌥⌘N` at home) |
+| `⇧⌘N` / `⌘O` | New folder / open folder |
+| `⌥⌘R` | Rename session |
+| `⌘W` / `⇧⌘W` | Close the tab you are in / close the session |
 | `⌘1`…`⌘9` | Select session by position |
-| `⌘⌥↑` / `⌘⌥↓` | Previous / next session |
-| `⌘⇧[` / `⌘⇧]` | Previous / next session |
-| `⌘⌥]` | Jump to the next session waiting on you |
-| `⌘⌥S` | Toggle the sidebar |
-| `⌘⌥G` | Source control: Changes and History |
-| `⌘⌥E` | Files |
-| `⌘⌥L` | Move keyboard focus into whichever list is showing |
+| `⇧⌘[` / `⇧⌘]` | Previous / next session (also `⌥⌘↑` / `⌥⌘↓`) |
+| `⌥⌘]` | Jump to the next session waiting on you |
+| `⌘B` / `⌥⌘B` / `⌘J` | Show or hide the sidebar, the side column, the bottom strip |
+| `⇧⌘E` / `⌃⇧G` | Files / source control |
+| `⌘T` | New terminal tab in the area you are in |
+| `⌘D` / `⇧⌘D` | New terminal in the side column / the bottom strip |
+| `⇧⌘L` | New browser tab |
+| `⇧⌘T` | Reopen closed tab |
+| `⌃Tab` / `⌃⇧Tab` | Next / previous tab (also `⌥⌘→` / `⌥⌘←`) |
+| `⌘]` / `⌘[` | Focus the next / previous area |
+| `⌘L` / `⌘R` | Browser: address field / reload |
+| `⌘F`, `⌘G` | Find in a file, next match |
+| `⌘K` | Clear the terminal |
 | `⌘+` / `⌘-` / `⌘0` | Font size |
-| `⌘⇧A` | Select all (the whole scrollback) |
+| `⇧⌘A` | Select all (the whole scrollback) |
+| `⌘/` | This list |
+
+The full list, and which app each one is borrowed from, is in
+[`macos/docs/shortcuts.md`](macos/docs/shortcuts.md).
 
 `⌘A` is deliberately *not* select-all: it is bound in `wortel.conf` to clear the
-input line, which is why select-all lives on `⌘⇧A`. The menu is authoritative for
+input line, which is why select-all lives on `⇧⌘A`. The menu is authoritative for
 key equivalents (AppKit scans them on every keypress, so it is kept small), and
 it interacts with `wortel.conf`'s keybinds. **When adding or moving a shortcut,
 check both files.**

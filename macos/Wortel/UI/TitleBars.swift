@@ -66,6 +66,18 @@ class ChromeBarView: FilledView {
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
+    /// Whether the hairline along the bottom shows. Faded rather than cut,
+    /// since the sidebar's comes and goes as its list scrolls.
+    var showsBottomLine = true {
+        didSet {
+            guard showsBottomLine != oldValue else { return }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                bottomLine.animator().alphaValue = showsBottomLine ? 1 : 0
+            }
+        }
+    }
+
     override var mouseDownCanMoveWindow: Bool { false }
 
     /// Handled here rather than left to `mouseDownCanMoveWindow`, because a
@@ -93,11 +105,15 @@ final class ChromePaneController: NSViewController {
     let bar: NSView
     let content: NSViewController
     private let bodyColor: NSColor
+    /// The body's colour runs up behind the titlebar row too, so the pane is
+    /// one surface to the top of the window (the sidebar, as ChatGPT's is).
+    private let colorsUnderBar: Bool
 
-    init(bar: NSView, content: NSViewController, bodyColor: NSColor) {
+    init(bar: NSView, content: NSViewController, bodyColor: NSColor, colorsUnderBar: Bool = false) {
         self.bar = bar
         self.content = content
         self.bodyColor = bodyColor
+        self.colorsUnderBar = colorsUnderBar
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -107,7 +123,8 @@ final class ChromePaneController: NSViewController {
         addChild(content)
         let page = FilledView(color: bodyColor)
         let body = content.view
-        for view in [bar, page, body] {
+        // The page first, so when it runs up behind the row it's under it.
+        for view in [page, bar, body] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
@@ -116,11 +133,11 @@ final class ChromePaneController: NSViewController {
             bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             bar.heightAnchor.constraint(equalToConstant: Chrome.titlebarHeight),
-            page.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            page.topAnchor.constraint(equalTo: colorsUnderBar ? root.topAnchor : bar.bottomAnchor),
             page.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             page.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             page.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            body.topAnchor.constraint(equalTo: page.topAnchor),
+            body.topAnchor.constraint(equalTo: bar.bottomAnchor),
             body.leadingAnchor.constraint(equalTo: page.leadingAnchor),
             body.trailingAnchor.constraint(equalTo: page.trailingAnchor),
             body.bottomAnchor.constraint(equalTo: page.bottomAnchor),
@@ -182,8 +199,25 @@ final class ChromeSplitView: NSSplitView {
 /// session is ⌘N or the sidebar's own "+".
 @MainActor
 final class SidebarBar: ChromeBarView {
+    /// Posted by the sidebar's list as it scrolls, with the window as its
+    /// object and whether any of the list is under the row.
+    static let scrolledNotification = Notification.Name("WortelSidebarScrolled")
+
     override init() {
         super.init()
+        // No line under the row while the list sits at the top: the sidebar
+        // reads as one surface up to the traffic lights. It comes back once
+        // rows slide under the row, so they don't vanish at an invisible edge.
+        showsBottomLine = false
+        NotificationCenter.default.addObserver(
+            forName: Self.scrolledNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let scrolled = note.userInfo?["scrolled"] as? Bool ?? false
+            MainActor.assumeIsolated {
+                guard let self, note.object as AnyObject? === self.window else { return }
+                self.showsBottomLine = scrolled
+            }
+        }
         let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar (⌘B)")
         toggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
         addSubview(toggle)

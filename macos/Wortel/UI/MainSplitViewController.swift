@@ -134,7 +134,8 @@ final class MainSplitViewController: NSSplitViewController {
         let sidebar = ChromePaneController(
             bar: titleBars.sidebarBar,
             content: sidebarHost,
-            bodyColor: Chrome.sidebar)
+            bodyColor: Chrome.sidebar,
+            colorsUnderBar: true)
         sidebar.view.setFrameSize(NSSize(width: 220, height: sidebar.view.frame.height))
         let sidebarItem = NSSplitViewItem(viewController: sidebar)
         sidebarItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView

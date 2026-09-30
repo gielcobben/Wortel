@@ -557,6 +557,18 @@ struct SidebarOutlineView: NSViewRepresentable {
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
+        // Tell the titlebar row whether rows are under it (SidebarBar).
+        scroll.contentView.postsBoundsChangedNotifications = true
+        context.coordinator.scrollObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main
+        ) { [weak scroll] _ in
+            MainActor.assumeIsolated {
+                guard let scroll else { return }
+                NotificationCenter.default.post(
+                    name: SidebarBar.scrolledNotification, object: scroll.window,
+                    userInfo: ["scrolled": scroll.documentVisibleRect.minY > 0.5])
+            }
+        }
         context.coordinator.apply(snapshot)
         return scroll
     }
@@ -595,6 +607,7 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         let manager: SessionManager
         weak var outline: NSOutlineView?
+        var scrollObserver: NSObjectProtocol?
         weak var insertionLine: SidebarInsertionLine?
 
         private var snapshot: [SidebarSnapshotGroup] = []

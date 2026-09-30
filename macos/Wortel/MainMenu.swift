@@ -55,6 +55,22 @@ enum MainMenu {
         return false
     }
 
+    /// ⌘R has two meanings and, like ⌘1…⌘3 below, only one item can hold it:
+    /// "Reload Page" while a browser is in front (Safari, Chrome, Codex), and
+    /// the old binding for Rename Session otherwise (⌥⌘R is the one the menu
+    /// shows). AppDelegate says which, asked before each ⌘ keypress is matched.
+    static var browserInFront: () -> Bool = { false }
+    private static weak var reloadItem: NSMenuItem?
+    private static weak var renameAliasItem: NSMenuItem?
+
+    private static func syncReload() {
+        let browser = browserInFront()
+        let reload = browser ? "r" : ""
+        let rename = browser ? "" : "r"
+        if reloadItem?.keyEquivalent != reload { reloadItem?.keyEquivalent = reload }
+        if renameAliasItem?.keyEquivalent != rename { renameAliasItem?.keyEquivalent = rename }
+    }
+
     private static var keyMonitor: Any?
 
     /// Keep Select All's shortcut right for wherever the keyboard is, just
@@ -62,7 +78,10 @@ enum MainMenu {
     static func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.modifierFlags.contains(.command) { syncSelectAll() }
+            if event.modifierFlags.contains(.command) {
+                syncSelectAll()
+                syncReload()
+            }
             return event
         }
     }
@@ -218,7 +237,11 @@ enum MainMenu {
         let palette = sessionMenu.addItem(withTitle: "Commands\u{2026}", action: #selector(AppDelegate.showCommandPalette(_:)), keyEquivalent: "p")
         palette.keyEquivalentModifierMask = [.command, .shift]
         palette.image = NSImage(systemSymbolName: "command", accessibilityDescription: nil)
-        sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
+        // ⌥⌘R, as Codex renames a chat. Plain ⌘R is a browser's Reload; with
+        // no browser in front it still renames (`syncReload`), as it always did.
+        let rename = sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
+        rename.keyEquivalentModifierMask = [.command, .option]
+        renameAliasItem = addHidden(sessionMenu, "Rename Session", #selector(AppDelegate.renameSession(_:)), "", [.command])
         // The selected session's own actions, also on its row's "…" and
         // right-click (SessionActions), and so in the ⌘P palette.
         let moveTo = sessionMenu.addItem(withTitle: "Move To", action: nil, keyEquivalent: "")
@@ -349,6 +372,15 @@ enum MainMenu {
         editMenu.addItem(withTitle: "Find",
                          action: #selector(PreviewWindowController.showPreviewFind(_:)),
                          keyEquivalent: "f")
+        // ⌘G / ⇧⌘G walk the matches of an open find bar, as everywhere. With
+        // none open they're disabled and go on to the terminal.
+        editMenu.addItem(withTitle: "Find Next",
+                         action: #selector(PreviewWindowController.previewFindNext(_:)),
+                         keyEquivalent: "g")
+        let findPrevious = editMenu.addItem(withTitle: "Find Previous",
+                                            action: #selector(PreviewWindowController.previewFindPrevious(_:)),
+                                            keyEquivalent: "g")
+        findPrevious.keyEquivalentModifierMask = [.command, .shift]
         selectAllItem = selectAll
 
         // View menu (font size; session-local)
@@ -384,21 +416,23 @@ enum MainMenu {
         let toggleSidebar = viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(AppDelegate.toggleSessionSidebar(_:)), keyEquivalent: "b")
         toggleSidebar.keyEquivalentModifierMask = [.command]
         addHidden(viewMenu, "Toggle Sidebar", #selector(AppDelegate.toggleSessionSidebar(_:)), "s", [.command, .option])
-        // ⌘⌥G, not ⌘G: ⌘⌥S is already Toggle Sidebar above, and ⌘G is free of a
-        // wortel.conf keybind. Routes through the responder chain to AppDelegate.
-        // Title flips Show/Hide in AppDelegate.validateMenuItem based on panel
-        // visibility; the icon stays put.
+        // ⌃⇧G, as VS Code, Cursor, Zed and Codex open source control; ⌥⌘G
+        // (what Wortel had) keeps working. Routes through the responder chain
+        // to AppDelegate. Title flips Show/Hide in AppDelegate.validateMenuItem
+        // based on panel visibility; the icon stays put.
         let sourceControl = viewMenu.addItem(withTitle: "Show Source Control", action: #selector(AppDelegate.toggleSourceControl(_:)), keyEquivalent: "g")
-        sourceControl.keyEquivalentModifierMask = [.command, .option]
+        sourceControl.keyEquivalentModifierMask = [.control, .shift]
+        addHidden(viewMenu, "Show Source Control", #selector(AppDelegate.toggleSourceControl(_:)), "g", [.command, .option])
         sourceControl.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)
-        // ⌘⌥E for the third pane — free in both this file and wortel.conf. It
-        // behaves exactly like ⌘⌥G: open on Files, bring it forward, or close
-        // it if Files is already up.
+        // ⇧⌘E for the third pane, as VS Code, Cursor, Zed and Codex open their
+        // file tree; ⌥⌘E keeps working. It behaves exactly like ⌃⇧G: open on
+        // Files, bring it forward, or close it if Files is already up.
         let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "g")
         history.keyEquivalentModifierMask = [.command, .option, .shift]
         history.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)
         let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "e")
-        files.keyEquivalentModifierMask = [.command, .option]
+        files.keyEquivalentModifierMask = [.command, .shift]
+        addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .option])
         files.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
         // ⌘⌥L: reveal the panel (if hidden) and move focus into whichever list is
         // showing — files on Changes, commits on History, the tree on Files — so
@@ -444,9 +478,22 @@ enum MainMenu {
         newBrowser.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         let openLocation = viewMenu.addItem(withTitle: "Open Location", action: #selector(AppDelegate.openBrowserLocation(_:)), keyEquivalent: "l")
         openLocation.keyEquivalentModifierMask = [.command]
-        let newBottom = viewMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "`")
-        newBottom.keyEquivalentModifierMask = [.control, .shift]
-        // The shifted twin, as ⌘⇧] carries: with Shift kept, ⌃⇧` can arrive as ~.
+        // ⌘R / ⇧⌘R, as Chrome, Codex and cmux. The ⌘R is lent by `syncReload`
+        // while a browser is in front.
+        reloadItem = viewMenu.addItem(withTitle: "Reload Page", action: #selector(AppDelegate.reloadBrowserPage(_:)), keyEquivalent: "")
+        let forceReload = viewMenu.addItem(withTitle: "Force Reload Page", action: #selector(AppDelegate.forceReloadBrowserPage(_:)), keyEquivalent: "r")
+        forceReload.keyEquivalentModifierMask = [.command, .shift]
+        // ⌘D / ⇧⌘D: every terminal's split right and split down (iTerm,
+        // Ghostty, Warp, cmux, Terminal). Wortel's layout is fixed, so they
+        // are a terminal beside the one you're in and one under it.
+        let newSide = viewMenu.addItem(withTitle: "New Terminal in Side Column", action: #selector(AppDelegate.newSideTerminal(_:)), keyEquivalent: "d")
+        newSide.keyEquivalentModifierMask = [.command]
+        let newBottom = viewMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "d")
+        newBottom.keyEquivalentModifierMask = [.command, .shift]
+        // ⌃⇧` too, as VS Code and Zed open a new terminal. The shifted twin,
+        // as ⌘⇧] carries: with Shift kept, ⌃⇧` can arrive as ~.
+        addHidden(viewMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
+                  "`", [.control, .shift])
         addHidden(viewMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
                   "~", [.control, .shift])
         let reopen = viewMenu.addItem(withTitle: "Reopen Closed Tab", action: #selector(AppDelegate.reopenClosedTab(_:)), keyEquivalent: "t")
@@ -468,6 +515,9 @@ enum MainMenu {
         }
 
         viewMenu.addItem(.separator())
+        // With the keyboard in a browser's page these are Forward and Back
+        // while the page has somewhere to go, as in Safari and Chrome (and as
+        // cmux splits the same two keys); see AppDelegate.focusNextArea.
         let focusNext = viewMenu.addItem(withTitle: "Focus Next Area", action: #selector(AppDelegate.focusNextArea(_:)), keyEquivalent: "]")
         focusNext.keyEquivalentModifierMask = [.command]
         let focusPrevious = viewMenu.addItem(withTitle: "Focus Previous Area", action: #selector(AppDelegate.focusPreviousArea(_:)), keyEquivalent: "[")
@@ -485,6 +535,12 @@ enum MainMenu {
             item.keyEquivalentModifierMask = [.control, .command]
         }
 
+        // ⌃⌘F, the Mac's own. Stated rather than left to AppKit's automatic
+        // item, so it's there whatever AppKit decides about a built menu.
+        viewMenu.addItem(.separator())
+        let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+        fullScreen.keyEquivalentModifierMask = [.control, .command]
+
         // Window menu
         let windowItem = NSMenuItem()
         main.addItem(windowItem)
@@ -493,6 +549,17 @@ enum MainMenu {
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         NSApp.windowsMenu = windowMenu
+
+        // Help menu. Two things for the price of one item: the shortcut list
+        // (⌘/, as Codex and Claude show theirs), and the system's search
+        // field, which finds any command in these menus by name. That is the
+        // nearest thing Wortel has to a command palette.
+        let helpItem = NSMenuItem()
+        main.addItem(helpItem)
+        let helpMenu = NSMenu(title: "Help")
+        helpItem.submenu = helpMenu
+        helpMenu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "/")
+        NSApp.helpMenu = helpMenu
 
         // Which window is key is the only thing that moves ⌘1…⌘3. Read the key
         // window a turn later rather than trusting the notification's window: a
@@ -504,6 +571,7 @@ enum MainMenu {
             }
         }
         syncPreviewShortcuts()
+        syncReload()
 
         return main
     }

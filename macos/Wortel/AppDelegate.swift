@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Menu must exist before launch so key equivalents resolve immediately.
         NSApp.mainMenu = MainMenu.build()
+        MainMenu.browserInFront = { [weak self] in self?.frontBrowser() != nil }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -825,8 +826,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return regions
     }
 
-    @objc func focusNextArea(_ sender: Any?) { stepArea(1) }
-    @objc func focusPreviousArea(_ sender: Any?) { stepArea(-1) }
+    /// ⌘] / ⌘[. With the keyboard in a browser's page they are Forward and
+    /// Back, as in every browser, for as long as the page has somewhere to go;
+    /// a page with no history that way lets the key through to the areas, so
+    /// the keyboard is never stuck in a page.
+    @objc func focusNextArea(_ sender: Any?) {
+        if let page = keyboardBrowserPage, page.canGoForward { return page.goForward() }
+        stepArea(1)
+    }
+
+    @objc func focusPreviousArea(_ sender: Any?) {
+        if let page = keyboardBrowserPage, page.canGoBack { return page.goBack() }
+        stepArea(-1)
+    }
+
+    /// The browser whose page has the keyboard, if one does.
+    private var keyboardBrowserPage: BrowserPage? {
+        BrowserTabs.shared.page(holding: window?.firstResponder)
+    }
 
     private func stepArea(_ offset: Int) {
         let regions = visibleRegions
@@ -870,6 +887,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
         return visible.lazy.compactMap { self.gitPanel.activeTab(in: $0)?.browserID }.first
+    }
+
+    /// ⌘R: reload the browser in front, the area you're in first. It works
+    /// from the terminal too, which is the point: change something, ⌘R, look.
+    @objc func reloadBrowserPage(_ sender: Any?) {
+        guard let id = frontBrowser() else { return }
+        BrowserTabs.shared.page(for: id).reload()
+    }
+
+    /// ⇧⌘R: the same, past the cache.
+    @objc func forceReloadBrowserPage(_ sender: Any?) {
+        guard let id = frontBrowser() else { return }
+        BrowserTabs.shared.page(for: id).reloadFromOrigin()
+    }
+
+    /// ⌘+ / ⌘- / ⌘0 with the keyboard in a browser's page zoom the page. The
+    /// same selectors a terminal answers for its font size: the responder
+    /// chain reaches a focused terminal first, and gets here only when there
+    /// is none.
+    @objc func increaseFontSize(_ sender: Any?) { keyboardBrowserPage?.zoom(by: 1) }
+    @objc func decreaseFontSize(_ sender: Any?) { keyboardBrowserPage?.zoom(by: -1) }
+    @objc func resetFontSize(_ sender: Any?) { keyboardBrowserPage?.zoom(by: 0) }
+
+    /// ⌘/: the shortcut list, on the site because that is the one copy that
+    /// is kept.
+    @objc func showKeyboardShortcuts(_ sender: Any?) {
+        NSWorkspace.shared.open(URL(string: "https://wortel.sh/docs#shortcuts")!)
     }
 
     @objc func newBottomTerminal(_ sender: Any?) {
@@ -937,6 +981,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // As ⌘L: the find bar has the keyboard, so its area is the one you're in.
         if let region = manager.selected?.workspace.region(of: .file(path)) { gitPanel.lastRegion = region }
         previewTabs.document(for: path).find.isPresented = true
+    }
+
+    /// ⌘G / ⇧⌘G: the next and previous match of the find bar that's open.
+    @objc func previewFindNext(_ sender: Any?) { openFind()?.next() }
+    @objc func previewFindPrevious(_ sender: Any?) { openFind()?.previous() }
+
+    /// The find bar of the file tab ⌘F would pick, if it's up.
+    private func openFind() -> PreviewFind? {
+        guard let path = findableFileTab() else { return nil }
+        let find = previewTabs.document(for: path).find
+        return find.isPresented ? find : nil
     }
 
     private func findableFileTab() -> String? {
@@ -1147,8 +1202,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(showPreviewFind(_:)) {
             return findableFileTab() != nil
         }
-        if menuItem.action == #selector(openBrowserLocation(_:)) {
+        if menuItem.action == #selector(previewFindNext(_:))
+            || menuItem.action == #selector(previewFindPrevious(_:)) {
+            return openFind()?.matches.isEmpty == false
+        }
+        if menuItem.action == #selector(openBrowserLocation(_:))
+            || menuItem.action == #selector(reloadBrowserPage(_:))
+            || menuItem.action == #selector(forceReloadBrowserPage(_:)) {
             return frontBrowser() != nil
+        }
+        if menuItem.action == #selector(increaseFontSize(_:))
+            || menuItem.action == #selector(decreaseFontSize(_:))
+            || menuItem.action == #selector(resetFontSize(_:)) {
+            return keyboardBrowserPage != nil
         }
         if menuItem.action == #selector(reopenClosedTab(_:)) {
             return gitPanel.canReopenClosedTab
@@ -1168,7 +1234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(focusNextArea(_:))
             || menuItem.action == #selector(focusPreviousArea(_:)) {
-            return visibleRegions.count > 1
+            return visibleRegions.count > 1 || keyboardBrowserPage != nil
         }
         if menuItem.action == #selector(toggleFileTree(_:)) {
             let showing = [TabRegion.main, .side, .bottom]

@@ -9,7 +9,7 @@ final class SidebarPillRowView: NSTableRowView {
     /// How far the pill is inset from the row. Also what the close button keeps
     /// clear of the pill's edges, so its padding reads the same on all three
     /// sides it touches.
-    private static let pillInset = NSSize(width: 10, height: 2)
+    private static let pillInset = NSSize(width: 10, height: 1)
     /// The pill's corners: a tab's and a titlebar button's.
     private static let pillRadius: CGFloat = 8
     /// The selected row's fill, and the hover's, over the sidebar material. The
@@ -34,9 +34,18 @@ final class SidebarPillRowView: NSTableRowView {
         didSet { if showsHover != oldValue { needsDisplay = true } }
     }
 
+    /// Room above a section header, so sections stand apart while the rows
+    /// inside one sit close. Kept out of the pill, the hover and the "+".
+    var sectionGap: CGFloat = 0 {
+        didSet { if sectionGap != oldValue { needsLayout = true; needsDisplay = true } }
+    }
+
     /// The pill, and the box the close button is laid out against.
     private var pillRect: NSRect {
-        bounds.insetBy(dx: Self.pillInset.width, dy: Self.pillInset.height)
+        var rect = bounds
+        rect.size.height -= sectionGap
+        if isFlipped { rect.origin.y += sectionGap }
+        return rect.insetBy(dx: Self.pillInset.width, dy: Self.pillInset.height)
     }
 
     override func drawBackground(in dirtyRect: NSRect) {
@@ -742,11 +751,13 @@ struct SidebarOutlineView: NSViewRepresentable {
                 let path = session.session.abbreviatedPath
                 cell.dragSubtitle = path.isEmpty ? nil : path
             } else if item is PinnedItem || item is LooseHeaderItem {
-                content = AnyView(SidebarSectionHeaderContent(title: item is PinnedItem ? "Pinned" : "Sessions"))
+                content = AnyView(SidebarSectionHeaderContent(title: item is PinnedItem ? "Pinned" : "Sessions")
+                    .padding(.top, sectionGap(item)))
                 cell = SidebarCellView(content: content)
                 return cell
             } else if let folder = item as? FolderItem {
-                content = AnyView(SidebarHeaderContent(manager: manager, folder: folder.name))
+                content = AnyView(SidebarHeaderContent(manager: manager, folder: folder.name)
+                    .padding(.top, sectionGap(item)))
                 cell = SidebarCellView(content: content)
                 cell.dragTitle = folder.name
                 cell.dragIsHeader = true
@@ -763,9 +774,22 @@ struct SidebarOutlineView: NSViewRepresentable {
             // second line (see `Session.showsBranchLine`).
             // Roomier than a Finder list, as the ChatGPT app's is: a session
             // row is something you read and pick all day, not scan past.
-            if item is FolderItem || item is PinnedItem || item is LooseHeaderItem { return 36 }
-            if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 48 }
-            return 34
+            // Sections apart, rows close, as the ChatGPT app's are: the gap
+            // goes above a header, and a row's pill nearly touches the next.
+            if item is FolderItem || item is PinnedItem || item is LooseHeaderItem { return 30 + sectionGap(item) }
+            if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 44 }
+            return 30
+        }
+
+        /// The room above a section header: none for the first, which the
+        /// sidebar's own top margin already sets apart.
+        private func sectionGap(_ item: Any) -> CGFloat {
+            guard item is FolderItem || item is PinnedItem || item is LooseHeaderItem else { return 0 }
+            let first: AnyObject?
+            if !pinnedItems.isEmpty { first = pinnedItem }
+            else if !looseItems.isEmpty { first = looseHeader }
+            else { first = folderItems.first }
+            return first === (item as AnyObject) ? 0 : 14
         }
 
         /// Row views draw the selection pill (full row width, across the
@@ -775,6 +799,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
             let rowView = SidebarPillRowView()
             rowView.showsPill = showsPill(item)
+            rowView.sectionGap = sectionGap(item)
             if let folder = item as? FolderItem {
                 let manager = self.manager, name = folder.name
                 let directory = manager.root(ofFolder: name).map { ($0 as NSString).abbreviatingWithTildeInPath }

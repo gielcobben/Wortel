@@ -895,6 +895,22 @@ private final class BrowserWebView: WKWebView {
         return super.performKeyEquivalent(with: event)
     }
 
+    /// A file dragged out of one of Wortel's own lists is for the tab rows
+    /// (TabDragController.handleFileDrag), to open beside the page: WebKit
+    /// would take it and navigate to it as file://. Files from the Finder still
+    /// reach the page.
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        sender.draggingSource is RowClickCatcher.CatcherView ? [] : super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        sender.draggingSource is RowClickCatcher.CatcherView ? [] : super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        sender.draggingSource is RowClickCatcher.CatcherView ? false : super.performDragOperation(sender)
+    }
+
     private static let arrowUp = String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!)
     private static let arrowDown = String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!)
 

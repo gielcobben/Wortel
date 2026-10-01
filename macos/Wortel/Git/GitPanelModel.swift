@@ -627,6 +627,23 @@ final class GitPanelModel {
         settle(tab, in: session)
     }
 
+    /// A tab dragged in from outside the rows (a file out of a list) and dropped
+    /// at `index` in `region`'s row: opened there, the way a dragged tab lands.
+    /// One that's already open somewhere is moved there instead.
+    func openDropped(_ tab: SideTab, in region: TabRegion, at index: Int) {
+        guard let session else { return }
+        guard session.workspace.region(of: tab) == nil else {
+            move(tab, to: region, at: index)
+            return
+        }
+        reportOpened(tab, in: region)
+        change(session) {
+            $0.place(tab, in: region, at: index)
+            $0.bringForward(tab)
+        }
+        settle(tab, in: session)
+    }
+
     /// Give an empty column something to show, when it's asked to open. The
     /// pane last chosen, unless that one is in the main area's row (opening it
     /// would only bring it forward there, and the column would stay shut): then

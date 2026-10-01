@@ -117,6 +117,21 @@ struct PressCatcher: NSViewRepresentable {
 /// The same conclusion the sidebar reached for its own rows, where a native
 /// `doubleAction` replaced `.onTapGesture(count: 2)`.
 struct RowClickCatcher: NSViewRepresentable {
+    /// A row's file drag, as it goes: so the window can offer the same landing
+    /// spots a dragged tab gets (TabDragController.handleFileDrag) on top of
+    /// everything that takes a file anyway (a terminal types its path).
+    enum FileDragPhase {
+        case began
+        case moved
+        /// `accepted`: something took the drop itself (a terminal, the Finder,
+        /// another app), so it isn't a tab row's.
+        case ended(accepted: Bool)
+    }
+
+    /// Set by the window's split view, which owns the tab drag controller.
+    /// Points are in the dragging row's window.
+    @MainActor static var onFileDrag: ((FileDragPhase, [URL], NSWindow, NSPoint) -> Void)?
+
     /// Called with the click's modifiers, because a list selection is a different
     /// gesture with ⌘ or ⇧ held and only the view that owns the click can tell.
     let onClick: (NSEvent.ModifierFlags) -> Void
@@ -146,6 +161,8 @@ struct RowClickCatcher: NSViewRepresentable {
         var onDoubleClick: () -> Void = {}
         var urls: () -> [URL] = { [] }
         private var mouseDownEvent: NSEvent?
+        /// What this drag carries, for its later phases.
+        private var draggedURLs: [URL] = []
 
         /// Claims the left button and nothing else: right-clicks and hover fall
         /// through to the row beneath, which still owns those.
@@ -190,7 +207,12 @@ struct RowClickCatcher: NSViewRepresentable {
                 item.setDraggingFrame(frame, contents: NSWorkspace.shared.icon(forFile: url.path))
                 return item
             }
-            beginDraggingSession(with: items, event: down, source: self)
+            draggedURLs = dragged
+            let session = beginDraggingSession(with: items, event: down, source: self)
+            // Dropped on a tab row or a pane, nothing *accepts* it (the window
+            // opens it, see `onFileDrag`), and the icon flying back to the row
+            // would say the opposite of what just happened.
+            session.animatesToStartingPositionsOnCancelOrFail = false
         }
 
         override func mouseUp(with event: NSEvent) { mouseDownEvent = nil }
@@ -198,6 +220,25 @@ struct RowClickCatcher: NSViewRepresentable {
         func draggingSession(_ session: NSDraggingSession,
                              sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
             .copy
+        }
+
+        func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+            report(.began, at: screenPoint)
+        }
+
+        func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+            report(.moved, at: screenPoint)
+        }
+
+        func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint,
+                             operation: NSDragOperation) {
+            report(.ended(accepted: operation != []), at: screenPoint)
+            draggedURLs = []
+        }
+
+        private func report(_ phase: FileDragPhase, at screenPoint: NSPoint) {
+            guard let window, !draggedURLs.isEmpty else { return }
+            RowClickCatcher.onFileDrag?(phase, draggedURLs, window, window.convertPoint(fromScreen: screenPoint))
         }
     }
 }

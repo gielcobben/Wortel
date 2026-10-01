@@ -244,6 +244,15 @@ final class MainSplitViewController: NSSplitViewController {
         drag.onDrop = { [weak self] tab, region, index in
             self?.git.move(tab, to: region, at: index)
         }
+        drag.onFileDrop = { [weak self] urls, region, index in
+            self?.openDroppedFiles(urls, region, index)
+        }
+        // A file dragged out of a list in this window gets the tab drag's
+        // landing spots too.
+        RowClickCatcher.onFileDrag = { [weak self, weak drag] phase, urls, window, point in
+            guard let self, window === self.view.window else { return }
+            drag?.handleFileDrag(phase, urls: urls, window: window, point: point)
+        }
         titleBars.mainBar.strip.onDrag = { [weak drag] phase, tab, view, point in
             drag?.handle(phase, tab: tab, view: view, point: point)
         }
@@ -267,6 +276,10 @@ final class MainSplitViewController: NSSplitViewController {
 
     /// Resolves tab drags across both tab rows. Held for the window's life.
     private var tabDrag: TabDragController?
+
+    /// Open files dropped on a row or an area, from `index` in that row: set by
+    /// AppDelegate, which decides what each file's tab shows (its diff).
+    var openDroppedFiles: ([URL], TabRegion, Int) -> Void = { _, _, _ in }
 
     /// The autosave restore above happens before the split view has a width, and
     /// it restores one column width for every session. Take the column back on

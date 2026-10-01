@@ -114,6 +114,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             runtime: runtime, manager: manager, git: gitPanel, files: fileTree,
             titleBars: titleBars, previewTabs: previewTabs)
         self.splitController = split
+        // A file dragged out of a list onto a tab row or an area opens there,
+        // through the same opener as a double-click, so it shows the same diff.
+        split.openDroppedFiles = { [weak self] urls, region, index in
+            for (offset, url) in urls.enumerated() {
+                self?.openPreview(url, placement: .dropped(region, index: index == .max ? .max : index + offset))
+            }
+        }
         window.contentViewController = BackdropController(child: split)
         titleBars.start()
         window.setFrameAutosaveName("main")
@@ -624,21 +631,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the wrong one here: it meant a file opened with the inspector closed had
     /// no repo, so no diff source, so no Diff mode at all. When the panel
     /// happens to have the answer it's free; when it doesn't, we ask.
+    /// Where a file being opened goes: where files go (⌥: the main area this
+    /// once), or exactly where a dragged file was dropped.
+    private enum FilePlacement {
+        case home(inMain: Bool)
+        case dropped(TabRegion, index: Int)
+    }
+
     private func openPreview(_ requested: URL) {
+        // ⌥ read now, at the click: the open can land after a git lookup, and
+        // by then there's no event to ask.
+        openPreview(requested, placement: .home(inMain: Self.optionClicked))
+    }
+
+    private func openPreview(_ requested: URL, placement: FilePlacement) {
         // Two paths, deliberately: git and the window registry work on the real
         // file, while the window is opened with the path you actually clicked so
         // it can tell you when that was an alias.
         let url = requested.resolvingSymlinksInPath().standardizedFileURL
-        // ⌥ read now, at the click: the open can land after a git lookup, and
-        // by then there's no event to ask.
-        let inMain = Self.optionClicked
-        // Already open, in a tab or a window: bring it forward and do no git
-        // work whatsoever.
+        // Already open, in a tab or a window: bring it forward (or, dropped,
+        // move it there) and do no git work whatsoever.
         if manager.selected?.workspace.region(of: .file(url.path)) != nil {
-            gitPanel.openAtHome(.file(url.path), inMain: inMain)
+            place(.file(url.path), placement)
             return
         }
-        if previewWindows.focus(url) { return }
+        if case .home = placement, previewWindows.focus(url) { return }
 
         // The panel already knows this repo and its status — free, and it also
         // knows *which side* of a change the file is on.
@@ -647,12 +664,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 ?? repo.status.stagedChanges.first { $0.path == relative }
             if let change {
                 presentPreview(requested, diff: .change(root: repo.root, change: change),
-                               hasChanges: true, inMain: inMain)
+                               hasChanges: true, placement: placement)
             } else {
                 presentPreview(
                     requested,
                     diff: .workingTree(root: repo.root, path: relative, untracked: false),
-                    inMain: inMain)
+                    placement: placement)
             }
             return
         }
@@ -668,7 +685,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 repoRootCache[directory] = root
             }
             guard let root, let relative = Self.relativePath(of: url, in: root) else {
-                presentPreview(requested, inMain: inMain)
+                presentPreview(requested, placement: placement)
                 return
             }
             // One line of porcelain, not a patch: it decides whether the window
@@ -678,7 +695,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             presentPreview(
                 requested,
                 diff: .workingTree(root: root, path: relative, untracked: state == .untracked),
-                hasChanges: state.hasChanges, inMain: inMain)
+                hasChanges: state.hasChanges, placement: placement)
         }
     }
 
@@ -696,9 +713,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// History, the file tree, a path in a terminal, a link in Markdown) gets
     /// it without each passing it along.
     private func presentPreview(_ url: URL, diff: PreviewDiffSource = .none,
-                                hasChanges: Bool = false, inMain: Bool? = nil) {
-        gitPanel.openAtHome(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges),
-                            inMain: inMain ?? Self.optionClicked)
+                                hasChanges: Bool = false, placement: FilePlacement? = nil) {
+        place(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges),
+              placement ?? .home(inMain: Self.optionClicked))
+    }
+
+    private func place(_ tab: SideTab, _ placement: FilePlacement) {
+        switch placement {
+        case .home(let inMain): gitPanel.openAtHome(tab, inMain: inMain)
+        case .dropped(let region, let index): gitPanel.openDropped(tab, in: region, at: index)
+        }
     }
 
     private static func relativePath(of url: URL, in root: String) -> String? {

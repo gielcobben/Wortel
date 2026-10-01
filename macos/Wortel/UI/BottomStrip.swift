@@ -322,6 +322,9 @@ final class TabDragController {
     /// The side column's content area when it's showing, in window coordinates.
     var columnArea: () -> NSRect? = { nil }
     var onDrop: (SideTab, TabRegion, Int) -> Void = { _, _, _ in }
+    /// Files dragged out of a list and dropped on a row or an area: open them
+    /// there, from `index` in that row's order.
+    var onFileDrop: ([URL], TabRegion, Int) -> Void = { _, _, _ in }
     /// Which side the column is on now.
     var columnLeading: () -> Bool = { false }
     var onSwap: (SideTab, Bool) -> Void = { _, _ in }
@@ -366,9 +369,70 @@ final class TabDragController {
     /// same drop zones differently (see `resolve`).
     private var draggingSession = false
 
+    /// A file is being dragged out of a list rather than a tab across rows:
+    /// it opens where it lands ("Open in…"), and never moves the column.
+    private var draggingFile = false
+    private weak var fileDragWindow: NSWindow?
+
+    /// A file dragged out of a list (Changes, History, the file tree): the
+    /// same landing spots as a tab, to open it there as a tab. Not over a
+    /// terminal: a file dropped on one types its path, which is how you hand
+    /// an agent a file, and that stays the terminal's.
+    func handleFileDrag(_ phase: RowClickCatcher.FileDragPhase, urls: [URL],
+                        window: NSWindow, point: NSPoint) {
+        let files = urls.filter { url in
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                && !isDirectory.boolValue
+        }
+        guard let first = files.first else { return }
+        let tab = SideTab.file(first.resolvingSymlinksInPath().standardizedFileURL.path)
+        switch phase {
+        case .began:
+            guard let content = window.contentView else { return }
+            let overlay = TabDragOverlay(frame: content.bounds)
+            overlay.autoresizingMask = [.width, .height]
+            // No ghost: the system drag already shows the file's icon.
+            content.addSubview(overlay, positioned: .above, relativeTo: nil)
+            self.overlay = overlay
+            draggingFile = true
+            fileDragWindow = window
+            update(tab: tab, point: point)
+        case .moved:
+            guard draggingFile else { return }
+            update(tab: tab, point: point)
+        case .ended(let accepted):
+            guard draggingFile else { return }
+            let landing = accepted ? nil : target
+            finish()
+            switch landing {
+            case .strip(let region, let index, _): onFileDrop(files, region, index)
+            case .zone(let region, _): onFileDrop(files, region, .max)
+            case .swap, nil: break
+            }
+        }
+    }
+
+    /// Whether `point` is over a terminal, which takes a dropped file itself.
+    private static func isOverTerminal(_ point: NSPoint, in window: NSWindow?) -> Bool {
+        guard let frameView = window?.contentView?.superview else { return false }
+        var view = frameView.hitTest(point)
+        while let current = view {
+            if current is SurfaceView { return true }
+            view = current.superview
+        }
+        return false
+    }
+
     private func update(tab: SideTab, point: NSPoint) {
         draggingSession = tab == .session
         target = resolve(tab: tab, point: point)
+        if draggingFile {
+            // Never "move the column" for a file, and nothing over a terminal:
+            // that drop is the terminal's (it types the path).
+            if case .swap? = target { target = nil }
+            if case .zone? = target, Self.isOverTerminal(point, in: fileDragWindow) { target = nil }
+        }
         guard let overlay else { return }
         overlay.pointer = overlay.convert(point, from: nil)
         switch target {
@@ -380,13 +444,13 @@ final class TabDragController {
             overlay.zone = overlay.convert(area, from: nil)
             switch region {
             case .bottom:
-                overlay.zoneLabel = "Move to Bottom"
+                overlay.zoneLabel = draggingFile ? "Open in Bottom Strip" : "Move to Bottom"
                 overlay.zoneEdge = .maxY
             case .side:
-                overlay.zoneLabel = "Move to Side Column"
+                overlay.zoneLabel = draggingFile ? "Open in Side Column" : "Move to Side Column"
                 overlay.zoneEdge = columnLeading() ? .maxX : .minX
             case .main:
-                overlay.zoneLabel = "Move Here"
+                overlay.zoneLabel = draggingFile ? "Open Here" : "Move Here"
                 overlay.zoneEdge = .minY
             }
         case .swap(let leading, let area):
@@ -488,6 +552,8 @@ final class TabDragController {
     }
 
     private func finish() {
+        draggingFile = false
+        fileDragWindow = nil
         overlay?.removeFromSuperview()
         overlay = nil
         source?.alphaValue = 1

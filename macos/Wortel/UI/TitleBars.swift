@@ -620,54 +620,10 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         git.toggle()
     }
 
-    /// The "+" menu. Native and small, like the ChatGPT app's own menus: a
-    /// terminal first, because a new one is what "+" usually means, a browser,
-    /// then the panes, the groups set apart by separators rather than labels.
-    /// What's serving is offered by a new browser's address field instead. No
-    /// checkmarks on the panes that are already open, since choosing one does the
-    /// useful thing either way: it brings that tab to the front.
-    ///
-    /// Right-aligned under the button, so it opens into the window rather than
-    /// off its side.
+    /// The column's "+": NewTabMenu, opening into the column.
     @objc private func presentNewTabMenu(_ sender: NSView) {
         // "+" is the column's; the main area's tabs come from the "…" menu.
-        let region: TabRegion = .side
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-
-        // ⌘T, which opens a terminal in the area you're in: from this menu,
-        // the column. (It said ⌃`, which shows and hides the strip.)
-        let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
-            self?.git.openTerminal()
-        }
-        Self.setGlyph("apple.terminal", on: terminal)
-        terminal.keyEquivalent = "t"
-        terminal.keyEquivalentModifierMask = [.command]
-        menu.addItem(terminal)
-
-        let browser = ClosureMenuItem(title: "New Browser") { [weak self] in
-            self?.git.openBrowser(at: nil, in: region)
-        }
-        Self.setGlyph("globe", on: browser)
-        browser.keyEquivalent = "l"
-        browser.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(browser)
-
-        menu.addItem(.separator())
-        for pane in InspectorPane.allCases {
-            let item = ClosureMenuItem(title: pane.title) { [weak self] in
-                self?.git.open(.pane(pane), in: region)
-            }
-            Self.setGlyph(pane.symbol, on: item)
-            // How much is waiting in Changes, as a native count badge.
-            if pane == .changes, let count = git.repo?.status.changes.count, count > 0 {
-                item.badge = NSMenuItemBadge(count: count)
-            }
-            menu.addItem(item)
-        }
-
-        let x = sender.bounds.width - menu.size.width
-        menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.bounds.height + 4), in: sender)
+        NewTabMenu.popUp(from: sender, git: git, region: .side)
     }
 
     /// The session's "…": its own actions, as ChatGPT's menu is the
@@ -772,5 +728,66 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             self.runningPopover = nil
             self.mainBar.running.show(self.runningSnapshot)
         }
+    }
+}
+
+/// What "+" offers in a tab row. The column's and the bottom strip's are the
+/// same menu, built here once so the two can't drift apart again (the strip's
+/// used to open a terminal straight away), and what it opens goes into the row
+/// whose "+" was clicked.
+///
+/// Native and small, like the ChatGPT app's own menus: a terminal first,
+/// because a new one is what "+" usually means, a browser, then the panes, the
+/// groups set apart by separators rather than labels. What's serving is offered
+/// by a new browser's address field instead. No checkmarks on the panes that
+/// are already open, since choosing one does the useful thing either way: it
+/// brings that tab to the front.
+@MainActor
+enum NewTabMenu {
+    static func popUp(from sender: NSView, git: GitPanelModel, region: TabRegion) {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        // The shortcut that opens a terminal *there*: ⌘T opens one in the area
+        // you're in, which from the column's menu is the column; the strip's
+        // own is ⇧⌘D.
+        let terminal = ClosureMenuItem(title: "New Terminal") {
+            git.open(.terminal(UUID()), in: region)
+        }
+        terminal.setGlyph("apple.terminal")
+        if region == .bottom {
+            terminal.keyEquivalent = "d"
+            terminal.keyEquivalentModifierMask = [.command, .shift]
+        } else {
+            terminal.keyEquivalent = "t"
+            terminal.keyEquivalentModifierMask = [.command]
+        }
+        menu.addItem(terminal)
+
+        let browser = ClosureMenuItem(title: "New Browser") {
+            git.openBrowser(at: nil, in: region)
+        }
+        browser.setGlyph("globe")
+        browser.keyEquivalent = "l"
+        browser.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(browser)
+
+        menu.addItem(.separator())
+        for pane in InspectorPane.allCases {
+            let item = ClosureMenuItem(title: pane.title) {
+                git.open(.pane(pane), in: region)
+            }
+            item.setGlyph(pane.symbol)
+            // How much is waiting in Changes, as a native count badge.
+            if pane == .changes, let count = git.repo?.status.changes.count, count > 0 {
+                item.badge = NSMenuItemBadge(count: count)
+            }
+            menu.addItem(item)
+        }
+
+        // Hung from the button the native way, its leading edge under the
+        // button's, as a toolbar's pull-down opens. (It used to open leftward,
+        // its trailing edge on the "+", back over the tabs.)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 }

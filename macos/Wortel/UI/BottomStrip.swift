@@ -158,20 +158,22 @@ final class TerminalWorkspaceController: NSSplitViewController {
     var terminalView: NSView { top.view }
 }
 
-/// The strip's own row: its tabs, and at the trailing end a new terminal and
-/// the button that tucks the strip away. On a faint band, so the tab in front
-/// can be raised off it the way the column's tabs are off the titlebar.
+/// The strip's own row: its tabs with "+" right after the last one (the
+/// column's menu, NewTabMenu), and at the trailing end the button that tucks
+/// the strip away. On a faint band, so the tab in front can be raised off it
+/// the way the column's tabs are off the titlebar.
 @MainActor
 final class BottomBar: FilledView {
     let strip = SideTabStrip()
-    let add = HoverFillButton.glyph("plus", "New Terminal")
+    let add = HoverFillButton.glyph("plus", "New Tab")
     let hide = HoverFillButton.glyph("chevron.down", "Hide Bottom Strip")
 
     init() {
         super.init(color: Chrome.stripBand)
         strip.region = .bottom
         strip.translatesAutoresizingMaskIntoConstraints = false
-        let trailing = NSStackView(views: [add, hide])
+        strip.trailingAccessory = add
+        let trailing = NSStackView(views: [hide])
         trailing.spacing = 4
         trailing.translatesAutoresizingMaskIntoConstraints = false
         addSubview(strip)
@@ -236,7 +238,7 @@ final class BottomPaneController: NSViewController {
         view = root
 
         bar.add.target = self
-        bar.add.action = #selector(addTerminal)
+        bar.add.action = #selector(addTab(_:))
         bar.hide.target = self
         bar.hide.action = #selector(hideStrip)
         let strip = bar.strip
@@ -248,7 +250,9 @@ final class BottomPaneController: NSViewController {
         observe()
     }
 
-    @objc private func addTerminal() { git.openBottomTerminal() }
+    @objc private func addTab(_ sender: NSView) {
+        NewTabMenu.popUp(from: sender, git: git, region: .bottom)
+    }
     @objc private func hideStrip() { git.toggleBottom() }
 
     private func observe() {

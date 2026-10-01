@@ -31,6 +31,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac</key>
+	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© Giel Cobben</string>
 	<key>NSPrincipalClass</key>

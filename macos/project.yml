@@ -219,6 +219,14 @@ targets:
         NSHumanReadableCopyright: "© Giel Cobben"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSSupportsSuddenTermination: false
+        # No "Fill code 123456, From Messages/Mail" over the terminal. macOS
+        # offers a verification code to any focused text input by default, and
+        # the terminal view is one that always has the keyboard. With this, a
+        # code goes only to a field that declares itself a one-time-code field:
+        # a login page in a browser tab still gets it, a shell never does.
+        # Ghostty sets the same key, but in its framework's plist, and macOS
+        # reads it only from the app's own.
+        NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true
         # Browser tabs load what a session serves (http://localhost:5173) and
         # whatever else is typed, which App Transport Security would otherwise
         # refuse for being plain http.

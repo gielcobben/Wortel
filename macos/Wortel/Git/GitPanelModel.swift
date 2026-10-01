@@ -475,11 +475,20 @@ final class GitPanelModel {
     /// column's row if it isn't in any.
     func open(_ tab: SideTab) {
         guard let session else { return }
+        if session.workspace.region(of: tab) == nil { reportOpened(tab, in: .side) }
         change(session) { workspace in
             if workspace.region(of: tab) == nil { workspace.place(tab, in: .side, at: .max) }
             workspace.bringForward(tab)
         }
         settle(tab, in: session)
+    }
+
+    /// A tab new to the session's rows. Bringing one forward isn't opening it,
+    /// and neither is a session's tabs coming back at launch (they never come
+    /// through here).
+    private func reportOpened(_ tab: SideTab, in region: TabRegion) {
+        guard let kind = TabOpenedKind(tab) else { return }
+        Telemetry.capture(.tabOpened(kind: kind, area: TabArea(region)))
     }
 
     /// A new shell beside the session's own.
@@ -601,6 +610,7 @@ final class GitPanelModel {
     /// row means: here.
     func open(_ tab: SideTab, in region: TabRegion) {
         guard let session else { return }
+        if session.workspace.region(of: tab) == nil { reportOpened(tab, in: region) }
         switch session.workspace.region(of: tab) {
         case region?:
             change(session) { $0.bringForward(tab) }

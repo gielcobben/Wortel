@@ -19,6 +19,9 @@ import SwiftUI
 final class SessionSwitcher {
     private let manager: SessionManager
     private var panel: SwitcherPanel?
+    /// Which palette is open, until it closes and is counted
+    /// (`Telemetry` palette_used): nil once reported.
+    private var openMode: PaletteMode?
     /// Where the card's top sits, in screen coordinates: what stays put as
     /// its height changes.
     private var top: CGFloat = 0
@@ -65,10 +68,12 @@ final class SessionSwitcher {
             commands: commands,
             commandsOnly: commandsOnly,
             pick: { [weak self] id in
+                self?.report(.session)
                 self?.close()
                 self?.manager.selectedID = id
             },
             run: { [weak self] command in
+                self?.report(.command)
                 self?.close()
                 // Once the window has the keyboard back: commands act on the
                 // key window's responder chain, as from the menu.
@@ -98,6 +103,7 @@ final class SessionSwitcher {
         // change again: the window stayed at the field's height, the card cut
         // off inside it.
         self.panel = panel
+        openMode = commandsOnly ? .commands : .sessions
         window.addChildWindow(panel, ordered: .above)
 
         // In with a quick fade, as Spotlight comes in.
@@ -123,7 +129,16 @@ final class SessionSwitcher {
         panel.invalidateShadow()
     }
 
+    /// How this palette ended, counted once. A close with nothing picked is a
+    /// dismissal, whatever closed it.
+    private func report(_ result: PaletteResult) {
+        guard let mode = openMode else { return }
+        openMode = nil
+        Telemetry.capture(.paletteUsed(mode: mode, result: result))
+    }
+
     func close() {
+        report(.dismissed)
         guard let panel else { return }
         self.panel = nil
         panel.onResign = nil

@@ -53,8 +53,24 @@ enum TelemetryEvent: Equatable {
     /// separate bets and this is how they are told apart.
     case inspectorShown(pane: InspectorPaneKind, via: PanelOrigin)
 
-    /// A preview window was opened, and on which view.
-    case previewOpened(mode: PreviewKind)
+    /// A file preview was opened, on which view, and whether as a tab or a
+    /// window. Tabs are how a file opens now; `where` says whether the window
+    /// is still earning its code.
+    case previewOpened(mode: PreviewKind, where: PreviewPlace)
+
+    /// A tab was opened (not brought forward: new to its session's rows), what
+    /// kind, and in which area. Tabs and the browser were the biggest bet of
+    /// their release, and this is the one number that says if they're used.
+    case tabOpened(kind: TabOpenedKind, area: TabArea)
+
+    /// ⌘P or ⇧⌘P was opened and closed, and how. Says whether the palette is a
+    /// habit, which half of it is used, and how often it's opened for nothing.
+    case paletteUsed(mode: PaletteMode, result: PaletteResult)
+
+    /// A commit from the Changes pane, and where its message came from. The
+    /// on-device drafter has real upkeep; this says whether it's used, and
+    /// whether what it drafts is kept as it is.
+    case commitMade(message: CommitMessageSource)
 
     /// The running-processes list was opened, and roughly how much was in it.
     /// `orphans` is the question this feature exists to answer: whether servers
@@ -102,6 +118,9 @@ enum TelemetryEvent: Equatable {
         case .sessionRenamed: return "session_renamed"
         case .inspectorShown: return "inspector_shown"
         case .previewOpened: return "preview_opened"
+        case .tabOpened: return "tab_opened"
+        case .paletteUsed: return "palette_used"
+        case .commitMade: return "commit_made"
         case .processesShown: return "processes_shown"
         case .processQuit: return "process_quit"
         case .agentAttention: return "agent_attention"
@@ -126,8 +145,14 @@ enum TelemetryEvent: Equatable {
             return ["automatic": automatic ? "true" : "false"]
         case let .inspectorShown(pane, via):
             return ["pane": pane.rawValue, "via": via.rawValue]
-        case let .previewOpened(mode):
-            return ["mode": mode.rawValue]
+        case let .previewOpened(mode, place):
+            return ["mode": mode.rawValue, "where": place.rawValue]
+        case let .tabOpened(kind, area):
+            return ["kind": kind.rawValue, "area": area.rawValue]
+        case let .paletteUsed(mode, result):
+            return ["mode": mode.rawValue, "result": result.rawValue]
+        case let .commitMade(message):
+            return ["message": message.rawValue]
         case let .processesShown(jobs, orphans):
             return ["jobs": jobs.rawValue, "orphans": orphans.rawValue]
         case let .processQuit(orphan):
@@ -224,6 +249,49 @@ enum PreviewKind: String {
     case diff
     case rendered
     case quickLook = "quick_look"
+}
+
+/// Where a preview opened.
+enum PreviewPlace: String, CaseIterable {
+    case tab
+    case window
+}
+
+/// Mirrors `SideTab`, without the session's own terminal: that one is never
+/// opened, it is the main area's from the start.
+enum TabOpenedKind: String, CaseIterable {
+    case terminal
+    case browser
+    case file
+    case pane
+}
+
+/// Mirrors `TabRegion`.
+enum TabArea: String, CaseIterable {
+    case main
+    case side
+    case bottom
+}
+
+/// ⌘P (sessions and commands) or ⇧⌘P (commands only).
+enum PaletteMode: String, CaseIterable {
+    case sessions
+    case commands
+}
+
+/// How the palette closed: a session picked, a command run, or neither.
+enum PaletteResult: String, CaseIterable {
+    case session
+    case command
+    case dismissed
+}
+
+/// Where a commit's message came from: typed, drafted on-device and kept as
+/// drafted, or drafted and then changed.
+enum CommitMessageSource: String, CaseIterable {
+    case typed
+    case generated
+    case edited
 }
 
 /// Mirrors `AttentionKind`.

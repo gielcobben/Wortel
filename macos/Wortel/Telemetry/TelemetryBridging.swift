@@ -48,6 +48,29 @@ extension PreviewKind {
     }
 }
 
+extension TabOpenedKind {
+    /// nil for the session's own terminal, which is never opened as a tab.
+    init?(_ tab: SideTab) {
+        switch tab {
+        case .terminal: self = .terminal
+        case .browser: self = .browser
+        case .file: self = .file
+        case .pane: self = .pane
+        case .session: return nil
+        }
+    }
+}
+
+extension TabArea {
+    init(_ region: TabRegion) {
+        switch region {
+        case .main: self = .main
+        case .side: self = .side
+        case .bottom: self = .bottom
+        }
+    }
+}
+
 extension CommandVerb {
     init(_ command: WortelCommand) {
         switch command {

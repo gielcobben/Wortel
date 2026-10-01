@@ -41,6 +41,7 @@ final class TelemetryTests: XCTestCase {
         let documented: Set<String> = [
             "sessions", "agents_resumed", "uptime", "via", "automatic",
             "pane", "mode", "kind", "verb", "jobs", "orphans", "orphan",
+            "where", "area", "result", "message",
         ]
         for event in Self.everyEvent {
             for key in event.properties.keys {
@@ -180,6 +181,17 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CommandVerb(.rename(session: nil, name: "x")).rawValue, "rename")
         XCTAssertEqual(CommandVerb(.notify(session: nil, title: "t", body: nil)).rawValue, "notify")
         XCTAssertEqual(CommandVerb(.version).rawValue, "version")
+
+        XCTAssertEqual(TabOpenedKind(.terminal(UUID()))?.rawValue, "terminal")
+        XCTAssertEqual(TabOpenedKind(.browser(UUID()))?.rawValue, "browser")
+        XCTAssertEqual(TabOpenedKind(.file("/x"))?.rawValue, "file")
+        XCTAssertEqual(TabOpenedKind(.pane(.changes))?.rawValue, "pane")
+        // The session's own terminal is never opened, so never reported.
+        XCTAssertNil(TabOpenedKind(.session))
+
+        XCTAssertEqual(TabArea(.main).rawValue, "main")
+        XCTAssertEqual(TabArea(.side).rawValue, "side")
+        XCTAssertEqual(TabArea(.bottom).rawValue, "bottom")
     }
 
     // MARK: -
@@ -217,7 +229,22 @@ final class TelemetryTests: XCTestCase {
         }
         let previews: [PreviewKind] = [.source, .diff, .rendered, .quickLook]
         for mode in previews {
-            events.append(.previewOpened(mode: mode))
+            for place in PreviewPlace.allCases {
+                events.append(.previewOpened(mode: mode, where: place))
+            }
+        }
+        for kind in TabOpenedKind.allCases {
+            for area in TabArea.allCases {
+                events.append(.tabOpened(kind: kind, area: area))
+            }
+        }
+        for mode in PaletteMode.allCases {
+            for result in PaletteResult.allCases {
+                events.append(.paletteUsed(mode: mode, result: result))
+            }
+        }
+        for source in CommitMessageSource.allCases {
+            events.append(.commitMade(message: source))
         }
         for count in CountBucket.allCases {
             events.append(.processesShown(jobs: count, orphans: count))
@@ -234,6 +261,7 @@ final class TelemetryTests: XCTestCase {
         }
 
         events.append(.agentJumpUsed)
+        events.append(.globalHotkeyUsed)
         events.append(.reportingDisabled)
         return events
     }

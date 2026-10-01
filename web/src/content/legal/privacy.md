@@ -1,7 +1,7 @@
 ---
 title: Privacy
 description: What Wortel and wortel.sh record, what they never record, and how to turn the app's reporting off.
-updated: 2026-09-14
+updated: 2026-09-30
 nav: Privacy
 order: 10
 ---
@@ -61,7 +61,17 @@ about the thing it happened to:
 - a session was renamed
 - the git panel was opened, on which of the three panes, and whether from the
   toolbar or the keyboard
-- a preview window was opened, and whether it showed source, a diff or Markdown
+- a file preview was opened, whether it showed source, a diff or Markdown, and
+  whether it opened as a tab or a window
+- a tab was opened, which kind (a terminal, a browser, a file or one of the git
+  and file panes) and in which area of the window (never what is in it, where
+  a browser is pointed, or which file)
+- the command palette was used (⌘P or ⇧⌘P), and whether it ended with a session
+  picked, a command run, or neither (never what was typed or which session or
+  command it was)
+- a commit was made from the Changes pane, and whether its message was typed,
+  drafted on your Mac and kept, or drafted and then edited (never the message,
+  the files or the repository)
 - the list of processes your sessions are still running was opened, with rough
   counts of how many there were and how many had outlived their session (never
   what they are, what they are serving, or where they are running)
@@ -69,7 +79,9 @@ about the thing it happened to:
   its session
 - a background session asked for attention, and which kind of signal raised it
 - the jump-to-next-waiting shortcut was used
-- a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`)
+- the shortcut that shows and hides Wortel from any app was used
+- a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`,
+  `version`)
 - one last message when you turn reporting off, and then silence
 
 Each carries the app version, your macOS version to one decimal place, and

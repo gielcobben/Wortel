@@ -56,7 +56,7 @@ final class PreviewWindows {
         // The view it opened on, which is the only question here worth asking:
         // Rendered Markdown, a diff and plain source are three different
         // features sharing one window. The file this is about is never named.
-        Telemetry.capture(.previewOpened(mode: PreviewKind(mode)))
+        Telemetry.capture(.previewOpened(mode: PreviewKind(mode), where: .window))
 
         let document = PreviewDocument(
             url: url,

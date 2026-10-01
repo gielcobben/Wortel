@@ -69,6 +69,10 @@ final class GitRepoModel {
     private(set) var imageDiff: ImageDiff?
 
     var commitMessage = ""
+    /// The last message the on-device drafter put in the field, to tell a
+    /// commit with a drafted message from one typed by hand (telemetry's
+    /// commit_made). nil when nothing was drafted since the last commit.
+    @ObservationIgnored private var draftedMessage: String?
 
     // MARK: - History
 
@@ -292,6 +296,7 @@ final class GitRepoModel {
                 branch: status.branch, recentSubjects: recentSubjects)
             if !message.isEmpty {
                 commitMessage = message
+                draftedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
                 lastError = nil
             }
         } catch {
@@ -830,6 +835,9 @@ final class GitRepoModel {
         isCommitting = false
 
         if result.ok {
+            let source: CommitMessageSource = draftedMessage.map { $0 == message ? .generated : .edited } ?? .typed
+            Telemetry.capture(.commitMade(message: source))
+            draftedMessage = nil
             commitMessage = ""
             lastError = nil
             // The log just moved, but the refresh below notices that from HEAD

@@ -55,7 +55,7 @@ final class PreviewTabs {
         let source = sources[path] ?? (.none, false)
         let mode = PreviewMode.inferred(for: url, hasChanges: source.hasChanges,
                                         hasDiffSource: source.diff.exists)
-        Telemetry.capture(.previewOpened(mode: PreviewKind(mode)))
+        Telemetry.capture(.previewOpened(mode: PreviewKind(mode), where: .tab))
         let entry = Entry(
             document: PreviewDocument(url: url, diffSource: source.diff, mode: mode,
                                       highlighter: highlighter),

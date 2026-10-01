@@ -165,7 +165,7 @@ final class GitPanelModel {
     }
 
     /// Every checkout of the shown repository, when it has more than one:
-    /// what the branch menu offers to show instead, and what a clean Changes
+    /// what the worktree chip offers to show instead, and what a clean Changes
     /// pane points at when the work is somewhere else. Read when the repo
     /// resolves and when the menu opens, not on every refresh.
     private(set) var checkouts: [Checkout] = []

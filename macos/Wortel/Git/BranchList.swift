@@ -39,32 +39,15 @@ struct BranchList: View {
             // Nothing here reads arrows or Return, so the highlight is only ever
             // "the pointer is on this" and must go when the pointer does.
             hoverSelects: false,
-            checkouts: checkouts,
-            chooseCheckout: { checkout in
-                panel.showCheckout(checkout.id)
-                dismiss()
-            },
+            // Branches only: which worktree the panes show has its own chip
+            // in the header (RepoHeader.worktreeChip). The two in one list
+            // looked alike and did very different things: one only changes
+            // what you look at, the other changes the files on disk.
             activate: activate)
             .overlay {
                 if repo.isLoadingBranches && repo.branches.isEmpty {
                     ProgressView().controlSize(.small)
                 }
-            }
-    }
-
-    /// Which checkout the panes show, which is the terminal's, and what's in
-    /// each. Choosing one shows it here without touching the terminal or
-    /// anyone's branch. Filtered with the branches.
-    private var checkouts: [BranchOptionList.CheckoutOption] {
-        guard panel.checkouts.count > 1 else { return [] }
-        let query = query.trimmingCharacters(in: .whitespaces)
-        return panel.checkouts
-            .filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
-            .map { checkout in
-                let summary = GitPanelModel.summary(of: checkout)
-                return .init(id: checkout.path, name: checkout.name,
-                             detail: checkout.path == panel.terminalCheckout ? "terminal \u{00B7} \(summary)" : summary,
-                             isShown: checkout.path == repo.root)
             }
     }
 

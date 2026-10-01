@@ -11,71 +11,61 @@ import SwiftUI
 /// tab's address bar. It costs the list its run up under the titlebar, which the
 /// tab strip would have covered anyway.
 ///
-/// A session can show another checkout of the repo than its terminal's (an
-/// agent working in a worktree): chosen in the branch menu, or from the hint
-/// beside the branch when another checkout has changes, and undone by the
-/// arrow that appears beside the branch while it's in effect.
+/// A session can show another worktree of the repo than its terminal's (an
+/// agent working in one): chosen from the worktree chip, or from the hint
+/// beside the branch when another worktree has changes, and undone from the
+/// same chip or the "Back" that appears while it's in effect. Looking at one
+/// runs no git command; switching a branch is the branch chip's alone, and
+/// only in your own folder.
 struct RepoHeader: View {
     @Bindable var repo: GitRepoModel
     @Bindable var panel: GitPanelModel
     @State private var showsBranches = false
     @State private var moreOpen = false
     @State private var moreAnchor = MenuAnchor.Anchor()
+    @State private var showsWorktrees = false
+
+    /// Looking at another worktree than the terminal's: the header gets a faint
+    /// fill and a "Back", and the branch can't be switched from here.
+    private var isAway: Bool { panel.pinnedCheckout != nil }
+
+    /// A worktree is named for its folder: that's the "desk", and the branch
+    /// chip beside it already says which branch is on it.
+    private static func folderName(_ path: String) -> String {
+        (path as NSString).lastPathComponent
+    }
 
     var body: some View {
         HStack(spacing: 6) {
-            Button {
-                Task {
-                    // Loaded before the popover opens so it sizes for the list
-                    // it will show. A `for-each-ref`: the click still feels
-                    // immediate.
-                    await repo.loadBranches()
-                    await panel.loadCheckouts()
-                    showsBranches = true
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    Text(repo.status.branch ?? "detached")
-                        .font(.system(size: 13))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal, 6)
-                .frame(height: 24)
-                .contentShape(RoundedRectangle(cornerRadius: 6))
+            // The same two chips whether you're in your own folder or looking
+            // at another worktree: what changes is the name in the first, the
+            // second going quiet, and a faint fill.
+            if panel.checkouts.count > 1 || isAway {
+                worktreeChip
             }
-            // Lit while its list is open, so it's clear what the list hangs from.
-            .buttonStyle(HeaderButtonStyle(isActive: showsBranches))
-            .help(panel.pinnedCheckout.map { "Showing \($0)" } ?? repo.status.branch ?? "Switch branch")
-            .popover(isPresented: $showsBranches, arrowEdge: .bottom) {
-                BranchList(repo: repo, panel: panel, dismiss: { showsBranches = false })
-            }
-
-            if panel.pinnedCheckout != nil {
-                Button {
-                    panel.showCheckout(nil)
-                } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(HeaderButtonStyle())
-                .help("Back to the terminal's checkout")
-            }
-
-            if let elsewhere = panel.workElsewhere {
+            branchChip
+            if !isAway, let elsewhere = panel.workElsewhere {
                 elsewhereHint(elsewhere)
             }
 
             Spacer(minLength: 4)
+
+            if isAway {
+                // Said in words as well as by the dropdown: the clearest way
+                // out of "I'm looking at someone else's folder".
+                Button {
+                    panel.showCheckout(nil)
+                } label: {
+                    Text("Back")
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(HeaderButtonStyle())
+                .fixedSize()
+                .help("Show your own folder again")
+            }
 
             // A native menu rather than a SwiftUI one, for two things SwiftUI's
             // can't do: open with its right edge on the button's (into the
@@ -94,6 +84,9 @@ struct RepoHeader: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
+        // Away from your own folder: a faint fill, enough to tell it from
+        // your own changes without shouting.
+        .background(isAway ? Color.primary.opacity(0.05) : Color.clear)
         // Kept fresh while it's on screen, so the hint comes and goes with the
         // work (a read is a `git status` per checkout, and only when stale).
         .task(id: repo.root) {
@@ -104,31 +97,121 @@ struct RepoHeader: View {
         }
     }
 
-    /// "sidebar has 16 changes  Show": the work is in another checkout, most
-    /// likely an agent's worktree, and one click shows it here. Quiet, in the
-    /// header's grey, and the first thing to give way when the column is
-    /// narrow.
+    /// The branch, and the switcher behind it: branches only. Locked while
+    /// you look at another worktree: switching the branch of a folder you're
+    /// only looking at changes the files under whoever works there, most
+    /// likely an agent.
+    @ViewBuilder
+    private var branchChip: some View {
+        if isAway {
+            // A label, not a disabled button: macOS shows no tooltip on a
+            // disabled control, and the tooltip is the explanation.
+            branchLabel
+                .padding(.horizontal, 6)
+                .frame(height: 24)
+                .help("Branches can't be switched in a worktree you're only looking at: an agent may be working there")
+        } else {
+            branchButton
+        }
+    }
+
+    private var branchLabel: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(repo.status.branch ?? "detached")
+                .font(.system(size: 13))
+                .foregroundStyle(isAway ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if !isAway {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var branchButton: some View {
+        Button {
+            Task {
+                // Loaded before the popover opens so it sizes for the list
+                // it will show. A `for-each-ref`: the click still feels
+                // immediate.
+                await repo.loadBranches()
+                showsBranches = true
+            }
+        } label: {
+            branchLabel
+                .padding(.horizontal, 6)
+                .frame(height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        // Lit while its list is open, so it's clear what the list hangs from.
+        .buttonStyle(HeaderButtonStyle(isActive: showsBranches))
+        .help("Switch this folder to another branch")
+        .popover(isPresented: $showsBranches, arrowEdge: .bottom) {
+            BranchList(repo: repo, panel: panel, dismiss: { showsBranches = false })
+        }
+    }
+
+    /// Which worktree the panes show, and the menu to show another or go back
+    /// to yours. Looking only: picking one runs no git command and changes no
+    /// files.
+    private var worktreeChip: some View {
+        Button {
+            Task {
+                // Read before it opens, so the list sizes for what it shows.
+                await panel.loadCheckouts()
+                showsWorktrees = true
+            }
+        } label: {
+            HStack(spacing: 5) {
+                // A stack: one of several copies of the repo, which is what a
+                // worktree is.
+                Image(systemName: "rectangle.stack")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(verbatim: Self.folderName(repo.root))
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(HeaderButtonStyle(isActive: showsWorktrees))
+        .help(isAway ? "Looking at another worktree: \(repo.root)" : "Your folder: \(repo.root)")
+        .popover(isPresented: $showsWorktrees, arrowEdge: .bottom) {
+            WorktreeList(panel: panel, shown: repo.root,
+                         dismiss: { showsWorktrees = false })
+        }
+    }
+
+    /// "web-next: 16 changes": the work is in another worktree, most likely an
+    /// agent's, and a click shows it here. Grey like the rest of the header,
+    /// and the first thing to give way when the column is narrow.
     private func elsewhereHint(_ checkout: GitPanelModel.Checkout) -> some View {
         Button {
             panel.showCheckout(checkout.path)
         } label: {
-            HStack(spacing: 5) {
-                Text(verbatim: "\(checkout.name) has \(GitPanelModel.summary(of: checkout))")
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text("Show")
-                    .foregroundStyle(Color.accentColor)
-                    .fixedSize()
-            }
-            .font(.system(size: 12))
-            .padding(.horizontal, 6)
-            .frame(height: 24)
-            .contentShape(Rectangle())
+            Text(verbatim: "\(Self.folderName(checkout.path)): \(checkout.changes) change\(checkout.changes == 1 ? "" : "s")")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, 6)
+                .frame(height: 24)
+                .contentShape(Rectangle())
         }
         .buttonStyle(HeaderButtonStyle())
         .layoutPriority(-1)
-        .help(checkout.path)
+        .help("Show the changes in that worktree here. Looking only: nothing is switched.")
     }
 
     private var busy: Bool { repo.isFetching || repo.isPulling || repo.isPushing }
@@ -212,5 +295,87 @@ private struct MenuAnchor: NSViewRepresentable {
     private final class FlippedView: NSView {
         override var isFlipped: Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+/// The worktree chip's list: yours first, then the others, each with what's in
+/// it, and a tick on the one shown. The same rows as the branch list beside it.
+/// Looking only: picking one runs no git command and changes no files.
+private struct WorktreeList: View {
+    let panel: GitPanelModel
+    /// The worktree the panes show now.
+    let shown: String
+    let dismiss: () -> Void
+
+    @State private var hovered: String?
+
+    private static let width: CGFloat = 300
+    // The branch list's measured metrics (BranchOptionList).
+    private static let rowHeight: CGFloat = 23
+    private static let headerHeight: CGFloat = 21
+    private static let listPadding: CGFloat = 8
+    private static let maxListHeight: CGFloat = 260
+
+    private var yours: GitPanelModel.Checkout? {
+        panel.checkouts.first { $0.path == panel.terminalCheckout }
+    }
+
+    private var others: [GitPanelModel.Checkout] {
+        panel.checkouts.filter { $0.path != panel.terminalCheckout }
+    }
+
+    private var listHeight: CGFloat {
+        var height = Self.listPadding + CGFloat(panel.checkouts.count) * Self.rowHeight
+        if !others.isEmpty { height += Self.headerHeight }
+        return min(height, Self.maxListHeight)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if let yours {
+                        row(yours, detail: "yours \u{00B7} " + GitPanelModel.summary(of: yours))
+                    }
+                    if !others.isEmpty {
+                        Text("Other worktrees")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 12)
+                            .padding(.top, 6)
+                            .padding(.bottom, 2)
+                        ForEach(others) { checkout in
+                            row(checkout, detail: GitPanelModel.summary(of: checkout))
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .frame(height: listHeight)
+
+            Divider()
+            Text("Looking only. Nothing is switched.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+        }
+        .frame(width: Self.width)
+    }
+
+    private func row(_ checkout: GitPanelModel.Checkout, detail: String) -> some View {
+        OptionRow(glyph: checkout.path == shown ? "checkmark" : "rectangle.stack",
+                  title: (checkout.path as NSString).lastPathComponent,
+                  isCurrent: checkout.path == shown,
+                  trailing: detail,
+                  isSelected: hovered == checkout.path,
+                  action: {
+                      panel.showCheckout(checkout.path)
+                      dismiss()
+                  },
+                  hover: { inside in
+                      if inside { hovered = checkout.path } else if hovered == checkout.path { hovered = nil }
+                  })
+            .help(checkout.path)
     }
 }

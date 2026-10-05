@@ -97,6 +97,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // tab never moved relative to anything. This is how Electron apps, the
         // ChatGPT app among them, give their titlebars draggable tabs. Moves
         // started this way still snap, tile and cross Spaces like any other.
+        // Off only while the pointer is over the titlebar band, though
+        // (ChromeBarView): a window that's never movable has its whole tiling
+        // set greyed out in the Window menu, fn-⌃C and the rest with it. It
+        // starts off here and comes on the first time the pointer is elsewhere.
         window.isMovable = false
         window.titleVisibility = .hidden
         let toolbar = NSToolbar(identifier: "wortel.main")

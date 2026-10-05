@@ -339,15 +339,31 @@ final class MainSplitViewController: NSSplitViewController {
 
     /// Re-read on every change of the column's front tab. Only the priority
     /// moves, never the width: a tab switch doesn't relayout the terminal.
+    ///
+    /// That takes holding the width, not just changing the priority. Usually a
+    /// new priority moves nothing, but once the sidebar has been hidden and
+    /// shown, NSSplitView re-solves on the next priority change and hands the
+    /// sidebar's width to whichever pane now holds least: the divider jumped
+    /// ~220pt on the first browser/Files switch, and that was saved as a drag.
     private func observeColumnFront() {
-        withObservationTracking {
-            let priority = NSLayoutConstraint.Priority(columnTakesResize ? 240 : 260)
-            if let inspectorItem, inspectorItem.holdingPriority != priority {
-                inspectorItem.holdingPriority = priority
-            }
+        // Only the front tab is tracked; the layout pass below stays outside,
+        // so nothing it reads becomes a reason to run this again.
+        let takesResize = withObservationTracking {
+            columnTakesResize
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeColumnFront() }
         }
+        let priority = NSLayoutConstraint.Priority(takesResize ? 240 : 260)
+        guard let inspectorItem, inspectorItem.holdingPriority != priority else { return }
+        let width = inspectorItem.viewController.view.frame.width
+        inspectorItem.holdingPriority = priority
+        guard didApplyInitialWidth, !inspectorItem.isCollapsed else { return }
+        suspendWidthCapture = true
+        splitView.layoutSubtreeIfNeeded()
+        if abs(inspectorItem.viewController.view.frame.width - width) > 0.5 {
+            setColumnWidth(width)
+        }
+        DispatchQueue.main.async { [weak self] in self?.suspendWidthCapture = false }
     }
 
     /// Everything about the column's place in the window: which side it's on,
@@ -370,9 +386,12 @@ final class MainSplitViewController: NSSplitViewController {
         removeSplitViewItem(inspectorItem)
         insertSplitViewItem(inspectorItem, at: git.columnLeading ? 1 : splitViewItems.count)
         syncingInspector = false
+        // Released before the width is applied, not after: applyInspectorWidth
+        // holds capture itself until the turn after, and releasing it here
+        // afterwards cut that short.
         DispatchQueue.main.async { [weak self] in
-            self?.applyInspectorWidth()
             self?.suspendWidthCapture = false
+            self?.applyInspectorWidth()
         }
     }
 
@@ -427,8 +446,20 @@ final class MainSplitViewController: NSSplitViewController {
             }
         } else {
             inspectorItem.isCollapsed = !show
-            suspendWidthCapture = false
-            if show { applyInspectorWidth() }
+            if show {
+                // Lay the opening out now, while capture is still held, and
+                // only then set the width. With a browser in front the column
+                // has the lowest holding priority, so the split view makes room
+                // for it by squeezing *it* rather than the terminal: left to
+                // the next layout pass, that squeezed width landed after
+                // capture was released and was saved as the session's, and the
+                // browser came back at the minimum on every switch.
+                splitView.layoutSubtreeIfNeeded()
+                applyInspectorWidth()
+            }
+            // A turn later, as in applyInspectorWidth: the resize notification
+            // the collapse provokes may not arrive until then.
+            DispatchQueue.main.async { [weak self] in self?.suspendWidthCapture = false }
         }
         syncingInspector = false
     }
@@ -447,20 +478,26 @@ final class MainSplitViewController: NSSplitViewController {
             return
         }
         suspendWidthCapture = true
-        guard let index = splitViewItems.firstIndex(of: inspectorItem) else { return }
-        if index == splitViewItems.count - 1 {
-            // Trailing: the divider before it sits the column's width from the end.
-            splitView.setPosition(total - target - splitView.dividerThickness,
-                                  ofDividerAt: index - 1)
-        } else {
-            // Leading: the divider after it sits the column's width past its start.
-            let start = inspectorItem.viewController.view.frame.minX
-            splitView.setPosition(start + target, ofDividerAt: index)
-        }
+        setColumnWidth(target)
         lastAppliedWidth = target
         // Cleared a turn later: the resize notification this provokes may not
         // arrive until the next layout pass, and it must not be read as a drag.
         DispatchQueue.main.async { [weak self] in self?.suspendWidthCapture = false }
+    }
+
+    /// Move the column's divider so the column is `width` wide, on whichever
+    /// side it is. The caller holds `suspendWidthCapture`.
+    private func setColumnWidth(_ width: CGFloat) {
+        guard let inspectorItem, let index = splitViewItems.firstIndex(of: inspectorItem) else { return }
+        if index == splitViewItems.count - 1 {
+            // Trailing: the divider before it sits the column's width from the end.
+            splitView.setPosition(splitView.bounds.width - width - splitView.dividerThickness,
+                                  ofDividerAt: index - 1)
+        } else {
+            // Leading: the divider after it sits the column's width past its start.
+            let start = inspectorItem.viewController.view.frame.minX
+            splitView.setPosition(start + width, ofDividerAt: index)
+        }
     }
 
     /// Record the width the user just dragged the column to, on the session it

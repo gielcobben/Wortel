@@ -3,6 +3,39 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.41.1</title>
+            <pubDate>Mon, 05 Oct 2026 11:22:53 -0400</pubDate>
+            <sparkle:version>2026.41.1</sparkle:version>
+            <sparkle:shortVersionString>2026.41.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Window tiling is back, and the browser keeps its size</h1>
+<p class="date">Wortel 2026.41.1 &middot; 2026-10-05</p>
+<p><strong>Window tiling is back.</strong> Since the new titlebar, Fill, Center and everything under Window ▸ Move &#x26; Resize were greyed out, and their shortcuts (fn-⌃C to center, fn-⌃F to fill, fn-⌃ and an arrow for a half) did nothing. They work again. Dragging a tab in the titlebar still moves the tab, not the window.</p>
+<p><strong>The browser keeps its size.</strong> A browser in the side column could come back at its narrowest after you switched to another session and back. And once you had hidden and shown the sidebar, switching the column between the browser and Files or Changes could make it jump in width. Both are fixed: the column stays the width you gave it. If a session’s browser already got stuck narrow, drag it wide once and it stays.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.1.zip" length="20795820" type="application/octet-stream" sparkle:edSignature="UD7xDpiu4HO/0ugZFoDcgg3y3KJtUIvQEmZmKRDOgQ90EhQNCJaHOcWFKVVaoyMstkMmRtT59aNTd224dKEADA=="/>
+        </item>
+        <item>
             <title>2026.40.2</title>
             <pubDate>Wed, 30 Sep 2026 23:42:39 -0400</pubDate>
             <sparkle:version>2026.40.2</sparkle:version>
@@ -93,39 +126,6 @@
 <li>The terminal’s padding is closer to the edges, as in iTerm.</li>
 </ul>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.40.1.zip" length="20713881" type="application/octet-stream" sparkle:edSignature="8tO+lwIIhG62181/d8fJi+hY6zJZrSHLgqDd+qLmvY36dZPRy2O+YNIOzAeqiAkIPJ9yeWzoFwWQJsoQG0q6CA=="/>
-        </item>
-        <item>
-            <title>2026.39.1</title>
-            <pubDate>Tue, 22 Sep 2026 17:12:20 -0400</pubDate>
-            <sparkle:version>2026.39.1</sparkle:version>
-            <sparkle:shortVersionString>2026.39.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>An agent follows light and dark again</h1>
-<p class="date">Wortel 2026.39.1 &middot; 2026-09-22</p>
-<p><strong>An agent follows light and dark again.</strong> An agent asks the terminal once, when it starts, to be told whenever the Mac changes appearance, and from then on it trusts the terminal to say so. Your sessions survive a Wortel restart while their terminal does not, and the new one was never asked, so nothing was ever said. The agent went on painting the palette it chose hours earlier, which is how a dark diff block ends up on a white screen, or a white prompt box on a dark one. Nothing recovered on its own, because the agent had no reason to ask twice. A resumed session now carries that request across and is told what the appearance is as soon as it comes back, so an agent left running overnight is in the right colours in the morning.</p>
-<p>This is the same fix as the pasted paragraph in 2026.38.5, one setting further on: a session outlives the app, its terminal does not, and everything the program still believes has to be said again.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.39.1.zip" length="19323147" type="application/octet-stream" sparkle:edSignature="qvXvfM5oUf6+4U2YVebpwX8LFMoczGEeurTjYapeM+XlFF2QnN9imnByDc/uBbbO1BHo4NKnyNiJj2Szx35PCg=="/>
         </item>
     </channel>
 </rss>

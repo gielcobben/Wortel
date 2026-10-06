@@ -124,8 +124,6 @@ final class WorktreeCleanupModel {
         var report: WorktreeReport?
         /// Move the folder to the Trash.
         var remove = false
-        /// Delete the branch as well. Defaults on only when that loses nothing.
-        var deleteBranch = false
         /// Why the last attempt kept it, when it did.
         var error: String?
         var id: String { path }
@@ -143,6 +141,12 @@ final class WorktreeCleanupModel {
     private(set) var rows: [Row] = []
     private(set) var isLoading = true
     private(set) var isWorking = false
+    /// Delete the branches of what's removed as well, for the ones that can
+    /// go without losing anything: Wortel's own (`worktree/`), with every
+    /// commit also on another branch or a remote. One switch for the sheet,
+    /// not one per row; a branch with commits found nowhere else is always
+    /// kept, and deleting it is the terminal's job.
+    var deleteBranches = true
     @ObservationIgnored private let manager: SessionManager
     @ObservationIgnored private var knownRepos: [String] = []
     @ObservationIgnored private var usage: WorktreeUsage
@@ -191,7 +195,6 @@ final class WorktreeCleanupModel {
             rows[index].report = report
             // The default is always the choice that loses nothing.
             rows[index].remove = report.verdict != .blocked
-            rows[index].deleteBranch = report.verdict == .safe && report.ownsBranch
         }
         // A folder for a repo with nothing left in it is a trace too.
         if closingSession == nil { WorktreeCleanup.removeEmptyRepoFolders() }
@@ -200,13 +203,19 @@ final class WorktreeCleanupModel {
     func setRemove(_ path: String, _ on: Bool) {
         guard let index = rows.firstIndex(where: { $0.path == path }) else { return }
         rows[index].remove = on
-        if !on { rows[index].deleteBranch = false }
+        // Ticked again after a failed attempt: that's a retry, and the old
+        // reason is history until it fails again.
+        if on { rows[index].error = nil }
     }
 
-    func setDeleteBranch(_ path: String, _ on: Bool) {
-        guard let index = rows.firstIndex(where: { $0.path == path }) else { return }
-        rows[index].deleteBranch = on
-        if on { rows[index].remove = true }
+    /// Whether removing this row also deletes its branch.
+    func deletesBranch(_ row: Row) -> Bool {
+        deleteBranches && row.report?.branchIsDeletable == true
+    }
+
+    /// Whether the branch switch would affect anything on screen at all.
+    var offersBranchDeletion: Bool {
+        rows.contains { $0.remove && $0.report?.branchIsDeletable == true }
     }
 
     /// Remove what's ticked. Each is re-checked first (see
@@ -220,8 +229,7 @@ final class WorktreeCleanupModel {
             let users = usage.users(of: row.path, in: processes)
             let error = await WorktreeCleanup.remove(
                 path: row.path, knownRepos: knownRepos, usedBy: users,
-                deleteBranch: row.deleteBranch,
-                allowLosingCommits: row.deleteBranch && row.report?.verdict == .keepsCommits)
+                deleteBranch: deletesBranch(row))
             if let error, let index = rows.firstIndex(where: { $0.path == row.path }) {
                 rows[index].error = error
                 rows[index].remove = false
@@ -241,6 +249,7 @@ final class WorktreeCleanupModel {
         // Not read yet (a big repo, a slow disk): the session closes and the
         // worktree stays, because nothing has said it's safe to remove.
         let row = rows.first.flatMap { $0.report == nil ? nil : $0 }
+        let deleteBranch = row.map(deletesBranch) ?? false
         let usage = self.usage
         dismiss()
         manager.close(session)
@@ -251,8 +260,7 @@ final class WorktreeCleanupModel {
             let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
             let users = usage.users(of: row.path, in: processes)
             let error = await WorktreeCleanup.remove(
-                path: row.path, knownRepos: repos, usedBy: users, deleteBranch: row.deleteBranch,
-                allowLosingCommits: row.deleteBranch && row.report?.verdict == .keepsCommits)
+                path: row.path, knownRepos: repos, usedBy: users, deleteBranch: deleteBranch)
             guard let error else { return }
             let alert = NSAlert()
             alert.alertStyle = .warning
@@ -293,25 +301,86 @@ final class WorktreeCleanupModel {
     }
 }
 
+/// The sheet. Minimal, and in today's macOS idiom (System Settings, Reminders):
+/// a card per repository, one row per worktree, a round selection mark you can
+/// click anywhere on the row to toggle, and the state on the right: quiet when
+/// it's clean, a tinted pill when something keeps it. Everything longer (the
+/// changed files, what's running there, the path) is the row's tooltip, and
+/// Show in Finder its context menu.
 struct WorktreeCleanupView: View {
     @Bindable var model: WorktreeCleanupModel
 
+    /// Measured, so the sheet is exactly as tall as what's in it, up to a
+    /// point, and only scrolls past that. A ScrollView has no height of its
+    /// own to offer; guessing one either cut rows off or left a gap.
+    @State private var contentHeight: CGFloat = 96
+
+    private static let width: CGFloat = 480
+    private static let maxContentHeight: CGFloat = 400
+    private static let margin: CGFloat = 24
+
+    /// Title, list, buttons, stacked: the list scrolls in a region of its
+    /// own, the full width of the sheet with its scroller at the edge, and can
+    /// never run under the title or the buttons. When it's long enough to
+    /// scroll, a hairline marks each edge of that region, as in a sheet of
+    /// Xcode's; a list that fits draws no lines at all.
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(model.title)
-                .font(.headline)
-            if case .closing(_, let note?) = model.mode {
-                Text(note)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        let scrolls = contentHeight > Self.maxContentHeight
+        VStack(spacing: 0) {
+            header
+            if scrolls { Divider() }
+            ScrollView {
+                content
+                    .padding(.horizontal, Self.margin)
+                    .padding(.vertical, scrolls ? 12 : 2)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
-            content
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: min(contentHeight, Self.maxContentHeight))
+            if scrolls { Divider() }
             footer
         }
-        .padding(20)
-        .frame(width: 480)
+        .frame(width: Self.width)
         .task { await model.load() }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(model.title)
+                .font(.title3.weight(.semibold))
+            Text(subtitle)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Self.margin)
+        .padding(.top, 22)
+        .padding(.bottom, 14)
+    }
+
+    private var subtitle: String {
+        if case .closing(_, let note) = model.mode {
+            // Closing before the check lands keeps the worktree (see
+            // `closeSession`), so until then the sheet must not suggest
+            // otherwise.
+            let worktree = model.rows.first?.report == nil && !model.rows.isEmpty
+                ? "Checking its worktree for unsaved work. Closing now keeps the worktree."
+                : "Its worktree can go to the Trash if nothing in it is unsaved."
+            return [note, worktree].compactMap { $0 }.joined(separator: " ")
+        }
+        return "Selected worktrees go to the Trash. Anything with unsaved work stays."
+    }
+
+    /// Repositories in name order, each with its worktrees by branch.
+    private var groups: [(repo: String, rows: [WorktreeCleanupModel.Row])] {
+        let byRepo = Dictionary(grouping: model.rows) { WorktreeRow.repoName(of: $0) }
+        return byRepo.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { repo in
+            (repo, byRepo[repo, default: []].sorted {
+                WorktreeRow.name(of: $0).localizedStandardCompare(WorktreeRow.name(of: $1))
+                    == .orderedAscending
+            })
+        }
     }
 
     @ViewBuilder
@@ -321,122 +390,236 @@ struct WorktreeCleanupView: View {
                 ProgressView().controlSize(.small)
                 Text("Looking for worktrees\u{2026}").foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, minHeight: 96)
         } else if model.rows.isEmpty {
             Text(model.closingSession == nil
-                 ? "No worktrees to clean up. Everything Wortel made is in use or already gone."
+                 ? "Nothing to clean up. Every worktree Wortel made is in use or already gone."
                  : "This session's folder isn't a worktree Wortel made.")
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 96)
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.rows) { row in
-                        WorktreeRowView(row: row, model: model)
-                        if row.id != model.rows.last?.id { Divider() }
+            cards
+        }
+    }
+
+    private static let groupHeaderHeight: CGFloat = 22
+    private static let groupSpacing: CGFloat = 16
+
+    private var showsHeaders: Bool { model.closingSession == nil }
+
+    private var cards: some View {
+        VStack(alignment: .leading, spacing: Self.groupSpacing) {
+            ForEach(groups, id: \.repo) { group in
+                VStack(alignment: .leading, spacing: 6) {
+                    if showsHeaders {
+                        Text(group.repo)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(height: Self.groupHeaderHeight)
+                            .padding(.leading, 4)
                     }
+                    VStack(spacing: 0) {
+                        ForEach(group.rows) { row in
+                            WorktreeRow(row: row, model: model)
+                            if row.id != group.rows.last?.id {
+                                Divider().padding(.leading, 42)
+                            }
+                        }
+                    }
+                    .background(Color.primary.opacity(0.035),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.07)))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
             }
-            .frame(maxHeight: model.closingSession == nil ? 360 : nil)
-            .fixedSize(horizontal: false, vertical: model.closingSession != nil)
         }
     }
 
     private var footer: some View {
-        HStack {
+        footerControls
+            .padding(.horizontal, Self.margin)
+            .padding(.top, 16)
+            .padding(.bottom, 20)
+    }
+
+    private var footerControls: some View {
+        HStack(spacing: 10) {
+            if model.offersBranchDeletion {
+                Toggle(isOn: $model.deleteBranches) {
+                    Text("Also delete their branches")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .help("Only branches Wortel created, and only when every commit on them is also on another branch or a remote. Any other branch is kept.")
+            }
             if model.isWorking { ProgressView().controlSize(.small) }
-            Spacer()
+            Spacer(minLength: 12)
             Button("Cancel") { model.dismiss() }
                 .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
             if model.closingSession != nil {
                 // Never waits on the check: a big repo's status can take a
                 // while, and closing a session shouldn't. Until the worktree
                 // is read, closing keeps it (see `closeSession`).
                 Button("Close Session") { model.closeSession() }
                     .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
             } else {
-                Button(model.removableCount == 0 ? "Remove" : "Remove \(model.removableCount)") {
+                Button(model.removableCount == 0
+                       ? "Move to Trash" : "Move \(model.removableCount) to Trash") {
                     Task { await model.removeSelected() }
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .disabled(model.removableCount == 0 || model.isWorking)
             }
         }
     }
 }
 
-private struct WorktreeRowView: View {
+private struct WorktreeRow: View {
     let row: WorktreeCleanupModel.Row
     let model: WorktreeCleanupModel
+    @State private var hovering = false
+
+    static let height: CGFloat = 38
+
+    private var report: WorktreeReport? { row.report }
+    private var isKept: Bool { report?.verdict == .blocked }
+    private var selectable: Bool { report != nil && !isKept }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(row.report?.branch ?? (row.path as NSString).lastPathComponent)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    if let repo = row.report?.repoName {
-                        Text(repo).font(.caption).foregroundStyle(.secondary)
-                    }
+        HStack(spacing: 10) {
+            mark
+                .frame(width: 20)
+            Text(Self.name(of: row))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(isKept ? .secondary : .primary)
+            Spacer(minLength: 12)
+            status
+        }
+        .padding(.horizontal, 12)
+        .frame(height: Self.height)
+        .contentShape(Rectangle())
+        // Inset and rounded, as a menu or sidebar highlights a row, rather
+        // than a band across the card from edge to edge.
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(hovering && selectable ? Color.primary.opacity(0.06) : .clear)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 3))
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: toggle)
+        // Reachable without a pointer: Tab to it with Full Keyboard Access,
+        // Space to tick, and VoiceOver's default action does the same.
+        .focusable(selectable)
+        .onKeyPress(.space) {
+            toggle()
+            return .handled
+        }
+        .help(tooltip)
+        .contextMenu {
+            if report?.isMissing != true {
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: row.path)])
                 }
-                Spacer()
-                if row.report?.verdict == .blocked, !(row.report?.isMissing ?? false) {
-                    Button("Show in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: row.path)])
-                    }
-                    .controlSize(.small)
-                }
-            }
-            if let report = row.report {
-                details(report)
-            } else {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.mini)
-                    Text(model.closingSession == nil
-                         ? "Checking for changes\u{2026}"
-                         : "Checking for changes\u{2026} Closing now keeps the worktree.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-            }
-            if let error = row.error {
-                Text(error)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selectable ? (row.remove ? [.isButton, .isSelected] : .isButton) : [])
+        .accessibilityAction { toggle() }
+    }
+
+    private func toggle() {
+        if selectable { model.setRemove(row.path, !row.remove) }
+    }
+
+    /// Round, as selection is in today's lists: filled when it goes, an empty
+    /// ring when it could, a lock when it's kept.
+    @ViewBuilder
+    private var mark: some View {
+        if report == nil {
+            ProgressView().controlSize(.mini)
+        } else if isKept {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
+        } else {
+            Image(systemName: row.remove ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 17))
+                .foregroundStyle(row.remove ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+                .contentTransition(.symbolEffect(.replace))
+        }
     }
 
     @ViewBuilder
-    private func details(_ report: WorktreeReport) -> some View {
-        Text(report.summary)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        if report.verdict != .blocked {
-            Toggle(isOn: Binding(get: { row.remove }, set: { model.setRemove(row.path, $0) })) {
-                Text(report.isMissing ? "Forget it" : "Move the folder to the Trash")
-            }
-            .toggleStyle(.checkbox)
-            if report.ownsBranch, let branch = report.branch {
-                Toggle(isOn: Binding(get: { row.deleteBranch },
-                                     set: { model.setDeleteBranch(row.path, $0) })) {
-                    switch report.uniqueCommits {
-                    case 0?:
-                        Text("Also delete branch \(branch)")
-                    case let n?:
-                        Text("Also delete branch \(branch) and its \(n) unsaved commit\(n == 1 ? "" : "s")")
-                            .foregroundStyle(row.deleteBranch ? .red : .primary)
-                    case nil:
-                        Text("Also delete branch \(branch), whose commits may exist nowhere else")
-                            .foregroundStyle(row.deleteBranch ? .red : .primary)
-                    }
-                }
-                .toggleStyle(.checkbox)
+    private var status: some View {
+        if row.error != nil {
+            pill("Couldn't remove", tint: .red)
+        } else if let report {
+            if let problem = problem(report) {
+                pill(problem, tint: .orange)
+            } else {
+                Text(quietStatus(report))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
+    }
+
+    private func pill(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(tint.opacity(0.14), in: Capsule())
+    }
+
+    /// What keeps it, in a word or three. The sentence is the tooltip.
+    private func problem(_ report: WorktreeReport) -> String? {
+        if report.isOrphanedFolder { return "Not a checkout" }
+        if report.isPrimaryCheckout { return "Not a worktree" }
+        if report.isLocked { return "Locked" }
+        if !report.usedBy.isEmpty { return "In use" }
+        if !report.changedFiles.isEmpty {
+            let n = report.changedFiles.count
+            return "\(n) change\(n == 1 ? "" : "s")"
+        }
+        if report.verdict == .blocked { return "Unsaved commits" }
+        return nil
+    }
+
+    private func quietStatus(_ report: WorktreeReport) -> String {
+        if report.isMissing { return "Folder already gone" }
+        if report.verdict == .keepsCommits { return "Branch kept" }
+        return model.deletesBranch(row) ? "Clean \u{00b7} branch too" : "Clean"
+    }
+
+    private var tooltip: String {
+        if let error = row.error { return error + "\n" + row.path }
+        guard let report else { return "Checking for changes\u{2026}\n" + row.path }
+        return report.summary + "\n" + row.path
+    }
+
+    /// The branch, which is what a worktree is for; the folder when there isn't
+    /// one (a detached HEAD) or it isn't known yet.
+    static func name(of row: WorktreeCleanupModel.Row) -> String {
+        row.report?.branch ?? (row.path as NSString).lastPathComponent
+    }
+
+    /// The repository, or the folder Wortel filed it under until that's known.
+    static func repoName(of row: WorktreeCleanupModel.Row) -> String {
+        row.report?.repoName
+            ?? ((row.path as NSString).deletingLastPathComponent as NSString).lastPathComponent
     }
 }
 
@@ -447,7 +630,12 @@ enum WorktreeCleanupSheet {
     static func present(_ mode: WorktreeCleanupModel.Mode, manager: SessionManager, over window: NSWindow) {
         window.makeKeyAndOrderFront(nil)
         let model = WorktreeCleanupModel(mode: mode, manager: manager)
-        let host = NSWindow(contentViewController: NSHostingController(rootView: WorktreeCleanupView(model: model)))
+        let controller = NSHostingController(rootView: WorktreeCleanupView(model: model))
+        // The sheet follows its content: it opens on "Looking for worktrees…"
+        // and must grow when the rows arrive, rather than keep that first
+        // size and squeeze them.
+        controller.sizingOptions = [.preferredContentSize]
+        let host = NSWindow(contentViewController: controller)
         model.dismiss = { [weak host] in
             guard let host else { return }
             host.sheetParent?.endSheet(host)

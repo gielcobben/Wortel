@@ -113,6 +113,17 @@ enum MainMenu {
     /// it opens (and when the palette reads the menus). Set by AppDelegate.
     static var fillMoveTo: (NSMenu) -> Void = { _ in }
     private static let moveToFiller = MenuFiller { MainMenu.fillMoveTo($0) }
+    /// Whether the selected session has anywhere to move to. Set by
+    /// AppDelegate; read as the Session menu opens.
+    static var canMoveTo: () -> Bool = { false }
+    private static weak var moveToItem: NSMenuItem?
+    /// A row with a submenu has no action to validate, so its enabled state is
+    /// set by hand, just before the menu opens (AppKit leaves a row without an
+    /// action as it finds it). An empty "Move To" is a dead end; greyed out,
+    /// it says there's nowhere to go, as the Finder's does.
+    private static let sessionMenuUpdater = MenuFiller { _ in
+        MainMenu.moveToItem?.isEnabled = MainMenu.canMoveTo()
+    }
 
     private static func arrow(_ key: Int) -> String {
         String(UnicodeScalar(UInt16(key))!)
@@ -159,6 +170,14 @@ enum MainMenu {
                             action: #selector(AppDelegate.toggleTelemetry(_:)),
                             keyEquivalent: "")
         }
+        // Services, where every Mac app has it: the system fills it, and a
+        // terminal is where "make a new note from this selection" and the like
+        // are most often wanted.
+        appMenu.addItem(.separator())
+        let services = appMenu.addItem(withTitle: "Services", action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu(title: "Services")
+        services.submenu = servicesMenu
+        NSApp.servicesMenu = servicesMenu
         appMenu.addItem(.separator())
         // The only shortcut in this menu bar that works when Wortel is not the
         // app you are in: ⌃⌥⌘. summons it from anywhere and puts it away again.
@@ -177,6 +196,7 @@ enum MainMenu {
         appMenu.addItem(withTitle: "Hide Wortel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Wortel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
@@ -191,6 +211,7 @@ enum MainMenu {
         let sessionItem = NSMenuItem()
         main.addItem(sessionItem)
         let sessionMenu = NSMenu(title: "Session")
+        sessionMenu.delegate = sessionMenuUpdater
         sessionItem.submenu = sessionMenu
 
         // -- Start a session ---------------------------------------------------
@@ -226,47 +247,10 @@ enum MainMenu {
         // which are both already in front of the file you mean.
         sessionMenu.addItem(withTitle: "Open Folder\u{2026}", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
 
-        // -- This session ------------------------------------------------------
-        // Acting on the selected session, as opposed to making one. No ellipsis
-        // on Rename: it starts an inline edit in the sidebar, not a dialog.
-        sessionMenu.addItem(.separator())
-        // ⌘P, as VS Code, Cursor and Zed open a file by name: here, a session.
-        let goTo = sessionMenu.addItem(withTitle: "Go to Session\u{2026}", action: #selector(AppDelegate.showSessionSwitcher(_:)), keyEquivalent: "p")
-        goTo.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
-        // ⇧⌘P, VS Code's command palette: every command in these menus.
-        let palette = sessionMenu.addItem(withTitle: "Commands\u{2026}", action: #selector(AppDelegate.showCommandPalette(_:)), keyEquivalent: "p")
-        palette.keyEquivalentModifierMask = [.command, .shift]
-        palette.image = NSImage(systemSymbolName: "command", accessibilityDescription: nil)
-        // ⌥⌘R, as Codex renames a chat. Plain ⌘R is a browser's Reload; with
-        // no browser in front it still renames (`syncReload`), as it always did.
-        let rename = sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
-        rename.keyEquivalentModifierMask = [.command, .option]
-        renameAliasItem = addHidden(sessionMenu, "Rename Session", #selector(AppDelegate.renameSession(_:)), "", [.command])
-        // The selected session's own actions, also on its row's "…" and
-        // right-click (SessionActions), and so in the ⌘P palette.
-        let moveTo = sessionMenu.addItem(withTitle: "Move To", action: nil, keyEquivalent: "")
-        let moveToMenu = NSMenu(title: "Move To")
-        moveToMenu.delegate = moveToFiller
-        moveTo.submenu = moveToMenu
-        // ⌥⌘P, the ChatGPT app's: to the Pinned section at the top of the
-        // sidebar, and back. Title flips in AppDelegate.validateMenuItem.
-        let pin = sessionMenu.addItem(withTitle: "Pin Session", action: #selector(AppDelegate.togglePinSession(_:)), keyEquivalent: "p")
-        pin.keyEquivalentModifierMask = [.command, .option]
-        // ⇧⌘U, the ChatGPT app's: a "come back to this" flag.
-        let unread = sessionMenu.addItem(withTitle: "Mark as Unread", action: #selector(AppDelegate.markSessionUnread(_:)), keyEquivalent: "u")
-        unread.keyEquivalentModifierMask = [.command, .shift]
-        sessionMenu.addItem(withTitle: "Remove Worktree\u{2026}", action: #selector(AppDelegate.removeSessionWorktree(_:)), keyEquivalent: "")
-        // Every worktree Wortel made, including those of sessions long closed.
-        sessionMenu.addItem(withTitle: "Clean Up Worktrees\u{2026}", action: #selector(AppDelegate.cleanUpWorktrees(_:)), keyEquivalent: "")
-        // ⌘W closes what you're in: a tab, or the session when its own terminal
-        // is in front (as closing a tab in any other terminal ends its shell).
-        // ⇧⌘W always means the whole session, as in iTerm and Ghostty.
-        sessionMenu.addItem(withTitle: "Close Tab", action: #selector(AppDelegate.closeSession(_:)), keyEquivalent: "w")
-        let closeSession = sessionMenu.addItem(withTitle: "Close Session", action: #selector(AppDelegate.closeWholeSession(_:)), keyEquivalent: "w")
-        closeSession.keyEquivalentModifierMask = [.command, .shift]
-
         // -- Move between sessions ---------------------------------------------
         sessionMenu.addItem(.separator())
+        // ⌘P, as VS Code, Cursor and Zed open a file by name: here, a session.
+        sessionMenu.addItem(withTitle: "Go to Session\u{2026}", action: #selector(AppDelegate.showSessionSwitcher(_:)), keyEquivalent: "p")
         // ⌘⇧[ / ⌘⇧] walk the sidebar. They're the system-wide convention for
         // "previous/next thing in this window" — Safari, Chrome, Finder,
         // Ghostty — so they're what the menu advertises, even though Wortel's
@@ -322,15 +306,54 @@ enum MainMenu {
         // list. Disabled (via AppDelegate.validateMenuItem) when nothing waits.
         let nextAlert = sessionMenu.addItem(withTitle: "Next Waiting Session", action: #selector(AppDelegate.selectNextAttentionSession(_:)), keyEquivalent: "]")
         nextAlert.keyEquivalentModifierMask = [.command, .option]
-        sessionMenu.addItem(.separator())
+        // ⌘1…⌘9: the sessions by position. Shortcuts only: nine rows reading
+        // "Session 1" … "Session 9" said nothing the sidebar doesn't, and made
+        // this menu twice the length of any other. As Safari's ⌘1…⌘9 for tabs.
         for i in 1...9 {
-            let item = sessionMenu.addItem(
-                withTitle: "Session \(i)",
-                action: #selector(AppDelegate.selectSessionAtIndex(_:)),
-                keyEquivalent: "\(i)")
+            let item = addHidden(sessionMenu, "Session \(i)", #selector(AppDelegate.selectSessionAtIndex(_:)),
+                                 "\(i)", [.command])
             item.tag = i - 1
             if i <= 3 { sessionDigitItems.append(item) }
         }
+
+        // -- This session ------------------------------------------------------
+        // Acting on the selected session, as opposed to making one or moving
+        // to one. No ellipsis on Rename: it starts an inline edit in the
+        // sidebar, not a dialog. Also on its row's "…" and right-click
+        // (SessionActions), and so in the ⇧⌘P palette.
+        sessionMenu.addItem(.separator())
+        // ⌥⌘R, as Codex renames a chat. Plain ⌘R is a browser's Reload; with
+        // no browser in front it still renames (`syncReload`), as it always did.
+        let rename = sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")
+        rename.keyEquivalentModifierMask = [.command, .option]
+        renameAliasItem = addHidden(sessionMenu, "Rename Session", #selector(AppDelegate.renameSession(_:)), "", [.command])
+        // ⌥⌘P, the ChatGPT app's: to the Pinned section at the top of the
+        // sidebar, and back. Title flips in AppDelegate.validateMenuItem.
+        let pin = sessionMenu.addItem(withTitle: "Pin Session", action: #selector(AppDelegate.togglePinSession(_:)), keyEquivalent: "p")
+        pin.keyEquivalentModifierMask = [.command, .option]
+        // ⇧⌘U, the ChatGPT app's: a "come back to this" flag.
+        let unread = sessionMenu.addItem(withTitle: "Mark as Unread", action: #selector(AppDelegate.markSessionUnread(_:)), keyEquivalent: "u")
+        unread.keyEquivalentModifierMask = [.command, .shift]
+        let moveTo = sessionMenu.addItem(withTitle: "Move To", action: nil, keyEquivalent: "")
+        let moveToMenu = NSMenu(title: "Move To")
+        moveToMenu.delegate = moveToFiller
+        moveTo.submenu = moveToMenu
+        moveToItem = moveTo
+        // The worktree commands together, behind one row: the selected
+        // session's own, and every worktree Wortel made, including those of
+        // sessions long closed. Neither has a shortcut, and two rows of them
+        // read as session commands they aren't.
+        let worktree = sessionMenu.addItem(withTitle: "Worktree", action: nil, keyEquivalent: "")
+        let worktreeMenu = NSMenu(title: "Worktree")
+        worktree.submenu = worktreeMenu
+        worktreeMenu.addItem(withTitle: "Remove This Worktree\u{2026}", action: #selector(AppDelegate.removeSessionWorktree(_:)), keyEquivalent: "")
+        worktreeMenu.addItem(withTitle: "Clean Up Worktrees\u{2026}", action: #selector(AppDelegate.cleanUpWorktrees(_:)), keyEquivalent: "")
+
+        // ⇧⌘W always means the whole session, as in iTerm and Ghostty. ⌘W,
+        // which closes what you're in, is Tab ▸ Close Tab.
+        sessionMenu.addItem(.separator())
+        let closeSession = sessionMenu.addItem(withTitle: "Close Session", action: #selector(AppDelegate.closeWholeSession(_:)), keyEquivalent: "w")
+        closeSession.keyEquivalentModifierMask = [.command, .shift]
 
         // Edit menu (copy/paste route to the focused SurfaceView via the
         // responder chain; SurfaceView implements these selectors).
@@ -371,30 +394,110 @@ enum MainMenu {
         // A preview window answers it for its file, and AppDelegate for a file
         // tab in front of an area. With neither it's disabled, and ⌘F goes on
         // to the shell, where it's the terminal's.
-        editMenu.addItem(withTitle: "Find",
+        //
+        // In a Find submenu, as every Apple app's Edit menu has it.
+        let find = editMenu.addItem(withTitle: "Find", action: nil, keyEquivalent: "")
+        let findMenu = NSMenu(title: "Find")
+        find.submenu = findMenu
+        findMenu.addItem(withTitle: "Find\u{2026}",
                          action: #selector(PreviewWindowController.showPreviewFind(_:)),
                          keyEquivalent: "f")
         // ⌘G / ⇧⌘G walk the matches of an open find bar, as everywhere. With
         // none open they're disabled and go on to the terminal.
-        editMenu.addItem(withTitle: "Find Next",
+        findMenu.addItem(withTitle: "Find Next",
                          action: #selector(PreviewWindowController.previewFindNext(_:)),
                          keyEquivalent: "g")
-        let findPrevious = editMenu.addItem(withTitle: "Find Previous",
+        let findPrevious = findMenu.addItem(withTitle: "Find Previous",
                                             action: #selector(PreviewWindowController.previewFindPrevious(_:)),
                                             keyEquivalent: "g")
         findPrevious.keyEquivalentModifierMask = [.command, .shift]
         selectAllItem = selectAll
 
-        // View menu (font size; session-local)
+        // View menu: what's on screen. The areas first, then what fills the
+        // side column, then the browser in front, then the text itself.
         let viewItem = NSMenuItem()
         main.addItem(viewItem)
         let viewMenu = NSMenu(title: "View")
         viewItem.submenu = viewMenu
-        let bigger = viewMenu.addItem(withTitle: "Increase Font Size", action: #selector(SurfaceView.increaseFontSize(_:)), keyEquivalent: "+")
-        bigger.keyEquivalentModifierMask = [.command]
-        let smaller = viewMenu.addItem(withTitle: "Decrease Font Size", action: #selector(SurfaceView.decreaseFontSize(_:)), keyEquivalent: "-")
-        smaller.keyEquivalentModifierMask = [.command]
-        viewMenu.addItem(withTitle: "Reset Font Size", action: #selector(SurfaceView.resetFontSize(_:)), keyEquivalent: "0")
+
+        // The workspace: the three areas, their tabs, and moving between them.
+        // Aligned with what people already know (see docs/shortcuts.md): ⌘B /
+        // ⌥⌘B / ⌘J for the sidebar, the column and the strip as in VS Code, Zed
+        // and ChatGPT; ⌃Tab and ⌥⌘←/→ for tabs as in Safari and the editors;
+        // ⌘[ / ⌘] between areas as in iTerm and Ghostty; ⌃⌘arrows to move a tab
+        // as VS Code moves an editor. Everything is ⌘-based but the three
+        // Control keys every one of those apps uses, which the terminal gives up
+        // nothing for: Control+letter and Option+letter stay the shell's.
+        //
+        // ⌘B, as VS Code, Cursor, Zed and ChatGPT; ⌥⌘S (the Finder's, and what
+        // Wortel had) keeps working.
+        // Titled Show/Hide by AppDelegate.validateMenuItem, as Apple's are.
+        let toggleSidebar = viewMenu.addItem(withTitle: "Hide Sidebar", action: #selector(AppDelegate.toggleSessionSidebar(_:)), keyEquivalent: "b")
+        toggleSidebar.keyEquivalentModifierMask = [.command]
+        addHidden(viewMenu, "Hide Sidebar", #selector(AppDelegate.toggleSessionSidebar(_:)), "s", [.command, .option])
+        let sideColumn = viewMenu.addItem(withTitle: "Show Side Column", action: #selector(AppDelegate.toggleSideColumn(_:)), keyEquivalent: "b")
+        sideColumn.keyEquivalentModifierMask = [.command, .option]
+        let bottomStrip = viewMenu.addItem(withTitle: "Show Bottom Strip", action: #selector(AppDelegate.toggleBottomStrip(_:)), keyEquivalent: "j")
+        bottomStrip.keyEquivalentModifierMask = [.command]
+        // ⌃` too, as VS Code, Zed and ChatGPT toggle their terminal panel.
+        addHidden(viewMenu, "Show Bottom Strip", #selector(AppDelegate.toggleBottomStrip(_:)), "`", [.control])
+        let swapSides = viewMenu.addItem(withTitle: "Move Side Column to the Left", action: #selector(AppDelegate.toggleColumnSide(_:)), keyEquivalent: "b")
+        swapSides.keyEquivalentModifierMask = [.command, .option, .shift]
+        // With the keyboard in a browser's page these are Forward and Back
+        // while the page has somewhere to go, as in Safari and Chrome (and as
+        // cmux splits the same two keys); see AppDelegate.focusNextArea.
+        let focusNext = viewMenu.addItem(withTitle: "Focus Next Area", action: #selector(AppDelegate.focusNextArea(_:)), keyEquivalent: "]")
+        focusNext.keyEquivalentModifierMask = [.command]
+        let focusPrevious = viewMenu.addItem(withTitle: "Focus Previous Area", action: #selector(AppDelegate.focusPreviousArea(_:)), keyEquivalent: "[")
+        focusPrevious.keyEquivalentModifierMask = [.command]
+
+        viewMenu.addItem(.separator())
+        // ⌃⇧G, as VS Code, Cursor, Zed and Codex open source control; ⌥⌘G
+        // (what Wortel had) keeps working. Routes through the responder chain
+        // to AppDelegate. Title flips Show/Hide in AppDelegate.validateMenuItem
+        // based on panel visibility.
+        let sourceControl = viewMenu.addItem(withTitle: "Show Source Control", action: #selector(AppDelegate.toggleSourceControl(_:)), keyEquivalent: "g")
+        sourceControl.keyEquivalentModifierMask = [.control, .shift]
+        addHidden(viewMenu, "Show Source Control", #selector(AppDelegate.toggleSourceControl(_:)), "g", [.command, .option])
+        let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "g")
+        history.keyEquivalentModifierMask = [.command, .option, .shift]
+        // ⇧⌘E for the third pane, as VS Code, Cursor, Zed and Codex open their
+        // file tree; ⌥⌘E keeps working. It behaves exactly like ⌃⇧G: open on
+        // Files, bring it forward, or close it if Files is already up.
+        let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "e")
+        files.keyEquivalentModifierMask = [.command, .shift]
+        addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .option])
+        // ⌘⌥L: reveal the panel (if hidden) and move focus into whichever list is
+        // showing — files on Changes, commits on History, the tree on Files — so
+        // ↑/↓ navigate it without reaching for the mouse.
+        let focusList = viewMenu.addItem(withTitle: "Focus List", action: #selector(AppDelegate.focusSourceControlList(_:)), keyEquivalent: "l")
+        focusList.keyEquivalentModifierMask = [.command, .option]
+
+        viewMenu.addItem(.separator())
+        // ⇧⌘P, VS Code's command palette (which VS Code also keeps in View):
+        // every command in these menus.
+        let palette = viewMenu.addItem(withTitle: "Commands\u{2026}", action: #selector(AppDelegate.showCommandPalette(_:)), keyEquivalent: "p")
+        palette.keyEquivalentModifierMask = [.command, .shift]
+
+        // The browser in front. Headed, because four page commands among
+        // terminal ones are otherwise easy to misread as the terminal's.
+        viewMenu.addItem(.separator())
+        viewMenu.addItem(.sectionHeader(title: "Browser"))
+        // ⌘L, as in Safari and Chrome, puts you in the address field of the
+        // browser in front; with none, the item is disabled and ⌘L goes on to
+        // the terminal.
+        let openLocation = viewMenu.addItem(withTitle: "Open Location", action: #selector(AppDelegate.openBrowserLocation(_:)), keyEquivalent: "l")
+        openLocation.keyEquivalentModifierMask = [.command]
+        // ⌘R / ⇧⌘R, as Chrome, Codex and cmux. The ⌘R is lent by `syncReload`
+        // while a browser is in front.
+        reloadItem = viewMenu.addItem(withTitle: "Reload Page", action: #selector(AppDelegate.reloadBrowserPage(_:)), keyEquivalent: "")
+        let forceReload = viewMenu.addItem(withTitle: "Force Reload Page", action: #selector(AppDelegate.forceReloadBrowserPage(_:)), keyEquivalent: "r")
+        forceReload.keyEquivalentModifierMask = [.command, .shift]
+        // ⌥⌘I, as Safari and Chrome open their inspector. Disabled with no
+        // browser in front, so it goes on to the terminal.
+        let inspector = viewMenu.addItem(withTitle: "Show Web Inspector", action: #selector(AppDelegate.showWebInspector(_:)), keyEquivalent: "i")
+        inspector.keyEquivalentModifierMask = [.command, .option]
+
         viewMenu.addItem(.separator())
         // What a preview window is showing. A submenu rather than three more
         // entries in View: "Show Source" sitting next to "Show Source Control"
@@ -413,122 +516,65 @@ enum MainMenu {
             previewModeItems.append(item)
         }
         viewMenu.addItem(.separator())
-        // ⌘B, as VS Code, Cursor, Zed and ChatGPT; ⌥⌘S (the Finder's, and what
-        // Wortel had) keeps working.
-        let toggleSidebar = viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(AppDelegate.toggleSessionSidebar(_:)), keyEquivalent: "b")
-        toggleSidebar.keyEquivalentModifierMask = [.command]
-        addHidden(viewMenu, "Toggle Sidebar", #selector(AppDelegate.toggleSessionSidebar(_:)), "s", [.command, .option])
-        // ⌃⇧G, as VS Code, Cursor, Zed and Codex open source control; ⌥⌘G
-        // (what Wortel had) keeps working. Routes through the responder chain
-        // to AppDelegate. Title flips Show/Hide in AppDelegate.validateMenuItem
-        // based on panel visibility; the icon stays put.
-        let sourceControl = viewMenu.addItem(withTitle: "Show Source Control", action: #selector(AppDelegate.toggleSourceControl(_:)), keyEquivalent: "g")
-        sourceControl.keyEquivalentModifierMask = [.control, .shift]
-        addHidden(viewMenu, "Show Source Control", #selector(AppDelegate.toggleSourceControl(_:)), "g", [.command, .option])
-        sourceControl.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)
-        // ⇧⌘E for the third pane, as VS Code, Cursor, Zed and Codex open their
-        // file tree; ⌥⌘E keeps working. It behaves exactly like ⌃⇧G: open on
-        // Files, bring it forward, or close it if Files is already up.
-        let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "g")
-        history.keyEquivalentModifierMask = [.command, .option, .shift]
-        history.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)
-        let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "e")
-        files.keyEquivalentModifierMask = [.command, .shift]
-        addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .option])
-        files.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
-        // ⌘⌥L: reveal the panel (if hidden) and move focus into whichever list is
-        // showing — files on Changes, commits on History, the tree on Files — so
-        // ↑/↓ navigate it without reaching for the mouse.
-        let focusList = viewMenu.addItem(withTitle: "Focus List", action: #selector(AppDelegate.focusSourceControlList(_:)), keyEquivalent: "l")
-        focusList.keyEquivalentModifierMask = [.command, .option]
-        focusList.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: nil)
+        let bigger = viewMenu.addItem(withTitle: "Increase Font Size", action: #selector(SurfaceView.increaseFontSize(_:)), keyEquivalent: "+")
+        bigger.keyEquivalentModifierMask = [.command]
+        let smaller = viewMenu.addItem(withTitle: "Decrease Font Size", action: #selector(SurfaceView.decreaseFontSize(_:)), keyEquivalent: "-")
+        smaller.keyEquivalentModifierMask = [.command]
+        viewMenu.addItem(withTitle: "Reset Font Size", action: #selector(SurfaceView.resetFontSize(_:)), keyEquivalent: "0")
 
-        // The workspace: the three areas, their tabs, and moving between them.
-        // Aligned with what people already know (see docs/shortcuts.md): ⌘B /
-        // ⌥⌘B / ⌘J for the sidebar, the column and the strip as in VS Code, Zed
-        // and ChatGPT; ⌃Tab and ⌥⌘←/→ for tabs as in Safari and the editors;
-        // ⌘[ / ⌘] between areas as in iTerm and Ghostty; ⌃⌘arrows to move a tab
-        // as VS Code moves an editor. Everything is ⌘-based but the three
-        // Control keys every one of those apps uses, which the terminal gives up
-        // nothing for: Control+letter and Option+letter stay the shell's.
+        // ⌃⌘F, the Mac's own. Stated rather than left to AppKit's automatic
+        // item, so it's there whatever AppKit decides about a built menu.
         viewMenu.addItem(.separator())
-        let sideColumn = viewMenu.addItem(withTitle: "Show Side Column", action: #selector(AppDelegate.toggleSideColumn(_:)), keyEquivalent: "b")
-        sideColumn.keyEquivalentModifierMask = [.command, .option]
-        sideColumn.image = NSImage(systemSymbolName: "sidebar.right", accessibilityDescription: nil)
-        let bottomStrip = viewMenu.addItem(withTitle: "Show Bottom Strip", action: #selector(AppDelegate.toggleBottomStrip(_:)), keyEquivalent: "j")
-        bottomStrip.keyEquivalentModifierMask = [.command]
-        bottomStrip.image = NSImage(systemSymbolName: "rectangle.bottomthird.inset.filled", accessibilityDescription: nil)
-        // ⌃` too, as VS Code, Zed and ChatGPT toggle their terminal panel.
-        addHidden(viewMenu, "Show Bottom Strip", #selector(AppDelegate.toggleBottomStrip(_:)), "`", [.control])
-        let swapSides = viewMenu.addItem(withTitle: "Move Side Column to the Left", action: #selector(AppDelegate.toggleColumnSide(_:)), keyEquivalent: "b")
-        swapSides.keyEquivalentModifierMask = [.command, .option, .shift]
+        let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+        fullScreen.keyEquivalentModifierMask = [.control, .command]
 
-        viewMenu.addItem(.separator())
+        // Tab menu, as Chrome has one: the tabs of the row you're in. Opening,
+        // moving between and closing them used to be spread over View (opening,
+        // switching) and Session (⌘W), which is where neither is looked for.
+        let tabItem = NSMenuItem()
+        main.addItem(tabItem)
+        let tabMenu = NSMenu(title: "Tab")
+        tabItem.submenu = tabMenu
         // ⌘T: a new tab, as everywhere else; here a terminal in the row you're
         // in, which is also what a terminal user's ⌘T has always given them: a
         // new shell, right where they are. ⌘N is New Session. (Until the rows
         // had tabs, ⌘T was an alias of ⌘N: a session was the only tab there was.)
-        let newTerminal = viewMenu.addItem(withTitle: "New Terminal Tab", action: #selector(AppDelegate.newTerminalHere(_:)), keyEquivalent: "t")
+        let newTerminal = tabMenu.addItem(withTitle: "New Terminal Tab", action: #selector(AppDelegate.newTerminalHere(_:)), keyEquivalent: "t")
         newTerminal.keyEquivalentModifierMask = [.command]
-        newTerminal.image = NSImage(systemSymbolName: "apple.terminal", accessibilityDescription: nil)
-        // ⇧⌘L: a browser in the row you're in, as cmux opens its browser. ⌘L,
-        // as in Safari and Chrome, puts you in the address field of the
-        // browser in front; with none, the item is disabled and ⌘L goes on to
-        // the terminal.
-        let newBrowser = viewMenu.addItem(withTitle: "New Browser Tab", action: #selector(AppDelegate.newBrowserHere(_:)), keyEquivalent: "l")
+        // ⇧⌘L: a browser in the row you're in, as cmux opens its browser.
+        let newBrowser = tabMenu.addItem(withTitle: "New Browser Tab", action: #selector(AppDelegate.newBrowserHere(_:)), keyEquivalent: "l")
         newBrowser.keyEquivalentModifierMask = [.command, .shift]
-        newBrowser.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
-        let openLocation = viewMenu.addItem(withTitle: "Open Location", action: #selector(AppDelegate.openBrowserLocation(_:)), keyEquivalent: "l")
-        openLocation.keyEquivalentModifierMask = [.command]
-        // ⌘R / ⇧⌘R, as Chrome, Codex and cmux. The ⌘R is lent by `syncReload`
-        // while a browser is in front.
-        reloadItem = viewMenu.addItem(withTitle: "Reload Page", action: #selector(AppDelegate.reloadBrowserPage(_:)), keyEquivalent: "")
-        let forceReload = viewMenu.addItem(withTitle: "Force Reload Page", action: #selector(AppDelegate.forceReloadBrowserPage(_:)), keyEquivalent: "r")
-        forceReload.keyEquivalentModifierMask = [.command, .shift]
-        // ⌥⌘I, as Safari and Chrome open their inspector. Disabled with no
-        // browser in front, so it goes on to the terminal.
-        let inspector = viewMenu.addItem(withTitle: "Show Web Inspector", action: #selector(AppDelegate.showWebInspector(_:)), keyEquivalent: "i")
-        inspector.keyEquivalentModifierMask = [.command, .option]
         // ⌘D / ⇧⌘D: every terminal's split right and split down (iTerm,
         // Ghostty, Warp, cmux, Terminal). Wortel's layout is fixed, so they
         // are a terminal beside the one you're in and one under it.
-        let newSide = viewMenu.addItem(withTitle: "New Terminal in Side Column", action: #selector(AppDelegate.newSideTerminal(_:)), keyEquivalent: "d")
+        let newSide = tabMenu.addItem(withTitle: "New Terminal in Side Column", action: #selector(AppDelegate.newSideTerminal(_:)), keyEquivalent: "d")
         newSide.keyEquivalentModifierMask = [.command]
-        let newBottom = viewMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "d")
+        let newBottom = tabMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "d")
         newBottom.keyEquivalentModifierMask = [.command, .shift]
         // ⌃⇧` too, as VS Code and Zed open a new terminal. The shifted twin,
         // as ⌘⇧] carries: with Shift kept, ⌃⇧` can arrive as ~.
-        addHidden(viewMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
+        addHidden(tabMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
                   "`", [.control, .shift])
-        addHidden(viewMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
+        addHidden(tabMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
                   "~", [.control, .shift])
-        let reopen = viewMenu.addItem(withTitle: "Reopen Closed Tab", action: #selector(AppDelegate.reopenClosedTab(_:)), keyEquivalent: "t")
-        reopen.keyEquivalentModifierMask = [.command, .shift]
-        let nextTab = viewMenu.addItem(withTitle: "Next Tab", action: #selector(AppDelegate.selectNextSideTab(_:)), keyEquivalent: "\t")
+
+        tabMenu.addItem(.separator())
+        let nextTab = tabMenu.addItem(withTitle: "Next Tab", action: #selector(AppDelegate.selectNextSideTab(_:)), keyEquivalent: "\t")
         nextTab.keyEquivalentModifierMask = [.control]
-        let previousTab = viewMenu.addItem(withTitle: "Previous Tab", action: #selector(AppDelegate.selectPreviousSideTab(_:)), keyEquivalent: "\t")
+        let previousTab = tabMenu.addItem(withTitle: "Previous Tab", action: #selector(AppDelegate.selectPreviousSideTab(_:)), keyEquivalent: "\t")
         previousTab.keyEquivalentModifierMask = [.control, .shift]
         // Shift+Tab arrives as backtab on some paths; the hidden twin catches it.
-        addHidden(viewMenu, "Previous Tab", #selector(AppDelegate.selectPreviousSideTab(_:)), "\u{19}", [.control, .shift])
+        addHidden(tabMenu, "Previous Tab", #selector(AppDelegate.selectPreviousSideTab(_:)), "\u{19}", [.control, .shift])
         // ⌥⌘→ / ⌥⌘←, as VS Code, Zed and ChatGPT: horizontal for tabs, where
         // ⌥⌘↑ / ⌥⌘↓ are vertical for sessions.
-        addHidden(viewMenu, "Next Tab", #selector(AppDelegate.selectNextSideTab(_:)), arrow(NSRightArrowFunctionKey), [.command, .option])
-        addHidden(viewMenu, "Previous Tab", #selector(AppDelegate.selectPreviousSideTab(_:)), arrow(NSLeftArrowFunctionKey), [.command, .option])
+        addHidden(tabMenu, "Next Tab", #selector(AppDelegate.selectNextSideTab(_:)), arrow(NSRightArrowFunctionKey), [.command, .option])
+        addHidden(tabMenu, "Previous Tab", #selector(AppDelegate.selectPreviousSideTab(_:)), arrow(NSLeftArrowFunctionKey), [.command, .option])
         // ⌥⌘1…9: a tab of the row you're in (⌘1…9 are sessions), 9 the last.
         for number in 1...9 {
-            let item = addHidden(viewMenu, "Tab \(number)", #selector(AppDelegate.selectTabByNumber(_:)), "\(number)", [.command, .option])
+            let item = addHidden(tabMenu, "Tab \(number)", #selector(AppDelegate.selectTabByNumber(_:)), "\(number)", [.command, .option])
             item.tag = number
         }
-
-        viewMenu.addItem(.separator())
-        // With the keyboard in a browser's page these are Forward and Back
-        // while the page has somewhere to go, as in Safari and Chrome (and as
-        // cmux splits the same two keys); see AppDelegate.focusNextArea.
-        let focusNext = viewMenu.addItem(withTitle: "Focus Next Area", action: #selector(AppDelegate.focusNextArea(_:)), keyEquivalent: "]")
-        focusNext.keyEquivalentModifierMask = [.command]
-        let focusPrevious = viewMenu.addItem(withTitle: "Focus Previous Area", action: #selector(AppDelegate.focusPreviousArea(_:)), keyEquivalent: "[")
-        focusPrevious.keyEquivalentModifierMask = [.command]
-        let moveMenuItem = viewMenu.addItem(withTitle: "Move Tab", action: nil, keyEquivalent: "")
+        let moveMenuItem = tabMenu.addItem(withTitle: "Move Tab", action: nil, keyEquivalent: "")
         let moveMenu = NSMenu(title: "Move Tab")
         moveMenuItem.submenu = moveMenu
         for (title, action, key) in [
@@ -541,11 +587,12 @@ enum MainMenu {
             item.keyEquivalentModifierMask = [.control, .command]
         }
 
-        // ⌃⌘F, the Mac's own. Stated rather than left to AppKit's automatic
-        // item, so it's there whatever AppKit decides about a built menu.
-        viewMenu.addItem(.separator())
-        let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
-        fullScreen.keyEquivalentModifierMask = [.control, .command]
+        tabMenu.addItem(.separator())
+        let reopen = tabMenu.addItem(withTitle: "Reopen Closed Tab", action: #selector(AppDelegate.reopenClosedTab(_:)), keyEquivalent: "t")
+        reopen.keyEquivalentModifierMask = [.command, .shift]
+        // ⌘W closes what you're in: a tab, or the session when its own terminal
+        // is in front (as closing a tab in any other terminal ends its shell).
+        tabMenu.addItem(withTitle: "Close Tab", action: #selector(AppDelegate.closeSession(_:)), keyEquivalent: "w")
 
         // Window menu
         let windowItem = NSMenuItem()
@@ -554,6 +601,8 @@ enum MainMenu {
         windowItem.submenu = windowMenu
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
         NSApp.windowsMenu = windowMenu
 
         // Help menu. Two things for the price of one item: the shortcut list

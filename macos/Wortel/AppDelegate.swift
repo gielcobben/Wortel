@@ -310,6 +310,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if self.gitPanel.lastRegion != region { self.gitPanel.lastRegion = region }
             return event
         }
+        MainMenu.canMoveTo = { [weak self] in
+            guard let self, let session = self.manager.selected else { return false }
+            return SessionActions.canMove(session, manager: self.manager)
+        }
         MainMenu.fillMoveTo = { [weak self] menu in
             guard let self, let session = self.manager.selected else { return menu.removeAllItems() }
             SessionActions.fillMoveTo(menu, for: session, manager: self.manager)
@@ -1233,6 +1237,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Grey out "Check for Updates…" while a check is already in flight (Sparkle
     /// drops `canCheckForUpdates` to false for the duration).
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleSessionSidebar(_:)) {
+            menuItem.title = splitController.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+            return true
+        }
+        // Nothing to act on without a session, and nowhere to step to with one.
+        if menuItem.action == #selector(renameSession(_:))
+            || menuItem.action == #selector(closeWholeSession(_:))
+            || menuItem.action == #selector(forkSession(_:)) {
+            return manager.selected != nil
+        }
+        if menuItem.action == #selector(selectPreviousSession(_:))
+            || menuItem.action == #selector(selectNextSession(_:)) {
+            return manager.sessions.count > 1
+        }
         if menuItem.action == #selector(removeSessionWorktree(_:)) {
             return manager.selected?.isInOwnWorktree == true
         }

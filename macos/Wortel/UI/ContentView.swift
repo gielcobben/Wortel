@@ -318,9 +318,15 @@ enum SessionActions {
 
     /// "Move To": top level plus every other folder, the no-drag way to
     /// refile. Nil when there's nowhere to move to.
+    /// Whether "Move To" has anywhere to go: out of the folder it's in, or into
+    /// another. Cheap on purpose: the Session menu asks it as it updates, which
+    /// AppKit also does while it looks for a key equivalent, so on keypresses.
+    static func canMove(_ session: Session, manager: SessionManager) -> Bool {
+        session.folderPath != nil || manager.folderNames.contains { $0 != session.folderPath }
+    }
+
     static func moveToMenu(for session: Session, manager: SessionManager) -> NSMenu? {
-        let destinations = manager.folderNames.filter { $0 != session.folderPath }
-        guard session.folderPath != nil || !destinations.isEmpty else { return nil }
+        guard canMove(session, manager: manager) else { return nil }
         let submenu = NSMenu(title: "Move To")
         fillMoveTo(submenu, for: session, manager: manager)
         return submenu

@@ -73,6 +73,11 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
         branch?.hasPrefix(GitWorktree.branchNamespace) == true
     }
 
+    /// Whether removing it may take its branch too: Wortel's own, with every
+    /// commit also on another branch or a remote. A branch with commits found
+    /// nowhere else is never deleted here; that's the terminal's job.
+    var branchIsDeletable: Bool { ownsBranch && uniqueCommits == 0 }
+
     /// The folder's name, which is what the worktree is called on disk.
     var folderName: String { (path as NSString).lastPathComponent }
 
@@ -119,7 +124,7 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
             guard let n = uniqueCommits else {
                 return "Wortel couldn't tell whether its commits are anywhere else, so the branch is kept."
             }
-            return "\(n) commit\(n == 1 ? "" : "s") only on this branch. The branch is kept unless you choose otherwise."
+            return "\(n) commit\(n == 1 ? "" : "s") only on this branch, so the branch is kept."
         case .blocked:
             return blockers.joined(separator: " ")
         }
@@ -216,13 +221,13 @@ enum WorktreeCleanup {
     /// while, and an agent may have written a file since. Returns nil on
     /// success, or why nothing was removed.
     ///
-    /// `deleteBranch` is honoured only for a branch in Wortel's namespace, and
-    /// for one with commits found nowhere else only when the report it was
-    /// chosen against said so (`allowLosingCommits`). `discard` moves the
-    /// folder away; the app passes the Trash, the tests a plain delete.
+    /// `deleteBranch` is honoured only where `branchIsDeletable` says so, as
+    /// re-checked here: a branch Wortel made, with nothing on it to lose.
+    /// `discard` moves the folder away; the app passes the Trash, the tests a
+    /// plain delete.
     static func remove(
         path: String, knownRepos: [String] = [], usedBy: [String] = [],
-        deleteBranch: Bool, allowLosingCommits: Bool = false,
+        deleteBranch: Bool,
         discard: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
     ) async -> String? {
         let report = await inspect(path: path, knownRepos: knownRepos, usedBy: usedBy)
@@ -248,7 +253,7 @@ enum WorktreeCleanup {
             return "The folder is in the Trash, but git still lists it: \(message)"
         }
         if deleteBranch, report.ownsBranch, let branch = report.branch,
-           report.uniqueCommits == 0 || allowLosingCommits,
+           report.branchIsDeletable,
            await GitService.run(["rev-parse", "--verify", "--quiet", "refs/heads/\(branch)"], in: primary).ok {
             // (A branch with no commits yet has no ref to delete.)
             // `-D`: `-d` asks whether the branch is merged into *HEAD*, which a

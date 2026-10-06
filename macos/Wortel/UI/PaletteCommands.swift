@@ -73,6 +73,12 @@ enum PaletteCommands {
         "decreaseFontSize:": "textformat.size.smaller",
         "resetFontSize:": "textformat.size",
         "toggleSessionSidebar:": "sidebar.left",
+        "toggleSourceControl:": "arrow.triangle.branch",
+        "showHistory:": "clock",
+        "toggleFileTree:": "folder",
+        "focusSourceControlList:": "list.bullet",
+        "newTerminalHere:": "apple.terminal",
+        "newBrowserHere:": "globe",
         "toggleSideColumn:": "sidebar.right",
         "toggleBottomStrip:": "rectangle.bottomthird.inset.filled",
         "toggleColumnSide:": "arrow.left.arrow.right",
@@ -102,6 +108,8 @@ enum PaletteCommands {
         for (index, item) in menu.items.enumerated() {
             guard !item.isSeparatorItem, !item.isHidden, !item.title.isEmpty else { continue }
             if let submenu = item.submenu {
+                // The system's Services are other apps' commands, not Wortel's.
+                guard submenu !== NSApp.servicesMenu else { continue }
                 let name = path.isEmpty && index == 0 ? appName
                     : submenu.title.isEmpty ? item.title : submenu.title
                 commands += collect(submenu, path: path + [name])

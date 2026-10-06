@@ -568,6 +568,9 @@ final class MainSplitViewController: NSSplitViewController {
 
     // MARK: - Sidebar and dividers
 
+    /// Whether the session sidebar is showing, for the menu's Show/Hide title.
+    var isSidebarVisible: Bool { sidebarItem.map { !$0.isCollapsed } ?? true }
+
     /// ⌘⌥S and the titlebar's sidebar buttons. NSSplitViewController's own
     /// implementation only acts on an item with the `.sidebar` behavior, which
     /// this one deliberately isn't (see `viewDidLoad`).

@@ -3,6 +3,53 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.41.2</title>
+            <pubDate>Tue, 06 Oct 2026 13:48:49 -0400</pubDate>
+            <sparkle:version>2026.41.2</sparkle:version>
+            <sparkle:shortVersionString>2026.41.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Lighter in the background, and nothing left behind</h1>
+<p class="date">Wortel 2026.41.2 &middot; 2026-10-06</p>
+<p><strong>Much less work in the background.</strong> The source control panel used to re-read every repository it had ever shown each time a file changed, and to count the changes in every worktree on almost every switch. On a big repository with agents busy in a few worktrees, that could keep several cores busy and the fan spinning. Now only the repository you’re looking at is read. The others note that something changed and catch up when you come back to them, with a small spinner while they do. The Files pane does no work while it’s hidden.</p>
+<p><strong>Switching sessions is lighter.</strong> Moving between two sessions whose side columns differ no longer resizes every terminal in the app, which made every agent redraw its whole screen. A terminal takes its size when you show it.</p>
+<p><strong>Worktrees are cleaned up, safely.</strong> Closing a session in a worktree now says what’s in it and what will happen to it, and Session ▸ Clean Up Worktrees… lists every worktree Wortel made. One with nothing unsaved is removed, folder and branch. One with commits that exist nowhere else keeps its branch unless you tick it. One with uncommitted changes, or something running in it, is kept, and Wortel says why. Folders go to the Trash, so nothing is gone for good.</p>
+<p><strong>Nothing left running.</strong></p>
+<ul>
+<li>When your git settings turn on its file watcher, Wortel no longer starts one for every repository it looks at. They never exited, and piled up.</li>
+<li>Closing a session you hadn’t opened since launch now ends its shell, instead of leaving it, and any agent in it, running out of sight.</li>
+<li>A shell Wortel lost track of comes back at launch as a Recovered session if something is running in it, and is closed if it’s idle.</li>
+<li>A fetch, pull or push that hangs is stopped after five minutes, and anything git started stops with it when you quit.</li>
+</ul>
+<p><strong>ssh sets up once.</strong> Connecting to a host installs its terminfo the first time only, instead of printing “Setting up xterm-ghostty terminfo” and leaving a folder in /tmp on every connection.</p>
+<p>Also in this release:</p>
+<ul>
+<li>Pasted images are cleared from the temp folder after a day.</li>
+<li>If the list of sessions can’t be read, it’s set aside instead of being overwritten.</li>
+</ul>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.2.zip" length="21051646" type="application/octet-stream" sparkle:edSignature="tN5QAeyc76OUMDW3la9fvTAk2NxVAuNPw+daNh7XdvhPJVOt8exBMKmi1D9PmMWCmlTlVY95lRcsuSQhMBDvAA=="/>
+        </item>
+        <item>
             <title>2026.41.1</title>
             <pubDate>Mon, 05 Oct 2026 11:22:53 -0400</pubDate>
             <sparkle:version>2026.41.1</sparkle:version>
@@ -78,54 +125,6 @@
 <li>Usage reporting now also counts which kinds of tabs are opened and where, whether ⌘P ends in a session, a command or nothing, whether a commit’s message was typed or drafted on your Mac, and whether a file preview opened as a tab or a window. Never what is in them. The full list is at wortel.sh/privacy, and the switch is the ⓘ at the bottom of the sidebar.</li>
 </ul>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.40.2.zip" length="20794459" type="application/octet-stream" sparkle:edSignature="ZPG8IFz9aWkAfscTp1euld/ufNen3ns2Oyf3leZiZ9VEkykbvCWjwRSHOCBjI2nxiI6oUeWHss/qmWMbv53KBA=="/>
-        </item>
-        <item>
-            <title>2026.40.1</title>
-            <pubDate>Wed, 30 Sep 2026 10:29:54 -0400</pubDate>
-            <sparkle:version>2026.40.1</sparkle:version>
-            <sparkle:shortVersionString>2026.40.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Everything is a tab, and a calmer window</h1>
-<p class="date">Wortel 2026.40.1 &middot; 2026-09-30</p>
-<p><strong>Everything is a tab.</strong> A session used to be one terminal with a panel beside it. Now it has three rows of tabs: the main area with the session’s own terminal, a column beside it, and a strip under the terminal (⌘J). A tab can be a terminal (⌘T opens one where you are, ⌘D in the column, ⇧⌘D in the strip), a browser, a file, or one of the git and file panes, and any of them can be dragged to any row. ⌘W closes the tab in front of the area you’re in, ⇧⌘T brings back the last one you closed, and resting the pointer on a tab shows what’s in it: a terminal’s last lines, the page, the top of the file.</p>
-<p><strong>A browser beside your work.</strong> ⇧⌘L opens a browser tab. Its address field lists what your sessions are serving and completes as you type, and a port on its own is enough. ⌘L goes to the address, ⌘R reloads from anywhere, the terminal included (change something, ⌘R, look), and the button beside the address opens the page in your own browser.</p>
-<p><strong>Tabs open where you put them.</strong> Files and browsers open in the column until you move one somewhere else; from then on, that kind opens where you last moved one, per session. ⌥-click a file or a server to open it in the main area just this once.</p>
-<p><strong>A calmer window.</strong> Wortel draws its own titlebar now: one flat band with the tabs in it, the desktop showing softly through the sidebar, plain white pages for the terminal and the column, and fewer buttons, each beside what it controls. Panes open and close in one smooth motion, with the terminals resizing once when they land instead of on every frame. The sidebar runs up to the traffic lights as one surface.</p>
-<p><strong>The sidebar, rethought.</strong> Pin the sessions you live in (⌥⌘P, or the ”…” that now appears on every row) and they stay in a Pinned section at the top. Sessions in no folder get a section of their own. Rows are roomier, a session that is waiting on you says what for on a second line and for how long, a long name slides into view when you rest the pointer on it, and renaming happens right on the row. Mark as Unread (⇧⌘U) flags a session to come back to. Folder headers lose their path and gain a ”+” for a new session in that folder, and a ”…” for the rest.</p>
-<p><strong>⌘P finds anything.</strong> Type a few letters of a session’s name, folder, branch or directory and Return takes you there. With nothing typed, Return goes back to the session you were in before this one. The same box runs any command in the menus, and ⇧⌘P shows commands only.</p>
-<p><strong>One menu for a session.</strong> The ”…” in the titlebar, the ”…” on its sidebar row and its right-click menu are the same menu now, with icons: rename, move to a folder, pin, mark as unread, fork onto a branch of its own, show in Finder, copy the path, close. Fork is in the Session menu too.</p>
-<p><strong>Git follows the session, and the work.</strong> The git panes always show the session you’re in. When an agent works in a worktree while your terminal stays in the main checkout, the header says so (“sidebar has 16 changes”) and one click shows that checkout, for that session, until you go back. The branch list starts with every checkout of the repository, and the commit box is a single line until you start writing.</p>
-<p><strong>You can see where the keyboard went.</strong> Moving between areas with ⌘] and ⌘[ briefly lights the edge of the area you land in, and a list’s selection is blue only while that list has the keyboard, grey otherwise, as in Finder.</p>
-<p><strong>Shortcuts you already know.</strong> The layout follows the editors and Codex: ⇧⌘E for files, ⌃⇧G for source control, ⌥⌘R to rename a session, ⌘G for the next match. ⌥⌘E and ⌥⌘G keep working. ⌘/ opens the full list, and the Help menu’s search field finds any command by name. ⌘A selects all in a text field or a page.</p>
-<p>Also in this release:</p>
-<ul>
-<li><code>wortel rename</code> and <code>wortel notify</code> work from any terminal in the session, not only its own.</li>
-<li>The running jobs list is smaller and reads like a menu.</li>
-<li>A click anywhere on a row in the file tree selects it, not only on its name.</li>
-<li>The terminal’s padding is closer to the edges, as in iTerm.</li>
-</ul>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.40.1.zip" length="20713881" type="application/octet-stream" sparkle:edSignature="8tO+lwIIhG62181/d8fJi+hY6zJZrSHLgqDd+qLmvY36dZPRy2O+YNIOzAeqiAkIPJ9yeWzoFwWQJsoQG0q6CA=="/>
         </item>
     </channel>
 </rss>

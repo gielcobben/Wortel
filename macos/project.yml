@@ -333,9 +333,6 @@ targets:
       # against real git: a branch whose commits are counted as shared when
       # they aren't is a silent loss of work.
       - path: Wortel/Git/WorktreeCleanup.swift
-      # GitService stops a git's children before git itself (a fetch's ssh
-      # outlives a plain terminate), and finds them here. Pure sysctl.
-      - path: Wortel/Processes/ProcessTable.swift
       # The diff table. Its *views* aren't testable without a window, but its
       # metrics are, and they carry an invariant nothing else enforces: the
       # coordinator's row height must equal the static `rowHeight(forFontSize:)`

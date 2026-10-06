@@ -53,43 +53,16 @@ enum GitService {
         return env
     }()
 
-    /// Every git we've started and not yet seen exit, so quitting can stop them
-    /// (`terminateAll`). A `fetch` stuck on a dead network otherwise outlives
-    /// the app by as long as the network takes to say so, which can be never.
-    private static let live = OSAllocatedUnfairLock(uncheckedState: [ObjectIdentifier: Process]())
+    /// Every git we've started and not yet seen exit, by pid (which is also its
+    /// process group), so quitting can stop them (`terminateAll`). A `fetch`
+    /// stuck on a dead network otherwise outlives the app by as long as the
+    /// network takes to say so, which can be never.
+    private static let live = OSAllocatedUnfairLock(initialState: Set<pid_t>())
 
-    private static func track(_ process: Process) {
-        live.withLock { $0[ObjectIdentifier(process)] = process }
-    }
-
-    private static func untrack(_ process: Process) {
-        _ = live.withLock { $0.removeValue(forKey: ObjectIdentifier(process)) }
-    }
-
-    /// Stop every git still running. Called as the app quits.
+    /// Stop every git still running, and what it started. Called as the app
+    /// quits.
     static func terminateAll() {
-        for process in live.withLock({ Array($0.values) }) where process.isRunning {
-            stop(process)
-        }
-    }
-
-    /// Stop a git and everything it started, children first.
-    ///
-    /// Signalling git alone isn't enough, measured: a fetch's `ssh` survived
-    /// it, reparented to launchd. That leaves a stray process, and it holds
-    /// our output pipes open, so the call that was meant to end at its time
-    /// limit waits for the ssh instead. The children are found through git, so
-    /// before git goes: after, nothing links them to us. (git shares our
-    /// process group, so signalling the group would take the app with it.)
-    static func stop(_ process: Process) {
-        let pid = process.processIdentifier
-        let table = ProcessTable.snapshot()
-        var parentOf: [pid_t: pid_t] = [:]
-        for entry in table { parentOf[entry.pid] = entry.ppid }
-        for entry in table where ProcessTable.isDescendant(entry.pid, of: pid, parentOf: parentOf) {
-            kill(entry.pid, SIGTERM)
-        }
-        if process.isRunning { process.terminate() }
+        for group in live.withLock({ $0 }) { kill(-group, SIGTERM) }
     }
 
     /// How long a command that talks to a remote may take before it's stopped.
@@ -97,37 +70,134 @@ enum GitService {
     /// only that a hung one ends.
     static let networkTimeout: TimeInterval = 300
 
+    /// Start git in a process group of its own, so stopping it stops
+    /// everything it started.
+    ///
+    /// Why not `Process`: it leaves the child in our group, and signalling git
+    /// alone was measured not to be enough. A fetch's ssh survived it,
+    /// reparented to launchd, and held our pipes open, so a call that was
+    /// meant to end at its time limit waited for the ssh instead. Hunting the
+    /// children down by parent pid first still lost a race to one started a
+    /// moment later. A group catches every process git starts, then or later,
+    /// and `kill(-group)` can't reach the app.
+    ///
+    /// The child gets exactly stdin, stdout and stderr (`CLOEXEC_DEFAULT`),
+    /// none of the app's other descriptors, and default signal handling.
+    /// Returns nil when it couldn't start.
+    private static func spawn(
+        _ args: [String], in directory: String, stdin: Int32?, stdout: Int32, stderr: Int32?
+    ) -> pid_t? {
+        var actions: posix_spawn_file_actions_t?
+        posix_spawn_file_actions_init(&actions)
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        if let stdin {
+            posix_spawn_file_actions_adddup2(&actions, stdin, 0)
+        } else {
+            posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+        }
+        posix_spawn_file_actions_adddup2(&actions, stdout, 1)
+        if let stderr {
+            posix_spawn_file_actions_adddup2(&actions, stderr, 2)
+        } else {
+            posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0)
+        }
+        posix_spawn_file_actions_addchdir_np(&actions, directory)
+
+        var attributes: posix_spawnattr_t?
+        posix_spawnattr_init(&attributes)
+        defer { posix_spawnattr_destroy(&attributes) }
+        posix_spawnattr_setflags(&attributes, Int16(
+            POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT
+                | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
+        posix_spawnattr_setpgroup(&attributes, 0) // a new group, led by git
+        var none = sigset_t()
+        sigemptyset(&none)
+        posix_spawnattr_setsigmask(&attributes, &none)
+        var all = sigset_t()
+        sigfillset(&all)
+        posix_spawnattr_setsigdefault(&attributes, &all)
+
+        let argv = (["env"] + gitArguments(args)).map { strdup($0) } + [nil]
+        let envp = gitEnvironment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        defer {
+            argv.forEach { free($0) }
+            envp.forEach { free($0) }
+        }
+        var pid: pid_t = 0
+        guard posix_spawn(&pid, "/usr/bin/env", &actions, &attributes, argv, envp) == 0 else {
+            return nil
+        }
+        live.withLock { _ = $0.insert(pid) }
+        return pid
+    }
+
+    /// Wait for git to exit, stopping its whole group if it outlives
+    /// `timeout`: SIGTERM, then SIGKILL two seconds on. Returns what
+    /// `Process.terminationStatus` would: the exit code, or the signal.
+    ///
+    /// The limit is kept by the thread that is here to wait anyway, rather
+    /// than a timer on a background queue, which is the system's to defer.
+    private static func wait(for pid: pid_t, timeout: TimeInterval?) -> Int32 {
+        let status = OSAllocatedUnfairLock(initialState: Int32(0))
+        let exited = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            var raw: Int32 = 0
+            while waitpid(pid, &raw, 0) < 0 && errno == EINTR {}
+            status.withLock { $0 = raw }
+            exited.signal()
+        }
+        if let timeout {
+            if exited.wait(timeout: .now() + timeout) == .timedOut {
+                kill(-pid, SIGTERM)
+                if exited.wait(timeout: .now() + 2) == .timedOut {
+                    kill(-pid, SIGKILL)
+                    exited.wait()
+                }
+            }
+        } else {
+            exited.wait()
+        }
+        // Whatever git left in its group (a transport on its way out) goes
+        // with it: nothing in there is ours to keep, and it holds our pipes.
+        kill(-pid, SIGTERM)
+        live.withLock { _ = $0.remove(pid) }
+        let raw = status.withLock { $0 }
+        return (raw & 0x7F) == 0 ? (raw >> 8) & 0xFF : raw & 0x7F
+    }
+
+    /// A pipe whose ends don't leak into anything else the app starts.
+    private static func makePipe() -> (read: FileHandle, write: FileHandle)? {
+        var fds: [Int32] = [0, 0]
+        guard pipe(&fds) == 0 else { return nil }
+        for fd in fds { _ = fcntl(fd, F_SETFD, FD_CLOEXEC) }
+        return (FileHandle(fileDescriptor: fds[0], closeOnDealloc: true),
+                FileHandle(fileDescriptor: fds[1], closeOnDealloc: true))
+    }
+
     static func run(_ args: [String], in directory: String, input: Data? = nil,
                     timeout: TimeInterval? = nil) async -> CommandResult {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = gitArguments(args)
-                process.currentDirectoryURL = URL(fileURLWithPath: directory)
-                process.environment = gitEnvironment
-
-                let outPipe = Pipe()
-                let errPipe = Pipe()
-                process.standardOutput = outPipe
-                process.standardError = errPipe
-                let inPipe = input.map { _ in Pipe() }
-                if let inPipe { process.standardInput = inPipe }
-
-                do {
-                    try process.run()
-                } catch {
+                guard let out = makePipe(), let err = makePipe() else {
                     continuation.resume(returning: CommandResult(
-                        status: -1, stdout: "", stderr: "\(error)"))
+                        status: -1, stdout: "", stderr: "couldn't create a pipe"))
                     return
                 }
-                track(process)
-                defer { untrack(process) }
-                if let timeout {
-                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                        if process.isRunning { stop(process) }
-                    }
+                let inPipe = input == nil ? nil : makePipe()
+                guard let pid = spawn(args, in: directory,
+                                      stdin: inPipe?.read.fileDescriptor,
+                                      stdout: out.write.fileDescriptor,
+                                      stderr: err.write.fileDescriptor)
+                else {
+                    continuation.resume(returning: CommandResult(
+                        status: -1, stdout: "", stderr: "couldn't start git"))
+                    return
                 }
+                // The child has its copies. Ours must go, or the readers below
+                // would wait on a write end we hold ourselves.
+                try? out.write.close()
+                try? err.write.close()
+                try? inPipe?.read.close()
 
                 // Drain both pipes off separate threads before waiting, so a
                 // full pipe buffer never wedges the child.
@@ -142,13 +212,13 @@ enum GitService {
                 let group = DispatchGroup()
                 group.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
-                    let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    let data = out.read.readDataToEndOfFile()
                     collected.withLock { $0.out = data }
                     group.leave()
                 }
                 group.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
-                    let data = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    let data = err.read.readDataToEndOfFile()
                     collected.withLock { $0.err = data }
                     group.leave()
                 }
@@ -159,17 +229,17 @@ enum GitService {
                         // it `--stdin` waits forever. try? because a child that
                         // exited early (a bad argument) leaves us writing to a
                         // broken pipe, which is a failed command, not a crash.
-                        try? inPipe.fileHandleForWriting.write(contentsOf: input)
-                        try? inPipe.fileHandleForWriting.close()
+                        try? inPipe.write.write(contentsOf: input)
+                        try? inPipe.write.close()
                         group.leave()
                     }
                 }
-                process.waitUntilExit()
+                let status = wait(for: pid, timeout: timeout)
                 group.wait()
 
                 let drained = collected.withLock { $0 }
                 continuation.resume(returning: CommandResult(
-                    status: process.terminationStatus,
+                    status: status,
                     stdout: String(decoding: drained.out, as: UTF8.self),
                     stderr: String(decoding: drained.err, as: UTF8.self)))
             }
@@ -814,27 +884,17 @@ enum GitService {
     static func runData(_ args: [String], in directory: String) async -> Data {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = gitArguments(args)
-                process.currentDirectoryURL = URL(fileURLWithPath: directory)
-                process.environment = gitEnvironment
-
-                let outPipe = Pipe()
-                process.standardOutput = outPipe
-                process.standardError = FileHandle.nullDevice
-
-                do {
-                    try process.run()
-                } catch {
+                guard let out = makePipe(),
+                      let pid = spawn(args, in: directory, stdin: nil,
+                                      stdout: out.write.fileDescriptor, stderr: nil)
+                else {
                     continuation.resume(returning: Data())
                     return
                 }
-                track(process)
-                defer { untrack(process) }
-                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                continuation.resume(returning: process.terminationStatus == 0 ? data : Data())
+                try? out.write.close()
+                let data = out.read.readDataToEndOfFile()
+                let status = wait(for: pid, timeout: nil)
+                continuation.resume(returning: status == 0 ? data : Data())
             }
         }
     }

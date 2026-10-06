@@ -540,7 +540,9 @@ the same thing by all three.
 - **Main-thread only** for everything Wortel owns; only libghostty callbacks
   cross threads, and they marshal to main immediately. `TelemetryClient` is the
   one deliberate exception: it is an actor, because it is the only thing here
-  that touches the network and must never make the terminal wait.
+  that touches the network and must never make the terminal wait. `SerialGate`
+  (`GitService.backgroundStatus`) is the other: a queue that lets background
+  `git status` scans run one at a time app-wide, holding no state of Wortel's.
 - **Nothing about the user's work leaves the machine.** Wortel reports anonymous
   feature usage (`Wortel/Telemetry/`, opt-out, `docs/telemetry.md`) and that is
   the whole of it. No case in `TelemetryEvent` takes a `String`, which is what

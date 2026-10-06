@@ -186,6 +186,69 @@ final class WorktreeCleanupTests: XCTestCase {
         XCTAssertNil(error)
     }
 
+    /// Commits on a detached HEAD have no branch to survive on: removing the
+    /// worktree would drop the only thing pointing at them. (Review finding:
+    /// this used to read as "keepsCommits", removal ticked by default.)
+    func testDetachedCommitsBlockRemoval() async {
+        let path = addWorktree("detached")
+        let dir = URL(fileURLWithPath: path)
+        GitFixture.sh("git checkout -q --detach", in: dir)
+        GitFixture.commit("only here", in: dir)
+
+        let report = await WorktreeCleanup.inspect(path: path)
+        XCTAssertNil(report.branch)
+        XCTAssertEqual(report.uniqueCommits, 1)
+        XCTAssertEqual(report.verdict, .blocked)
+        XCTAssertTrue(report.blockers.contains { $0.contains("detached") })
+
+        let error = await WorktreeCleanup.remove(path: path, deleteBranch: false, discard: delete)
+        XCTAssertNotNil(error)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+    }
+
+    /// The same with the folder already gone: the registration's HEAD is still
+    /// the only reference, so forgetting it isn't safe either.
+    func testAMissingDetachedWorktreeWithCommitsIsBlocked() async {
+        let path = addWorktree("gone-detached")
+        let dir = URL(fileURLWithPath: path)
+        GitFixture.sh("git checkout -q --detach", in: dir)
+        GitFixture.commit("only here", in: dir)
+        try? FileManager.default.removeItem(atPath: path)
+
+        let report = await WorktreeCleanup.inspect(path: path, knownRepos: [repo.path])
+        XCTAssertTrue(report.isMissing)
+        XCTAssertEqual(report.uniqueCommits, 1)
+        XCTAssertEqual(report.verdict, .blocked)
+    }
+
+    /// A lock still counts when the folder is gone. (Review finding: reported
+    /// safe, then failed with a message that blamed the Trash.)
+    func testAMissingLockedWorktreeIsBlocked() async {
+        let path = addWorktree("gone-locked")
+        GitFixture.sh("git worktree lock \(GitFixture.shellQuoted(path))", in: repo)
+        try? FileManager.default.removeItem(atPath: path)
+
+        let report = await WorktreeCleanup.inspect(path: path, knownRepos: [repo.path])
+        XCTAssertTrue(report.isMissing)
+        XCTAssertTrue(report.isLocked)
+        XCTAssertEqual(report.verdict, .blocked)
+    }
+
+    /// A repository's own checkout sitting under the root (a nested clone, a
+    /// submodule) is never a worktree to remove.
+    func testARepositorysOwnCheckoutIsNeverOffered() async {
+        let path = base.appendingPathComponent("repo/clone").path
+        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        GitFixture.sh("git init -q -b main && git commit -q --allow-empty -m x", in: URL(fileURLWithPath: path))
+
+        let report = await WorktreeCleanup.inspect(path: path)
+        XCTAssertTrue(report.isPrimaryCheckout)
+        XCTAssertEqual(report.verdict, .blocked)
+        let error = await WorktreeCleanup.remove(path: path, deleteBranch: false, discard: delete)
+        XCTAssertNotNil(error)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+    }
+
     func testTheParserReadsLocks() {
         let parsed = GitWorktree.parse(porcelain: """
             worktree /r

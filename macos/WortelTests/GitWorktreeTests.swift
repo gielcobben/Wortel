@@ -91,7 +91,8 @@ final class GitWorktreeTests: XCTestCase {
         let trees = GitWorktree.parse(porcelain: porcelain)
         XCTAssertEqual(trees.count, 2)
         XCTAssertEqual(trees[0], GitWorktree(
-            path: "/Users/x/Developer/wortel", branch: "main", isPrimary: true))
+            path: "/Users/x/Developer/wortel", branch: "main", isPrimary: true,
+            head: "4bd0b1e0dcbaa3fbcbd0e14a72e0d7ee2ba7e0d1"))
         XCTAssertEqual(trees[1].branch, "feature/x", "the branch, not its slug")
         XCTAssertFalse(trees[1].isPrimary)
     }

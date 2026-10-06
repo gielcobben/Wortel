@@ -617,14 +617,16 @@ final class FileTreeModel {
             Task { @MainActor in
                 guard let self else { return }
                 self.pendingRefreshes.remove(path)
+                // Its contents moved, so any ignore answer for them is stale,
+                // shown or not: `resync` keeps the answers it has, so one left
+                // here would leave new ignored files undimmed on return.
+                self.ignoreChecked.remove(path)
                 // Off screen: the pane re-lists everything open when it comes
                 // back (`resync`), so a re-listing and a `check-ignore` per
                 // burst of writes now are for nobody. An agent writing into an
                 // open folder kept git busy with the pane hidden.
                 guard self.isShowing else { return }
                 guard let node = self.node(at: path), self.isExpanded(node) else { return }
-                // Its contents moved, so any ignore answer for them is stale.
-                self.ignoreChecked.remove(path)
                 await self.load(node)
             }
         }

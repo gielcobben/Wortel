@@ -15,9 +15,56 @@ struct WorktreeUsage: Sendable {
         let shellPIDs: [pid_t]
     }
 
+    /// Your processes and where each one stands, read once and asked about
+    /// every worktree: reading every process's directory is a syscall each,
+    /// and a pass over twenty worktrees used to do it twenty times.
+    struct Processes: Sendable {
+        struct Entry: Sendable {
+            let pid: pid_t
+            let name: String
+            let cwd: String
+        }
+        let entries: [Entry]
+        let parentOf: [pid_t: pid_t]
+
+        /// Off the main thread: it reads the whole process table.
+        nonisolated static func read() -> Processes {
+            let table = ProcessTable.snapshot()
+            var parentOf: [pid_t: pid_t] = [:]
+            for entry in table { parentOf[entry.pid] = entry.ppid }
+            let me = getuid()
+            let app = getpid()
+            var entries: [Entry] = []
+            // Not the app or its own children: the git it runs to inspect (and
+            // the header's change counts) stands in these folders too, and
+            // would otherwise read as "git, running there".
+            for entry in table where entry.uid == me && entry.pid != app && entry.ppid != app {
+                guard let cwd = ProcessTable.workingDirectory(of: entry.pid) else { continue }
+                entries.append(Entry(pid: entry.pid, name: entry.name, cwd: cwd))
+            }
+            return Processes(entries: entries, parentOf: parentOf)
+        }
+
+        func tree(under roots: [pid_t]) -> Set<pid_t> {
+            Self.tree(under: roots, parentOf: parentOf)
+        }
+
+        nonisolated static func tree(under roots: [pid_t], parentOf: [pid_t: pid_t]) -> Set<pid_t> {
+            var found = Set(roots)
+            for pid in parentOf.keys where roots.contains(where: {
+                ProcessTable.isDescendant(pid, of: $0, parentOf: parentOf)
+            }) {
+                found.insert(pid)
+            }
+            return found
+        }
+    }
+
     let sessions: [SessionPlace]
     /// Processes not to count: the session being closed, whose shell and
-    /// children are on their way out.
+    /// children are on their way out. Taken when the sheet opens, while they
+    /// still hang from its shell; once it's gone they're reparented and no
+    /// longer look like anyone's.
     let excludedPIDs: Set<pid_t>
 
     @MainActor
@@ -28,55 +75,34 @@ struct WorktreeUsage: Sendable {
                 paths: [session.cwd, session.originCwd, session.gitCheckout].compactMap { $0 },
                 shellPIDs: [session.shellPID].compactMap { $0 } + session.sideShells.map(\.pid))
         }
-        var excluded = Set<pid_t>()
         if let closing {
             let roots = [closing.shellPID].compactMap { $0 } + closing.sideShells.map(\.pid)
-            excluded = Self.tree(under: roots)
+            // Parent links only, no directories: this runs on the main thread
+            // as the sheet opens, and one sysctl is all it needs.
+            var parentOf: [pid_t: pid_t] = [:]
+            for entry in ProcessTable.snapshot() { parentOf[entry.pid] = entry.ppid }
+            excludedPIDs = roots.isEmpty ? [] : Processes.tree(under: roots, parentOf: parentOf)
+        } else {
+            excludedPIDs = []
         }
-        excludedPIDs = excluded
     }
 
-    /// The pids under `roots`, roots included, as of now. Taken when the close
-    /// is confirmed: once the shell is gone its children are reparented and no
-    /// longer look like anyone's.
-    nonisolated static func tree(under roots: [pid_t]) -> Set<pid_t> {
-        guard !roots.isEmpty else { return [] }
-        let table = ProcessTable.snapshot()
-        var parentOf: [pid_t: pid_t] = [:]
-        for entry in table { parentOf[entry.pid] = entry.ppid }
-        var found = Set(roots)
-        for entry in table where roots.contains(where: {
-            ProcessTable.isDescendant(entry.pid, of: $0, parentOf: parentOf)
-        }) {
-            found.insert(entry.pid)
-        }
-        return found
-    }
-
-    /// Who is using `path`, for the report. Reads the process table, so call it
-    /// off the main thread.
-    nonisolated func users(of path: String) -> [String] {
+    /// Who is using `path`, for the report.
+    nonisolated func users(of path: String, in processes: Processes) -> [String] {
+        let base = WorktreeCleanup.canonical(path)
         let inside: (String) -> Bool = { candidate in
-            WorktreeCleanup.samePath(candidate, path)
-                || WorktreeCleanup.canonical(candidate).hasPrefix(WorktreeCleanup.canonical(path) + "/")
+            let resolved = WorktreeCleanup.canonical(candidate)
+            return resolved == base || resolved.hasPrefix(base + "/")
         }
         var users: [String] = []
         var accounted = excludedPIDs
         for session in sessions where session.paths.contains(where: inside) {
             users.append("the session \u{201c}\(session.name)\u{201d}")
             // Its own processes are that session, already said.
-            accounted.formUnion(Self.tree(under: session.shellPIDs))
+            accounted.formUnion(processes.tree(under: session.shellPIDs))
         }
-
-        let me = getuid()
-        let app = getpid()
         var names: [String] = []
-        // Not the app or its own children: the git it runs to inspect (and the
-        // header's change counts) stands in these folders too, and would
-        // otherwise read as "git, running there".
-        for entry in ProcessTable.snapshot()
-        where entry.uid == me && !accounted.contains(entry.pid) && entry.pid != app && entry.ppid != app {
-            guard let cwd = ProcessTable.workingDirectory(of: entry.pid), inside(cwd) else { continue }
+        for entry in processes.entries where !accounted.contains(entry.pid) && inside(entry.cwd) {
             if !names.contains(entry.name) { names.append(entry.name) }
         }
         if !names.isEmpty {
@@ -155,9 +181,12 @@ final class WorktreeCleanupModel {
         rows = paths.map { Row(path: $0) }
         isLoading = false
         let usage = self.usage
+        let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+        let urgent = closingSession != nil
         for path in paths {
-            let users = await Task.detached { usage.users(of: path) }.value
-            let report = await WorktreeCleanup.inspect(path: path, knownRepos: knownRepos, usedBy: users)
+            let users = usage.users(of: path, in: processes)
+            let report = await WorktreeCleanup.inspect(
+                path: path, knownRepos: knownRepos, usedBy: users, urgent: urgent)
             guard let index = rows.firstIndex(where: { $0.path == path }) else { continue }
             rows[index].report = report
             // The default is always the choice that loses nothing.
@@ -185,8 +214,10 @@ final class WorktreeCleanupModel {
     func removeSelected() async {
         isWorking = true
         defer { isWorking = false }
+        // Read fresh, once: things may have started since the sheet opened.
+        let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
         for row in rows where row.remove {
-            let users = await Task.detached { [usage] in usage.users(of: row.path) }.value
+            let users = usage.users(of: row.path, in: processes)
             let error = await WorktreeCleanup.remove(
                 path: row.path, knownRepos: knownRepos, usedBy: users,
                 deleteBranch: row.deleteBranch,
@@ -207,16 +238,18 @@ final class WorktreeCleanupModel {
     /// anything that turned up since the sheet was read keeps it, and says so.
     func closeSession() {
         guard let session = closingSession else { return }
-        let row = rows.first
-        // Taken now, while the shell's children still hang from it.
-        let usage = WorktreeUsage(manager: manager, excluding: session)
+        // Not read yet (a big repo, a slow disk): the session closes and the
+        // worktree stays, because nothing has said it's safe to remove.
+        let row = rows.first.flatMap { $0.report == nil ? nil : $0 }
+        let usage = self.usage
         dismiss()
         manager.close(session)
         guard let row, row.remove else { return }
         let repos = knownRepos
         Task {
             try? await Task.sleep(for: .milliseconds(400))
-            let users = await Task.detached { usage.users(of: row.path) }.value
+            let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+            let users = usage.users(of: row.path, in: processes)
             let error = await WorktreeCleanup.remove(
                 path: row.path, knownRepos: repos, usedBy: users, deleteBranch: row.deleteBranch,
                 allowLosingCommits: row.deleteBranch && row.report?.verdict == .keepsCommits)
@@ -243,13 +276,20 @@ final class WorktreeCleanupModel {
         return Array(repos)
     }
 
-    /// The worktree a session stands in: its checkout's root, when that's one
-    /// Wortel made.
+    /// The worktree a session stands in: the folder two levels under the root
+    /// (`<root>/<repo>/<branch>`), which is where Wortel puts every one it
+    /// makes. By position, not by asking git for the repository around the
+    /// session's directory: from inside a nested clone or a submodule that
+    /// answer is the nested repository, which would then be the one offered
+    /// for removal.
     private static func worktreePath(of session: Session) async -> String? {
-        guard let cwd = session.cwd, let root = await GitService.repoRoot(for: cwd),
-              WorktreeCleanup.isUnder(GitWorktree.root, root)
-        else { return nil }
-        return root
+        guard let cwd = session.cwd else { return nil }
+        let root = WorktreeCleanup.canonical(GitWorktree.root.path)
+        let resolved = WorktreeCleanup.canonical(cwd)
+        guard resolved.hasPrefix(root + "/") else { return nil }
+        let parts = resolved.dropFirst(root.count + 1).split(separator: "/")
+        guard parts.count >= 2 else { return nil }
+        return root + "/" + parts[0] + "/" + parts[1]
     }
 }
 
@@ -308,11 +348,11 @@ struct WorktreeCleanupView: View {
             Button("Cancel") { model.dismiss() }
                 .keyboardShortcut(.cancelAction)
             if model.closingSession != nil {
+                // Never waits on the check: a big repo's status can take a
+                // while, and closing a session shouldn't. Until the worktree
+                // is read, closing keeps it (see `closeSession`).
                 Button("Close Session") { model.closeSession() }
                     .keyboardShortcut(.defaultAction)
-                    // Not until the worktree is read: closing first would
-                    // decide its fate on a guess.
-                    .disabled(model.isLoading || model.rows.contains { $0.report == nil })
             } else {
                 Button(model.removableCount == 0 ? "Remove" : "Remove \(model.removableCount)") {
                     Task { await model.removeSelected() }
@@ -353,7 +393,10 @@ private struct WorktreeRowView: View {
             } else {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
-                    Text("Checking for changes\u{2026}").font(.callout).foregroundStyle(.secondary)
+                    Text(model.closingSession == nil
+                         ? "Checking for changes\u{2026}"
+                         : "Checking for changes\u{2026} Closing now keeps the worktree.")
+                        .font(.callout).foregroundStyle(.secondary)
                 }
             }
             if let error = row.error {

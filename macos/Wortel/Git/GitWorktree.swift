@@ -24,6 +24,9 @@ struct GitWorktree: Equatable {
     let isPrimary: Bool
     /// `git worktree lock`ed: someone said not to remove it. Cleanup respects it.
     var isLocked = false
+    /// The commit checked out. For a detached HEAD this is the only thing
+    /// holding its commits, so cleanup has to know it.
+    var head: String?
 }
 
 extension GitWorktree {
@@ -152,14 +155,16 @@ extension GitWorktree {
         var path: String?
         var branch: String?
         var locked = false
+        var head: String?
 
         func flush() {
             guard let current = path else { return }
             result.append(GitWorktree(path: current, branch: branch, isPrimary: result.isEmpty,
-                                      isLocked: locked))
+                                      isLocked: locked, head: head))
             path = nil
             branch = nil
             locked = false
+            head = nil
         }
 
         for line in porcelain.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -170,6 +175,8 @@ extension GitWorktree {
                 path = String(line.dropFirst("worktree ".count))
             } else if line.hasPrefix("branch refs/heads/") {
                 branch = String(line.dropFirst("branch refs/heads/".count))
+            } else if line.hasPrefix("HEAD ") {
+                head = String(line.dropFirst("HEAD ".count))
             } else if line == "locked" || line.hasPrefix("locked ") {
                 locked = true
             }

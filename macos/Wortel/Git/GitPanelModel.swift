@@ -208,14 +208,17 @@ final class GitPanelModel {
         // superseded since (another session asked in between) is giving up,
         // so it doesn't count.
         let key = Self.checkoutsKey(root: repo.root, pinned: pinnedCheckout, cwd: session?.cwd)
-        if let reading = checkoutsReading, reading.key == key,
+        // For the same session too: a read discards its answer when the session
+        // moved on, so one started for the session you just left answers
+        // nobody, and skipping this one on its account left the hint stale.
+        if let reading = checkoutsReading, reading.key == key, reading.owner === session,
            reading.generation == checkoutGeneration { return }
         // The newest read wins, for the session it was read for: ⌃Tab held
         // down starts one per tab, and a slow one finishing last, or one for
         // the session you just left, must not write over it.
         checkoutGeneration += 1
         let generation = checkoutGeneration
-        checkoutsReading = (key, generation)
+        checkoutsReading = (key, generation, session)
         defer { if checkoutsReading?.generation == generation { checkoutsReading = nil } }
         let owner = session
         let root = repo.root
@@ -264,7 +267,7 @@ final class GitPanelModel {
 
     @ObservationIgnored private var checkoutGeneration = 0
     /// The key of the checkouts read in flight, if any.
-    @ObservationIgnored private var checkoutsReading: (key: String, generation: Int)?
+    @ObservationIgnored private var checkoutsReading: (key: String, generation: Int, owner: Session?)?
     /// What the checkouts were last read for, and when: they're read again
     /// when the repo or the pin changes, or when they're a while old, not on
     /// every tab pick (each read is a `git status` per worktree).

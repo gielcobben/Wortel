@@ -31,6 +31,9 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
     var isMissing = false
     /// The folder exists but git doesn't know it as a checkout any more.
     var isOrphanedFolder = false
+    /// The folder is a repository's own checkout (a clone or a submodule that
+    /// happens to sit under the root), not a linked worktree. Never ours.
+    var isPrimaryCheckout = false
     var isLocked = false
     /// Uncommitted and untracked files, repo-relative.
     var changedFiles: [String] = []
@@ -51,12 +54,16 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
     }
 
     var verdict: Verdict {
-        if isMissing { return .safe }
-        if isOrphanedFolder || isLocked || !changedFiles.isEmpty || !usedBy.isEmpty {
+        if isOrphanedFolder || isPrimaryCheckout || isLocked || !changedFiles.isEmpty || !usedBy.isEmpty {
             return .blocked
         }
+        // A detached HEAD's commits have no branch to survive on: removing the
+        // worktree drops the only thing pointing at them.
+        if detachedCommitsAtRisk { return .blocked }
         return uniqueCommits == 0 ? .safe : .keepsCommits
     }
+
+    private var detachedCommitsAtRisk: Bool { branch == nil && uniqueCommits != 0 }
 
     /// Whether Wortel may offer to delete the branch at all. Only a branch in
     /// its own namespace: a branch you checked out into a worktree yourself is
@@ -78,6 +85,16 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
         if isOrphanedFolder {
             reasons.append("This folder isn't a git checkout any more, so Wortel can't tell what's in it. Check it in Finder.")
         }
+        if isPrimaryCheckout {
+            reasons.append("This is a repository's own checkout, not a worktree Wortel made.")
+        }
+        if detachedCommitsAtRisk, !isOrphanedFolder, !isPrimaryCheckout {
+            if let n = uniqueCommits {
+                reasons.append("It has \(n) commit\(n == 1 ? "" : "s") on no branch (a detached HEAD), which removing it would lose. Put them on a branch first, with git switch -c.")
+            } else {
+                reasons.append("Its HEAD is detached, and Wortel couldn't tell whether its commits are anywhere else.")
+            }
+        }
         if isLocked { reasons.append("It's locked in git (git worktree lock).") }
         if !changedFiles.isEmpty {
             let count = changedFiles.count
@@ -93,6 +110,7 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
 
     /// One line on what removing it does, for the safe and keepsCommits cases.
     var summary: String {
+        if verdict == .blocked { return blockers.joined(separator: " ") }
         if isMissing { return "Its folder is already gone. Only git's record of it is left." }
         switch verdict {
         case .safe:
@@ -149,11 +167,23 @@ enum WorktreeCleanup {
     /// Inspect one worktree. `usedBy` is what the app knows is using it (open
     /// sessions, processes whose directory is inside it); it can't be found
     /// from git, so the caller supplies it.
-    static func inspect(path: String, knownRepos: [String] = [], usedBy: [String] = []) async -> WorktreeReport {
+    ///
+    /// `urgent`: someone is waiting on this answer (closing a session), so its
+    /// status scan doesn't queue behind the background ones.
+    static func inspect(path: String, knownRepos: [String] = [], usedBy: [String] = [],
+                        urgent: Bool = false) async -> WorktreeReport {
         var report = WorktreeReport(path: path)
         guard FileManager.default.fileExists(atPath: path) else {
+            // Gone from disk, but its registration still has a lock, a branch
+            // and a HEAD, and a detached HEAD's commits go with it.
             report.isMissing = true
-            report.repoRoot = await registeringRepo(of: path, among: knownRepos)
+            guard let repo = await registeringRepo(of: path, among: knownRepos),
+                  let entry = await GitService.worktrees(root: repo).first(where: { samePath($0.path, path) })
+            else { return report }
+            report.repoRoot = repo
+            report.branch = entry.branch
+            report.isLocked = entry.isLocked
+            report.uniqueCommits = await uniqueCommits(branch: entry.branch, head: entry.head, primary: repo)
             return report
         }
         guard let primary = await primaryCheckout(of: path),
@@ -163,16 +193,22 @@ enum WorktreeCleanup {
             return report
         }
         report.repoRoot = primary
+        guard !entry.isPrimary else {
+            report.isPrimaryCheckout = true
+            return report
+        }
         report.branch = entry.branch
         report.isLocked = entry.isLocked
         report.usedBy = usedBy
 
         // The full scan, untracked files included: an untracked file is
         // exactly the work a "clean" status would otherwise miss.
-        let status = await GitService.backgroundStatus(root: path)
+        let status = urgent
+            ? await GitService.status(root: path)
+            : await GitService.backgroundStatus(root: path)
         report.changedFiles = status.changes.map(\.path)
 
-        report.uniqueCommits = await uniqueCommits(branch: entry.branch, in: path, primary: primary)
+        report.uniqueCommits = await uniqueCommits(branch: entry.branch, head: entry.head, primary: primary)
         return report
     }
 
@@ -235,7 +271,7 @@ enum WorktreeCleanup {
     /// nil when git can't answer. A branch with no commits yet (an unborn
     /// branch, in a repository that has none) answers 0: there is nothing on it
     /// to lose.
-    static func uniqueCommits(branch: String?, in path: String, primary: String) async -> Int? {
+    static func uniqueCommits(branch: String?, head: String?, primary: String) async -> Int? {
         let args: [String]
         if let branch {
             // `--exclude` patterns for `--branches` are matched without the
@@ -243,13 +279,23 @@ enum WorktreeCleanup {
             // every commit counts as shared with the branch itself.
             args = ["rev-list", "--count", "refs/heads/\(branch)", "--not",
                     "--exclude=\(branch)", "--branches", "--remotes"]
+        } else if let head {
+            // Detached: the commit itself, asked of the primary, so it works for
+            // a worktree whose folder is gone too.
+            args = ["rev-list", "--count", head, "--not", "--branches", "--remotes"]
         } else {
-            args = ["rev-list", "--count", "HEAD", "--not", "--branches", "--remotes"]
+            return nil
         }
-        let result = await GitService.run(args, in: branch == nil ? path : primary)
+        let result = await GitService.run(args, in: primary)
         guard result.ok else {
-            let hasHead = await GitService.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: path).ok
-            return hasHead ? nil : 0
+            // A branch with no commits yet has no ref at all: nothing to lose.
+            // Anything else git couldn't answer is "may have commits".
+            if let branch {
+                let exists = await GitService.run(
+                    ["rev-parse", "--verify", "--quiet", "refs/heads/\(branch)"], in: primary).ok
+                return exists ? nil : 0
+            }
+            return nil
         }
         return Int(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
     }

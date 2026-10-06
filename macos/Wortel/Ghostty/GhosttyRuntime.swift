@@ -417,7 +417,13 @@ final class GhosttyRuntime {
             environment: ProcessInfo.processInfo.environment,
             extraEnvironment: extra,
             shellFeatures: ShellSpawn.features(fromConfig: configuredShellFeatures),
-            binDir: Bundle.main.executableURL?.deletingLastPathComponent().path)
+            // Where the integration looks for a `ghostty` command, and the only
+            // one it runs is `+ssh-cache`. Contents/MacOS holds no such thing,
+            // so the check always failed and every `ssh` reinstalled terminfo
+            // and left a /tmp directory behind; Resources/ghostty/bin holds a
+            // small script that answers it. Not on PATH (the integration takes
+            // this directory off PATH), so it isn't a command anyone types.
+            binDir: resources?.appendingPathComponent("ghostty/bin").path)
     }
 
     /// `shell-integration-features` as written in the bundled config, read from

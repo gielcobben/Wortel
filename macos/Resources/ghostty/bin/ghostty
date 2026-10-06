@@ -1,0 +1,52 @@
+#!/bin/sh
+# Wortel's stand-in for `ghostty +ssh-cache`, the one `ghostty` command the
+# shell integration calls. Wortel ships no ghostty binary, so before this the
+# integration's "is the terminfo already on this host?" check always failed,
+# and every `ssh` re-installed it, printed "Setting up xterm-ghostty
+# terminfo...", and left a /tmp/ghostty-ssh-* directory behind.
+#
+#   ghostty +ssh-cache --host=user@host   exit 0 if installed there recently
+#   ghostty +ssh-cache --add=user@host    remember that it is
+#
+# Entries expire after 30 days, so a host rebuilt under the same name gets its
+# terminfo again. The cache lives in Wortel's data folder, beside sessions.json.
+
+if [ "$1" != "+ssh-cache" ]; then
+  echo "Wortel has no ghostty command; this only answers its shell integration." >&2
+  exit 1
+fi
+shift
+
+mode=
+host=
+for arg in "$@"; do
+  case "$arg" in
+    --host=*) mode=host; host=${arg#--host=} ;;
+    --add=*) mode=add; host=${arg#--add=} ;;
+  esac
+done
+[ -n "$host" ] || exit 1
+
+dir=${WORTEL_DATA_DIR:-"$HOME/Library/Application Support/Wortel"}
+cache="$dir/ssh-terminfo-hosts"
+now=$(date +%s)
+max_age=$((30 * 24 * 60 * 60))
+
+case $mode in
+  host)
+    [ -f "$cache" ] || exit 1
+    awk -F '\t' -v h="$host" -v now="$now" -v max="$max_age" \
+      '$1 == h && now - $2 < max { found = 1 } END { exit !found }' "$cache"
+    ;;
+  add)
+    mkdir -p "$dir" || exit 1
+    tmp="$cache.$$"
+    {
+      [ -f "$cache" ] && awk -F '\t' -v h="$host" '$1 != h' "$cache"
+      printf '%s\t%s\n' "$host" "$now"
+    } > "$tmp" && mv "$tmp" "$cache"
+    ;;
+  *)
+    exit 1
+    ;;
+esac

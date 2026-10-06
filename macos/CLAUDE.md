@@ -557,6 +557,13 @@ the same thing by all three.
   `Resources/ghostty`) landing in `Contents/Resources/`; the Zig core locates
   them via the `terminfo/78/xterm-ghostty` sentinel. Don't restructure those
   paths.
+- `GHOSTTY_BIN_DIR` points at `Resources/ghostty/bin`, which holds one small
+  `sh` script named `ghostty` that answers `+ssh-cache` (the only `ghostty`
+  command the integration runs). Without it the "terminfo already installed on
+  this host?" check always failed, so every `ssh` reinstalled it, printed a
+  setup line and left a `/tmp/ghostty-ssh-*` directory. The cache is
+  `ssh-terminfo-hosts` in the data folder, 30-day entries. Keeper-spawned
+  shells only: the exec fallback gets whatever libghostty sets.
 - `GhosttyRuntime` init pins config loading to the bundle only — never
   `ghostty_config_load_default_files` (leaks the user's real config) or
   `load_cli_args` (reads Xcode debug flags on macOS).

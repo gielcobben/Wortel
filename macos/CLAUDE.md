@@ -263,6 +263,21 @@ it's off screen, and catches up when shown. And a hidden terminal takes no
 resize (`SurfaceView.isHidden`): switching between sessions whose columns
 differ used to re-wrap every session's terminal and SIGWINCH every agent.
 
+**Removing a worktree never loses work without you choosing it.** Closing a
+session in a worktree Wortel made, "Remove Worktree…" and "Clean Up
+Worktrees…" all go through `WorktreeCleanupSheet`, which inspects first
+(`WorktreeCleanup.inspect`): uncommitted or untracked files, something running
+there or another session in it, a lock, or a folder that isn't a checkout any
+more → **blocked**, with the reason; commits found on no other branch or
+remote → the folder may go, the branch stays unless you tick it; otherwise
+**safe**, folder and (Wortel-namespaced) branch both. Removal re-inspects, moves
+the folder to the **Trash** (a clean status says nothing about an ignored
+`.env`), then drops only that registration (`worktree remove` on the now-missing
+folder, not `prune`, which would also forget a worktree on an unmounted
+volume). Only worktrees under `~/.wortel/worktrees`, and only branches in
+`worktree/`, are ever Wortel's to remove; a commit count git can't give is
+treated as "may have commits".
+
 **The changes list holds a selection, not a selected row.** ⌘ toggles a row, ⇧
 takes the run from the anchor, ⇧↑/⇧↓ do the same from the keyboard, ⌘A takes the
 lot (free to bind because the menu bar keeps Select All on ⌘⇧A so plain ⌘A

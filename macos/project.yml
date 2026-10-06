@@ -328,6 +328,11 @@ targets:
       # one directory, and a mis-parsed listing hides an existing worktree so the
       # next attempt tries to create it again.
       - path: Wortel/Git/GitWorktree.swift
+      # What removing a worktree would cost, and the removal itself. The one
+      # place Wortel deletes a folder of the user's, so every verdict is pinned
+      # against real git: a branch whose commits are counted as shared when
+      # they aren't is a silent loss of work.
+      - path: Wortel/Git/WorktreeCleanup.swift
       # The diff table. Its *views* aren't testable without a window, but its
       # metrics are, and they carry an invariant nothing else enforces: the
       # coordinator's row height must equal the static `rowHeight(forFontSize:)`

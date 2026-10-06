@@ -22,6 +22,8 @@ struct GitWorktree: Equatable {
     let branch: String?
     /// The repository's own working tree — the one that isn't a linked worktree.
     let isPrimary: Bool
+    /// `git worktree lock`ed: someone said not to remove it. Cleanup respects it.
+    var isLocked = false
 }
 
 extension GitWorktree {
@@ -149,12 +151,15 @@ extension GitWorktree {
         var result: [GitWorktree] = []
         var path: String?
         var branch: String?
+        var locked = false
 
         func flush() {
             guard let current = path else { return }
-            result.append(GitWorktree(path: current, branch: branch, isPrimary: result.isEmpty))
+            result.append(GitWorktree(path: current, branch: branch, isPrimary: result.isEmpty,
+                                      isLocked: locked))
             path = nil
             branch = nil
+            locked = false
         }
 
         for line in porcelain.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -165,6 +170,8 @@ extension GitWorktree {
                 path = String(line.dropFirst("worktree ".count))
             } else if line.hasPrefix("branch refs/heads/") {
                 branch = String(line.dropFirst("branch refs/heads/".count))
+            } else if line == "locked" || line.hasPrefix("locked ") {
+                locked = true
             }
         }
         flush()

@@ -147,6 +147,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
+        manager.closeWorktreeSession = { [weak self] session in
+            self?.closeWorktreeSession(session)
+        }
         // A fresh scan, not the last snapshot: closing silently stops what the
         // session runs, and a server started in the last ten seconds is exactly
         // the one a stale snapshot would miss.
@@ -584,6 +587,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // MARK: - Close confirmation
+
+    /// Closing a session in a worktree Wortel made: one sheet that says what
+    /// closing ends (as `confirmClose` does) and what's in the worktree, and
+    /// offers to remove it only as far as that loses nothing.
+    private func closeWorktreeSession(_ session: Session) {
+        guard let window else {
+            manager.close(session)
+            return
+        }
+        var note: String?
+        if session.needsConfirmClose || manager.hasBackgroundWork?(session) == true {
+            let scanned = processes.scanNow()
+            let running = scanned.jobs(for: session.id)
+                + scanned.orphans.filter { $0.lastSessionID == session.id }
+            note = RunningJobs.closeSummary(for: running)
+                ?? "A process is still running in this session. Closing it will terminate the process."
+        }
+        WorktreeCleanupSheet.present(.closing(session, note: note), manager: manager, over: window)
+    }
 
     /// Sheets a warning when closing a session that still has a running
     /// process. `completion(true)` proceeds with the close. Falls back to
@@ -1122,6 +1144,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func markSessionUnread(_ sender: Any?) {
         guard let session = manager.selected else { return }
         manager.markUnread(session)
+    }
+
+    @objc func cleanUpWorktrees(_ sender: Any?) {
+        focusMainWindow()
+        guard let window else { return }
+        WorktreeCleanupSheet.present(.cleanUp, manager: manager, over: window)
     }
 
     @objc func removeSessionWorktree(_ sender: Any?) {

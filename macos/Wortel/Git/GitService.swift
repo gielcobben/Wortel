@@ -487,6 +487,8 @@ enum GitService {
 
     /// Remove a worktree. Refuses when it has uncommitted changes — deliberately
     /// not forced: the whole point of a worktree is that work lives in it.
+    /// (The app's own removal goes through `WorktreeCleanup.remove`, which
+    /// checks more than git does and keeps the folder in the Trash.)
     static func removeWorktree(root: String, at path: String) async -> String? {
         let result = await run(["worktree", "remove", path], in: root)
         guard !result.ok else { return nil }

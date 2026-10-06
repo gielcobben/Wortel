@@ -91,6 +91,7 @@ enum PaletteCommands {
         "markSessionUnread:": "circle.dashed",
         "togglePinSession:": "pin",
         "removeSessionWorktree:": "trash",
+        "cleanUpWorktrees:": "folder.badge.minus",
     ]
 
     @MainActor private static func collect(_ menu: NSMenu, path: [String]) -> [PaletteCommand] {

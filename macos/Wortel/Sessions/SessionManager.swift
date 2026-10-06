@@ -64,6 +64,10 @@ final class SessionManager {
     /// layer (it owns the window to sheet onto). When nil, closes without
     /// asking.
     @ObservationIgnored var confirmClose: ((Session, @escaping (Bool) -> Void) -> Void)?
+    /// Closing a session that stands in a worktree Wortel made: the app shows
+    /// what's in it and what closing will do to it (`WorktreeCleanupSheet`),
+    /// and closes from there. Replaces `confirmClose` for those sessions.
+    @ObservationIgnored var closeWorktreeSession: ((Session) -> Void)?
 
     /// Whether a session has work running that the terminal itself cannot see:
     /// a server behind the prompt (`bun dev &`), or one that has left the shell
@@ -1404,43 +1408,6 @@ final class SessionManager {
             .compactMap(\.branch))
     }
 
-    /// The worktree a session is sitting in, when it's one Wortel created — the
-    /// gate on offering to remove it. A session in the repository's own checkout,
-    /// or in a worktree someone made by hand, is not ours to tidy up.
-    func worktree(of session: Session) async -> GitWorktree? {
-        guard let cwd = session.cwd,
-              cwd.hasPrefix(GitWorktree.root.path + "/"),
-              let root = await GitService.repoRoot(for: cwd) else { return nil }
-        // Compared resolved: git reports real paths, and a path that crosses a
-        // symlink — /var against /private/var, or a home directory on another
-        // volume — would otherwise never match, quietly making "Remove
-        // Worktree" decide the session wasn't in one of ours.
-        let resolved = URL(fileURLWithPath: cwd).resolvingSymlinksInPath().path
-        return await GitService.worktrees(root: root).first {
-            !$0.isPrimary
-                && URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == resolved
-        }
-    }
-
-    /// Remove a session's worktree. Never forced: git refuses while there are
-    /// uncommitted changes, and that refusal is the feature — a worktree is
-    /// where work lives, and the branch survives the directory either way.
-    func removeWorktree(of session: Session, onFailure: @escaping (String) -> Void) {
-        Task { [weak self] in
-            guard let self, let worktree = await self.worktree(of: session),
-                  let cwd = session.cwd,
-                  let root = await GitService.repoRoot(for: cwd) else {
-                onFailure("This session isn't in a worktree Wortel created.")
-                return
-            }
-            if let error = await GitService.removeWorktree(root: root, at: worktree.path) {
-                onFailure(error)
-                return
-            }
-            self.close(session)
-        }
-    }
-
     private func appendRestored(_ session: Session) {
         wire(session)
         sessions.append(session)
@@ -1508,6 +1475,10 @@ final class SessionManager {
     /// Interactive close (menu / context menu / ⌘W): confirms first if the
     /// session still has a running process, otherwise closes immediately.
     func requestClose(_ session: Session) {
+        if session.isInOwnWorktree, let closeWorktreeSession {
+            closeWorktreeSession(session)
+            return
+        }
         let needsConfirm = session.needsConfirmClose || hasBackgroundWork?(session) == true
         guard needsConfirm, let confirmClose else {
             close(session)

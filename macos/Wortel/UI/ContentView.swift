@@ -297,10 +297,9 @@ enum SessionActions {
         }
 
         menu.addItem(.separator())
-        // Only for a worktree Wortel made, and it closes the session with it —
-        // the directory is what the session *is*. git refuses while there are
-        // uncommitted changes, and that refusal is shown rather than overridden:
-        // a worktree is where work lives.
+        // Only for a worktree Wortel made, and it closes the session with it:
+        // the directory is what the session *is*. Uncommitted changes, unsaved
+        // commits and anything running there are shown, not overridden.
         if session.isInOwnWorktree {
             _ = item("Remove Worktree\u{2026}", "trash") { removeWorktree(session, manager: manager) }
         }
@@ -310,24 +309,11 @@ enum SessionActions {
         return menu
     }
 
+    /// The same sheet closing the session shows, which is what removing its
+    /// worktree means: it says what's in it, and removes it only when that
+    /// loses nothing or you chose to.
     static func removeWorktree(_ session: Session, manager: SessionManager) {
-        let confirm = NSAlert()
-        confirm.messageText =
-            "Remove the worktree for \u{201c}\(session.worktreeLabel ?? session.leafName)\u{201d}?"
-        confirm.informativeText = "The directory is deleted and the session closes. "
-            + "The branch and its commits are untouched, and nothing is removed if there "
-            + "are uncommitted changes."
-        confirm.addButton(withTitle: "Remove")
-        confirm.addButton(withTitle: "Cancel")
-        confirm.alertStyle = .warning
-        guard confirm.runModal() == .alertFirstButtonReturn else { return }
-        manager.removeWorktree(of: session) { message in
-            let alert = NSAlert()
-            alert.messageText = "Couldn't remove the worktree"
-            alert.informativeText = message
-            alert.alertStyle = .warning
-            alert.runModal()
-        }
+        manager.requestClose(session)
     }
 
     /// "Move To": top level plus every other folder, the no-drag way to

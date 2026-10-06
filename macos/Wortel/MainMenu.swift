@@ -256,6 +256,8 @@ enum MainMenu {
         let unread = sessionMenu.addItem(withTitle: "Mark as Unread", action: #selector(AppDelegate.markSessionUnread(_:)), keyEquivalent: "u")
         unread.keyEquivalentModifierMask = [.command, .shift]
         sessionMenu.addItem(withTitle: "Remove Worktree\u{2026}", action: #selector(AppDelegate.removeSessionWorktree(_:)), keyEquivalent: "")
+        // Every worktree Wortel made, including those of sessions long closed.
+        sessionMenu.addItem(withTitle: "Clean Up Worktrees\u{2026}", action: #selector(AppDelegate.cleanUpWorktrees(_:)), keyEquivalent: "")
         // ⌘W closes what you're in: a tab, or the session when its own terminal
         // is in front (as closing a tab in any other terminal ends its shell).
         // ⇧⌘W always means the whole session, as in iTerm and Ghostty.

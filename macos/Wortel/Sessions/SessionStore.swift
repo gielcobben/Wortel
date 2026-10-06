@@ -234,7 +234,13 @@ final class SessionStore {
 
     private var pendingSave: DispatchWorkItem?
 
+    /// Whether the last `load` read the file, or found none. False when there
+    /// was one and it couldn't be read: nothing may then be inferred from what
+    /// the list *doesn't* contain (see `SessionManager.recoverOrphanedShells`).
+    private(set) var loadedCleanly = true
+
     func load() -> [PersistedSession] {
+        loadedCleanly = true
         guard let data = try? Data(contentsOf: Self.fileURL) else { return [] }
         do {
             return try JSONDecoder().decode([PersistedSession].self, from: data)
@@ -245,6 +251,7 @@ final class SessionStore {
             // them could then never be attached to, or closed, again. Set it
             // aside so it can be recovered. One copy, replaced each time, so a
             // file that keeps failing doesn't leave a trail.
+            loadedCleanly = false
             NSLog("sessions.json unreadable, set aside: %@", String(describing: error))
             let aside = DataDirectory.file("sessions.unreadable.json")
             try? FileManager.default.removeItem(at: aside)

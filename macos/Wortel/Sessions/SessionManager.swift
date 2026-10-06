@@ -522,6 +522,11 @@ final class SessionManager {
         startAgentActivityWatch()
         let persisted = store.load()
         hasRestored = true
+        // Once launch has settled: the keeper is asked what it holds, which is
+        // a round trip, and nothing about it is urgent.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.recoverOrphanedShells()
+        }
         guard !persisted.isEmpty else {
             newSession()
             return
@@ -1406,6 +1411,59 @@ final class SessionManager {
         return Set(await GitService.worktrees(root: root)
             .filter { !$0.isPrimary }
             .compactMap(\.branch))
+    }
+
+    /// Shells the keeper is holding that no session or tab refers to.
+    ///
+    /// They happen when the list of sessions loses one the keeper still has: a
+    /// crash inside the save's debounce, an older build rewriting the file
+    /// without a tab kind it didn't know. Nothing can attach to such a shell
+    /// again, or close it, so it ran on invisibly, an agent included, until
+    /// logout. Killing them would be the tidy answer and the wrong one: an
+    /// agent in there may be halfway through your work. So:
+    ///
+    /// - nothing running under the shell (it's at a prompt): closed. There is
+    ///   nothing in it to lose but scrollback nobody could reach.
+    /// - something running: it comes back as a session of its own, named for
+    ///   what runs there, for you to look at and close.
+    ///
+    /// Never after a list that couldn't be read: then *every* shell looks
+    /// unclaimed, and the right number of them to close is none.
+    func recoverOrphanedShells() {
+        guard store.loadedCleanly, let keeper = GhosttyRuntime.keeper else { return }
+        let known = Set(sessions.flatMap { [$0.id] + $0.terminalTabIDs })
+        let orphans: [(id: UUID, pid: pid_t)] = keeper.running().compactMap { state in
+            guard !state.attached, let id = UUID(uuidString: state.session),
+                  !known.contains(id), state.pid > 0 else { return nil }
+            return (id, state.pid)
+        }
+        guard !orphans.isEmpty else { return }
+
+        let table = ProcessTable.snapshot()
+        var parentOf: [pid_t: pid_t] = [:]
+        for entry in table { parentOf[entry.pid] = entry.ppid }
+        var recovered = false
+        for orphan in orphans {
+            // The shell's own children first: that's what was started there
+            // (`claude`, `npm`), rather than something deep in its tree.
+            let children = table.filter { $0.ppid == orphan.pid }
+            let running = table.filter {
+                ProcessTable.isDescendant($0.pid, of: orphan.pid, parentOf: parentOf)
+            }
+            guard let what = (children.first ?? running.first)?.name else {
+                keeper.close(session: orphan.id)
+                TerminalModeRecorder.shared.forget(session: orphan.id)
+                continue
+            }
+            let session = Session(id: orphan.id, name: "Recovered (\(what))", title: what,
+                                  cwd: ProcessTable.workingDirectory(of: orphan.pid))
+            // A placeholder: the agent's own title, when it pushes one, is a
+            // better name than ours.
+            session.nameSource = .placeholder
+            appendRestored(session)
+            recovered = true
+        }
+        if recovered { scheduleSave() }
     }
 
     private func appendRestored(_ session: Session) {

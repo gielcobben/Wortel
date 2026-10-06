@@ -377,6 +377,20 @@ final class TerminalModeRecorder: @unchecked Sendable {
         save()
     }
 
+    /// Forget every terminal but `live`'s: entries for sessions that went away
+    /// without a `forget` (a crash, a build from before it was called on every
+    /// path). Run once at launch, after the session list is known to be whole.
+    func keepOnly(_ live: Set<UUID>) {
+        lock.lock()
+        let stale = modes.keys.filter { !live.contains($0) }
+        for id in stale {
+            modes.removeValue(forKey: id)
+            scanners.removeValue(forKey: id)
+        }
+        lock.unlock()
+        if !stale.isEmpty { save() }
+    }
+
     func save() {
         lock.lock()
         saveScheduled = false

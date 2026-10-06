@@ -54,6 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             fatalError("failed to initialize libghostty")
         }
         self.runtime = runtime
+        // Housekeeping, well off the launch path.
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
+            DropPasteboard.sweepOldImages()
+        }
 
         let manager = SessionManager(runtime: runtime)
         self.manager = manager
@@ -584,6 +588,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // it. The server recovers from a stale one on the next launch, but only
         // by proving it's stale — cheaper and less alarming to tidy up.
         cli?.stop()
+        // Nothing we started outlives us: a fetch hung on a dead network would.
+        GitService.terminateAll()
     }
 
     // MARK: - Close confirmation

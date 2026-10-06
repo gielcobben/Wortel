@@ -39,6 +39,24 @@ enum DropPasteboard {
             || pb.canReadObject(forClasses: [NSImage.self], options: nil)
     }
 
+    /// Delete pasted images older than a day. Each paste writes one, and the
+    /// path is all the terminal gets, so nothing knows when the program it was
+    /// pasted into is done with it; a day is long past any prompt it went into.
+    /// (macOS clears the temp folder itself, but only after three days.)
+    static func sweepOldImages(olderThan age: TimeInterval = 24 * 60 * 60) {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory
+        let cutoff = Date().addingTimeInterval(-age)
+        let files = (try? fm.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        for url in files
+        where url.lastPathComponent.hasPrefix("wortel-") && url.pathExtension == "png" {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantFuture
+            if modified < cutoff { try? fm.removeItem(at: url) }
+        }
+    }
+
     /// Spill pasteboard image bytes to a temp PNG. Goes through NSImage so it
     /// accepts any format the pasteboard offers (PNG, TIFF, JPEG, PDF, …),
     /// not just the few raw types. Returns nil when there's no image.

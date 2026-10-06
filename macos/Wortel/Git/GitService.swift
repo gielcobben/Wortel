@@ -53,7 +53,52 @@ enum GitService {
         return env
     }()
 
-    static func run(_ args: [String], in directory: String, input: Data? = nil) async -> CommandResult {
+    /// Every git we've started and not yet seen exit, so quitting can stop them
+    /// (`terminateAll`). A `fetch` stuck on a dead network otherwise outlives
+    /// the app by as long as the network takes to say so, which can be never.
+    private static let live = OSAllocatedUnfairLock(uncheckedState: [ObjectIdentifier: Process]())
+
+    private static func track(_ process: Process) {
+        live.withLock { $0[ObjectIdentifier(process)] = process }
+    }
+
+    private static func untrack(_ process: Process) {
+        _ = live.withLock { $0.removeValue(forKey: ObjectIdentifier(process)) }
+    }
+
+    /// Stop every git still running. Called as the app quits.
+    static func terminateAll() {
+        for process in live.withLock({ Array($0.values) }) where process.isRunning {
+            stop(process)
+        }
+    }
+
+    /// Stop a git and everything it started, children first.
+    ///
+    /// Signalling git alone isn't enough, measured: a fetch's `ssh` survived
+    /// it, reparented to launchd. That leaves a stray process, and it holds
+    /// our output pipes open, so the call that was meant to end at its time
+    /// limit waits for the ssh instead. The children are found through git, so
+    /// before git goes: after, nothing links them to us. (git shares our
+    /// process group, so signalling the group would take the app with it.)
+    static func stop(_ process: Process) {
+        let pid = process.processIdentifier
+        let table = ProcessTable.snapshot()
+        var parentOf: [pid_t: pid_t] = [:]
+        for entry in table { parentOf[entry.pid] = entry.ppid }
+        for entry in table where ProcessTable.isDescendant(entry.pid, of: pid, parentOf: parentOf) {
+            kill(entry.pid, SIGTERM)
+        }
+        if process.isRunning { process.terminate() }
+    }
+
+    /// How long a command that talks to a remote may take before it's stopped.
+    /// Generous, because a big fetch on a slow link is real work; the point is
+    /// only that a hung one ends.
+    static let networkTimeout: TimeInterval = 300
+
+    static func run(_ args: [String], in directory: String, input: Data? = nil,
+                    timeout: TimeInterval? = nil) async -> CommandResult {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
@@ -75,6 +120,13 @@ enum GitService {
                     continuation.resume(returning: CommandResult(
                         status: -1, stdout: "", stderr: "\(error)"))
                     return
+                }
+                track(process)
+                defer { untrack(process) }
+                if let timeout {
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                        if process.isRunning { stop(process) }
+                    }
                 }
 
                 // Drain both pipes off separate threads before waiting, so a
@@ -778,6 +830,8 @@ enum GitService {
                     continuation.resume(returning: Data())
                     return
                 }
+                track(process)
+                defer { untrack(process) }
                 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
                 continuation.resume(returning: process.terminationStatus == 0 ? data : Data())
@@ -947,7 +1001,7 @@ enum GitService {
     /// refs that ahead/behind and the blue dots are measured against, without
     /// touching the work tree — fetch never merges.
     static func fetch(root: String) async -> CommandResult {
-        await run(["fetch", "--prune"], in: root)
+        await run(["fetch", "--prune"], in: root, timeout: networkTimeout)
     }
 
     /// Pull the current branch, fast-forward only. A panel with no conflict UI
@@ -956,7 +1010,7 @@ enum GitService {
     /// is right there to resolve it in. `git pull` fetches first, so this is
     /// "catch up with the remote" in one step, not a merge of a stale ref.
     static func pull(root: String) async -> CommandResult {
-        await run(["pull", "--ff-only"], in: root)
+        await run(["pull", "--ff-only"], in: root, timeout: networkTimeout)
     }
 
     /// Push the current branch. On a branch with no upstream yet, set one on
@@ -964,7 +1018,7 @@ enum GitService {
     static func push(root: String, setUpstream: Bool) async -> CommandResult {
         var args = ["push"]
         if setUpstream { args += ["--set-upstream", "origin", "HEAD"] }
-        return await run(args, in: root)
+        return await run(args, in: root, timeout: networkTimeout)
     }
 
     /// The staged changes as a stat summary + full patch, for feeding a model

@@ -522,6 +522,7 @@ final class SessionManager {
         startAgentActivityWatch()
         let persisted = store.load()
         hasRestored = true
+        if store.loadedCleanly { Self.retireDeadDefaults(persisted: persisted) }
         // Once launch has settled: the keeper is asked what it holds, which is
         // a round trip, and nothing about it is urgent.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
@@ -1413,6 +1414,18 @@ final class SessionManager {
             .compactMap(\.branch))
     }
 
+    /// Settings older builds wrote that nothing reads any more. The legacy
+    /// panel flag still answers for a session saved before visibility was per
+    /// session, so it goes only once no saved session needs it.
+    private static func retireDeadDefaults(persisted: [PersistedSession]) {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "inspector.widths")
+        defaults.removeObject(forKey: "git.panelWidth")
+        if persisted.allSatisfy({ $0.gitPanelVisible != nil }) {
+            defaults.removeObject(forKey: "git.panelVisible")
+        }
+    }
+
     /// Shells the keeper is holding that no session or tab refers to.
     ///
     /// They happen when the list of sessions loses one the keeper still has: a
@@ -1430,7 +1443,13 @@ final class SessionManager {
     /// Never after a list that couldn't be read: then *every* shell looks
     /// unclaimed, and the right number of them to close is none.
     func recoverOrphanedShells() {
-        guard store.loadedCleanly, let keeper = GhosttyRuntime.keeper else { return }
+        guard store.loadedCleanly else { return }
+        // And, with the list settled, the saved terminal modes of terminals
+        // that no longer exist.
+        defer {
+            TerminalModeRecorder.shared.keepOnly(Set(sessions.flatMap { [$0.id] + $0.terminalTabIDs }))
+        }
+        guard let keeper = GhosttyRuntime.keeper else { return }
         let known = Set(sessions.flatMap { [$0.id] + $0.terminalTabIDs })
         let orphans: [(id: UUID, pid: pid_t)] = keeper.running().compactMap { state in
             guard !state.attached, let id = UUID(uuidString: state.session),

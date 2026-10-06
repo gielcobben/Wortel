@@ -25,8 +25,16 @@ import AppKit
 /// its own), key goes straight back to the window with the terminal's first
 /// responder intact, and the monitors below do the dismissing: a keystroke — it
 /// passes through to the shell — or a click anywhere outside.
+///
+/// **And when Wortel stops being the app you're in.** The monitors only see
+/// Wortel's own events, and the window losing key only happens to a window
+/// that had it. A first-run notice shown while Wortel wasn't active (launched
+/// in the background, at login, relaunched by an update) had neither: clicks
+/// went to other apps, and the popover stayed up over the window for good.
+/// So deactivating closes it too, and the first-run notice waits until the
+/// app is active and the ⓘ is actually on screen.
 @MainActor
-final class TelemetryNotice: NSObject {
+final class TelemetryNotice: NSObject, NSPopoverDelegate {
     static let shared = TelemetryNotice()
 
     /// The ⓘ, registered by `TelemetryInfoButton` when the sidebar builds it.
@@ -50,21 +58,61 @@ final class TelemetryNotice: NSObject {
             DispatchQueue.main.async { self.presentFirstRunIfNeeded(retries: retries - 1) }
             return
         }
+        // Not now: shown to an app you aren't in, it has nothing to dismiss
+        // it. Next time you come to Wortel instead, and only counted as seen
+        // once it has been.
+        guard NSApp.isActive, anchorIsOnScreen else {
+            waitingForActivation = true
+            return
+        }
+        guard show() else { return }
         TelemetrySettings.markNoticeShown()
-        show()
+    }
+
+    private var waitingForActivation = false
+
+    @objc private func appBecameActive() {
+        guard waitingForActivation else { return }
+        waitingForActivation = false
+        // A turn later: activation and the window coming forward land together.
+        DispatchQueue.main.async { self.presentFirstRunIfNeeded() }
+    }
+
+    /// The ⓘ is somewhere you can see it: its window up and not in the Dock,
+    /// and the sidebar it sits in not collapsed.
+    private var anchorIsOnScreen: Bool {
+        guard let anchor, let window = anchor.window else { return false }
+        return window.isVisible && !window.isMiniaturized
+            && !anchor.isHiddenOrHasHiddenAncestor && !anchor.visibleRect.isEmpty
+    }
+
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appBecameActive),
+            name: NSApplication.didBecomeActiveNotification, object: nil)
     }
 
     @objc func toggleVisible(_ sender: Any?) {
         if popover == nil { show() } else { dismiss() }
     }
 
+    /// AppKit closed it itself (its window went, say): forget it, so the next
+    /// click on the ⓘ opens it rather than closing what's already gone.
+    func popoverDidClose(_ notification: Notification) {
+        guard let closed = notification.object as? NSPopover, closed === popover else { return }
+        tearDown()
+    }
+
     // ---- showing ----------------------------------------------------------
 
-    private func show() {
-        guard popover == nil, let anchor, let window = anchor.window else { return }
+    @discardableResult
+    private func show() -> Bool {
+        guard popover == nil, anchorIsOnScreen, let anchor, let window = anchor.window else { return false }
 
         let popover = NSPopover()
         popover.behavior = .applicationDefined
+        popover.delegate = self
         popover.contentViewController = makeContent()
         self.popover = popover
 
@@ -95,6 +143,10 @@ final class TelemetryNotice: NSObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(windowResignedKey),
             name: NSWindow.didResignKeyNotification, object: window)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowResignedKey),
+            name: NSApplication.didResignActiveNotification, object: nil)
+        return true
     }
 
     private func isOnAnchor(_ event: NSEvent) -> Bool {
@@ -106,13 +158,19 @@ final class TelemetryNotice: NSObject {
 
     private func dismiss() {
         guard let popover else { return }
-        NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
-        monitors.forEach(NSEvent.removeMonitor)
-        monitors = []
-        self.popover = nil
+        tearDown()
         // `close()`, not `performClose(_:)`: the second is the user-initiated
         // path, and this popover's behaviour is `.applicationDefined`.
         popover.close()
+    }
+
+    /// Everything that was watching for a reason to close it.
+    private func tearDown() {
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: NSApplication.didResignActiveNotification, object: nil)
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors = []
+        popover = nil
     }
 
     // ---- the content ------------------------------------------------------

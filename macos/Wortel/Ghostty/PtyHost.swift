@@ -278,6 +278,10 @@ final class PtyHost: @unchecked Sendable {
     private func reapWhenItExits() {
         let pid = self.pid
         let started = self.startedAt
+        // Held directly, not through `self`: the keeper frees the host the
+        // moment it closes a session, and `stop`'s SIGKILL follow-up reads this
+        // to know the pid hasn't been reaped and recycled.
+        let shared = self.shared
         let source = DispatchSource.makeProcessSource(
             identifier: pid, eventMask: .exit, queue: queue)
         source.setEventHandler { [weak self] in
@@ -285,7 +289,7 @@ final class PtyHost: @unchecked Sendable {
             while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
             let code: Int32 = (status & 0x7F) == 0 ? (status >> 8) & 0xFF : -1
             let ms = (DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
-            self?.shared.withLock { $0.hasExited = true }
+            shared.withLock { $0.hasExited = true }
             self?.onExit?(code, ms)
             source.cancel()
         }
@@ -435,9 +439,14 @@ final class PtyHost: @unchecked Sendable {
         // reaper has collected the child the number is free to be reused, and
         // signalling a recycled pid would kill something that has nothing to do
         // with us.
+        //
+        // The state, not `self`, is what's held: the keeper drops the host as
+        // it closes the session, so a `[weak self]` here was always nil by the
+        // time it ran, and the SIGKILL never happened.
         let target = pid
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self, !self.shared.withLock({ $0.hasExited }) else { return }
+        let shared = self.shared
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) {
+            guard !shared.withLock({ $0.hasExited }) else { return }
             if kill(-target, SIGKILL) != 0 { kill(target, SIGKILL) }
         }
     }

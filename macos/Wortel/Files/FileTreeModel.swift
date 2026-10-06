@@ -123,6 +123,9 @@ final class FileTreeModel {
     /// `check-ignore` answers, cached per directory and dropped when that
     /// directory's listing changes.
     @ObservationIgnored private var ignoreChecked: Set<String> = []
+    /// The session or its repo moved while the tree wasn't on screen; see
+    /// `reroot`.
+    @ObservationIgnored private var rerootPending = false
 
     /// How long a directory's re-listing waits after an event, coalescing a
     /// burst (an `npm install`, an agent writing a tree) into one pass.
@@ -147,6 +150,16 @@ final class FileTreeModel {
     /// Rebuilds only when the answer moved; the repo root arrives a beat after
     /// a cwd (it's resolved asynchronously), so this runs again when it lands.
     func reroot() {
+        // Not on screen: just remember the root may have moved. Every session
+        // switch lands here, and rebuilding a tree nobody is looking at (a
+        // listing and a `check-ignore` per open directory, a watcher each)
+        // was most of what a switch cost with the column on another pane.
+        // `resync`, which the pane runs when it appears, picks this up.
+        guard isShowing else {
+            rerootPending = true
+            return
+        }
+        rerootPending = false
         syncRepoRoot()
         let path = repoRoot ?? session?.cwd
         guard let path, !path.isEmpty else {
@@ -604,6 +617,11 @@ final class FileTreeModel {
             Task { @MainActor in
                 guard let self else { return }
                 self.pendingRefreshes.remove(path)
+                // Off screen: the pane re-lists everything open when it comes
+                // back (`resync`), so a re-listing and a `check-ignore` per
+                // burst of writes now are for nobody. An agent writing into an
+                // open folder kept git busy with the pane hidden.
+                guard self.isShowing else { return }
                 guard let node = self.node(at: path), self.isExpanded(node) else { return }
                 // Its contents moved, so any ignore answer for them is stale.
                 self.ignoreChecked.remove(path)
@@ -636,7 +654,15 @@ final class FileTreeModel {
     /// glance because it walks only what's open, which is the pane's whole cost
     /// rule.
     func resync() {
-        guard let root, isShowing else { return }
+        guard isShowing else { return }
+        if rerootPending {
+            // reroot lists what's open itself when the root moved, and does
+            // nothing at all when it didn't.
+            let before = root
+            reroot()
+            if root !== before { return }
+        }
+        guard let root else { return }
         // Snapshot the open directories first: each `load` rebuilds `rows`, so
         // iterating it while awaiting would walk a list changing underneath.
         let open = rows.map(\.node).filter { $0.isDirectory && isExpanded($0) }

@@ -1461,6 +1461,8 @@ final class SessionManager {
         explicitSignalAt.removeValue(forKey: session.id)
         autoNameState.removeValue(forKey: session.id)
         attentionSince.removeValue(forKey: session.id)
+        attentionContent.removeValue(forKey: session.id)
+        recentSessionIDs.removeAll { $0 == session.id }
         pinnedIDs.removeAll { $0 == session.id }
         endPromptCapture(session)
         // The killed shell never reaches its prompt to clear its own agent
@@ -2259,7 +2261,10 @@ final class SessionManager {
     }
 
     private func persistedSessions() -> [PersistedSession] {
-        sessions.map { session in
+        // One read of the process table for the whole save, taken only if some
+        // session has an agent to vouch for.
+        lazy var table = ProcessTable.snapshot()
+        return sessions.map { session in
             // What to record as "the agent to resume next launch", resolved as one
             // unit so a model or command can never outlive the agent it belongs to.
             //
@@ -2272,7 +2277,8 @@ final class SessionManager {
             var conversationID = session.pendingResumeConversationID
             let agent: AgentMarker? = {
                 if let running = session.runningAgent,
-                   AgentLiveness.isRunning(agent: running, shellPID: session.runningShellPID) {
+                   AgentLiveness.isRunning(agent: running, shellPID: session.runningShellPID,
+                                           table: table) {
                     // Ask the live agent which conversation it's actually writing to,
                     // while it's still there to ask — after it dies only a guess is left.
                     // Ask which transcript this agent created, while it's still

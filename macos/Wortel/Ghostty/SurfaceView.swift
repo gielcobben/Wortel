@@ -90,6 +90,25 @@ final class SurfaceView: NSView {
 
     static func holdResizes() { resizeHolds += 1 }
 
+    /// Shown again: take the size it missed while hidden, a moment later
+    /// rather than now. A session switch unhides this before the new session's
+    /// column has been applied, so the container is still the *previous*
+    /// session's width at this instant; taken now, a terminal coming back to
+    /// the width it left at would be resized to the other session's and back
+    /// again, two redraws for nothing. A moment later the layout has landed,
+    /// and usually it's the size it already had. Until then its last frame
+    /// shows pinned top left, as during a hold.
+    override var isHidden: Bool {
+        didSet {
+            guard oldValue, !isHidden, resizePending else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                guard let self, self.resizePending, !self.isHidden, Self.resizeHolds == 0
+                else { return }
+                self.sizeDidChange(self.frame.size)
+            }
+        }
+    }
+
     static func releaseResizes() {
         resizeHolds = max(0, resizeHolds - 1)
         guard resizeHolds == 0 else { return }
@@ -290,7 +309,15 @@ final class SurfaceView: NSView {
         // that was only put away. Nothing this small is a size anyone works
         // at, so it keeps the last real one.
         guard size.width >= 40, size.height >= 20 else { return }
-        if Self.resizeHolds > 0 {
+        // Hidden (another session's terminal, a side terminal behind another
+        // tab) takes no size either, for the same reason as a hold. Every
+        // session's terminal sits in one container, so switching between two
+        // sessions whose columns differ resized all of them: each hidden one
+        // re-wrapped and its program got a SIGWINCH, so every agent in the
+        // sidebar redrew its whole screen, for a width that wasn't even its
+        // own (it gets resized back when you return to it). It takes whatever
+        // size is current when it's shown again (`isHidden` below).
+        if Self.resizeHolds > 0 || isHidden {
             if !resizePending {
                 resizePending = true
                 // Pinned, not stretched, while it waits for its real size;
@@ -300,6 +327,7 @@ final class SurfaceView: NSView {
             }
             return
         }
+        resizePending = false
         let reflowed = size != contentSize
         contentSize = size
         if reflowed { onSizeChange?() }

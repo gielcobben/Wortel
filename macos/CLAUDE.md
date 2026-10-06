@@ -247,6 +247,22 @@ FSEvents watcher fires on every write, and bursts used to stack scans), and
 watches `# branch.oid` so a commit made **in the terminal** — the normal way —
 reloads History.
 
+**Only the repo on screen does git work.** `GitPanelModel` caches a model per
+root it has shown, and each keeps its watch, but only the shown one scans on a
+write (`GitRepoModel.setActive`); the rest mark themselves `isStale`, and a
+switch back re-reads only if stale (the header's spinner covers the catch-up).
+Before this, an agent merging in one worktree woke a full scan in every cached
+checkout at once. The other worktrees' change counts behind the header's hint
+go through `GitService.backgroundStatus`, one at a time app-wide, reuse a
+cached model's status when it's current, and stop when a newer read supersedes
+them. Every git we run gets `-c core.fsmonitor=false`: with fsmonitor in the
+user's config each repo touched left a daemon running for good, for no gain
+(our reads never write the index the daemon's answers are keyed to). The Files
+tree follows the same rule: it doesn't re-root, re-list or `check-ignore` while
+it's off screen, and catches up when shown. And a hidden terminal takes no
+resize (`SurfaceView.isHidden`): switching between sessions whose columns
+differ used to re-wrap every session's terminal and SIGWINCH every agent.
+
 **The changes list holds a selection, not a selected row.** ⌘ toggles a row, ⇧
 takes the run from the anchor, ⇧↑/⇧↓ do the same from the keyboard, ⌘A takes the
 lot (free to bind because the menu bar keeps Select All on ⌘⇧A so plain ⌘A

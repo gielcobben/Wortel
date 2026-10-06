@@ -236,7 +236,21 @@ final class SessionStore {
 
     func load() -> [PersistedSession] {
         guard let data = try? Data(contentsOf: Self.fileURL) else { return [] }
-        return (try? JSONDecoder().decode([PersistedSession].self, from: data)) ?? []
+        do {
+            return try JSONDecoder().decode([PersistedSession].self, from: data)
+        } catch {
+            // Unreadable is not empty. Starting fresh is still the only way to
+            // open a window, but the next save would overwrite the list, and
+            // with it every session's id: the shells the keeper is holding for
+            // them could then never be attached to, or closed, again. Set it
+            // aside so it can be recovered. One copy, replaced each time, so a
+            // file that keeps failing doesn't leave a trail.
+            NSLog("sessions.json unreadable, set aside: %@", String(describing: error))
+            let aside = DataDirectory.file("sessions.unreadable.json")
+            try? FileManager.default.removeItem(at: aside)
+            try? FileManager.default.copyItem(at: Self.fileURL, to: aside)
+            return []
+        }
     }
 
     func scheduleSave(_ provider: @escaping () -> [PersistedSession]) {

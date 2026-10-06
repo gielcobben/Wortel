@@ -46,9 +46,13 @@ struct AgentMarker {
 /// because a script-based agent's process is named after its interpreter (see
 /// `locate`).
 enum AgentLiveness {
-    static func isRunning(agent: String, shellPID: pid_t?) -> Bool {
+    /// `table`: a snapshot to read instead of taking one. A caller asking
+    /// about every session (the save) takes one and shares it, rather than
+    /// reading the whole process table once per agent on the main thread.
+    static func isRunning(agent: String, shellPID: pid_t?,
+                          table: [ProcessEntry]? = nil) -> Bool {
         guard shellPID != nil else { return true }     // nothing recorded — assume alive
-        switch locate(agent: agent, shellPID: shellPID) {
+        switch locate(agent: agent, shellPID: shellPID, table: table) {
         case .running, .unknown: return true
         case .gone: return false
         }
@@ -62,9 +66,10 @@ enum AgentLiveness {
         case unknown
     }
 
-    static func locate(agent: String, shellPID: pid_t?) -> Located {
+    static func locate(agent: String, shellPID: pid_t?,
+                       table: [ProcessEntry]? = nil) -> Located {
         guard let shellPID else { return .unknown }
-        let table = ProcessTable.snapshot()
+        let table = table ?? ProcessTable.snapshot()
         guard !table.isEmpty else { return .unknown }  // couldn't read — no claim
 
         var parentOf: [pid_t: pid_t] = [:]

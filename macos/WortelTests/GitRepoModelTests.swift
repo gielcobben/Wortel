@@ -1,4 +1,5 @@
 import XCTest
+import os
 
 /// The model's behaviour under the conditions that actually bite: a watcher
 /// firing during a build, a commit made in the terminal, and a reader scrolling
@@ -319,6 +320,86 @@ final class GitRepoModelTests: XCTestCase {
         XCTAssertEqual(model.statusScans - before, 1, "three files, one scan")
         XCTAssertEqual(model.status.stagedChanges.count, 3)
         XCTAssertTrue(model.status.unstagedChanges.isEmpty)
+    }
+
+    /// The panel caches a model per repo it has shown, and every one of them
+    /// used to scan on every write. An agent merging in one worktree then woke
+    /// a full `git status` in every cached checkout at once: four concurrent 7s
+    /// scans of a monorepo, a core each. One that isn't shown must only note
+    /// that it's stale; the shown one beside it proves the write was seen.
+    func testAnInactiveModelGoesStaleInsteadOfScanning() async {
+        repo = GitFixture.newRepo("inactive")
+        GitFixture.commit("base", in: repo)
+        let shown = GitRepoModel(root: repo.path)
+        let hidden = GitRepoModel(root: repo.path)
+        await shown.refresh()
+        await hidden.refresh()
+        XCTAssertFalse(hidden.isStale, "a fresh read is current")
+        hidden.setActive(false)
+        let shownBefore = shown.statusScans
+        let hiddenBefore = hidden.statusScans
+        // Let the streams come up before writing, or the write predates them.
+        try? await Task.sleep(for: .milliseconds(500))
+
+        GitFixture.sh("echo x > new.txt", in: repo)
+        await waitUntil { shown.statusScans > shownBefore && hidden.isStale }
+
+        XCTAssertGreaterThan(shown.statusScans, shownBefore, "the write must wake the shown model")
+        XCTAssertTrue(hidden.isStale, "the hidden one must know it missed something")
+        XCTAssertEqual(hidden.statusScans, hiddenBefore, "and must not have scanned for it")
+
+        // Shown again, it catches up with exactly one scan.
+        hidden.setActive(true)
+        await hidden.refreshIfStale()
+        XCTAssertEqual(hidden.statusScans, hiddenBefore + 1)
+        XCTAssertFalse(hidden.isStale)
+        XCTAssertTrue(hidden.status.changes.contains { $0.path == "new.txt" })
+    }
+
+    /// Switching back to a repo nothing happened in runs no git at all.
+    func testSwitchingBackToAQuietRepoRunsNoScan() async {
+        repo = GitFixture.newRepo("quiet")
+        GitFixture.commit("base", in: repo)
+        let model = GitRepoModel(root: repo.path)
+        await model.refresh()
+        model.setActive(false)
+        try? await Task.sleep(for: .milliseconds(300))
+        let before = model.statusScans
+
+        model.setActive(true)
+        await model.refreshIfStale()
+
+        XCTAssertEqual(model.statusScans, before)
+    }
+
+    /// Background scans (other worktrees' change counts) are queued app-wide:
+    /// however many pile up, only one runs at a time, and all of them finish.
+    func testTheBackgroundGateRunsOneAtATime() async {
+        let gate = SerialGate()
+        let counter = OSAllocatedUnfairLock(initialState: (now: 0, peak: 0))
+        await withTaskGroup(of: Int.self) { group in
+            for i in 0..<6 {
+                group.addTask {
+                    await gate.run {
+                        counter.withLock { $0.now += 1; $0.peak = max($0.peak, $0.now) }
+                        try? await Task.sleep(for: .milliseconds(20))
+                        counter.withLock { $0.now -= 1 }
+                        return i
+                    }
+                }
+            }
+            var finished = 0
+            for await _ in group { finished += 1 }
+            XCTAssertEqual(finished, 6)
+        }
+        XCTAssertEqual(counter.withLock { $0.peak }, 1)
+    }
+
+    /// Poll for a condition FSEvents will make true, for up to four seconds.
+    private func waitUntil(_ condition: () -> Bool) async {
+        for _ in 0..<40 where !condition() {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
     }
 
     /// selectAdjacentCommit kicks off an async selection; give it a turn.

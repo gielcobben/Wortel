@@ -47,6 +47,19 @@ final class GitRepoModel {
 
     private(set) var status = GitStatus()
     private(set) var isRefreshing = false
+    /// What's on screen may be out of date: nothing has been read yet, or the
+    /// work tree changed while this model wasn't the one shown and the scan
+    /// that catches up hasn't landed. The repo header shows a spinner for it,
+    /// which is what lets a switch show the old list at once instead of a
+    /// blank one for as long as a big repo's `git status` takes.
+    private(set) var isStale = true
+    /// Bumped whenever the model goes stale. A scan only clears `isStale` if
+    /// nothing went stale after it started, or a write landing mid-scan would
+    /// be marked as read.
+    @ObservationIgnored private var staleGeneration = 0
+    /// Whether this is the repo the panel shows. Only the shown repo scans on
+    /// file changes; the rest just mark themselves stale. See `setActive`.
+    @ObservationIgnored private var isActive = true
     private(set) var isCommitting = false
     private(set) var isPushing = false
     private(set) var isPulling = false
@@ -207,8 +220,53 @@ final class GitRepoModel {
     private func makeWatcher(paths: [String], excluding: [String] = []) -> GitRepoWatcher {
         GitRepoWatcher(paths: paths, excluding: excluding) { [weak self] in
             // Callback is on a background queue — hop to the main actor.
-            Task { @MainActor in self?.scheduleWatchRefresh() }
+            Task { @MainActor in self?.workTreeChanged() }
         }
+    }
+
+    /// Whether this is the repo on screen. `GitPanelModel` keeps a model per
+    /// repo it has shown, and each one used to scan on every write: an agent
+    /// merging in one worktree woke a full `git status` in every cached
+    /// checkout at once (seen: four concurrent 7s scans of a monorepo, most of
+    /// a core each). Now only the shown one scans; the rest keep their watch,
+    /// which costs nothing while the tree is quiet, and use it only to know
+    /// whether they're stale. Switching back to one that is still current
+    /// runs no git at all.
+    ///
+    /// The watch stays up rather than being torn down and rebuilt per switch:
+    /// starting a stream on a big tree isn't free, and a stream that was down
+    /// can't say what changed while it was.
+    func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        // A refresh the watcher had queued up for us hasn't run, so what it
+        // was about is still unread.
+        if !active, let item = watchRefreshItem {
+            item.cancel()
+            watchRefreshItem = nil
+            markStale()
+        }
+    }
+
+    /// Re-read status if anything may have moved since the last read. What a
+    /// switch back to this repo calls instead of an unconditional refresh.
+    func refreshIfStale() async {
+        guard isStale else { return }
+        await refresh()
+    }
+
+    private func workTreeChanged() {
+        if isActive {
+            scheduleWatchRefresh()
+        } else {
+            markStale()
+        }
+    }
+
+    private func markStale() {
+        staleGeneration += 1
+        // Observed, so only write when it moves.
+        if !isStale { isStale = true }
     }
 
     private static func worktreesDir(inside root: String) -> String {
@@ -327,10 +385,12 @@ final class GitRepoModel {
         repeat {
             refreshQueued = false
             let started = Date()
+            let generation = staleGeneration
             isRefreshing = true
             status = await GitService.status(root: root)
             isRefreshing = false
             statusScans += 1
+            if generation == staleGeneration, isStale { isStale = false }
 
             // Resolve once whether there's a remote at all. The Changes pane can
             // be open long before History (which is what otherwise triggers this

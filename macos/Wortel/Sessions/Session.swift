@@ -355,6 +355,9 @@ final class Session: Identifiable {
     /// never shown in this one has no view, and its shell is still being kept
     /// alive for it, so that one is closed at the keeper directly.
     func closeSideSurface(_ id: UUID) {
+        // Like a closed session's: an agent marker left for this tab would be
+        // offered for resume, or swept only at some later launch.
+        AgentResumeStore.remove(sessionID: id)
         if let view = sideSurfaces.removeValue(forKey: id) {
             view.close()
             view.removeFromSuperview()
@@ -368,8 +371,18 @@ final class Session: Identifiable {
 
     func close() {
         for id in terminalTabIDs { closeSideSurface(id) }
-        surfaceView?.close()
-        surfaceView?.removeFromSuperview()
+        if let surfaceView {
+            surfaceView.close()
+            surfaceView.removeFromSuperview()
+        } else {
+            // Never shown since launch (past the warm-up's limit, or closed
+            // before it got there): its shell is still in the keeper, kept
+            // alive for a view that will now never come. Without this it ran
+            // on, agent and all, invisible and unreachable until logout. The
+            // same as `closeSideSurface` does for a tab without a view.
+            GhosttyRuntime.keeper?.close(session: id)
+            TerminalModeRecorder.shared.forget(session: id)
+        }
         surfaceView = nil
     }
 }

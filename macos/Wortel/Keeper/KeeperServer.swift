@@ -229,11 +229,17 @@ final class KeeperServer: @unchecked Sendable {
             // fresh shell, which is what the exec backend has always done when
             // a shell exits. Any client still attached has its own descriptor
             // and sees the EOF itself.
-            self.state.sync {
-                guard self.sessions[session.id] === session else { return }
+            let empty: Bool = self.state.sync {
+                guard self.sessions[session.id] === session else { return false }
                 self.sessions.removeValue(forKey: session.id)
+                return self.liveConnections == 0 && self.sessions.isEmpty
             }
             session.pty.stop()
+            // The other way to run out of things to keep: the app quit with
+            // shells alive and the last of them has now ended. Checked only on
+            // a connection closing, this left a keeper holding nothing running
+            // until the next launch happened to connect and disconnect.
+            if empty { self.onIdle?() }
         }
 
         guard pty.start(

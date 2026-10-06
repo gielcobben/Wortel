@@ -30,20 +30,37 @@ enum GitService {
     /// two readers, because a list long enough to fill the pipe buffer would
     /// otherwise block us while the child is blocked writing output nobody is
     /// draining yet.
+    /// What every git we run is told, whatever the user's config says.
+    ///
+    /// `core.fsmonitor=false`: with fsmonitor on in the user's config, each
+    /// repo git touches starts a `fsmonitor--daemon` that outlives us for good,
+    /// and we touch a lot of repos (every worktree, for the header's counts).
+    /// Seen: 25 of them left running for days. They don't even buy us speed:
+    /// the daemon answers relative to a token stored in the index, our reads
+    /// never write the index (below), and the git that does write it is
+    /// usually the shell's, a different binary with its own daemon. So for us
+    /// it's a process left behind per repo for a scan we run anyway.
+    private static func gitArguments(_ args: [String]) -> [String] {
+        ["git", "-c", "core.fsmonitor=false"] + args
+    }
+
+    /// Never let git block on a credential/terminal prompt, and don't let it
+    /// take the index.lock just to read status.
+    private static let gitEnvironment: [String: String] = {
+        var env = ProcessInfo.processInfo.environment
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        env["GIT_OPTIONAL_LOCKS"] = "0"
+        return env
+    }()
+
     static func run(_ args: [String], in directory: String, input: Data? = nil) async -> CommandResult {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = ["git"] + args
+                process.arguments = gitArguments(args)
                 process.currentDirectoryURL = URL(fileURLWithPath: directory)
-
-                // Never let git block on a credential/terminal prompt, and don't
-                // let it take the index.lock just to read status.
-                var env = ProcessInfo.processInfo.environment
-                env["GIT_TERMINAL_PROMPT"] = "0"
-                env["GIT_OPTIONAL_LOCKS"] = "0"
-                process.environment = env
+                process.environment = gitEnvironment
 
                 let outPipe = Pipe()
                 let errPipe = Pipe()
@@ -652,6 +669,17 @@ enum GitService {
         return (old.isEmpty ? nil : old, new.isEmpty ? nil : new)
     }
 
+    /// `status` for work nobody is looking at yet: the other worktrees' change
+    /// counts behind the repo header's hint. Queued app-wide, one at a time,
+    /// so however many of these pile up (a read per session flicked past, the
+    /// header's timer) they cost one core at most, and the scan for the repo
+    /// on screen, which isn't queued, never waits behind them.
+    static func backgroundStatus(root: String) async -> GitStatus {
+        await backgroundScans.run { await status(root: root) }
+    }
+
+    private static let backgroundScans = SerialGate()
+
     static func status(root: String) async -> GitStatus {
         let result = await run(
             ["status", "--porcelain=v2", "--branch", "--untracked-files=all"],
@@ -734,12 +762,9 @@ enum GitService {
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = ["git"] + args
+                process.arguments = gitArguments(args)
                 process.currentDirectoryURL = URL(fileURLWithPath: directory)
-                var env = ProcessInfo.processInfo.environment
-                env["GIT_TERMINAL_PROMPT"] = "0"
-                env["GIT_OPTIONAL_LOCKS"] = "0"
-                process.environment = env
+                process.environment = gitEnvironment
 
                 let outPipe = Pipe()
                 process.standardOutput = outPipe
@@ -949,5 +974,25 @@ enum GitService {
         let patch = await run(["diff", "--cached"], in: root).stdout
         guard !patch.isEmpty else { return nil }
         return (stat, patch)
+    }
+}
+
+/// Runs async work one piece at a time, in arrival order. A lock can't do this
+/// (the work suspends), and a serial queue can't await.
+actor SerialGate {
+    private var busy = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func run<T: Sendable>(_ work: @Sendable () async -> T) async -> T {
+        if busy {
+            await withCheckedContinuation { waiting.append($0) }
+        } else {
+            busy = true
+        }
+        let result = await work()
+        // Hand the turn straight to the next in line, so nobody can slip in
+        // between and two run at once.
+        if waiting.isEmpty { busy = false } else { waiting.removeFirst().resume() }
+        return result
     }
 }

@@ -202,11 +202,21 @@ final class GitPanelModel {
     /// Read every checkout of the shown repo and what's in each.
     func loadCheckouts() async {
         guard let repo else { checkouts = []; return }
+        // Already being read, for the same thing: the switch that resolved the
+        // repo and the header's timer both ask the moment it appears, and two
+        // reads would be two scans of every worktree for one answer. A read
+        // superseded since (another session asked in between) is giving up,
+        // so it doesn't count.
+        let key = Self.checkoutsKey(root: repo.root, pinned: pinnedCheckout, cwd: session?.cwd)
+        if let reading = checkoutsReading, reading.key == key,
+           reading.generation == checkoutGeneration { return }
         // The newest read wins, for the session it was read for: ⌃Tab held
         // down starts one per tab, and a slow one finishing last, or one for
         // the session you just left, must not write over it.
         checkoutGeneration += 1
         let generation = checkoutGeneration
+        checkoutsReading = (key, generation)
+        defer { if checkoutsReading?.generation == generation { checkoutsReading = nil } }
         let owner = session
         let root = repo.root
         let cwd = session?.cwd
@@ -227,7 +237,18 @@ final class GitPanelModel {
         let head = repo.status.head
         var found: [Checkout] = []
         for worktree in worktrees {
-            let status = await GitService.status(root: worktree.path)
+            // Superseded (another session, another repo): stop rather than
+            // finish a scan per worktree for an answer nobody will see. ⌃Tab
+            // through five sessions used to leave five of these running.
+            guard generation == checkoutGeneration else { return }
+            let status: GitStatus
+            if let known = cache[worktree.path], !known.isStale {
+                // A checkout already open in the panel knows its status, and
+                // its watch says nothing has moved since.
+                status = known.status
+            } else {
+                status = await GitService.backgroundStatus(root: worktree.path)
+            }
             var ahead = 0
             if let head, let theirs = status.head, theirs != head {
                 ahead = await GitService.commitsAhead(from: head, to: theirs, root: root)
@@ -242,17 +263,21 @@ final class GitPanelModel {
     }
 
     @ObservationIgnored private var checkoutGeneration = 0
+    /// The key of the checkouts read in flight, if any.
+    @ObservationIgnored private var checkoutsReading: (key: String, generation: Int)?
     /// What the checkouts were last read for, and when: they're read again
     /// when the repo or the pin changes, or when they're a while old, not on
     /// every tab pick (each read is a `git status` per worktree).
     @ObservationIgnored private var checkoutsRead: (key: String, at: Date)?
     private static let checkoutsMaxAge: TimeInterval = 30
 
-    /// The terminal's directory too: which checkout is the terminal's is read
-    /// from it, and two sessions pinned alike can have terminals in different
-    /// checkouts.
+    /// The terminal's directory too while pinned: which checkout is the
+    /// terminal's is then read from it, and two sessions pinned alike can have
+    /// terminals in different checkouts. Unpinned, the terminal's checkout *is*
+    /// the root, so the directory is left out: sessions in different folders of
+    /// one repo share a read rather than each switch rescanning every worktree.
     private static func checkoutsKey(root: String, pinned: String?, cwd: String?) -> String {
-        [root, pinned ?? "", cwd ?? ""].joined(separator: "\u{0}")
+        [root, pinned ?? "", pinned == nil ? "" : cwd ?? ""].joined(separator: "\u{0}")
     }
 
     /// Re-read the checkouts if the last read is stale: the repo header asks
@@ -305,6 +330,8 @@ final class GitPanelModel {
     @ObservationIgnored var onOpenPreview: ((URL, PreviewDiffSource, Bool) -> Void)?
 
     @ObservationIgnored private var cache: [String: GitRepoModel] = [:]
+    /// Each directory's work-tree root, as `resolve` last found it.
+    @ObservationIgnored private var rootByCwd: [String: String] = [:]
     @ObservationIgnored private var currentCwd: String?
     /// Coalesces bursts of command-finished refreshes into one status read.
     @ObservationIgnored private var refreshWorkItem: DispatchWorkItem?
@@ -917,9 +944,39 @@ final class GitPanelModel {
 
     /// Resolve the current cwd to a repo, if a repo view could be on screen.
     private func resolveCurrent() {
+        // A directory already resolved puts its repo up now, in the same pass as
+        // the switch, rather than leaving the last session's repo on screen
+        // until `rev-parse` answers (a frame on a quiet machine, much longer on
+        // a busy one). `resolve` still asks, and corrects it if the answer moved.
+        if needsRepo, let cwd = currentCwd, let root = rootByCwd[cwd],
+           let known = cache[root], repo !== known {
+            repo = known
+            resolvedNonRepo = false
+        }
+        updateActive()
         guard needsRepo else { return }
         let cwd = currentCwd
         Task { await resolve(cwd: cwd) }
+    }
+
+    /// Only the repo on screen scans when its work tree changes; every other
+    /// cached model just notes that it's stale (see `GitRepoModel.setActive`).
+    /// Hidden means none at all, which is what "no git work runs while hidden"
+    /// on `focus` has to mean for the watchers too.
+    /// Drop the models of checkouts that are gone from disk, a removed
+    /// worktree most of all. Each holds a recursive watch and its caches for
+    /// as long as the app runs, for a folder that no longer exists. Done when
+    /// a new repo is opened, the moment the cache grows anyway.
+    private func pruneRemovedCheckouts() {
+        for (root, model) in cache
+        where model !== repo && !FileManager.default.fileExists(atPath: root) {
+            cache[root] = nil
+        }
+    }
+
+    private func updateActive() {
+        let shown = needsRepo ? repo : nil
+        for model in cache.values { model.setActive(model === shown) }
     }
 
     /// A command finished in the shown repo's session — the work tree may have
@@ -936,9 +993,15 @@ final class GitPanelModel {
         guard let cwd, !cwd.isEmpty else {
             repo = nil
             resolvedNonRepo = false
+            updateActive()
             return
         }
-        guard let root = await GitService.repoRoot(for: cwd) else {
+        let found = await GitService.repoRoot(for: cwd)
+        // Every `cd` adds one; a long day's worth is still small, but not
+        // unbounded.
+        if rootByCwd.count > 1000 { rootByCwd.removeAll() }
+        rootByCwd[cwd] = found
+        guard let root = found else {
             // The user may have switched away while we awaited.
             guard currentCwd == cwd else { return }
             // The checkout this session was pointed at is gone (a worktree
@@ -954,15 +1017,21 @@ final class GitPanelModel {
             }
             repo = nil
             resolvedNonRepo = true
+            updateActive()
             return
         }
         guard currentCwd == cwd else { return }
 
         if let existing = cache[root] {
-            repo = existing
+            // Observed: assigning the same model would still wake every view.
+            if repo !== existing { repo = existing }
             resolvedNonRepo = false
-            await existing.refresh()
+            updateActive()
+            // The list it already has goes up at once; it's only re-read if the
+            // tree moved while it was away, with the header's spinner saying so.
+            await existing.refreshIfStale()
         } else {
+            pruneRemovedCheckouts()
             let model = GitRepoModel(root: root, highlighter: DiffHighlighter.shared)
             model.onOpenPreview = { [weak self] url, diff, hasChanges in
                 self?.onOpenPreview?(url, diff, hasChanges)
@@ -970,6 +1039,7 @@ final class GitPanelModel {
             cache[root] = model
             repo = model
             resolvedNonRepo = false
+            updateActive()
             await model.refresh()
         }
         if !checkoutsAreCurrent(for: root) { await loadCheckouts() }

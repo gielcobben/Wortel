@@ -24,6 +24,14 @@ struct RepoHeader: View {
     @State private var moreOpen = false
     @State private var moreAnchor = MenuAnchor.Anchor()
     @State private var showsWorktrees = false
+    /// Says the list under the header is being re-read: the repo changed while
+    /// it wasn't the one shown, so a switch put its old list up at once rather
+    /// than a blank pane for as long as a big repo's `git status` takes. Only
+    /// for that catch-up, never for the scans a build triggers while you watch
+    /// (the list is current then, just about to change), and only after a
+    /// beat, so a repo that answers quickly never flashes it. Not mounted when
+    /// idle: a hidden `ProgressView` still animates.
+    @State private var showsCatchUp = false
 
     /// Looking at another worktree than the terminal's: the header gets a faint
     /// fill and a "Back", and the branch can't be switched from here.
@@ -67,6 +75,14 @@ struct RepoHeader: View {
                 .help("Show your own folder again")
             }
 
+            if showsCatchUp {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.6)
+                    .frame(width: 16, height: 16)
+                    .help("Updating the changes")
+            }
+
             // A native menu rather than a SwiftUI one, for two things SwiftUI's
             // can't do: open with its right edge on the button's (into the
             // pane, as the titlebar's and the sidebar's "…" do), and say it's
@@ -89,6 +105,14 @@ struct RepoHeader: View {
         .background(isAway ? Color.primary.opacity(0.05) : Color.clear)
         // Kept fresh while it's on screen, so the hint comes and goes with the
         // work (a read is a `git status` per checkout, and only when stale).
+        .task(id: CatchUpKey(root: repo.root, stale: repo.isStale)) {
+            guard repo.isStale else {
+                showsCatchUp = false
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+            if !Task.isCancelled { showsCatchUp = true }
+        }
         .task(id: repo.root) {
             while !Task.isCancelled {
                 await panel.refreshCheckoutsIfStale()
@@ -378,4 +402,9 @@ private struct WorktreeList: View {
                   })
             .help(checkout.path)
     }
+}
+
+private struct CatchUpKey: Equatable {
+    let root: String
+    let stale: Bool
 }

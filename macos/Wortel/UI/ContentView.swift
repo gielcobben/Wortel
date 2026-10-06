@@ -1073,6 +1073,10 @@ struct DetailPane: View {
             // or a session would show its cwd where its repo root belongs until
             // something else moved.
             .onChange(of: git.repo?.root) { _, _ in files.reroot() }
+            // The tree does no work while it's off screen, so it catches up
+            // when it comes back however it does (the column reshown keeps the
+            // pane mounted, so its own `onAppear` isn't enough).
+            .onChange(of: git.showsFiles) { _, shows in if shows { files.resync() } }
             // The tree's git colouring is a view of the same status the changes
             // list draws, so it follows the same refreshes.
             .onChange(of: git.repo?.status) { _, _ in files.refreshDecorations() }

@@ -3,6 +3,49 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.41.3</title>
+            <pubDate>Tue, 06 Oct 2026 16:23:04 -0400</pubDate>
+            <sparkle:version>2026.41.3</sparkle:version>
+            <sparkle:shortVersionString>2026.41.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Tidier menus, and a Clean Up that shows what it cleans</h1>
+<p class="date">Wortel 2026.41.3 &middot; 2026-10-06</p>
+<p><strong>Clean Up Worktrees, readable.</strong> In 2026.41.2 the list in Session ▸ Worktree ▸ Clean Up Worktrees… could collapse to nothing, leaving only the button. It now shows every worktree Wortel made, grouped by repository, one line each: tick what should go, see at a glance what’s clean and what’s kept, with “17 changes” or “In use” on the ones that stay. Rest the pointer on a row for the details, or right-click it to show it in Finder. One switch decides whether the branches Wortel made go too, and only ever the ones with nothing to lose.</p>
+<p><strong>Menus that read like a Mac app’s.</strong></p>
+<ul>
+<li>A new Tab menu holds everything about tabs: new terminal and browser tabs, moving between and moving tabs, reopening, and Close Tab.</li>
+<li>The Session menu is down to what it’s about: starting sessions and folders, moving between sessions, the selected session’s own commands, and closing it. ⌘1 to ⌘9 still switch sessions, without nine rows for them.</li>
+<li>The worktree commands sit together under Session ▸ Worktree.</li>
+<li>Move To is greyed out when there’s nowhere to move the session.</li>
+<li>View is in the order of the window: the sidebar and panels, the source control panes, the browser, then text size.</li>
+<li>Show Sidebar and Hide Sidebar say which one they’ll do, Find has its own submenu, and the Wortel menu has Services and Show All, as every Mac app does.</li>
+</ul>
+<p>Every keyboard shortcut works as before.</p>
+<p>Also in this release: the usage-data note under the ⓘ in the sidebar could stay on screen and not go away when it first appeared while Wortel wasn’t the app you were in. It now closes when you switch to another app, and only appears once you’re back in Wortel.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.3.zip" length="21127814" type="application/octet-stream" sparkle:edSignature="HXjYez/OZyh6MRpBAVkjDj7qcp7LOQr9qvZ9DoHlSH52q4x9xx0z1UbnJx0Qg9d15HFo9Y5kU+O+9EFL6WeGDg=="/>
+        </item>
+        <item>
             <title>2026.41.2</title>
             <pubDate>Tue, 06 Oct 2026 13:48:49 -0400</pubDate>
             <sparkle:version>2026.41.2</sparkle:version>
@@ -81,50 +124,6 @@
 <p><strong>Window tiling is back.</strong> Since the new titlebar, Fill, Center and everything under Window ▸ Move &#x26; Resize were greyed out, and their shortcuts (fn-⌃C to center, fn-⌃F to fill, fn-⌃ and an arrow for a half) did nothing. They work again. Dragging a tab in the titlebar still moves the tab, not the window.</p>
 <p><strong>The browser keeps its size.</strong> A browser in the side column could come back at its narrowest after you switched to another session and back. And once you had hidden and shown the sidebar, switching the column between the browser and Files or Changes could make it jump in width. Both are fixed: the column stays the width you gave it. If a session’s browser already got stuck narrow, drag it wide once and it stays.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.41.1.zip" length="20795820" type="application/octet-stream" sparkle:edSignature="UD7xDpiu4HO/0ugZFoDcgg3y3KJtUIvQEmZmKRDOgQ90EhQNCJaHOcWFKVVaoyMstkMmRtT59aNTd224dKEADA=="/>
-        </item>
-        <item>
-            <title>2026.40.2</title>
-            <pubDate>Wed, 30 Sep 2026 23:42:39 -0400</pubDate>
-            <sparkle:version>2026.40.2</sparkle:version>
-            <sparkle:shortVersionString>2026.40.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>A browser that behaves, and files open where you drop them</h1>
-<p class="date">Wortel 2026.40.2 &middot; 2026-09-30</p>
-<p><strong>A browser that behaves like one.</strong> Signing in with Google, and sites like Figma, work now: the browser introduces itself the way Safari does, and a page’s sign-in window opens as a real window that can report back and close itself. A page’s own cursors show, so Figma’s hand appears when you pan. Holding a key a page doesn’t use, like space to pan a canvas, no longer beeps. ⌥⌘I opens Web Inspector, and ⌥⌘I again puts it away. A page still gets your shortcuts first, as in Safari and Chrome, except quitting, closing, a new session and moving between sessions, which no page can take from you.</p>
-<p><strong>The browser takes the resize.</strong> With a browser in front of the side column, making the window bigger or smaller changes only the browser, and your terminal holds still. With Files, Changes or History in front, the terminal takes it, as before.</p>
-<p><strong>Drag a file where you want it.</strong> Drag a file out of Changes, History or the file tree onto any tab row, or onto a pane that isn’t a terminal, and it opens there as a tab. Dropped on a terminal it types the file’s path, as it always has, which is how you hand an agent a file.</p>
-<p><strong>One ”+” everywhere.</strong> The bottom strip’s ”+” sits right after its tabs and offers the same menu as the side column’s: a terminal, a browser, or one of the git and file panes, opening in that row.</p>
-<p><strong>Worktrees, said plainly.</strong> When the repository has more than one worktree, a chip beside the branch says which one you’re looking at, and its list shows what’s in each. Looking at another one, an agent’s for instance, changes nothing on disk: the header says so, the branch can’t be switched from there, and Back takes you home. The branch menu only switches branches now.</p>
-<p><strong>A calmer sidebar.</strong> A session waiting on you is its coloured dot again, without a second line making the list jump each time an agent finishes; rest the pointer on the row to read what it said. The dot for a session that is working is easier to find.</p>
-<p>Also in this release:</p>
-<ul>
-<li>History keeps room for the commit subject in a narrow column, letting the author, the hash and then the age go first.</li>
-<li>macOS no longer offers to fill a verification code from Messages or Mail over the terminal. A sign-in page in a browser tab still gets it.</li>
-<li>Agents stay in the right light or dark palette after a restart. A second copy of Wortel, such as a test build, could undo what the running one knew about your sessions; now a second copy brings the running one forward instead.</li>
-<li>Usage reporting now also counts which kinds of tabs are opened and where, whether ⌘P ends in a session, a command or nothing, whether a commit’s message was typed or drafted on your Mac, and whether a file preview opened as a tab or a window. Never what is in them. The full list is at wortel.sh/privacy, and the switch is the ⓘ at the bottom of the sidebar.</li>
-</ul>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.40.2.zip" length="20794459" type="application/octet-stream" sparkle:edSignature="ZPG8IFz9aWkAfscTp1euld/ufNen3ns2Oyf3leZiZ9VEkykbvCWjwRSHOCBjI2nxiI6oUeWHss/qmWMbv53KBA=="/>
         </item>
     </channel>
 </rss>

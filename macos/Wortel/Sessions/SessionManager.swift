@@ -18,6 +18,9 @@ final class SessionManager {
     var selectedID: Session.ID? {
         didSet {
             guard selectedID != oldValue, let session = selected else { return }
+            // The selected row is always drawn: ⌘-number, a notification or
+            // Next Waiting Session can pick a session inside a folded section.
+            reveal(session)
             // Most recent first, for ⌘P's list.
             recentSessionIDs.removeAll { $0 == session.id }
             recentSessionIDs.insert(session.id, at: 0)
@@ -201,6 +204,47 @@ final class SessionManager {
     }
     @ObservationIgnored private static let collapsedFoldersKey = "WortelCollapsedFolders"
 
+    /// The Pinned section and the folderless "Sessions" one, folded like a
+    /// folder. View state, kept beside the folders'.
+    private(set) var pinnedCollapsed = false {
+        didSet { UserDefaults.standard.set(pinnedCollapsed, forKey: Self.pinnedCollapsedKey) }
+    }
+    private(set) var looseCollapsed = false {
+        didSet { UserDefaults.standard.set(looseCollapsed, forKey: Self.looseCollapsedKey) }
+    }
+    @ObservationIgnored private static let pinnedCollapsedKey = "WortelPinnedCollapsed"
+    @ObservationIgnored private static let looseCollapsedKey = "WortelLooseCollapsed"
+
+    func setPinnedCollapsed(_ collapsed: Bool) {
+        if pinnedCollapsed != collapsed { pinnedCollapsed = collapsed }
+    }
+
+    func setLooseCollapsed(_ collapsed: Bool) {
+        if looseCollapsed != collapsed { looseCollapsed = collapsed }
+    }
+
+    /// Unfold whichever section a session is drawn in now (Pinned, its folder,
+    /// or Sessions), so it has a row: after it was selected, pinned, unpinned,
+    /// or renamed into another place.
+    private func reveal(_ session: Session) {
+        if isPinned(session) {
+            setPinnedCollapsed(false)
+        } else if let folder = session.folderPath {
+            if collapsedFolders.contains(folder) { collapsedFolders.remove(folder) }
+        } else {
+            setLooseCollapsed(false)
+        }
+    }
+
+    /// What a folded Pinned or Sessions header shows for the sessions it
+    /// hides, as `attention(inFolder:)` does for a folder.
+    func attention(inPinned pinned: Bool) -> AttentionKind? {
+        guard pinned ? pinnedCollapsed : looseCollapsed else { return nil }
+        return AttentionKind.loudest(of: sessions.lazy.filter {
+            pinned ? self.isPinned($0) : (!self.isPinned($0) && $0.folderPath == nil)
+        }.map(\.attention))
+    }
+
     /// Folders the user created explicitly (the "+ → New Folder" menu). Unlike
     /// folders that emerge from a "giel/…" name, these persist as sections even
     /// when empty, so you can make a folder first and drag sessions in after —
@@ -258,12 +302,18 @@ final class SessionManager {
         }
         guard ids != pinnedIDs else { return }
         pinnedIDs = ids
+        // Pinning shows what you pinned, as a drop into a folder opens it.
+        // Pinning shows it in Pinned, unpinning back where it came from, as a
+        // drop into a folder opens it.
+        reveal(session)
         normalizeOrder()
         scheduleSave()
     }
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
         collapsedFolders = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedFoldersKey) ?? [])
+        pinnedCollapsed = UserDefaults.standard.bool(forKey: Self.pinnedCollapsedKey)
+        looseCollapsed = UserDefaults.standard.bool(forKey: Self.looseCollapsedKey)
         declaredFolders = UserDefaults.standard.stringArray(forKey: Self.declaredFoldersKey) ?? []
         folderOrder = UserDefaults.standard.stringArray(forKey: Self.folderOrderKey) ?? []
         folderRoots = UserDefaults.standard.dictionary(forKey: Self.folderRootsKey)
@@ -425,9 +475,13 @@ final class SessionManager {
     /// Delete a folder: its sessions drop to the top level (nothing is closed),
     /// and the section disappears.
     func deleteFolder(_ folder: String) {
+        var released = false
         for session in sessions where session.folderPath == folder {
             session.name = session.leafName
+            released = true
         }
+        // They land in Sessions, which must not be folded over them.
+        if released { setLooseCollapsed(false) }
         declaredFolders.removeAll { $0 == folder }
         collapsedFolders.remove(folder)
         folderRoots.removeValue(forKey: folder)
@@ -462,8 +516,9 @@ final class SessionManager {
             : (members.last.map { $0 + 1 } ?? sessions.count)
         sessions.insert(session, at: flatIdx)
         normalizeOrder()
-        // Show the result of the drop, even into a collapsed folder.
-        if let folder { collapsedFolders.remove(folder) }
+        // Show the result of the drop, even into a collapsed folder, or a
+        // folded Sessions.
+        if let folder { collapsedFolders.remove(folder) } else { setLooseCollapsed(false) }
         scheduleSave()
     }
 
@@ -1136,7 +1191,8 @@ final class SessionManager {
         wire(session)
         sessions.append(session)
         normalizeOrder() // slot the append into its folder's contiguous block
-        if let dir { collapsedFolders.remove(dir) } // never select into a hidden row
+        // Never select into a hidden row.
+        if let dir { collapsedFolders.remove(dir) } else { setLooseCollapsed(false) }
         selectedID = session.id
         scheduleSave()
         Telemetry.capture(.sessionCreated(via: origin))
@@ -1600,7 +1656,7 @@ final class SessionManager {
         // flat order matching the render order, and make sure the row it moved
         // to is actually visible.
         normalizeOrder()
-        if let folder = session.folderPath { collapsedFolders.remove(folder) }
+        reveal(session)
         scheduleSave()
         refreshAttentionNotification(session)
         // Whether people name sessions themselves, which is the premise of the
@@ -1676,9 +1732,10 @@ final class SessionManager {
     }
 
     /// Whether a session has a row in the sidebar right now — i.e. it isn't
-    /// tucked inside a collapsed folder.
+    /// tucked inside a collapsed folder, or a folded Pinned or Sessions.
     private func isVisibleInSidebar(_ session: Session) -> Bool {
-        guard !isPinned(session), let folder = session.folderPath else { return true }
+        if isPinned(session) { return !pinnedCollapsed }
+        guard let folder = session.folderPath else { return !looseCollapsed }
         return !isFolderCollapsed(folder)
     }
 

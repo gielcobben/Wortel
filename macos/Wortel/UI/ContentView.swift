@@ -62,7 +62,10 @@ struct SidebarPane: View {
                     folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
                     tallIDs: Set($0.sessions.filter(\.hasSecondLine).map(\.id)),
                     isPinned: $0.isPinned)
-            })
+            },
+            folding: SidebarFolding(folders: manager.collapsedFolders,
+                                    pinned: manager.pinnedCollapsed,
+                                    loose: manager.looseCollapsed))
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 2) {
                     // Grouped like the Session menu, and in the same order, so
@@ -208,20 +211,59 @@ struct SidebarRowContent: View {
     }
 }
 
-/// A fixed section's header (Pinned, Sessions): its title in the folder
-/// headers' style, and nothing to click or drag.
-struct SidebarSectionHeaderContent: View {
+/// A section header's label, the same for a folder, Pinned and Sessions so the
+/// three read as one kind of thing: the title, the chevron after it, and a dot
+/// for what a folded section is hiding.
+struct SidebarSectionLabel: View {
     let title: String
+    let collapsed: Bool
+    let attention: AttentionKind?
 
     var body: some View {
-        Text(title)
-            .font(.system(size: 13))
-            .foregroundStyle(.tertiary)
-            .lineLimit(1)
-            // Placed exactly as a folder's title is.
-            .padding(.leading, 20)
-            .padding(.trailing, 36)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        HStack(spacing: 6) {
+            // The same size as the rows under it, and set apart by colour alone:
+            // a small bold header is a second type size and a second weight
+            // doing a job the grey already does.
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            // Open or collapsed, after the name rather than as a triangle in
+            // front of it: down when open, turned to point at the name's end
+            // when collapsed. The whole header is the button (SidebarOutline).
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(collapsed ? -90 : 0))
+                .animation(.easeOut(duration: 0.15), value: collapsed)
+            // What the section is hiding. Same dot as a session row's, so it
+            // reads as the same fact rather than as a new kind of badge — and
+            // it pulses for the same reason, because a blocked agent you can't
+            // see is exactly the case this whole system is for.
+            if let kind = attention {
+                AttentionDot(color: SessionStatusIndicator.attentionColor(kind),
+                             motion: kind.pulses ? .pulse : .still)
+            }
+            Spacer(minLength: 4)
+        }
+    }
+}
+
+/// A fixed section's header (Pinned, Sessions): a press anywhere folds it, as a
+/// folder header's does; never dragged, no menu.
+struct SidebarSectionHeaderContent: View {
+    let manager: SessionManager
+    /// Pinned, or the folderless "Sessions".
+    let isPinned: Bool
+
+    var body: some View {
+        SidebarSectionLabel(title: isPinned ? "Pinned" : "Sessions",
+                            collapsed: isPinned ? manager.pinnedCollapsed : manager.looseCollapsed,
+                            attention: manager.attention(inPinned: isPinned))
+        // Placed exactly as a folder's title is.
+        .padding(.leading, 20)
+        .padding(.trailing, 36)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
@@ -456,32 +498,9 @@ struct SidebarHeaderContent: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            // The same size as the rows under it, and set apart by colour alone:
-            // a small bold header is a second type size and a second weight
-            // doing a job the grey already does.
-            Text(folder)
-                .font(.system(size: 13))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-            // Open or collapsed, after the name rather than as a triangle in
-            // front of it: down when open, turned to point at the name's end
-            // when collapsed. The whole header is the button (SidebarOutline).
-            Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .rotationEffect(.degrees(manager.isFolderCollapsed(folder) ? -90 : 0))
-                .animation(.easeOut(duration: 0.15), value: manager.isFolderCollapsed(folder))
-            // What the folder is hiding. Same dot as a session row's, so it
-            // reads as the same fact rather than as a new kind of badge — and
-            // it pulses for the same reason, because a blocked agent you can't
-            // see is exactly the case this whole system is for.
-            if let kind = manager.attention(inFolder: folder) {
-                AttentionDot(color: SessionStatusIndicator.attentionColor(kind),
-                             motion: kind == .needsInput ? .pulse : .still)
-            }
-            Spacer(minLength: 4)
-        }
+        SidebarSectionLabel(title: folder,
+                            collapsed: manager.isFolderCollapsed(folder),
+                            attention: manager.attention(inFolder: folder))
             // The directory the folder stands for (where a new session in it
             // starts) is on hover, not on the header: a path on every header
             // was grey noise for something you rarely need to see. The "+" says
@@ -854,15 +873,15 @@ struct SessionStatusIndicator: View {
                 AttentionDot(color: Self.attentionColor(kind),
                              motion: kind.pulses ? .pulse : .still)
             } else if session.isBusy {
-                // Working. A small grey dot breathing slowly, where there used to
-                // be a spinner: a spinner says *the app* is loading, and three of
-                // them turning at once in a list of agents was the busiest thing
-                // on screen, for the least urgent news in it.
-                //
-                // Grey still, but strong enough to find: at the secondary label
-                // colour and a shallow swell it was so faint you had to look for
-                // it to know a session was working.
-                AttentionDot(color: NSColor.labelColor.withAlphaComponent(0.6), motion: .breathe)
+                // Working: three small grey dots lighting up in turn, the
+                // "someone is writing" of Messages and every chat app, because
+                // that is what a working agent is doing. Before this it was a
+                // grey dot breathing, which read as a status light rather than
+                // as activity, and next to the coloured dots as one more of
+                // them. A spinner was tried before that and dropped: it says
+                // *the app* is loading, and several turning at once was the
+                // busiest thing on screen for the least urgent news in it.
+                WorkingIndicator()
             }
         }
         // Centre in whatever slot the row view gives us — the same rect the
@@ -880,7 +899,8 @@ struct SessionStatusIndicator: View {
     }
 }
 
-/// A status dot that can pulse (urgent), breathe (working) or sit still.
+/// A status dot that can pulse (urgent) or sit still. (Working has its own
+/// indicator: `WorkingIndicator`.)
 ///
 /// A layer and a Core Animation animation rather than a SwiftUI
 /// `repeatForever`: the render server runs it, so a list with several agents
@@ -891,9 +911,6 @@ struct AttentionDot: NSViewRepresentable {
     enum Motion: Equatable {
         /// Opacity and a touch of scale, fast enough to catch the eye.
         case pulse
-        /// A slower swell than `pulse`, and grey where that one is coloured:
-        /// clearly alive, without asking for anything.
-        case breathe
         case still
     }
 
@@ -942,6 +959,15 @@ struct AttentionDot: NSViewRepresentable {
             CATransaction.commit()
         }
 
+        /// A layer's colour is a fixed CGColor, so a change between light and
+        /// dark has to re-resolve it: without this a dot kept the colour of the
+        /// appearance it was first drawn in (the old grey working dot showed
+        /// near-black on a dark sidebar that way).
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            needsDisplay = true
+        }
+
         /// Colours resolve against this view's appearance, so a dynamic colour
         /// follows light and dark instead of freezing at whatever was current.
         override func updateLayer() {
@@ -977,17 +1003,6 @@ struct AttentionDot: NSViewRepresentable {
                 group.animations = [fade, grow]
                 group.duration = 0.7
                 add(group)
-            case .breathe:
-                let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = 1
-                fade.toValue = 0.2
-                let shrink = CABasicAnimation(keyPath: "transform.scale")
-                shrink.fromValue = 1
-                shrink.toValue = 0.75
-                let group = CAAnimationGroup()
-                group.animations = [fade, shrink]
-                group.duration = 0.9
-                add(group)
             }
         }
 
@@ -997,6 +1012,131 @@ struct AttentionDot: NSViewRepresentable {
             animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             animation.isRemovedOnCompletion = false
             dot.add(animation, forKey: "motion")
+        }
+    }
+}
+
+/// "Working": three small dots in a soft wave, as a chat app shows someone
+/// typing. Each brightens and lifts a point as the wave passes, then settles,
+/// so the three read as one ripple rather than as blinking lights. Grey, so it
+/// never competes with the coloured dots that mean something needs you, but
+/// never faint either: about a third there at rest, two thirds at the crest.
+///
+/// Core Animation for the same reason as `AttentionDot`: the render server
+/// runs it, so a sidebar full of working agents costs the main thread nothing.
+/// The colour is resolved for the view's own appearance, and again when that
+/// changes, so it's light on a dark sidebar and dark on a light one. With
+/// Reduce Motion the dots sit still.
+struct WorkingIndicator: NSViewRepresentable {
+    static let dotDiameter: CGFloat = 3
+    static let spacing: CGFloat = 2
+    /// How far a dot rises at the crest of the wave.
+    static let lift: CGFloat = 1.2
+
+    func makeNSView(context: Context) -> DotsView { DotsView() }
+    func updateNSView(_ view: DotsView, context: Context) {}
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: DotsView, context: Context) -> CGSize? {
+        CGSize(width: Self.dotDiameter * 3 + Self.spacing * 2, height: Self.dotDiameter + Self.lift * 2)
+    }
+
+    final class DotsView: NSView {
+        private let dots = (0..<3).map { _ in CALayer() }
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            dots.forEach { layer?.addSublayer($0) }
+            // The colour is set in `updateLayer`; ask for it, or a new view
+            // whose appearance never changes would keep colourless dots.
+            needsDisplay = true
+            // Reduce Motion turned on or off while agents work: re-read it.
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(displayOptionsChanged),
+                name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+                object: NSWorkspace.shared)
+        }
+
+        @objc private func displayOptionsChanged() { animate() }
+        @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+        override var wantsUpdateLayer: Bool { true }
+
+        override func layout() {
+            super.layout()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            let d = WorkingIndicator.dotDiameter
+            let y = (bounds.height - d) / 2
+            for (index, dot) in dots.enumerated() {
+                dot.frame = CGRect(x: CGFloat(index) * (d + WorkingIndicator.spacing), y: y, width: d, height: d)
+                dot.cornerRadius = d / 2
+            }
+            CATransaction.commit()
+        }
+
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            needsDisplay = true
+        }
+
+        override func updateLayer() {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                let color = NSColor.labelColor.cgColor
+                dots.forEach { $0.backgroundColor = color }
+            }
+            CATransaction.commit()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            animate()
+        }
+
+        private func animate() {
+            dots.forEach { $0.removeAllAnimations() }
+            // Every direct change below without Core Animation's implicit fade:
+            // that fade starts from full opacity, so new dots flashed bright
+            // before settling, Reduce Motion or not.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
+            // The label colour itself, dimmed by opacity: about a third there at
+            // rest and two thirds at the crest, so it reads as grey in either
+            // appearance without going faint.
+            let rest: Float = 0.32
+            let crest: Float = 0.68
+            guard window != nil,
+                  !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+                dots.forEach { $0.opacity = 0.5 }
+                return
+            }
+            // One wave through the three every 1.3s: each brightens and lifts
+            // in a fifth of it and settles in the next fifth, a beat after the
+            // one before, then all three rest together before the next.
+            let now = CACurrentMediaTime()
+            let ease = CAMediaTimingFunction(name: .easeInEaseOut)
+            for (index, dot) in dots.enumerated() {
+                dot.opacity = rest
+                let glow = CAKeyframeAnimation(keyPath: "opacity")
+                glow.values = [rest, crest, rest, rest]
+                let rise = CAKeyframeAnimation(keyPath: "transform.translation.y")
+                // Up is +y in a layer-backed view.
+                rise.values = [0, WorkingIndicator.lift, 0, 0]
+                for frames in [glow, rise] {
+                    frames.keyTimes = [0, 0.2, 0.42, 1]
+                    frames.timingFunctions = [ease, ease, ease]
+                }
+                let wave = CAAnimationGroup()
+                wave.animations = [glow, rise]
+                wave.duration = 1.3
+                wave.repeatCount = .infinity
+                wave.beginTime = now + Double(index) * 0.14
+                wave.isRemovedOnCompletion = false
+                dot.add(wave, forKey: "working")
+            }
         }
     }
 }

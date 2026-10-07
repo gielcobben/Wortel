@@ -71,7 +71,9 @@ print(String(data: try! JSONSerialization.data(withJSONObject: out, options: [.s
 
 SOURCES = ["Wortel/Processes/ProcessTable.swift", "Wortel/Processes/RunningJobs.swift",
            "Wortel/Sessions/AgentResumeStore.swift", "Wortel/Sessions/FolderRoot.swift",
-           "Wortel/CLI/WortelCommand.swift"]
+           "Wortel/CLI/WortelCommand.swift",
+           # AgentResumeStore finds its folder through it (WORTEL_DATA_DIR).
+           "Wortel/DataDirectory.swift"]
 
 
 def build():
@@ -131,10 +133,39 @@ class Session:
         self.drain(wait)
 
     def close(self):
+        """Hang the shell up, and keep reading its pty while it goes.
+
+        Not a blocking `waitpid`: a process's exit flushes what it last wrote
+        to its terminal, and a pty nobody reads blocks that flush in the
+        kernel, past SIGKILL. With a waitpid here the run stopped dead on one
+        shape, login and zsh both stuck exiting, until the script itself was
+        killed and the pty closed."""
         try:
             os.kill(self.pid, signal.SIGHUP)
-            os.waitpid(self.pid, 0)
-        except (ProcessLookupError, ChildProcessError):
+        except ProcessLookupError:
+            pass
+        end = time.time() + 10
+        while time.time() < end:
+            try:
+                done, _ = os.waitpid(self.pid, os.WNOHANG)
+            except ChildProcessError:
+                break
+            if done:
+                break
+            self.drain(0.1)
+        else:
+            try:
+                os.kill(self.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        # Closing our end is the last word: it hangs up anything still on it.
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+        try:
+            os.waitpid(self.pid, os.WNOHANG)
+        except ChildProcessError:
             pass
 
 

@@ -3,6 +3,43 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.41.5</title>
+            <pubDate>Wed, 07 Oct 2026 13:55:15 -0400</pubDate>
+            <sparkle:version>2026.41.5</sparkle:version>
+            <sparkle:shortVersionString>2026.41.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Every agent back in its own conversation</h1>
+<p class="date">Wortel 2026.41.5 &middot; 2026-10-07</p>
+<p><strong>Every agent comes back where it was.</strong> If Wortel’s sessions end while it’s closed, for example after choosing Stop Running in Background on its Dock icon, reopening Wortel resumes each agent into the conversation it was in. Claude, Pi and Codex come back in their exact conversation, even with two sessions of the same agent in one folder. Other agents continue their latest conversation, as before.</p>
+<p><strong>No freeze on reopening.</strong> Wortel could hang on launch when a session had been busy while it was closed, for example an agent that kept working. It now reconnects right away, however much happened in the meantime.</p>
+<p><strong>A shell that lost its agent gets it back.</strong> When an agent ended while Wortel was closed but its terminal stayed open, the session used to come back as a bare prompt. Wortel now starts the agent again in its own conversation.</p>
+<p><strong>Updates that land.</strong> Updates download quietly in the background. When one is ready, a download icon appears in the sidebar’s bottom bar, and Restart Now takes a second or two, with every session back. Automatic checks are on; you can turn them off in the Wortel menu.</p>
+<p><strong>Shortcuts that match other Mac apps.</strong> ⇧⌘[ and ⇧⌘] switch tabs, as in Safari and Xcode. ⌥⌘↑ and ⌥⌘↓ move between sessions. ⌃⌘1, ⌃⌘2 and ⌃⌘3 open Changes, History and Files.</p>
+<p>Also in this release: Wortel keeps a short log of how each agent exited, so a session that ends unexpectedly can be explained.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.5.zip" length="21298220" type="application/octet-stream" sparkle:edSignature="s1qlM/k4Btx5qcDq8UPYOzQ5x2XWQL8iJpfL+YwVHk7UZvnL+rSJ+mSBlpG0Co8/mOGTgp2pSj5z8+3G/kbkAQ=="/>
+        </item>
+        <item>
             <title>2026.41.4</title>
             <pubDate>Tue, 06 Oct 2026 21:36:02 -0400</pubDate>
             <sparkle:version>2026.41.4</sparkle:version>
@@ -79,53 +116,6 @@
 <p>Every keyboard shortcut works as before.</p>
 <p>Also in this release: the usage-data note under the ⓘ in the sidebar could stay on screen and not go away when it first appeared while Wortel wasn’t the app you were in. It now closes when you switch to another app, and only appears once you’re back in Wortel.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.41.3.zip" length="21127814" type="application/octet-stream" sparkle:edSignature="HXjYez/OZyh6MRpBAVkjDj7qcp7LOQr9qvZ9DoHlSH52q4x9xx0z1UbnJx0Qg9d15HFo9Y5kU+O+9EFL6WeGDg=="/>
-        </item>
-        <item>
-            <title>2026.41.2</title>
-            <pubDate>Tue, 06 Oct 2026 13:48:49 -0400</pubDate>
-            <sparkle:version>2026.41.2</sparkle:version>
-            <sparkle:shortVersionString>2026.41.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Lighter in the background, and nothing left behind</h1>
-<p class="date">Wortel 2026.41.2 &middot; 2026-10-06</p>
-<p><strong>Much less work in the background.</strong> The source control panel used to re-read every repository it had ever shown each time a file changed, and to count the changes in every worktree on almost every switch. On a big repository with agents busy in a few worktrees, that could keep several cores busy and the fan spinning. Now only the repository you’re looking at is read. The others note that something changed and catch up when you come back to them, with a small spinner while they do. The Files pane does no work while it’s hidden.</p>
-<p><strong>Switching sessions is lighter.</strong> Moving between two sessions whose side columns differ no longer resizes every terminal in the app, which made every agent redraw its whole screen. A terminal takes its size when you show it.</p>
-<p><strong>Worktrees are cleaned up, safely.</strong> Closing a session in a worktree now says what’s in it and what will happen to it, and Session ▸ Clean Up Worktrees… lists every worktree Wortel made. One with nothing unsaved is removed, folder and branch. One with commits that exist nowhere else keeps its branch unless you tick it. One with uncommitted changes, or something running in it, is kept, and Wortel says why. Folders go to the Trash, so nothing is gone for good.</p>
-<p><strong>Nothing left running.</strong></p>
-<ul>
-<li>When your git settings turn on its file watcher, Wortel no longer starts one for every repository it looks at. They never exited, and piled up.</li>
-<li>Closing a session you hadn’t opened since launch now ends its shell, instead of leaving it, and any agent in it, running out of sight.</li>
-<li>A shell Wortel lost track of comes back at launch as a Recovered session if something is running in it, and is closed if it’s idle.</li>
-<li>A fetch, pull or push that hangs is stopped after five minutes, and anything git started stops with it when you quit.</li>
-</ul>
-<p><strong>ssh sets up once.</strong> Connecting to a host installs its terminfo the first time only, instead of printing “Setting up xterm-ghostty terminfo” and leaving a folder in /tmp on every connection.</p>
-<p>Also in this release:</p>
-<ul>
-<li>Pasted images are cleared from the temp folder after a day.</li>
-<li>If the list of sessions can’t be read, it’s set aside instead of being overwritten.</li>
-</ul>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.2.zip" length="21051646" type="application/octet-stream" sparkle:edSignature="tN5QAeyc76OUMDW3la9fvTAk2NxVAuNPw+daNh7XdvhPJVOt8exBMKmi1D9PmMWCmlTlVY95lRcsuSQhMBDvAA=="/>
         </item>
     </channel>
 </rss>

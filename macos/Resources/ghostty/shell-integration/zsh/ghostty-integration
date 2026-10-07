@@ -401,18 +401,33 @@ _ghostty_deferred_init() {
     # On 2026-10-07 nine agents exited within a minute of a relaunch and nothing
     # on the machine could say how. One line, appended on this path only; a
     # plain prompt does nothing beyond the rm it always did.
+    #
+    # **Only a marker this shell wrote.** The file is keyed by session, and a
+    # session can briefly have two shells: the one a relaunch forked and the
+    # old one still dying after its keeper went away. The dying shell's last
+    # prompt deleted the new shell's marker, and the new shell's first prompt
+    # logged the dead one's agent as an exit that never happened. So: our own
+    # marker is cleared and logged; a dead shell's is cleared quietly; a live
+    # other shell's is left alone.
     _ghostty_wortel_clear_agent() {
         builtin emulate -L zsh -o no_warn_create_global -o no_aliases
         [[ -n $WORTEL_SESSION_ID ]] || return
         builtin local marker="$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID"
-        if [[ -f $marker ]]; then
-            builtin local line agent=
-            while IFS= builtin read -r line; do
-                [[ $line == agent=* ]] && { agent=${line#agent=}; break; }
-            done < "$marker" 2>/dev/null
-            builtin print -r -- "$(command date +%s) session=$WORTEL_SESSION_ID agent=$agent status=${1:-?} shellpid=$$" \
-                >> "$_ghostty_wortel_agent_dir/exits.log" 2>/dev/null
+        [[ -f $marker ]] || return
+        builtin local line agent= owner=
+        while IFS= builtin read -r line; do
+            case $line in
+                agent=*)    agent=${line#agent=} ;;
+                shellpid=*) owner=${line#shellpid=} ;;
+            esac
+        done < "$marker" 2>/dev/null
+        if [[ -n $owner && $owner != $$ ]]; then
+            builtin kill -0 $owner 2>/dev/null && return
+            command rm -f "$marker" 2>/dev/null
+            return
         fi
+        builtin print -r -- "$(command date +%s) session=$WORTEL_SESSION_ID agent=$agent status=${1:-?} shellpid=$$" \
+            >> "$_ghostty_wortel_agent_dir/exits.log" 2>/dev/null
         command rm -f "$marker" 2>/dev/null
     }
 

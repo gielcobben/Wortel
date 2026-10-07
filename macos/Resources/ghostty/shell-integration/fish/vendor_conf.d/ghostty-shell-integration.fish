@@ -359,14 +359,22 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     # was an agent, and $status is the only trace of *why* once the scrollback
     # is gone (129 and up is a signal). One line, on this path only; see the
     # zsh copy.
+    # Only a marker this shell wrote: our own is logged and cleared, a dead
+    # shell's is cleared quietly, a live other shell's is left alone. A session
+    # can briefly have two shells across a relaunch; see the zsh copy.
     function __ghostty_wortel_clear_agent --on-event fish_prompt
         set --local last $status
         test -n "$WORTEL_SESSION_ID"; or return
         set --local marker $_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID
-        if test -f $marker
-            set --local agent (string replace --regex '^agent=' '' -- (string match --regex '^agent=.*' < $marker))
-            echo (command date +%s) session=$WORTEL_SESSION_ID agent=$agent status=$last shellpid=$fish_pid >> $_ghostty_wortel_agent_dir/exits.log 2>/dev/null
+        test -f $marker; or return
+        set --local owner (string replace --regex '^shellpid=' '' -- (string match --regex '^shellpid=.*' < $marker))
+        if test -n "$owner"; and test "$owner" != "$fish_pid"
+            kill -0 $owner 2>/dev/null; and return
+            command rm -f $marker 2>/dev/null
+            return
         end
+        set --local agent (string replace --regex '^agent=' '' -- (string match --regex '^agent=.*' < $marker))
+        echo (command date +%s) session=$WORTEL_SESSION_ID agent=$agent status=$last shellpid=$fish_pid >> $_ghostty_wortel_agent_dir/exits.log 2>/dev/null
         command rm -f $marker 2>/dev/null
     end
 

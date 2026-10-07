@@ -270,18 +270,29 @@ function __ghostty_precmd() {
   # was an agent, and `$ret` is the only trace of *why* once the scrollback is
   # gone (129 and up is a signal: 129 SIGHUP, 130 SIGINT, 143 SIGTERM). One
   # line, on this path only; see the zsh copy.
+  #
+  # Only a marker this shell wrote: our own is logged and cleared, a dead
+  # shell's is cleared quietly, a live other shell's is left alone. A session
+  # can briefly have two shells across a relaunch; see the zsh copy.
   if [[ -n "$WORTEL_SESSION_ID" ]]; then
     local _wortel_marker="$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID"
     if [[ -f "$_wortel_marker" ]]; then
-      local _wortel_line _wortel_agent=""
+      local _wortel_line _wortel_agent="" _wortel_owner=""
       while IFS= builtin read -r _wortel_line; do
-        [[ "$_wortel_line" == agent=* ]] && { _wortel_agent="${_wortel_line#agent=}"; break; }
+        case "$_wortel_line" in
+          agent=*)    _wortel_agent="${_wortel_line#agent=}" ;;
+          shellpid=*) _wortel_owner="${_wortel_line#shellpid=}" ;;
+        esac
       done < "$_wortel_marker" 2>/dev/null
-      builtin printf '%s session=%s agent=%s status=%s shellpid=%s\n' \
-        "$(command date +%s)" "$WORTEL_SESSION_ID" "$_wortel_agent" "$ret" "$$" \
-        >> "$_ghostty_wortel_agent_dir/exits.log" 2>/dev/null
+      if [[ -n "$_wortel_owner" && "$_wortel_owner" != "$$" ]]; then
+        builtin kill -0 "$_wortel_owner" 2>/dev/null || command rm -f "$_wortel_marker" 2>/dev/null
+      else
+        builtin printf '%s session=%s agent=%s status=%s shellpid=%s\n' \
+          "$(command date +%s)" "$WORTEL_SESSION_ID" "$_wortel_agent" "$ret" "$$" \
+          >> "$_ghostty_wortel_agent_dir/exits.log" 2>/dev/null
+        command rm -f "$_wortel_marker" 2>/dev/null
+      fi
     fi
-    command rm -f "$_wortel_marker" 2>/dev/null
   fi
 
   _ghostty_executing=0

@@ -133,6 +133,26 @@ final class PtyHost: @unchecked Sendable {
         // writes the replay, and only then calls `beginReading`.
     }
 
+    /// Run `work` on the read queue, ahead of anything the pty produces.
+    ///
+    /// For the bytes that have to reach the terminal before the first read: the
+    /// saved modes and the keeper's replay. They go into libghostty through
+    /// `ghostty_surface_write_buffer`, which runs the VT parser on **whichever
+    /// thread calls it**, and the parser pushes surface messages (titles, cwd
+    /// reports) into a 64-slot queue that only the main thread drains, waiting
+    /// forever when it's full. Fed from the main thread, a replay from an agent
+    /// that kept working while nobody was attached, hundreds of title updates,
+    /// blocked the main thread on a queue it alone could empty: the beach ball
+    /// of 2026-10-07. This queue is where the live output already goes, so it
+    /// is where everything that precedes it belongs too.
+    ///
+    /// Ordering holds without further bookkeeping: the queue is serial and the
+    /// read source targets it, so a block submitted before `beginReading` runs
+    /// before the first read event.
+    func deliverBeforeReading(_ work: @escaping () -> Void) {
+        queue.async(execute: work)
+    }
+
     /// Start reading a descriptor adopted from the keeper. Separate from `init`
     /// so nothing is read before there is somewhere to put it.
     func beginReading() {

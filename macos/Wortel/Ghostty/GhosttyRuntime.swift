@@ -338,55 +338,68 @@ final class GhosttyRuntime {
         // each pasted line as Enter. The replay goes second on purpose —
         // anything the program changed while nobody was attached is in there,
         // and has to win over what was recorded before it detached.
-        if attachment.resumed {
-            let prelude = TerminalModeRecorder.shared.modes(for: session).prelude
+        //
+        // **None of it on this thread.** `ghostty_surface_write_buffer` parses
+        // on the caller, and the parser hands surface messages (every title
+        // change, every cwd report) to a bounded queue that only the main
+        // thread empties, blocking when it's full. A replay from an agent that
+        // kept working while detached is exactly that: hundreds of title
+        // updates, and the 65th stopped the main thread for good, waiting on
+        // itself. So the writes go to the pty's read queue, ahead of the first
+        // read, which is the thread the live output has always been parsed on.
+        // Only what needs AppKit is read here first.
+        let resumed = attachment.resumed
+        let replay = attachment.replay
+        let dark = Self.systemIsDark
+        let prelude = resumed ? TerminalModeRecorder.shared.modes(for: session).prelude : []
+        pty.deliverBeforeReading {
             if !prelude.isEmpty {
                 prelude.withUnsafeBufferPointer { raw in
                     guard let base = raw.baseAddress else { return }
                     ghostty_surface_write_buffer(surface, base, UInt(raw.count))
                 }
             }
-        }
-        // The buffer holds what the shell wrote while nobody was attached, and
-        // it has to reach the terminal before anything newer or the screen ends
-        // up out of order.
-        if !attachment.replay.isEmpty {
-            TerminalModeRecorder.shared.feed(session: session, replay: attachment.replay)
-            attachment.replay.withUnsafeBytes { raw in
-                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
-                ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+            // The buffer holds what the shell wrote while nobody was attached,
+            // and it has to reach the terminal before anything newer or the
+            // screen ends up out of order.
+            if !replay.isEmpty {
+                TerminalModeRecorder.shared.feed(session: session, replay: replay)
+                replay.withUnsafeBytes { raw in
+                    guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                    ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+                }
             }
-        }
 
-        // And then, if the program asked to hear about it, what the appearance
-        // is *now*.
-        //
-        // Restoring `?2031` above only re-subscribes it; it says nothing about
-        // what changed while nobody was attached, and a Mac left on "Auto"
-        // flips at sunset. A session resumed the next morning has an agent
-        // still painting last night's palette: dark diff blocks on a white
-        // screen. It will never notice either, because it asked once, at its
-        // own startup, and has been waiting for us ever since.
-        //
-        // This is the one thing here written to the *program* rather than to
-        // the terminal, so it goes after the replay has been read for modes —
-        // a program that turned reporting off while detached said so in there,
-        // and must not be written to.
-        //
-        // Sent on every resume, not only when the appearance changed. Tracking
-        // what each program was last told would mean persisting a second belief
-        // about the far side and being wrong about it silently, which is the
-        // shape of the bug this whole file exists for. A report a program
-        // already agrees with costs it nothing: it sets the theme it is already
-        // painting. The only case that shows is a mode recorded as on for a
-        // program that has since exited, and the prelude above already accepts
-        // that same risk for seventeen modes with far more to say.
-        if attachment.resumed,
-           TerminalModeRecorder.shared.modes(for: session).wantsColorSchemeReports {
-            let report = TerminalModes.colorSchemeReport(dark: Self.systemIsDark)
-            report.withUnsafeBufferPointer { raw in
-                guard let base = raw.baseAddress else { return }
-                pty.write(base, count: raw.count)
+            // And then, if the program asked to hear about it, what the
+            // appearance is *now*.
+            //
+            // Restoring `?2031` above only re-subscribes it; it says nothing
+            // about what changed while nobody was attached, and a Mac left on
+            // "Auto" flips at sunset. A session resumed the next morning has an
+            // agent still painting last night's palette: dark diff blocks on a
+            // white screen. It will never notice either, because it asked once,
+            // at its own startup, and has been waiting for us ever since.
+            //
+            // This is the one thing here written to the *program* rather than
+            // to the terminal, so it goes after the replay has been read for
+            // modes — a program that turned reporting off while detached said
+            // so in there, and must not be written to.
+            //
+            // Sent on every resume, not only when the appearance changed.
+            // Tracking what each program was last told would mean persisting a
+            // second belief about the far side and being wrong about it
+            // silently, which is the shape of the bug this whole file exists
+            // for. A report a program already agrees with costs it nothing: it
+            // sets the theme it is already painting. The only case that shows
+            // is a mode recorded as on for a program that has since exited, and
+            // the prelude above already accepts that same risk for seventeen
+            // modes with far more to say.
+            if resumed, TerminalModeRecorder.shared.modes(for: session).wantsColorSchemeReports {
+                let report = TerminalModes.colorSchemeReport(dark: dark)
+                report.withUnsafeBufferPointer { raw in
+                    guard let base = raw.baseAddress else { return }
+                    pty.write(base, count: raw.count)
+                }
             }
         }
         pty.beginReading()

@@ -153,6 +153,19 @@ final class PtyHost: @unchecked Sendable {
         queue.async(execute: work)
     }
 
+    /// Run `work` once everything already on the read queue has run: the
+    /// replay above, and any read in flight. Call after `release`, which
+    /// cancels the read source so nothing new is queued behind it.
+    ///
+    /// For freeing the surface the queue writes into. Freed straight away on
+    /// the main thread, a read handler or a replay still running here would
+    /// write into freed memory. Waiting for the queue *synchronously* is not
+    /// an option either: a write blocked on libghostty's full surface mailbox
+    /// waits for the main thread, and would wait forever.
+    func afterPendingWork(_ work: @escaping () -> Void) {
+        queue.async(execute: work)
+    }
+
     /// Start reading a descriptor adopted from the keeper. Separate from `init`
     /// so nothing is read before there is somewhere to put it.
     func beginReading() {

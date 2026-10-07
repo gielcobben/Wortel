@@ -665,12 +665,21 @@ final class SessionManager {
                             cwd: entry.cwd, argv: entry.runningArgv,
                             shellPID: nil, startedAt: nil)
             }
-            // The id recorded at quit when there was one, else the last one this
-            // session was ever seen in: the marker case is precisely an agent
-            // that died without a clean quit, which is when the running id is
-            // gone and the newest-file guess would be the only other option.
-            let conversationID = entry.runningConversationID ?? entry.lastConversationID
-            session.lastConversationID = entry.lastConversationID
+            // Which conversation to resume, best evidence first. A surviving
+            // marker knows when its agent started, and a fresh `claude` creates
+            // its transcript at that moment: that is exact, and it is newer than
+            // anything saved, which matters after a crash where a new
+            // conversation began after the last save. A resume appends instead
+            // of creating, so nothing is found and the saved ids stand: the one
+            // recorded at quit, else the last one this session was ever seen
+            // in, before the newest-file guess as the last resort.
+            let observedID: String? = {
+                guard let marker = resume[entry.id], marker.agent == "claude",
+                      let cwd = marker.cwd, let startedAt = marker.startedAt else { return nil }
+                return AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: startedAt)
+            }()
+            let conversationID = observedID ?? entry.runningConversationID ?? entry.lastConversationID
+            session.lastConversationID = observedID ?? entry.lastConversationID
             session.pendingResumeInput = agent.flatMap {
                 AgentResumeStore.resumeInput(for: $0, knownConversationID: conversationID)
             }
@@ -1522,21 +1531,26 @@ final class SessionManager {
         guard !orphans.isEmpty else { return }
 
         let table = ProcessTable.snapshot()
+        // An unreadable table says nothing about what is running, and every
+        // orphan would look idle and be closed, agent and all.
+        guard !table.isEmpty else { return }
         var parentOf: [pid_t: pid_t] = [:]
         for entry in table { parentOf[entry.pid] = entry.ppid }
         var recovered = false
         for orphan in orphans {
+            // The keeper's pid is login; the work hangs off the shell under it.
+            let shell = ProcessTable.shell(of: orphan.pid, in: table)
             // What the prompt itself keeps running doesn't count: see
             // `ProcessTable.work(under:in:)`.
-            let shellName = table.first { $0.pid == orphan.pid }?.name
+            let shellName = table.first { $0.pid == shell }?.name
             let isPromptHelper: (ProcessEntry) -> Bool = {
                 $0.name.hasPrefix("gitstatusd") || $0.name == shellName
             }
             // The shell's own children first: that's what was started there
             // (`claude`, `npm`), rather than something deep in its tree.
-            let children = ProcessTable.work(under: orphan.pid, in: table)
+            let children = ProcessTable.work(under: shell, in: table)
             let running = table.filter {
-                ProcessTable.isDescendant($0.pid, of: orphan.pid, parentOf: parentOf)
+                ProcessTable.isDescendant($0.pid, of: shell, parentOf: parentOf)
                     && !isPromptHelper($0)
             }
             guard let what = (children.first ?? running.first)?.name else {
@@ -1545,7 +1559,7 @@ final class SessionManager {
                 continue
             }
             let session = Session(id: orphan.id, name: "Recovered (\(what))", title: what,
-                                  cwd: ProcessTable.workingDirectory(of: orphan.pid))
+                                  cwd: ProcessTable.workingDirectory(of: shell))
             // A placeholder: the agent's own title, when it pushes one, is a
             // better name than ours.
             session.nameSource = .placeholder

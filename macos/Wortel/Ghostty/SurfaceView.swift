@@ -210,10 +210,20 @@ final class SurfaceView: NSView {
             ptyHost?.stop()
         }
         keeperSession = nil
+        let pty = ptyHost
         ptyHost = nil
         guard let surface else { return }
-        ghostty_surface_free(surface)
         self.surface = nil
+        // The pty's queue writes into this surface — the replay right after
+        // it was created, then every read — so it is freed only once that
+        // queue has nothing left to write. See `PtyHost.afterPendingWork`.
+        // `self` is held until then: the surface's userdata points at it.
+        guard let pty else { return ghostty_surface_free(surface) }
+        pty.afterPendingWork {
+            DispatchQueue.main.async {
+                withExtendedLifetime(self) { ghostty_surface_free(surface) }
+            }
+        }
     }
 
     // MARK: - Focus & visibility

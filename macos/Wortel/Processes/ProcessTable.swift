@@ -262,8 +262,24 @@ enum ProcessTable {
         return path.isEmpty ? nil : path
     }
 
+    /// The shell of a keeper session, given the pid the keeper forked.
+    ///
+    /// That pid is **`/usr/bin/login`**, not the shell: `ShellSpawn` wraps
+    /// every shell in it, as upstream does on macOS, and login stays the
+    /// shell's parent for the session's whole life. Asked for its children it
+    /// always answers with the shell, so a check for "anything running under
+    /// it" was never false — which kept every idle orphan coming back as a
+    /// session and a dead agent's resume from ever being retyped. Anything
+    /// that isn't login is returned as is.
+    static func shell(of root: pid_t, in table: [ProcessEntry]) -> pid_t {
+        guard table.first(where: { $0.pid == root })?.name == "login",
+              let child = table.first(where: { $0.ppid == root }) else { return root }
+        return child.pid
+    }
+
     /// The shell's own children, minus what its prompt keeps running: a shell
-    /// with none of these is idle at a prompt.
+    /// with none of these is idle at a prompt. Pass the shell, not login; see
+    /// `shell(of:in:)`.
     ///
     /// Not every child is work. powerlevel10k's `gitstatusd` lives for the
     /// shell's whole life, and async prompt frameworks fork copies of the

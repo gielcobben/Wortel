@@ -108,12 +108,24 @@ final class KeeperConnection {
         try spawn()
     }
 
+    /// Only the copy in an Applications folder registers the job. launchd
+    /// knows one `sh.wortel.keeper`, and it belongs to whichever bundle
+    /// registered it last: a Debug build from DerivedData registering it would
+    /// leave the installed app starting that build's keeper, failing the
+    /// version check, killing it, and starting it again. Every other copy
+    /// spawns its keeper directly, as before.
+    static var isInstalledCopy: Bool {
+        let path = Bundle.main.bundleURL.deletingLastPathComponent().path
+        return path == "/Applications"
+            || path == (NSHomeDirectory() as NSString).appendingPathComponent("Applications")
+    }
+
     /// The job's plist, in `Contents/Library/LaunchAgents`.
     static let launchdPlist = "sh.wortel.keeper.plist"
     static let launchdLabel = "sh.wortel.keeper"
 
     private func launchViaLaunchd() -> Bool {
-        guard DataDirectory.custom == nil else { return false }
+        guard DataDirectory.custom == nil, Self.isInstalledCopy else { return false }
         let service = SMAppService.agent(plistName: Self.launchdPlist)
         if service.status != .enabled {
             do {
@@ -212,7 +224,13 @@ final class KeeperConnection {
         func resumeIsOwed(now: Date = Date(), table: () -> [ProcessEntry]) -> Bool {
             guard resumed, inputDelivered, let startedAt, pid > 0,
                   now.timeIntervalSince(startedAt) > 10 else { return false }
-            return ProcessTable.work(under: pid, in: table()).isEmpty
+            let snapshot = table()
+            // `pid` is login; the agent hangs off the shell under it.
+            let shell = ProcessTable.shell(of: pid, in: snapshot)
+            // An unreadable table is no claim at all, not an idle shell:
+            // reading it as idle would start a second agent beside a live one.
+            guard snapshot.contains(where: { $0.pid == shell }) else { return false }
+            return ProcessTable.work(under: shell, in: snapshot).isEmpty
         }
     }
 

@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 
@@ -16,18 +17,23 @@ import Foundation
 /// the shell is still running the keeper hands it straight back.
 final class KeeperConnection {
     private let client: KeeperClient
-    private let binary: String?
+    private let app: URL?
 
-    init(socketPath: String = Keeper.socketPath, binary: String? = KeeperConnection.bundledBinary) {
+    init(socketPath: String = Keeper.socketPath, app: URL? = KeeperConnection.bundledApp) {
         self.client = KeeperClient(path: socketPath)
-        self.binary = binary
+        self.app = app
     }
 
-    /// `Contents/Resources/bin/wortel-keeper`, beside the `wortel` command.
-    static var bundledBinary: String? {
-        guard let resources = Bundle.main.resourceURL else { return nil }
-        let path = resources.appendingPathComponent("bin/wortel-keeper").path
-        return FileManager.default.isExecutableFile(atPath: path) ? path : nil
+    /// `Contents/Helpers/wortel-keeper.app`: the keeper as an app of its own,
+    /// "Wortel Keeper", background only. See `launch`.
+    static var bundledApp: URL? {
+        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/wortel-keeper.app")
+        return FileManager.default.fileExists(atPath: url.appendingPathComponent(
+            "Contents/MacOS/wortel-keeper").path) ? url : nil
+    }
+
+    private var binary: String? {
+        app?.appendingPathComponent("Contents/MacOS/wortel-keeper").path
     }
 
     /// Connect, starting the keeper if it isn't running.
@@ -57,9 +63,23 @@ final class KeeperConnection {
         return true
     }
 
-    /// Connect, starting the keeper if it isn't running.
+    /// Set when LaunchServices was asked to start the keeper, so a keeper it
+    /// never started can be started the other way.
+    private var askedLaunchServices = false
+
+    /// Connect, starting the keeper if it isn't running: through
+    /// LaunchServices, and if nothing answers within a couple of seconds,
+    /// directly, rather than run the whole launch without a keeper. The first
+    /// wait is short because binding takes milliseconds and this blocks
+    /// surface creation.
     private func connectStarting() -> Bool {
-        (try? client.connect(startingWith: { try self.launch() })) == true
+        askedLaunchServices = false
+        if (try? client.connect(startingWith: { try self.launch() }, timeout: 2)) == true {
+            return true
+        }
+        guard askedLaunchServices else { return false }
+        NSLog("wortel: LaunchServices started no keeper that answered; starting it directly")
+        return (try? client.connect(startingWith: { try self.spawn() })) == true
     }
 
     /// Stop a keeper we cannot talk to, and clear its socket so a new one can
@@ -90,24 +110,52 @@ final class KeeperConnection {
         try? FileManager.default.removeItem(atPath: Keeper.socketPath)
     }
 
-    /// Start the keeper as a process of its own.
+    /// Start the keeper as an app of its own.
+    ///
+    /// **Why an app, started through LaunchServices.** A process Wortel spawns
+    /// stays part of Wortel as far as macOS is concerned, however many
+    /// `setsid`s it does. On macOS 27 that made the Dock show Wortel as
+    /// "Running in Background" after a quit, with "Stop Running in Background"
+    /// next to Quit, and that item stopped the keeper and every session in it
+    /// (2026-10-07). Opened through LaunchServices, the keeper is "Wortel
+    /// Keeper", a background-only app with its own identity: Wortel's tile has
+    /// nothing left running after a quit, and the keeper has no tile at all.
+    ///
+    /// A launchd agent (`SMAppService`) was tried first and did not help: the
+    /// Dock counts an app's registered background item as the app running.
+    ///
+    /// The same binary is still started directly when LaunchServices does not
+    /// deliver one (see `connectStarting`).
+    ///
+    /// Options: never activated or shown, not in recent items, and always a
+    /// new instance at *this* path. A `WORTEL_DATA_DIR` instance needs a
+    /// keeper of its own beside the real one, and LaunchServices must not hand
+    /// back another copy of the same bundle id, a Debug build's say.
+    private func launch() throws {
+        guard let app else { throw WortelCLI.SocketError.notRunning }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.addsToRecentItems = false
+        configuration.promptsUserIfNeeded = false
+        configuration.createsNewApplicationInstance = true
+        configuration.allowsRunningApplicationSubstitution = false
+        if let custom = DataDirectory.custom {
+            configuration.environment = [DataDirectory.variable: custom]
+        }
+        askedLaunchServices = true
+        NSWorkspace.shared.openApplication(at: app, configuration: configuration) { _, error in
+            if let error { NSLog("wortel: LaunchServices could not open the keeper: %@", "\(error)") }
+        }
+    }
+
+    /// The fallback: start the keeper's executable directly.
     ///
     /// `POSIX_SPAWN_SETSID` puts the keeper in a new session, so it is not in
     /// the app's process group and does not receive the signals the app
     /// receives. A keeper that died with its parent would be an elaborate way
-    /// to change nothing.
-    ///
-    /// **Not a launchd agent, deliberately.** Tried and removed on 2026-10-07.
-    /// Registered through `SMAppService`, the keeper was launchd's process and
-    /// outlived the app as before, but macOS 27's Dock still marked Wortel
-    /// "Running in Background" after a quit, now because the keeper was the
-    /// app's registered background item, so "Stop Running in Background" was
-    /// still offered next to Quit, which is how that day's sessions were lost.
-    /// It also costs a "Background Items Added" notice after every update. The
-    /// answer to a killed keeper is recovery instead: the next launch resumes
-    /// every agent into its own conversation. Leaving the Dock's reach
-    /// entirely would take a keeper with an app identity of its own.
-    private func launch() throws {
+    /// to change nothing. What this cannot do is make it its own app, so the
+    /// Dock counts it as Wortel's again.
+    private func spawn() throws {
         guard let binary else { throw WortelCLI.SocketError.notRunning }
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)

@@ -313,10 +313,14 @@ enum AgentResumeStore {
     /// cannot); everything else uses the mapped "continue last" command, falling
     /// back to re-running the original invocation for agents with no resume flag.
     static func resumeCommand(for marker: AgentMarker, knownConversationID: String? = nil) -> String? {
+        // A known conversation, for an agent that can resume an exact one, is
+        // exact. See `AgentConversation`.
+        if let id = knownConversationID,
+           let command = AgentConversation.resumeCommand(agent: marker.agent, id: id) {
+            return command
+        }
         if marker.agent == "claude" {
-            // An id observed from the running agent's own open transcript is exact.
             // Only fall back to the newest-file guess when we never got to look.
-            if let id = knownConversationID { return "claude --resume \(id)" }
             if let cwd = marker.cwd, let id = latestClaudeSessionID(cwd: cwd) {
                 return "claude --resume \(id)"
             }

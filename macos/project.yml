@@ -426,6 +426,10 @@ targets:
       # wrong entry doesn't throw, it silently leaves a session cold or types the
       # wrong command. Foundation only.
       - path: Wortel/Sessions/AgentResumeStore.swift
+      # Which conversation Claude, Pi or Codex is in, read from each agent's
+      # own files. Three layouts nobody documents; a drift resumes the wrong
+      # conversation without a sound. Foundation only.
+      - path: Wortel/Sessions/AgentConversation.swift
       # The auto-naming gate. Pure, and every one of its failure modes is
       # timing-shaped and invisible: too eager and the sidebar relabels itself
       # while you read it, too shy and a session keeps a name that stopped being

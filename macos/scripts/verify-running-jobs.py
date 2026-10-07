@@ -70,7 +70,8 @@ print(String(data: try! JSONSerialization.data(withJSONObject: out, options: [.s
 ''' % SESSION_ID
 
 SOURCES = ["Wortel/Processes/ProcessTable.swift", "Wortel/Processes/RunningJobs.swift",
-           "Wortel/Sessions/AgentResumeStore.swift", "Wortel/Sessions/FolderRoot.swift",
+           "Wortel/Sessions/AgentResumeStore.swift", "Wortel/Sessions/AgentConversation.swift",
+           "Wortel/Sessions/FolderRoot.swift",
            "Wortel/CLI/WortelCommand.swift",
            # AgentResumeStore finds its folder through it (WORTEL_DATA_DIR).
            "Wortel/DataDirectory.swift"]

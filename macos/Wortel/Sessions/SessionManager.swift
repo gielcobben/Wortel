@@ -677,23 +677,24 @@ final class SessionManager {
             // The marker's command line counts as evidence too: a resume names
             // its conversation there. And the last id only counts in the
             // directory it belongs to; Claude can't resume it anywhere else.
+            //
+            // Claude, Pi and Codex alike: see `AgentConversation`.
             let marker = resume[entry.id]
             let observedID: String? = {
-                guard let marker, marker.agent == "claude", let cwd = marker.cwd else { return nil }
+                guard let marker, AgentConversation.exact.contains(marker.agent),
+                      let cwd = marker.cwd else { return nil }
                 // A surviving marker is an agent still running (the snapshot
-                // drops the rest), so Claude's own file for it is the answer.
+                // drops the rest), so whatever it can tell about itself counts.
                 var livePID: pid_t?
                 if case .running(let pid) = AgentLiveness.locate(
                     agent: marker.agent, shellPID: marker.shellPID) { livePID = pid }
-                return livePID.flatMap(AgentResumeStore.claudeConversationID(pid:))
-                    ?? AgentResumeStore.claudeResumeTarget(argv: marker.argv)
-                    ?? marker.startedAt.flatMap {
-                        AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: $0)
-                    }
+                return AgentConversation.observe(agent: marker.agent, livePID: livePID, cwd: cwd,
+                                                 argv: marker.argv, startedAt: marker.startedAt)
             }()
+            let resumingAgent = marker?.agent ?? entry.runningAgent
             let lastID = entry.lastConversationID.flatMap { id -> String? in
-                guard let cwd = marker?.cwd ?? entry.cwd,
-                      AgentResumeStore.claudeTranscriptExists(id: id, cwd: cwd) else { return nil }
+                guard let agent = resumingAgent, let cwd = marker?.cwd ?? entry.cwd,
+                      AgentConversation.exists(agent: agent, id: id, cwd: cwd) else { return nil }
                 return id
             }
             let conversationID = observedID ?? entry.runningConversationID ?? lastID
@@ -2440,17 +2441,14 @@ final class SessionManager {
                     // `--continue`, the directory's newest, which is the one
                     // it is appending to right now. Nothing found leaves the
                     // id we already know.
-                    if running == "claude", let cwd = session.cwd {
-                        let argv = session.runningArgv
+                    // The same for Pi and Codex, from their own files; see
+                    // `AgentConversation`.
+                    if AgentConversation.exact.contains(running), let cwd = session.cwd {
                         var livePID: pid_t?
                         if case .running(let pid) = located { livePID = pid }
-                        let observed = livePID.flatMap(AgentResumeStore.claudeConversationID(pid:))
-                            ?? AgentResumeStore.claudeResumeTarget(argv: argv)
-                            ?? session.runningStartedAt.flatMap {
-                                AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: $0)
-                            }
-                            ?? (AgentResumeStore.claudeContinuesLatest(argv: argv)
-                                ? AgentResumeStore.latestClaudeSessionID(cwd: cwd) : nil)
+                        let observed = AgentConversation.observe(
+                            agent: running, livePID: livePID, cwd: cwd,
+                            argv: session.runningArgv, startedAt: session.runningStartedAt)
                         if let observed {
                             conversationID = observed
                             // Remembered past this agent's life: see

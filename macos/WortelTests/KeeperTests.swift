@@ -317,7 +317,14 @@ extension KeeperTests {
         let descriptor = try XCTUnwrap(fd)
         let shellPID = try XCTUnwrap(opened.pid)
 
-        let text = read(descriptor, until: "SHELL-")
+        // Both lines, in either order: the child is started in the background,
+        // so its line can land after the shell's, and stopping at "SHELL-"
+        // alone made this fail now and then under load.
+        var text = read(descriptor, until: "SHELL-")
+        let deadline = Date().addingTimeInterval(5)
+        while text.range(of: #"CHILD-\d+\s"#, options: .regularExpression) == nil, Date() < deadline {
+            text += read(descriptor, until: "\n", timeout: 0.5)
+        }
         let childPID = try XCTUnwrap(
             text.split(whereSeparator: \.isNewline)
                 .first { $0.hasPrefix("CHILD-") }

@@ -291,9 +291,11 @@ enum AgentResumeStore {
         }
         // Anything the directory holds that isn't a marker we could read is not
         // going to become one; it would only be re-read every launch. The exit
-        // log lives here too and is not a marker to sweep.
+        // log lives here too and is not a marker to sweep, and neither is a
+        // dot-file: a marker being written, a moment from its rename into place.
         if let entries = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
             for url in entries where !url.lastPathComponent.hasPrefix(exitLog.lastPathComponent)
+                && !url.lastPathComponent.hasPrefix(".")
                 && (UUID(uuidString: url.lastPathComponent).map({ markers[$0] == nil }) ?? true) {
                 try? fm.removeItem(at: url)
             }

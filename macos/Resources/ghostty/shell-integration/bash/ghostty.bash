@@ -504,7 +504,11 @@ function __ghostty_preexec() {
         builtin printf 'shellpid=%s\n' "$$"
         # When the agent started — see the zsh integration.
         builtin printf 'startedat=%s\n' "$(command date +%s)"
-      } > "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+      } > "$_ghostty_wortel_agent_dir/.$WORTEL_SESSION_ID.$$" 2>/dev/null
+      # Renamed into place whole: the app reads it once, when the name
+      # appears. See the zsh integration.
+      command mv -f "$_ghostty_wortel_agent_dir/.$WORTEL_SESSION_ID.$$" \
+        "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
     fi
   fi
   _ghostty_executing=1

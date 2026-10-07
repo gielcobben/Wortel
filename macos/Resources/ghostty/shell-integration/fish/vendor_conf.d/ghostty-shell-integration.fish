@@ -406,7 +406,11 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                     echo "shellpid=$fish_pid"
                     # When the agent started — see the zsh integration.
                     echo "startedat="(command date +%s)
-                end >$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID 2>/dev/null
+                end >$_ghostty_wortel_agent_dir/.$WORTEL_SESSION_ID.$fish_pid 2>/dev/null
+                # Renamed into place whole: the app reads it once, when the
+                # name appears. See the zsh integration.
+                command mv -f $_ghostty_wortel_agent_dir/.$WORTEL_SESSION_ID.$fish_pid \
+                    $_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID 2>/dev/null
             end
         end
     end

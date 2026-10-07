@@ -480,7 +480,14 @@ _ghostty_deferred_init() {
                     # When the agent started, so the app can tell which transcript
                     # the agent created (and so which conversation it is in).
                     builtin print -r -- "startedat=$(command date +%s)"
-                } > "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+                } > "$_ghostty_wortel_agent_dir/.$WORTEL_SESSION_ID.$$" 2>/dev/null
+                # Renamed into place whole. The app watches the folder, which
+                # fires once, when the name appears; written in place, it read
+                # the marker after its first line and never again, so it knew
+                # the agent but not its command, start or shell, and could not
+                # tell which conversation it was in.
+                command mv -f "$_ghostty_wortel_agent_dir/.$WORTEL_SESSION_ID.$$" \
+                    "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
             fi
         fi
         (( _ghostty_state = 1 ))

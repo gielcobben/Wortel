@@ -23,6 +23,12 @@ final class KeeperServer: @unchecked Sendable {
         /// descriptor because that is what a connection *is* here, and because
         /// it makes "the app died" and "the app detached" the same code path.
         var attachedTo: Int32?
+        /// When the shell was forked, and whether the plan's `initialInput`
+        /// went into its pty. Reported on every attach, so an app that comes
+        /// back can tell a resume that was never typed from one whose agent
+        /// has since ended. See `KeeperSpawnPlan.initialInput`.
+        let startedAt = Date()
+        var inputDelivered = false
 
         init(id: String, pty: PtyHost, limit: Int) {
             self.id = id
@@ -250,19 +256,35 @@ final class KeeperServer: @unchecked Sendable {
             return reply(.failure("could not start \(plan.executable)"), to: client)
         }
 
+        // What the app wants run first, typed before the shell has read a
+        // byte: it waits in the pty's input buffer until the prompt. Done here
+        // and not by the app so the keeper can vouch for it later.
+        if let input = plan.initialInput, !input.isEmpty {
+            let bytes = Array(input.utf8)
+            bytes.withUnsafeBufferPointer { raw in
+                guard let base = raw.baseAddress else { return }
+                pty.write(base, count: raw.count)
+            }
+            session.inputDelivered = true
+        }
+
         state.sync {
             sessions[id] = session
             // Hand it straight over: the caller opened it in order to use it.
             session.attachedTo = client
             session.pty.pauseReading()
         }
-        reply(.success(pid: pty.pid), descriptor: pty.master, to: client)
+        reply(.success(pid: pty.pid, inputDelivered: session.inputDelivered,
+                       startedAt: session.startedAt.timeIntervalSince1970),
+              descriptor: pty.master, to: client)
     }
 
     private func attach(id: String, from client: Int32) {
         var descriptor: Int32 = -1
         var replay = Data()
         var pid: Int32 = -1
+        var inputDelivered = false
+        var startedAt: Double = 0
 
         enum Outcome { case ok, missing, busy }
         let outcome: Outcome = state.sync {
@@ -276,6 +298,8 @@ final class KeeperServer: @unchecked Sendable {
             replay = session.buffer.take()
             descriptor = session.pty.master
             pid = session.pty.pid
+            inputDelivered = session.inputDelivered
+            startedAt = session.startedAt.timeIntervalSince1970
             return .ok
         }
 
@@ -289,7 +313,8 @@ final class KeeperServer: @unchecked Sendable {
         guard descriptor >= 0 else {
             return reply(.failure("session has no pty"), to: client)
         }
-        reply(.success(pid: pid, replay: replay.isEmpty ? nil : replay),
+        reply(.success(pid: pid, replay: replay.isEmpty ? nil : replay,
+                       inputDelivered: inputDelivered, startedAt: startedAt),
               descriptor: descriptor, to: client)
     }
 

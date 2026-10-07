@@ -262,6 +262,21 @@ enum ProcessTable {
         return path.isEmpty ? nil : path
     }
 
+    /// The shell's own children, minus what its prompt keeps running: a shell
+    /// with none of these is idle at a prompt.
+    ///
+    /// Not every child is work. powerlevel10k's `gitstatusd` lives for the
+    /// shell's whole life, and async prompt frameworks fork copies of the
+    /// shell itself; counted, an idle shell at a p10k prompt came back as
+    /// "Recovered (gitstatusd)" on every launch, and the same count would
+    /// stop a resume from ever being retyped.
+    static func work(under shell: pid_t, in table: [ProcessEntry]) -> [ProcessEntry] {
+        let shellName = table.first { $0.pid == shell }?.name
+        return table.filter {
+            $0.ppid == shell && !$0.name.hasPrefix("gitstatusd") && $0.name != shellName
+        }
+    }
+
     /// Walk up the parent chain, bounded so a cycle in a torn process table
     /// can't spin here — this runs on the main thread during termination.
     static func isDescendant(_ pid: pid_t, of ancestor: pid_t,

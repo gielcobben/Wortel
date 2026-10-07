@@ -60,6 +60,14 @@ struct KeeperSpawnPlan: Codable, Equatable {
     var arguments: [String]
     var environment: [String: String]
     var workingDirectory: String?
+    /// Typed into the pty as soon as the shell is forked: the agent's resume
+    /// command for a restored session. The keeper does the typing rather than
+    /// the app so that it can **remember having done it** (`inputDelivered`),
+    /// which is what lets a later attach tell "the resume was never typed"
+    /// from "it was typed and the agent has since gone". Optional, and absent
+    /// from the wire when nil, so a keeper from before it simply never types
+    /// and never claims to have.
+    var initialInput: String? = nil
 }
 
 /// What the keeper says back. One JSON line, and for `open`/`attach` a
@@ -77,6 +85,16 @@ struct KeeperResponse: Codable, Equatable {
     /// The keeper's own build, so a stale keeper left over from an older app can
     /// be recognised instead of talked to.
     var version: String?
+    /// For `open` and `attach`: whether this keeper typed the session's
+    /// `initialInput` into the pty when it forked the shell. nil from a keeper
+    /// that predates the field, which the app reads as "don't know", never as
+    /// "no".
+    var inputDelivered: Bool?
+    /// For `open` and `attach`: when the shell was forked, as seconds since
+    /// 1970. A shell young enough to still be reading its rc files has not had
+    /// time to run what was typed into it; this is how the app tells that from
+    /// an agent that ran and ended.
+    var startedAt: Double?
 
     static func failure(_ message: String) -> KeeperResponse {
         KeeperResponse(ok: false, message: message)
@@ -84,10 +102,12 @@ struct KeeperResponse: Codable, Equatable {
 
     static func success(
         message: String? = nil, pid: Int32? = nil, replay: Data? = nil,
-        sessions: [KeeperSessionState]? = nil, version: String? = nil
+        sessions: [KeeperSessionState]? = nil, version: String? = nil,
+        inputDelivered: Bool? = nil, startedAt: Double? = nil
     ) -> KeeperResponse {
         KeeperResponse(ok: true, message: message, pid: pid, replay: replay,
-                       sessions: sessions, version: version)
+                       sessions: sessions, version: version,
+                       inputDelivered: inputDelivered, startedAt: startedAt)
     }
 }
 

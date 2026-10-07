@@ -1526,17 +1526,15 @@ final class SessionManager {
         for entry in table { parentOf[entry.pid] = entry.ppid }
         var recovered = false
         for orphan in orphans {
-            // What the prompt itself keeps running doesn't count: powerlevel10k's
-            // `gitstatusd`, and the copies of the shell that async prompt
-            // frameworks fork. Counted, an idle shell at a p10k prompt came
-            // back as "Recovered (gitstatusd)" on every such launch.
+            // What the prompt itself keeps running doesn't count: see
+            // `ProcessTable.work(under:in:)`.
             let shellName = table.first { $0.pid == orphan.pid }?.name
             let isPromptHelper: (ProcessEntry) -> Bool = {
                 $0.name.hasPrefix("gitstatusd") || $0.name == shellName
             }
             // The shell's own children first: that's what was started there
             // (`claude`, `npm`), rather than something deep in its tree.
-            let children = table.filter { $0.ppid == orphan.pid && !isPromptHelper($0) }
+            let children = ProcessTable.work(under: orphan.pid, in: table)
             let running = table.filter {
                 ProcessTable.isDescendant($0.pid, of: orphan.pid, parentOf: parentOf)
                     && !isPromptHelper($0)

@@ -119,6 +119,30 @@ final class KeeperConnection {
         /// True when this attached to a shell that was already running — i.e.
         /// the session survived, which is the whole feature.
         let resumed: Bool
+        /// Whether the keeper typed the plan's `initialInput` into this shell
+        /// when it forked it. False from a keeper too old to say.
+        let inputDelivered: Bool
+        /// When the keeper forked the shell. nil from a keeper too old to say.
+        let startedAt: Date?
+
+        /// Whether a resume typed into this shell has run its course and the
+        /// shell is back at a prompt with nothing under it: the one case where
+        /// a *survived* session should be resumed again.
+        ///
+        /// Three things have to hold, because each alone is ambiguous. The
+        /// keeper must vouch that it typed the resume, or it may never have
+        /// been typed. The shell must be older than a startup: a shell still
+        /// in its rc files has the text waiting in the pty and will run it
+        /// in a moment, and typing it again would run the agent twice. And
+        /// the shell must have nothing but its prompt's helpers under it,
+        /// which is the process table's word rather than a marker file's.
+        /// What this cannot tell is *why* the agent ended; that is what the
+        /// exit log is for.
+        func resumeIsOwed(now: Date = Date(), table: () -> [ProcessEntry]) -> Bool {
+            guard resumed, inputDelivered, let startedAt, pid > 0,
+                  now.timeIntervalSince(startedAt) > 10 else { return false }
+            return ProcessTable.work(under: pid, in: table()).isEmpty
+        }
     }
 
     /// Get a pty for `session`: the one it already has if it survived, a new one
@@ -130,7 +154,7 @@ final class KeeperConnection {
     /// stopped running.
     func attachOrOpen(
         session: UUID, plan: ShellSpawn.Plan, workingDirectory: String?,
-        columns: UInt16, rows: UInt16
+        initialInput: String? = nil, columns: UInt16, rows: UInt16
     ) -> Attachment? {
         guard client.isConnected else { return nil }
         let id = session.uuidString
@@ -142,19 +166,24 @@ final class KeeperConnection {
            response.ok, let descriptor {
             return Attachment(session: session, descriptor: descriptor,
                               pid: response.pid ?? -1,
-                              replay: response.replay ?? Data(), resumed: true)
+                              replay: response.replay ?? Data(), resumed: true,
+                              inputDelivered: response.inputDelivered ?? false,
+                              startedAt: response.startedAt.map(Date.init(timeIntervalSince1970:)))
         }
 
         let keeperPlan = KeeperSpawnPlan(
             executable: plan.executable, arguments: plan.arguments,
-            environment: plan.environment, workingDirectory: workingDirectory)
+            environment: plan.environment, workingDirectory: workingDirectory,
+            initialInput: initialInput)
         guard let (response, descriptor) = try? client.send(
             .open(session: id, plan: keeperPlan, columns: columns, rows: rows)),
             response.ok, let descriptor
         else { return nil }
         return Attachment(session: session, descriptor: descriptor,
                           pid: response.pid ?? -1,
-                          replay: response.replay ?? Data(), resumed: false)
+                          replay: response.replay ?? Data(), resumed: false,
+                          inputDelivered: response.inputDelivered ?? false,
+                          startedAt: response.startedAt.map(Date.init(timeIntervalSince1970:)))
     }
 
     /// End a session for good — the user closed it, so the shell goes too.

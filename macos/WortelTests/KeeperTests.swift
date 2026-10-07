@@ -117,6 +117,44 @@ final class KeeperTests: XCTestCase {
         XCTAssertTrue(read(descriptor, until: "GOT-ping").contains("GOT-ping"))
     }
 
+    /// The plan's `initialInput` is typed by the keeper itself, before the
+    /// shell has read a byte, and the keeper then vouches for it on every
+    /// attach — which is what lets a relaunch tell "the resume was never
+    /// typed" from "it was typed and the agent has since ended".
+    func testInitialInputIsTypedByTheKeeperAndVouchedFor() throws {
+        try startServer()
+        var plan = plan("read line; echo GOT-$line; sleep 30")
+        plan.initialInput = "resume-me\n"
+        let before = Date().timeIntervalSince1970 - 1
+        let first = try connect()
+        let (opened, fd) = try first.send(
+            .open(session: "a", plan: plan, columns: 80, rows: 24))
+        let descriptor = try XCTUnwrap(fd)
+        descriptors.append(descriptor)
+        XCTAssertEqual(opened.inputDelivered, true)
+        XCTAssertGreaterThan(try XCTUnwrap(opened.startedAt), before)
+        XCTAssertTrue(read(descriptor, until: "GOT-resume-me").contains("GOT-resume-me"))
+
+        // The app goes away; the next one asks what this shell was given.
+        first.disconnect()
+        usleep(100_000)
+        let (attached, fd2) = try connect().send(.attach(session: "a"))
+        if let fd2 { descriptors.append(fd2) }
+        XCTAssertTrue(attached.ok, attached.message ?? "")
+        XCTAssertEqual(attached.inputDelivered, true)
+        XCTAssertEqual(attached.startedAt, opened.startedAt)
+    }
+
+    /// A plan without input is the old wire, byte for byte: nothing typed, and
+    /// nothing claimed.
+    func testNoInitialInputMeansNothingTyped() throws {
+        try startServer()
+        let (opened, fd) = try connect().send(
+            .open(session: "a", plan: plan("echo READY; sleep 30"), columns: 80, rows: 24))
+        if let fd { descriptors.append(fd) }
+        XCTAssertEqual(opened.inputDelivered, false)
+    }
+
     // MARK: - Surviving
 
     /// **The whole feature, in one test.** Open a session, drop the connection

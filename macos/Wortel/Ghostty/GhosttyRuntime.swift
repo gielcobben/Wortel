@@ -250,10 +250,28 @@ final class GhosttyRuntime {
         if let sessionID, let keeper = Self.keeper,
            let attachment = keeper.attachOrOpen(
                session: sessionID, plan: Self.shellPlan(sessionID: sessionID),
-               workingDirectory: workingDirectory, columns: 80, rows: 24) {
-            // A session that never died has nothing to resume; see below.
-            if attachment.resumed { cfg.initial_input = nil }
-            return hostManagedSurface(view: view, config: &cfg, attachment: attachment)
+               workingDirectory: workingDirectory, initialInput: initialInput,
+               columns: 80, rows: 24) {
+            // The resume is typed by the keeper when it forks the shell, so
+            // libghostty must not type it a second time. A session that never
+            // died has, as a rule, nothing to resume either — with one
+            // exception: the shell survived but the agent in it did not, and
+            // the shell sits idle at a prompt. On 2026-10-07 that was nine
+            // sessions out of ten, and a restart of the app could never bring
+            // them back because "the shell is alive" was read as "the agent
+            // is". Only then is the resume typed into the surviving shell,
+            // after its replay, and only on the keeper's word that the first
+            // one went in; see `Attachment.resumeIsOwed`.
+            var resumeAgain: String?
+            if attachment.resumed, let initialInput,
+               attachment.resumeIsOwed(table: ProcessTable.snapshot) {
+                NSLog("wortel: shell %d of session %@ is idle without its agent; resuming it again",
+                      attachment.pid, sessionID.uuidString)
+                resumeAgain = initialInput
+            }
+            cfg.initial_input = nil
+            return hostManagedSurface(view: view, config: &cfg, attachment: attachment,
+                                      resumeAgain: resumeAgain)
         }
 
         return envVars.withUnsafeMutableBufferPointer { buf in
@@ -274,7 +292,7 @@ final class GhosttyRuntime {
     /// wire, replay, and only then start reading.
     private func hostManagedSurface(
         view: SurfaceView, config cfg: inout ghostty_surface_config_s,
-        attachment: KeeperConnection.Attachment
+        attachment: KeeperConnection.Attachment, resumeAgain: String? = nil
     ) -> ghostty_surface_t? {
         let session = attachment.session
         let pty = PtyHost(adopting: attachment.descriptor)
@@ -397,6 +415,15 @@ final class GhosttyRuntime {
             if resumed, TerminalModeRecorder.shared.modes(for: session).wantsColorSchemeReports {
                 let report = TerminalModes.colorSchemeReport(dark: dark)
                 report.withUnsafeBufferPointer { raw in
+                    guard let base = raw.baseAddress else { return }
+                    pty.write(base, count: raw.count)
+                }
+            }
+            // Last, so the shell's prompt and whatever preceded it are on
+            // screen before the command appears under them. See `newSurface`.
+            if let resumeAgain {
+                let bytes = Array(resumeAgain.utf8)
+                bytes.withUnsafeBufferPointer { raw in
                     guard let base = raw.baseAddress else { return }
                     pty.write(base, count: raw.count)
                 }

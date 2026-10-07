@@ -334,4 +334,79 @@ final class WorkspaceTabsTests: XCTestCase {
         }
         XCTAssertNil(ClosedTab(rawValue: "side:x:changes"))
     }
+
+    // MARK: - Closing goes back to where a tab came from
+
+    private let fileA = SideTab.file("/repo/a.swift")
+    private let fileB = SideTab.file("/repo/b.swift")
+
+    /// Changes in front, a file opened from it at the end of the row: closing
+    /// the file goes back to Changes, not to its left-hand neighbour.
+    func testClosingAFileOpenedFromChangesGoesBackToChanges() {
+        var tabs = column()
+        tabs.place(fileA, in: .side, at: .max)
+        tabs.bringForward(opened: fileA)
+        tabs.close(fileA)
+        XCTAssertEqual(tabs.activeSide, changes)
+    }
+
+    /// Once you've switched to another tab in that row and come back, where it
+    /// came from is no longer the point: the neighbour rule, as before.
+    func testSwitchingAwayEndsIt() {
+        var tabs = column()
+        tabs.place(fileA, in: .side, at: .max)
+        tabs.bringForward(opened: fileA)
+        tabs.bringForward(history)
+        tabs.bringForward(fileA)
+        tabs.close(fileA)
+        XCTAssertEqual(tabs.activeSide, files, "the neighbour: the one before it at the end of the row")
+    }
+
+    /// A file opened from a file: closing the second goes back to the first,
+    /// and the first still goes back to Changes. Opening is not leaving.
+    func testAFileOpenedFromAFileUnwindsInOrder() {
+        var tabs = column()
+        tabs.place(fileA, in: .side, at: .max)
+        tabs.bringForward(opened: fileA)
+        tabs.place(fileB, in: .side, at: .max)
+        tabs.bringForward(opened: fileB)
+        tabs.close(fileB)
+        XCTAssertEqual(tabs.activeSide, fileA)
+        tabs.close(fileA)
+        XCTAssertEqual(tabs.activeSide, changes)
+    }
+
+    /// Closing a tab that isn't in front changes nothing you see.
+    func testClosingABackgroundTabLeavesTheFront() {
+        var tabs = column()
+        tabs.place(fileA, in: .side, at: .max)
+        tabs.bringForward(opened: fileA)
+        tabs.place(fileB, in: .side, at: .max)
+        tabs.bringForward(opened: fileB)
+        tabs.close(fileA)
+        XCTAssertEqual(tabs.activeSide, fileB)
+    }
+
+    /// The origin moved to another row since: it isn't here to go back to.
+    func testAnOriginInAnotherRowIsNotFollowed() {
+        var tabs = column()
+        tabs.place(fileA, in: .side, at: .max)
+        tabs.bringForward(opened: fileA)
+        tabs.move(changes, to: .main, at: .max)
+        tabs.bringForward(fileA)
+        tabs.close(fileA)
+        XCTAssertNotEqual(tabs.activeSide, changes)
+        XCTAssertEqual(tabs.region(of: changes), .main)
+    }
+
+    /// In the main row the origin can be the session's own terminal, which is
+    /// "nothing else in front".
+    func testTheMainRowGoesBackToTheTerminal() {
+        var tabs = WorkspaceTabs()
+        tabs.place(fileA, in: .main, at: .max)
+        tabs.bringForward(opened: fileA)
+        XCTAssertEqual(tabs.activeMain, fileA)
+        tabs.close(fileA)
+        XCTAssertNil(tabs.activeMain)
+    }
 }

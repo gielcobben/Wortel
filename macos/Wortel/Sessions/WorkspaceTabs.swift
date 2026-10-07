@@ -16,6 +16,11 @@ import Foundation
 ///   Taking out the one in front brings its neighbour forward, the one to its
 ///   right first. The column and the strip hide when they're left empty; the
 ///   main row never is, it always has the terminal.
+/// - Except when you close a tab you opened and haven't left since: then
+///   what was in front of its row when it opened comes back (a file opened
+///   from Changes returns you to Changes), as a browser returns you to the tab
+///   that opened one. Switching to another tab in that row ends it, and from
+///   then on the neighbour rule applies.
 /// - Moving a file or a browser to another row makes that row where the next
 ///   one of its kind opens (`home(for:)`): drag one browser to the main area
 ///   and browsers open there. Until then, and for everything else, the column.
@@ -40,6 +45,10 @@ struct WorkspaceTabs: Equatable, Sendable {
     var closed: [ClosedTab] = []
     /// Where you last moved a tab of each kind: where the next one opens.
     var habits: [TabKind: TabRegion] = [:]
+    /// For a tab opened into a row and not left since: what was in front of
+    /// that row when it opened. Not persisted; it is about the last few
+    /// minutes, not about the layout.
+    var openers: [SideTab: SideTab] = [:]
 
     static let closedLimit = 25
 
@@ -106,8 +115,38 @@ struct WorkspaceTabs: Equatable, Sendable {
         return true
     }
 
-    /// Put a tab in front of its row and show the row.
+    /// Put a tab in front of its row and show the row: you switching to it.
+    /// The tab you leave forgets where it came from; closing it later is the
+    /// neighbour rule's again.
     mutating func bringForward(_ tab: SideTab) {
+        if let region = region(of: tab), let previous = front(of: region), previous != tab {
+            openers[previous] = nil
+        }
+        show(tab)
+    }
+
+    /// Put a tab just opened into its row in front, remembering what was in
+    /// front there, so closing it before you switch away goes back to that.
+    /// What you're leaving keeps its own origin: opening a file from a file
+    /// is not leaving it.
+    mutating func bringForward(opened tab: SideTab) {
+        if let region = region(of: tab), let previous = front(of: region), previous != tab {
+            openers[tab] = previous
+        }
+        show(tab)
+    }
+
+    /// The tab in front of `region`'s row; the session's terminal for the
+    /// main row when nothing else is.
+    func front(of region: TabRegion) -> SideTab? {
+        switch region {
+        case .main: return activeMain ?? .session
+        case .side: return activeSide
+        case .bottom: return activeBottom
+        }
+    }
+
+    private mutating func show(_ tab: SideTab) {
         switch region(of: tab) {
         case .main?: activeMain = tab == .session ? nil : tab
         case .side?:
@@ -145,7 +184,16 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// The row it was in, or nil if nothing was closed.
     @discardableResult
     mutating func close(_ tab: SideTab) -> TabRegion? {
-        guard tab != .session, let from = detach(tab) else { return nil }
+        guard tab != .session, let region = region(of: tab) else { return nil }
+        // Back to where it came from: only for the tab in front (closing one
+        // behind changes nothing you see), and only if that is still in the
+        // same row.
+        let opener = front(of: region) == tab
+            ? openers[tab].flatMap { self.region(of: $0) == region ? $0 : nil } : nil
+        guard let from = detach(tab) else { return nil }
+        if let opener { show(opener) }
+        openers[tab] = nil
+        openers = openers.filter { $0.value != tab }
         closed.append(ClosedTab(tab: tab, region: from.region, index: from.index))
         if closed.count > Self.closedLimit { closed.removeFirst(closed.count - Self.closedLimit) }
         return from.region

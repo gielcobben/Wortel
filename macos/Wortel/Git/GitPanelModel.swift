@@ -518,8 +518,12 @@ final class GitPanelModel {
         guard let session else { return }
         if session.workspace.region(of: tab) == nil { reportOpened(tab, in: .side) }
         change(session) { workspace in
-            if workspace.region(of: tab) == nil { workspace.place(tab, in: .side, at: .max) }
-            workspace.bringForward(tab)
+            if workspace.region(of: tab) == nil {
+                workspace.place(tab, in: .side, at: .max)
+                workspace.bringForward(opened: tab)
+            } else {
+                workspace.bringForward(tab)
+            }
         }
         settle(tab, in: session)
     }
@@ -662,7 +666,7 @@ final class GitPanelModel {
         case nil:
             change(session) {
                 $0.place(tab, in: region, at: .max)
-                $0.bringForward(tab)
+                $0.bringForward(opened: tab)
             }
         }
         settle(tab, in: session)
@@ -680,7 +684,7 @@ final class GitPanelModel {
         reportOpened(tab, in: region)
         change(session) {
             $0.place(tab, in: region, at: index)
-            $0.bringForward(tab)
+            $0.bringForward(opened: tab)
         }
         settle(tab, in: session)
     }

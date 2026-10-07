@@ -3,29 +3,91 @@ import Combine
 import Foundation
 import Observation
 import Sparkle
+import UserNotifications
 
-/// Wraps Sparkle's standard updater. `SPUStandardUpdaterController` starts the
-/// updater (scheduled background checks against `SUFeedURL` in Info.plist) and
-/// provides the default user-facing update UI. We mirror Sparkle's KVO
-/// `canCheckForUpdates` flag into observable state so the "Check for Updates…"
-/// menu item can disable itself while a check is already in flight.
+/// Sparkle, set up for an app nobody quits.
+///
+/// Sparkle's quiet path downloads an update and installs it "when the app
+/// quits", and its other path is a window in the middle of your work. Wortel is
+/// left open for weeks, so the first never comes and the second gets
+/// dismissed. What makes a better path possible is that a restart costs
+/// nothing here: the shells live in the keeper, so Wortel quits and comes back
+/// in a second or two with every session, agent and layout as it was.
+///
+/// So: check every few hours and download in the background (Info.plist's
+/// `SUEnableAutomaticChecks`, `SUAutomaticallyUpdate`,
+/// `SUScheduledCheckInterval`); when an update is downloaded, take it over from
+/// Sparkle (`willInstallUpdateOnQuit` returning true) and say so quietly: a
+/// blue download icon in the sidebar's bottom bar, whose popover offers
+/// Restart Now (`UpdateIndicator`), and an item in the Wortel menu, until you
+/// choose the moment. One click installs and relaunches.
+/// After that launch, a one-time "Updated to … · What's new". And if an update
+/// has waited a day, one notification, once.
+///
+/// Sparkle's own window still answers "Check for Updates…" when nothing is
+/// waiting: asked for, it's not an interruption. While an update waits, Sparkle
+/// holds its session open for the icon and runs no other check (so that item
+/// is greyed, with "Restart to Update" right under it); the restart's launch
+/// checks again soon after, so a release that came out meanwhile follows in
+/// minutes rather than at the next interval.
 @MainActor
 @Observable
-final class Updater {
+final class Updater: NSObject, SPUUpdaterDelegate {
+    static let shared = Updater()
+
     private(set) var canCheckForUpdates = false
+    /// A downloaded update waiting for a restart, by its version.
+    private(set) var readyVersion: String? {
+        didSet { if readyVersion != oldValue { onReadyVersionChange?(readyVersion) } }
+    }
+    /// Set by the menu, so its Restart to Update item follows this without
+    /// being re-read on every keypress (a menu delegate would be).
+    @ObservationIgnored var onReadyVersionChange: ((String?) -> Void)?
+    /// This launch is the first of a new version: the one it is, until
+    /// dismissed (or a while has passed).
+    private(set) var justUpdatedTo: String?
 
-    @ObservationIgnored private let controller: SPUStandardUpdaterController
+    /// nil on a development build (see `isDevelopmentBuild`).
+    @ObservationIgnored private var controller: SPUStandardUpdaterController?
     @ObservationIgnored private var cancellable: AnyCancellable?
+    @ObservationIgnored private var installNow: (() -> Void)?
+    /// The one nudge: when the waiting began, by the wall clock, and a timer
+    /// that looks every half hour. Not a timer for the whole day: a run-loop
+    /// timer's clock stops while the Mac sleeps, and a laptop asleep two
+    /// thirds of the day would have it fire days late. In memory, not stored:
+    /// any quit installs the update, so a wait never spans launches.
+    @ObservationIgnored private var readySince: Date?
+    @ObservationIgnored private var nudgeTimer: Timer?
 
-    init() {
-        controller = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
+    /// The reminder notification's identifier, which AppDelegate answers.
+    static let notificationID = "WortelUpdateReady"
+
+    private static let migratedKey = "WortelAutomaticUpdatesOn1"
+    private static let lastRunVersionKey = "WortelLastRunVersion"
+    /// How long an update may wait before the one notification.
+    private static let nudgeAfter: TimeInterval = 24 * 60 * 60
+
+    /// A Debug build is version 0.0.0, so every release reads as newer: left
+    /// running, Sparkle would download one and offer to replace the build
+    /// you're developing. It shares the release's preferences too (one bundle
+    /// id), so it mustn't touch those either. So on a development build the
+    /// updater stays off. The same rule telemetry uses, from the same place.
+    static var isDevelopmentBuild: Bool { TelemetrySettings.isDevelopmentBuild }
+
+    private override init() {
+        super.init()
+        assert(Self.sparkleCallbacks.allSatisfy { responds(to: $0) },
+               "Updater doesn't implement the Sparkle callbacks it relies on")
+        guard !Self.isDevelopmentBuild else { return }
+        let controller = SPUStandardUpdaterController(
+            startingUpdater: false, updaterDelegate: self, userDriverDelegate: nil)
+        self.controller = controller
+        turnOnAutomaticUpdatesOnce()
+        controller.startUpdater()
         cancellable = controller.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.canCheckForUpdates = $0 }
+        noteVersionChange()
     }
 
     /// Manual check — shows progress and (if found) the update prompt. Activate
@@ -33,6 +95,148 @@ final class Updater {
     /// active app.
     func checkForUpdates() {
         NSApp.activate(ignoringOtherApps: true)
-        controller.updater.checkForUpdates()
+        controller?.updater.checkForUpdates()
+    }
+
+    /// Install the downloaded update and relaunch. Sparkle quits Wortel, which
+    /// saves everything on the way out as any quit does; the keeper holds the
+    /// shells across it.
+    func restartToUpdate() {
+        installNow?()
+    }
+
+    /// Whether this build updates itself at all (a development build doesn't).
+    var isAvailable: Bool { controller != nil }
+
+    /// The Wortel menu's "Check for Updates Automatically": checking and
+    /// downloading together, because one without the other is a window again.
+    var updatesAutomatically: Bool {
+        // On only while both are: a check without the download is Sparkle's
+        // window again (its own dialog can turn downloading off on its own).
+        get {
+            guard let updater = controller?.updater else { return false }
+            return updater.automaticallyChecksForUpdates && updater.automaticallyDownloadsUpdates
+        }
+        set {
+            controller?.updater.automaticallyChecksForUpdates = newValue
+            controller?.updater.automaticallyDownloadsUpdates = newValue
+        }
+    }
+
+    func dismissUpdatedNote() { justUpdatedTo = nil }
+
+    // MARK: - Sparkle
+
+    /// Both delegate methods below are optional Objective-C requirements, and
+    /// a Swift name that misses one by a word compiles fine and is simply never
+    /// called: the update would wait for a quit that never comes, silently.
+    /// So each name is pinned twice, both at compile time: `#selector` on the
+    /// protocol fails the build if Sparkle has no such method, and
+    /// `checkCallbacksAreOurs` fails it if this class doesn't implement that
+    /// exact name. (The assert in init says the same at runtime, in Debug.)
+    private static let sparkleCallbacks: [Selector] = [
+        #selector(SPUUpdaterDelegate.updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)),
+        #selector(SPUUpdaterDelegate.updater(_:didFinishUpdateCycleFor:error:)),
+    ]
+
+    /// Never called: it compiles only while this class implements the two
+    /// callbacks under Sparkle's own names.
+    private func checkCallbacksAreOurs() {
+        _ = updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)
+        _ = updater(_:didFinishUpdateCycleFor:error:)
+    }
+
+    /// An update is downloaded and would install on quit. Take it over, so it
+    /// can install on a click instead of waiting for a quit that never comes.
+    /// (Sparkle still installs it on quit if you get there first.)
+    nonisolated func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
+                             immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
+        let version = item.displayVersionString
+        MainActor.assumeIsolated {
+            self.installNow = immediateInstallHandler
+            self.readyVersion = version
+            self.startNudgeClock()
+        }
+        return true
+    }
+
+    /// The session behind the icon ended without installing (an error in the
+    /// installer, say). Sparkle schedules a fresh check on its own; until then
+    /// there's nothing to restart into, and an icon that does nothing on a click
+    /// is worse than none. While the session waits, Sparkle starts no other
+    /// (a manual check is refused), so this is the only way it goes stale.
+    nonisolated func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+                             error: (any Error)?) {
+        MainActor.assumeIsolated {
+            guard self.installNow != nil else { return }
+            self.installNow = nil
+            self.readyVersion = nil
+            self.nudgeTimer?.invalidate()
+            self.readySince = nil
+        }
+    }
+
+    // MARK: - Once
+
+    /// Both Macs this was written on had answered Sparkle's one-time "check
+    /// automatically?" prompt with "Don't Check", most likely without meaning
+    /// to: it's a dialog on the second launch of a terminal you're about to
+    /// type in. Info.plist now answers it, so it's never asked; this turns it
+    /// on once for anyone who answered before. The menu item turns it off.
+    private func turnOnAutomaticUpdatesOnce() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.migratedKey) else { return }
+        defaults.set(true, forKey: Self.migratedKey)
+        updatesAutomatically = true
+    }
+
+    /// A launch on a version other than the last one's says so, once.
+    private func noteVersionChange() {
+        let defaults = UserDefaults.standard
+        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let last = defaults.string(forKey: Self.lastRunVersionKey)
+        defaults.set(current, forKey: Self.lastRunVersionKey)
+        // An update moves the version forward; a debug build next to a
+        // release, or the first launch ever, isn't news.
+        guard let current, let last, current != last,
+              current.compare(last, options: .numeric) == .orderedDescending else { return }
+        justUpdatedTo = current
+        // Long enough to be seen after the restart, not so long it's furniture.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
+            self?.justUpdatedTo = nil
+        }
+        // While the last one waited, Sparkle checked for nothing newer: look
+        // now rather than at the next interval, so a release that came out in
+        // the meantime follows in minutes.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            guard let updater = self?.controller?.updater,
+                  updater.automaticallyChecksForUpdates, updater.canCheckForUpdates else { return }
+            updater.checkForUpdatesInBackground()
+        }
+    }
+
+    // MARK: - The one nudge
+
+    private func startNudgeClock() {
+        readySince = Date()
+        nudgeTimer?.invalidate()
+        nudgeTimer = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.nudgeIfWaitedLong() }
+        }
+    }
+
+    /// One notification per waiting update, a day in by the clock on the wall.
+    /// Never more: the icon is the reminder, and this only catches an icon
+    /// nobody looked at.
+    private func nudgeIfWaitedLong() {
+        guard let version = readyVersion, let readySince,
+              Date().timeIntervalSince(readySince) >= Self.nudgeAfter else { return }
+        nudgeTimer?.invalidate()
+        nudgeTimer = nil
+        let content = UNMutableNotificationContent()
+        content.title = "Wortel \(version) is ready"
+        content.body = "Restart when it suits you. Your sessions come back as they were."
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: Self.notificationID, content: content, trigger: nil))
     }
 }

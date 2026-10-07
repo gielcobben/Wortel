@@ -404,69 +404,25 @@ final class SideColumnBar: ChromeBarView {
     }
 }
 
-// MARK: - Running jobs
+// MARK: - A badge on a glyph
 
-/// What the session on screen is still running: a plain glyph, like the
-/// ChatGPT app's Outputs button, with a small dot while something runs (green
-/// when it's serving a port). Always there, so the row never shifts when a
-/// server starts; the list it opens says when nothing is. The count is in the
-/// tooltip.
-@MainActor
-final class RunningButton: HoverFillButton {
-    private let dot = CALayer()
-    private var dotColor: NSColor?
-
-    /// The badge, as SF Symbols draw theirs (`app.badge`): a dot on the
-    /// glyph's top-right corner with a ring of the glyph cut away around it,
-    /// so it reads as a badge and not as a blot on the lines. There is no
-    /// `list.bullet.badge` to use instead.
-    private static let dotSize: CGFloat = 6
-    private static let gap: CGFloat = 1.5
-
-    private let plain = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "Running")?
-        .withSymbolConfiguration(Chrome.glyph)
-    private lazy var badged: NSImage? = plain.map(Self.cutOut)
-
-    convenience init() {
-        self.init(frame: .zero)
-        image = plain
-        toolTip = "Running in this session"
-        translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: Chrome.controlSize),
-            heightAnchor.constraint(equalToConstant: Chrome.controlSize),
-        ])
-        wantsLayer = true
-        dot.cornerRadius = Self.dotSize / 2
-        dot.isHidden = true
-        layer?.addSublayer(dot)
-    }
-
-    func show(_ snapshot: RunningJobsSnapshot) {
-        let status = snapshot.status
-        let count = snapshot.work.count + snapshot.orphans.count
-        dotColor = snapshot.hasWork ? (status.isServing ? .systemGreen : .secondaryLabelColor) : nil
-        dot.isHidden = dotColor == nil
-        // The glyph with its gap only while there's a dot to sit in it.
-        let wanted = dotColor == nil ? plain : badged
-        if image !== wanted { image = wanted }
-        needsLayout = true
-        needsDisplay = true
-        toolTip = count == 0 ? "Nothing running in this session"
-            : "\(count) \(count == 1 ? "job" : "jobs") running: \(([status.title] + status.ports).joined(separator: " "))"
-        setAccessibilityLabel(toolTip)
-    }
+/// A dot on a glyph's top-right corner, as SF Symbols draw their own badges
+/// (`app.badge`): half out of the corner, with a ring of the glyph cut away
+/// around it so it reads as a badge and not as a blot on the lines. Used where
+/// no `.badge` variant of the symbol exists: the running list, the update icon.
+enum GlyphBadge {
+    static let dotSize: CGFloat = 6
+    static let gap: CGFloat = 1.5
 
     /// Where the dot's centre sits on a glyph of `size`, in the glyph's own
-    /// (unflipped) coordinates: on its top-right corner, half out of it, as
-    /// `app.badge` sits.
-    private static func dotCenter(in size: NSSize) -> NSPoint {
+    /// (unflipped) coordinates.
+    static func dotCenter(in size: NSSize) -> NSPoint {
         NSPoint(x: size.width - 1.5, y: size.height - 1.5)
     }
 
     /// The glyph with a ring cut out where the dot goes. Still a template, so
     /// it takes the button's tint in light and dark like any other glyph.
-    private static func cutOut(_ glyph: NSImage) -> NSImage {
+    static func cutOut(_ glyph: NSImage) -> NSImage {
         let size = glyph.size
         let image = NSImage(size: size, flipped: false) { rect in
             glyph.draw(in: rect)
@@ -482,31 +438,117 @@ final class RunningButton: HoverFillButton {
         return image
     }
 
-    override func layout() {
-        super.layout()
-        guard let image = badged else { return }
-        // Where the button actually draws its image, so the dot lands in the
-        // gap however the cell centres it.
-        let imageRect = cell?.imageRect(forBounds: bounds)
+    /// The dot's frame in `button`, where the button actually draws `image`,
+    /// so it lands in the gap however the cell centres it, flipped or not.
+    @MainActor
+    static func dotFrame(in button: NSButton, image: NSImage) -> NSRect {
+        let bounds = button.bounds
+        let imageRect = button.cell?.imageRect(forBounds: bounds)
             ?? NSRect(x: (bounds.width - image.size.width) / 2, y: (bounds.height - image.size.height) / 2,
                       width: image.size.width, height: image.size.height)
-        let center = Self.dotCenter(in: image.size)
+        let center = dotCenter(in: image.size)
         let x = imageRect.minX + center.x
-        let y = isFlipped ? imageRect.minY + (image.size.height - center.y) : imageRect.minY + center.y
-        let half = Self.dotSize / 2
+        let y = button.isFlipped ? imageRect.minY + (image.size.height - center.y) : imageRect.minY + center.y
+        let half = dotSize / 2
+        return button.backingAlignedRect(NSRect(x: x - half, y: y - half, width: dotSize, height: dotSize),
+                                         options: .alignAllEdgesNearest)
+    }
+}
+
+/// A hover glyph button with an optional `GlyphBadge` dot: the glyph swaps to
+/// its cut-out version while there's a dot to sit in the gap. One place for the
+/// running list's dot and the update icon's.
+@MainActor
+class BadgedGlyphButton: HoverFillButton {
+    private let dot = CALayer()
+    private var plainGlyph: NSImage?
+    private var badgedGlyph: NSImage?
+
+    /// The dot's colour; nil for no dot (and the plain glyph).
+    var dotColor: NSColor? {
+        didSet { if dotColor != oldValue { applyBadge() } }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        dot.cornerRadius = GlyphBadge.dotSize / 2
+        dot.isHidden = true
+        layer?.addSublayer(dot)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    /// The glyph; its cut-out twin is made once, here, not on every redraw.
+    func setGlyph(_ glyph: NSImage?) {
+        plainGlyph = glyph
+        badgedGlyph = glyph.map(GlyphBadge.cutOut)
+        applyBadge()
+    }
+
+    private func applyBadge() {
+        let wanted = dotColor == nil ? plainGlyph : badgedGlyph
+        if image !== wanted { image = wanted }
+        dot.isHidden = dotColor == nil
+        needsLayout = true
+        applyDotColor()
+    }
+
+    override func layout() {
+        super.layout()
+        guard dotColor != nil, let badgedGlyph else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        dot.frame = backingAlignedRect(NSRect(x: x - half, y: y - half, width: Self.dotSize, height: Self.dotSize),
-                                       options: .alignAllEdgesNearest)
+        dot.frame = GlyphBadge.dotFrame(in: self, image: badgedGlyph)
         CATransaction.commit()
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
+    /// A layer holds a fixed CGColor: resolve it for this view's appearance,
+    /// and again whenever that changes.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyDotColor()
+    }
+
+    private func applyDotColor() {
         guard let dotColor else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         effectiveAppearance.performAsCurrentDrawingAppearance {
             dot.backgroundColor = dotColor.cgColor
         }
+        CATransaction.commit()
+    }
+}
+
+// MARK: - Running jobs
+
+/// What the session on screen is still running: a plain glyph, like the
+/// ChatGPT app's Outputs button, with a small dot while something runs (green
+/// when it's serving a port). Always there, so the row never shifts when a
+/// server starts; the list it opens says when nothing is. The count is in the
+/// tooltip.
+@MainActor
+final class RunningButton: BadgedGlyphButton {
+    convenience init() {
+        self.init(frame: .zero)
+        // The badge (`GlyphBadge`): there is no `list.bullet.badge` to use.
+        setGlyph(NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "Running")?
+            .withSymbolConfiguration(Chrome.glyph))
+        toolTip = "Running in this session"
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: Chrome.controlSize),
+            heightAnchor.constraint(equalToConstant: Chrome.controlSize),
+        ])
+    }
+
+    func show(_ snapshot: RunningJobsSnapshot) {
+        let status = snapshot.status
+        let count = snapshot.work.count + snapshot.orphans.count
+        dotColor = snapshot.hasWork ? (status.isServing ? .systemGreen : .secondaryLabelColor) : nil
+        toolTip = count == 0 ? "Nothing running in this session"
+            : "\(count) \(count == 1 ? "job" : "jobs") running: \(([status.title] + status.ports).joined(separator: " "))"
+        setAccessibilityLabel(toolTip)
     }
 }
 

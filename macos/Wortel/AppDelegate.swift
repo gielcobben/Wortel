@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Sparkle auto-updater. Constructed here (rather than lazily) so scheduled
     /// background update checks start at launch; the "Check for Updates…" menu
     /// item drives manual checks through it.
-    private let updater = Updater()
+    private let updater = Updater.shared
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Menu must exist before launch so key equivalents resolve immediately.
@@ -551,6 +551,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         MainActor.assumeIsolated {
+            // "Wortel … is ready": come forward, where the update icon is.
+            // Restarting is still yours to click.
+            if response.notification.request.identifier == Updater.notificationID {
+                NSApp.activate(ignoringOtherApps: true)
+                window?.makeKeyAndOrderFront(nil)
+            }
             if let idString = response.notification.request.content.userInfo[Self.sessionKey] as? String,
                let id = UUID(uuidString: idString) {
                 manager?.select(id: id)
@@ -991,6 +997,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.selectTab(number: sender.tag, in: focusedRegion())
     }
 
+    /// Install the downloaded update and relaunch: the update icon's popover,
+    /// the Wortel menu, ⌘P.
+    @objc func restartToUpdate(_ sender: Any?) {
+        updater.restartToUpdate()
+    }
+
+    @objc func toggleAutomaticUpdates(_ sender: Any?) {
+        updater.updatesAutomatically.toggle()
+    }
+
     /// ⌃⌘1 — open Changes, bring it forward, or close it, as ⌃⌘2 does History.
     @objc func showChanges(_ sender: Any?) {
         focusMainWindow()
@@ -1281,6 +1297,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(checkForUpdates(_:)) {
             return updater.canCheckForUpdates
+        }
+        if menuItem.action == #selector(toggleAutomaticUpdates(_:)) {
+            menuItem.state = updater.updatesAutomatically ? .on : .off
+            // Switchable any time, an update waiting or not.
+            return updater.isAvailable
         }
         if menuItem.action == #selector(toggleTelemetry(_:)) {
             // Only the checkmark: on a build that cannot report, the item was

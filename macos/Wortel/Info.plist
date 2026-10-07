@@ -39,9 +39,15 @@
 	<string>NSApplication</string>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://updates.wortel.sh/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>+IarWSgiwu1pxk25kk/8Rcl9Mf/AXwH/Z2qFoOYXEGI=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>14400</integer>
 </dict>
 </plist>

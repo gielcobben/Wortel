@@ -121,6 +121,8 @@ final class TelemetryNotice: NSObject, NSPopoverDelegate {
         // receiving keys until the next click.
         let responder = window.firstResponder
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        // Lit while it's open, as a titlebar button is while its popover is.
+        (anchor as? HoverFillButton)?.isSelected = true
         window.makeKey()
         if let responder { window.makeFirstResponder(responder) }
 
@@ -171,6 +173,8 @@ final class TelemetryNotice: NSObject, NSPopoverDelegate {
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
         popover = nil
+        // Its button stops looking pressed with it.
+        (anchor as? HoverFillButton)?.isSelected = false
     }
 
     // ---- the content ------------------------------------------------------

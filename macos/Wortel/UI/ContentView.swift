@@ -68,42 +68,14 @@ struct SidebarPane: View {
                                     loose: manager.looseCollapsed))
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 2) {
-                    // Grouped like the Session menu, and in the same order, so
-                    // the two places you reach for this agree with each other:
-                    // ways to start a session, then the two folder verbs.
-                    Menu {
-                        Button("New Session") { manager.newSession() }
-                        // "New Session" here looks global but isn't — it lands
-                        // in whichever folder the selection is in. This is the
-                        // way out of that, and it belongs next to the thing it
-                        // is the exception to rather than only on a shortcut
-                        // nobody has met yet.
-                        Button("New Session at Home") { manager.newHomeSession() }
-                        // Its own branch and its own files: what makes running
-                        // two agents in one repository safe.
-                        Button("Fork…") { newSessionOnBranch(manager) }
-                        Divider()
-                        Button("New Folder…") {
-                            if let name = promptFolderName(title: "New Folder", confirm: "Create") {
-                                manager.addFolder(named: name)
-                            }
-                        }
-                        // The way to reach a project no session is standing in
-                        // without typing `cd` — and the way a folder usually
-                        // gets its directory, since opening one creates the
-                        // folder for it.
-                        Button("Open Folder…") { openFolderSession(manager) }
-                    } label: {
-                        Image(systemName: "plus")
-                            .frame(width: 24, height: 24)
-                            .contentShape(Rectangle())
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help("New Session or Folder")
+                    // AppKit, as the ⓘ and the update icon are, so all three
+                    // light up under the pointer the same way (HoverFillButton,
+                    // the titlebar's). See NewSessionButton for the menu.
+                    NewSessionButton(manager: manager)
+                        .frame(width: 24, height: 24)
                     TelemetryInfoButton()
                         .frame(width: 24, height: 24)
+                    UpdateIndicator()
                     Spacer()
                 }
                 // Equal on all four sides, so the 24pt hit box's centre sits on
@@ -119,6 +91,192 @@ struct SidebarPane: View {
     }
 }
 
+/// The sidebar's word about updates, beside + and ⓘ and drawn like them: an
+/// icon, nothing louder. While a downloaded update waits it's a download arrow
+/// in the accent colour (as Safari's turns blue when there's something for
+/// you) with a dot on its corner; its tooltip
+/// names the version, and a click opens a popover that explains and offers
+/// Restart Now. For a couple of minutes after an update it's a sparkle that
+/// opens the release notes.
+///
+/// An icon rather than Sparkle's window or a banner, because Wortel is never
+/// quit: anything that interrupts gets dismissed, and anything loud becomes
+/// furniture. This waits, quietly, until you pick the moment (see `Updater`).
+struct UpdateIndicator: View {
+    private var updater: Updater { .shared }
+
+    var body: some View {
+        if let version = updater.readyVersion {
+            UpdateButton(kind: .ready(version))
+                .frame(width: 24, height: 24)
+        } else if let version = updater.justUpdatedTo {
+            UpdateButton(kind: .updated(version))
+                .frame(width: 24, height: 24)
+        }
+    }
+}
+
+/// AppKit, as the ⓘ is, so the popover can hang off the real button.
+struct UpdateButton: NSViewRepresentable {
+    enum Kind: Equatable {
+        case ready(String)
+        case updated(String)
+    }
+
+    let kind: Kind
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> GlyphButton {
+        let button = GlyphButton()
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.clicked(_:))
+        return button
+    }
+
+    func updateNSView(_ button: GlyphButton, context: Context) {
+        // The sidebar redraws often (selection, dots, the working wave); the
+        // icon only has to change when what it says does.
+        guard context.coordinator.shown != kind else { return }
+        context.coordinator.shown = kind
+        context.coordinator.kind = kind
+        switch kind {
+        case .ready(let version):
+            // Blue, as Safari's download button turns blue when something's
+            // there for you, with the dot on its corner.
+            button.setGlyph("arrow.down.circle", label: "Update ready")
+            button.dotColor = .controlAccentColor
+            button.contentTintColor = .controlAccentColor
+            button.toolTip = "Wortel \(version) is ready"
+        case .updated(let version):
+            button.setGlyph("sparkles", label: "What's new")
+            button.dotColor = nil
+            button.contentTintColor = .secondaryLabelColor
+            button.toolTip = "Updated to Wortel \(version). See what's new."
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var kind: Kind = .ready("")
+        /// What the button was last set up for.
+        var shown: Kind?
+
+        @objc func clicked(_ sender: NSButton) {
+            switch kind {
+            case .ready(let version):
+                UpdateNotice.shared.toggle(from: sender, version: version)
+            case .updated(let version):
+                NSWorkspace.shared.open(UpdateNotice.notesURL(for: version))
+                Updater.shared.dismissUpdatedNote()
+            }
+        }
+    }
+
+    /// The bar's glyph button: the hover every icon there has, and the dot
+    /// (`BadgedGlyphButton`, shared with the running list's).
+    final class GlyphButton: BadgedGlyphButton {
+        /// The same size and weight as the ⓘ beside it.
+        func setGlyph(_ symbol: String, label: String) {
+            setGlyph(NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+                .withSymbolConfiguration(SidebarBarButton.glyph))
+            setAccessibilityLabel(label)
+        }
+    }
+}
+
+/// The popover the update icon opens: what's waiting, that a restart costs
+/// nothing, and the button. Shown only on a click, so it can behave as any
+/// popover does (it closes on a click elsewhere).
+@MainActor
+final class UpdateNotice: NSObject, NSPopoverDelegate {
+    static let shared = UpdateNotice()
+    private var popover: NSPopover?
+    /// Lit while its popover is open, as a titlebar button is.
+    private weak var anchor: HoverFillButton?
+    /// Whoever had the keyboard (the terminal), given it back on close:
+    /// showing a popover moves key, and the surface would otherwise stop
+    /// getting keys until the next click (as TelemetryNotice found).
+    private weak var responder: NSResponder?
+    /// When it last closed. A transient popover closes on the mouse-down of a
+    /// click on its own icon, before that click's action runs; without this
+    /// the action would find it closed and open it again.
+    private var closedAt = Date.distantPast
+
+    static func notesURL(for version: String) -> URL {
+        URL(string: "https://wortel.sh/updates#\(version)")!
+    }
+
+    func toggle(from anchor: NSView, version: String) {
+        if let popover, popover.isShown {
+            popover.close()
+            return
+        }
+        // That same click, closing it: leave it closed.
+        guard Date().timeIntervalSince(closedAt) > 0.3 else { return }
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.delegate = self
+        popover.contentViewController = NSHostingController(rootView: UpdateNoticeView(
+            version: version,
+            restart: { [weak self] in
+                self?.popover?.close()
+                Updater.shared.restartToUpdate()
+            },
+            whatsNew: { [weak self] in
+                self?.popover?.close()
+                NSWorkspace.shared.open(Self.notesURL(for: version))
+            }))
+        self.popover = popover
+        responder = anchor.window?.firstResponder
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        self.anchor = anchor as? HoverFillButton
+        self.anchor?.isSelected = true
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        closedAt = Date()
+        if let window = anchor?.window, let responder {
+            window.makeKey()
+            window.makeFirstResponder(responder)
+        }
+        anchor?.isSelected = false
+        anchor = nil
+        responder = nil
+    }
+}
+
+private struct UpdateNoticeView: View {
+    let version: String
+    let restart: () -> Void
+    let whatsNew: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Wortel \(version) is ready")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("It's downloaded. Restarting takes a second or two, and every session, agent and layout comes back as it was.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Divider()
+            HStack {
+                Button("What's New", action: whatsNew)
+                    .buttonStyle(.link)
+                    .font(.system(size: 12))
+                Spacer()
+                Button("Restart Now", action: restart)
+                    .keyboardShortcut(.defaultAction)
+                    .controlSize(.small)
+            }
+        }
+        .padding(14)
+        .frame(width: 272)
+    }
+}
+
 /// The ⓘ beside the +, and the anchor the usage-data popover hangs off.
 ///
 /// AppKit rather than a SwiftUI `Button` with `.popover`, for the one thing this
@@ -128,20 +286,92 @@ struct SidebarPane: View {
 /// AppKit one and the presenter owns the rest.
 struct TelemetryInfoButton: NSViewRepresentable {
     func makeNSView(context: Context) -> NSButton {
-        let button = NSButton(title: "", target: TelemetryNotice.shared,
-                              action: #selector(TelemetryNotice.toggleVisible(_:)))
+        let button = HoverFillButton()
+        button.target = TelemetryNotice.shared
+        button.action = #selector(TelemetryNotice.toggleVisible(_:))
         button.image = NSImage(systemSymbolName: "info.circle",
-                               accessibilityDescription: "Anonymous usage data")
-        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-        button.imagePosition = .imageOnly
-        button.isBordered = false
-        button.contentTintColor = .secondaryLabelColor
+                               accessibilityDescription: "Anonymous usage data")?
+            .withSymbolConfiguration(SidebarBarButton.glyph)
         button.toolTip = "Anonymous usage data"
         TelemetryNotice.shared.register(anchor: button)
         return button
     }
 
     func updateNSView(_ nsView: NSButton, context: Context) {}
+}
+
+/// The sidebar bottom bar's three icons share a size and weight.
+enum SidebarBarButton {
+    static let glyph = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+}
+
+/// The bottom bar's "+": new sessions and folders, grouped like the Session
+/// menu and in the same order, so the two places you reach for this agree:
+/// ways to start a session, then the two folder verbs. A native menu from an
+/// AppKit button (as the rows' "…" do), so it lights up under the pointer like
+/// the ⓘ and the update icon beside it.
+struct NewSessionButton: NSViewRepresentable {
+    let manager: SessionManager
+
+    func makeCoordinator() -> Coordinator { Coordinator(manager: manager) }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = HoverFillButton()
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.showMenu(_:))
+        button.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Session or Folder")?
+            .withSymbolConfiguration(SidebarBarButton.glyph)
+        button.toolTip = "New Session or Folder"
+        return button
+    }
+
+    func updateNSView(_ nsView: NSButton, context: Context) {
+        context.coordinator.manager = manager
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var manager: SessionManager
+        init(manager: SessionManager) { self.manager = manager }
+
+        @objc func showMenu(_ sender: NSButton) {
+            let manager = self.manager
+            let menu = NSMenu()
+            // Glyphs as every other menu here has them (`setGlyph`), the
+            // palette's for the same commands.
+            func add(_ title: String, _ symbol: String, _ action: @escaping () -> Void) {
+                let item = ClosureMenuItem(title: title, handler: action)
+                item.setGlyph(symbol)
+                menu.addItem(item)
+            }
+            add("New Session", "plus.square") { manager.newSession() }
+            // "New Session" here looks global but isn't: it lands in whichever
+            // folder the selection is in. This is the way out of that, next to
+            // the thing it's the exception to.
+            add("New Session at Home", "house") { manager.newHomeSession() }
+            // Its own branch and its own files: what makes running two agents
+            // in one repository safe.
+            add("Fork\u{2026}", "arrow.triangle.branch") { newSessionOnBranch(manager) }
+            menu.addItem(.separator())
+            add("New Folder\u{2026}", "folder.badge.plus") {
+                if let name = promptFolderName(title: "New Folder", confirm: "Create") {
+                    manager.addFolder(named: name)
+                }
+            }
+            // The way to reach a project no session is standing in without
+            // typing `cd`, and how a folder usually gets its directory.
+            add("Open Folder\u{2026}", "folder") { openFolderSession(manager) }
+            // Lit while open, then opening upward from the button, as a menu
+            // at the bottom of a window does.
+            // The point is the menu's top-left: one menu-height above the
+            // button (which is flipped, so up is smaller y).
+            let top = sender.isFlipped ? sender.bounds.minY - menu.size.height - 4
+                                       : sender.bounds.maxY + menu.size.height + 4
+            sender.highlight(true)
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: top), in: sender)
+            sender.highlight(false)
+        }
+    }
 }
 
 /// One outline row's SwiftUI content: the session row on its selection pill,

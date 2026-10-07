@@ -235,6 +235,13 @@ targets:
           NSAllowsArbitraryLoadsInWebContent: true
         # Sparkle auto-update feed (served from the wortel-updates R2 bucket).
         SUFeedURL: https://updates.wortel.sh/appcast.xml
+        # Check and download in the background, every 4 hours, without the
+        # "check automatically?" prompt Sparkle otherwise asks on the second
+        # launch. A downloaded update waits for a click on "Restart to Update"
+        # (see Updater.swift); the Wortel menu turns this off.
+        SUEnableAutomaticChecks: true
+        SUAutomaticallyUpdate: true
+        SUScheduledCheckInterval: 14400
         # EdDSA public key — private half lives in the login Keychain (shared
         # publisher key, same as Wakker/Opslan).
         SUPublicEDKey: +IarWSgiwu1pxk25kk/8Rcl9Mf/AXwH/Z2qFoOYXEGI=

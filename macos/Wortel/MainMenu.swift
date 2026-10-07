@@ -154,6 +154,24 @@ enum MainMenu {
         // Routes through the responder chain to AppDelegate, which drives the
         // Sparkle updater and validates (disables) this item mid-check.
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates(_:)), keyEquivalent: "")
+        // Only while a downloaded update is waiting, and so in ⌘P only then.
+        // Shown and hidden by the updater as that changes (twice a run at
+        // most), rather than by a menu delegate, which AppKit would also ask
+        // on every keypress while it looks for a shortcut. (`isHidden` from
+        // `validateMenuItem` doesn't reliably take.)
+        let restart = appMenu.addItem(withTitle: "Restart to Update", action: #selector(AppDelegate.restartToUpdate(_:)), keyEquivalent: "")
+        restart.isHidden = true
+        Updater.shared.onReadyVersionChange = { [weak restart] version in
+            restart?.isHidden = version == nil
+            restart?.title = version.map { "Restart to Update to \($0)" } ?? "Restart to Update"
+        }
+        // Checking and downloading in the background; on unless you turn it
+        // off. Not on a development build, which doesn't update at all: a
+        // switch that can't be turned on is worse than none (as the usage-data
+        // item below).
+        if !Updater.isDevelopmentBuild {
+            appMenu.addItem(withTitle: "Check for Updates Automatically", action: #selector(AppDelegate.toggleAutomaticUpdates(_:)), keyEquivalent: "")
+        }
         // The same preference as the switch in the sidebar's ⓘ popover, in the
         // place a Mac user looks for a setting in an app that has no settings
         // window. AppDelegate carries the checkmark.

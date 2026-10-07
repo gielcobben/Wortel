@@ -58,6 +58,8 @@ enum PaletteCommands {
     private static let symbols: [String: String] = [
         "orderFrontStandardAboutPanel:": "info.circle",
         "checkForUpdates:": "arrow.down.circle",
+        "restartToUpdate:": "arrow.clockwise.circle",
+        "toggleAutomaticUpdates:": "arrow.triangle.2.circlepath",
         "newSession:": "plus.square",
         "newHomeSession:": "house",
         "forkSession:": "arrow.triangle.branch",

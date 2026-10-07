@@ -20,9 +20,8 @@ import UserNotifications
 /// Sparkle (`willInstallUpdateOnQuit` returning true) and say so quietly: a
 /// blue download icon in the sidebar's bottom bar, whose popover offers
 /// Restart Now (`UpdateIndicator`), and an item in the Wortel menu, until you
-/// choose the moment. One click installs and relaunches.
-/// After that launch, a one-time "Updated to … · What's new". And if an update
-/// has waited a day, one notification, once.
+/// choose the moment. One click installs and relaunches. And if an update has
+/// waited a day, one notification, once.
 ///
 /// Sparkle's own window still answers "Check for Updates…" when nothing is
 /// waiting: asked for, it's not an interruption. While an update waits, Sparkle
@@ -43,9 +42,6 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     /// Set by the menu, so its Restart to Update item follows this without
     /// being re-read on every keypress (a menu delegate would be).
     @ObservationIgnored var onReadyVersionChange: ((String?) -> Void)?
-    /// This launch is the first of a new version: the one it is, until
-    /// dismissed (or a while has passed).
-    private(set) var justUpdatedTo: String?
 
     /// nil on a development build (see `isDevelopmentBuild`).
     @ObservationIgnored private var controller: SPUStandardUpdaterController?
@@ -123,8 +119,6 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         }
     }
 
-    func dismissUpdatedNote() { justUpdatedTo = nil }
-
     // MARK: - Sparkle
 
     /// Both delegate methods below are optional Objective-C requirements, and
@@ -190,21 +184,16 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         updatesAutomatically = true
     }
 
-    /// A launch on a version other than the last one's says so, once.
+    /// The first launch of a new version checks again soon.
     private func noteVersionChange() {
         let defaults = UserDefaults.standard
         let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let last = defaults.string(forKey: Self.lastRunVersionKey)
         defaults.set(current, forKey: Self.lastRunVersionKey)
         // An update moves the version forward; a debug build next to a
-        // release, or the first launch ever, isn't news.
+        // release, or the first launch ever, doesn't count.
         guard let current, let last, current != last,
               current.compare(last, options: .numeric) == .orderedDescending else { return }
-        justUpdatedTo = current
-        // Long enough to be seen after the restart, not so long it's furniture.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
-            self?.justUpdatedTo = nil
-        }
         // While the last one waited, Sparkle checked for nothing newer: look
         // now rather than at the next interval, so a release that came out in
         // the meantime follows in minutes.

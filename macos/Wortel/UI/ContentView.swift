@@ -96,8 +96,7 @@ struct SidebarPane: View {
 /// in the accent colour (as Safari's turns blue when there's something for
 /// you) with a dot on its corner; its tooltip
 /// names the version, and a click opens a popover that explains and offers
-/// Restart Now. For a couple of minutes after an update it's a sparkle that
-/// opens the release notes.
+/// Restart Now.
 ///
 /// An icon rather than Sparkle's window or a banner, because Wortel is never
 /// quit: anything that interrupts gets dismissed, and anything loud becomes
@@ -107,10 +106,7 @@ struct UpdateIndicator: View {
 
     var body: some View {
         if let version = updater.readyVersion {
-            UpdateButton(kind: .ready(version))
-                .frame(width: 24, height: 24)
-        } else if let version = updater.justUpdatedTo {
-            UpdateButton(kind: .updated(version))
+            UpdateButton(version: version)
                 .frame(width: 24, height: 24)
         }
     }
@@ -118,69 +114,40 @@ struct UpdateIndicator: View {
 
 /// AppKit, as the ⓘ is, so the popover can hang off the real button.
 struct UpdateButton: NSViewRepresentable {
-    enum Kind: Equatable {
-        case ready(String)
-        case updated(String)
-    }
-
-    let kind: Kind
+    let version: String
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeNSView(context: Context) -> GlyphButton {
-        let button = GlyphButton()
+    func makeNSView(context: Context) -> BadgedGlyphButton {
+        // The hover every icon in the bar has, and the dot the running list's
+        // icon has.
+        let button = BadgedGlyphButton()
+        // Blue, as Safari's download button turns blue when something's
+        // there for you, with the dot on its corner.
+        button.setGlyph(NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: "Update ready")?
+            .withSymbolConfiguration(SidebarBarButton.glyph))
+        button.setAccessibilityLabel("Update ready")
+        button.dotColor = .controlAccentColor
+        button.contentTintColor = .controlAccentColor
         button.target = context.coordinator
         button.action = #selector(Coordinator.clicked(_:))
         return button
     }
 
-    func updateNSView(_ button: GlyphButton, context: Context) {
-        // The sidebar redraws often (selection, dots, the working wave); the
-        // icon only has to change when what it says does.
-        guard context.coordinator.shown != kind else { return }
-        context.coordinator.shown = kind
-        context.coordinator.kind = kind
-        switch kind {
-        case .ready(let version):
-            // Blue, as Safari's download button turns blue when something's
-            // there for you, with the dot on its corner.
-            button.setGlyph("arrow.down.circle", label: "Update ready")
-            button.dotColor = .controlAccentColor
-            button.contentTintColor = .controlAccentColor
-            button.toolTip = "Wortel \(version) is ready"
-        case .updated(let version):
-            button.setGlyph("sparkles", label: "What's new")
-            button.dotColor = nil
-            button.contentTintColor = .secondaryLabelColor
-            button.toolTip = "Updated to Wortel \(version). See what's new."
-        }
+    func updateNSView(_ button: BadgedGlyphButton, context: Context) {
+        // The sidebar redraws often (selection, dots, the working wave), and
+        // setting a tooltip re-registers it: only when the version changes.
+        guard context.coordinator.version != version else { return }
+        context.coordinator.version = version
+        button.toolTip = "Wortel \(version) is ready"
     }
 
     @MainActor
     final class Coordinator: NSObject {
-        var kind: Kind = .ready("")
-        /// What the button was last set up for.
-        var shown: Kind?
+        var version = ""
 
         @objc func clicked(_ sender: NSButton) {
-            switch kind {
-            case .ready(let version):
-                UpdateNotice.shared.toggle(from: sender, version: version)
-            case .updated(let version):
-                NSWorkspace.shared.open(UpdateNotice.notesURL(for: version))
-                Updater.shared.dismissUpdatedNote()
-            }
-        }
-    }
-
-    /// The bar's glyph button: the hover every icon there has, and the dot
-    /// (`BadgedGlyphButton`, shared with the running list's).
-    final class GlyphButton: BadgedGlyphButton {
-        /// The same size and weight as the ⓘ beside it.
-        func setGlyph(_ symbol: String, label: String) {
-            setGlyph(NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-                .withSymbolConfiguration(SidebarBarButton.glyph))
-            setAccessibilityLabel(label)
+            UpdateNotice.shared.toggle(from: sender, version: version)
         }
     }
 }

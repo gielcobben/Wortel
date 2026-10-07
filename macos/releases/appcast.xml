@@ -3,6 +3,39 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.41.6</title>
+            <pubDate>Wed, 07 Oct 2026 14:31:10 -0400</pubDate>
+            <sparkle:version>2026.41.6</sparkle:version>
+            <sparkle:shortVersionString>2026.41.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Closing a file takes you back</h1>
+<p class="date">Wortel 2026.41.6 &middot; 2026-10-07</p>
+<p><strong>Closing a file takes you back.</strong> Double-click a file in Changes or History, read it, close it, and you’re back where you opened it, not on whichever tab happened to sit next to it. If you switched to another tab in the meantime, the neighbouring tab comes forward, as before.</p>
+<p><strong>Menus that say what they’ll do.</strong> Check for Updates Automatically and Share Anonymous Usage Data in the Wortel menu now show a checkmark when they’re on. Show and Hide commands for the sidebar, the panes and the side column now name what they’ll actually do, Pin Session reads Unpin Session for a pinned one, and commands that don’t apply right now are greyed out.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.6.zip" length="21301346" type="application/octet-stream" sparkle:edSignature="YenDKRRp3RguRKLeVB4QSK9sEqQSNW117uASLZ3suGCXVZ5JKpi+J8SChSKhlO13zVz8IfhiEwRoUccMdXb6Bw=="/>
+        </item>
+        <item>
             <title>2026.41.5</title>
             <pubDate>Wed, 07 Oct 2026 13:55:15 -0400</pubDate>
             <sparkle:version>2026.41.5</sparkle:version>
@@ -73,49 +106,6 @@
 <p><strong>Headers you can point at.</strong> Folder, Pinned and Sessions headers light up under the pointer like session rows do, so it’s clear they’re there to click.</p>
 <p>Also in this release: every status dot in the sidebar now follows light and dark mode when you switch between them.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.41.4.zip" length="21150936" type="application/octet-stream" sparkle:edSignature="H9UycgXhESe8IHuULeM4Lmi0AnFOICDe4QN2h5XnV5Lc0bmyifdktpEK+KM6SadCK7JhHN9I9t8EDxmUl2iVDw=="/>
-        </item>
-        <item>
-            <title>2026.41.3</title>
-            <pubDate>Tue, 06 Oct 2026 16:23:04 -0400</pubDate>
-            <sparkle:version>2026.41.3</sparkle:version>
-            <sparkle:shortVersionString>2026.41.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Tidier menus, and a Clean Up that shows what it cleans</h1>
-<p class="date">Wortel 2026.41.3 &middot; 2026-10-06</p>
-<p><strong>Clean Up Worktrees, readable.</strong> In 2026.41.2 the list in Session ▸ Worktree ▸ Clean Up Worktrees… could collapse to nothing, leaving only the button. It now shows every worktree Wortel made, grouped by repository, one line each: tick what should go, see at a glance what’s clean and what’s kept, with “17 changes” or “In use” on the ones that stay. Rest the pointer on a row for the details, or right-click it to show it in Finder. One switch decides whether the branches Wortel made go too, and only ever the ones with nothing to lose.</p>
-<p><strong>Menus that read like a Mac app’s.</strong></p>
-<ul>
-<li>A new Tab menu holds everything about tabs: new terminal and browser tabs, moving between and moving tabs, reopening, and Close Tab.</li>
-<li>The Session menu is down to what it’s about: starting sessions and folders, moving between sessions, the selected session’s own commands, and closing it. ⌘1 to ⌘9 still switch sessions, without nine rows for them.</li>
-<li>The worktree commands sit together under Session ▸ Worktree.</li>
-<li>Move To is greyed out when there’s nowhere to move the session.</li>
-<li>View is in the order of the window: the sidebar and panels, the source control panes, the browser, then text size.</li>
-<li>Show Sidebar and Hide Sidebar say which one they’ll do, Find has its own submenu, and the Wortel menu has Services and Show All, as every Mac app does.</li>
-</ul>
-<p>Every keyboard shortcut works as before.</p>
-<p>Also in this release: the usage-data note under the ⓘ in the sidebar could stay on screen and not go away when it first appeared while Wortel wasn’t the app you were in. It now closes when you switch to another app, and only appears once you’re back in Wortel.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.3.zip" length="21127814" type="application/octet-stream" sparkle:edSignature="HXjYez/OZyh6MRpBAVkjDj7qcp7LOQr9qvZ9DoHlSH52q4x9xx0z1UbnJx0Qg9d15HFo9Y5kU+O+9EFL6WeGDg=="/>
         </item>
     </channel>
 </rss>

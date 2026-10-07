@@ -680,9 +680,16 @@ final class SessionManager {
             let marker = resume[entry.id]
             let observedID: String? = {
                 guard let marker, marker.agent == "claude", let cwd = marker.cwd else { return nil }
-                return marker.startedAt.flatMap {
-                    AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: $0)
-                } ?? AgentResumeStore.claudeResumeTarget(argv: marker.argv)
+                // A surviving marker is an agent still running (the snapshot
+                // drops the rest), so Claude's own file for it is the answer.
+                var livePID: pid_t?
+                if case .running(let pid) = AgentLiveness.locate(
+                    agent: marker.agent, shellPID: marker.shellPID) { livePID = pid }
+                return livePID.flatMap(AgentResumeStore.claudeConversationID(pid:))
+                    ?? AgentResumeStore.claudeResumeTarget(argv: marker.argv)
+                    ?? marker.startedAt.flatMap {
+                        AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: $0)
+                    }
             }()
             let lastID = entry.lastConversationID.flatMap { id -> String? in
                 guard let cwd = marker?.cwd ?? entry.cwd,
@@ -2417,22 +2424,31 @@ final class SessionManager {
             // being silently dropped.
             var conversationID = session.pendingResumeConversationID
             let agent: AgentMarker? = {
-                if let running = session.runningAgent,
-                   AgentLiveness.isRunning(agent: running, shellPID: session.runningShellPID,
-                                           table: table) {
+                if let running = session.runningAgent {
+                    let located = AgentLiveness.locate(
+                        agent: running, shellPID: session.runningShellPID, table: table)
+                    // Only a definite "gone" counts; unknown is running. See
+                    // `AgentLiveness` for why it fails open.
+                    if case .gone = located { return session.pendingResumeAgent }
                     // Ask the live agent which conversation it's actually writing to,
                     // while it's still there to ask — after it dies only a guess is left.
-                    // In order: the transcript it created when it started (a
-                    // fresh `claude`); the one its command line names (a
-                    // resume, which appends and creates nothing, and is what
-                    // every resume Wortel types looks like); for `--continue`,
-                    // the directory's newest, which is the one it is appending
-                    // to right now. Nothing found leaves the id we already know.
+                    // In order: the file Claude keeps for the live process
+                    // (exact, whatever started it); the conversation its
+                    // command line names (every resume Wortel types names
+                    // one); the transcript created just after it started (a
+                    // fresh `claude` from before that file existed); for
+                    // `--continue`, the directory's newest, which is the one
+                    // it is appending to right now. Nothing found leaves the
+                    // id we already know.
                     if running == "claude", let cwd = session.cwd {
                         let argv = session.runningArgv
-                        let observed = session.runningStartedAt.flatMap {
-                            AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: $0)
-                        } ?? AgentResumeStore.claudeResumeTarget(argv: argv)
+                        var livePID: pid_t?
+                        if case .running(let pid) = located { livePID = pid }
+                        let observed = livePID.flatMap(AgentResumeStore.claudeConversationID(pid:))
+                            ?? AgentResumeStore.claudeResumeTarget(argv: argv)
+                            ?? session.runningStartedAt.flatMap {
+                                AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: $0)
+                            }
                             ?? (AgentResumeStore.claudeContinuesLatest(argv: argv)
                                 ? AgentResumeStore.latestClaudeSessionID(cwd: cwd) : nil)
                         if let observed {

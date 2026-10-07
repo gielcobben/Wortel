@@ -29,6 +29,19 @@ final class ClaudeResumeTargetTests: XCTestCase {
         XCTAssertNil(AgentResumeStore.claudeResumeTarget(argv: nil))
     }
 
+    /// Claude Code's per-process file, `~/.claude/sessions/<pid>.json`, is the
+    /// exact answer for a live agent. A file whose pid doesn't match is a
+    /// stale one for a reused pid and must not be believed.
+    func testTheLiveProcessFileNamesTheConversation() {
+        let file = Data(#"{"pid":62426,"sessionId":"9274E8D8-FBDF-4255-ACF3-81C3E08791EE","cwd":"/x","kind":"interactive"}"#.utf8)
+        XCTAssertEqual(AgentResumeStore.claudeConversationID(sessionFile: file, pid: 62426),
+                       "9274e8d8-fbdf-4255-acf3-81c3e08791ee")
+        XCTAssertNil(AgentResumeStore.claudeConversationID(sessionFile: file, pid: 99999))
+        XCTAssertNil(AgentResumeStore.claudeConversationID(
+            sessionFile: Data(#"{"pid":1,"sessionId":"not-an-id"}"#.utf8), pid: 1))
+        XCTAssertNil(AgentResumeStore.claudeConversationID(sessionFile: Data("junk".utf8), pid: 1))
+    }
+
     func testContinueIsRecognised() {
         XCTAssertTrue(AgentResumeStore.claudeContinuesLatest(argv: "claude --continue"))
         XCTAssertTrue(AgentResumeStore.claudeContinuesLatest(argv: "claude -c"))

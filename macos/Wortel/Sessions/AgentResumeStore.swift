@@ -357,14 +357,50 @@ enum AgentResumeStore {
     /// nothing. (The tempting alternative, reading the transcript from the agent's
     /// open file descriptors, does not work: Claude appends and closes rather than
     /// holding the file open — verified with `lsof` against a live process.)
+    ///
+    /// **Bounded on both sides**, and the last resort: see
+    /// `claudeConversationID(pid:)` for the exact answer. Unbounded, "the first
+    /// transcript born after launch" for an agent that *resumed* (and so
+    /// created nothing) was whichever conversation anyone opened next in the
+    /// same directory, hours later. On 2026-10-07 that put two Wortel sessions,
+    /// resumed at 09:20, into a third session's conversation created at 09:28,
+    /// and the next relaunch resumed all three into it.
     static func claudeConversationID(cwd: String, startedAt: Date) -> String? {
         // The agent starts a moment before its transcript appears, and both clocks
-        // are second-granularity, so allow a small window on either side.
+        // are second-granularity, so allow a small window on either side. A
+        // transcript appears with the first exchange, so the window allows for
+        // a prompt being typed, but not for the rest of the day.
         let earliest = startedAt.addingTimeInterval(-5)
+        let latest = startedAt.addingTimeInterval(120)
         return transcripts(cwd: cwd)
-            .filter { $0.created >= earliest }
+            .filter { $0.created >= earliest && $0.created <= latest }
             .min { $0.created < $1.created }?      // the first one born after launch
             .id
+    }
+
+    /// The conversation a **running** Claude process is in, read from the file
+    /// Claude Code keeps for each live process: `~/.claude/sessions/<pid>.json`,
+    /// whose `sessionId` is the conversation. Exact however it was started
+    /// (fresh, `--resume`, `--continue`) and after a `/resume` inside it, which
+    /// no command line or file date can see. Observation only, like every other
+    /// read of Claude's files here. nil for an older Claude that doesn't keep
+    /// the file, or a pid that isn't one.
+    static func claudeConversationID(pid: pid_t) -> String? {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/sessions/\(pid).json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return claudeConversationID(sessionFile: data, pid: pid)
+    }
+
+    /// The `sessionId` of a `~/.claude/sessions/<pid>.json`, if it is a
+    /// conversation id and the file is for `pid` (pids are reused, and a stale
+    /// file must not hand a new process someone else's conversation).
+    static func claudeConversationID(sessionFile data: Data, pid: pid_t) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (object["pid"] as? NSNumber)?.int32Value == pid,
+              let id = object["sessionId"] as? String, UUID(uuidString: id) != nil
+        else { return nil }
+        return id.lowercased()
     }
 
     private static func transcripts(cwd: String) -> [(id: String, created: Date, modified: Date)] {

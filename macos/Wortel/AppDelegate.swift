@@ -3,7 +3,8 @@ import SwiftUI
 import UserNotifications
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate,
+    NSMenuItemValidation {
     /// Notification userInfo key carrying the session UUID string, so a tap can
     /// route back to the right session.
     private static let sessionKey = "sessionID"
@@ -1270,6 +1271,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Grey out "Check for Updates…" while a check is already in flight (Sparkle
     /// drops `canCheckForUpdates` to false for the duration).
+    ///
+    /// **Only called because the class declares `NSMenuItemValidation`.** A
+    /// Swift method on an NSObject subclass is not exposed to Objective-C
+    /// unless it satisfies an `@objc` requirement, and AppKit asks through the
+    /// runtime. Without the declaration this compiled, never ran, and every
+    /// rule below was dead: no checkmarks on the Wortel menu's switches, no
+    /// Show/Hide titles, nothing greyed out, ⌘F never falling through to the
+    /// terminal. Found 2026-10-07 from a missing checkmark.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleSessionSidebar(_:)) {
             menuItem.title = splitController.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"

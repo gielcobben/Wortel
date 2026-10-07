@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import ServiceManagement
 
 /// The app's side of process survival: one connection to the keeper, held open
 /// for the whole run.
@@ -87,13 +88,83 @@ final class KeeperConnection {
         try? FileManager.default.removeItem(atPath: Keeper.socketPath)
     }
 
-    /// Start the keeper as a process of its own.
+    /// Start the keeper: as launchd's process when it can be, ours when not.
     ///
-    /// `POSIX_SPAWN_SETSID` is the whole point: it puts the keeper in a new
-    /// session, so it is not in the app's process group and does not receive the
-    /// signals the app receives. A keeper that died with its parent would be an
-    /// elaborate way to change nothing.
+    /// launchd first, and not for tidiness. A process the app spawns stays in
+    /// the app's coalition however many `setsid`s it does, and macOS 27's Dock
+    /// reads that as the app "Running in Background" once it has quit, with a
+    /// "Stop Running in Background" item that force-quits whatever is left.
+    /// On 2026-10-07 what was left was the keeper, and with it every shell
+    /// and every agent. Registered through `SMAppService` the keeper is
+    /// launchd's, with a coalition of its own, and shows under Wortel in
+    /// Login Items ("Allow in the Background") where stopping it is a
+    /// deliberate act rather than a menu item next to Quit.
+    ///
+    /// Spawning it directly stays as the fallback: for a `WORTEL_DATA_DIR`
+    /// instance (launchd knows one keeper per label, and it would be the real
+    /// one), and for a user who switched the background item off.
     private func launch() throws {
+        if launchViaLaunchd() { return }
+        try spawn()
+    }
+
+    /// The job's plist, in `Contents/Library/LaunchAgents`.
+    static let launchdPlist = "sh.wortel.keeper.plist"
+    static let launchdLabel = "sh.wortel.keeper"
+
+    private func launchViaLaunchd() -> Bool {
+        guard DataDirectory.custom == nil else { return false }
+        let service = SMAppService.agent(plistName: Self.launchdPlist)
+        if service.status != .enabled {
+            do {
+                try service.register()
+            } catch {
+                NSLog("wortel: keeper not registered with launchd (%@); starting it directly",
+                      String(describing: error))
+                return false
+            }
+        }
+        guard service.status == .enabled else {
+            NSLog("wortel: keeper not allowed in the background (status %ld); starting it directly",
+                  service.status.rawValue)
+            return false
+        }
+        // Not run at load, so registering starts nothing: ask launchd for it.
+        // The app then polls for the socket as it always has.
+        return kickstart()
+    }
+
+    /// `launchctl kickstart gui/<uid>/sh.wortel.keeper`. Spawned and reaped
+    /// here rather than through `Process`, whose wait pumps the run loop; see
+    /// `replaceMismatchedKeeper` for what that re-entered. launchctl itself
+    /// returns in milliseconds.
+    private func kickstart() -> Bool {
+        let target = "gui/\(getuid())/\(Self.launchdLabel)"
+        var argv: [UnsafeMutablePointer<CChar>?] =
+            ["/bin/launchctl", "kickstart", target].map { strdup($0) } + [nil]
+        defer { argv.forEach { free($0) } }
+        var pid: pid_t = 0
+        guard posix_spawn(&pid, "/bin/launchctl", nil, nil, &argv, environ) == 0 else {
+            return false
+        }
+        var status: Int32 = 0
+        while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
+        let code = (status & 0x7F) == 0 ? (status >> 8) & 0xFF : -1
+        if code != 0 {
+            NSLog("wortel: launchctl kickstart %@ failed (%d); starting the keeper directly",
+                  target, code)
+        }
+        return code == 0
+    }
+
+    /// Start the keeper as a process of our own.
+    ///
+    /// `POSIX_SPAWN_SETSID` puts the keeper in a new session, so it is not in
+    /// the app's process group and does not receive the signals the app
+    /// receives. A keeper that died with its parent would be an elaborate way
+    /// to change nothing. What this cannot do is leave the app's coalition,
+    /// which is why launchd is tried first.
+    private func spawn() throws {
         guard let binary else { throw WortelCLI.SocketError.notRunning }
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)

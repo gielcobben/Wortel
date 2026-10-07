@@ -355,8 +355,19 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     # Wortel: clear this session's agent marker at every prompt, so a marker only
     # survives while an agent is actually running — which is precisely when no
     # prompt fires. See __ghostty_wortel_agent.
+    # And log the exit first: a marker here means the command that just ended
+    # was an agent, and $status is the only trace of *why* once the scrollback
+    # is gone (129 and up is a signal). One line, on this path only; see the
+    # zsh copy.
     function __ghostty_wortel_clear_agent --on-event fish_prompt
-        test -n "$WORTEL_SESSION_ID"; and command rm -f $_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID 2>/dev/null
+        set --local last $status
+        test -n "$WORTEL_SESSION_ID"; or return
+        set --local marker $_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID
+        if test -f $marker
+            set --local agent (string replace --regex '^agent=' '' -- (string match --regex '^agent=.*' < $marker))
+            echo (command date +%s) session=$WORTEL_SESSION_ID agent=$agent status=$last shellpid=$fish_pid >> $_ghostty_wortel_agent_dir/exits.log 2>/dev/null
+        end
+        command rm -f $marker 2>/dev/null
     end
 
     function __ghostty_mark_output_start --on-event fish_preexec

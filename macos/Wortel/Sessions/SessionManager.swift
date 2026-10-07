@@ -1509,6 +1509,8 @@ final class SessionManager {
         // that no longer exist.
         defer {
             TerminalModeRecorder.shared.keepOnly(Set(sessions.flatMap { [$0.id] + $0.terminalTabIDs }))
+            // And the agent exit log, which only ever grows.
+            DispatchQueue.global(qos: .utility).async { AgentResumeStore.trimExitLog() }
         }
         guard let keeper = GhosttyRuntime.keeper else { return }
         let known = Set(sessions.flatMap { [$0.id] + $0.terminalTabIDs })

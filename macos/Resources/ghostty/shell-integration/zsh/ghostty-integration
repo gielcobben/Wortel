@@ -393,9 +393,27 @@ _ghostty_deferred_init() {
     # Wortel: clear this session's agent marker. Runs at every prompt (registered
     # into precmd below), so a marker only survives while an agent is actually
     # running — which is precisely when no prompt fires.
+    #
+    # And log the exit first. A marker here means the command that just ended
+    # was an agent, and the status precmd hands in as `$1` is the only trace of
+    # *why* it ended once the scrollback is gone: 129 and up is a signal (129
+    # SIGHUP, 130 SIGINT, 143 SIGTERM), anything else the agent's own choice.
+    # On 2026-10-07 nine agents exited within a minute of a relaunch and nothing
+    # on the machine could say how. One line, appended on this path only; a
+    # plain prompt does nothing beyond the rm it always did.
     _ghostty_wortel_clear_agent() {
+        builtin emulate -L zsh -o no_warn_create_global -o no_aliases
         [[ -n $WORTEL_SESSION_ID ]] || return
-        command rm -f "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+        builtin local marker="$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID"
+        if [[ -f $marker ]]; then
+            builtin local line agent=
+            while IFS= builtin read -r line; do
+                [[ $line == agent=* ]] && { agent=${line#agent=}; break; }
+            done < "$marker" 2>/dev/null
+            builtin print -r -- "$(command date +%s) session=$WORTEL_SESSION_ID agent=$agent status=${1:-?} shellpid=$$" \
+                >> "$_ghostty_wortel_agent_dir/exits.log" 2>/dev/null
+        fi
+        command rm -f "$marker" 2>/dev/null
     }
 
     _ghostty_preexec() {
@@ -476,8 +494,10 @@ _ghostty_deferred_init() {
         _ghostty_report_pwd"
     _ghostty_report_pwd
     # Wortel: clear the agent marker at every prompt (see _ghostty_wortel_clear_agent).
-    functions[_ghostty_precmd]+="
-        _ghostty_wortel_clear_agent"
+    # `$cmd_status` is precmd's own local, the status of the command that just
+    # ended; single-quoted so it is read then, not now.
+    functions[_ghostty_precmd]+='
+        _ghostty_wortel_clear_agent $cmd_status'
 
     if [[ "$GHOSTTY_SHELL_FEATURES" == *"title"* ]]; then
       # Enable terminal title changes, formatted for user-friendly display.

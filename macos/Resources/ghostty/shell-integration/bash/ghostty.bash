@@ -265,8 +265,23 @@ function __ghostty_precmd() {
   # Wortel: clear this session's agent marker at every prompt, so a marker only
   # survives while an agent is actually running — which is precisely when no
   # prompt fires. See __ghostty_wortel_agent.
+  #
+  # And log the exit first: a marker here means the command that just ended
+  # was an agent, and `$ret` is the only trace of *why* once the scrollback is
+  # gone (129 and up is a signal: 129 SIGHUP, 130 SIGINT, 143 SIGTERM). One
+  # line, on this path only; see the zsh copy.
   if [[ -n "$WORTEL_SESSION_ID" ]]; then
-    command rm -f "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+    local _wortel_marker="$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID"
+    if [[ -f "$_wortel_marker" ]]; then
+      local _wortel_line _wortel_agent=""
+      while IFS= builtin read -r _wortel_line; do
+        [[ "$_wortel_line" == agent=* ]] && { _wortel_agent="${_wortel_line#agent=}"; break; }
+      done < "$_wortel_marker" 2>/dev/null
+      builtin printf '%s session=%s agent=%s status=%s shellpid=%s\n' \
+        "$(command date +%s)" "$WORTEL_SESSION_ID" "$_wortel_agent" "$ret" "$$" \
+        >> "$_ghostty_wortel_agent_dir/exits.log" 2>/dev/null
+    fi
+    command rm -f "$_wortel_marker" 2>/dev/null
   fi
 
   _ghostty_executing=0

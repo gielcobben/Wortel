@@ -149,6 +149,31 @@ enum AgentResumeStore {
     /// data folder's `agents`, `WORTEL_DATA_DIR` included.
     static let directory: URL = DataDirectory.url.appendingPathComponent("agents", isDirectory: true)
 
+    /// Where the shell integration notes every agent's exit: one line per exit,
+    /// `<epoch> session=<id> agent=<name> status=<n> shellpid=<pid>`, written
+    /// at the prompt that clears the marker (see `_ghostty_wortel_clear_agent`
+    /// in the zsh copy). A status of 129 and up is a signal. It exists because
+    /// on 2026-10-07 nine agents exited within a minute of a relaunch and
+    /// nothing on the machine could say how: the scrollback was gone, the
+    /// transcripts record prompts, not exits. Nothing in the app reads it; it
+    /// is for the next investigation.
+    static let exitLog: URL = directory.appendingPathComponent("exits.log")
+
+    /// Keep the exit log to its last `lines`. One line per agent exit grows
+    /// slowly, but unbounded is unbounded. Called once per launch, off main.
+    static func trimExitLog(keeping lines: Int = 1000) {
+        guard let data = try? Data(contentsOf: exitLog), data.count > 128 * 1024 else { return }
+        var newlines = 0
+        var cut = data.count
+        for index in stride(from: data.count - 1, through: 0, by: -1) where data[index] == 0x0A {
+            newlines += 1
+            // The newline that ends the line *before* the last `lines` lines.
+            if newlines == lines + 1 { cut = index + 1; break }
+        }
+        guard cut < data.count else { return }
+        try? data[cut...].write(to: exitLog, options: .atomic)
+    }
+
     /// The command that reopens an agent's most recent conversation for the
     /// current directory, keyed by the agent's basename. Each maps to a
     /// non-interactive "continue the latest session" invocation verified against

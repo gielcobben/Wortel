@@ -140,14 +140,6 @@ targets:
         buildPhase: resources
       - path: Resources/wortel.conf
         buildPhase: resources
-      # The keeper's launchd job, where SMAppService.agent(plistName:) looks
-      # for it. Registered on first use so the keeper is launchd's process
-      # rather than a stray of the app's: see the plist for why that matters.
-      - path: Resources/LaunchAgents/sh.wortel.keeper.plist
-        buildPhase:
-          copyFiles:
-            destination: wrapper
-            subpath: Contents/Library/LaunchAgents
     dependencies:
       # The `wortel` command, copied into Contents/Resources/bin. There is no
       # install step: GhosttyRuntime puts that directory on the PATH of every

@@ -45,9 +45,6 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
 
   Keep the path short (sockets live in it; 104-byte limit). Its keeper keeps
   its shells after it quits, like the real one; stop it by pid when done.
-  The real keeper is a launchd agent (`sh.wortel.keeper`, registered with
-  `SMAppService`, listed under Wortel in Login Items); a `WORTEL_DATA_DIR`
-  instance spawns its own directly, since launchd knows one keeper per label.
   UserDefaults (sidebar width, folder roots) are still shared, by bundle ID.
 - **Proper signed release:** `./scripts/release.sh` builds Release, signs it
   with your Developer ID (auto-detected), installs to `/Applications`, and

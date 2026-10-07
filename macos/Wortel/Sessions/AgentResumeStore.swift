@@ -159,19 +159,22 @@ enum AgentResumeStore {
     /// is for the next investigation.
     static let exitLog: URL = directory.appendingPathComponent("exits.log")
 
-    /// Keep the exit log to its last `lines`. One line per agent exit grows
-    /// slowly, but unbounded is unbounded. Called once per launch, off main.
-    static func trimExitLog(keeping lines: Int = 1000) {
-        guard let data = try? Data(contentsOf: exitLog), data.count > 128 * 1024 else { return }
-        var newlines = 0
-        var cut = data.count
-        for index in stride(from: data.count - 1, through: 0, by: -1) where data[index] == 0x0A {
-            newlines += 1
-            // The newline that ends the line *before* the last `lines` lines.
-            if newlines == lines + 1 { cut = index + 1; break }
-        }
-        guard cut < data.count else { return }
-        try? data[cut...].write(to: exitLog, options: .atomic)
+    /// Keep the exit log bounded: once it passes `limit`, it becomes
+    /// `exits.log.1` (replacing the previous one) and the shells start a new
+    /// one. One line per agent exit grows slowly, but unbounded is unbounded.
+    ///
+    /// A rename rather than a rewrite. Shells append with `>>` at any moment,
+    /// including the launch this runs in, which is exactly when restored
+    /// agents start and sometimes die; a line appended between reading the
+    /// file and writing a trimmed copy back would vanish. A rename keeps the
+    /// inode, so an append already under way lands in `.1` instead.
+    static func rotateExitLog(over limit: Int = 256 * 1024) {
+        let fm = FileManager.default
+        guard let size = (try? fm.attributesOfItem(atPath: exitLog.path))?[.size] as? Int,
+              size > limit else { return }
+        let previous = exitLog.appendingPathExtension("1")
+        try? fm.removeItem(at: previous)
+        try? fm.moveItem(at: exitLog, to: previous)
     }
 
     /// The command that reopens an agent's most recent conversation for the
@@ -287,10 +290,11 @@ enum AgentResumeStore {
             }
         }
         // Anything the directory holds that isn't a marker we could read is not
-        // going to become one; it would only be re-read every launch.
+        // going to become one; it would only be re-read every launch. The exit
+        // log lives here too and is not a marker to sweep.
         if let entries = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
-            for url in entries where UUID(uuidString: url.lastPathComponent)
-                .map({ markers[$0] == nil }) ?? true {
+            for url in entries where !url.lastPathComponent.hasPrefix(exitLog.lastPathComponent)
+                && (UUID(uuidString: url.lastPathComponent).map({ markers[$0] == nil }) ?? true) {
                 try? fm.removeItem(at: url)
             }
         }
@@ -387,8 +391,51 @@ enum AgentResumeStore {
         String(cwd.map { ($0.isASCII && ($0.isLetter || $0.isNumber)) ? $0 : "-" })
     }
 
-    private static func latestClaudeSessionID(cwd: String) -> String? {
+    static func latestClaudeSessionID(cwd: String) -> String? {
         transcripts(cwd: cwd).max { $0.modified < $1.modified }?.id
+    }
+
+    /// Whether conversation `id` belongs to `cwd`: Claude only resumes a
+    /// conversation from the directory it was held in, so an id remembered from
+    /// another directory is no id at all there.
+    static func claudeTranscriptExists(id: String, cwd: String) -> Bool {
+        FileManager.default.fileExists(atPath: FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects/\(escapedProjectDirectory(for: cwd))/\(id).jsonl")
+            .path)
+    }
+
+    /// The conversation a `claude` command line names: `--resume <id>`,
+    /// `--resume=<id>` or `-r <id>`. nil for anything else, including a bare
+    /// `--resume`, which opens a picker.
+    ///
+    /// The command line is the one exact answer for an agent that resumed: a
+    /// resume appends to the original transcript and creates nothing, so
+    /// `claudeConversationID(cwd:startedAt:)` has nothing to find. And every
+    /// resume Wortel types is of this form.
+    static func claudeResumeTarget(argv: String?) -> String? {
+        guard let argv else { return nil }
+        let words = argv.split(separator: " ").map(String.init)
+        for (index, word) in words.enumerated() {
+            let value: String?
+            if word.hasPrefix("--resume=") {
+                value = String(word.dropFirst("--resume=".count))
+            } else if word == "--resume" || word == "-r", index + 1 < words.count {
+                value = words[index + 1]
+            } else {
+                continue
+            }
+            if let value, UUID(uuidString: value) != nil { return value.lowercased() }
+        }
+        return nil
+    }
+
+    /// Whether a `claude` command line continues the directory's latest
+    /// conversation (`--continue`, `-c`). While such an agent is running, the
+    /// transcript it appends to is the newest in the directory, which makes the
+    /// newest-file guess exact for that one moment.
+    static func claudeContinuesLatest(argv: String?) -> Bool {
+        guard let argv else { return false }
+        return argv.split(separator: " ").contains { $0 == "--continue" || $0 == "-c" }
     }
 
     /// Drop a session's marker when it's closed, so the killed shell (which never

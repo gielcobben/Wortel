@@ -132,6 +132,13 @@ enum Keeper {
     /// doesn't match is killed and replaced rather than negotiated with, because
     /// it is *our* process and there is no user data in it to preserve beyond
     /// the shells — which is exactly what a mismatch would put at risk.
+    ///
+    /// Still "1" after `initialInput`, `inputDelivered` and `startedAt` were
+    /// added, deliberately: all three are optional both ways, so an old keeper
+    /// decodes a new request and a new app reads an old reply, and the app
+    /// handles an old keeper by typing the resume itself (see `newSurface`).
+    /// Bumping it would kill every running shell on the update that ships it,
+    /// for a change that needs nothing killed.
     static let version = "1"
 
     /// A JSON reply is small; anything near this is a confused peer. The replay

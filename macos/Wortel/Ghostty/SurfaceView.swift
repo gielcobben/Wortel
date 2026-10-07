@@ -216,10 +216,10 @@ final class SurfaceView: NSView {
         self.surface = nil
         // The pty's queue writes into this surface — the replay right after
         // it was created, then every read — so it is freed only once that
-        // queue has nothing left to write. See `PtyHost.afterPendingWork`.
+        // queue has nothing left to write. See `PtyHost.enqueue`.
         // `self` is held until then: the surface's userdata points at it.
         guard let pty else { return ghostty_surface_free(surface) }
-        pty.afterPendingWork {
+        pty.enqueue {
             DispatchQueue.main.async {
                 withExtendedLifetime(self) { ghostty_surface_free(surface) }
             }

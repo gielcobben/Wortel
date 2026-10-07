@@ -264,12 +264,17 @@ final class GhosttyRuntime {
             // one went in; see `Attachment.resumeIsOwed`.
             var resumeAgain: String?
             if attachment.resumed, let initialInput,
-               attachment.resumeIsOwed(table: ProcessTable.snapshot) {
+               attachment.resumeIsOwed(table: Self.recentProcessTable) {
                 NSLog("wortel: shell %d of session %@ is idle without its agent; resuming it again",
                       attachment.pid, sessionID.uuidString)
-                resumeAgain = initialInput
+                // ^U first: whatever was left half-typed at that prompt is
+                // cleared rather than prefixed to the command.
+                resumeAgain = "\u{15}" + initialInput
             }
-            cfg.initial_input = nil
+            // A keeper too old to know `initialInput` drops it and says
+            // nothing; then libghostty types it into the fresh shell, as it
+            // did before the keeper could. A survived shell never gets it here.
+            if attachment.resumed || attachment.inputDelivered { cfg.initial_input = nil }
             return hostManagedSurface(view: view, config: &cfg, attachment: attachment,
                                       resumeAgain: resumeAgain)
         }
@@ -370,7 +375,7 @@ final class GhosttyRuntime {
         let replay = attachment.replay
         let dark = Self.systemIsDark
         let prelude = resumed ? TerminalModeRecorder.shared.modes(for: session).prelude : []
-        pty.deliverBeforeReading {
+        pty.enqueue {
             if !prelude.isEmpty {
                 prelude.withUnsafeBufferPointer { raw in
                     guard let base = raw.baseAddress else { return }
@@ -493,6 +498,25 @@ final class GhosttyRuntime {
         }
         return connection
     }()
+
+    /// The process table, read at most once a second.
+    ///
+    /// For deciding whether a survived shell owes a resume, which runs during
+    /// surface creation on the main thread, once for every restored session
+    /// that had an agent. Launch warms those one per runloop turn, all within a
+    /// second or two, and a whole-table `sysctl` each time is work the launch
+    /// doesn't need: an agent that is gone does not come back within a second.
+    private static var processTableMemo: (taken: Date, table: [ProcessEntry])?
+
+    static func recentProcessTable() -> [ProcessEntry] {
+        dispatchPrecondition(condition: .onQueue(.main))
+        if let memo = processTableMemo, Date().timeIntervalSince(memo.taken) < 1 {
+            return memo.table
+        }
+        let table = ProcessTable.snapshot()
+        processTableMemo = (Date(), table)
+        return table
+    }
 
     /// Where the bundled `wortel` binary lives — `Contents/Resources/bin`,
     /// filled by the CLI target's copy phase. nil in a build without it, which

@@ -288,9 +288,23 @@ enum ProcessTable {
     /// stop a resume from ever being retyped.
     static func work(under shell: pid_t, in table: [ProcessEntry]) -> [ProcessEntry] {
         let shellName = table.first { $0.pid == shell }?.name
-        return table.filter {
-            $0.ppid == shell && !$0.name.hasPrefix("gitstatusd") && $0.name != shellName
-        }
+        return table.filter { $0.ppid == shell && !isPromptHelper($0, shellName: shellName) }
+    }
+
+    /// What an idle prompt keeps running: powerlevel10k's `gitstatusd`, and the
+    /// copies of the shell itself that async prompt frameworks fork. The one
+    /// definition, for every check of "is anything running in this shell".
+    static func isPromptHelper(_ entry: ProcessEntry, shellName: String?) -> Bool {
+        entry.name.hasPrefix("gitstatusd") || entry.name == shellName
+    }
+
+    /// Whether a process is an interactive shell, by name. What login's child
+    /// should be: after `exec claude` it is the agent instead, and typing a
+    /// resume into that would land in the agent's own input.
+    static func isShell(_ name: String) -> Bool {
+        let bare = name.hasPrefix("-") ? String(name.dropFirst()) : name
+        return ["zsh", "bash", "fish", "sh", "dash", "ksh", "mksh", "tcsh", "csh",
+                "nu", "xonsh", "elvish", "pwsh"].contains(bare)
     }
 
     /// Walk up the parent chain, bounded so a cycle in a torn process table

@@ -133,36 +133,24 @@ final class PtyHost: @unchecked Sendable {
         // writes the replay, and only then calls `beginReading`.
     }
 
-    /// Run `work` on the read queue, ahead of anything the pty produces.
+    /// Run `work` on the read queue, in order with the reads.
     ///
-    /// For the bytes that have to reach the terminal before the first read: the
-    /// saved modes and the keeper's replay. They go into libghostty through
-    /// `ghostty_surface_write_buffer`, which runs the VT parser on **whichever
-    /// thread calls it**, and the parser pushes surface messages (titles, cwd
-    /// reports) into a 64-slot queue that only the main thread drains, waiting
-    /// forever when it's full. Fed from the main thread, a replay from an agent
-    /// that kept working while nobody was attached, hundreds of title updates,
-    /// blocked the main thread on a queue it alone could empty: the beach ball
-    /// of 2026-10-07. This queue is where the live output already goes, so it
-    /// is where everything that precedes it belongs too.
+    /// The queue is serial and the read source targets it, so that is the
+    /// whole guarantee, and it serves two callers:
     ///
-    /// Ordering holds without further bookkeeping: the queue is serial and the
-    /// read source targets it, so a block submitted before `beginReading` runs
-    /// before the first read event.
-    func deliverBeforeReading(_ work: @escaping () -> Void) {
-        queue.async(execute: work)
-    }
-
-    /// Run `work` once everything already on the read queue has run: the
-    /// replay above, and any read in flight. Call after `release`, which
-    /// cancels the read source so nothing new is queued behind it.
-    ///
-    /// For freeing the surface the queue writes into. Freed straight away on
-    /// the main thread, a read handler or a replay still running here would
-    /// write into freed memory. Waiting for the queue *synchronously* is not
-    /// an option either: a write blocked on libghostty's full surface mailbox
-    /// waits for the main thread, and would wait forever.
-    func afterPendingWork(_ work: @escaping () -> Void) {
+    /// - **Before the first read**, the bytes that must reach the terminal
+    ///   first: the saved modes and the keeper's replay. They go into
+    ///   libghostty through `ghostty_surface_write_buffer`, which runs the VT
+    ///   parser on whichever thread calls it, and the parser pushes surface
+    ///   messages (titles, cwd reports) into a 64-slot queue that only the
+    ///   main thread drains, waiting forever when it's full. Fed from main, a
+    ///   replay from an agent that kept working while detached, hundreds of
+    ///   title updates, blocked the main thread on a queue it alone could
+    ///   empty: the beach ball of 2026-10-07.
+    /// - **After `release`**, freeing the surface that queue writes into, once
+    ///   the replay and any read in flight are done. Waiting for the queue
+    ///   synchronously instead would deadlock on that same mailbox.
+    func enqueue(_ work: @escaping () -> Void) {
         queue.async(execute: work)
     }
 

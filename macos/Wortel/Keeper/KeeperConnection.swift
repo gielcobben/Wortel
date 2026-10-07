@@ -46,18 +46,35 @@ final class KeeperConnection {
     /// update, and only once.
     @discardableResult
     func connect() -> Bool {
-        guard (try? client.connect(startingWith: { try self.launch() })) == true else {
-            return false
-        }
+        guard connectStarting() else { return false }
         guard let (response, _) = try? client.send(.ping), response.ok,
               response.version == Keeper.version
         else {
             NSLog("wortel: keeper speaks a different protocol; replacing it")
             replaceMismatchedKeeper()
-            return (try? client.connect(startingWith: { try self.launch() })) == true
+            return connectStarting()
                 && (try? client.send(.ping))?.response.version == Keeper.version
         }
         return true
+    }
+
+    /// Set by `launch` when launchd took the job, so a keeper that then never
+    /// binds can be started the other way.
+    private var startedViaLaunchd = false
+
+    /// Connect, starting the keeper if needed — and if launchd said it started
+    /// one that never bound the socket (a job launchd still thought was
+    /// running, a bundle program that failed to exec), start one directly
+    /// rather than run the whole launch without a keeper. The first wait is
+    /// short: binding takes milliseconds, and this blocks surface creation.
+    private func connectStarting() -> Bool {
+        startedViaLaunchd = false
+        if (try? client.connect(startingWith: { try self.launch() }, timeout: 2)) == true {
+            return true
+        }
+        guard startedViaLaunchd else { return false }
+        NSLog("wortel: launchd started no keeper that answered; starting it directly")
+        return (try? client.connect(startingWith: { try self.spawn() })) == true
     }
 
     /// Stop a keeper we cannot talk to, and clear its socket so a new one can
@@ -104,7 +121,10 @@ final class KeeperConnection {
     /// instance (launchd knows one keeper per label, and it would be the real
     /// one), and for a user who switched the background item off.
     private func launch() throws {
-        if launchViaLaunchd() { return }
+        if launchViaLaunchd() {
+            startedViaLaunchd = true
+            return
+        }
         try spawn()
     }
 
@@ -146,14 +166,19 @@ final class KeeperConnection {
         return kickstart()
     }
 
-    /// `launchctl kickstart gui/<uid>/sh.wortel.keeper`. Spawned and reaped
+    /// `launchctl kickstart -k gui/<uid>/sh.wortel.keeper`. Spawned and reaped
     /// here rather than through `Process`, whose wait pumps the run loop; see
     /// `replaceMismatchedKeeper` for what that re-entered. launchctl itself
     /// returns in milliseconds.
+    ///
+    /// `-k` because this only runs when no keeper answered on the socket: an
+    /// instance launchd still counts as running is then one that is wedged or
+    /// was just killed by `replaceMismatchedKeeper`, and a plain kickstart of a
+    /// running job does nothing at all.
     private func kickstart() -> Bool {
         let target = "gui/\(getuid())/\(Self.launchdLabel)"
         var argv: [UnsafeMutablePointer<CChar>?] =
-            ["/bin/launchctl", "kickstart", target].map { strdup($0) } + [nil]
+            ["/bin/launchctl", "kickstart", "-k", target].map { strdup($0) } + [nil]
         defer { argv.forEach { free($0) } }
         var pid: pid_t = 0
         guard posix_spawn(&pid, "/bin/launchctl", nil, nil, &argv, environ) == 0 else {
@@ -208,28 +233,30 @@ final class KeeperConnection {
         /// When the keeper forked the shell. nil from a keeper too old to say.
         let startedAt: Date?
 
-        /// Whether a resume typed into this shell has run its course and the
-        /// shell is back at a prompt with nothing under it: the one case where
-        /// a *survived* session should be resumed again.
+        /// Whether this survived shell should have its agent resumed: the
+        /// caller has a resume for it (an agent was running at the last quit),
+        /// and the shell is back at a prompt with nothing under it.
         ///
-        /// Three things have to hold, because each alone is ambiguous. The
-        /// keeper must vouch that it typed the resume, or it may never have
-        /// been typed. The shell must be older than a startup: a shell still
-        /// in its rc files has the text waiting in the pty and will run it
-        /// in a moment, and typing it again would run the agent twice. And
-        /// the shell must have nothing but its prompt's helpers under it,
-        /// which is the process table's word rather than a marker file's.
-        /// What this cannot tell is *why* the agent ended; that is what the
-        /// exit log is for.
+        /// Each condition rules out a way to start a second agent. The shell
+        /// must be older than a startup: the keeper types a resume into a new
+        /// shell before it has read anything, and one still in its rc files
+        /// has that text waiting and will run it in a moment. The process under
+        /// login must be a shell: after `exec claude` it is the agent, and the
+        /// resume would be typed into its input. And it must have nothing but
+        /// its prompt's helpers under it, by the process table's word rather
+        /// than a marker file's; an unreadable table is no claim at all.
+        ///
+        /// It covers an agent started by hand as much as one Wortel resumed:
+        /// either way it was running at quit, and the shell outlived it. What
+        /// this cannot tell is *why* the agent ended; that is the exit log's.
         func resumeIsOwed(now: Date = Date(), table: () -> [ProcessEntry]) -> Bool {
-            guard resumed, inputDelivered, let startedAt, pid > 0,
+            guard resumed, let startedAt, pid > 0,
                   now.timeIntervalSince(startedAt) > 10 else { return false }
             let snapshot = table()
             // `pid` is login; the agent hangs off the shell under it.
             let shell = ProcessTable.shell(of: pid, in: snapshot)
-            // An unreadable table is no claim at all, not an idle shell:
-            // reading it as idle would start a second agent beside a live one.
-            guard snapshot.contains(where: { $0.pid == shell }) else { return false }
+            guard let entry = snapshot.first(where: { $0.pid == shell }),
+                  ProcessTable.isShell(entry.name) else { return false }
             return ProcessTable.work(under: shell, in: snapshot).isEmpty
         }
     }

@@ -673,12 +673,23 @@ final class SessionManager {
             // of creating, so nothing is found and the saved ids stand: the one
             // recorded at quit, else the last one this session was ever seen
             // in, before the newest-file guess as the last resort.
+            //
+            // The marker's command line counts as evidence too: a resume names
+            // its conversation there. And the last id only counts in the
+            // directory it belongs to; Claude can't resume it anywhere else.
+            let marker = resume[entry.id]
             let observedID: String? = {
-                guard let marker = resume[entry.id], marker.agent == "claude",
-                      let cwd = marker.cwd, let startedAt = marker.startedAt else { return nil }
-                return AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: startedAt)
+                guard let marker, marker.agent == "claude", let cwd = marker.cwd else { return nil }
+                return marker.startedAt.flatMap {
+                    AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: $0)
+                } ?? AgentResumeStore.claudeResumeTarget(argv: marker.argv)
             }()
-            let conversationID = observedID ?? entry.runningConversationID ?? entry.lastConversationID
+            let lastID = entry.lastConversationID.flatMap { id -> String? in
+                guard let cwd = marker?.cwd ?? entry.cwd,
+                      AgentResumeStore.claudeTranscriptExists(id: id, cwd: cwd) else { return nil }
+                return id
+            }
+            let conversationID = observedID ?? entry.runningConversationID ?? lastID
             session.lastConversationID = observedID ?? entry.lastConversationID
             session.pendingResumeInput = agent.flatMap {
                 AgentResumeStore.resumeInput(for: $0, knownConversationID: conversationID)
@@ -1519,7 +1530,7 @@ final class SessionManager {
         defer {
             TerminalModeRecorder.shared.keepOnly(Set(sessions.flatMap { [$0.id] + $0.terminalTabIDs }))
             // And the agent exit log, which only ever grows.
-            DispatchQueue.global(qos: .utility).async { AgentResumeStore.trimExitLog() }
+            DispatchQueue.global(qos: .utility).async { AgentResumeStore.rotateExitLog() }
         }
         guard let keeper = GhosttyRuntime.keeper else { return }
         let known = Set(sessions.flatMap { [$0.id] + $0.terminalTabIDs })
@@ -1543,15 +1554,12 @@ final class SessionManager {
             // What the prompt itself keeps running doesn't count: see
             // `ProcessTable.work(under:in:)`.
             let shellName = table.first { $0.pid == shell }?.name
-            let isPromptHelper: (ProcessEntry) -> Bool = {
-                $0.name.hasPrefix("gitstatusd") || $0.name == shellName
-            }
             // The shell's own children first: that's what was started there
             // (`claude`, `npm`), rather than something deep in its tree.
             let children = ProcessTable.work(under: shell, in: table)
             let running = table.filter {
                 ProcessTable.isDescendant($0.pid, of: shell, parentOf: parentOf)
-                    && !isPromptHelper($0)
+                    && !ProcessTable.isPromptHelper($0, shellName: shellName)
             }
             guard let what = (children.first ?? running.first)?.name else {
                 keeper.close(session: orphan.id)
@@ -2407,24 +2415,32 @@ final class SessionManager {
             // already stopped. Failing that, a resume we restored but haven't
             // delivered yet still counts, so it survives another quit instead of
             // being silently dropped.
-            var conversationID = session.pendingResumeConversationID ?? session.lastConversationID
+            var conversationID = session.pendingResumeConversationID
             let agent: AgentMarker? = {
                 if let running = session.runningAgent,
                    AgentLiveness.isRunning(agent: running, shellPID: session.runningShellPID,
                                            table: table) {
                     // Ask the live agent which conversation it's actually writing to,
                     // while it's still there to ask — after it dies only a guess is left.
-                    // Ask which transcript this agent created, while it's still
-                    // running. Nil means it resumed an existing conversation
-                    // (a resume appends rather than creating), so the id we already
-                    // know for this session stands.
-                    if running == "claude", let cwd = session.cwd,
-                       let startedAt = session.runningStartedAt {
-                        conversationID = AgentResumeStore.claudeConversationID(
-                            cwd: cwd, startedAt: startedAt) ?? conversationID
-                        // Remembered past this agent's life: see
-                        // `PersistedSession.lastConversationID`.
-                        if let conversationID { session.lastConversationID = conversationID }
+                    // In order: the transcript it created when it started (a
+                    // fresh `claude`); the one its command line names (a
+                    // resume, which appends and creates nothing, and is what
+                    // every resume Wortel types looks like); for `--continue`,
+                    // the directory's newest, which is the one it is appending
+                    // to right now. Nothing found leaves the id we already know.
+                    if running == "claude", let cwd = session.cwd {
+                        let argv = session.runningArgv
+                        let observed = session.runningStartedAt.flatMap {
+                            AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: $0)
+                        } ?? AgentResumeStore.claudeResumeTarget(argv: argv)
+                            ?? (AgentResumeStore.claudeContinuesLatest(argv: argv)
+                                ? AgentResumeStore.latestClaudeSessionID(cwd: cwd) : nil)
+                        if let observed {
+                            conversationID = observed
+                            // Remembered past this agent's life: see
+                            // `PersistedSession.lastConversationID`.
+                            session.lastConversationID = observed
+                        }
                     }
                     return AgentMarker(agent: running, model: session.runningModel,
                                        cwd: session.cwd, argv: session.runningArgv,

@@ -44,6 +44,18 @@ final class KeeperShellTests: XCTestCase {
         XCTAssertEqual(ProcessTable.work(under: shell, in: table).map(\.name), ["claude"])
     }
 
+    /// `exec claude` replaces the shell: login's child is then the agent, and
+    /// "nothing under it" would type a resume into the agent's own input. The
+    /// resume check only proceeds when the process under login is a shell.
+    func testAnExecdAgentIsNotAShell() {
+        let table = [entry(200, 100, "login"), entry(300, 200, "claude")]
+        let shell = ProcessTable.shell(of: 200, in: table)
+        XCTAssertEqual(shell, 300)
+        XCTAssertFalse(ProcessTable.isShell("claude"))
+        XCTAssertTrue(ProcessTable.isShell("zsh"))
+        XCTAssertTrue(ProcessTable.isShell("-zsh"))
+    }
+
     /// powerlevel10k keeps `gitstatusd` and forked copies of the shell under
     /// an idle prompt; neither is work.
     func testPromptHelpersAreNotWork() {

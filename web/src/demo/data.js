@@ -219,7 +219,7 @@ export const STORY = [
     rows: [
       { block: true, g: '❯', t: 'if I leave you running, how do I find you again?' },
       { t: '' },
-      { g: '●', t: 'The sidebar marks me while I work, and again when I stop. **⌘⌥]** jumps straight to whichever session is waiting on you.' },
+      { g: '●', t: 'The sidebar marks me while I work, and again when I stop. **⌥⇧⌘↓** jumps straight to whichever session is waiting on you.' },
       { t: '' },
     ],
   },

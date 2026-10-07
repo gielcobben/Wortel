@@ -74,8 +74,10 @@ enum PaletteCommands {
         "resetFontSize:": "textformat.size",
         "toggleSessionSidebar:": "sidebar.left",
         "toggleSourceControl:": "arrow.triangle.branch",
-        "showHistory:": "clock",
-        "toggleFileTree:": "folder",
+        // As the panes' own tabs show them.
+        "showChanges:": InspectorPane.changes.symbol,
+        "showHistory:": InspectorPane.history.symbol,
+        "toggleFileTree:": InspectorPane.files.symbol,
         "focusSourceControlList:": "list.bullet",
         "newTerminalHere:": "apple.terminal",
         "newBrowserHere:": "globe",

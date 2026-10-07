@@ -399,6 +399,17 @@ final class GitPanelModel {
     ///
     /// A pane in the main row or the strip toggles there, against the terminal
     /// or the strip being up.
+    /// Whether `activate(_:)` would put the pane away rather than bring it up,
+    /// by the same rules in the same order: what the menu calls it, Show or
+    /// Hide, has to be what the key then does.
+    func activateHides(_ requested: InspectorPane) -> Bool {
+        if mainTabs.contains(.pane(requested)) { return activeMainTab == .pane(requested) }
+        if bottomTabs.contains(.pane(requested)) {
+            return bottomVisible && activeBottomTab == .pane(requested)
+        }
+        return isVisible && activeTab == .pane(requested)
+    }
+
     func activate(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
         // In the main area's row: the same toggle, against the terminal.
         if mainTabs.contains(.pane(requested)) {

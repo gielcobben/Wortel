@@ -139,7 +139,7 @@ export const SECTIONS: Section[] = [
         p: 'Wortel reads that off the screen. Output that keeps moving is an agent working; a screen gone still is one waiting on you. Where an agent announces itself Wortel takes its word for it, and where it says nothing, which is most of them, Wortel still knows.',
       },
       {
-        p: 'The sidebar marks what is working and what is waiting, a notification arrives when a background agent goes quiet, and ⌘⌥] jumps to the next one waiting. Anything still running when you quit is picked back up on the next launch.',
+        p: 'The sidebar marks what is working and what is waiting, a notification arrives when a background agent goes quiet, and ⌥⇧⌘↓ jumps to the next one waiting. Anything still running when you quit is picked back up on the next launch.',
       },
       {
         p: 'It ships no per-agent integrations on purpose: a terminal that adapts to six agents by name is a terminal that is wrong about the seventh. A bundled wortel command sits on every session’s PATH instead, so anything that can run a command can drive the app.',
@@ -258,16 +258,13 @@ export const DOCS_SECTIONS: Section[] = [
             ['New folder / open folder', '⇧⌘N / ⌘O'],
             ['Rename session', '⌥⌘R'],
             ['Close tab / close session', '⌘W / ⇧⌘W'],
-            // One row, two bindings. MainMenu.swift shows exactly one
-            // "Previous Session" item and hides the arrow twin, so two
-            // identical actions here read as a mistake rather than a pair.
-            ['Previous / next session', '⇧⌘[ ⇧⌘] or ⌥⌘↑ ⌥⌘↓'],
+            ['Previous / next session', '⌥⌘↑ / ⌥⌘↓'],
             ['Jump to session by position', '⌘1 … ⌘9'],
-            ['Jump to the next waiting session', '⌥⌘]'],
+            ['Jump to the next waiting session', '⌥⇧⌘↓'],
             ['Show or hide the sidebar', '⌘B'],
             ['Show or hide the side column', '⌥⌘B'],
             ['Show or hide the bottom strip', '⌘J or ⌃`'],
-            ['Show files', '⇧⌘E'],
+            ['Show changes / history / files', '⌃⌘1 / ⌃⌘2 / ⌃⌘3'],
             ['Show source control', '⌃⇧G'],
             ['Focus the list in the side column', '⌥⌘L'],
             ['New terminal tab where you are', '⌘T'],
@@ -275,7 +272,7 @@ export const DOCS_SECTIONS: Section[] = [
             ['New terminal in the bottom strip', '⇧⌘D'],
             ['New browser tab', '⇧⌘L'],
             ['Reopen closed tab', '⇧⌘T'],
-            ['Next / previous tab', '⌃Tab ⌃⇧Tab or ⌥⌘→ ⌥⌘←'],
+            ['Next / previous tab', '⇧⌘] / ⇧⌘[ or ⌃Tab ⌃⇧Tab'],
             ['Focus the next / previous area', '⌘] / ⌘['],
             ['Browser: address field', '⌘L'],
             ['Browser: reload', '⌘R'],
@@ -401,7 +398,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel work with Claude Code, Codex and Aider?',
-    a: 'Yes. They run as ordinary shell commands in any session, with no per-agent setup and no changes to their configuration files. Beyond that, Wortel marks in the sidebar which agents are working and which are waiting, notifies you when a background agent goes quiet, jumps to the next waiting session with ⌘⌥], gives each one its own worktree so they can share a repository, keeps them running when the app is closed, and resumes agents that were still running when you last quit.',
+    a: 'Yes. They run as ordinary shell commands in any session, with no per-agent setup and no changes to their configuration files. Beyond that, Wortel marks in the sidebar which agents are working and which are waiting, notifies you when a background agent goes quiet, jumps to the next waiting session with ⌥⇧⌘↓, gives each one its own worktree so they can share a repository, keeps them running when the app is closed, and resumes agents that were still running when you last quit.',
   },
   {
     q: 'What are the system requirements?',

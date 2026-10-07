@@ -991,6 +991,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.selectTab(number: sender.tag, in: focusedRegion())
     }
 
+    /// ⌃⌘1 — open Changes, bring it forward, or close it, as ⌃⌘2 does History.
+    @objc func showChanges(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.activate(.changes, via: .shortcut)
+    }
+
     @objc func showHistory(_ sender: Any?) {
         focusMainWindow()
         gitPanel.activate(.history, via: .shortcut)
@@ -1204,7 +1210,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// ⌘⌥E — the same rule for the Files pane.
     @objc func toggleFileTree(_ sender: Any?) {
+        // As ⌃⌘1 and ⌃⌘2: from a preview window, act on the window you'll see.
+        focusMainWindow()
         gitPanel.activate(.files, via: .shortcut)
+    }
+
+    /// The pane ⌃⌘1, ⌃⌘2 or ⌃⌘3 opens, for the menu titles.
+    private static func pane(toggledBy action: Selector?) -> InspectorPane? {
+        switch action {
+        case #selector(showChanges(_:)): return .changes
+        case #selector(showHistory(_:)): return .history
+        case #selector(toggleFileTree(_:)): return .files
+        default: return nil
+        }
     }
 
     @objc func focusSourceControlList(_ sender: Any?) {
@@ -1274,11 +1292,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Each pane command reads "Hide" only when *its* pane is the one on
         // screen — with Files up, ⌘⌥G swaps rather than closes, so calling it
         // "Hide Source Control" would describe the wrong action.
+        // The panes' Show/Hide, by what the key would actually do to them.
+        if let pane = Self.pane(toggledBy: menuItem.action) {
+            let hides = gitPanel.activateHides(pane)
+            menuItem.title = (hides ? "Hide " : "Show ") + pane.title
+            return true
+        }
         if menuItem.action == #selector(toggleSourceControl(_:)) {
-            // In front anywhere, as ⌘⌥G toggles it wherever it is.
-            let showing = [TabRegion.main, .side, .bottom]
-                .contains { gitPanel.activeTab(in: $0)?.pane?.isSourceControl == true }
-            menuItem.title = showing ? "Hide Source Control" : "Show Source Control"
+            let hides = gitPanel.activateHides(GitPanelModel.lastSourceControlPane)
+            menuItem.title = hides ? "Hide Source Control" : "Show Source Control"
             return true
         }
         if menuItem.action == #selector(toggleBottomStrip(_:)) {
@@ -1327,12 +1349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             || menuItem.action == #selector(focusPreviousArea(_:)) {
             return visibleRegions.count > 1 || keyboardBrowserPage != nil
         }
-        if menuItem.action == #selector(toggleFileTree(_:)) {
-            let showing = [TabRegion.main, .side, .bottom]
-                .contains { gitPanel.activeTab(in: $0) == .pane(.files) }
-            menuItem.title = showing ? "Hide Files" : "Show Files"
-            return true
-        }
+
         // Only offer "Next Waiting Session" when something is actually waiting.
         if menuItem.action == #selector(selectNextAttentionSession(_:)) {
             return manager?.hasAttention ?? false

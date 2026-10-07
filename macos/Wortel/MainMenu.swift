@@ -251,61 +251,31 @@ enum MainMenu {
         sessionMenu.addItem(.separator())
         // ⌘P, as VS Code, Cursor and Zed open a file by name: here, a session.
         sessionMenu.addItem(withTitle: "Go to Session\u{2026}", action: #selector(AppDelegate.showSessionSwitcher(_:)), keyEquivalent: "p")
-        // ⌘⇧[ / ⌘⇧] walk the sidebar. They're the system-wide convention for
-        // "previous/next thing in this window" — Safari, Chrome, Finder,
-        // Ghostty — so they're what the menu advertises, even though Wortel's
-        // sessions aren't tabs. Free of a wortel.conf keybind (that file binds
-        // alt+arrow and cmd+arrow, never a shifted bracket).
+        // ⌥⌘↑ / ⌥⌘↓ walk the sidebar: up and down, because it's a vertical
+        // list, as Arc walks the tabs in its sidebar with the same keys. (It
+        // was ⇧⌘[ / ⇧⌘], which every other Mac app means as previous/next
+        // *tab*, so that is what those are now: Tab ▸ Next/Previous Tab.)
+        let up = arrow(NSUpArrowFunctionKey)
+        let down = arrow(NSDownArrowFunctionKey)
         let prev = sessionMenu.addItem(
             withTitle: "Previous Session",
             action: #selector(AppDelegate.selectPreviousSession(_:)),
-            keyEquivalent: "[")
-        prev.keyEquivalentModifierMask = [.command, .shift]
+            keyEquivalent: up)
+        prev.keyEquivalentModifierMask = [.command, .option]
         let next = sessionMenu.addItem(
             withTitle: "Next Session",
             action: #selector(AppDelegate.selectNextSession(_:)),
-            keyEquivalent: "]")
-        next.keyEquivalentModifierMask = [.command, .shift]
-        // AppKit matches a key equivalent against the event's
-        // charactersIgnoringModifiers, which *keeps* Shift applied — so
-        // depending on the event, ⌘⇧] arrives as "]" or as "}", and an item
-        // authored the conventional way ("]" + ⌘⇧) only matches the former.
-        // Rather than bet on one shape, carry a hidden twin for the other.
-        // Verified: whichever shape arrives, exactly one item fires — matching
-        // stops at the first hit, so this can't skip two sessions at once.
-        let prevShifted = sessionMenu.addItem(
-            withTitle: "Previous Session",
-            action: #selector(AppDelegate.selectPreviousSession(_:)),
-            keyEquivalent: "{")
-        prevShifted.keyEquivalentModifierMask = [.command, .shift]
-        prevShifted.isHidden = true
-        let nextShifted = sessionMenu.addItem(
-            withTitle: "Next Session",
-            action: #selector(AppDelegate.selectNextSession(_:)),
-            keyEquivalent: "}")
-        nextShifted.keyEquivalentModifierMask = [.command, .shift]
-        nextShifted.isHidden = true
-        // ⌘⌥↑/↓ keep working — they read as "move in the list" and were the
-        // original binding, so muscle memory shouldn't break. Hidden rather
-        // than shown twice: a hidden item is skipped when the menu is drawn but
-        // still matched by NSMenu.performKeyEquivalent, which is exactly the
-        // "second binding, one menu entry" shape we want.
-        let prevArrow = sessionMenu.addItem(
-            withTitle: "Previous Session",
-            action: #selector(AppDelegate.selectPreviousSession(_:)),
-            keyEquivalent: String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!))
-        prevArrow.keyEquivalentModifierMask = [.command, .option]
-        prevArrow.isHidden = true
-        let nextArrow = sessionMenu.addItem(
-            withTitle: "Next Session",
-            action: #selector(AppDelegate.selectNextSession(_:)),
-            keyEquivalent: String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!))
-        nextArrow.keyEquivalentModifierMask = [.command, .option]
-        nextArrow.isHidden = true
+            keyEquivalent: down)
+        next.keyEquivalentModifierMask = [.command, .option]
         // Jump straight to whatever is waiting on you, wherever it sits in the
-        // list. Disabled (via AppDelegate.validateMenuItem) when nothing waits.
-        let nextAlert = sessionMenu.addItem(withTitle: "Next Waiting Session", action: #selector(AppDelegate.selectNextAttentionSession(_:)), keyEquivalent: "]")
-        nextAlert.keyEquivalentModifierMask = [.command, .option]
+        // list: "next", with ⇧ for "only the ones that need me", as Slack's
+        // ⌥⇧↓ goes to the next unread channel. Disabled (via
+        // AppDelegate.validateMenuItem) when nothing waits. ⌥⌘], what it was,
+        // keeps working.
+        let nextAlert = sessionMenu.addItem(withTitle: "Next Waiting Session", action: #selector(AppDelegate.selectNextAttentionSession(_:)), keyEquivalent: down)
+        nextAlert.keyEquivalentModifierMask = [.command, .option, .shift]
+        addHidden(sessionMenu, "Next Waiting Session", #selector(AppDelegate.selectNextAttentionSession(_:)),
+                  "]", [.command, .option])
         // ⌘1…⌘9: the sessions by position. Shortcuts only: nine rows reading
         // "Session 1" … "Session 9" said nothing the sidebar doesn't, and made
         // this menu twice the length of any other. As Safari's ⌘1…⌘9 for tabs.
@@ -423,11 +393,12 @@ enum MainMenu {
         // The workspace: the three areas, their tabs, and moving between them.
         // Aligned with what people already know (see docs/shortcuts.md): ⌘B /
         // ⌥⌘B / ⌘J for the sidebar, the column and the strip as in VS Code, Zed
-        // and ChatGPT; ⌃Tab and ⌥⌘←/→ for tabs as in Safari and the editors;
-        // ⌘[ / ⌘] between areas as in iTerm and Ghostty; ⌃⌘arrows to move a tab
-        // as VS Code moves an editor. Everything is ⌘-based but the three
-        // Control keys every one of those apps uses, which the terminal gives up
-        // nothing for: Control+letter and Option+letter stay the shell's.
+        // and ChatGPT; ⇧⌘[ / ⇧⌘] for tabs as in every Mac app (⌃Tab and
+        // ⌥⌘←/→ too); ⌘[ / ⌘] between areas as in iTerm and Ghostty; ⌃⌘1-3
+        // for the panes, numbered as git apps number theirs; ⌃⌘arrows to move a
+        // tab as VS Code moves an editor. Everything is ⌘-based but the Control
+        // keys those apps use, which the terminal gives up nothing for:
+        // Control+letter and Option+letter stay the shell's.
         //
         // ⌘B, as VS Code, Cursor, Zed and ChatGPT; ⌥⌘S (the Finder's, and what
         // Wortel had) keeps working.
@@ -452,21 +423,29 @@ enum MainMenu {
         focusPrevious.keyEquivalentModifierMask = [.command]
 
         viewMenu.addItem(.separator())
-        // ⌃⇧G, as VS Code, Cursor, Zed and Codex open source control; ⌥⌘G
-        // (what Wortel had) keeps working. Routes through the responder chain
-        // to AppDelegate. Title flips Show/Hide in AppDelegate.validateMenuItem
-        // based on panel visibility.
+        // The three panes by number, as git apps number theirs (GitHub Desktop,
+        // Tower and Fork: ⌘1 Changes, ⌘2 History), with ⌃ added because ⌘1…⌘9
+        // are the sessions here. Each opens its pane, brings it forward, or
+        // closes it when it's already in front. Titles flip Show/Hide in
+        // AppDelegate.validateMenuItem.
+        let changes = viewMenu.addItem(withTitle: "Show Changes", action: #selector(AppDelegate.showChanges(_:)), keyEquivalent: "1")
+        changes.keyEquivalentModifierMask = [.control, .command]
+        let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "2")
+        history.keyEquivalentModifierMask = [.control, .command]
+        // ⌥⇧⌘G, what History had, keeps working.
+        addHidden(viewMenu, "Show History", #selector(AppDelegate.showHistory(_:)), "g", [.command, .option, .shift])
+        let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "3")
+        files.keyEquivalentModifierMask = [.control, .command]
+        // ⇧⌘E, as VS Code, Cursor, Zed and Codex open their file tree, and
+        // ⌥⌘E, what Wortel had, keep working.
+        addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .shift])
+        addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .option])
+        // ⌃⇧G, as VS Code, Cursor, Zed and Codex open source control: the
+        // source control pane you used last. ⌥⌘G, what Wortel had, too.
+        // Shown, not only a hidden key, so it's in the menu and the palette.
         let sourceControl = viewMenu.addItem(withTitle: "Show Source Control", action: #selector(AppDelegate.toggleSourceControl(_:)), keyEquivalent: "g")
         sourceControl.keyEquivalentModifierMask = [.control, .shift]
         addHidden(viewMenu, "Show Source Control", #selector(AppDelegate.toggleSourceControl(_:)), "g", [.command, .option])
-        let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "g")
-        history.keyEquivalentModifierMask = [.command, .option, .shift]
-        // ⇧⌘E for the third pane, as VS Code, Cursor, Zed and Codex open their
-        // file tree; ⌥⌘E keeps working. It behaves exactly like ⌃⇧G: open on
-        // Files, bring it forward, or close it if Files is already up.
-        let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "e")
-        files.keyEquivalentModifierMask = [.command, .shift]
-        addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .option])
         // ⌘⌥L: reveal the panel (if hidden) and move focus into whichever list is
         // showing — files on Changes, commits on History, the tree on Files — so
         // ↑/↓ navigate it without reaching for the mouse.
@@ -559,11 +538,24 @@ enum MainMenu {
                   "~", [.control, .shift])
 
         tabMenu.addItem(.separator())
-        let nextTab = tabMenu.addItem(withTitle: "Next Tab", action: #selector(AppDelegate.selectNextSideTab(_:)), keyEquivalent: "\t")
-        nextTab.keyEquivalentModifierMask = [.control]
-        let previousTab = tabMenu.addItem(withTitle: "Previous Tab", action: #selector(AppDelegate.selectPreviousSideTab(_:)), keyEquivalent: "\t")
-        previousTab.keyEquivalentModifierMask = [.control, .shift]
-        // Shift+Tab arrives as backtab on some paths; the hidden twin catches it.
+        // ⇧⌘] / ⇧⌘[: next and previous tab, as in Safari, Chrome, Finder,
+        // Xcode, Terminal, iTerm2 and Ghostty.
+        let nextTab = tabMenu.addItem(withTitle: "Next Tab", action: #selector(AppDelegate.selectNextSideTab(_:)), keyEquivalent: "]")
+        nextTab.keyEquivalentModifierMask = [.command, .shift]
+        let previousTab = tabMenu.addItem(withTitle: "Previous Tab", action: #selector(AppDelegate.selectPreviousSideTab(_:)), keyEquivalent: "[")
+        previousTab.keyEquivalentModifierMask = [.command, .shift]
+        // AppKit matches a key equivalent against the event's
+        // charactersIgnoringModifiers, which *keeps* Shift applied — so
+        // depending on the event, ⌘⇧] arrives as "]" or as "}", and an item
+        // authored the conventional way ("]" + ⌘⇧) only matches the former.
+        // A hidden twin for the other shape. Matching stops at the first hit,
+        // so whichever arrives, exactly one fires.
+        addHidden(tabMenu, "Next Tab", #selector(AppDelegate.selectNextSideTab(_:)), "}", [.command, .shift])
+        addHidden(tabMenu, "Previous Tab", #selector(AppDelegate.selectPreviousSideTab(_:)), "{", [.command, .shift])
+        // ⌃⇥ / ⌃⇧⇥ too, as Safari and Chrome. Shift+Tab arrives as backtab on
+        // some paths; a hidden twin catches that.
+        addHidden(tabMenu, "Next Tab", #selector(AppDelegate.selectNextSideTab(_:)), "\t", [.control])
+        addHidden(tabMenu, "Previous Tab", #selector(AppDelegate.selectPreviousSideTab(_:)), "\t", [.control, .shift])
         addHidden(tabMenu, "Previous Tab", #selector(AppDelegate.selectPreviousSideTab(_:)), "\u{19}", [.control, .shift])
         // ⌥⌘→ / ⌥⌘←, as VS Code, Zed and ChatGPT: horizontal for tabs, where
         // ⌥⌘↑ / ⌥⌘↓ are vertical for sessions.

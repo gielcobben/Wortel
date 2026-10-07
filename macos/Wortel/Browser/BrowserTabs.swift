@@ -885,7 +885,7 @@ private struct WebViewHost: NSViewRepresentable {
 /// A page gets every ⌘ key first, and the menu only what it lets go of: the
 /// order Safari and Chrome use, and what lets a web app have its ⌘K. Like
 /// Chrome, a short list skips the page, so no page can keep you in it: quit,
-/// close, a new session, and moving between sessions.
+/// close, a new session, and moving between tabs and between sessions.
 private final class BrowserWebView: WKWebView {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, window?.firstResponder === self, Self.isReserved(event),
@@ -914,12 +914,14 @@ private final class BrowserWebView: WKWebView {
     private static let arrowUp = String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!)
     private static let arrowDown = String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!)
 
-    /// The keys, as the menu has them. "{" and "}" because ⇧⌘[ arrives as
-    /// either shape (see MainMenu's hidden twins).
+    /// The keys, as the menu has them: ⇧⌘[ / ⇧⌘] for tabs ("{" and "}"
+    /// because ⇧⌘[ arrives as either shape, see MainMenu's hidden twins),
+    /// ⌥⌘↑ / ⌥⌘↓ for sessions, ⇧⌥⌘↓ and ⌥⌘] for the next waiting one.
     private static let reserved: [(NSEvent.ModifierFlags, Set<String>)] = [
         ([.command], ["q", "w", "n"]),
         ([.command, .shift], ["w", "[", "]", "{", "}"]),
         ([.command, .option], ["]", arrowUp, arrowDown]),
+        ([.command, .option, .shift], [arrowDown]),
     ]
 
     private static func isReserved(_ event: NSEvent) -> Bool {

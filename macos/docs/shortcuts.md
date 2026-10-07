@@ -3,13 +3,17 @@
 Wortel's shortcuts follow the apps people already have in their fingers, so the
 layout works the way you'd guess from day one. Where apps disagree, the choice
 goes to what most of them share, and nearly every shortcut is Command-based.
-The few Control keys are the ones the editors all use (⌃Tab, ⌃`, ⌃⇧G).
+The few Control keys are the ones the editors all use (⌃Tab, ⌃`, ⌃⇧G), and
+⌃⌘ with a number for the panes, where ⌘ alone is taken by the sessions.
 Control and Option with a letter always stay with the shell.
 
 Three rules cover most of it:
 
 - **The layout is an editor's.** ⌘B, ⌥⌘B and ⌘J show and hide the three areas,
-  ⇧⌘E is files and ⌃⇧G is source control, as in VS Code, Cursor, Zed and Codex.
+  as in VS Code, Cursor, Zed and Codex. The three panes are numbered as git
+  apps number theirs: ⌃⌘1 Changes, ⌃⌘2 History, ⌃⌘3 Files.
+- **Up and down for sessions, brackets for tabs.** ⌥⌘↑ / ⌥⌘↓ walk the sidebar,
+  as Arc walks its; ⇧⌘[ / ⇧⌘] are previous and next tab, as in every Mac app.
 - **A terminal is a terminal.** ⌘T, ⌘W, ⌘D, ⇧⌘D, ⌘K and ⌘] mean what they mean
   in iTerm, Ghostty and Warp.
 - **A browser is a browser.** ⌘L, ⌘R, ⌘[ and ⌘] mean what they mean in Safari
@@ -29,9 +33,9 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | New folder | ⇧⌘N | Finder |
 | Open folder | ⌘O | Codex, cmux, every Mac app |
 | Close session | ⇧⌘W | iTerm, Ghostty, Warp, VS Code (close window) |
-| Next / previous session | ⇧⌘] / ⇧⌘[, ⌥⌘↓ / ⌥⌘↑ | Codex, Claude |
+| Next / previous session | ⌥⌘↓ / ⌥⌘↑ | Arc (its sidebar's tabs) |
 | Session 1 to 9 | ⌘1 to ⌘9 | Codex, cmux |
-| Next waiting session | ⌥⌘] | |
+| Next waiting session | ⌥⇧⌘↓ (also ⌥⌘]) | Slack (⌥⇧↓, the next unread) |
 | Go to a session, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |
 | Run a command (the palette, commands only) | ⇧⌘P | VS Code (command palette) |
 | Rename session | ⌥⌘R | Codex |
@@ -55,10 +59,13 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 
 | Action | Shortcut | Same as |
 |---|---|---|
-| Show Files | ⇧⌘E (also ⌥⌘E) | VS Code, Cursor, Zed, Codex |
-| Show Changes (or History, if that's where you were) | ⌃⇧G (also ⌥⌘G) | VS Code, Cursor, Zed, Codex |
-| Show History | ⇧⌥⌘G | |
+| Show Changes | ⌃⌘1 | GitHub Desktop, Tower, Fork (⌘1) |
+| Show History | ⌃⌘2 (also ⌥⇧⌘G) | GitHub Desktop, Tower (⌘2) |
+| Show Files | ⌃⌘3 (also ⇧⌘E, ⌥⌘E) | VS Code, Cursor, Zed, Codex (⇧⌘E) |
+| Source control, on the pane you used last | ⌃⇧G (also ⌥⌘G) | VS Code, Cursor, Zed, Codex |
 | Focus the list | ⌥⌘L | |
+
+Each opens its pane, brings it forward, or closes it when it's already in front.
 
 ## Tabs
 
@@ -73,7 +80,7 @@ picked a tab in, or moved to with ⌘] / ⌘[.
 | New browser tab here | ⇧⌘L | cmux |
 | Close tab | ⌘W | everyone |
 | Reopen closed tab | ⇧⌘T | Safari, Chrome, VS Code, Zed, iTerm, Ghostty, Warp, cmux |
-| Next / previous tab | ⌃Tab / ⌃⇧Tab, ⌥⌘→ / ⌥⌘← | Safari, Terminal, Ghostty, Codex; VS Code, Zed, Chrome |
+| Next / previous tab | ⇧⌘] / ⇧⌘[ (also ⌃Tab / ⌃⇧Tab, ⌥⌘→ / ⌥⌘←) | Safari, Chrome, Finder, Xcode, Terminal, iTerm, Ghostty; VS Code, Zed |
 | Tab 1 to 9 | ⌥⌘1 to ⌥⌘9 (9 is the last) | Xcode (inspector tabs) |
 | Move tab left / right | ⌃⌘← / ⌃⌘→ | |
 | Move tab down to the bottom strip / up to the main area | ⌃⌘↓ / ⌃⌘↑ | |
@@ -134,7 +141,8 @@ that, that kind opens where you last moved one, per session.
   terminal selects the whole scrollback on ⌘A. In a text field, a page or a
   preview, ⌘A is Select All as usual.
 - **⌘1 to ⌘9 are sessions, not tabs.** Sessions are what you switch between all
-  day, which is also how Codex and cmux spend those keys.
+  day, which is also how Codex and cmux spend those keys. So the git apps' ⌘1
+  and ⌘2 for Changes and History are ⌃⌘1 and ⌃⌘2 here.
 - **No settings (⌘,).** Wortel has none; `wortel.conf` is the settings. ⌘P
   finds any session or command, ⇧⌘P commands only, and so does the Help
   menu's search field.

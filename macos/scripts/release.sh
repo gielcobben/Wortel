@@ -243,21 +243,8 @@ for tool in "$APP"/Contents/Resources/bin/*; do
   echo "    signing $(basename "$tool")"
   codesign --force --timestamp ${RUNTIME[@]+"${RUNTIME[@]}"} --sign "$IDENTITY" "$tool"
 done
-# Then the helper apps (the keeper, Contents/Helpers/wortel-keeper.app), each
-# as a bundle of its own: same rule, inside-out, and the notary service checks
-# them as nested code.
-for helper in "$APP"/Contents/Helpers/*.app; do
-  [ -d "$helper" ] || continue
-  echo "    signing $(basename "$helper")"
-  codesign --force --timestamp ${RUNTIME[@]+"${RUNTIME[@]}"} --sign "$IDENTITY" "$helper"
-done
 codesign --force --deep --timestamp ${RUNTIME[@]+"${RUNTIME[@]}"} --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
-for helper in "$APP"/Contents/Helpers/*.app; do
-  [ -d "$helper" ] || continue
-  codesign --verify --strict "$helper"
-  codesign -dvv "$helper" 2>&1 | grep -E "^(Identifier=|Authority=Developer ID|Timestamp=)" | sed 's/^/    /'
-done
 # Verify each one on its own terms. `--verify --deep` on the app does not check
 # these — it passed happily while both tools carried a development signature —
 # so the only honest check is per-tool, and the authority beyond it is the notary

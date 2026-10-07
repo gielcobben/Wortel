@@ -19,15 +19,6 @@ import Foundation
 
 setvbuf(stdout, nil, _IOLBF, 0)
 
-// No App Nap, ever. The keeper is a background-only app with no window, which
-// is exactly what App Nap throttles, and every shell, build and agent in Wortel
-// runs under it. `LSAppNapIsDisabled` in Info.plist says the same; this holds
-// for the spawned fallback too, which never reads it. Allowing idle sleep:
-// holding sessions is no reason to keep the Mac awake.
-let noAppNap = ProcessInfo.processInfo.beginActivity(
-    options: .userInitiatedAllowingIdleSystemSleep,
-    reason: "Holding Wortel's terminal sessions")
-
 let server = KeeperServer()
 let idleQueue = DispatchQueue(label: "sh.wortel.keeper.idle")
 var idleWork: DispatchWorkItem?

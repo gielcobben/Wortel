@@ -152,15 +152,14 @@ targets:
         copy:
           destination: resources
           subpath: bin
-      # The pty keeper: an app of its own (Wortel Keeper, background only) in
-      # Contents/Helpers, started through LaunchServices so macOS counts it as
-      # its own app rather than as Wortel still running. See KeeperConnection.
+      # The pty keeper, beside it. The app spawns this on demand; it is not on
+      # anyone's PATH and is never run by hand.
       - target: WortelKeeper
         embed: true
         codeSign: true
         copy:
-          destination: wrapper
-          subpath: Contents/Helpers
+          destination: resources
+          subpath: bin
       - package: GhosttyKit
         product: GhosttyKit
       - package: Sparkle
@@ -284,15 +283,8 @@ targets:
   # `WortelCLI`: a target's name is its intermediates directory, and on a
   # case-insensitive disk one called `wortel-keeper` is fine but anything that
   # case-folds onto `Wortel` silently shares the app's object files.
-  #
-  # An application, not a tool, since 2026-10-07: background only (no Dock
-  # tile, no menu bar) and started through LaunchServices, which gives it an
-  # identity of its own. As a tool Wortel spawned, macOS counted it as part of
-  # Wortel, so after a quit the Dock offered "Stop Running in Background" on
-  # Wortel's tile, and that stopped every session. The executable keeps its
-  # name, `wortel-keeper`, so the process is found by it as before.
   WortelKeeper:
-    type: application
+    type: tool
     platform: macOS
     sources:
       - path: WortelKeeper
@@ -307,30 +299,10 @@ targets:
       - path: Wortel/CLI/WortelCommand.swift
       - path: Wortel/CLI/WortelCLIClient.swift
       - path: Wortel/DataDirectory.swift
-    info:
-      path: WortelKeeper/Info.plist
-      properties:
-        CFBundleName: Wortel Keeper
-        CFBundleDisplayName: Wortel Keeper
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        LSMinimumSystemVersion: "14.0"
-        # No Dock tile, no menu bar, never frontmost.
-        LSBackgroundOnly: true
-        # Every shell and agent in Wortel runs under this process. A
-        # background-only app is App Nap's first candidate, and a napping
-        # keeper would throttle the builds and agents under it.
-        LSAppNapIsDisabled: true
-        NSSupportsAutomaticTermination: false
-        NSSupportsSuddenTermination: false
     settings:
       base:
         PRODUCT_NAME: wortel-keeper
-        PRODUCT_BUNDLE_IDENTIFIER: com.gielcobben.Wortel.Keeper
         SKIP_INSTALL: true
-        # One binary in every configuration: no preview stub and debug dylib
-        # in Debug, so what runs is what ships.
-        ENABLE_DEBUG_DYLIB: false
 
   # Unit tests for the git panel's logic. Run with:
   #   xcodebuild -project Wortel.xcodeproj -scheme WortelTests test

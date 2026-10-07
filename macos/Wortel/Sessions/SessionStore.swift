@@ -104,6 +104,19 @@ struct PersistedSession: Codable {
     /// it's what lets a repo with two agent sessions resume each into the right
     /// conversation. nil when it couldn't be observed; the guess still applies.
     let runningConversationID: String?
+    /// The last Claude conversation this session was seen writing to, kept
+    /// **whether or not** that agent is still running.
+    ///
+    /// `runningConversationID` answers "what was running at quit", and goes
+    /// away with the agent. This answers "which conversation is this session's",
+    /// which is a different fact and must not depend on the first: an agent
+    /// that died for an outside reason (on 2026-10-07, a keeper force-quit from
+    /// the Dock) had its id dropped at the very next save, and from then on
+    /// nothing on disk said which conversation belonged where. Resuming from a
+    /// surviving marker then fell back to the newest transcript per directory,
+    /// which hands two sessions in one repo the same conversation. Overwritten
+    /// when a newer conversation is observed; never cleared by an exit.
+    let lastConversationID: String?
 
     // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
@@ -112,6 +125,7 @@ struct PersistedSession: Codable {
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
         case runningAgent, runningModel, runningArgv, runningConversationID
+        case lastConversationID
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
     /// so the synthesised encoder never writes it again.
@@ -131,7 +145,7 @@ struct PersistedSession: Codable {
          gitCheckout: String? = nil,
          tabHabits: [String: String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
-         runningConversationID: String? = nil) {
+         runningConversationID: String? = nil, lastConversationID: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
         self.originCwd = originCwd
         self.selected = selected; self.nameSource = nameSource
@@ -154,6 +168,7 @@ struct PersistedSession: Codable {
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
+        self.lastConversationID = lastConversationID
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -211,6 +226,10 @@ struct PersistedSession: Codable {
         runningModel = try c.decodeIfPresent(String.self, forKey: .runningModel)
         runningArgv = try c.decodeIfPresent(String.self, forKey: .runningArgv)
         runningConversationID = try c.decodeIfPresent(String.self, forKey: .runningConversationID)
+        // Older files never recorded it; the running id, when there is one, is
+        // the same fact for a session whose agent was alive at quit.
+        lastConversationID = try c.decodeIfPresent(String.self, forKey: .lastConversationID)
+            ?? runningConversationID
     }
 }
 

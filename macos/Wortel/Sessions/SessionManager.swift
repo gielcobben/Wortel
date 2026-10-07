@@ -665,13 +665,18 @@ final class SessionManager {
                             cwd: entry.cwd, argv: entry.runningArgv,
                             shellPID: nil, startedAt: nil)
             }
+            // The id recorded at quit when there was one, else the last one this
+            // session was ever seen in: the marker case is precisely an agent
+            // that died without a clean quit, which is when the running id is
+            // gone and the newest-file guess would be the only other option.
+            let conversationID = entry.runningConversationID ?? entry.lastConversationID
+            session.lastConversationID = entry.lastConversationID
             session.pendingResumeInput = agent.flatMap {
-                AgentResumeStore.resumeInput(for: $0,
-                                             knownConversationID: entry.runningConversationID)
+                AgentResumeStore.resumeInput(for: $0, knownConversationID: conversationID)
             }
             session.pendingResumeAgent = session.pendingResumeInput == nil ? nil : agent
             session.pendingResumeConversationID =
-                session.pendingResumeInput == nil ? nil : entry.runningConversationID
+                session.pendingResumeInput == nil ? nil : conversationID
             appendRestored(session)
         }
         syncFolderOrder() // seed/prune the persisted folder order for the restored set
@@ -2388,7 +2393,7 @@ final class SessionManager {
             // already stopped. Failing that, a resume we restored but haven't
             // delivered yet still counts, so it survives another quit instead of
             // being silently dropped.
-            var conversationID = session.pendingResumeConversationID
+            var conversationID = session.pendingResumeConversationID ?? session.lastConversationID
             let agent: AgentMarker? = {
                 if let running = session.runningAgent,
                    AgentLiveness.isRunning(agent: running, shellPID: session.runningShellPID,
@@ -2403,6 +2408,9 @@ final class SessionManager {
                        let startedAt = session.runningStartedAt {
                         conversationID = AgentResumeStore.claudeConversationID(
                             cwd: cwd, startedAt: startedAt) ?? conversationID
+                        // Remembered past this agent's life: see
+                        // `PersistedSession.lastConversationID`.
+                        if let conversationID { session.lastConversationID = conversationID }
                     }
                     return AgentMarker(agent: running, model: session.runningModel,
                                        cwd: session.cwd, argv: session.runningArgv,
@@ -2433,7 +2441,8 @@ final class SessionManager {
                     : Dictionary(uniqueKeysWithValues: session.tabHabits.map { ($0.key.rawValue, $0.value.rawValue) }),
                 runningAgent: agent?.agent, runningModel: agent?.model,
                 runningArgv: agent?.argv,
-                runningConversationID: agent == nil ? nil : conversationID)
+                runningConversationID: agent == nil ? nil : conversationID,
+                lastConversationID: session.lastConversationID)
         }
     }
 

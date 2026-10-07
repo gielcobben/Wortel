@@ -313,6 +313,29 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertNil(session.runningArgv)
     }
 
+    /// The conversation a session belongs to is kept apart from whether its
+    /// agent was running at quit. An agent killed from outside (a keeper
+    /// force-quit) loses the running id at the next save; the last id must
+    /// survive that, or a repo with two sessions resumes both into the newest
+    /// transcript.
+    func testLastConversationIDSurvivesTheAgentExiting() throws {
+        let session = try decode(#"""
+            {"id":"\#(UUID())","lastConversationID":"5131fb0c-345b-4a6c-9d49-49084d92b570"}
+            """#)
+        XCTAssertNil(session.runningAgent)
+        XCTAssertNil(session.runningConversationID)
+        XCTAssertEqual(session.lastConversationID, "5131fb0c-345b-4a6c-9d49-49084d92b570")
+    }
+
+    /// A file from before the last id existed carries the running id as both:
+    /// an agent alive at quit was, by definition, the session's last conversation.
+    func testRunningConversationIDSeedsTheLastOne() throws {
+        let session = try decode(#"""
+            {"id":"\#(UUID())","runningAgent":"claude","runningConversationID":"39027937-053d-49f7-ae3b-1eb98a87a811"}
+            """#)
+        XCTAssertEqual(session.lastConversationID, "39027937-053d-49f7-ae3b-1eb98a87a811")
+    }
+
     /// An agent left on its default model records the agent and nothing else —
     /// the common case, since most agents are launched without a `--model` flag.
     func testAgentWithoutAModelIsStillResumable() throws {

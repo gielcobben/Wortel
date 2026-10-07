@@ -214,6 +214,13 @@ final class Session: Identifiable {
     /// it rather than fall back to guessing by modification time.
     @ObservationIgnored var pendingResumeConversationID: String?
 
+    /// The last Claude conversation this session was seen writing to, kept
+    /// across the agent's exit. Learned at save time from the transcript the
+    /// running agent created, and what a resume from a surviving marker uses
+    /// instead of guessing by the newest file in the directory. See
+    /// `PersistedSession.lastConversationID`.
+    @ObservationIgnored var lastConversationID: String?
+
     /// Called whenever a surface view is created for this session (eager or
     /// lazy). The SessionManager wires the view's callbacks here.
     @ObservationIgnored var onSurfaceCreated: ((SurfaceView) -> Void)?

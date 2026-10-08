@@ -397,6 +397,7 @@ targets:
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/GitRepoModel.swift
       - path: Wortel/Git/PullRequest.swift
+      - path: Wortel/Git/GitMessage.swift
       - path: Wortel/Git/GitRepoWatcher.swift
       - path: Wortel/Git/CommitMessageGenerator.swift
       # Not a git source, but the same rule applies: PersistedSession is a pure

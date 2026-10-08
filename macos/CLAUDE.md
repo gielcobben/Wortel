@@ -89,6 +89,11 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   code. Fixtures cannot catch a shape nobody thought of, and that is what every
   bug in that feature has been. Run it before releasing a change to
   `Wortel/Processes/`.
+- **`./scripts/try-git.sh`** builds a throwaway repo with every git situation
+  the panel handles (branches busy in other folders, agent worktrees with and
+  without changes, something running in one, ahead and behind, a branch in
+  the way of a local edit) and opens a session in it, with a checklist to
+  look over before a release touching `Wortel/Git/`. `--clean` removes it.
 - Performance checks live in `bench/`: `./bench/measure.sh` (cold-launch time +
   memory, Release only), `./bench/gen.sh` (throughput fixtures). Most latency /
   render checks are manual side-by-side vs Ghostty.app — see `bench/BENCHMARKS.md`.

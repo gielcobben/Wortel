@@ -69,6 +69,9 @@ final class GitRepoModel {
     /// says (see `PullRequest`). nil when unknown. Read by the header while
     /// it's on screen.
     private(set) var pullRequest: PullRequestState?
+    /// Which branch (and upstream) was last asked about, and when.
+    @ObservationIgnored private var pullRequestLookedUp: (key: String, at: Date)?
+    private static let pullRequestMaxAge: TimeInterval = 300
     /// stderr from the last failed action (commit conflicts, hook rejects…).
     private(set) var lastError: String?
 
@@ -540,14 +543,26 @@ final class GitRepoModel {
 
     func dismissCheckoutError() { checkoutError = nil }
 
+    /// The notice over the commit box, closed by hand.
+    func dismissError() { lastError = nil }
+
     /// Ask again which pull request the checked-out branch has. Only for a
     /// branch that has been pushed (one with an upstream): there's no PR for
     /// one that hasn't, and no reason to make a network call to hear so.
+    ///
+    /// A network call, so at most one per branch every five minutes: the
+    /// header asks on every session switch and every minute, and almost all
+    /// of those are answered by the last one. A push (a new upstream) asks
+    /// again at once.
     func refreshPullRequest() async {
-        guard let branch = status.branch, status.upstream != nil else {
+        guard let branch = status.branch, let upstream = status.upstream else {
             pullRequest = nil
             return
         }
+        let key = branch + "\u{0}" + upstream
+        if let last = pullRequestLookedUp, last.key == key,
+           Date().timeIntervalSince(last.at) < Self.pullRequestMaxAge { return }
+        pullRequestLookedUp = (key, Date())
         // Never beside another branch while the lookup runs.
         if pullRequest?.branch != branch { pullRequest = nil }
         var found = await PullRequest.lookUp(branch: branch, root: root)
@@ -559,9 +574,11 @@ final class GitRepoModel {
     }
 
     /// Open the host's page for a new PR from this branch (see
-    /// `PullRequest.create`). The header's regular look turns the button into
-    /// the PR once you've made it.
+    /// `PullRequest.create`). The header's next look (within the minute, the
+    /// five-minute rest is waived) turns the button into the PR once you've
+    /// made it.
     func createPullRequest() async {
+        pullRequestLookedUp = nil
         if let error = await PullRequest.create(root: root) { lastError = error }
     }
 
@@ -935,7 +952,9 @@ final class GitRepoModel {
             // user was looking at belongs to the old tip.
             selectedCommitID = nil
         } else {
-            lastError = result.stderr.isEmpty ? result.stdout : result.stderr
+            // A hook's output goes to either stream; git's own refusal to stderr.
+            lastError = GitMessage.readable(result.stderr.isEmpty ? result.stdout : result.stderr,
+                                            while: .commit)
         }
         await refresh()
     }
@@ -952,7 +971,8 @@ final class GitRepoModel {
         if result.ok {
             lastError = nil
         } else {
-            lastError = result.stderr.isEmpty ? result.stdout : result.stderr
+            lastError = GitMessage.readable(result.stderr.isEmpty ? result.stdout : result.stderr,
+                                            while: .fetch)
         }
         // Pick up the new behind count and any refs the fetch moved; refresh's
         // keyed recompute redraws the blue dots only if the range actually moved.
@@ -972,7 +992,8 @@ final class GitRepoModel {
         if result.ok {
             lastError = nil
         } else {
-            lastError = result.stderr.isEmpty ? result.stdout : result.stderr
+            lastError = GitMessage.readable(result.stderr.isEmpty ? result.stdout : result.stderr,
+                                            while: .pull)
         }
         // A fast-forward moves HEAD and the work tree under us: everything the
         // panel shows is downstream of this refresh.
@@ -989,7 +1010,8 @@ final class GitRepoModel {
         if result.ok {
             lastError = nil
         } else {
-            lastError = result.stderr.isEmpty ? result.stdout : result.stderr
+            lastError = GitMessage.readable(result.stderr.isEmpty ? result.stdout : result.stderr,
+                                            while: .push)
         }
         await refresh()
     }

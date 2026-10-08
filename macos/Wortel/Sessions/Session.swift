@@ -261,7 +261,14 @@ final class Session: Identifiable {
     /// Whether the sidebar row is two lines tall: a worktree session named for
     /// its task, with its branch under the name. Waiting on you doesn't add one:
     /// the dot says it, and what the session said is on the row's tooltip.
-    var hasSecondLine: Bool { showsBranchLine }
+    var hasSecondLine: Bool { showsBranchLine || folderIsGone }
+
+    /// The folder this session stands in has been deleted (a removed worktree,
+    /// a demo repo, a branch's folder cleaned up by an agent). Said on the row
+    /// rather than acted on: the shell is still there, and so is what it
+    /// printed. Checked by the manager when Wortel comes forward
+    /// (`SessionManager.checkFolders`), not stored.
+    var folderIsGone = false
 
     /// Short, Finder-like label: the working directory's last path component
     /// (~ for home). Falls back to the shell title.

@@ -136,7 +136,13 @@ enum WorktreeCleanup {
     /// any registration under it whose folder is gone, found through the
     /// repositories those folders (and `knownRepos`, the repos open sessions
     /// are in) belong to.
-    static func discover(knownRepos: [String] = [], under base: URL = GitWorktree.root) async -> [String] {
+    ///
+    /// Plus the folders "Bring Here" took a branch from (`broughtHere`):
+    /// Wortel didn't make those, but it left them on a commit with no branch,
+    /// which makes them its trace to offer. Only while they still have no
+    /// branch: one you've checked a branch out in again is yours.
+    static func discover(knownRepos: [String] = [], under base: URL = GitWorktree.root,
+                         broughtHere: [String] = WorktreeCleanup.broughtHere) async -> [String] {
         let fm = FileManager.default
         let root = base.path
         var found: [String] = []
@@ -166,7 +172,40 @@ enum WorktreeCleanup {
                 found.append(worktree.path)
             }
         }
+        for path in broughtHere {
+            guard fm.fileExists(atPath: path), let primary = await primaryCheckout(of: path),
+                  let entry = await GitService.worktrees(root: primary).first(where: { samePath($0.path, path) }),
+                  !entry.isPrimary, entry.branch == nil
+            else {
+                forgetBroughtHere(path)
+                continue
+            }
+            found.append(path)
+        }
         return Array(Set(found)).sorted()
+    }
+
+    // MARK: - Left behind by Bring Here
+
+    private static let broughtHereKey = "WortelBroughtHereFrom"
+
+    /// Folders "Bring Here" left on a commit with no branch, not yet cleaned up.
+    static var broughtHere: [String] {
+        UserDefaults.standard.stringArray(forKey: broughtHereKey) ?? []
+    }
+
+    static func rememberBroughtHere(_ path: String) {
+        var paths = broughtHere
+        guard !paths.contains(where: { samePath($0, path) }) else { return }
+        paths.append(path)
+        UserDefaults.standard.set(paths, forKey: broughtHereKey)
+    }
+
+    static func forgetBroughtHere(_ path: String) {
+        let paths = broughtHere
+        let kept = paths.filter { !samePath($0, path) }
+        guard kept.count != paths.count else { return }
+        UserDefaults.standard.set(kept, forKey: broughtHereKey)
     }
 
     /// Inspect one worktree. `usedBy` is what the app knows is using it (open
@@ -266,6 +305,7 @@ enum WorktreeCleanup {
             }
         }
         removeEmptyRepoFolder(containing: path)
+        forgetBroughtHere(path)
         return nil
     }
 

@@ -58,15 +58,29 @@ final class ProcessMonitor {
 
     func startSampling() {
         guard timer == nil else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: Self.sampleInterval,
+        schedule(every: Self.sampleInterval)
+        refresh()
+    }
+
+    /// While Wortel is behind other apps nobody is reading the list, so it's
+    /// kept a third as fresh; coming back scans at once. (Closing a session
+    /// scans for itself, `scanNow`, so it never acts on an old answer.)
+    func setInBackground(_ background: Bool) {
+        guard timer != nil else { return }
+        schedule(every: background ? Self.sampleInterval * 3 : Self.sampleInterval)
+        if !background { refresh() }
+    }
+
+    private func schedule(every interval: TimeInterval) {
+        timer?.invalidate()
+        let timer = Timer.scheduledTimer(withTimeInterval: interval,
                                          repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
         // A background poll has no deadline; the tolerance lets the OS coalesce
         // it with other timers rather than waking the CPU on its own.
-        timer.tolerance = Self.sampleInterval / 4
+        timer.tolerance = interval / 4
         self.timer = timer
-        refresh()
     }
 
     func stopSampling() {

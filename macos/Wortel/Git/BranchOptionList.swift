@@ -153,11 +153,7 @@ struct BranchOptionList: View {
             // local changes, and naming the files is the whole value of it.
             if let error {
                 Divider()
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
+                GitNotice(message: error)
                     .padding(8)
             }
         }

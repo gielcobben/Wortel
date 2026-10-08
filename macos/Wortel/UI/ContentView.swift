@@ -831,7 +831,18 @@ struct SessionRow: View {
                     // slides to show the rest, as the ChatGPT app's do.
                     MarqueeName(text: session.leafName, active: isHovered)
                 }
-                if session.showsBranchLine, let branch = session.worktreeLabel {
+                if session.folderIsGone, !isEditing {
+                    // Under the name, where a worktree's branch would be: the
+                    // row's folder was deleted. Close it with its ×.
+                    HStack(spacing: 3) {
+                        Image(systemName: "folder.badge.minus")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                        TruncatingLabel(text: "Folder is gone", font: .systemFont(ofSize: 11),
+                                        color: .tertiaryLabelColor)
+                    }
+                    .help("This session's folder no longer exists. Close the session when you're done with it.")
+                } else if session.showsBranchLine, let branch = session.worktreeLabel {
                     // Where the work lives, under what the work is. Only for a
                     // worktree session whose name has moved on from the branch;
                     // the row height follows `hasSecondLine` (SidebarOutlineView).

@@ -357,11 +357,7 @@ private struct RepoView: View {
     private var commitBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let error = repo.lastError, !error.isEmpty {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .lineLimit(3)
-                    .textSelection(.enabled)
+                GitNotice(message: error, dismiss: { repo.dismissError() })
             }
             // Message field with the commit action as a circular button tucked
             // into the bottom-trailing corner, like a chat composer's send. The

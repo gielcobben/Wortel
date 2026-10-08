@@ -461,6 +461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidBecomeActive(_ notification: Notification) {
         manager?.appDidBecomeActive()
+        processes.setInBackground(false)
         // Whatever happened to the work tree while we were away — a branch
         // switched in another window, a build run from another terminal — the
         // file tree's watchers may not have been able to see it. Coming back is
@@ -471,6 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidResignActive(_ notification: Notification) {
         manager?.appDidResignActive()
+        processes.setInBackground(true)
     }
 
     @objc private func windowOcclusionChanged(_ notification: Notification) {

@@ -1427,7 +1427,7 @@ final class SessionManager {
             }
             if let error = await GitService.addWorktree(
                 root: root, at: path, branch: branch, source: source) {
-                return .failure(Failure(message: error))
+                return .failure(Failure(message: GitMessage.readable(error, while: .worktree(branch: branch))))
             }
         }
         let session = newSession(cwd: path, inFolder: folder, via: .worktree)
@@ -2141,10 +2141,23 @@ final class SessionManager {
         unreadDwellTimers.removeValue(forKey: id)?.cancel()
     }
 
+    /// Mark the sessions whose folder no longer exists (`Session.folderIsGone`).
+    /// A `stat` per session, when Wortel comes forward: that's when a folder
+    /// deleted from elsewhere would be news.
+    func checkFolders() {
+        let fm = FileManager.default
+        for session in sessions {
+            guard let path = session.cwd ?? session.originCwd, !path.isEmpty else { continue }
+            let gone = !fm.fileExists(atPath: path)
+            if session.folderIsGone != gone { session.folderIsGone = gone }
+        }
+    }
+
     /// Wortel became frontmost: the user is now looking at the selected
     /// session, so clear its attention and start its caught-up clock.
     func appDidBecomeActive() {
         appIsActive = true
+        checkFolders()
         // Focus moving in or out makes every agent TUI redraw (they ask for
         // focus reports, and they answer them) — one frame of change on screens
         // that are otherwise standing still. Re-baseline before the next sample
@@ -2610,6 +2623,8 @@ final class SessionManager {
             view.onPwdChange = { [weak self, weak session] pwd in
                 guard let self, let session else { return }
                 session.cwd = pwd // observed → sidebar row + navigation subtitle update
+                // The shell moved somewhere: a folder it reports is one it's in.
+                if session.folderIsGone { session.folderIsGone = !FileManager.default.fileExists(atPath: pwd) }
                 self.scheduleSave()
             }
             view.onBell = { [weak self, weak session] in

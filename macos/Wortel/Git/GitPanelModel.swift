@@ -240,26 +240,44 @@ final class GitPanelModel {
             return
         }
         let head = repo.status.head
+        await watchCheckouts(worktrees, shown: root)
         var found: [Checkout] = []
         for worktree in worktrees {
             // Superseded (another session, another repo): stop rather than
             // finish a scan per worktree for an answer nobody will see. ⌃Tab
             // through five sessions used to leave five of these running.
             guard generation == checkoutGeneration else { return }
-            let status: GitStatus
+            let summary: CheckoutScan
             if let known = cache[worktree.path], !known.isStale {
                 // A checkout already open in the panel knows its status, and
                 // its watch says nothing has moved since.
-                status = known.status
+                summary = CheckoutScan(head: known.status.head, changes: known.status.changes.count)
+            } else if let scanned = checkoutScans[worktree.path],
+                      !changedCheckouts.contains(worktree.path) {
+                // Its watch has seen nothing since the last scan: the answer
+                // stands, and no git runs. This is what makes an idle worktree
+                // cost nothing however long the panel stays up.
+                summary = scanned
             } else {
-                status = await GitService.backgroundStatus(root: worktree.path)
+                // Taken off before the scan, so a write landing during it
+                // marks it again rather than being lost.
+                changedCheckouts.remove(worktree.path)
+                summary = await Self.scan(worktree.path)
+                checkoutScans[worktree.path] = summary
             }
             var ahead = 0
-            if let head, let theirs = status.head, theirs != head {
-                ahead = await GitService.commitsAhead(from: head, to: theirs, root: root)
+            if let head, let theirs = summary.head, theirs != head {
+                let key = head + ".." + theirs
+                if let known = aheadCounts[key] {
+                    ahead = known
+                } else {
+                    // Two commits' distance never changes: asked once.
+                    ahead = await GitService.commitsAhead(from: head, to: theirs, root: root)
+                    aheadCounts[key] = ahead
+                }
             }
             found.append(Checkout(path: worktree.path, branch: worktree.branch,
-                                  changes: status.changes.count, ahead: ahead,
+                                  changes: summary.changes, ahead: ahead,
                                   isPrimary: worktree.isPrimary))
         }
         guard generation == checkoutGeneration, repo === self.repo, owner === session else { return }
@@ -275,7 +293,66 @@ final class GitPanelModel {
     /// when the repo or the pin changes, or when they're a while old, not on
     /// every tab pick (each read is a `git status` per worktree).
     @ObservationIgnored private var checkoutsRead: (key: String, at: Date)?
-    private static let checkoutsMaxAge: TimeInterval = 30
+    /// How old the list of worktrees may get. Only the *list*: reading it is
+    /// `git worktree list`, which reads a few files and walks nothing, and
+    /// what each worktree holds is re-read only when its watch says so.
+    private static let checkoutsMaxAge: TimeInterval = 60
+
+    /// What a scan of another worktree found: all the header and the lists
+    /// need, not the file list.
+    struct CheckoutScan: Equatable {
+        let head: String?
+        let changes: Int
+    }
+
+    /// The last scan of each other worktree, kept until its watch fires.
+    @ObservationIgnored private var checkoutScans: [String: CheckoutScan] = [:]
+    /// Worktrees whose watch fired since their last scan.
+    @ObservationIgnored private var changedCheckouts: Set<String> = []
+    /// A watch per other worktree, by path. FSEvents is the kernel's: an idle
+    /// watch costs nothing, and a busy one only marks its worktree changed.
+    @ObservationIgnored private var checkoutWatchers: [String: GitRepoWatcher] = [:]
+    /// `rev-list --count` answers by commit pair, which never go stale.
+    @ObservationIgnored private var aheadCounts: [String: Int] = [:]
+
+    /// Watch every worktree in `worktrees` but the shown one (its own model
+    /// watches it), and stop watching, and forget, the ones gone from the list.
+    private func watchCheckouts(_ worktrees: [GitWorktree], shown: String) async {
+        let wanted = Set(worktrees.map(\.path).filter { $0 != shown && cache[$0] == nil })
+        for path in checkoutWatchers.keys where !wanted.contains(path) {
+            checkoutWatchers[path] = nil
+            checkoutScans[path] = nil
+            changedCheckouts.remove(path)
+        }
+        for worktree in worktrees where wanted.contains(worktree.path) && checkoutWatchers[worktree.path] == nil {
+            let path = worktree.path
+            // A linked worktree's HEAD and index live in the primary's .git, so
+            // a commit there moves nothing under its own folder. The primary's
+            // watch leaves out the other worktrees' state it also holds.
+            var paths = [path]
+            var excluding: [String] = []
+            if worktree.isPrimary {
+                excluding = [(path as NSString).appendingPathComponent(".git/worktrees")]
+            } else if let gitDir = await GitService.externalGitDir(root: path) {
+                paths.append(gitDir)
+            }
+            checkoutWatchers[path] = GitRepoWatcher(paths: paths, excluding: excluding) { [weak self] in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { _ = self?.changedCheckouts.insert(path) }
+                }
+            }
+        }
+        if aheadCounts.count > 500 { aheadCounts.removeAll() }
+    }
+
+    /// The cheap status: the counts, without what the changes list needs.
+    /// `normal` untracked files (a new folder is one change, not a walk of it)
+    /// and no rename detection, one at a time app-wide like every background
+    /// scan.
+    private static func scan(_ path: String) async -> CheckoutScan {
+        let status = await GitService.backgroundStatus(root: path, light: true)
+        return CheckoutScan(head: status.head, changes: status.changes.count)
+    }
 
     /// The terminal's directory too while pinned: which checkout is the
     /// terminal's is then read from it, and two sessions pinned alike can have
@@ -286,11 +363,14 @@ final class GitPanelModel {
         [root, pinned ?? "", pinned == nil ? "" : cwd ?? ""].joined(separator: "\u{0}")
     }
 
-    /// Re-read the checkouts if the last read is stale: the repo header asks
-    /// every little while it's on screen, so its "work is over there" hint
-    /// follows an agent that starts or finishes in another worktree.
+    /// Re-read the checkouts if a worktree's watch fired, or the list is old.
+    /// The repo header asks every little while it's on screen, so what the
+    /// lists and a clean pane say about other folders follows an agent working
+    /// in one. (Only while Wortel is in front, which is the header's to say:
+    /// changes are still marked meanwhile, and caught up on the next ask.)
     func refreshCheckoutsIfStale() async {
-        guard let repo, !checkoutsAreCurrent(for: repo.root) else { return }
+        guard let repo else { return }
+        guard !checkoutsAreCurrent(for: repo.root) || !changedCheckouts.isEmpty else { return }
         await loadCheckouts()
     }
 
@@ -339,9 +419,11 @@ final class GitPanelModel {
         } else {
             let detached = await GitService.run(["switch", "--detach"], in: path)
             if !detached.ok {
-                let message = detached.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-                return "\(name) stays in \(folder): \(message)"
+                return "\(name) stays in \(folder). " + GitMessage.readable(detached.stderr)
             }
+            // Left on a commit with no branch: a trace now, which Clean Up
+            // Worktrees offers to remove (WorktreeCleanup.broughtHere).
+            WorktreeCleanup.rememberBroughtHere(path)
         }
         await repo.checkout(branch)
         // What's in which folder just changed: read it again now, not in 30s.

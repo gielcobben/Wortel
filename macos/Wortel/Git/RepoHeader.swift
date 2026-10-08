@@ -120,18 +120,21 @@ struct RepoHeader: View {
         }
         .task(id: repo.root) {
             while !Task.isCancelled {
-                await panel.refreshCheckoutsIfStale()
-                try? await Task.sleep(for: .seconds(15))
+                // Runs git only for a worktree whose watch fired (or a list a
+                // minute old), and nothing while Wortel isn't in front.
+                if NSApp.isActive { await panel.refreshCheckoutsIfStale() }
+                try? await Task.sleep(for: .seconds(10))
             }
         }
         // The branch's pull request: looked up when the branch or its upstream
-        // changes (a push publishes it), and every two minutes while this is
-        // on screen, so one an agent opens shows up without a click.
+        // changes (a push publishes it), and again while this is on screen and
+        // Wortel in front, at most every five minutes (`refreshPullRequest`),
+        // so one an agent opens shows up without a click.
         .task(id: PullRequestKey(root: repo.root, branch: repo.status.branch,
                                  upstream: repo.status.upstream)) {
             while !Task.isCancelled {
-                await repo.refreshPullRequest()
-                try? await Task.sleep(for: .seconds(120))
+                if NSApp.isActive { await repo.refreshPullRequest() }
+                try? await Task.sleep(for: .seconds(60))
             }
         }
     }

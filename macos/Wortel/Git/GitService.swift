@@ -696,26 +696,10 @@ enum GitService {
         let name = branch.isRemote ? Self.localName(forRemote: branch.name) : branch.name
         let result = await run(["checkout", name], in: root)
         guard !result.ok else { return nil }
-        let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-        // The list routes a branch in another folder to Show, so this is only
-        // reached by a race (an agent checked it out since the list opened).
-        // Still said in words: git's version is a `fatal:` and a full path.
-        if let folder = Self.otherWorktree(inCheckoutError: message) {
-            return "\u{201C}\(name)\u{201D} is checked out in another folder, \(folder). A branch can only be in one folder at a time."
-        }
-        return message.isEmpty ? "Could not switch to \(name)." : message
-    }
-
-    /// The folder named by git's "already used by worktree at '…'" (2.42+) or
-    /// "already checked out at '…'" (older).
-    static func otherWorktree(inCheckoutError message: String) -> String? {
-        for marker in ["already used by worktree at '", "already checked out at '"] {
-            guard let start = message.range(of: marker) else { continue }
-            let rest = message[start.upperBound...]
-            guard let end = rest.firstIndex(of: "'") else { continue }
-            return (String(rest[..<end]) as NSString).lastPathComponent
-        }
-        return nil
+        // In a sentence (GitMessage): the files a switch would overwrite, or
+        // the folder a branch is busy in when an agent took it since the list
+        // opened (the list itself routes those to Show).
+        return GitMessage.readable(result.stderr, while: .switching(to: name))
     }
 
     /// "origin/feature/x" → "feature/x". Only the remote name comes off — the
@@ -836,8 +820,19 @@ enum GitService {
     /// so however many of these pile up (a read per session flicked past, the
     /// header's timer) they cost one core at most, and the scan for the repo
     /// on screen, which isn't queued, never waits behind them.
-    static func backgroundStatus(root: String) async -> GitStatus {
-        await backgroundScans.run { await status(root: root) }
+    /// `light`: the counts only, as the other-worktree scans want them:
+    /// `normal` untracked files (a new folder is one change, not a walk of
+    /// every file in it, which on a fresh `node_modules` is the whole cost)
+    /// and no rename detection.
+    static func backgroundStatus(root: String, light: Bool = false) async -> GitStatus {
+        await backgroundScans.run {
+            guard light else { return await status(root: root) }
+            let result = await run(
+                ["status", "--porcelain=v2", "--branch", "--untracked-files=normal", "--no-renames"],
+                in: root)
+            guard result.ok else { return GitStatus() }
+            return GitStatusParser.parse(result.stdout)
+        }
     }
 
     private static let backgroundScans = SerialGate()

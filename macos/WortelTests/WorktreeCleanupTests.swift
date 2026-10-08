@@ -263,4 +263,28 @@ final class WorktreeCleanupTests: XCTestCase {
             """)
         XCTAssertEqual(parsed.map(\.isLocked), [false, true])
     }
+
+    // MARK: - Left behind by Bring Here
+
+    /// A folder Bring Here took the branch from is offered, and safe: it sits
+    /// on a commit the branch still has. Once a branch is checked out in it
+    /// again, it's somebody's folder and isn't.
+    func testAFolderBringHereLeftIsOfferedOnlyWhileItHasNoBranch() async {
+        let elsewhere = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wortel-brought-\(UUID().uuidString)")
+        defer { GitFixture.destroy(elsewhere) }
+        GitFixture.sh("git worktree add -q -b feature/agent \(GitFixture.shellQuoted(elsewhere.path))", in: repo)
+        GitFixture.commit("agent work", in: elsewhere)
+        GitFixture.sh("git switch -q --detach", in: elsewhere)
+
+        let found = await WorktreeCleanup.discover(under: base, broughtHere: [elsewhere.path])
+        XCTAssertTrue(found.contains { WorktreeCleanup.samePath($0, elsewhere.path) })
+        let report = await WorktreeCleanup.inspect(path: elsewhere.path)
+        XCTAssertEqual(report.verdict, .safe, report.summary)
+
+        GitFixture.sh("git switch -q -c feature/back", in: elsewhere)
+        let after = await WorktreeCleanup.discover(under: base, broughtHere: [elsewhere.path])
+        XCTAssertFalse(after.contains { WorktreeCleanup.samePath($0, elsewhere.path) },
+                       "a folder with a branch again is somebody's")
+    }
 }

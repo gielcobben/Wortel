@@ -52,6 +52,9 @@ struct RepoHeader: View {
                 worktreeChip
             }
             branchChip
+            if let state = shownPullRequest {
+                pullRequestButton(state)
+            }
 
             // Work in another folder isn't said here: beside the branch chip,
             // "web-next: 16 changes" read as being about this branch. It's in
@@ -121,6 +124,16 @@ struct RepoHeader: View {
                 try? await Task.sleep(for: .seconds(15))
             }
         }
+        // The branch's pull request: looked up when the branch or its upstream
+        // changes (a push publishes it), and every two minutes while this is
+        // on screen, so one an agent opens shows up without a click.
+        .task(id: PullRequestKey(root: repo.root, branch: repo.status.branch,
+                                 upstream: repo.status.upstream)) {
+            while !Task.isCancelled {
+                await repo.refreshPullRequest()
+                try? await Task.sleep(for: .seconds(120))
+            }
+        }
     }
 
     /// The branch, and the switcher behind it: branches only. Locked while
@@ -182,6 +195,58 @@ struct RepoHeader: View {
         }
     }
 
+    /// The branch's pull request as the header offers it: only for the branch
+    /// on screen, never one looked up for the branch before.
+    private var shownPullRequest: PullRequestState? {
+        guard let state = repo.pullRequest, state.branch == repo.status.branch else { return nil }
+        return state
+    }
+
+    /// One label for the button and the "…" item, so the two never say
+    /// different things: "PR #1234", or "Create PR" when `gh` found none.
+    private static func title(_ state: PullRequestState) -> String {
+        switch state {
+        case .open(let pr): return "PR #\(pr.number)"
+        case .none: return "Create PR"
+        }
+    }
+
+    private func perform(_ state: PullRequestState) {
+        switch state {
+        case .open(let pr): NSWorkspace.shared.open(pr.url)
+        case .none: Task { await repo.createPullRequest() }
+        }
+    }
+
+    /// The pull request, in words. (An icon alone was the pull-request glyph,
+    /// which reads as a merge to anyone who doesn't already know it.) Never
+    /// shortened: the branch beside it gives way first.
+    private func pullRequestButton(_ state: PullRequestState) -> some View {
+        Button {
+            perform(state)
+        } label: {
+            Text(verbatim: Self.title(state))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .frame(height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HeaderButtonStyle())
+        .fixedSize()
+        .help(Self.help(state))
+    }
+
+    private static func help(_ state: PullRequestState) -> String {
+        switch state {
+        case .open(let pr):
+            return pr.isDraft ? "Open draft pull request #\(pr.number) in your browser"
+                              : "Open pull request #\(pr.number) in your browser"
+        case .none:
+            return "Start a pull request for this branch in your browser"
+        }
+    }
+
     /// Which worktree the panes show, and the menu to show another or go back
     /// to yours. Looking only: picking one runs no git command and changes no
     /// files.
@@ -225,14 +290,23 @@ struct RepoHeader: View {
         guard let view = moreAnchor.view else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        func item(_ title: String, enabled: Bool, _ action: @escaping () async -> Void) {
+        func item(_ title: String, glyph: String, enabled: Bool, _ action: @escaping () async -> Void) {
             let item = ClosureMenuItem(title: title) { Task { await action() } }
             item.isEnabled = enabled
+            // Glyphs as every other menu here has them.
+            item.setGlyph(glyph)
             menu.addItem(item)
         }
-        item(fetchTitle, enabled: !busy && repo.canFetch) { await repo.fetch() }
-        item(pullTitle, enabled: !busy && repo.canPull) { await repo.pull() }
-        item(pushTitle, enabled: !busy && repo.canPush) { await repo.push() }
+        // The header's PR button, said the same way, and only when it's shown.
+        if let state = shownPullRequest {
+            item(Self.title(state), glyph: "arrow.triangle.pull", enabled: true) { perform(state) }
+            menu.addItem(.separator())
+        }
+        item(fetchTitle, glyph: "arrow.triangle.2.circlepath", enabled: !busy && repo.canFetch) {
+            await repo.fetch()
+        }
+        item(pullTitle, glyph: "arrow.down", enabled: !busy && repo.canPull) { await repo.pull() }
+        item(pushTitle, glyph: "arrow.up", enabled: !busy && repo.canPush) { await repo.push() }
         moreOpen = true
         // A turn later, so the button is drawn lit before the menu's tracking
         // takes the run loop.
@@ -383,6 +457,12 @@ private struct WorktreeList: View {
                       if inside { hovered = checkout.path } else if hovered == checkout.path { hovered = nil }
                   })
     }
+}
+
+private struct PullRequestKey: Equatable {
+    let root: String
+    let branch: String?
+    let upstream: String?
 }
 
 private struct CatchUpKey: Equatable {

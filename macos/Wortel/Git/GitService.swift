@@ -85,7 +85,8 @@ enum GitService {
     /// none of the app's other descriptors, and default signal handling.
     /// Returns nil when it couldn't start.
     private static func spawn(
-        _ args: [String], in directory: String, stdin: Int32?, stdout: Int32, stderr: Int32?
+        _ argv: [String], environment: [String: String], in directory: String,
+        stdin: Int32?, stdout: Int32, stderr: Int32?
     ) -> pid_t? {
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
@@ -117,14 +118,14 @@ enum GitService {
         sigfillset(&all)
         posix_spawnattr_setsigdefault(&attributes, &all)
 
-        let argv = (["env"] + gitArguments(args)).map { strdup($0) } + [nil]
-        let envp = gitEnvironment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        let cArgv = (["env"] + argv).map { strdup($0) } + [nil]
+        let envp = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer {
-            argv.forEach { free($0) }
+            cArgv.forEach { free($0) }
             envp.forEach { free($0) }
         }
         var pid: pid_t = 0
-        guard posix_spawn(&pid, "/usr/bin/env", &actions, &attributes, argv, envp) == 0 else {
+        guard posix_spawn(&pid, "/usr/bin/env", &actions, &attributes, cArgv, envp) == 0 else {
             return nil
         }
         live.withLock { _ = $0.insert(pid) }
@@ -176,6 +177,20 @@ enum GitService {
 
     static func run(_ args: [String], in directory: String, input: Data? = nil,
                     timeout: TimeInterval? = nil) async -> CommandResult {
+        await execute(gitArguments(args), environment: gitEnvironment, in: directory,
+                      input: input, timeout: timeout)
+    }
+
+    /// Another command-line tool, run the way git is: its own process group,
+    /// stopped at `timeout` and on quit, never waiting on a prompt. `argv[0]`
+    /// is a full path, or found on `environment`'s PATH.
+    static func runTool(_ argv: [String], environment: [String: String], in directory: String,
+                        timeout: TimeInterval) async -> CommandResult {
+        await execute(argv, environment: environment, in: directory, input: nil, timeout: timeout)
+    }
+
+    private static func execute(_ argv: [String], environment: [String: String], in directory: String,
+                                input: Data?, timeout: TimeInterval?) async -> CommandResult {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 guard let out = makePipe(), let err = makePipe() else {
@@ -184,13 +199,13 @@ enum GitService {
                     return
                 }
                 let inPipe = input == nil ? nil : makePipe()
-                guard let pid = spawn(args, in: directory,
+                guard let pid = spawn(argv, environment: environment, in: directory,
                                       stdin: inPipe?.read.fileDescriptor,
                                       stdout: out.write.fileDescriptor,
                                       stderr: err.write.fileDescriptor)
                 else {
                     continuation.resume(returning: CommandResult(
-                        status: -1, stdout: "", stderr: "couldn't start git"))
+                        status: -1, stdout: "", stderr: "couldn't start \(argv.first ?? "it")"))
                     return
                 }
                 // The child has its copies. Ours must go, or the readers below
@@ -908,7 +923,8 @@ enum GitService {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 guard let out = makePipe(),
-                      let pid = spawn(args, in: directory, stdin: nil,
+                      let pid = spawn(gitArguments(args), environment: gitEnvironment,
+                                      in: directory, stdin: nil,
                                       stdout: out.write.fileDescriptor, stderr: nil)
                 else {
                     continuation.resume(returning: Data())

@@ -65,6 +65,10 @@ final class GitRepoModel {
     private(set) var isPulling = false
     private(set) var isFetching = false
     private(set) var isGeneratingMessage = false
+    /// The checked-out branch's pull request, or that it has none, as `gh`
+    /// says (see `PullRequest`). nil when unknown. Read by the header while
+    /// it's on screen.
+    private(set) var pullRequest: PullRequestState?
     /// stderr from the last failed action (commit conflicts, hook rejects…).
     private(set) var lastError: String?
 
@@ -535,6 +539,31 @@ final class GitRepoModel {
     }
 
     func dismissCheckoutError() { checkoutError = nil }
+
+    /// Ask again which pull request the checked-out branch has. Only for a
+    /// branch that has been pushed (one with an upstream): there's no PR for
+    /// one that hasn't, and no reason to make a network call to hear so.
+    func refreshPullRequest() async {
+        guard let branch = status.branch, status.upstream != nil else {
+            pullRequest = nil
+            return
+        }
+        // Never beside another branch while the lookup runs.
+        if pullRequest?.branch != branch { pullRequest = nil }
+        var found = await PullRequest.lookUp(branch: branch, root: root)
+        // Trunk is what a PR goes *into*: none there is not a gap to fill.
+        if case .none = found, await GitService.defaultBranch(root: root) == branch { found = nil }
+        // The branch may have changed while `gh` was out.
+        guard status.branch == branch else { return }
+        if found != pullRequest { pullRequest = found }
+    }
+
+    /// Open the host's page for a new PR from this branch (see
+    /// `PullRequest.create`). The header's regular look turns the button into
+    /// the PR once you've made it.
+    func createPullRequest() async {
+        if let error = await PullRequest.create(root: root) { lastError = error }
+    }
 
     /// Append the next page as the reader nears the bottom of the list.
     ///

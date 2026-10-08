@@ -210,4 +210,51 @@ final class GitWorktreeTests: XCTestCase {
         XCTAssertEqual(once, "GFPC/wakker-menubar-demo")
         XCTAssertNil(GitWorktree.repairedSessionName(once!, branch: "worktree/wakker-slide"))
     }
+
+    // MARK: - Typed branch names
+
+    /// The case that failed: a space, which git refuses outright.
+    func testASpaceBecomesADash() {
+        XCTAssertEqual(GitWorktree.branchName(from: "worktree/Jump to"), "worktree/Jump-to")
+        XCTAssertEqual(GitWorktree.branchName(from: "  fix   the  login "), "fix-the-login")
+    }
+
+    /// Every character `git check-ref-format` forbids, and the places it
+    /// forbids others.
+    func testWhatGitForbidsIsMadeValid() {
+        XCTAssertEqual(GitWorktree.branchName(from: "a~b^c:d?e*f[g\\h"), "a-b-c-d-e-f-g-h")
+        XCTAssertEqual(GitWorktree.branchName(from: "a..b"), "a-b")
+        XCTAssertEqual(GitWorktree.branchName(from: "a@{b"), "a-b")
+        XCTAssertEqual(GitWorktree.branchName(from: "feature//x/"), "feature/x")
+        XCTAssertEqual(GitWorktree.branchName(from: "worktree/.hidden"), "worktree/hidden")
+        XCTAssertEqual(GitWorktree.branchName(from: "thing.lock"), "thing")
+        XCTAssertEqual(GitWorktree.branchName(from: "-leading"), "leading")
+        XCTAssertEqual(GitWorktree.branchName(from: "trailing."), "trailing")
+        XCTAssertEqual(GitWorktree.branchName(from: "@"), "")
+        XCTAssertEqual(GitWorktree.branchName(from: "   "), "")
+    }
+
+    /// A good name is left exactly as typed, case and all.
+    func testAValidNameIsUntouched() {
+        for name in ["main", "worktree/calm-river-1a2f", "Giel/Mode_Toolbar.v2", "fix/1482"] {
+            XCTAssertEqual(GitWorktree.branchName(from: name), name)
+        }
+    }
+
+    /// Git is the oracle: whatever comes out, it accepts.
+    func testGitAcceptsEveryResult() {
+        let typed = ["worktree/Jump to", "a~b^c", "x..y", "a@{b", ".dot/.dot", "end.lock",
+                     "-x", "y.", "tab\there", "emoji 🌱 name", "a//b", "über branch"]
+        for input in typed {
+            let name = GitWorktree.branchName(from: input)
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["check-ref-format", "--branch", name]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0, "\(input) → \(name)")
+        }
+    }
 }

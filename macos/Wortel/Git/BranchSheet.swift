@@ -73,9 +73,11 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     private static let contentWidth: CGFloat = 380
     private static let margin: CGFloat = 20
 
-    /// The branch to open, nil when nothing has been typed.
+    /// The branch to open, nil when nothing usable has been typed. As git will
+    /// get it (`GitWorktree.branchName`), so the line under the field names
+    /// the branch that will exist: "Creates “worktree/Jump-to” from “main”."
     var branch: String? {
-        let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = GitWorktree.branchName(from: nameField.stringValue)
         return name.isEmpty ? nil : name
     }
 

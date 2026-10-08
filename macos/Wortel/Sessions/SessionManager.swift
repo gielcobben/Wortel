@@ -1336,7 +1336,9 @@ final class SessionManager {
         onBranch branch: String, base: String? = nil,
         inFolder folder: String? = nil, from cwd: String? = nil
     ) async -> Result<Session, Failure> {
-        let branch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Made into a name git accepts ("Jump to" → "Jump-to"), here where the
+        // sheet, the menu and `wortel new --branch` all arrive.
+        let branch = GitWorktree.branchName(from: branch)
         guard !branch.isEmpty else { return .failure(Failure(message: "No branch given.")) }
         guard let cwd = cwd ?? selected?.cwd else {
             return .failure(Failure(message: "No session to take a repository from."))

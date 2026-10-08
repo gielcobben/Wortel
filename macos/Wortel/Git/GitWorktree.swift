@@ -45,6 +45,34 @@ extension GitWorktree {
     /// name and the half that reads it back must never drift apart.
     static let branchNamespace = "worktree/"
 
+    /// A typed name made into one git accepts: what you meant, not a refusal.
+    /// "worktree/Jump to" becomes "worktree/Jump-to".
+    ///
+    /// GitHub Desktop's rule (`sanitizedRefName`), which VS Code's
+    /// `git.branchWhitespaceChar` default agrees with: every run of what
+    /// `git check-ref-format` forbids (spaces and control characters,
+    /// `~ ^ : ? * [ \`, `@{`, `..`) becomes one "-". Then the rules about
+    /// where things may appear: no empty or dot-led path component, none ending
+    /// in `.lock`, no leading "-", no trailing "." or "/". Case is kept: it's
+    /// your name. Empty when nothing usable is left; git's own check at
+    /// creation is still the last word.
+    static func branchName(from typed: String) -> String {
+        var name = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        name = name.replacingOccurrences(
+            of: #"[\x00-\x20\x7F~^:?*\[\\]+|@\{|\.\.+"#, with: "-", options: .regularExpression)
+        let components = name.split(separator: "/", omittingEmptySubsequences: true).map { part in
+            var part = String(part)
+            while part.hasPrefix(".") { part.removeFirst() }
+            while part.hasSuffix(".lock") { part.removeLast(".lock".count) }
+            return part
+        }
+        name = components.filter { !$0.isEmpty }.joined(separator: "/")
+        name = name.replacingOccurrences(of: "-{2,}", with: "-", options: .regularExpression)
+        while name.hasPrefix("-") || name.hasPrefix("+") { name.removeFirst() }
+        while name.hasSuffix(".") || name.hasSuffix("/") { name.removeLast() }
+        return name == "@" ? "" : name
+    }
+
     /// What a worktree session is called in the sidebar before an agent says
     /// what it is for: the branch, minus Wortel's own namespace.
     ///

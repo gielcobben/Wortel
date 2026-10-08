@@ -1,4 +1,19 @@
 import Foundation
+import OSLog
+
+/// What both ends of the keeper say about its life: started, connected,
+/// replaced, ended and why, and what the app did about it.
+///
+/// Default level and up only, so it is kept on disk and can be read days
+/// later. The keeper was the one process in the 2026-10-08 incident that had
+/// left no trace at all; the investigation had to infer its death from a
+/// security agent that happened to probe it every quarter of an hour. To read
+/// it:
+///
+///     log show --last 1d --predicate 'subsystem == "com.gielcobben.Wortel" && category == "keeper"'
+enum KeeperLog {
+    static let log = Logger(subsystem: "com.gielcobben.Wortel", category: "keeper")
+}
 
 /// The wire between Wortel and the process that holds its ptys.
 ///

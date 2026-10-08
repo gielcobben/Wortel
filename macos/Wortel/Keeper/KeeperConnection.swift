@@ -46,15 +46,61 @@ final class KeeperConnection {
     @discardableResult
     func connect() -> Bool {
         guard connectStarting() else { return false }
-        guard let (response, _) = try? client.send(.ping), response.ok,
-              response.version == Keeper.version
-        else {
+        let ping = (try? client.send(.ping))?.response
+        guard !Self.shouldReplace(afterPing: ping) else {
             NSLog("wortel: keeper speaks a different protocol; replacing it")
+            KeeperLog.log.notice("""
+                keeper \(self.keeperPID ?? -1, privacy: .public) speaks protocol \
+                \(ping?.version ?? "?", privacy: .public), not \(Keeper.version, privacy: .public); replacing it
+                """)
             replaceMismatchedKeeper()
             return connectStarting()
                 && (try? client.send(.ping))?.response.version == Keeper.version
         }
+        guard ping?.ok == true else {
+            // Something holds the socket and would not say who it is: busy,
+            // wedged or stopped. Every session it holds may still be alive,
+            // so this launch goes without it rather than killing them. The
+            // next launch asks again.
+            NSLog("wortel: keeper did not answer; sessions will not survive a quit this time")
+            KeeperLog.log.error("""
+                keeper \(self.keeperPID ?? -1, privacy: .public) did not answer a ping; running without it
+                """)
+            client.disconnect()
+            return false
+        }
+        KeeperLog.log.notice("connected to keeper \(self.keeperPID ?? -1, privacy: .public)")
         return true
+    }
+
+    /// Whether a keeper should be killed and replaced, judged by its answer to
+    /// a ping.
+    ///
+    /// Only a keeper that answered and named another protocol. Killing one
+    /// costs every shell it holds, so "it didn't answer" is not reason enough:
+    /// a reply that timed out or came back garbled says nothing about its
+    /// sessions. Until 2026-10-08 any failed ping counted as a mismatch.
+    static func shouldReplace(afterPing response: KeeperResponse?) -> Bool {
+        guard let response, response.ok else { return false }
+        return response.version != Keeper.version
+    }
+
+    /// The keeper process, as the kernel names the other end of the socket.
+    var keeperPID: pid_t? { client.peerProcessID() }
+
+    private var exitWatch: ProcessExitWatch?
+
+    /// Call `handler` on the main queue, once, when the keeper process ends.
+    ///
+    /// It is not supposed to end while the app runs, so this is the moment
+    /// every shell it held may have gone with it. On 2026-10-08 that happened,
+    /// killed from outside, and the app noticed nothing for seven minutes: the
+    /// terminals just stopped. The process rather than the socket, because
+    /// `send` reads that socket on demand and a second reader would take a
+    /// reply meant for it.
+    func watchForExit(_ handler: @escaping (pid_t) -> Void) {
+        guard exitWatch == nil, let pid = keeperPID, pid > 1 else { return }
+        exitWatch = ProcessExitWatch(pid: pid) { handler(pid) }
     }
 
     /// Connect, starting the keeper if it isn't running.

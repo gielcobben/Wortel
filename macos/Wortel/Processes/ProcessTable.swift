@@ -21,6 +21,11 @@ struct ProcessEntry: Equatable {
     /// `workerd`) but fine for the name matching `AgentLiveness` does.
     let name: String
     let startedAt: Date
+    /// Ending: a zombie, or a process the kernel is still tearing down. Still
+    /// in the table, but it will never run anything again. A shell killed
+    /// with output nobody drained sits like this for as long as its pty is
+    /// held open, which is exactly the shell a lost keeper leaves behind.
+    var isExiting = false
 }
 
 /// Everything this app asks the kernel about other processes, in one place.
@@ -68,7 +73,8 @@ enum ProcessTable {
                 uid: proc.kp_eproc.e_ucred.cr_uid,
                 name: name,
                 startedAt: Date(timeIntervalSince1970:
-                    Double(started.tv_sec) + Double(started.tv_usec) / 1_000_000))
+                    Double(started.tv_sec) + Double(started.tv_usec) / 1_000_000),
+                isExiting: Int32(proc.kp_proc.p_stat) == SZOMB || proc.kp_proc.p_flag & P_WEXIT != 0)
         }
     }
 
@@ -318,5 +324,37 @@ enum ProcessTable {
             current = parent
         }
         return false
+    }
+}
+
+/// Calls a handler once, on `queue`, when a process exits.
+///
+/// Any process this user can see, not only a child: `EVFILT_PROC` through a
+/// dispatch source, which needs no `waitpid` and so works for the keeper
+/// whether this launch started it or found it already running.
+final class ProcessExitWatch {
+    private var source: DispatchSourceProcess?
+    private var fired = false
+
+    init(pid: pid_t, queue: DispatchQueue = .main, handler: @escaping () -> Void) {
+        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
+        let fire: () -> Void = { [weak self] in
+            guard let self, !self.fired else { return }
+            self.fired = true
+            self.cancel()
+            handler()
+        }
+        source.setEventHandler(handler: fire)
+        self.source = source
+        source.resume()
+        // Gone before the source was armed: then it never fires.
+        if kill(pid, 0) != 0, errno == ESRCH { queue.async(execute: fire) }
+    }
+
+    deinit { cancel() }
+
+    func cancel() {
+        source?.cancel()
+        source = nil
     }
 }

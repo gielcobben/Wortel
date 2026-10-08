@@ -320,6 +320,10 @@ final class SessionManager {
             as? [String: String] ?? [:]
         pinnedIDs = (UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? [])
             .compactMap(UUID.init(uuidString:))
+        // Delivered on the main queue by the keeper's process source.
+        GhosttyRuntime.onKeeperLost = { [weak self] pid in
+            MainActor.assumeIsolated { self?.keeperDidExit(pid: pid) }
+        }
     }
 
     // MARK: - Sidebar folders (derived from session names)
@@ -937,6 +941,17 @@ final class SessionManager {
                 continue
             }
             AgentStatusLog.log.debug("dropping stale marker for \(agent, privacy: .public)")
+            // The shell went too, not only the agent. Nobody ends a session
+            // like that on purpose (an agent you quit hands its shell back to
+            // a prompt), so the resume outlives the marker and the next
+            // launch brings the agent back. Dropping it with the marker is
+            // how a keeper killed under a running app on 2026-10-08 cost
+            // every agent its resume.
+            if session.pendingResumeAgent == nil, let shell = session.runningShellPID,
+               AgentLiveness.shellIsGone(shellPID: shell),
+               let plan = resumePlan(forLostShellOf: session) {
+                hold(plan, for: session)
+            }
             AgentResumeStore.remove(sessionID: session.id)
             goneSweeps[session.id] = nil
             removedAny = true
@@ -949,6 +964,156 @@ final class SessionManager {
         // Mirrors the markers back onto the sessions, which also stops the
         // sampler and releases the assertion when the last one goes.
         if removedAny { refreshAgentActivity() }
+    }
+
+    // MARK: - A keeper lost while the app runs
+
+    /// What happened when the keeper died under a running app, for the one
+    /// message that says so. See `keeperDidExit`.
+    struct KeeperLoss {
+        let at: Date
+        /// Terminals whose shell had gone and got a new one.
+        let restarted: Int
+        /// Of those, the ones whose agent was typed back in.
+        let resumed: Int
+        /// Terminals whose shell outlived the keeper. They keep working, but
+        /// nothing holds them past this app's quit.
+        let survived: Int
+        /// Whether a new keeper took over. If not, the new shells are the
+        /// app's own and end when it quits.
+        let keeperBack: Bool
+    }
+
+    /// Called once per keeper lost while the app runs, after the terminals
+    /// have been dealt with.
+    @ObservationIgnored var onKeeperLost: ((KeeperLoss) -> Void)?
+
+    /// The keeper process ended while the app is running.
+    ///
+    /// Never meant to happen, and on 2026-10-08 it did: something outside the
+    /// app (a Force Quit in the Dock, on an app started from one of these
+    /// terminals) killed the keeper and every shell and agent with it. The app
+    /// noticed nothing, the terminals just stopped, and seven minutes later
+    /// the liveness sweep had thrown away every agent's resume. So: say so,
+    /// start a new keeper, and give every terminal whose shell is gone a new
+    /// one, with its agent resumed into the same conversation, which is what
+    /// a relaunch would have done.
+    ///
+    /// A beat late on purpose. The keeper's shells go at about the same time
+    /// it does when they go at all, and the table is read once, after.
+    func keeperDidExit(pid: pid_t) {
+        let at = Date()
+        NSLog("wortel: keeper %d exited while Wortel was running", pid)
+        KeeperLog.log.error("keeper \(pid, privacy: .public) exited while Wortel was running")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.recoverFromLostKeeper(at: at)
+        }
+    }
+
+    private func recoverFromLostKeeper(at: Date) {
+        let table = ProcessTable.snapshot()
+        // An unreadable table can't say which shells are gone, and restarting
+        // one that isn't starts a second agent beside the first. A terminal
+        // left stopped is the lesser harm, and the quit still saves its agent.
+        guard !table.isEmpty else {
+            KeeperLog.log.error("process table unreadable; not restarting any terminal")
+            return
+        }
+        // A shell still being torn down counts as gone: it will never run
+        // anything again, and it can't finish while this app holds its pty.
+        let alive = Set(table.filter { !$0.isExiting }.map(\.pid))
+        // Before any shell is restarted, so the new ones land in it.
+        let keeperBack = GhosttyRuntime.reconnectKeeper() != nil
+
+        var restarted = 0, resumed = 0, survived = 0
+        // Whether a terminal the old keeper held still has its shell: the
+        // pid the keeper gave is `login`, which outlives the keeper whenever
+        // the shell under it does.
+        func isGone(_ view: SurfaceView) -> Bool? {
+            guard view.keeperSession != nil, let pid = view.shellPID else { return nil }
+            if alive.contains(pid) {
+                survived += 1
+                return false
+            }
+            return true
+        }
+        for session in sessions {
+            let directory = session.cwd ?? session.originCwd
+            if let view = session.surfaceView {
+                if isGone(view) == true {
+                    let plan = resumePlan(forLostShellOf: session)
+                    // The new shell's agent writes a marker of its own; this
+                    // one names a shell that no longer exists.
+                    AgentResumeStore.remove(sessionID: session.id)
+                    view.restartShell(workingDirectory: directory, sessionID: session.id,
+                                      initialInput: plan?.input)
+                    restarted += 1
+                    if plan != nil { resumed += 1 }
+                }
+            } else if session.pendingResumeInput == nil, let plan = resumePlan(forLostShellOf: session) {
+                // Never shown this launch, so its shell sat in the old keeper
+                // with nobody reading it. It gets the new keeper's shell when
+                // it is first shown; this makes that shell resume the agent.
+                AgentResumeStore.remove(sessionID: session.id)
+                hold(plan, for: session)
+                resumed += 1
+            }
+            for id in session.terminalTabIDs {
+                guard let view = session.sideSurfaces[id], isGone(view) == true else { continue }
+                view.restartShell(workingDirectory: directory, sessionID: id, initialInput: nil)
+                restarted += 1
+            }
+        }
+        refreshAgentActivity()
+        scheduleSave()
+        KeeperLog.log.notice("""
+            after the keeper was lost: \(restarted, privacy: .public) terminals restarted, \
+            \(resumed, privacy: .public) agents resumed, \(survived, privacy: .public) survived; \
+            new keeper: \(keeperBack, privacy: .public)
+            """)
+        guard restarted + survived + resumed > 0 else { return }
+        onKeeperLost?(KeeperLoss(at: at, restarted: restarted, resumed: resumed,
+                                 survived: survived, keeperBack: keeperBack))
+    }
+
+    /// The agent `session` was running when its shell was lost, and the
+    /// command that brings it back into the same conversation. nil when no
+    /// agent was running, or it is one with no way back.
+    ///
+    /// The same evidence a quit records, in the same order (see
+    /// `persistedSessions`): what the agent's own files or command line say,
+    /// then the conversation this session was last seen in. Never the newest
+    /// file in the folder: that can be another session's.
+    private func resumePlan(forLostShellOf session: Session)
+        -> (input: String, agent: AgentMarker, conversationID: String?)? {
+        guard let agent = session.runningAgent else { return nil }
+        let marker = AgentMarker(agent: agent, model: session.runningModel, cwd: session.cwd,
+                                 argv: session.runningArgv, shellPID: nil,
+                                 startedAt: session.runningStartedAt)
+        var conversationID: String?
+        if AgentConversation.exact.contains(agent), let cwd = session.cwd {
+            conversationID = AgentConversation.observe(
+                agent: agent, livePID: nil, cwd: cwd,
+                argv: session.runningArgv, startedAt: session.runningStartedAt)
+            if conversationID == nil, let last = session.lastConversationID,
+               AgentConversation.exists(agent: agent, id: last, cwd: cwd) {
+                conversationID = last
+            }
+        }
+        guard let input = AgentResumeStore.resumeInput(for: marker, knownConversationID: conversationID)
+        else { return nil }
+        if let conversationID { session.lastConversationID = conversationID }
+        return (input, marker, conversationID)
+    }
+
+    /// Keep `plan` as the resume this session owes: typed into its shell when
+    /// one is first made for it, and saved at quit until then, exactly like a
+    /// resume restored at launch.
+    private func hold(_ plan: (input: String, agent: AgentMarker, conversationID: String?),
+                      for session: Session) {
+        session.pendingResumeInput = plan.input
+        session.pendingResumeAgent = plan.agent
+        session.pendingResumeConversationID = plan.conversationID
     }
 
     /// Whether any session actually needs its screen read: the same question

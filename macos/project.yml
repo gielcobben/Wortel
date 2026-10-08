@@ -472,6 +472,7 @@ targets:
       - path: Wortel/Keeper/KeeperProtocol.swift
       - path: Wortel/Keeper/KeeperServer.swift
       - path: Wortel/Keeper/KeeperClient.swift
+      - path: Wortel/Keeper/KeeperConnection.swift
       - path: Wortel/Keeper/ReplayBuffer.swift
       - path: Wortel/Keeper/FileDescriptorChannel.swift
       - path: Wortel/Ghostty/PtyHost.swift

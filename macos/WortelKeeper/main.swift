@@ -30,6 +30,7 @@ server.onIdle = {
     idleWork?.cancel()
     let work = DispatchWorkItem {
         guard server.sessionCount == 0 else { return }
+        KeeperLog.log.notice("keeper \(getpid(), privacy: .public) ending: nothing left to hold")
         server.stop()
         exit(0)
     }
@@ -41,8 +42,14 @@ do {
     try server.start()
 } catch {
     FileHandle.standardError.write(Data("wortel-keeper: \(error)\n".utf8))
+    KeeperLog.log.error("keeper \(getpid(), privacy: .public) could not start: \(String(describing: error), privacy: .public)")
     exit(1)
 }
+// Its whole life is outliving things, so its start is worth a line: the next
+// investigation can tell which keeper held the shells, and since when. An end
+// by SIGKILL (a Force Quit, the Dock stopping it) can't be logged from here;
+// the app logs that one when it sees the process go.
+KeeperLog.log.notice("keeper \(getpid(), privacy: .public) started, protocol \(Keeper.version, privacy: .public)")
 
 // SIGHUP would otherwise arrive when the terminal that launched us goes away —
 // which, for a process whose entire job is outliving things, is exactly wrong.
@@ -61,6 +68,10 @@ for terminating in [SIGTERM, SIGINT] {
     signal(terminating, SIG_IGN)
     let source = DispatchSource.makeSignalSource(signal: terminating, queue: .main)
     source.setEventHandler {
+        KeeperLog.log.notice("""
+            keeper \(getpid(), privacy: .public) ending on signal \(terminating, privacy: .public), \
+            closing \(server.sessionCount, privacy: .public) sessions
+            """)
         server.stop()
         exit(0)
     }

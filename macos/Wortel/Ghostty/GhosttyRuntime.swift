@@ -483,10 +483,18 @@ final class GhosttyRuntime {
         return ""
     }()
 
-    /// The keeper, connected once per launch. nil when there is no keeper
-    /// binary or it could not be started — the app still runs, it just forks its
-    /// own shells and they die with it, exactly as before.
-    static let keeper: KeeperConnection? = {
+    /// The keeper, connected on first use. nil when there is no keeper binary
+    /// or it could not be started — the app still runs, it just forks its own
+    /// shells and they die with it, exactly as before.
+    ///
+    /// Replaced only by `reconnectKeeper`, after the one before it died.
+    private(set) static var keeper: KeeperConnection? = connectKeeper()
+
+    /// Told when the keeper process ends while the app is running, with its
+    /// pid, on the main queue. See `SessionManager.keeperDidExit`.
+    static var onKeeperLost: ((pid_t) -> Void)?
+
+    private static func connectKeeper() -> KeeperConnection? {
         guard !PtyHost.isDisabled else {
             NSLog("wortel: keeper disabled; sessions will not survive a quit")
             return nil
@@ -496,8 +504,21 @@ final class GhosttyRuntime {
             NSLog("wortel: no keeper; sessions will not survive a quit")
             return nil
         }
+        connection.watchForExit { pid in onKeeperLost?(pid) }
         return connection
-    }()
+    }
+
+    /// Connect to a new keeper, starting one, after the last one died.
+    ///
+    /// Shells created after this land in the new keeper. Ones the old keeper
+    /// held and that are still alive (they can be: the app holds a descriptor
+    /// for every terminal it shows) stay with the app and end when it quits.
+    @discardableResult
+    static func reconnectKeeper() -> KeeperConnection? {
+        dispatchPrecondition(condition: .onQueue(.main))
+        keeper = connectKeeper()
+        return keeper
+    }
 
     /// The process table, read at most once a second.
     ///

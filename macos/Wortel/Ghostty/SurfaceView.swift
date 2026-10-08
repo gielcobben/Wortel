@@ -226,6 +226,53 @@ final class SurfaceView: NSView {
         }
     }
 
+    /// Start a new shell in this view, in place of one that went with its
+    /// keeper.
+    ///
+    /// The view stays where it is (in its host, its tab, first responder or
+    /// not) and only what is behind it is replaced, which is why this is not a
+    /// new `SurfaceView`: every host keeps its views for the life of the
+    /// session and would need telling. The old terminal's screen goes with the
+    /// old surface; there is nothing left behind it to talk to.
+    ///
+    /// Nobody is told the old session closed. Its keeper is gone, and a
+    /// `close` sent to the new one, under the same id, would end the shell
+    /// this is about to get.
+    func restartShell(workingDirectory: String?, sessionID: UUID, initialInput: String?) {
+        guard let runtime else { return }
+        let pty = ptyHost
+        pty?.release()
+        ptyHost = nil
+        keeperSession = nil
+        shellPID = nil
+        // Whatever the old program told its terminal is not true of a new
+        // shell, and a relaunch would otherwise replay it into one.
+        TerminalModeRecorder.shared.forget(session: sessionID)
+        if let old = surface {
+            surface = nil
+            // Freed only once the old pty's queue has nothing left to write
+            // into it, as in `close`.
+            if let pty {
+                pty.enqueue { DispatchQueue.main.async { ghostty_surface_free(old) } }
+            } else {
+                ghostty_surface_free(old)
+            }
+        }
+
+        surface = runtime.newSurface(view: self, workingDirectory: workingDirectory,
+                                     sessionID: sessionID, initialInput: initialInput)
+        guard let surface else { return }
+        // What `viewDidMoveToWindow` and the host told the old surface, told
+        // again: the screen, the scale and last real size, the appearance,
+        // whether it is shown, and whether it has the keyboard.
+        if let window { ghostty_surface_set_display_id(surface, window.screen?.displayID ?? 0) }
+        viewDidChangeBackingProperties()
+        viewDidChangeEffectiveAppearance()
+        ghostty_surface_set_occlusion(surface, !isHidden)
+        focused = false
+        updateFocus()
+    }
+
     // MARK: - Focus & visibility
 
     override var acceptsFirstResponder: Bool { true }

@@ -58,6 +58,17 @@ enum AgentLiveness {
         }
     }
 
+    /// Whether the shell an agent was started from has itself gone, which
+    /// `locate` reports as `.gone` just the same as an agent that exited and
+    /// left its shell at a prompt. The difference decides whether the agent is
+    /// owed a resume: you quit an agent yourself, but nothing you do ends the
+    /// shell under a running one. An unreadable table claims nothing.
+    static func shellIsGone(shellPID: pid_t, table: [ProcessEntry]? = nil) -> Bool {
+        let table = table ?? ProcessTable.snapshot()
+        guard !table.isEmpty else { return false }
+        return !table.contains { $0.pid == shellPID && !$0.isExiting }
+    }
+
     /// Whether the agent could be found, and its pid when it could. `unknown` is
     /// the fail-open case: we couldn't read enough to make a claim either way.
     enum Located {

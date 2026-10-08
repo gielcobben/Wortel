@@ -183,6 +183,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.onOpenMarkdown = { [weak self] url in
             self?.openPreview(url)
         }
+        manager.onKeeperLost = { [weak self] loss in
+            self?.reportKeeperLoss(loss)
+        }
         fileTree.onOpenPreview = { [weak self] url in
             self?.openPreview(url)
         }
@@ -604,6 +607,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         cli?.stop()
         // Nothing we started outlives us: a fetch hung on a dead network would.
         GitService.terminateAll()
+    }
+
+    // MARK: - A lost keeper
+
+    /// Say that the terminals were lost and what came back, once, when it
+    /// happens. The fix-up already ran by now (see
+    /// `SessionManager.keeperDidExit`); this is so it is never silent again.
+    /// Silent was the 2026-10-08 incident: every agent gone, a sidebar that
+    /// still looked fine, and seven minutes before anyone found out.
+    private func reportKeeperLoss(_ loss: SessionManager.KeeperLoss) {
+        func count(_ n: Int, _ one: String, _ many: String) -> String { "\(n) \(n == 1 ? one : many)" }
+        let time = DateFormatter.localizedString(from: loss.at, dateStyle: .none, timeStyle: .medium)
+        var lines = ["At \(time), something outside Wortel ended the process that keeps your terminals running."]
+        if loss.restarted > 0 || loss.resumed > 0 {
+            var line = "Wortel started new shells in \(count(loss.restarted, "terminal", "terminals"))"
+            if loss.resumed > 0 {
+                line += " and resumed " + (loss.resumed == 1
+                    ? "1 agent in the conversation it was in"
+                    : "\(loss.resumed) agents in the conversations they were in")
+            }
+            lines.append(line + ". Anything else that was running, like a dev server, was not restarted.")
+        }
+        if loss.survived > 0 {
+            lines.append("\(count(loss.survived, "terminal kept", "terminals kept")) running, but will close "
+                + "when you quit Wortel. Their agents are resumed when it opens again.")
+        }
+        if !loss.keeperBack {
+            lines.append("Wortel could not start a new keeper, so these terminals close when you quit.")
+        }
+        lines.append("A Force Quit or Stop Running in Background in the Dock can do this, "
+            + "also on an app that was opened from one of these terminals.")
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Your terminals were stopped"
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.addButton(withTitle: "OK")
+        guard let window else { return }
+        alert.beginSheetModal(for: window)
     }
 
     // MARK: - Close confirmation

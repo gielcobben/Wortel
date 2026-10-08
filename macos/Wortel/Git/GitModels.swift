@@ -164,6 +164,12 @@ struct GitBranch: Identifiable, Hashable {
     let upstream: String?
     /// True for the checked-out branch.
     let isCurrent: Bool
+    /// The checkout it's checked out in, this one or another worktree's.
+    /// Local branches only. Git lets a branch be in one folder at a time, so
+    /// a branch in another folder can't be switched to here.
+    var worktreePath: String? = nil
+    /// Its last commit's date, for the list's "2d".
+    var date: Date? = nil
 
     var id: String { (isRemote ? "r:" : "l:") + name }
 }

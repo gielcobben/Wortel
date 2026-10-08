@@ -19,7 +19,9 @@ struct SourceControlPanel: View {
                 if let repo = panel.repo {
                     VStack(spacing: 0) {
                         RepoHeader(repo: repo, panel: panel)
-                        RepoView(repo: repo, focusRequest: panel.listFocusRequest(in: region))
+                        RepoView(repo: repo, focusRequest: panel.listFocusRequest(in: region),
+                                 elsewhere: panel.workElsewhere,
+                                 showCheckout: { panel.showCheckout($0) })
                     }
                 } else {
                     emptyState
@@ -67,6 +69,10 @@ private struct RepoView: View {
     /// Monotonic focus-request token from GitPanelModel (⌘⌥L). A change means
     /// "put keyboard focus in the changes list."
     let focusRequest: Int
+    /// Another folder of the repo with uncommitted changes, while this one has
+    /// none: most likely an agent's worktree, and the reason you opened this.
+    var elsewhere: GitPanelModel.Checkout? = nil
+    var showCheckout: (String) -> Void = { _ in }
     @FocusState private var listFocused: Bool
     /// Whether the native commit editor holds focus (drives its border). Driven
     /// by CommitMessageEditor's focus callback, not @FocusState — the editor is
@@ -190,9 +196,26 @@ private struct RepoView: View {
         // of its pane like the diff's does. Sharing `centered` is the point: the
         // two halves of this panel are empty at the same moments, and they
         // should say so the same way.
-        // Work in another worktree is pointed at from the header (RepoHeader),
-        // on both tabs and whether or not this one is clean.
-        if repo.status.isClean {
+        // A clean pane is where work in another worktree is pointed at: it's
+        // the moment you'd wonder where it went, and the space is empty anyway.
+        if repo.status.isClean, let elsewhere {
+            VStack(spacing: 6) {
+                Text("No changes here")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                Button {
+                    showCheckout(elsewhere.path)
+                } label: {
+                    Text(verbatim: "\(elsewhere.changes) change\(elsewhere.changes == 1 ? "" : "s") in \((elsewhere.path as NSString).lastPathComponent)")
+                        .font(.callout)
+                }
+                .buttonStyle(.link)
+                .help("Show that folder here. Looking only: nothing is switched.")
+            }
+            .padding(.horizontal, 16)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if repo.status.isClean {
             centered("No changes")
         } else {
             populatedChangesList

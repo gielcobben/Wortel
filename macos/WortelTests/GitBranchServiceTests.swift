@@ -456,4 +456,43 @@ final class GitBranchServiceTests: XCTestCase {
             "mine",
             "the uncommitted work survived")
     }
+
+    // MARK: - Branches in other folders
+
+    /// The switcher's sections rest on this: which folder each local branch is
+    /// checked out in, this one or another worktree's, and none for a free one.
+    func testBranchesSayWhichFolderEachIsCheckedOutIn() async {
+        repo = GitFixture.newRepo("where")
+        GitFixture.commit("first", in: repo)
+        GitFixture.sh("git branch free && git branch busy", in: repo)
+        let tree = worktreePath("busy")
+        GitFixture.sh("git worktree add -q \(tree) busy", in: repo)
+
+        let branches = await GitService.localBranches(root: repo.path)
+        let resolved = { (path: String?) in path.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } }
+        let byName = Dictionary(uniqueKeysWithValues: branches.map { ($0.name, $0) })
+
+        XCTAssertEqual(resolved(byName["main"]?.worktreePath), resolved(repo.path))
+        XCTAssertEqual(resolved(byName["busy"]?.worktreePath), resolved(tree))
+        XCTAssertNil(byName["free"]?.worktreePath)
+        XCTAssertNotNil(byName["free"]?.date, "the age on the right comes from here")
+    }
+
+    /// Reached only by a race (the list routes such a branch to Show), but
+    /// then said in words, with the folder, and not as git's `fatal:`.
+    func testCheckoutOfABranchInAnotherFolderSaysWhere() async {
+        repo = GitFixture.newRepo("elsewhere")
+        GitFixture.commit("first", in: repo)
+        GitFixture.sh("git branch busy", in: repo)
+        let tree = worktreePath("taken")
+        GitFixture.sh("git worktree add -q \(tree) busy", in: repo)
+
+        let branch = GitBranch(
+            name: "busy", isRemote: false, sha: "", upstream: nil, isCurrent: false)
+        let error = await GitService.checkout(root: repo.path, branch: branch)
+
+        XCTAssertNotNil(error)
+        XCTAssertTrue(error?.contains((tree as NSString).lastPathComponent) ?? false, error ?? "")
+        XCTAssertFalse(error?.contains("fatal") ?? true, error ?? "")
+    }
 }

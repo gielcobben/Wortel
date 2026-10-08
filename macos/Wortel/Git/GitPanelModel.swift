@@ -160,6 +160,8 @@ final class GitPanelModel {
         let changes: Int
         /// Commits there that the shown checkout doesn't have.
         let ahead: Int
+        /// The repository's main folder, not a linked worktree.
+        var isPrimary = false
         var id: String { path }
         var name: String { branch ?? (path as NSString).lastPathComponent }
     }
@@ -257,7 +259,8 @@ final class GitPanelModel {
                 ahead = await GitService.commitsAhead(from: head, to: theirs, root: root)
             }
             found.append(Checkout(path: worktree.path, branch: worktree.branch,
-                                  changes: status.changes.count, ahead: ahead))
+                                  changes: status.changes.count, ahead: ahead,
+                                  isPrimary: worktree.isPrimary))
         }
         guard generation == checkoutGeneration, repo === self.repo, owner === session else { return }
         terminalCheckout = terminal
@@ -289,6 +292,62 @@ final class GitPanelModel {
     func refreshCheckoutsIfStale() async {
         guard let repo, !checkoutsAreCurrent(for: repo.root) else { return }
         await loadCheckouts()
+    }
+
+    /// Set by AppDelegate: what is using a folder (open sessions, processes
+    /// standing in it), which only the app can tell and git can't.
+    @ObservationIgnored var worktreeUsage: (() -> WorktreeUsage?)?
+
+    /// "Bring Here": take `branch` off the other folder it's checked out in
+    /// and switch the shown folder to it. Git lets a branch be in one folder
+    /// at a time, and doing this by hand meant finishing up there, removing
+    /// the worktree and coming back. Returns why not, or nil when it worked.
+    ///
+    /// Only when nothing there can be lost or pulled from under someone: no
+    /// uncommitted or untracked files, no session open in it, nothing running
+    /// in it, and not the repository's main folder (taking `main` from your
+    /// own clone is not a side effect anyone expects). The same inspection
+    /// Clean Up Worktrees makes, then:
+    ///
+    /// - a worktree Wortel made goes to the Trash, as the cleanup would take
+    ///   it; its branch stays, it's the one coming here;
+    /// - any other folder stays where it is, on the same commit, with no
+    ///   branch (`switch --detach`): it isn't Wortel's to remove, and a
+    ///   detached checkout changes no file in it.
+    func bringHere(_ branch: GitBranch) async -> String? {
+        guard let repo, let path = branch.worktreePath else { return nil }
+        guard let make = worktreeUsage, let usage = make() else {
+            return "Wortel couldn't tell what's using that folder, so the branch stays there."
+        }
+        let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+        let users = usage.users(of: path, in: processes)
+        let report = await WorktreeCleanup.inspect(path: path, usedBy: users, urgent: true)
+        let folder = (path as NSString).lastPathComponent
+        let name = "\u{201C}\(branch.name)\u{201D}"
+        if report.isPrimaryCheckout {
+            return "\(name) is checked out in the repository's main folder, \(folder). Switch it there, or show that folder here."
+        }
+        if report.isOrphanedFolder || !report.changedFiles.isEmpty || !report.usedBy.isEmpty {
+            var reasons = report.blockers
+            if !report.changedFiles.isEmpty { reasons.append("Commit them there first.") }
+            return "\(name) stays in \(folder). " + reasons.joined(separator: " ")
+        }
+        if WorktreeCleanup.isUnder(GitWorktree.root, path) {
+            if let error = await WorktreeCleanup.remove(path: path, usedBy: users, deleteBranch: false) {
+                return error
+            }
+        } else {
+            let detached = await GitService.run(["switch", "--detach"], in: path)
+            if !detached.ok {
+                let message = detached.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                return "\(name) stays in \(folder): \(message)"
+            }
+        }
+        await repo.checkout(branch)
+        // What's in which folder just changed: read it again now, not in 30s.
+        checkoutsRead = nil
+        await loadCheckouts()
+        return repo.checkoutError
     }
 
     /// Where the work is when it isn't here: another checkout of the repo with

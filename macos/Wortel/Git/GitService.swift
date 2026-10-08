@@ -392,21 +392,25 @@ enum GitService {
     }
 
     private static func branches(root: String, refs: [String]) async -> [GitBranch] {
-        let format = "%(refname)\u{1f}%(objectname)\u{1f}%(upstream:short)\u{1f}%(HEAD)"
+        // `worktreepath` and the date are read off the ref and the commit the
+        // sort already loads: nothing extra to walk.
+        let format = "%(refname)\u{1f}%(objectname)\u{1f}%(upstream:short)\u{1f}%(HEAD)\u{1f}%(worktreepath)\u{1f}%(committerdate:unix)"
         let result = await run(
             ["for-each-ref", "--sort=-committerdate", "--format=\(format)"] + refs,
             in: root)
         guard result.ok else { return [] }
         return result.stdout.split(separator: "\n").compactMap { line in
             let fields = line.components(separatedBy: "\u{1f}")
-            guard fields.count == 4 else { return nil }
+            guard fields.count == 6 else { return nil }
             let refname = fields[0]
             let upstream = fields[2].isEmpty ? nil : fields[2]
             let isCurrent = fields[3] == "*"
+            let date = TimeInterval(fields[5]).map { Date(timeIntervalSince1970: $0) }
             if refname.hasPrefix("refs/heads/") {
                 return GitBranch(
                     name: String(refname.dropFirst("refs/heads/".count)),
-                    isRemote: false, sha: fields[1], upstream: upstream, isCurrent: isCurrent)
+                    isRemote: false, sha: fields[1], upstream: upstream, isCurrent: isCurrent,
+                    worktreePath: fields[4].isEmpty ? nil : fields[4], date: date)
             }
             if refname.hasPrefix("refs/remotes/") {
                 let name = String(refname.dropFirst("refs/remotes/".count))
@@ -415,7 +419,8 @@ enum GitService {
                 // thing. See GitRef.parse, which drops it for the same reason.
                 guard !name.hasSuffix("/HEAD") else { return nil }
                 return GitBranch(
-                    name: name, isRemote: true, sha: fields[1], upstream: nil, isCurrent: false)
+                    name: name, isRemote: true, sha: fields[1], upstream: nil, isCurrent: false,
+                    date: date)
             }
             return nil
         }
@@ -677,7 +682,25 @@ enum GitService {
         let result = await run(["checkout", name], in: root)
         guard !result.ok else { return nil }
         let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The list routes a branch in another folder to Show, so this is only
+        // reached by a race (an agent checked it out since the list opened).
+        // Still said in words: git's version is a `fatal:` and a full path.
+        if let folder = Self.otherWorktree(inCheckoutError: message) {
+            return "\u{201C}\(name)\u{201D} is checked out in another folder, \(folder). A branch can only be in one folder at a time."
+        }
         return message.isEmpty ? "Could not switch to \(name)." : message
+    }
+
+    /// The folder named by git's "already used by worktree at '…'" (2.42+) or
+    /// "already checked out at '…'" (older).
+    static func otherWorktree(inCheckoutError message: String) -> String? {
+        for marker in ["already used by worktree at '", "already checked out at '"] {
+            guard let start = message.range(of: marker) else { continue }
+            let rest = message[start.upperBound...]
+            guard let end = rest.firstIndex(of: "'") else { continue }
+            return (String(rest[..<end]) as NSString).lastPathComponent
+        }
+        return nil
     }
 
     /// "origin/feature/x" → "feature/x". Only the remote name comes off — the

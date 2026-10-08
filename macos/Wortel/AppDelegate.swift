@@ -289,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Panel visibility and the chosen pane are session state, so a toggle has
         // to reach sessions.json.
         gitPanel.onStateChanged = { [weak manager] in manager?.sessionStateChanged() }
+        gitPanel.worktreeUsage = { [weak manager] in manager.map { WorktreeUsage(manager: $0) } }
         // The side column's tabs: a side shell that exits takes its tab with it,
         // closing one that still runs something asks first, and the tab that had
         // the keyboard hands it back to the session's own terminal.

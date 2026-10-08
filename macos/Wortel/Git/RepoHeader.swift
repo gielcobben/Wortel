@@ -12,9 +12,9 @@ import SwiftUI
 /// tab strip would have covered anyway.
 ///
 /// A session can show another worktree of the repo than its terminal's (an
-/// agent working in one): chosen from the worktree chip, or from the hint
-/// beside the branch when another worktree has changes, and undone from the
-/// same chip or the "Back" that appears while it's in effect. Looking at one
+/// agent working in one): chosen from the worktree chip, from a branch in
+/// another folder in the branch list, or from a clean Changes pane that points
+/// at work elsewhere, and undone from the same chip or the "Back" that appears while it's in effect. Looking at one
 /// runs no git command; switching a branch is the branch chip's alone, and
 /// only in your own folder.
 struct RepoHeader: View {
@@ -52,10 +52,11 @@ struct RepoHeader: View {
                 worktreeChip
             }
             branchChip
-            if !isAway, let elsewhere = panel.workElsewhere {
-                elsewhereHint(elsewhere)
-            }
 
+            // Work in another folder isn't said here: beside the branch chip,
+            // "web-next: 16 changes" read as being about this branch. It's in
+            // the two lists, on the folder it belongs to, and in a clean
+            // Changes pane (SourceControlPanel), where it's the news.
             Spacer(minLength: 4)
 
             if isAway {
@@ -103,8 +104,9 @@ struct RepoHeader: View {
         // Away from your own folder: a faint fill, enough to tell it from
         // your own changes without shouting.
         .background(isAway ? Color.primary.opacity(0.05) : Color.clear)
-        // Kept fresh while it's on screen, so the hint comes and goes with the
-        // work (a read is a `git status` per checkout, and only when stale).
+        // Kept fresh while it's on screen, so what the lists and a clean pane
+        // say about other folders follows the work (a read is a `git status`
+        // per checkout, and only when stale).
         .task(id: CatchUpKey(root: repo.root, stale: repo.isStale)) {
             guard repo.isStale else {
                 showsCatchUp = false
@@ -215,27 +217,6 @@ struct RepoHeader: View {
             WorktreeList(panel: panel, shown: repo.root,
                          dismiss: { showsWorktrees = false })
         }
-    }
-
-    /// "web-next: 16 changes": the work is in another worktree, most likely an
-    /// agent's, and a click shows it here. Grey like the rest of the header,
-    /// and the first thing to give way when the column is narrow.
-    private func elsewhereHint(_ checkout: GitPanelModel.Checkout) -> some View {
-        Button {
-            panel.showCheckout(checkout.path)
-        } label: {
-            Text(verbatim: "\(Self.folderName(checkout.path)): \(checkout.changes) change\(checkout.changes == 1 ? "" : "s")")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.horizontal, 6)
-                .frame(height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(HeaderButtonStyle())
-        .layoutPriority(-1)
-        .help("Show the changes in that worktree here. Looking only: nothing is switched.")
     }
 
     private var busy: Bool { repo.isFetching || repo.isPulling || repo.isPushing }
@@ -392,6 +373,7 @@ private struct WorktreeList: View {
                   title: (checkout.path as NSString).lastPathComponent,
                   isCurrent: checkout.path == shown,
                   trailing: detail,
+                  style: OptionRow.Style(help: checkout.path),
                   isSelected: hovered == checkout.path,
                   action: {
                       panel.showCheckout(checkout.path)
@@ -400,7 +382,6 @@ private struct WorktreeList: View {
                   hover: { inside in
                       if inside { hovered = checkout.path } else if hovered == checkout.path { hovered = nil }
                   })
-            .help(checkout.path)
     }
 }
 

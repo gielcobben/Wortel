@@ -119,6 +119,11 @@ struct RunningJobsList: View {
                 Text(verbatim: RunningJobsList.size(rows.reduce(0) { $0 + $1.footprint }))
                     .monospacedDigit()
             }
+            // Only with two or more: for one, its own stop button is the same
+            // thing. The agent isn't a row, so it's never part of "all".
+            if stoppable.count > 1 {
+                StopAllButton { for job in stoppable { monitor.quit(job) } }
+            }
         }
         .font(.system(size: 11, weight: .medium))
         .foregroundStyle(.tertiary)
@@ -126,6 +131,9 @@ struct RunningJobsList: View {
         .padding(.top, 4)
         .padding(.bottom, 3)
     }
+
+    /// What Stop All stops: every row a row's own stop button could.
+    private var stoppable: [RunningJob] { rows.filter(\.isKillable) }
 
     private func heading(_ text: String) -> some View {
         Text(text)
@@ -386,6 +394,31 @@ private struct JobRow: View {
 
 /// A small round icon button that lights up under the pointer, the kind
 /// Proxyman puts beside a value to copy it.
+/// The heading's "Stop All": as quiet as the heading until the pointer is on
+/// it, then red as a row's stop button turns. No confirmation, as a row's
+/// stop asks none: a server is one command to start again.
+private struct StopAllButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text("Stop All")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isHovered ? AnyShapeStyle(Color(nsColor: .systemRed))
+                                           : AnyShapeStyle(.secondary))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color(nsColor: isHovered ? Chrome.selectedFill : .clear)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help("Stop everything listed")
+    }
+}
+
 private struct RowIconButton: View {
     let symbol: String
     let label: String

@@ -3,6 +3,43 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.41.7</title>
+            <pubDate>Thu, 08 Oct 2026 19:46:08 -0400</pubDate>
+            <sparkle:version>2026.41.7</sparkle:version>
+            <sparkle:shortVersionString>2026.41.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Terminals that come back on their own</h1>
+<p class="date">Wortel 2026.41.7 &middot; 2026-10-08</p>
+<p><strong>Terminals that come back on their own.</strong> An app you open from a Wortel terminal can take Wortel’s terminals with it when you force quit it from its Dock icon. Wortel used to keep showing those terminals as if nothing had happened, and the agents in them were lost. Now Wortel notices right away, starts each terminal again and brings every agent back into the conversation it was in. A message says when it happened, what came back, and what didn’t, like a dev server you’ll need to start again.</p>
+<p><strong>Branches, and where they are.</strong> The branch list now groups branches by what a click can do: this folder, branches checked out in other folders, branches to switch to, and remote ones. A branch an agent has in its own folder shows that folder, and clicking it shows that folder here. When nothing there can be lost, Bring Here moves the branch into the folder you’re in.</p>
+<p><strong>Git errors you can read.</strong> When git refuses something, the Changes pane and the branch list say what happened and what to do about it, in plain words, and you can dismiss the message.</p>
+<p><strong>The pull request in the header.</strong> If the branch has an open pull request on GitHub, the header shows it, and one click opens it. A pushed branch with none offers Create PR. This uses the <code>gh</code> command, when it’s installed and signed in.</p>
+<p><strong>Stop All.</strong> With two or more things running in a session, the heading of its running list offers Stop All.</p>
+<p>Also in this release: a branch name typed with spaces for a new worktree session becomes one git accepts. A session whose folder was deleted says so under its name. And Wortel does less work while it’s behind other apps, especially in repositories with many worktrees.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.7.zip" length="21592066" type="application/octet-stream" sparkle:edSignature="98wNKtdBtRdeEklm706WJtKiHzXX2GgpP2Yen7z1z4BLC/tLOszSDgrenWMFSm1k7Zw+ogNITWa8oQUJyaJLBg=="/>
+        </item>
+        <item>
             <title>2026.41.6</title>
             <pubDate>Wed, 07 Oct 2026 14:31:10 -0400</pubDate>
             <sparkle:version>2026.41.6</sparkle:version>
@@ -71,41 +108,6 @@
 <p><strong>Shortcuts that match other Mac apps.</strong> ⇧⌘[ and ⇧⌘] switch tabs, as in Safari and Xcode. ⌥⌘↑ and ⌥⌘↓ move between sessions. ⌃⌘1, ⌃⌘2 and ⌃⌘3 open Changes, History and Files.</p>
 <p>Also in this release: Wortel keeps a short log of how each agent exited, so a session that ends unexpectedly can be explained.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.41.5.zip" length="21298220" type="application/octet-stream" sparkle:edSignature="s1qlM/k4Btx5qcDq8UPYOzQ5x2XWQL8iJpfL+YwVHk7UZvnL+rSJ+mSBlpG0Co8/mOGTgp2pSj5z8+3G/kbkAQ=="/>
-        </item>
-        <item>
-            <title>2026.41.4</title>
-            <pubDate>Tue, 06 Oct 2026 21:36:02 -0400</pubDate>
-            <sparkle:version>2026.41.4</sparkle:version>
-            <sparkle:shortVersionString>2026.41.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>A clearer "working", and sections that fold</h1>
-<p class="date">Wortel 2026.41.4 &middot; 2026-10-06</p>
-<p><strong>Working, at a glance.</strong> A session with something running used to show a small grey dot breathing slowly, which in dark mode came out nearly black on a dark sidebar. It’s now three small dots in a soft wave, the way a chat app shows someone typing: clearly busy, without asking for anything. The coloured dots still mean something needs you.</p>
-<p><strong>Pinned and Sessions fold.</strong> Click the Pinned or Sessions header to fold it away, as you can a folder, and Wortel remembers it. A folded section shows a dot when a session inside needs you, and unfolds by itself when a new session lands in it.</p>
-<p><strong>Headers you can point at.</strong> Folder, Pinned and Sessions headers light up under the pointer like session rows do, so it’s clear they’re there to click.</p>
-<p>Also in this release: every status dot in the sidebar now follows light and dark mode when you switch between them.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.4.zip" length="21150936" type="application/octet-stream" sparkle:edSignature="H9UycgXhESe8IHuULeM4Lmi0AnFOICDe4QN2h5XnV5Lc0bmyifdktpEK+KM6SadCK7JhHN9I9t8EDxmUl2iVDw=="/>
         </item>
     </channel>
 </rss>

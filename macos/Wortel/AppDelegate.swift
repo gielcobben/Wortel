@@ -1224,6 +1224,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.markUnread(session)
     }
 
+    /// Session ▸ Colour: the item's colour (none for None) on the selected
+    /// session.
+    @objc func setSessionColour(_ sender: Any?) {
+        guard let session = manager.selected, let item = sender as? NSMenuItem else { return }
+        manager.setColour(session, (item.representedObject as? String).flatMap(SessionColour.init(rawValue:)))
+    }
+
     @objc func cleanUpWorktrees(_ sender: Any?) {
         focusMainWindow()
         guard let window else { return }
@@ -1343,6 +1350,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return manager.selected?.isInOwnWorktree == true
         }
         if menuItem.action == #selector(markSessionUnread(_:)) {
+            return manager.selected != nil
+        }
+        if menuItem.action == #selector(setSessionColour(_:)) {
+            let colour = (menuItem.representedObject as? String).flatMap(SessionColour.init(rawValue:))
+            menuItem.state = manager.selected.map { $0.colour == colour } == true ? .on : .off
             return manager.selected != nil
         }
         if menuItem.action == #selector(togglePinSession(_:)) {

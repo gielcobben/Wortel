@@ -80,6 +80,20 @@ final class WortelCLIService {
                 return .success("Renamed to \u{201c}\(session.name)\u{201d}.", value: session.name)
             })
 
+        case .mark(let session, let name):
+            let clear = name.lowercased() == SessionColour.none
+            guard clear || SessionColour.named(name) != nil else {
+                let names = SessionColour.allCases.map(\.rawValue).joined(separator: ", ")
+                reply(.failure("There's no colour \u{201c}\(name)\u{201d}. Use \(names), or none."))
+                return
+            }
+            reply(withSession(session) { session in
+                let colour = clear ? nil : SessionColour.named(name)
+                manager.setColour(session, colour)
+                return .success(colour.map { "Coloured \($0.rawValue)." } ?? "Colour cleared.",
+                                value: colour?.rawValue ?? SessionColour.none)
+            })
+
         case .notify(let session, let title, let body):
             reply(withSession(session) { session in
                 manager.notify(session, title: title, body: body ?? "")

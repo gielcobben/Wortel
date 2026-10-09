@@ -78,6 +78,7 @@ extension CommandVerb {
         case .newSession: self = .new
         case .rename: self = .rename
         case .notify: self = .notify
+        case .mark: self = .mark
         case .version: self = .version
         }
     }

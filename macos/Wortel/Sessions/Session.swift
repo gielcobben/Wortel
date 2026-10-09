@@ -50,6 +50,10 @@ final class Session: Identifiable {
     /// is where the task lives. Persisted; nil for a session that isn't in one
     /// of Wortel's worktrees.
     var worktreeBranch: String?
+    /// The colour you gave this session, drawn as a bar at the row's leading
+    /// edge. Persisted, and only ever changed by hand: opening the session
+    /// leaves it, which is the point of a "come back to this".
+    var colour: SessionColour?
     /// Whether the source-control panel is open while this session is selected.
     /// Per-session, and persisted: whether the panel earns its width depends on
     /// what the session is for — a manager in your home directory never needs

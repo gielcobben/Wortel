@@ -404,6 +404,9 @@ targets:
       # DTO with a hand-written decoder whose defaults are the app's file-format
       # migrations, and it drags in nothing (Foundation only).
       - path: Wortel/Sessions/SessionStore.swift
+      # What a session's colour can be, which both the file format above and
+      # `wortel mark`'s answer depend on (Foundation only).
+      - path: Wortel/Sessions/SessionColour.swift
       # Same again: the Folder/Leaf name split is the whole of sidebar grouping,
       # and it's plain string handling (Foundation only) that `Session` — which
       # does drag in AppKit — only delegates to.

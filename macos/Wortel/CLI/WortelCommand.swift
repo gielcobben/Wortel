@@ -26,6 +26,11 @@ enum WortelCommand: Codable, Equatable {
     case rename(session: String?, name: String)
     /// Raise attention on a session: the dot, the badge, the notification.
     case notify(session: String?, title: String, body: String?)
+    /// Colour a session in the sidebar, or clear it with "none". The colour
+    /// goes over as typed and is checked by the app: the colours are the
+    /// app's (`SessionColour`), and this file is also compiled into the CLI
+    /// and the keeper, which have no business knowing them.
+    case mark(session: String?, colour: String)
     /// Which Wortel is actually listening.
     ///
     /// Asked over the socket rather than read off disk because the two are
@@ -43,6 +48,7 @@ enum WortelCommand: Codable, Equatable {
         case .newSession: return "new"
         case .rename: return "rename"
         case .notify: return "notify"
+        case .mark: return "mark"
         case .version: return "--version"
         }
     }
@@ -175,6 +181,8 @@ enum WortelCommandParser {
                                    --from picks what a new branch forks from
           rename <name>            rename this session
           notify <title> [body]    raise attention on this session
+          mark <colour>            colour this session in the sidebar: red, orange,
+                                   yellow, green, blue, purple, grey, or none
 
           --version                this command's version, and the running app's
           --help                   this
@@ -217,6 +225,12 @@ enum WortelCommandParser {
             return .notify(session: session,
                            title: title,
                            body: rest.count > 1 ? rest[1] : nil)
+
+        case "mark":
+            guard let colour = rest.first, !colour.isEmpty else {
+                throw ParseError.missing("a colour, or none", verb)
+            }
+            return .mark(session: session, colour: colour)
 
         default:
             throw ParseError.unknown(verb)

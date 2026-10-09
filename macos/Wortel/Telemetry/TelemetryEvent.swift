@@ -311,5 +311,6 @@ enum CommandVerb: String {
     case new
     case rename
     case notify
+    case mark
     case version
 }

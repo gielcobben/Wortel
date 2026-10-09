@@ -102,9 +102,24 @@ This is the same path an agent's own escape sequence takes, so a build finishing
 and Claude finishing look and sound identical — which is the point when you're
 in another room.
 
+### `wortel mark <colour>`
+
+Colours the session you're in, as a bar at the edge of its row in the
+sidebar: red, orange, yellow, green, blue, purple or grey. `wortel mark none`
+takes it off. The same colours are in the row's menu, under Colour.
+
+```sh
+gh pr create --fill && wortel mark yellow
+wortel mark none
+```
+
+A colour is a note to yourself, and only you take it off: opening the session
+leaves it. Use it for a session you're nearly done with but want to keep, like
+a review waiting on CI.
+
 ## Which session a command means
 
-`rename` and `notify` act on the session they were run in. You never pass an id:
+`rename`, `notify` and `mark` act on the session they were run in. You never pass an id:
 every Wortel shell carries `$WORTEL_SESSION_ID`, and the command reads it. Run
 from outside Wortel they say so instead of guessing:
 

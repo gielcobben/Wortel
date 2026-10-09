@@ -322,6 +322,9 @@ enum MainMenu {
         // ⇧⌘U, the ChatGPT app's: a "come back to this" flag.
         let unread = sessionMenu.addItem(withTitle: "Mark as Unread", action: #selector(AppDelegate.markSessionUnread(_:)), keyEquivalent: "u")
         unread.keyEquivalentModifierMask = [.command, .shift]
+        // A colour of your own, for a session to come back to; checked in
+        // AppDelegate.validateMenuItem.
+        sessionMenu.addItem(SessionColourMenu.item(action: #selector(AppDelegate.setSessionColour(_:))))
         let moveTo = sessionMenu.addItem(withTitle: "Move To", action: nil, keyEquivalent: "")
         let moveToMenu = NSMenu(title: "Move To")
         moveToMenu.delegate = moveToFiller

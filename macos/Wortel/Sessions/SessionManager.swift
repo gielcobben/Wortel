@@ -604,6 +604,8 @@ final class SessionManager {
             // user's: the one reading that can never relabel work by surprise.
             session.nameSource = Session.NameSource(rawValue: entry.nameSource) ?? .user
             session.worktreeBranch = entry.worktreeBranch
+            // A colour only a newer build knows reads as none.
+            session.colour = entry.colour.flatMap(SessionColour.init(rawValue:))
             // An earlier build named these "<folder>/<branch>" with the branch
             // whole, which read back as a folder of their own. The rename that
             // gave them their real names kept that folder half, so stopping it
@@ -2282,6 +2284,14 @@ final class SessionManager {
         cancelCaughtUp(session.id)
     }
 
+    /// Give a session a colour, or take it away (nil). By hand only: the menu
+    /// or `wortel mark`; nothing in the app sets or clears one.
+    func setColour(_ session: Session, _ colour: SessionColour?) {
+        guard session.colour != colour else { return }
+        session.colour = colour
+        scheduleSave()
+    }
+
     private func scheduleCaughtUp(_ session: Session) {
         unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
         // Marked by hand: held until you come back to it (see `selectedID`),
@@ -2647,6 +2657,7 @@ final class SessionManager {
                 originCwd: session.originCwd,
                 selected: session.id == selectedID, nameSource: session.nameSource.rawValue,
                 worktreeBranch: session.worktreeBranch,
+                colour: session.colour?.rawValue,
                 gitPanelVisible: session.gitPanelVisible,
                 inspectorPane: session.inspectorPane?.rawValue,
                 sideTabs: session.sideTabs.map(\.rawValue),

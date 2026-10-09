@@ -102,6 +102,8 @@ final class WortelCommandTests: XCTestCase {
                        .notify(session: session, title: "Done", body: "tests passed"))
         XCTAssertEqual(try parse(["notify", "Done"]),
                        .notify(session: session, title: "Done", body: nil))
+        XCTAssertEqual(try parse(["mark", "yellow"]), .mark(session: session, colour: "yellow"))
+        XCTAssertEqual(try parse(["mark", "none"]), .mark(session: session, colour: "none"))
     }
 
     /// Run from outside Wortel there is no session, and the command has to say
@@ -115,6 +117,27 @@ final class WortelCommandTests: XCTestCase {
     func testRenameWithoutAName() {
         XCTAssertThrowsError(try parse(["rename"]))
         XCTAssertThrowsError(try parse(["rename", ""]))
+    }
+
+    func testMarkWithoutAColour() {
+        XCTAssertThrowsError(try parse(["mark"]))
+        XCTAssertThrowsError(try parse(["mark", ""]))
+    }
+
+    /// The colour goes over as typed: the app checks it, because the colours
+    /// are the app's and a newer app may have one this CLI doesn't.
+    func testMarkLeavesTheColourToTheApp() throws {
+        XCTAssertEqual(try parse(["mark", "teal"]), .mark(session: session, colour: "teal"))
+    }
+
+    /// What the app accepts, and the other spelling of grey with it.
+    func testColourNames() {
+        XCTAssertEqual(SessionColour.named("yellow"), .yellow)
+        XCTAssertEqual(SessionColour.named("Yellow"), .yellow)
+        XCTAssertEqual(SessionColour.named("gray"), .grey)
+        XCTAssertEqual(SessionColour.named("grey"), .grey)
+        XCTAssertNil(SessionColour.named("teal"))
+        XCTAssertNil(SessionColour.named(SessionColour.none))
     }
 
     // MARK: - Finding its own bundle
@@ -180,6 +203,7 @@ final class WortelCommandTests: XCTestCase {
             .newSession(cwd: nil, name: nil, branch: nil, base: nil),
             .rename(session: session, name: "build"),
             .notify(session: nil, title: "Done", body: nil),
+            .mark(session: session, colour: "yellow"),
             .version,
         ]
         for command in commands {
@@ -202,12 +226,18 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertEqual(WortelCommand.newSession(cwd: nil, name: nil, branch: nil, base: nil).verb, "new")
         XCTAssertEqual(WortelCommand.rename(session: nil, name: "a").verb, "rename")
         XCTAssertEqual(WortelCommand.notify(session: nil, title: "a", body: nil).verb, "notify")
+        XCTAssertEqual(WortelCommand.mark(session: nil, colour: "red").verb, "mark")
         XCTAssertEqual(WortelCommand.version.verb, "--version")
     }
 
     func testUsageListsEveryCommand() {
-        for verb in ["open", "new", "rename", "notify", "--version"] {
+        for verb in ["open", "new", "rename", "notify", "mark", "--version"] {
             XCTAssertTrue(WortelCommandParser.usage.contains(verb), "usage omits \(verb)")
+        }
+        // The colours are listed by hand there (the CLI can't see the app's
+        // type), so a colour added to the app has to be added to the usage.
+        for colour in SessionColour.allCases.map(\.rawValue) + [SessionColour.none] {
+            XCTAssertTrue(WortelCommandParser.usage.contains(colour), "usage omits \(colour)")
         }
         XCTAssertTrue(WortelCommandParser.usage.contains(WortelCommandParser.sessionVariable))
     }

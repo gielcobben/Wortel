@@ -180,6 +180,7 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CommandVerb(.newSession(cwd: nil, name: nil, branch: nil, base: nil)).rawValue, "new")
         XCTAssertEqual(CommandVerb(.rename(session: nil, name: "x")).rawValue, "rename")
         XCTAssertEqual(CommandVerb(.notify(session: nil, title: "t", body: nil)).rawValue, "notify")
+        XCTAssertEqual(CommandVerb(.mark(session: nil, colour: "red")).rawValue, "mark")
         XCTAssertEqual(CommandVerb(.version).rawValue, "version")
 
         XCTAssertEqual(TabOpenedKind(.terminal(UUID()))?.rawValue, "terminal")
@@ -255,7 +256,7 @@ final class TelemetryTests: XCTestCase {
         for cause in causes {
             events.append(.agentAttention(kind: cause))
         }
-        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .version]
+        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .version]
         for verb in verbs {
             events.append(.commandRun(verb: verb))
         }

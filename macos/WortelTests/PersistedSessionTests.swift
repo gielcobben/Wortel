@@ -162,6 +162,34 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertNil(session.browserAddresses)
         XCTAssertNil(session.gitCheckout)
         XCTAssertNil(session.tabHabits)
+        XCTAssertNil(session.colour)
+    }
+
+    // MARK: - Colour
+
+    func testRecordedColourDecodes() throws {
+        for colour in SessionColour.allCases {
+            let session = try decode(#"{"id":"\#(UUID())","colour":"\#(colour.rawValue)"}"#)
+            XCTAssertEqual(session.colour.flatMap(SessionColour.init(rawValue:)), colour)
+        }
+    }
+
+    /// A colour only a newer build has is kept as written, for `restore` to
+    /// read as none, rather than failing the whole file.
+    func testUnknownColourSurvivesDecoding() throws {
+        let session = try decode(#"{"id":"\#(UUID())","colour":"teal"}"#)
+        XCTAssertEqual(session.colour, "teal")
+    }
+
+    func testColourRoundTrips() throws {
+        for colour in ["yellow", nil] {
+            let original = PersistedSession(
+                id: UUID(), name: "Review", title: "shell", cwd: "/tmp",
+                selected: false, nameSource: "user", colour: colour, gitPanelVisible: false)
+            let data = try JSONEncoder().encode([original])
+            let decoded = try JSONDecoder().decode([PersistedSession].self, from: data)
+            XCTAssertEqual(decoded.first?.colour, colour)
+        }
     }
 
     /// The raw form is the one thing that has to agree between two builds: a

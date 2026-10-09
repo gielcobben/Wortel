@@ -389,6 +389,28 @@ struct SidebarRowContent: View {
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            // The colour you gave the session: a bar just inside the pill.
+            // Placed off a screenshot at 2x, then by eye:
+            // - across, 4.5pt in from the pill's edge (10pt in), a device
+            //   pixel nearer the name than the measured middle, which read as
+            //   too close to the edge;
+            // - down, 2pt past the name's ink at both ends (its tallest
+            //   letters to its baseline), which is centred 0.25pt below the
+            //   row's middle: hence 8.5 above and 8 below in a 30pt row.
+            // The only coloured thing at that end of the row; the attention
+            // dots are at the other.
+            .overlay(alignment: .leading) {
+                if let colour = session.colour {
+                    Capsule()
+                        .fill(Color(nsColor: colour.nsColor))
+                        .frame(width: 3)
+                        .padding(.top, 8.5)
+                        .padding(.bottom, 8)
+                        .padding(.leading, 14.5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .accessibilityValue(session.colour?.title ?? "")
             // Native right-click, popped instantly on rightMouseDown, and it
             // selects the row on the way so the terminal follows. SwiftUI's
             // `.contextMenu` presents on a press-hold and rebuilds its content
@@ -516,6 +538,7 @@ enum SessionActions {
         _ = item("Mark as Unread", "circle.dashed", key: "u", [.command, .shift]) {
             manager.markUnread(session)
         }
+        menu.addItem(SessionColourMenu.item(for: session, manager: manager))
 
         menu.addItem(.separator())
         // Its own branch in its own worktree, from this session's repository.

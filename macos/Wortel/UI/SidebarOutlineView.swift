@@ -9,12 +9,12 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     /// How far the pill is inset from the row. Also what the close button keeps
     /// clear of the pill's edges, so its padding reads the same on all three
     /// sides it touches.
-    private static let pillInset = NSSize(width: 10, height: 1)
+    static let pillInset = NSSize(width: 10, height: 1)
     /// The pill's corners: a tab's and a titlebar button's.
-    private static let pillRadius: CGFloat = 8
+    static let pillRadius: CGFloat = 8
     /// The selected row's fill, and the hover's, over the sidebar material. The
     /// hover has to stay visibly lighter than the selection it isn't.
-    private static let pillAlpha: CGFloat = 0.08
+    static let pillAlpha: CGFloat = 0.08
     private static let hoverAlpha: CGFloat = 0.04
 
     var showsPill = false {
@@ -352,12 +352,12 @@ final class SidebarCloseButton: NSButton {
 /// (not a bare NSHostingView) specifically so it can override
 /// `draggingImageComponents` — which is where AppKit gets the drag image. The
 /// default snapshot of the transparent hosted content is a see-through ghost;
-/// this composites the content over an opaque rounded card instead.
+/// this composites the content over an opaque card instead.
 final class SidebarCellView: NSTableCellView {
     private let hosting: NSHostingView<AnyView>
-    /// What the drag image paints — set per-row in viewForItem.
+    /// What a header's drag image paints, and a session's if its snapshot
+    /// fails — set per-row in viewForItem.
     var dragTitle = ""
-    var dragSubtitle: String?
     var dragIsHeader = false
 
     init(content: AnyView) {
@@ -377,38 +377,61 @@ final class SidebarCellView: NSTableCellView {
 
     func update(content: AnyView) { hosting.rootView = content }
 
-    /// The drag image, hand-drawn: a solid rounded rectangle with the row's text
-    /// on it. No SwiftUI snapshot / cacheDisplay (those produced a transparent
-    /// image) — plain AppKit fills and NSString drawing, guaranteed opaque.
+    /// The drag image. A session is the row itself: its content snapshotted
+    /// (the name, the colour bar, the glyph, a second line if it has one) on
+    /// the selected pill, made opaque, so what you drag is what you picked up.
+    /// It used to be a hand-drawn card with the name and the folder path under
+    /// it, two lines for a row that shows one. A header keeps its hand-drawn
+    /// title.
+    ///
+    /// The snapshot is taken here, at the start of the drag, and only drawn
+    /// later; `cacheDisplay` captures SwiftUI text and shapes (checked: an
+    /// earlier note here said it came out transparent, which no longer holds).
+    /// The pill is filled opaque because the sidebar behind it is vibrancy,
+    /// which a drag image can't carry: the window's background stands in.
     override var draggingImageComponents: [NSDraggingImageComponent] {
         let size = bounds.size
         guard size.width > 0, size.height > 0 else { return [] }
-        let title = dragTitle, subtitle = dragSubtitle, isHeader = dragIsHeader
+        let title = dragTitle, isHeader = dragIsHeader
+        let appearance = effectiveAppearance
+        var snapshot: NSBitmapImageRep?
+        if !isHeader, let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
+            hosting.cacheDisplay(in: hosting.bounds, to: rep)
+            snapshot = rep
+        }
 
         let component = NSDraggingImageComponent(key: .icon)
         component.frame = NSRect(origin: .zero, size: size)
         component.contents = NSImage(size: size, flipped: false) { rect in
-            let card = rect.insetBy(dx: 8, dy: 3)
-            NSColor.textBackgroundColor.setFill()
-            NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
-
-            let x = card.minX + 10
-            if isHeader {
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 13),
-                    .foregroundColor: NSColor.tertiaryLabelColor]
-                (title as NSString).draw(at: NSPoint(x: x, y: card.midY - 8), withAttributes: attrs)
-            } else if let subtitle {
-                let titleAttrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor]
-                let subAttrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
-                (title as NSString).draw(at: NSPoint(x: x, y: card.midY + 2), withAttributes: titleAttrs)
-                (subtitle as NSString).draw(at: NSPoint(x: x, y: card.midY - 15), withAttributes: subAttrs)
-            } else {
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor]
-                (title as NSString).draw(at: NSPoint(x: x, y: card.midY - 8), withAttributes: attrs)
+            appearance.performAsCurrentDrawingAppearance {
+                if isHeader {
+                    let card = rect.insetBy(dx: 8, dy: 3)
+                    NSColor.textBackgroundColor.setFill()
+                    NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.systemFont(ofSize: 13),
+                        .foregroundColor: NSColor.tertiaryLabelColor]
+                    (title as NSString).draw(at: NSPoint(x: card.minX + 10, y: card.midY - 8), withAttributes: attrs)
+                    return
+                }
+                // The row's pill, where the row view draws it.
+                let inset = SidebarPillRowView.pillInset
+                let radius = SidebarPillRowView.pillRadius
+                let pill = NSBezierPath(roundedRect: rect.insetBy(dx: inset.width, dy: inset.height),
+                                        xRadius: radius, yRadius: radius)
+                NSColor.windowBackgroundColor.setFill()
+                pill.fill()
+                NSColor.labelColor.withAlphaComponent(SidebarPillRowView.pillAlpha).setFill()
+                pill.fill()
+                if let snapshot {
+                    pill.addClip()
+                    snapshot.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1,
+                                  respectFlipped: true, hints: nil)
+                } else {
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor]
+                    (title as NSString).draw(at: NSPoint(x: 20, y: rect.midY - 8), withAttributes: attrs)
+                }
             }
             return true
         }
@@ -823,8 +846,6 @@ struct SidebarOutlineView: NSViewRepresentable {
                 content = AnyView(SidebarRowContent(manager: manager, session: session.session))
                 cell = SidebarCellView(content: content)
                 cell.dragTitle = session.session.leafName
-                let path = session.session.abbreviatedPath
-                cell.dragSubtitle = path.isEmpty ? nil : path
             } else if item is PinnedItem || item is LooseHeaderItem {
                 content = AnyView(SidebarSectionHeaderContent(manager: manager, isPinned: item is PinnedItem)
                     .padding(.top, sectionGap(item)))

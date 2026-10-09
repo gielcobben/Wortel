@@ -165,6 +165,38 @@ extension GitWorktree {
     /// `~/.wortel/worktrees/<repo>/<branch-slug>`. The repository's own directory
     /// name groups them, so two projects with a `main` branch don't collide and
     /// the folder is readable when you go looking.
+    /// The checkout `path` is inside, as the directory Wortel made for it
+    /// (`~/.wortel/worktrees/<repo>/<checkout>`), whatever depth the shell has
+    /// since `cd`'d to. nil outside Wortel's worktrees, and for the repository
+    /// folders themselves.
+    static func checkout(containing path: String?, under base: String = root.path) -> String? {
+        guard let path, path.hasPrefix(base + "/") else { return nil }
+        let parts = path.dropFirst(base.count + 1).split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count >= 2 else { return nil }
+        return "\(base)/\(parts[0])/\(parts[1])"
+    }
+
+    /// The branch checked out in the worktree at `path`, read from the files
+    /// git keeps there rather than by running git: its `.git` file names the
+    /// worktree's own git folder, and that folder's `HEAD` names the branch.
+    /// Instant, so a list of worktrees can show the right names before any
+    /// git has answered. nil for a detached HEAD, a folder that isn't a
+    /// linked worktree, or anything unreadable; the slower check has the
+    /// last word.
+    nonisolated static func checkedOutBranch(at path: String) -> String? {
+        let dotGit = (path as NSString).appendingPathComponent(".git")
+        guard let pointer = try? String(contentsOfFile: dotGit, encoding: .utf8),
+              pointer.hasPrefix("gitdir:") else { return nil }
+        var gitDir = pointer.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !gitDir.hasPrefix("/") { gitDir = (path as NSString).appendingPathComponent(gitDir) }
+        guard let head = try? String(contentsOfFile: (gitDir as NSString).appendingPathComponent("HEAD"),
+                                     encoding: .utf8) else { return nil }
+        let ref = head.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ref.hasPrefix("ref: refs/heads/") else { return nil }
+        let branch = String(ref.dropFirst("ref: refs/heads/".count))
+        return branch.isEmpty ? nil : branch
+    }
+
     static func path(forBranch branch: String, repoRoot: String) -> String {
         let repo = (repoRoot as NSString).lastPathComponent
         return root

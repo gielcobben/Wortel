@@ -257,4 +257,46 @@ final class GitWorktreeTests: XCTestCase {
             XCTAssertEqual(process.terminationStatus, 0, "\(input) → \(name)")
         }
     }
+
+    // MARK: - The checkout a directory is in
+
+    /// However deep the shell has gone, the checkout is the directory Wortel
+    /// made: the row's label is about the worktree, not the prompt.
+    func testCheckoutIsTheWorktreeDirectoryAtAnyDepth() {
+        let base = "/Users/x/.wortel/worktrees"
+        XCTAssertEqual(GitWorktree.checkout(containing: "\(base)/wortel/fix-1", under: base), "\(base)/wortel/fix-1")
+        XCTAssertEqual(GitWorktree.checkout(containing: "\(base)/wortel/fix-1/macos/Wortel", under: base),
+                       "\(base)/wortel/fix-1")
+    }
+
+    func testNoCheckoutOutsideTheWorktrees() {
+        let base = "/Users/x/.wortel/worktrees"
+        XCTAssertNil(GitWorktree.checkout(containing: nil, under: base))
+        XCTAssertNil(GitWorktree.checkout(containing: "/Users/x/Developer/wortel", under: base))
+        // The repository's folder holds checkouts; it isn't one.
+        XCTAssertNil(GitWorktree.checkout(containing: "\(base)/wortel", under: base))
+        XCTAssertNil(GitWorktree.checkout(containing: base, under: base))
+        // A sibling whose name merely starts the same.
+        XCTAssertNil(GitWorktree.checkout(containing: "/Users/x/.wortel/worktrees-old/a/b", under: base))
+    }
+
+    // MARK: - The branch, from the worktree's own files
+
+    /// Read without running git, and the same answer git gives.
+    func testCheckedOutBranchIsReadFromTheWorktreesFiles() {
+        let repo = GitFixture.newRepo("checked-out")
+        defer { GitFixture.destroy(repo) }
+        GitFixture.commit("first", in: repo)
+        let worktree = repo.appendingPathComponent(".wt")
+        GitFixture.sh("git worktree add -q -b feature/x \(worktree.path)", in: repo)
+        XCTAssertEqual(GitWorktree.checkedOutBranch(at: worktree.path), "feature/x")
+
+        // Detached: no branch to name.
+        GitFixture.sh("git checkout -q --detach", in: worktree)
+        XCTAssertNil(GitWorktree.checkedOutBranch(at: worktree.path))
+        // The primary checkout has a `.git` folder, not a file: not a
+        // linked worktree.
+        XCTAssertNil(GitWorktree.checkedOutBranch(at: repo.path))
+        XCTAssertNil(GitWorktree.checkedOutBranch(at: "/nonexistent"))
+    }
 }

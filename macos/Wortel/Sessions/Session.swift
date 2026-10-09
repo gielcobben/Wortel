@@ -54,6 +54,13 @@ final class Session: Identifiable {
     /// edge. Persisted, and only ever changed by hand: opening the session
     /// leaves it, which is the point of a "come back to this".
     var colour: SessionColour?
+    /// The worktree this session is waiting for, while git makes it. The row
+    /// and the page are there from the moment Fork is pressed; the shell
+    /// starts once its folder exists. In a large repository the checkout is
+    /// most of a minute, and it used to happen with nothing on screen and end
+    /// in an alert. Never persisted: a session still waiting at quit was
+    /// never opened.
+    var preparation: WorktreePreparation?
     /// Whether the source-control panel is open while this session is selected.
     /// Per-session, and persisted: whether the panel earns its width depends on
     /// what the session is for — a manager in your home directory never needs
@@ -160,7 +167,9 @@ final class Session: Identifiable {
     /// or the worktree, or the path `wortel new --cwd` was handed — and it's
     /// stable for as long as the session lives. Persisted, so it survives a
     /// relaunch.
-    let originCwd: String?
+    /// Set again once, by a session whose worktree was still being made
+    /// when it was created (`preparation`): it was born before its folder.
+    var originCwd: String?
     /// A background session wants your eyes *now*, and *why*: it's blocked on
     /// you, something failed, or a long command finished while unselected. `nil`
     /// once you select it (you've seen the ping). Drives the loud sidebar dot
@@ -291,10 +300,14 @@ final class Session: Identifiable {
     }
 
     /// What the row's second line says for a worktree session: the branch, or
-    /// until that's known, the checkout's directory. nil outside a worktree.
+    /// until that's known (or with no branch checked out), the checkout's own
+    /// directory. Never the shell's: that follows `cd`, and a row reading
+    /// "macos" or "src" under its name said where the prompt was, not which
+    /// checkout. nil outside a worktree.
     var worktreeLabel: String? {
         guard isInOwnWorktree else { return nil }
-        return worktreeBranch ?? displayName
+        if let worktreeBranch { return worktreeBranch }
+        return GitWorktree.checkout(containing: cwd).map { ($0 as NSString).lastPathComponent } ?? displayName
     }
 
     /// A worktree session shows its branch under the name, unless the name

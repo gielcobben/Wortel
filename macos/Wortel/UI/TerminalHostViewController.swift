@@ -45,6 +45,17 @@ final class TerminalHostViewController: NSViewController {
         }
     }
 
+    /// Nothing in front: the selected session has no terminal yet (its
+    /// worktree is still being made). The last one shown is hidden, not
+    /// removed, and comes back instantly as usual.
+    func showNothing() {
+        guard let currentView else { return }
+        currentView.isHidden = true
+        currentView.occlusionDidChange(visible: false)
+        if view.window?.firstResponder === currentView { view.window?.makeFirstResponder(nil) }
+        self.currentView = nil
+    }
+
     /// The window arriving is the other chance to focus, and the reliable one.
     ///
     /// `show` runs from SwiftUI's `updateNSViewController`, which during launch

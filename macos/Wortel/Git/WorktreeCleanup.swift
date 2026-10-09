@@ -144,20 +144,7 @@ enum WorktreeCleanup {
     static func discover(knownRepos: [String] = [], under base: URL = GitWorktree.root,
                          broughtHere: [String] = WorktreeCleanup.broughtHere) async -> [String] {
         let fm = FileManager.default
-        let root = base.path
-        var found: [String] = []
-        for repoDir in (try? fm.contentsOfDirectory(atPath: root)) ?? [] {
-            let repoPath = (root as NSString).appendingPathComponent(repoDir)
-            var isDirectory: ObjCBool = false
-            guard fm.fileExists(atPath: repoPath, isDirectory: &isDirectory), isDirectory.boolValue
-            else { continue }
-            for entry in (try? fm.contentsOfDirectory(atPath: repoPath)) ?? [] {
-                let path = (repoPath as NSString).appendingPathComponent(entry)
-                if fm.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue {
-                    found.append(path)
-                }
-            }
-        }
+        var found = folders(under: base)
 
         // Registrations whose folder is gone. Only through repos we can name:
         // the ones the folders above belong to, and the ones sessions are in.
@@ -183,6 +170,28 @@ enum WorktreeCleanup {
             found.append(path)
         }
         return Array(Set(found)).sorted()
+    }
+
+    /// The checkouts on disk under `base` (`<repo>/<checkout>`): a directory
+    /// listing and no git, so the sheet can list them the moment it opens and
+    /// check them after. `discover` adds what only git knows about.
+    nonisolated static func folders(under base: URL = GitWorktree.root) -> [String] {
+        let fm = FileManager.default
+        let root = base.path
+        var found: [String] = []
+        for repoDir in (try? fm.contentsOfDirectory(atPath: root)) ?? [] {
+            let repoPath = (root as NSString).appendingPathComponent(repoDir)
+            var isDirectory: ObjCBool = false
+            guard fm.fileExists(atPath: repoPath, isDirectory: &isDirectory), isDirectory.boolValue
+            else { continue }
+            for entry in (try? fm.contentsOfDirectory(atPath: repoPath)) ?? [] {
+                let path = (repoPath as NSString).appendingPathComponent(entry)
+                if fm.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue {
+                    found.append(path)
+                }
+            }
+        }
+        return found.sorted()
     }
 
     // MARK: - Left behind by Bring Here

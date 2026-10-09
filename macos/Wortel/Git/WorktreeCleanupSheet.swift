@@ -121,12 +121,24 @@ struct WorktreeUsage: Sendable {
 final class WorktreeCleanupModel {
     struct Row: Identifiable {
         let path: String
+        /// The branch, read from the worktree's own files as the row is made
+        /// (`GitWorktree.checkedOutBranch`), so it has its real name from the
+        /// start instead of its folder's, and doesn't change name and place in
+        /// the list when its check lands.
+        let branchHint: String?
         var report: WorktreeReport?
         /// Move the folder to the Trash.
         var remove = false
+        /// On its way to the Trash right now.
+        var removing = false
         /// Why the last attempt kept it, when it did.
         var error: String?
         var id: String { path }
+
+        init(path: String) {
+            self.path = path
+            branchHint = GitWorktree.checkedOutBranch(at: path)
+        }
     }
 
     enum Mode {
@@ -174,30 +186,72 @@ final class WorktreeCleanupModel {
 
     var removableCount: Int { rows.filter(\.remove).count }
 
+    /// How many rows have been checked, for the footer while it's going on.
+    var checkedCount: Int { rows.filter { $0.report != nil }.count }
+    var isChecking: Bool { !isLoading && rows.contains { $0.report == nil } }
+
+    /// How many worktrees are checked at once. Each is a full `git status`,
+    /// which in a large repository is seconds, and one after the other was
+    /// minutes for a handful; a few at once is what the disk can take
+    /// without the checks slowing each other down.
+    private static let parallelChecks = 4
+
+    /// The rows first, the checks after. Everything on disk is listed at
+    /// once, by name (a directory listing, no git), and checked a few at a
+    /// time, each row filling in as its own check lands. What only git knows
+    /// about (a registration whose folder is gone) is found alongside and
+    /// added when it's found.
     func load() async {
-        knownRepos = await Self.repos(of: manager)
-        let paths: [String]
         if let session = closingSession {
-            paths = await Self.worktreePath(of: session).map { [$0] } ?? []
-        } else {
-            paths = await WorktreeCleanup.discover(knownRepos: knownRepos)
+            rows = (await Self.worktreePath(of: session)).map { [Row(path: $0)] } ?? []
+            isLoading = false
+            knownRepos = await Self.repos(of: manager)
+            await check(rows.map(\.path))
+            return
         }
-        rows = paths.map { Row(path: $0) }
+        rows = WorktreeCleanup.folders().map { Row(path: $0) }
         isLoading = false
-        let usage = self.usage
-        let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
-        let urgent = closingSession != nil
-        for path in paths {
-            let users = usage.users(of: path, in: processes)
-            let report = await WorktreeCleanup.inspect(
-                path: path, knownRepos: knownRepos, usedBy: users, urgent: urgent)
-            guard let index = rows.firstIndex(where: { $0.path == path }) else { continue }
-            rows[index].report = report
-            // The default is always the choice that loses nothing.
-            rows[index].remove = report.verdict != .blocked
-        }
+        knownRepos = await Self.repos(of: manager)
+        async let onDisk: Void = check(rows.map(\.path))
+        let all = await WorktreeCleanup.discover(knownRepos: knownRepos)
+        let added = all.filter { path in !rows.contains { $0.path == path } }
+        rows += added.map { Row(path: $0) }
+        await onDisk
+        await check(added)
         // A folder for a repo with nothing left in it is a trace too.
-        if closingSession == nil { WorktreeCleanup.removeEmptyRepoFolders() }
+        WorktreeCleanup.removeEmptyRepoFolders()
+    }
+
+    private func check(_ paths: [String]) async {
+        guard !paths.isEmpty else { return }
+        let usage = self.usage
+        let repos = knownRepos
+        let urgent = closingSession != nil
+        let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+        await withTaskGroup(of: WorktreeReport.self) { group in
+            var queue = paths[...]
+            var running = 0
+            while running < Self.parallelChecks, let path = queue.popFirst() {
+                let users = usage.users(of: path, in: processes)
+                group.addTask {
+                    await WorktreeCleanup.inspect(path: path, knownRepos: repos, usedBy: users, urgent: urgent)
+                }
+                running += 1
+            }
+            for await report in group {
+                if let index = rows.firstIndex(where: { $0.path == report.path }) {
+                    rows[index].report = report
+                    // The default is always the choice that loses nothing.
+                    rows[index].remove = report.verdict != .blocked
+                }
+                if let path = queue.popFirst() {
+                    let users = usage.users(of: path, in: processes)
+                    group.addTask {
+                        await WorktreeCleanup.inspect(path: path, knownRepos: repos, usedBy: users, urgent: urgent)
+                    }
+                }
+            }
+        }
     }
 
     func setRemove(_ path: String, _ on: Bool) {
@@ -225,16 +279,22 @@ final class WorktreeCleanupModel {
         defer { isWorking = false }
         // Read fresh, once: things may have started since the sheet opened.
         let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+        // One at a time, on purpose, unlike the checks: removing a worktree
+        // and deleting its branch write the repository's shared files, and
+        // two at once trip over each other's locks. Each row says when it's
+        // the one going.
         for row in rows where row.remove {
+            if let index = rows.firstIndex(where: { $0.path == row.path }) { rows[index].removing = true }
             let users = usage.users(of: row.path, in: processes)
             let error = await WorktreeCleanup.remove(
                 path: row.path, knownRepos: knownRepos, usedBy: users,
                 deleteBranch: deletesBranch(row))
             if let error, let index = rows.firstIndex(where: { $0.path == row.path }) {
+                rows[index].removing = false
                 rows[index].error = error
                 rows[index].remove = false
             } else {
-                rows.removeAll { $0.path == row.path }
+                withAnimation(.easeOut(duration: 0.2)) { rows.removeAll { $0.path == row.path } }
             }
         }
         WorktreeCleanup.removeEmptyRepoFolders()
@@ -412,7 +472,9 @@ struct WorktreeCleanupView: View {
             ForEach(groups, id: \.repo) { group in
                 VStack(alignment: .leading, spacing: 6) {
                     if showsHeaders {
-                        Text(group.repo)
+                        // Grouped by folder from the start; named by the
+                        // repository once a check says what it's called.
+                        Text(group.rows.lazy.compactMap { $0.report?.repoName }.first ?? group.repo)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .frame(height: Self.groupHeaderHeight)
@@ -445,7 +507,17 @@ struct WorktreeCleanupView: View {
 
     private var footerControls: some View {
         HStack(spacing: 10) {
-            if model.offersBranchDeletion {
+            if model.isChecking && model.closingSession == nil {
+                // Where the branch switch will be: how far the checks are,
+                // so a long list in a big repository is visibly moving.
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("Checking \(min(model.checkedCount + 1, model.rows.count)) of \(model.rows.count)\u{2026}")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            } else if model.offersBranchDeletion {
                 Toggle(isOn: $model.deleteBranches) {
                     Text("Also delete their branches")
                         .font(.callout)
@@ -455,7 +527,6 @@ struct WorktreeCleanupView: View {
                 .controlSize(.mini)
                 .help("Only branches Wortel created, and only when every commit on them is also on another branch or a remote. Any other branch is kept.")
             }
-            if model.isWorking { ProgressView().controlSize(.small) }
             Spacer(minLength: 12)
             Button("Cancel") { model.dismiss() }
                 .keyboardShortcut(.cancelAction)
@@ -469,8 +540,8 @@ struct WorktreeCleanupView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
             } else {
-                Button(model.removableCount == 0
-                       ? "Move to Trash" : "Move \(model.removableCount) to Trash") {
+                Button(model.isWorking ? "Moving to Trash\u{2026}"
+                       : model.removableCount == 0 ? "Move to Trash" : "Move \(model.removableCount) to Trash") {
                     Task { await model.removeSelected() }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -544,8 +615,8 @@ private struct WorktreeRow: View {
     /// ring when it could, a lock when it's kept.
     @ViewBuilder
     private var mark: some View {
-        if report == nil {
-            ProgressView().controlSize(.mini)
+        if report == nil || row.removing {
+            ProgressView().controlSize(.small).scaleEffect(0.75)
         } else if isKept {
             Image(systemName: "lock.fill")
                 .font(.system(size: 12))
@@ -560,7 +631,19 @@ private struct WorktreeRow: View {
 
     @ViewBuilder
     private var status: some View {
-        if row.error != nil {
+        if row.removing {
+            Text("Moving to Trash\u{2026}")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        } else if report == nil {
+            // Said, not left blank: an empty right side read as "nothing
+            // here" while git was still working out whether there was.
+            Text("Checking\u{2026}")
+                .font(.callout)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        } else if row.error != nil {
             pill("Couldn't remove", tint: .red)
         } else if let report {
             if let problem = problem(report) {
@@ -613,13 +696,15 @@ private struct WorktreeRow: View {
     /// The branch, which is what a worktree is for; the folder when there isn't
     /// one (a detached HEAD) or it isn't known yet.
     static func name(of row: WorktreeCleanupModel.Row) -> String {
-        row.report?.branch ?? (row.path as NSString).lastPathComponent
+        row.report?.branch ?? row.branchHint ?? (row.path as NSString).lastPathComponent
     }
 
-    /// The repository, or the folder Wortel filed it under until that's known.
+    /// The folder Wortel filed it under, which is the repository's name. Not
+    /// the repository git reports: the grouping has to be right from the
+    /// first frame, and a row moving to another card as its check landed was
+    /// the list rearranging itself under the pointer.
     static func repoName(of row: WorktreeCleanupModel.Row) -> String {
-        row.report?.repoName
-            ?? ((row.path as NSString).deletingLastPathComponent as NSString).lastPathComponent
+        ((row.path as NSString).deletingLastPathComponent as NSString).lastPathComponent
     }
 }
 

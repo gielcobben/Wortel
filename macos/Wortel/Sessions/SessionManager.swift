@@ -37,7 +37,9 @@ final class SessionManager {
             // caught-up clock on the one you just landed on.
             cancelCaughtUp(oldValue)
             scheduleCaughtUp(session)
-            session.ensureSurfaceView(runtime: runtime)
+            // Not while its worktree is still being made: there's no folder
+            // for the shell to start in yet (see `prepareWorktree`).
+            if session.preparation == nil { session.ensureSurfaceView(runtime: runtime) }
             scheduleSave()
         }
     }
@@ -1377,7 +1379,8 @@ final class SessionManager {
     /// pick up `newSession`'s inherit-from-the-selection rule on the one path
     /// that exists to escape it.
     private func makeSession(
-        cwd directory: String?, inFolder dir: String?, via origin: SessionOrigin
+        cwd directory: String?, inFolder dir: String?, via origin: SessionOrigin,
+        reported: Bool = true
     ) -> Session {
         // Named for where it is, not for what number it is. "Session 3" tells you
         // nothing, and it's what a session is stuck with until an agent turn ends
@@ -1395,7 +1398,7 @@ final class SessionManager {
         if let dir { collapsedFolders.remove(dir) } else { setLooseCollapsed(false) }
         selectedID = session.id
         scheduleSave()
-        Telemetry.capture(.sessionCreated(via: origin))
+        if reported { Telemetry.capture(.sessionCreated(via: origin)) }
         return session
     }
 
@@ -1455,20 +1458,65 @@ final class SessionManager {
     /// git's "already checked out" — which is the same rule as double-clicking a
     /// file that already has a preview window.
     ///
-    /// `onFailure` receives git's own message. They're worth showing verbatim:
-    /// "already checked out at …" and "not a valid object name" each tell you
-    /// exactly what to do next, and a paraphrase would drop the path.
-    func newSession(
-        onBranch branch: String,
-        base: String? = nil,
-        inFolder folder: String? = nil,
-        onFailure: @escaping (String) -> Void
-    ) {
+    /// A refusal is git's own message, shown verbatim: "already checked out
+    /// at …" and "not a valid object name" each tell you exactly what to do
+    /// next, and a paraphrase would drop the path.
+    ///
+    /// **The session is there before its worktree is.** Its row appears and is
+    /// selected at once, its page says the worktree is being prepared, and the
+    /// shell starts when git is done; meanwhile every other session works as
+    /// usual. In a large repository the checkout takes most of a minute, and
+    /// it used to happen with nothing on screen and end, as often as not, in
+    /// an alert. A refusal now stays on the session's own page, with git's
+    /// words and a way to try again (`retryWorktree`), until it's closed.
+    ///
+    /// The CLI keeps `openSession`: it answers with the session's id, which
+    /// can only be given once there is a session to name.
+    ///
+    /// `after` is a fetch to give a few seconds first, so a new branch forks
+    /// from where the remote is now (see `newSessionOnBranch`); the session is
+    /// on screen while it runs.
+    @discardableResult
+    func newSession(onBranch branch: String, base: String? = nil,
+                    inFolder folder: String? = nil, after fetch: Task<Void, Never>? = nil) -> Session? {
+        let branch = GitWorktree.branchName(from: branch)
+        // The repository comes from the selection *now*, before the new row
+        // takes it over.
+        // A session still preparing has no directory yet, but knows where it
+        // came from: forking beside it means the same repository.
+        guard !branch.isEmpty,
+              let from = selected?.cwd ?? selected?.originCwd ?? selected?.preparation?.from
+        else { return nil }
+        let session = makeSession(cwd: nil, inFolder: folder ?? selected?.folderPath,
+                                  via: .worktree, reported: false)
+        let leaf = GitWorktree.sessionLeaf(forBranch: branch)
+        session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
+        session.worktreeBranch = branch
+        session.preparation = WorktreePreparation(branch: branch, base: base, from: from)
+        prepareWorktree(for: session, after: fetch)
+        return session
+    }
+
+    /// Ask git again for a session whose worktree it refused, as it was asked
+    /// the first time.
+    func retryWorktree(_ session: Session) {
+        guard session.preparation?.failure != nil else { return }
+        session.preparation?.failure = nil
+        prepareWorktree(for: session)
+    }
+
+    private func prepareWorktree(for session: Session, after fetch: Task<Void, Never>? = nil) {
+        guard let request = session.preparation else { return }
         Task { [weak self] in
+            await fetch?.finishing(within: .seconds(3))
             guard let self else { return }
-            if case .failure(let failure) = await self.openSession(
-                onBranch: branch, base: base, inFolder: folder) {
-                onFailure(failure.message)
+            let result = await self.openSession(
+                onBranch: request.branch, base: request.base, from: request.from, into: session)
+            // Closed while git worked: the worktree stays, as any does, and
+            // nothing comes back to life.
+            guard self.sessions.contains(where: { $0 === session }) else { return }
+            if case .failure(let failure) = result {
+                session.preparation?.failure = failure.message
             }
         }
     }
@@ -1498,10 +1546,15 @@ final class SessionManager {
     /// standing", and HEAD is exactly the answer that made a new branch inherit
     /// whichever worktree the request came from. Saying `HEAD` explicitly still
     /// works and is how you stack onto the current branch on purpose.
+    ///
+    /// `placeholder` is a session already on screen waiting for this worktree
+    /// (`newSession(onBranch:)`); it's given the worktree rather than a new
+    /// session being made.
     @discardableResult
     func openSession(
         onBranch branch: String, base: String? = nil,
-        inFolder folder: String? = nil, from cwd: String? = nil
+        inFolder folder: String? = nil, from cwd: String? = nil,
+        into placeholder: Session? = nil
     ) async -> Result<Session, Failure> {
         // Made into a name git accepts ("Jump to" → "Jump-to"), here where the
         // sheet, the menu and `wortel new --branch` all arrive.
@@ -1596,6 +1649,20 @@ final class SessionManager {
                 root: root, at: path, branch: branch, source: source) {
                 return .failure(Failure(message: GitMessage.readable(error, while: .worktree(branch: branch))))
             }
+        }
+        if let placeholder {
+            // Closed while git worked: leave it closed.
+            guard sessions.contains(where: { $0 === placeholder }) else { return .success(placeholder) }
+            placeholder.cwd = path
+            placeholder.originCwd = path
+            placeholder.worktreeBranch = branch
+            placeholder.preparation = nil
+            Telemetry.capture(.sessionCreated(via: .worktree))
+            // Its shell starts here when it's the one on screen; otherwise when
+            // it's next selected, as a restored session's does.
+            if placeholder.id == selectedID { placeholder.ensureSurfaceView(runtime: runtime) }
+            scheduleSave()
+            return .success(placeholder)
         }
         let session = newSession(cwd: path, inFolder: folder, via: .worktree)
         // Named for the branch rather than for the slug its directory got, but
@@ -1950,7 +2017,9 @@ final class SessionManager {
     /// Create surfaces for restored sessions that don't have one yet, one per
     /// runloop turn, so every session is warm within a couple of seconds.
     func warmRemainingSurfaces(limit: Int = 20) {
-        guard limit > 0, let cold = sessions.first(where: { $0.surfaceView == nil }) else { return }
+        guard limit > 0,
+              let cold = sessions.first(where: { $0.surfaceView == nil && $0.preparation == nil })
+        else { return }
         cold.ensureSurfaceView(runtime: runtime)
         DispatchQueue.main.async { [weak self] in
             self?.warmRemainingSurfaces(limit: limit - 1)
@@ -2576,13 +2645,29 @@ final class SessionManager {
     /// where the branch should be.
     private func resolveWorktreeBranches() {
         for session in sessions where session.isInOwnWorktree && session.worktreeBranch == nil {
-            guard let cwd = session.cwd else { continue }
-            Task { [weak session] in
-                let result = await GitService.run(["rev-parse", "--abbrev-ref", "HEAD"], in: cwd)
-                let branch = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard result.ok, !branch.isEmpty, branch != "HEAD", let session else { return }
-                session.worktreeBranch = branch
-            }
+            resolveWorktreeBranch(session)
+        }
+    }
+
+    /// The branch checked out where `session` is now: at launch for the ones
+    /// that don't know, and whenever a shell lands in another worktree (one an
+    /// agent made with `git worktree add`, or `cd`'d into), which is how most
+    /// sessions that aren't Fork's end up in one. The old answer stays on the
+    /// row until the new one is in, so it doesn't flicker; a checkout with no
+    /// branch (detached) clears it, and the row shows the checkout's folder.
+    private func resolveWorktreeBranch(_ session: Session) {
+        guard let cwd = session.cwd else { return }
+        Task { [weak self, weak session] in
+            let result = await GitService.run(["rev-parse", "--abbrev-ref", "HEAD"], in: cwd)
+            // Still in that checkout (a `cd macos` meanwhile is the same one).
+            guard result.ok, let session,
+                  GitWorktree.checkout(containing: session.cwd) == GitWorktree.checkout(containing: cwd)
+            else { return }
+            let branch = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            let known: String? = branch.isEmpty || branch == "HEAD" ? nil : branch
+            guard session.worktreeBranch != known else { return }
+            session.worktreeBranch = known
+            self?.scheduleSave()
         }
     }
 
@@ -2603,7 +2688,9 @@ final class SessionManager {
         // One read of the process table for the whole save, taken only if some
         // session has an agent to vouch for.
         lazy var table = ProcessTable.snapshot()
-        return sessions.map { session in
+        // A session still waiting for its worktree was never opened, and has
+        // no folder to come back to.
+        return sessions.filter { $0.preparation == nil }.map { session in
             // What to record as "the agent to resume next launch", resolved as one
             // unit so a model or command can never outlive the agent it belongs to.
             //
@@ -2798,7 +2885,14 @@ final class SessionManager {
             }
             view.onPwdChange = { [weak self, weak session] pwd in
                 guard let self, let session else { return }
+                let previous = session.cwd
                 session.cwd = pwd // observed → sidebar row + navigation subtitle update
+                // Into a worktree, or from one into another: whose branch the
+                // row shows has changed.
+                if let checkout = GitWorktree.checkout(containing: pwd),
+                   checkout != GitWorktree.checkout(containing: previous) || session.worktreeBranch == nil {
+                    self.resolveWorktreeBranch(session)
+                }
                 // The shell moved somewhere: a folder it reports is one it's in.
                 if session.folderIsGone { session.folderIsGone = !FileManager.default.fileExists(atPath: pwd) }
                 self.scheduleSave()

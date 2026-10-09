@@ -684,22 +684,11 @@ func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = ni
         // refs we managed to pull, which is where it would have forked from a
         // moment ago anyway. The fetch is not cancelled, only stopped waiting
         // for, so it still lands for next time.
-        await fetch.finishing(within: .seconds(3))
-        openSessionOnBranch(manager, branch: choice.branch, base: choice.base, inFolder: folder)
-    }
-}
-
-@MainActor
-func openSessionOnBranch(
-    _ manager: SessionManager, branch: String, base: String? = nil,
-    inFolder folder: String? = nil
-) {
-    manager.newSession(onBranch: branch, base: base, inFolder: folder) { message in
-        let alert = NSAlert()
-        alert.messageText = "Couldn't open a worktree for \u{201c}\(branch)\u{201d}"
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.runModal()
+        //
+        // That wait happens with the new session already on screen, saying it's
+        // preparing (`SessionManager.newSession(onBranch:)`), and so does a
+        // refusal: on its own page, not in an alert.
+        manager.newSession(onBranch: choice.branch, base: choice.base, inFolder: folder, after: fetch)
     }
 }
 
@@ -1086,6 +1075,20 @@ struct SessionStatusIndicator: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            // A worktree on its way: the same three dots as a working agent,
+            // because to the row it's the same news (something is under way
+            // here, nothing for you yet). The page itself has the spinner.
+            // Orange once git has refused, the colour of a session waiting on
+            // you.
+            if let preparation = session.preparation {
+                if preparation.failure != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                } else {
+                    WorkingIndicator()
+                }
+            }
             // The unread trail sits *beside* the busy dot rather than behind it:
             // a session that failed and is already working again still says so.
             // Hidden while a loud dot is up (the dot outranks it) and on the
@@ -1426,8 +1429,19 @@ struct DetailPane: View {
     @Bindable var files: FileTreeModel
 
     var body: some View {
-        TerminalContainer(runtime: runtime, session: manager.selected)
+        TerminalContainer(runtime: runtime, session: manager.selected,
+                          preparing: manager.selected?.preparation != nil)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Over the terminals rather than instead of them: the host keeps
+            // every session's view alive, and taking it out would rebuild them.
+            .overlay {
+                if let session = manager.selected, let preparation = session.preparation {
+                    WorktreePreparingPage(
+                        preparation: preparation,
+                        retry: { manager.retryWorktree(session) },
+                        close: { manager.close(session) })
+                }
+            }
             .overlay { AttentionFlashOverlay(flash: manager.attentionFlash) }
             .onAppear { focusInspector() }
             .onChange(of: manager.selectedID) { _, _ in focusInspector() }
@@ -1459,13 +1473,18 @@ struct DetailPane: View {
 private struct TerminalContainer: NSViewControllerRepresentable {
     let runtime: GhosttyRuntime
     let session: Session?
+    /// The session's worktree isn't there yet: no shell to show, and the one
+    /// shown before it is put away so it can't be typed into by mistake.
+    let preparing: Bool
 
     func makeNSViewController(context: Context) -> TerminalHostViewController {
         TerminalHostViewController()
     }
 
     func updateNSViewController(_ controller: TerminalHostViewController, context: Context) {
-        if let session {
+        if preparing {
+            controller.showNothing()
+        } else if let session {
             controller.show(session, runtime: runtime)
         }
     }

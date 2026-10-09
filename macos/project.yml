@@ -227,6 +227,25 @@ targets:
         # Ghostty sets the same key, but in its framework's plist, and macOS
         # reads it only from the app's own.
         NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true
+        # What a program run in a session asks for. macOS charges it to the
+        # terminal that started it, so the prompt says "Wortel", and without a
+        # line here for a kind of access the request is refused with no prompt
+        # at all. Under the hardened runtime each also needs its entitlement
+        # (Wortel.entitlements, applied by scripts/release.sh).
+        NSAppleEventsUsageDescription: A program running in Wortel wants to control another app.
+        NSBluetoothAlwaysUsageDescription: A program running in Wortel wants to use Bluetooth.
+        NSCalendarsUsageDescription: A program running in Wortel wants to use your calendars.
+        NSCalendarsFullAccessUsageDescription: A program running in Wortel wants to use your calendars.
+        NSCameraUsageDescription: A program running in Wortel wants to use your camera.
+        NSContactsUsageDescription: A program running in Wortel wants to use your contacts.
+        NSLocalNetworkUsageDescription: A program running in Wortel wants to reach devices on your local network.
+        NSLocationUsageDescription: A program running in Wortel wants to use your location.
+        NSMicrophoneUsageDescription: A program running in Wortel wants to use your microphone.
+        NSPhotoLibraryUsageDescription: A program running in Wortel wants to use your photo library.
+        NSRemindersUsageDescription: A program running in Wortel wants to use your reminders.
+        NSRemindersFullAccessUsageDescription: A program running in Wortel wants to use your reminders.
+        NSSpeechRecognitionUsageDescription: A program running in Wortel wants to use speech recognition.
+        NSSystemAdministrationUsageDescription: A program running in Wortel wants to change system settings.
         # Browser tabs load what a session serves (http://localhost:5173) and
         # whatever else is typed, which App Transport Security would otherwise
         # refuse for being plain http.

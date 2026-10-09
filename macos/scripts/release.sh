@@ -243,7 +243,11 @@ for tool in "$APP"/Contents/Resources/bin/*; do
   echo "    signing $(basename "$tool")"
   codesign --force --timestamp ${RUNTIME[@]+"${RUNTIME[@]}"} --sign "$IDENTITY" "$tool"
 done
+# The app alone gets the entitlements: the hardened-runtime exceptions that let
+# a program in a session be asked for the camera, contacts and the rest (see
+# Wortel.entitlements). Without them, notarized Wortel refuses all of it unasked.
 codesign --force --deep --timestamp ${RUNTIME[@]+"${RUNTIME[@]}"} --sign "$IDENTITY" "$APP"
+codesign --force --timestamp ${RUNTIME[@]+"${RUNTIME[@]}"} --entitlements "$ROOT/Wortel.entitlements" --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 # Verify each one on its own terms. `--verify --deep` on the app does not check
 # these — it passed happily while both tools carried a development signature —

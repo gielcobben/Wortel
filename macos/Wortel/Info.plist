@@ -31,14 +31,42 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>A program running in Wortel wants to control another app.</string>
 	<key>NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>A program running in Wortel wants to use Bluetooth.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>A program running in Wortel wants to use your calendars.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>A program running in Wortel wants to use your calendars.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A program running in Wortel wants to use your camera.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>A program running in Wortel wants to use your contacts.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© Giel Cobben</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>A program running in Wortel wants to reach devices on your local network.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>A program running in Wortel wants to use your location.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A program running in Wortel wants to use your microphone.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A program running in Wortel wants to use your photo library.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>A program running in Wortel wants to use your reminders.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>A program running in Wortel wants to use your reminders.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>A program running in Wortel wants to use speech recognition.</string>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>NSSystemAdministrationUsageDescription</key>
+	<string>A program running in Wortel wants to change system settings.</string>
 	<key>SUAutomaticallyUpdate</key>
 	<true/>
 	<key>SUEnableAutomaticChecks</key>

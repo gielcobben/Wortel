@@ -286,7 +286,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // alerts and sounds can set `badgeLabel` all day and the Dock will
         // ignore it. Which is exactly what it was doing.
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-            DispatchQueue.main.async { Self.notificationsAuthorized = granted }
+            DispatchQueue.main.async {
+                Self.notificationsAuthorized = granted
+                Permissions.shared.refresh()
+            }
         }
 
         // Panel visibility and the chosen pane are session state, so a toggle has
@@ -1296,6 +1299,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc func focusSourceControlList(_ sender: Any?) {
         gitPanel.requestListFocus()
+    }
+
+    @objc func showPermissions(_ sender: Any?) {
+        PermissionsNotice.shared.showFromMenu()
     }
 
     @objc func checkForUpdates(_ sender: Any?) {

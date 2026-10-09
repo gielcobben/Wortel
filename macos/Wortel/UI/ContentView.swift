@@ -76,6 +76,7 @@ struct SidebarPane: View {
                     TelemetryInfoButton()
                         .frame(width: 24, height: 24)
                     UpdateIndicator()
+                    PermissionsIndicator()
                     Spacer()
                 }
                 // Equal on all four sides, so the 24pt hit box's centre sits on

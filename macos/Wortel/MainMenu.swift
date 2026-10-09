@@ -188,6 +188,9 @@ enum MainMenu {
                             action: #selector(AppDelegate.toggleTelemetry(_:)),
                             keyEquivalent: "")
         }
+        // What macOS lets Wortel do. The sidebar's icon for it only shows
+        // while something is off, so this is the way in when nothing is.
+        appMenu.addItem(withTitle: "Permissions\u{2026}", action: #selector(AppDelegate.showPermissions(_:)), keyEquivalent: "")
         // Services, where every Mac app has it: the system fills it, and a
         // terminal is where "make a new note from this selection" and the like
         // are most often wanted.

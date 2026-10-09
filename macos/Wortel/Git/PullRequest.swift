@@ -84,14 +84,8 @@ struct PullRequest: Equatable, Sendable {
     /// has none of the places it's installed, so those are looked in by name.
     /// Read once: installing it while the app runs is picked up on relaunch.
     private static let ghPath: String? = {
-        let home = NSHomeDirectory()
-        let user = NSUserName()
-        let candidates = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+        GitService.toolPath(ProcessInfo.processInfo.environment["PATH"])
             .split(separator: ":").map(String.init)
-            + ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.nix-profile/bin",
-               "/etc/profiles/per-user/\(user)/bin", "/run/current-system/sw/bin",
-               "\(home)/.local/bin", "/opt/local/bin"]
-        return candidates
             .map { ($0 as NSString).appendingPathComponent("gh") }
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }()
@@ -101,7 +95,7 @@ struct PullRequest: Equatable, Sendable {
     private static func environment(for gh: String) -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         let dir = (gh as NSString).deletingLastPathComponent
-        env["PATH"] = [dir, env["PATH"] ?? "/usr/bin:/bin"].joined(separator: ":")
+        env["PATH"] = [dir, GitService.toolPath(env["PATH"])].joined(separator: ":")
         env["GH_PROMPT_DISABLED"] = "1"
         env["GH_NO_UPDATE_NOTIFIER"] = "1"
         env["GIT_TERMINAL_PROMPT"] = "0"

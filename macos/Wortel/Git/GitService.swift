@@ -48,10 +48,38 @@ enum GitService {
     /// take the index.lock just to read status.
     private static let gitEnvironment: [String: String] = {
         var env = ProcessInfo.processInfo.environment
+        env["PATH"] = toolPath(env["PATH"])
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_OPTIONAL_LOCKS"] = "0"
         return env
     }()
+
+    /// The folders command-line tools are installed in, beyond the system's.
+    ///
+    /// An app opened from the Dock gets launchd's PATH, `/usr/bin:/bin:/usr/sbin:/sbin`,
+    /// and none of these. git itself is in `/usr/bin`, but what it runs on the
+    /// user's behalf often isn't: `git-lfs`, which a repository with large files
+    /// can't check anything out without (`filter.lfs.required`), a credential
+    /// helper, a hook's tools. Without them a Fork in such a repository failed
+    /// with "git-lfs: command not found" while the same command worked in every
+    /// shell. `gh` is looked for in the same places (`PullRequest`).
+    static let installDirectories: [String] = {
+        let home = NSHomeDirectory()
+        return ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.nix-profile/bin",
+                "/etc/profiles/per-user/\(NSUserName())/bin", "/run/current-system/sw/bin",
+                "\(home)/.local/bin", "/opt/local/bin"]
+    }()
+
+    /// `path` with the install folders it lacks added **after** its own, so a
+    /// `git` already on it stays the one that runs and only what's missing is
+    /// found further along. (A Nix git on the work laptop is a different binary
+    /// with its own speed; swapping it in by accident is not this change.)
+    static func toolPath(_ path: String?, adding extra: [String] = installDirectories) -> String {
+        var entries = (path ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        if entries.isEmpty { entries = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] }
+        for directory in extra where !entries.contains(directory) { entries.append(directory) }
+        return entries.joined(separator: ":")
+    }
 
     /// Every git we've started and not yet seen exit, by pid (which is also its
     /// process group), so quitting can stop them (`terminateAll`). A `fetch`

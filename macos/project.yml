@@ -454,6 +454,10 @@ targets:
       # own files. Three layouts nobody documents; a drift resumes the wrong
       # conversation without a sound. Foundation only.
       - path: Wortel/Sessions/AgentConversation.swift
+      # What a resume carries over from the line that started the agent: its
+      # launcher and the flags that set how it runs. A slip here drops a
+      # permission mode or turns a flag's value into a prompt. Foundation only.
+      - path: Wortel/Sessions/AgentCommandLine.swift
       # The auto-naming gate. Pure, and every one of its failure modes is
       # timing-shaped and invisible: too eager and the sidebar relabels itself
       # while you read it, too shy and a session keeps a name that stopped being

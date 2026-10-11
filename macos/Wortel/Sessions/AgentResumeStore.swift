@@ -150,8 +150,8 @@ enum AgentLiveness {
 /// in this session", which is exactly when we want to resume it.
 ///
 /// On restore, `SessionManager` calls `consumeSnapshot()` to read the leftover
-/// markers, then seeds each matching session's `pendingResumeInput` (via
-/// `resumeInput(for:)`) so its first shell auto-runs the agent's resume command.
+/// markers, then gives each matching session an `OwedResume` (via
+/// `resumeInput(for:)`) so its first shell types the agent's resume command.
 /// `currentMarkers()` is the non-destructive read the live sidebar badge uses.
 /// See `Resources/ghostty/shell-integration/*` (the `_ghostty_wortel_agent`
 /// path in each shell).
@@ -281,24 +281,28 @@ enum AgentResumeStore {
     /// on a live marker. A terminal that quietly stops noticing the agents it
     /// was built to notice, the longer they run.
     ///
-    /// Deliberately the strict test rather than `isRunning`'s fail-open one: a
-    /// marker survives only on proof its shell is still there. The asymmetry
-    /// runs the other way here than it does for resume — an unprovable marker
-    /// kept is a phantom agent badge and a sampler watching a dead screen, an
-    /// unprovable marker dropped is at worst a duplicate resume, which is the
-    /// behaviour this had all along. (`sweepDeadAgentMarkers` is the backstop
-    /// either way, but it reaches only what `isRunning` calls dead, so a marker
-    /// with no recorded pid would sit here forever.)
+    /// Only a marker proven dead goes. `.unknown` is kept: it is what a failed
+    /// argument read gives for a live Pi, Gemini or aider (routine; see
+    /// `AgentLiveness.locate`), and dropping it lost the agent for the whole
+    /// launch, so a keeper lost later had nothing to resume. A marker with no
+    /// shell pid (an integration from before the field) can't be proven
+    /// either way and goes, as it always did; `sweepDeadAgentMarkers` catches
+    /// any kept one that turns out dead.
     static func consumeSnapshot() -> [UUID: AgentMarker] {
         let fm = FileManager.default
+        let table = ProcessTable.snapshot()
         let markers = currentMarkers()
         for (id, marker) in markers {
-            guard case .running = AgentLiveness.locate(agent: marker.agent,
-                                                       shellPID: marker.shellPID)
-            else {
-                try? fm.removeItem(at: markerURL(for: id))
-                continue
+            let dead: Bool
+            if marker.shellPID == nil {
+                dead = true
+            } else if case .gone = AgentLiveness.locate(agent: marker.agent, shellPID: marker.shellPID,
+                                                        table: table) {
+                dead = true
+            } else {
+                dead = false
             }
+            if dead { try? fm.removeItem(at: markerURL(for: id)) }
         }
         // Anything the directory holds that isn't a marker we could read is not
         // going to become one; it would only be re-read every launch. The exit
@@ -314,56 +318,52 @@ enum AgentResumeStore {
         return markers
     }
 
-    /// The literal input to auto-run to resume `marker`'s agent (command plus a
-    /// trailing newline), or nil if there's no way to bring the agent back.
+    /// The literal input that resumes `marker`'s agent, or nil if there's no
+    /// way to bring it back. Ends in a newline, so it runs, except for a
+    /// command line re-run as typed that is more than one simple command: that
+    /// is typed and left at the prompt, because running it again would also
+    /// run whatever came after the agent (`ollama run x; rm -rf build`).
     static func resumeInput(for marker: AgentMarker, knownConversationID: String? = nil) -> String? {
-        resumeCommand(for: marker, knownConversationID: knownConversationID).map { $0 + "\n" }
+        guard let command = resumeCommand(for: marker, knownConversationID: knownConversationID)
+        else { return nil }
+        let runsAsTyped = command == marker.argv && !AgentCommandLine.isSimple(command)
+        return runsAsTyped ? command : command + "\n"
     }
 
-    /// Resolve the resume command for a marker. Claude prefers an exact
-    /// `--resume <id>` when the conversation file can be found for its cwd (this
-    /// also disambiguates two sessions in one directory, which `--continue`
-    /// cannot); everything else uses the mapped "continue last" command, falling
-    /// back to re-running the original invocation for agents with no resume flag.
+    /// The command that resumes a marker's agent, started the way it was
+    /// (`AgentCommandLine`): an exact conversation when one is known (which is
+    /// what keeps two sessions in one folder apart); otherwise the agent's own
+    /// "continue the latest"; and for an agent with neither, its launch line
+    /// as typed.
     static func resumeCommand(for marker: AgentMarker, knownConversationID: String? = nil) -> String? {
-        // A known conversation, for an agent that can resume an exact one, is
-        // exact. See `AgentConversation`.
-        if let id = knownConversationID,
-           let command = AgentConversation.resumeCommand(agent: marker.agent, id: id) {
-            return command
+        let agent = marker.agent
+        if let id = knownConversationID, let words = AgentConversation.resumeWords(agent: agent, id: id) {
+            return AgentCommandLine.command(agent: agent, argv: marker.argv, resume: words)
         }
-        if marker.agent == "claude" {
-            // Only fall back to the newest-file guess when we never got to look.
-            if let cwd = marker.cwd, let id = latestClaudeSessionID(cwd: cwd) {
-                return "claude --resume \(id)"
+        if agent == "claude" {
+            // No conversation known: the newest in the folder, which is what
+            // `--continue` would pick, but named so the next save records it.
+            if let cwd = marker.cwd, let id = latestClaudeSessionID(cwd: cwd),
+               let words = AgentConversation.resumeWords(agent: agent, id: id) {
+                return AgentCommandLine.command(agent: agent, argv: marker.argv, resume: words)
             }
-            return "claude --continue"
+            return AgentCommandLine.command(agent: agent, argv: marker.argv, resume: ["--continue"])
         }
-        if let mapped = resumeCommands[marker.agent] { return mapped }
+        if let mapped = resumeCommands[agent] {
+            return AgentCommandLine.command(
+                agent: agent, argv: marker.argv, resume: Array(AgentCommandLine.words(mapped).dropFirst()))
+        }
         return marker.argv
     }
 
-    /// The id of the most recently touched Claude Code conversation for `cwd`, by
-    /// reading Claude's own store: `~/.claude/projects/<escaped-cwd>/<id>.jsonl`,
-    /// where the cwd is escaped by replacing every non-alphanumeric character with
-    /// `-` (verified against the on-disk layout). Returns nil if the directory or
-    /// a valid session file isn't found, in which case the caller falls back to
-    /// `claude --continue`.
-    ///
-    /// **Known limitation:** "most recently touched" is the same heuristic
-    /// `--continue` uses, so when several Claude conversations share one directory
-    /// — two sessions in the same repo, or an editor-hosted agent running
-    /// alongside — this can reattach to the wrong one. Resolving it properly needs
-    /// the id captured *while* the agent runs, which the shell can't do: the id
-    /// doesn't exist yet at `preexec`, and reading it back later would mean
-    /// writing into the agent's own config, which Wortel deliberately won't do.
     /// The id of the conversation an agent started at `startedAt` is writing to,
     /// identified by the transcript **created** when that agent launched.
     ///
-    /// A fresh `claude` creates `~/.claude/projects/<escaped-cwd>/<id>.jsonl` at
-    /// launch, so the transcript born at the moment the agent started *is* that
-    /// agent's conversation — even when several conversations share the directory,
-    /// which is the case `--continue` and a newest-modified guess both get wrong.
+    /// A fresh `claude` creates `~/.claude/projects/<escaped-cwd>/<id>.jsonl`
+    /// with its first exchange, so the transcript born just after the agent
+    /// started *is* that agent's conversation — even when several conversations
+    /// share the directory, which is the case `--continue` and a newest-modified
+    /// guess both get wrong.
     ///
     /// Returns nil when no transcript was created at that moment, which is the
     /// normal signal that the agent **resumed** an existing conversation rather
@@ -421,27 +421,78 @@ enum AgentResumeStore {
     }
 
     private static func transcripts(cwd: String) -> [(id: String, created: Date, modified: Date)] {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects/\(escapedProjectDirectory(for: cwd))",
-                                    isDirectory: true)
         let keys: [URLResourceKey] = [.creationDateKey, .contentModificationDateKey]
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: keys) else { return [] }
-        return files.compactMap { url in
-            guard url.pathExtension == "jsonl" else { return nil }
-            let id = url.deletingPathExtension().lastPathComponent
-            guard UUID(uuidString: id) != nil else { return nil }
-            let values = try? url.resourceValues(forKeys: Set(keys))
-            return (id,
-                    values?.creationDate ?? .distantPast,
-                    values?.contentModificationDate ?? .distantPast)
+        return claudeProjectDirectories(for: cwd).flatMap { dir -> [(id: String, created: Date, modified: Date)] in
+            guard let files = try? FileManager.default.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: keys) else { return [] }
+            return files.compactMap { url in
+                guard url.pathExtension == "jsonl" else { return nil }
+                let id = url.deletingPathExtension().lastPathComponent
+                guard UUID(uuidString: id) != nil else { return nil }
+                let values = try? url.resourceValues(forKeys: Set(keys))
+                return (id,
+                        values?.creationDate ?? .distantPast,
+                        values?.contentModificationDate ?? .distantPast)
+            }
         }
     }
 
-    /// Claude names a project directory after its cwd with every non-alphanumeric
-    /// character replaced by `-` (verified against the on-disk layout).
-    private static func escapedProjectDirectory(for cwd: String) -> String {
-        String(cwd.map { ($0.isASCII && ($0.isLetter || $0.isNumber)) ? $0 : "-" })
+    static var claudeProjectsRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects", isDirectory: true)
+    }
+
+    /// The folders Claude keeps `cwd`'s conversations in: usually one.
+    ///
+    /// Claude names it after the **physical** path (`/tmp/x` is held under
+    /// `-private-tmp-x`, a symlinked `~/code` under wherever it points), while
+    /// the shell reports the path as typed; both are tried. Past 200
+    /// characters Claude cuts the name and appends a hash of its own, which
+    /// isn't reproduced here: a long path's folder is found by its first 200.
+    /// A wrong folder here drops an exact conversation id as "not found", and
+    /// the resume falls back to a guess.
+    static func claudeProjectDirectories(for cwd: String) -> [URL] {
+        let root = claudeProjectsRoot
+        var names: [String] = []
+        for path in [physicalPath(cwd), cwd] {
+            let name = claudeProjectName(for: path)
+            guard !names.contains(name) else { continue }
+            names.append(name)
+        }
+        var found: [URL] = []
+        for name in names {
+            if name.count <= claudeProjectNameLimit {
+                let dir = root.appendingPathComponent(name, isDirectory: true)
+                if FileManager.default.fileExists(atPath: dir.path) { found.append(dir) }
+            } else if let entries = try? FileManager.default.contentsOfDirectory(atPath: root.path) {
+                let prefix = String(name.prefix(claudeProjectNameLimit)) + "-"
+                found += entries.filter { $0.hasPrefix(prefix) }
+                    .map { root.appendingPathComponent($0, isDirectory: true) }
+            }
+        }
+        return found
+    }
+
+    /// Claude's escape: every UTF-16 unit that isn't an ASCII letter or digit
+    /// becomes `-` (`replace(/[^a-zA-Z0-9]/g, "-")` in Claude Code itself), so
+    /// one emoji is two dashes.
+    static func claudeProjectName(for path: String) -> String {
+        String(path.utf16.map { unit -> Character in
+            switch unit {
+            case 0x30...0x39, 0x41...0x5A, 0x61...0x7A: return Character(Unicode.Scalar(unit)!)
+            default: return "-"
+            }
+        })
+    }
+
+    static let claudeProjectNameLimit = 200
+
+    /// `realpath`, or the path itself if it doesn't exist any more. Not
+    /// `URL.resolvingSymlinksInPath`, which drops `/private` from
+    /// `/private/tmp` and so undoes the very thing being resolved.
+    static func physicalPath(_ path: String) -> String {
+        guard let resolved = realpath(path, nil) else { return path }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     static func latestClaudeSessionID(cwd: String) -> String? {
@@ -452,9 +503,9 @@ enum AgentResumeStore {
     /// conversation from the directory it was held in, so an id remembered from
     /// another directory is no id at all there.
     static func claudeTranscriptExists(id: String, cwd: String) -> Bool {
-        FileManager.default.fileExists(atPath: FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects/\(escapedProjectDirectory(for: cwd))/\(id).jsonl")
-            .path)
+        claudeProjectDirectories(for: cwd).contains {
+            FileManager.default.fileExists(atPath: $0.appendingPathComponent("\(id).jsonl").path)
+        }
     }
 
     /// The conversation a `claude` command line names: `--resume <id>`,
@@ -465,17 +516,20 @@ enum AgentResumeStore {
     /// resume appends to the original transcript and creates nothing, so
     /// `claudeConversationID(cwd:startedAt:)` has nothing to find. And every
     /// resume Wortel types is of this form.
+    ///
+    /// `--session-id <id>` names it too. `--fork-session` names none: the
+    /// conversation it resumes is copied into a new one with an id of its own.
     static func claudeResumeTarget(argv: String?) -> String? {
-        guard let argv else { return nil }
-        let words = argv.split(separator: " ").map(String.init)
+        let words = AgentCommandLine.words(argv)
+        guard !words.contains("--fork-session") else { return nil }
         for (index, word) in words.enumerated() {
-            let value: String?
-            if word.hasPrefix("--resume=") {
-                value = String(word.dropFirst("--resume=".count))
-            } else if word == "--resume" || word == "-r", index + 1 < words.count {
-                value = words[index + 1]
-            } else {
-                continue
+            var value: String?
+            for flag in ["--resume", "-r", "--session-id"] {
+                if word.hasPrefix(flag + "=") {
+                    value = String(word.dropFirst(flag.count + 1))
+                } else if word == flag, index + 1 < words.count {
+                    value = words[index + 1]
+                }
             }
             if let value, UUID(uuidString: value) != nil { return value.lowercased() }
         }
@@ -487,8 +541,7 @@ enum AgentResumeStore {
     /// transcript it appends to is the newest in the directory, which makes the
     /// newest-file guess exact for that one moment.
     static func claudeContinuesLatest(argv: String?) -> Bool {
-        guard let argv else { return false }
-        return argv.split(separator: " ").contains { $0 == "--continue" || $0 == "-c" }
+        AgentCommandLine.words(argv).contains { $0 == "--continue" || $0 == "-c" }
     }
 
     /// Drop a session's marker when it's closed, so the killed shell (which never

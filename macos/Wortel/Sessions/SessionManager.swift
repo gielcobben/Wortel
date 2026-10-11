@@ -595,6 +595,8 @@ final class SessionManager {
         }
         // Markers left by agents that were still running at quit — resume them.
         let resume = AgentResumeStore.consumeSnapshot()
+        // One read of the process table for every surviving agent below.
+        lazy var table = ProcessTable.snapshot()
         for entry in persisted {
             // A file written before sessions recorded an origin has only the
             // last known cwd to offer, which is exactly what the old behaviour
@@ -688,6 +690,7 @@ final class SessionManager {
             //
             // Claude, Pi and Codex alike: see `AgentConversation`.
             let marker = resume[entry.id]
+            var agentIsRunning = false
             let observedID: String? = {
                 guard let marker, AgentConversation.exact.contains(marker.agent),
                       let cwd = marker.cwd else { return nil }
@@ -695,7 +698,10 @@ final class SessionManager {
                 // drops the rest), so whatever it can tell about itself counts.
                 var livePID: pid_t?
                 if case .running(let pid) = AgentLiveness.locate(
-                    agent: marker.agent, shellPID: marker.shellPID) { livePID = pid }
+                    agent: marker.agent, shellPID: marker.shellPID, table: table) {
+                    livePID = pid
+                    agentIsRunning = true
+                }
                 return AgentConversation.observe(agent: marker.agent, livePID: livePID, cwd: cwd,
                                                  argv: marker.argv, startedAt: marker.startedAt)
             }()
@@ -707,12 +713,14 @@ final class SessionManager {
             }
             let conversationID = observedID ?? entry.runningConversationID ?? lastID
             session.lastConversationID = observedID ?? entry.lastConversationID
-            session.pendingResumeInput = agent.flatMap {
-                AgentResumeStore.resumeInput(for: $0, knownConversationID: conversationID)
+            // An agent still running is owed nothing: the marker mirrors onto
+            // the session below, and its own turns say which conversation it
+            // is in. Anything less certain is owed, and the shell decides
+            // whether to type it (`Attachment.resumeIsOwed`).
+            if let agent, !agentIsRunning,
+               let input = AgentResumeStore.resumeInput(for: agent, knownConversationID: conversationID) {
+                session.owedResume = OwedResume(agent: agent, conversationID: conversationID, input: input)
             }
-            session.pendingResumeAgent = session.pendingResumeInput == nil ? nil : agent
-            session.pendingResumeConversationID =
-                session.pendingResumeInput == nil ? nil : conversationID
             appendRestored(session)
         }
         syncFolderOrder() // seed/prune the persisted folder order for the restored set
@@ -758,14 +766,36 @@ final class SessionManager {
     /// directory holds at most one tiny file per running agent.
     private func refreshAgentActivity() {
         let live = AgentResumeStore.currentMarkers()
+        var changed = false
         for session in sessions {
             let marker = live[session.id]
             let wasRunning = session.runningAgent
+            let isNewRun = marker?.agent != wasRunning || marker?.startedAt != session.runningStartedAt
+            // Another agent, or none: what the last one was in is no longer
+            // this one's, and a lost keeper or a quit may yet owe it a resume.
+            if let wasRunning, isNewRun {
+                session.endedAgent = AgentConversation.EndedAgent(
+                    marker: AgentMarker(agent: wasRunning, model: session.runningModel,
+                                        cwd: session.runningCwd ?? session.cwd, argv: session.runningArgv,
+                                        shellPID: session.runningShellPID,
+                                        startedAt: session.runningStartedAt),
+                    conversationID: session.liveConversationID, at: Date())
+                session.liveConversationID = nil
+            }
             if session.runningAgent != marker?.agent { session.runningAgent = marker?.agent }
             if session.runningModel != marker?.model { session.runningModel = marker?.model }
             session.runningArgv = marker?.argv
             session.runningShellPID = marker?.shellPID
             session.runningStartedAt = marker?.startedAt
+            session.runningCwd = marker?.cwd
+            if isNewRun {
+                changed = true
+                session.liveConversationID = nil
+            }
+            if let marker, let owed = session.owedResume, AgentConversation.confirms(marker, owed) {
+                session.owedResume = nil
+            }
+            if marker != nil, isNewRun { noteConversation(session) }
             // An agent launching is the moment to start listening for its first
             // prompt; the same agent exiting, or being replaced, ends the wait.
             if let marker, marker.agent != wasRunning {
@@ -786,6 +816,9 @@ final class SessionManager {
         // Markers appearing/vanishing is exactly when the screen sampler has
         // work to start or stop doing.
         updateAgentScreenSampling()
+        // And when what a crash would leave behind changes: a Force Quit takes
+        // the keeper with it, and the next launch has only the last save.
+        if changed { scheduleSave() }
     }
 
     // MARK: - Agent screen activity (fallback for agents that emit nothing)
@@ -950,11 +983,12 @@ final class SessionManager {
             // a prompt), so the resume outlives the marker and the next
             // launch brings the agent back. Dropping it with the marker is
             // how a keeper killed under a running app on 2026-10-08 cost
-            // every agent its resume.
-            if session.pendingResumeAgent == nil, let shell = session.runningShellPID,
-               AgentLiveness.shellIsGone(shellPID: shell),
-               let plan = resumePlan(forLostShellOf: session) {
-                hold(plan, for: session)
+            // every agent its resume. (A session with a terminal on screen
+            // hears about its shell itself; see `shellEnded`.)
+            if session.surfaceView == nil, session.owedResume == nil,
+               let shell = session.runningShellPID, AgentLiveness.shellIsGone(shellPID: shell),
+               let owed = owedResume(forLostShellOf: session, lostAt: Date()) {
+                session.owedResume = owed
             }
             AgentResumeStore.remove(sessionID: session.id)
             goneSweeps[session.id] = nil
@@ -998,126 +1032,186 @@ final class SessionManager {
     /// app (a Force Quit in the Dock, on an app started from one of these
     /// terminals) killed the keeper and every shell and agent with it. The app
     /// noticed nothing, the terminals just stopped, and seven minutes later
-    /// the liveness sweep had thrown away every agent's resume. So: say so,
-    /// start a new keeper, and give every terminal whose shell is gone a new
-    /// one, with its agent resumed into the same conversation, which is what
-    /// a relaunch would have done.
+    /// the liveness sweep had thrown away every agent's resume. So: start a
+    /// new keeper, give every terminal whose shell went with it a new one,
+    /// with its agent resumed into the same conversation, and say so.
     ///
-    /// A beat late on purpose. The keeper's shells go at about the same time
-    /// it does when they go at all, and the table is read once, after.
+    /// **Each terminal comes back when its own shell ends** (`shellEnded`),
+    /// not from one look at the process table here. The app holds its own
+    /// copy of every pty, so a keeper's death hangs nothing up by itself; the
+    /// shells end only as fast as whatever killed the keeper ends them, and an
+    /// agent finishing a write can take longer than any fixed wait. On
+    /// 2026-10-10 one look half a second in was what this did. A shell that
+    /// never ends keeps working on the app's copy, and is told apart at quit.
     func keeperDidExit(pid: pid_t) {
         let at = Date()
+        lostKeepers[pid] = KeeperLossTally(at: at)
         NSLog("wortel: keeper %d exited while Wortel was running", pid)
         KeeperLog.log.error("keeper \(pid, privacy: .public) exited while Wortel was running")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.recoverFromLostKeeper(at: at)
+            self?.recoverSessionsNotOnScreen(lostWith: pid)
+        }
+        // Long enough for every shell that is going to end with it to have
+        // ended and come back (`shellEnded` waits a second of its own).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.reportKeeperLoss(pid)
         }
     }
 
-    private func recoverFromLostKeeper(at: Date) {
-        let table = ProcessTable.snapshot()
-        // An unreadable table can't say which shells are gone, and restarting
-        // one that isn't starts a second agent beside the first. A terminal
-        // left stopped is the lesser harm, and the quit still saves its agent.
-        guard !table.isEmpty else {
-            KeeperLog.log.error("process table unreadable; not restarting any terminal")
-            return
-        }
-        // A shell still being torn down counts as gone: it will never run
-        // anything again, and it can't finish while this app holds its pty.
-        let alive = Set(table.filter { !$0.isExiting }.map(\.pid))
-        // Before any shell is restarted, so the new ones land in it.
-        let keeperBack = GhosttyRuntime.reconnectKeeper() != nil
+    /// What a lost keeper cost and what came back, kept per keeper until it
+    /// is reported. See `keeperDidExit`.
+    private struct KeeperLossTally {
+        let at: Date
+        /// Whether a new keeper took over; nil until one was asked for.
+        var keeperBack: Bool?
+        var restarted = 0
+        var resumed = 0
+    }
 
-        var restarted = 0, resumed = 0, survived = 0
-        // Whether a terminal the old keeper held still has its shell: the
-        // pid the keeper gave is `login`, which outlives the keeper whenever
-        // the shell under it does.
-        func isGone(_ view: SurfaceView) -> Bool? {
-            guard view.keeperSession != nil, let pid = view.shellPID else { return nil }
-            if alive.contains(pid) {
-                survived += 1
-                return false
-            }
-            return true
-        }
-        for session in sessions {
-            let directory = session.cwd ?? session.originCwd
-            if let view = session.surfaceView {
-                if isGone(view) == true {
-                    let plan = resumePlan(forLostShellOf: session)
-                    // The new shell's agent writes a marker of its own; this
-                    // one names a shell that no longer exists.
-                    AgentResumeStore.remove(sessionID: session.id)
-                    view.restartShell(workingDirectory: directory, sessionID: session.id,
-                                      initialInput: plan?.input)
-                    restarted += 1
-                    if plan != nil { resumed += 1 }
-                }
-            } else if session.pendingResumeInput == nil, let plan = resumePlan(forLostShellOf: session) {
-                // Never shown this launch, so its shell sat in the old keeper
-                // with nobody reading it. It gets the new keeper's shell when
-                // it is first shown; this makes that shell resume the agent.
-                AgentResumeStore.remove(sessionID: session.id)
-                hold(plan, for: session)
-                resumed += 1
-            }
-            for id in session.terminalTabIDs {
-                guard let view = session.sideSurfaces[id], isGone(view) == true else { continue }
-                view.restartShell(workingDirectory: directory, sessionID: id, initialInput: nil)
-                restarted += 1
-            }
+    /// Keepers that died under this launch, by pid. A terminal whose shell
+    /// ends is restarted only if the keeper that held it is in here. An entry
+    /// goes when its pid is handed to a new keeper: a recycled pid must not
+    /// make that keeper's terminals look lost.
+    @ObservationIgnored private var lostKeepers: [pid_t: KeeperLossTally] = [:]
+
+    /// Start the keeper that replaces `pid`, once, before the first shell
+    /// that needs one. Whichever comes first, a restarted terminal or the
+    /// sessions not on screen, asks.
+    @discardableResult
+    private func replaceKeeper(lost pid: pid_t) -> Bool {
+        if let back = lostKeepers[pid]?.keeperBack { return back }
+        let back = GhosttyRuntime.reconnectKeeper() != nil
+        lostKeepers[pid]?.keeperBack = back
+        if let new = GhosttyRuntime.keeper?.keeperPID, new != pid { lostKeepers[new] = nil }
+        return back
+    }
+
+    /// Sessions with no terminal this launch had their shell in the lost
+    /// keeper with nobody reading it. Each gets a new shell when it is first
+    /// shown, and this makes that shell resume its agent.
+    private func recoverSessionsNotOnScreen(lostWith pid: pid_t) {
+        guard let loss = lostKeepers[pid] else { return }
+        replaceKeeper(lost: pid)
+        for session in sessions where session.surfaceView == nil && session.owedResume == nil {
+            guard let owed = owedResume(forLostShellOf: session, lostAt: loss.at) else { continue }
+            AgentResumeStore.remove(sessionID: session.id)
+            session.owedResume = owed
+            lostKeepers[pid]?.resumed += 1
         }
         refreshAgentActivity()
         scheduleSave()
+    }
+
+    /// A keeper-held terminal's shell has ended: everything on its tty closed.
+    ///
+    /// Decided a second later, because two endings look the same here. A
+    /// shell that ended with a lost keeper gets a new one, its agent resumed;
+    /// one that ended because you typed `exit` ends like any terminal's.
+    /// Which keeper went is learned from its own process, and a keeper ending
+    /// its shells on the way out can end them before the app hears that it
+    /// has gone itself.
+    private func shellEnded(_ view: SurfaceView, in session: Session, tab: UUID?) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak session, weak view] in
+            guard let self, let session, let view else { return }
+            // Closed, or already given a new shell, in that second.
+            let current: SurfaceView? = if let tab { session.sideSurfaces[tab] } else { session.surfaceView }
+            guard current === view else { return }
+            guard let keeper = view.keeperPID, let loss = self.lostKeepers[keeper],
+                  AgentConversation.restartsAfterLoss(
+                      lostAt: loss.at, endedAt: Date().addingTimeInterval(-1),
+                      isSessionTerminal: tab == nil, agentRunning: session.runningAgent != nil)
+            else {
+                view.finishProcess()
+                return
+            }
+            self.replaceKeeper(lost: keeper)
+            self.restartTerminal(view, of: session, tab: tab, lostAt: loss.at, keeper: keeper)
+        }
+    }
+
+    private func restartTerminal(_ view: SurfaceView, of session: Session, tab: UUID?,
+                                 lostAt: Date, keeper: pid_t) {
+        lostKeepers[keeper]?.restarted += 1
+        if let tab {
+            view.restartShell(workingDirectory: session.cwd ?? session.originCwd, sessionID: tab,
+                              initialInput: nil)
+            return
+        }
+        if let owed = owedResume(forLostShellOf: session, lostAt: lostAt) {
+            session.owedResume = owed
+        }
+        // The new shell's agent writes a marker of its own; this one names a
+        // shell that no longer exists.
+        AgentResumeStore.remove(sessionID: session.id)
+        // Typed again even if it was typed once already: a resume typed into
+        // the shell the keeper just took with it (a keeper lost twice in a
+        // row) never ran.
+        let now = Date()
+        let owed = session.owedResume.flatMap { $0.isOwed(at: now) ? $0 : nil }
+        if owed != nil {
+            session.owedResume?.typedAt = now
+            lostKeepers[keeper]?.resumed += 1
+        }
+        // Where the agent ran, which a `cd x && claude` makes other than
+        // where the shell last reported being.
+        let directory = owed?.agent.cwd ?? session.cwd ?? session.originCwd
+        view.restartShell(workingDirectory: directory, sessionID: session.id, initialInput: owed?.input)
+        refreshAgentActivity()
+        scheduleSave()
+    }
+
+    /// Say what a lost keeper cost and what came back, once. Terminals still
+    /// held by it are the ones whose shells outlived it.
+    private func reportKeeperLoss(_ pid: pid_t) {
+        guard let loss = lostKeepers[pid] else { return }
+        let views = sessions.flatMap { [$0.surfaceView].compactMap { $0 } + Array($0.sideSurfaces.values) }
+        let survived = views.filter { $0.keeperPID == pid }.count
+        let keeperBack = loss.keeperBack ?? replaceKeeper(lost: pid)
         KeeperLog.log.notice("""
-            after the keeper was lost: \(restarted, privacy: .public) terminals restarted, \
-            \(resumed, privacy: .public) agents resumed, \(survived, privacy: .public) survived; \
-            new keeper: \(keeperBack, privacy: .public)
+            after keeper \(pid, privacy: .public) was lost: \(loss.restarted, privacy: .public) \
+            terminals restarted, \(loss.resumed, privacy: .public) agents resumed, \
+            \(survived, privacy: .public) survived; new keeper: \(keeperBack, privacy: .public)
             """)
-        guard restarted + survived + resumed > 0 else { return }
-        onKeeperLost?(KeeperLoss(at: at, restarted: restarted, resumed: resumed,
+        guard loss.restarted + survived + loss.resumed > 0 else { return }
+        onKeeperLost?(KeeperLoss(at: loss.at, restarted: loss.restarted, resumed: loss.resumed,
                                  survived: survived, keeperBack: keeperBack))
     }
 
-    /// The agent `session` was running when its shell was lost, and the
-    /// command that brings it back into the same conversation. nil when no
-    /// agent was running, or it is one with no way back.
+    /// What `session` owes the agent its shell was running when that shell
+    /// was lost, or nil when no agent was running or it has no way back.
     ///
-    /// The same evidence a quit records, in the same order (see
-    /// `persistedSessions`): what the agent's own files or command line say,
-    /// then the conversation this session was last seen in. Never the newest
-    /// file in the folder: that can be another session's.
-    private func resumePlan(forLostShellOf session: Session)
-        -> (input: String, agent: AgentMarker, conversationID: String?)? {
-        guard let agent = session.runningAgent else { return nil }
-        let marker = AgentMarker(agent: agent, model: session.runningModel, cwd: session.cwd,
-                                 argv: session.runningArgv, shellPID: nil,
-                                 startedAt: session.runningStartedAt)
+    /// "Running" includes an agent whose shell cleared its marker in the
+    /// moments before the keeper went (`AgentConversation.lostWithKeeper`).
+    /// The conversation is what the agent was last seen in while it ran, then
+    /// what its files or command line still say, then the one this session
+    /// was last seen in (`AgentConversation.afterExit`). Never the newest file
+    /// in the folder while anything better is known: that can be another
+    /// session's.
+    private func owedResume(forLostShellOf session: Session, lostAt: Date) -> OwedResume? {
+        let running = session.runningAgent.map {
+            AgentMarker(agent: $0, model: session.runningModel, cwd: session.runningCwd ?? session.cwd,
+                        argv: session.runningArgv, shellPID: nil,
+                        startedAt: session.runningStartedAt)
+        }
+        guard let (marker, live) = AgentConversation.lostWithKeeper(
+            running: running, liveConversationID: session.liveConversationID,
+            ended: session.endedAgent, keeperLostAt: lostAt)
+        else { return nil }
+        session.endedAgent = nil
         var conversationID: String?
-        if AgentConversation.exact.contains(agent), let cwd = session.cwd {
-            conversationID = AgentConversation.observe(
-                agent: agent, livePID: nil, cwd: cwd,
-                argv: session.runningArgv, startedAt: session.runningStartedAt)
-            if conversationID == nil, let last = session.lastConversationID,
-               AgentConversation.exists(agent: agent, id: last, cwd: cwd) {
-                conversationID = last
-            }
+        if AgentConversation.exact.contains(marker.agent), let cwd = marker.cwd ?? session.cwd {
+            conversationID = AgentConversation.afterExit(
+                live: live,
+                observed: AgentConversation.observe(
+                    agent: marker.agent, livePID: nil, cwd: cwd,
+                    argv: marker.argv, startedAt: marker.startedAt),
+                last: session.lastConversationID,
+                exists: { AgentConversation.exists(agent: marker.agent, id: $0, cwd: cwd) })
         }
         guard let input = AgentResumeStore.resumeInput(for: marker, knownConversationID: conversationID)
         else { return nil }
         if let conversationID { session.lastConversationID = conversationID }
-        return (input, marker, conversationID)
-    }
-
-    /// Keep `plan` as the resume this session owes: typed into its shell when
-    /// one is first made for it, and saved at quit until then, exactly like a
-    /// resume restored at launch.
-    private func hold(_ plan: (input: String, agent: AgentMarker, conversationID: String?),
-                      for session: Session) {
-        session.pendingResumeInput = plan.input
-        session.pendingResumeAgent = plan.agent
-        session.pendingResumeConversationID = plan.conversationID
+        return OwedResume(agent: marker, conversationID: conversationID, input: input)
     }
 
     /// Whether any session actually needs its screen read: the same question
@@ -1828,6 +1922,12 @@ final class SessionManager {
 
     func close(_ session: Session) {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
+        // On the record because its shell and agent end with it, and after
+        // 2026-10-10 two sessions were gone and nothing could say how.
+        KeeperLog.log.notice("""
+            session \(session.id.uuidString, privacy: .public) closed\
+            \(session.runningAgent.map { ", ending its \($0)" } ?? "", privacy: .public)
+            """)
         let wasSelected = session.id == selectedID
         let hadAttention = session.needsAttention
         busyTimers.removeValue(forKey: session.id)?.cancel()
@@ -2047,6 +2147,7 @@ final class SessionManager {
                 self.busyStartedAt[id] = now
             }
             session.isBusy = true
+            self.noteConversation(session)
         }
         busyTimers[id] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.busyShowDelay, execute: work)
@@ -2060,7 +2161,39 @@ final class SessionManager {
         if let start = busyStartedAt.removeValue(forKey: session.id) {
             lastBusyInterval[session.id] = (start: start, cleared: Date())
         }
-        if session.isBusy { session.isBusy = false }
+        if session.isBusy {
+            session.isBusy = false
+            noteConversation(session)
+        }
+    }
+
+    /// Look at which conversation the running agent is in: when it starts,
+    /// at the start and end of each turn, and at a quit (`persistedSessions`).
+    /// A `/clear` or `/resume` changes it without a word to the shell, and for
+    /// Claude the exact answer, its process file, is gone with the process.
+    /// See `Session.liveConversationID`.
+    ///
+    /// The process table is the one shared across a second of these
+    /// (`recentProcessTable`): a turn ending in five sessions at once reads
+    /// it once. What it learns is saved, because a Force Quit takes the keeper
+    /// with it and the next launch has only the last save.
+    private func noteConversation(_ session: Session, table: [ProcessEntry]? = nil) {
+        guard let agent = session.runningAgent, AgentConversation.exact.contains(agent),
+              let cwd = session.runningCwd ?? session.cwd else { return }
+        var livePID: pid_t?
+        if case .running(let pid) = AgentLiveness.locate(
+            agent: agent, shellPID: session.runningShellPID,
+            table: table ?? GhosttyRuntime.recentProcessTable()) {
+            livePID = pid
+        }
+        guard let id = AgentConversation.observe(agent: agent, livePID: livePID, cwd: cwd,
+                                                 argv: session.runningArgv,
+                                                 startedAt: session.runningStartedAt),
+              id != session.liveConversationID
+        else { return }
+        session.liveConversationID = id
+        session.lastConversationID = id
+        scheduleSave()
     }
 
     /// Title-marker fallback for agents that signal state only through the
@@ -2684,61 +2817,24 @@ final class SessionManager {
         return Dictionary(uniqueKeysWithValues: addresses.map { ($0.key.uuidString, $0.value) })
     }
 
-    private func persistedSessions() -> [PersistedSession] {
-        // One read of the process table for the whole save, taken only if some
-        // session has an agent to vouch for.
+    /// The session list as saved.
+    ///
+    /// **A save on the way is only a copy of what is known.** It runs after
+    /// every prompt in any session (each one reports its directory), so it
+    /// reads nothing: which agent runs where comes from the markers, and which
+    /// conversation each is in from `noteConversation`, both kept current as
+    /// they change. At quit (`vouching`), the one save the next launch most
+    /// depends on, each agent is first checked against the process table and
+    /// asked once more which conversation it is in.
+    private func persistedSessions(vouching: Bool = false) -> [PersistedSession] {
+        let now = Date()
         lazy var table = ProcessTable.snapshot()
         // A session still waiting for its worktree was never opened, and has
         // no folder to come back to.
         return sessions.filter { $0.preparation == nil }.map { session in
-            // What to record as "the agent to resume next launch", resolved as one
-            // unit so a model or command can never outlive the agent it belongs to.
-            //
-            // A live agent only counts if the process table still vouches for it:
-            // a marker outlives an agent killed without its shell reaching another
-            // prompt, and resuming from that reopens a conversation the user had
-            // already stopped. Failing that, a resume we restored but haven't
-            // delivered yet still counts, so it survives another quit instead of
-            // being silently dropped.
-            var conversationID = session.pendingResumeConversationID
-            let agent: AgentMarker? = {
-                if let running = session.runningAgent {
-                    let located = AgentLiveness.locate(
-                        agent: running, shellPID: session.runningShellPID, table: table)
-                    // Only a definite "gone" counts; unknown is running. See
-                    // `AgentLiveness` for why it fails open.
-                    if case .gone = located { return session.pendingResumeAgent }
-                    // Ask the live agent which conversation it's actually writing to,
-                    // while it's still there to ask — after it dies only a guess is left.
-                    // In order: the file Claude keeps for the live process
-                    // (exact, whatever started it); the conversation its
-                    // command line names (every resume Wortel types names
-                    // one); the transcript created just after it started (a
-                    // fresh `claude` from before that file existed); for
-                    // `--continue`, the directory's newest, which is the one
-                    // it is appending to right now. Nothing found leaves the
-                    // id we already know.
-                    // The same for Pi and Codex, from their own files; see
-                    // `AgentConversation`.
-                    if AgentConversation.exact.contains(running), let cwd = session.cwd {
-                        var livePID: pid_t?
-                        if case .running(let pid) = located { livePID = pid }
-                        let observed = AgentConversation.observe(
-                            agent: running, livePID: livePID, cwd: cwd,
-                            argv: session.runningArgv, startedAt: session.runningStartedAt)
-                        if let observed {
-                            conversationID = observed
-                            // Remembered past this agent's life: see
-                            // `PersistedSession.lastConversationID`.
-                            session.lastConversationID = observed
-                        }
-                    }
-                    return AgentMarker(agent: running, model: session.runningModel,
-                                       cwd: session.cwd, argv: session.runningArgv,
-                                       shellPID: nil, startedAt: nil)
-                }
-                return session.pendingResumeAgent
-            }()
+            if vouching, session.runningAgent != nil { noteConversation(session, table: table) }
+            let (agent, conversationID) = agentToResume(session, now: now,
+                                                        table: vouching ? table : nil)
             return PersistedSession(
                 id: session.id, name: session.name, title: session.title, cwd: session.cwd,
                 originCwd: session.originCwd,
@@ -2766,6 +2862,50 @@ final class SessionManager {
                 runningConversationID: agent == nil ? nil : conversationID,
                 lastConversationID: session.lastConversationID)
         }
+    }
+
+    /// The agent the next launch should bring back in `session`, and its
+    /// conversation, resolved as one unit so a model or command can never
+    /// outlive the agent it belongs to. In order:
+    ///
+    /// - the agent running now. With a `table` (a quit), only if the table
+    ///   still vouches for it: a marker outlives an agent killed without its
+    ///   shell reaching a prompt, and resuming that would reopen a conversation
+    ///   you had stopped. Unless the shell went too, which nobody does on
+    ///   purpose: that one is owed.
+    /// - a resume this session still owes (restored, or typed and not yet
+    ///   answered), so it survives another quit instead of being dropped.
+    /// - an agent that ended moments ago with its shell: a logout ends the
+    ///   keeper's shells, which clear their markers, and then quits the app.
+    private func agentToResume(_ session: Session, now: Date, table: [ProcessEntry]?)
+        -> (AgentMarker?, String?) {
+        if let running = session.runningAgent {
+            var counts = true
+            if let table, case .gone = AgentLiveness.locate(
+                agent: running, shellPID: session.runningShellPID, table: table) {
+                counts = session.runningShellPID.map {
+                    AgentLiveness.shellIsGone(shellPID: $0, table: table)
+                } ?? false
+            }
+            if counts {
+                // Only what this run was seen in: `lastConversationID` may
+                // be another agent's, or another folder's.
+                return (AgentMarker(agent: running, model: session.runningModel,
+                                    cwd: session.runningCwd ?? session.cwd, argv: session.runningArgv,
+                                    shellPID: nil, startedAt: nil),
+                        session.liveConversationID)
+            }
+        }
+        if let owed = session.owedResume, owed.isOwed(at: now) {
+            return (owed.agent, owed.conversationID)
+        }
+        if let ended = session.endedAgent, AgentConversation.endedWithItsShell(
+            ended, now: now, shellIsGone: { pid in
+                table.map { AgentLiveness.shellIsGone(shellPID: pid, table: $0) } ?? (kill(pid, 0) != 0)
+            }) {
+            return (ended.marker, ended.conversationID)
+        }
+        return (nil, nil)
     }
 
     /// A strip tab as saved: a `SideTab` raw value, or, in files from when the
@@ -2843,7 +2983,7 @@ final class SessionManager {
 
     func saveNow() {
         guard hasRestored else { return }
-        store.saveNow(persistedSessions())
+        store.saveNow(persistedSessions(vouching: true))
     }
 
     // MARK: - Wiring
@@ -2862,6 +3002,10 @@ final class SessionManager {
             view.onCloseRequest = { [weak self, weak session] in
                 guard let self, let session else { return }
                 self.onSideTerminalExited?(session, tabID)
+            }
+            view.onShellEnded = { [weak self, weak session, weak view] in
+                guard let self, let session, let view else { return }
+                self.shellEnded(view, in: session, tab: tabID)
             }
             view.onCommandFinished = { [weak self, weak session] _, _ in
                 guard let self, let session else { return }
@@ -2982,7 +3126,12 @@ final class SessionManager {
             }
             view.onCloseRequest = { [weak self] in
                 guard let self, let session = self.sessions.first(where: { $0.id == id }) else { return }
+                KeeperLog.log.notice("session \(id.uuidString, privacy: .public) closed: its terminal ended")
                 self.close(session)
+            }
+            view.onShellEnded = { [weak self, weak session, weak view] in
+                guard let self, let session, let view else { return }
+                self.shellEnded(view, in: session, tab: nil)
             }
             // The runtime already resolved this to a local markdown file; just
             // hand it up to the app layer, which opens the preview.

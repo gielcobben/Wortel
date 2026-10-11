@@ -80,15 +80,106 @@ enum AgentConversation {
         }
     }
 
-    /// The command that resumes conversation `id` of `agent`, or nil for an
-    /// agent without exact resume.
-    static func resumeCommand(agent: String, id: String) -> String? {
+    /// The agent's own words for "resume conversation `id`", after its name,
+    /// or nil for an agent without exact resume or an id that can't be typed.
+    static func resumeWords(agent: String, id: String) -> [String]? {
+        guard AgentCommandLine.isSafeID(id) else { return nil }
         switch agent {
-        case "claude": return "claude --resume \(id)"
-        case "pi": return "pi --session \(id)"
-        case "codex": return "codex resume \(id)"
+        case "claude": return ["--resume", id]
+        case "pi": return ["--session", id]
+        case "codex": return ["resume", id]
         default: return nil
         }
+    }
+
+    // MARK: - A lost keeper
+
+    /// An agent whose marker went at a prompt, kept a moment in case the
+    /// prompt was its shell dying rather than you quitting it.
+    ///
+    /// When the keeper goes, the pty closes and the shell and agent are both
+    /// hung up. Claude exits 0 on SIGHUP, and a shell quick enough to reach
+    /// its prompt before its own hangup clears the marker exactly as if you
+    /// had typed `/exit`. On 2026-10-10 that was three agents of nine, and
+    /// those three were never resumed.
+    struct EndedAgent {
+        /// Its shell pid is the shell it ran in.
+        let marker: AgentMarker
+        /// What it was last seen in. See `Session.liveConversationID`.
+        let conversationID: String?
+        let at: Date
+    }
+
+    /// Whether a typed resume has been answered: the agent is running in that
+    /// session (the resume started it, or it never stopped and the shell let
+    /// the resume be). Until then it is still owed, so a resume typed into a
+    /// shell that died before running it (a keeper lost twice, a logout
+    /// halfway through) is not forgotten.
+    static func confirms(_ marker: AgentMarker, _ owed: OwedResume) -> Bool {
+        owed.typedAt != nil && marker.agent == owed.agent.agent
+    }
+
+    /// How long after an agent ended, with its shell gone too, a save still
+    /// counts it as running. A logout ends the keeper's shells and then quits
+    /// the app; the shells clear their markers on the way, so without this the
+    /// quit saved no agent to resume.
+    static let endedWithShell: TimeInterval = 10
+
+    /// How long before the keeper was lost an agent may have ended and still
+    /// count as ended by it. The hangup reaches every shell within moments;
+    /// someone quitting an agent this close to a keeper dying is rare, and
+    /// costs only a conversation reopened.
+    static let endedWithKeeper: TimeInterval = 5
+
+    /// The agent a terminal whose shell went with the keeper is owed back,
+    /// and the conversation its own process last named: the one running, else
+    /// one that ended as the keeper went. nil when there's none.
+    static func lostWithKeeper(running: AgentMarker?, liveConversationID: String?,
+                               ended: EndedAgent?, keeperLostAt: Date)
+        -> (marker: AgentMarker, conversationID: String?)? {
+        if let running { return (running, liveConversationID) }
+        guard let ended, ended.at >= keeperLostAt.addingTimeInterval(-endedWithKeeper),
+              ended.at <= keeperLostAt.addingTimeInterval(keeperLossSettles)
+        else { return nil }
+        return (ended.marker, ended.conversationID)
+    }
+
+    /// How long after a keeper is lost its shells are taken to be ending
+    /// with it. A shell that ends later outlived it, and ends like any other:
+    /// you typed `exit`, or quit the agent first. Only one that ends with its
+    /// agent still running (no prompt reached) is still brought back.
+    static let keeperLossSettles: TimeInterval = 10
+
+    /// Whether a keeper-held terminal whose shell has ended, after its keeper
+    /// was lost, gets a new shell rather than ending: it ended as the keeper
+    /// went, or it is the session's own terminal and its agent never handed
+    /// it back a prompt.
+    static func restartsAfterLoss(lostAt: Date, endedAt: Date, isSessionTerminal: Bool,
+                                  agentRunning: Bool) -> Bool {
+        endedAt <= lostAt.addingTimeInterval(keeperLossSettles) || (isSessionTerminal && agentRunning)
+    }
+
+    /// The conversation to resume an agent into once its process is gone,
+    /// best evidence first: what the process itself last said (exact, and the
+    /// only thing that follows a `/clear` or `/resume` inside Claude, after
+    /// which the command line names the conversation it *started* in); what
+    /// can still be read without it; the one this session was last seen in.
+    /// A remembered id is offered only if it can still be resumed.
+    static func afterExit(live: String?, observed: @autoclosure () -> String?,
+                          last: String?, exists: (String) -> Bool) -> String? {
+        if let live, exists(live) { return live }
+        if let observed = observed() { return observed }
+        if let last, exists(last) { return last }
+        return nil
+    }
+
+    /// Whether the agent a session ran ended with its shell rather than at your
+    /// hand, as far as a save can tell: it ended moments ago and its shell is
+    /// gone too. You quit an agent at its prompt and the shell stays.
+    static func endedWithItsShell(_ ended: EndedAgent?, now: Date, shellIsGone: (pid_t) -> Bool) -> Bool {
+        guard let ended, now.timeIntervalSince(ended.at) <= endedWithShell,
+              let shell = ended.marker.shellPID else { return false }
+        return shellIsGone(shell)
     }
 
     /// Two paths name the same folder. `/tmp` is `/private/tmp`, and the shell's
@@ -97,8 +188,11 @@ enum AgentConversation {
         resolved(a) == resolved(b)
     }
 
+    /// The physical path, as the agents themselves record it (their cwd comes
+    /// from `getcwd`). See `AgentResumeStore.physicalPath` for why not
+    /// `resolvingSymlinksInPath`.
     static func resolved(_ path: String) -> String {
-        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+        AgentResumeStore.physicalPath(URL(fileURLWithPath: path).standardizedFileURL.path)
     }
 
     /// How far the shell's start time may be from the agent's own: the shell
@@ -107,7 +201,7 @@ enum AgentConversation {
 
     /// The words of a one-line command, as the marker records it.
     static func words(_ argv: String?) -> [String] {
-        argv?.split(separator: " ").map(String.init) ?? []
+        AgentCommandLine.words(argv)
     }
 
     // MARK: - Pi
@@ -334,4 +428,35 @@ enum AgentConversation {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
+}
+
+/// A resume a session owes its agent: what to type, for which agent and
+/// conversation, and whether it has been typed yet.
+///
+/// Owed from the moment it is known (a restore, a lost keeper, a shell gone
+/// under a running agent) until the agent is seen running in that session
+/// again (`AgentConversation.confirms`), and **not** merely until it is typed.
+/// Forgetting it at the typing lost it whenever the typed command never ran:
+/// a keeper lost twice in a row, a logout that ended the new shells too, an
+/// agent that failed to start.
+struct OwedResume {
+    let agent: AgentMarker
+    let conversationID: String?
+    /// The command, ending in a newline when it should run.
+    let input: String
+    /// When it went into a shell; nil while it waits for one (a session not
+    /// shown since launch).
+    var typedAt: Date?
+
+    /// How long a typed resume waits for its agent before it is taken as
+    /// failed and stops being owed. Long enough for a slow shell start, short
+    /// enough that a resume that can never start (an id the agent refuses, a
+    /// PATH without it) is not retried at every launch.
+    static let answerWithin: TimeInterval = 120
+
+    /// Still owed at `now`: untyped, or typed recently enough to still be
+    /// starting.
+    func isOwed(at now: Date) -> Bool {
+        typedAt.map { now.timeIntervalSince($0) < Self.answerWithin } ?? true
+    }
 }

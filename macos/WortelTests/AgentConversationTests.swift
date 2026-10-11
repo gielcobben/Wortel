@@ -147,4 +147,103 @@ final class AgentConversationTests: XCTestCase {
         // An agent without exact resume ignores an id.
         XCTAssertEqual(command("opencode", a), "opencode --continue")
     }
+
+    // MARK: - A lost keeper
+
+    private func marker(_ agent: String, argv: String? = nil) -> AgentMarker {
+        AgentMarker(agent: agent, model: nil, cwd: "/p", argv: argv, shellPID: nil, startedAt: nil)
+    }
+
+    /// 2026-10-10: started as `claude --resume A`, then `/clear` into B. The
+    /// command line still said A, and the keeper's loss resumed A.
+    func testWhatTheProcessSaidBeatsTheCommandLine() {
+        let id = AgentConversation.afterExit(
+            live: b, observed: AgentResumeStore.claudeResumeTarget(argv: "claude --resume \(a)"),
+            last: a, exists: { _ in true })
+        XCTAssertEqual(id, b)
+    }
+
+    func testAConversationThatCanNoLongerBeResumedIsPassedOver() {
+        XCTAssertEqual(AgentConversation.afterExit(live: b, observed: a, last: nil, exists: { $0 != b }), a)
+        XCTAssertEqual(AgentConversation.afterExit(live: nil, observed: nil, last: a, exists: { _ in true }), a)
+        XCTAssertNil(AgentConversation.afterExit(live: nil, observed: nil, last: a, exists: { _ in false }))
+    }
+
+    func testTheRunningAgentIsOwedItsResume() throws {
+        let lost = Date()
+        let owed = try XCTUnwrap(AgentConversation.lostWithKeeper(
+            running: marker("claude"), liveConversationID: b, ended: nil, keeperLostAt: lost))
+        XCTAssertEqual(owed.marker.agent, "claude")
+        XCTAssertEqual(owed.conversationID, b)
+    }
+
+    /// The shell reached its prompt before its own hangup and cleared the
+    /// marker, as on 2026-10-10 for three agents of nine.
+    func testAnAgentThatEndedAsTheKeeperWentIsStillOwedItsResume() throws {
+        let lost = Date()
+        for endedAt in [lost.addingTimeInterval(-1), lost.addingTimeInterval(0.3)] {
+            let ended = AgentConversation.EndedAgent(marker: marker("claude"), conversationID: b, at: endedAt)
+            let owed = try XCTUnwrap(AgentConversation.lostWithKeeper(
+                running: nil, liveConversationID: nil, ended: ended, keeperLostAt: lost))
+            XCTAssertEqual(owed.conversationID, b)
+        }
+    }
+
+    /// A resume is owed until the agent shows up running, not merely until it
+    /// is typed: a shell that died before running it must not lose it.
+    func testATypedResumeIsOwedUntilItsAgentRuns() {
+        var owed = OwedResume(agent: marker("claude"), conversationID: b, input: "claude --resume \(b)\n")
+        XCTAssertFalse(AgentConversation.confirms(marker("claude"), owed), "not typed yet")
+        owed.typedAt = Date()
+        XCTAssertFalse(AgentConversation.confirms(marker("pi"), owed))
+        XCTAssertTrue(AgentConversation.confirms(marker("claude"), owed))
+        XCTAssertTrue(owed.isOwed(at: Date()))
+        XCTAssertFalse(owed.isOwed(at: Date().addingTimeInterval(OwedResume.answerWithin + 1)),
+                       "a resume that never starts is not retried forever")
+    }
+
+    /// A logout ends the keeper's shells, which clear their markers, and then
+    /// quits the app: the quit's save must still name the agent.
+    func testAnAgentThatEndedWithItsShellIsSavedForResume() {
+        let now = Date()
+        let shell: pid_t = 4242
+        let ended = AgentConversation.EndedAgent(
+            marker: AgentMarker(agent: "claude", model: nil, cwd: "/p", argv: nil, shellPID: shell, startedAt: nil),
+            conversationID: b, at: now.addingTimeInterval(-2))
+        XCTAssertTrue(AgentConversation.endedWithItsShell(ended, now: now, shellIsGone: { _ in true }))
+        XCTAssertFalse(AgentConversation.endedWithItsShell(ended, now: now, shellIsGone: { _ in false }),
+                       "you quit an agent at its prompt and the shell stays")
+        XCTAssertFalse(AgentConversation.endedWithItsShell(
+            ended, now: now.addingTimeInterval(60), shellIsGone: { _ in true }))
+    }
+
+    /// A shell that outlived a lost keeper (the app holds its own copy of
+    /// every pty) ends like any other later on: `exit` closes it, and the
+    /// agent you quit first doesn't come back.
+    func testAShellThatOutlivedTheKeeperEndsNormallyLater() {
+        let lost = Date()
+        XCTAssertTrue(AgentConversation.restartsAfterLoss(
+            lostAt: lost, endedAt: lost.addingTimeInterval(2), isSessionTerminal: false, agentRunning: false))
+        XCTAssertFalse(AgentConversation.restartsAfterLoss(
+            lostAt: lost, endedAt: lost.addingTimeInterval(3600), isSessionTerminal: true, agentRunning: false))
+        // Its agent never handed it a prompt: still the keeper's doing.
+        XCTAssertTrue(AgentConversation.restartsAfterLoss(
+            lostAt: lost, endedAt: lost.addingTimeInterval(30), isSessionTerminal: true, agentRunning: true))
+        XCTAssertFalse(AgentConversation.restartsAfterLoss(
+            lostAt: lost, endedAt: lost.addingTimeInterval(30), isSessionTerminal: false, agentRunning: true))
+        let quitLater = AgentConversation.EndedAgent(marker: marker("claude"), conversationID: b,
+                                                     at: lost.addingTimeInterval(3600))
+        XCTAssertNil(AgentConversation.lostWithKeeper(
+            running: nil, liveConversationID: nil, ended: quitLater, keeperLostAt: lost))
+    }
+
+    func testAnAgentQuitEarlierIsNotBroughtBack() {
+        let lost = Date()
+        let ended = AgentConversation.EndedAgent(
+            marker: marker("claude"), conversationID: b, at: lost.addingTimeInterval(-60))
+        XCTAssertNil(AgentConversation.lostWithKeeper(
+            running: nil, liveConversationID: nil, ended: ended, keeperLostAt: lost))
+        XCTAssertNil(AgentConversation.lostWithKeeper(
+            running: nil, liveConversationID: nil, ended: nil, keeperLostAt: lost))
+    }
 }

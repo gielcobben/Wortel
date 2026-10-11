@@ -209,35 +209,45 @@ final class Session: Identifiable {
     /// When the running agent launched, used to identify which transcript it
     /// created and so which conversation it is in.
     @ObservationIgnored var runningStartedAt: Date?
+    /// Where the running agent was started, by its marker. Usually `cwd`, but
+    /// not after `cd ~/proj && claude` in bash, which reports its directory
+    /// only at a prompt: the agent's conversations are filed under its own
+    /// folder, and a resume has to be typed there.
+    @ObservationIgnored var runningCwd: String?
 
     /// The live terminal view. Not observed by SwiftUI (it's an NSView we host
     /// directly), so exclude it from observation tracking.
     @ObservationIgnored private(set) var surfaceView: SurfaceView?
 
-    /// A command to auto-run when this session's shell first spawns — set during
-    /// restore to resume an agent CLI (e.g. "claude --continue\n") that was
-    /// running at quit. Consumed once by `ensureSurfaceView`. Transient (not
-    /// persisted, not observed). See AgentResumeStore.
-    @ObservationIgnored var pendingResumeInput: String?
+    /// The agent this session owes a resume, from the moment it is known (a
+    /// restore, a lost keeper) until the agent is seen running here again. See
+    /// `OwedResume`. Transient: a quit persists it as the agent to resume.
+    @ObservationIgnored var owedResume: OwedResume?
 
-    /// The agent behind a not-yet-delivered `pendingResumeInput`. Kept so that a
-    /// quit *before* the session's shell is ever created — it may never be warmed
-    /// (`warmRemainingSurfaces` stops at 20) or clicked — re-persists the agent
-    /// instead of dropping it, which would strand that session cold forever.
-    /// Cleared together with `pendingResumeInput` once the surface takes it.
-    @ObservationIgnored var pendingResumeAgent: AgentMarker?
+    /// The input for this session's first shell: the owed resume, if it hasn't
+    /// been typed yet.
+    var pendingResumeInput: String? {
+        owedResume?.typedAt == nil ? owedResume?.input : nil
+    }
 
-    /// The exact conversation id restored alongside `pendingResumeAgent`, carried
-    /// for the same reason: a quit before the shell is ever created must re-persist
-    /// it rather than fall back to guessing by modification time.
-    @ObservationIgnored var pendingResumeConversationID: String?
-
-    /// The last Claude conversation this session was seen writing to, kept
-    /// across the agent's exit. Learned at save time from the transcript the
-    /// running agent created, and what a resume from a surviving marker uses
-    /// instead of guessing by the newest file in the directory. See
-    /// `PersistedSession.lastConversationID`.
+    /// The last conversation this session was seen in, kept across the agent's
+    /// exit. What a resume falls back on when nothing about the agent itself
+    /// is left to read, instead of guessing by the newest file in the folder.
+    /// See `PersistedSession.lastConversationID`.
     @ObservationIgnored var lastConversationID: String?
+
+    /// The conversation the running agent was last seen in, observed while it
+    /// ran: at its start, at every turn, and at a quit. Best evidence first,
+    /// which for Claude is its own process file (`~/.claude/sessions/<pid>.json`).
+    /// After a `/clear` or `/resume` inside Claude that file is the only thing
+    /// that knows: the command line still names the conversation Claude
+    /// started in, and the file goes when Claude exits, which on a lost keeper
+    /// is before Wortel can look. Cleared when the agent changes.
+    @ObservationIgnored var liveConversationID: String?
+
+    /// The agent that last left this session, for a moment after. See
+    /// `AgentConversation.EndedAgent`.
+    @ObservationIgnored var endedAgent: AgentConversation.EndedAgent?
 
     /// Called whenever a surface view is created for this session (eager or
     /// lazy). The SessionManager wires the view's callbacks here.
@@ -364,9 +374,14 @@ final class Session: Identifiable {
         if let surfaceView { return surfaceView }
         let view = SurfaceView(runtime: runtime, workingDirectory: cwd,
                                sessionID: id, initialInput: pendingResumeInput)
-        pendingResumeInput = nil // consumed once
-        pendingResumeAgent = nil // the resume has been dispatched; the live marker takes over
-        pendingResumeConversationID = nil
+        // Typed, not settled: still owed until the agent shows up running,
+        // which it already is if its shell survived with it.
+        if owedResume != nil, owedResume?.typedAt == nil, !view.initialInputDropped {
+            owedResume?.typedAt = Date()
+        }
+        if let owed = owedResume, owed.typedAt != nil, owed.agent.agent == runningAgent {
+            owedResume = nil
+        }
         surfaceView = view
         onSurfaceCreated?(view)
         return view

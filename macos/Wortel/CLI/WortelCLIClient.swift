@@ -49,6 +49,12 @@ enum WortelCLIClient {
         // marked attached with nobody reading them. It cost an hour to find,
         // because the symptom is a session that is alive and unreachable.
         _ = fcntl(socketFD, F_SETFD, FD_CLOEXEC)
+        // **And no SIGPIPE.** Writing to a socket whose far end has gone raises
+        // it, and its default is to end the process. The app does not ignore
+        // it, so a keeper that died between two requests would have taken the
+        // whole app with it instead of failing one `send`.
+        var on: Int32 = 1
+        setsockopt(socketFD, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         var address = try WortelCLI.address(for: path)
         guard WortelCLI.withSockaddr(&address, { Darwin.connect(socketFD, $0, $1) }) == 0 else {
             let failure = errno

@@ -39,6 +39,9 @@ final class KeeperServer: @unchecked Sendable {
 
     private let path: String
     private let replayLimit: Int
+    /// Which keeper this is, for `ping`. See `KeeperResponse.build`.
+    private let executable: String?
+    let build: String?
     /// Guards the session table. Everything that touches `sessions` hops here,
     /// including the pty read callbacks, which arrive on their own queues.
     private let state = DispatchQueue(label: "sh.wortel.keeper.state")
@@ -48,17 +51,45 @@ final class KeeperServer: @unchecked Sendable {
     private var listener: DispatchSourceRead?
     private var descriptor: Int32 = -1
     private var liveConnections = 0
+    /// Set by `stopIfIdle` as it decides to go. `open` refuses from then on,
+    /// so no shell is forked into a keeper that is about to hang it up.
+    private var stopping = false
 
     /// Called when nothing is left to keep — no sessions, no clients. A keeper
-    /// that lingers with nothing to hold is just a leaked process.
+    /// that lingers with nothing to hold is just a leaked process. A hint, not
+    /// a decision: by the time anyone acts on it an app may have connected, so
+    /// the decision is `stopIfIdle`'s.
     var onIdle: (() -> Void)?
 
-    init(path: String = Keeper.socketPath, replayLimit: Int = Keeper.replayLimit) {
+    /// `executable` is this keeper's own binary. Its build is read **now**, as
+    /// the keeper starts: an app update replaces the bundle on disk under a
+    /// running keeper, and reading it later would report the new build for a
+    /// process still running the old one.
+    init(path: String = Keeper.socketPath, replayLimit: Int = Keeper.replayLimit,
+         executable: String? = Bundle.main.executableURL?.resolvingSymlinksInPath().path) {
         self.path = path
         self.replayLimit = replayLimit
+        self.executable = executable
+        self.build = executable.flatMap(Self.build(ofExecutable:))
     }
 
     deinit { stop() }
+
+    /// The `CFBundleVersion` of the app a keeper binary ships in, or nil when it
+    /// isn't in one. The binary lives at `Wortel.app/Contents/Resources/bin/`,
+    /// so the app's Info.plist is two directories up.
+    static func build(ofExecutable executable: String) -> String? {
+        let plist = URL(fileURLWithPath: executable)
+            .deletingLastPathComponent()      // bin
+            .deletingLastPathComponent()      // Resources
+            .deletingLastPathComponent()      // Contents
+            .appendingPathComponent("Info.plist")
+        guard let data = try? Data(contentsOf: plist),
+              let info = try? PropertyListSerialization.propertyList(from: data, format: nil)
+                as? [String: Any]
+        else { return nil }
+        return info["CFBundleVersion"] as? String
+    }
 
     // MARK: - Lifecycle
 
@@ -112,6 +143,24 @@ final class KeeperServer: @unchecked Sendable {
         try? FileManager.default.removeItem(atPath: path)
     }
 
+    /// Stop, if there is nothing to keep and nobody to keep it for. Returns
+    /// whether it did.
+    ///
+    /// One step under `state`, because both halves of the question can change
+    /// between asking and acting: an app that has connected but not opened
+    /// anything yet holds no session, and was having the keeper stopped under
+    /// it; and an `open` landing just after "no sessions" forked a shell that
+    /// the stop then hung up.
+    func stopIfIdle() -> Bool {
+        let idle: Bool = state.sync {
+            guard !stopping, liveConnections == 0, sessions.isEmpty else { return false }
+            stopping = true
+            return true
+        }
+        if idle { stop() }
+        return idle
+    }
+
     /// Sessions still running, for tests and for `list`.
     var sessionCount: Int { state.sync { sessions.count } }
 
@@ -127,6 +176,10 @@ final class KeeperServer: @unchecked Sendable {
         let client = accept(socketFD, nil, nil)
         guard client >= 0 else { return }
         _ = fcntl(client, F_SETFD, FD_CLOEXEC)
+        // A reply to an app that has just gone must fail, not raise SIGPIPE:
+        // the keeper ignores it, but this server also runs inside the tests.
+        var on: Int32 = 1
+        setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         state.sync { liveConnections += 1 }
         connections.async { [weak self] in self?.serve(client) }
     }
@@ -171,7 +224,8 @@ final class KeeperServer: @unchecked Sendable {
     private func handle(_ command: KeeperCommand, from client: Int32) {
         switch command {
         case .ping:
-            reply(.success(message: "wortel-keeper", version: Keeper.version), to: client)
+            reply(.success(message: "wortel-keeper", version: Keeper.version,
+                           build: build, executable: executable), to: client)
 
         case .open(let id, let plan, let columns, let rows):
             open(id: id, plan: plan, columns: columns, rows: rows, from: client)
@@ -209,20 +263,53 @@ final class KeeperServer: @unchecked Sendable {
     private func open(
         id: String, plan: KeeperSpawnPlan, columns: UInt16, rows: UInt16, from client: Int32
     ) {
-        if let existing: Session = state.sync(execute: { sessions[id] }) {
-            // Opening one that already exists is an attach. That is not a
-            // convenience: it is what makes a relaunch idempotent, so an app
-            // that restores its session list doesn't fork a second shell for a
-            // session that never stopped running.
-            _ = existing
-            return attach(id: id, from: client)
+        enum Admission { case refused(String), opened(Session), existing(Session) }
+        // One step under `state`, fork included: two opens for one id cannot
+        // both fork, a shell that exits at once cannot be reaped before it is
+        // in the table, and `stopIfIdle` cannot decide in between.
+        let admission: Admission = state.sync {
+            if let session = sessions[id] {
+                // Opening one that already exists is an attach. That is not a
+                // convenience: it is what makes a relaunch idempotent, so an
+                // app that restores its session list doesn't fork a second
+                // shell for a session that never stopped running.
+                guard claim(session, for: client) else { return .refused("session is attached elsewhere") }
+                return .existing(session)
+            }
+            guard !stopping else { return .refused("this keeper is shutting down") }
+            guard let session = startSession(id: id, plan: plan, columns: columns, rows: rows) else {
+                return .refused("could not start \(plan.executable)")
+            }
+            sessions[id] = session
+            // Handed straight over: the caller opened it in order to use it.
+            _ = claim(session, for: client)
+            return .opened(session)
         }
 
+        switch admission {
+        case .refused(let reason):
+            reply(.failure(reason), to: client)
+        case .existing(let session):
+            // Says so, because the plan was not used: whatever `initialInput`
+            // asked for was not typed, and the app must not take this for a
+            // fresh shell and type a resume into a live agent.
+            send(handOver(session), existing: true, to: client)
+        case .opened(let session):
+            typeInitialInput(of: plan, into: session)
+            send(handOver(session), to: client)
+        }
+    }
+
+    /// A new session with its shell running, or nil if it could not be forked.
+    /// Called on `state`.
+    private func startSession(
+        id: String, plan: KeeperSpawnPlan, columns: UInt16, rows: UInt16
+    ) -> Session? {
         let pty = PtyHost()
         let session = Session(id: id, pty: pty, limit: replayLimit)
         pty.onOutput = { [weak self, weak session] bytes, count in
-            // Only ever called while detached — attached, the source is
-            // suspended and the app is reading the descriptor itself.
+            // Only while detached, plus at most the one read that was under way
+            // when an attach paused it, which `handOver` waits for and takes.
             guard let self, let session else { return }
             self.state.sync { session.buffer.append(bytes, count: count) }
         }
@@ -252,70 +339,92 @@ final class KeeperServer: @unchecked Sendable {
             executable: plan.executable, arguments: plan.arguments,
             environment: plan.environment, workingDirectory: plan.workingDirectory,
             columns: max(columns, 1), rows: max(rows, 1))
-        else {
-            return reply(.failure("could not start \(plan.executable)"), to: client)
-        }
+        else { return nil }
+        return session
+    }
 
-        // What the app wants run first, typed before the shell has read a
-        // byte: it waits in the pty's input buffer until the prompt. Done here
-        // and not by the app so the keeper can vouch for it later.
-        if let input = plan.initialInput, !input.isEmpty {
-            let bytes = Array(input.utf8)
-            bytes.withUnsafeBufferPointer { raw in
-                guard let base = raw.baseAddress else { return }
-                pty.write(base, count: raw.count)
-            }
-            session.inputDelivered = true
+    /// What the app wants run first, typed before the shell has read a byte:
+    /// it waits in the pty's input buffer until the prompt. Done here and not
+    /// by the app so the keeper can vouch for it later. Outside `state`,
+    /// because a write to a full pty waits.
+    private func typeInitialInput(of plan: KeeperSpawnPlan, into session: Session) {
+        guard let input = plan.initialInput, !input.isEmpty else { return }
+        let bytes = Array(input.utf8)
+        bytes.withUnsafeBufferPointer { raw in
+            guard let base = raw.baseAddress else { return }
+            session.pty.write(base, count: raw.count)
         }
-
-        state.sync {
-            sessions[id] = session
-            // Hand it straight over: the caller opened it in order to use it.
-            session.attachedTo = client
-            session.pty.pauseReading()
-        }
-        reply(.success(pid: pty.pid, inputDelivered: session.inputDelivered,
-                       startedAt: session.startedAt.timeIntervalSince1970),
-              descriptor: pty.master, to: client)
+        state.sync { session.inputDelivered = true }
     }
 
     private func attach(id: String, from client: Int32) {
-        var descriptor: Int32 = -1
-        var replay = Data()
-        var pid: Int32 = -1
-        var inputDelivered = false
-        var startedAt: Double = 0
-
-        enum Outcome { case ok, missing, busy }
-        let outcome: Outcome = state.sync {
+        enum Claim { case claimed(Session), missing, busy }
+        let outcome: Claim = state.sync {
             guard let session = sessions[id] else { return .missing }
-            // Someone else is reading it. Refusing beats two readers splitting
-            // the byte stream, which corrupts intermittently and cannot be
-            // reproduced on demand.
-            if let holder = session.attachedTo, holder != client { return .busy }
-            session.pty.pauseReading()
-            session.attachedTo = client
-            replay = session.buffer.take()
-            descriptor = session.pty.master
-            pid = session.pty.pid
-            inputDelivered = session.inputDelivered
-            startedAt = session.startedAt.timeIntervalSince1970
-            return .ok
+            return claim(session, for: client) ? .claimed(session) : .busy
         }
 
         // Told apart deliberately: "gone" and "someone else has it" look
         // identical from the app and need completely different fixes.
         switch outcome {
-        case .missing: return reply(.failure("no such session"), to: client)
-        case .busy: return reply(.failure("session is attached elsewhere"), to: client)
-        case .ok: break
+        case .missing: reply(.failure("no such session"), to: client)
+        case .busy: reply(.failure("session is attached elsewhere"), to: client)
+        case .claimed(let session): send(handOver(session), to: client)
         }
-        guard descriptor >= 0 else {
-            return reply(.failure("session has no pty"), to: client)
+    }
+
+    /// Make `client` the session's one reader and stop the keeper's own
+    /// reading, or say no because another client has it. Called on `state`.
+    ///
+    /// Refusing beats two readers splitting the byte stream, which corrupts
+    /// intermittently and cannot be reproduced on demand.
+    private func claim(_ session: Session, for client: Int32) -> Bool {
+        if let holder = session.attachedTo, holder != client { return false }
+        session.attachedTo = client
+        session.pty.pauseReading()
+        return true
+    }
+
+    /// What a client is given for a session it has just claimed.
+    private struct Handover {
+        let descriptor: Int32
+        let replay: Data
+        let pid: Int32
+        let inputDelivered: Bool
+        let startedAt: Date
+    }
+
+    /// Everything the keeper read before the claim, and a descriptor of the
+    /// client's own. nil when the pty has already closed under it (the shell
+    /// ended).
+    ///
+    /// The order is the fix for a lost chunk. The claim paused the keeper's
+    /// reading, but a read already under way finishes regardless, and appends
+    /// under `state`. So the wait for it happens here, **outside** `state` (it
+    /// may be waiting for exactly that), and only then is the buffer taken: the
+    /// chunk lands in this replay rather than after it, where it turned up
+    /// stale on the next attach and out of order on this one.
+    private func handOver(_ session: Session) -> Handover? {
+        session.pty.finishReadInFlight()
+        return state.sync {
+            guard let descriptor = session.pty.duplicateMaster() else { return nil }
+            return Handover(descriptor: descriptor, replay: session.buffer.take(),
+                            pid: session.pty.pid, inputDelivered: session.inputDelivered,
+                            startedAt: session.startedAt)
         }
-        reply(.success(pid: pid, replay: replay.isEmpty ? nil : replay,
-                       inputDelivered: inputDelivered, startedAt: startedAt),
-              descriptor: descriptor, to: client)
+    }
+
+    /// Reply with the handover, then close the keeper's copy of the descriptor:
+    /// the kernel has given the client one of its own by then.
+    private func send(_ handover: Handover?, existing: Bool = false, to client: Int32) {
+        guard let handover else { return reply(.failure("session has no pty"), to: client) }
+        defer { close(handover.descriptor) }
+        reply(.success(pid: handover.pid,
+                       replay: handover.replay.isEmpty ? nil : handover.replay,
+                       existing: existing ? true : nil,
+                       inputDelivered: handover.inputDelivered,
+                       startedAt: handover.startedAt.timeIntervalSince1970),
+              descriptor: handover.descriptor, to: client)
     }
 
     /// Resume the keeper's own reading. Called on detach and on disconnect.

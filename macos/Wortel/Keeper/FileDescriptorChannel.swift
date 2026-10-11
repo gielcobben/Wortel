@@ -62,19 +62,21 @@ enum FileDescriptorChannel {
                     var copy = descriptor
                     memcpy(controlData(control), &copy, payloadSize)
                 }
+                // The descriptor rides on the first segment only. A reply with
+                // a replay can be larger than the socket buffer, so the rest
+                // goes out as plain bytes, which the reader takes in bulk.
                 var offset = 0
                 while offset < buffer.count {
+                    iovPointer.pointee.iov_base = UnsafeMutableRawPointer(buffer.baseAddress! + offset)
+                    iovPointer.pointee.iov_len = buffer.count - offset
                     let sent = sendmsg(socket, &message, 0)
                     if sent < 0 {
                         if errno == EINTR { continue }
                         throw ChannelError.failed("sendmsg", errno)
                     }
-                    // A partial send would have to resend without the ancillary
-                    // data, which the protocol has no way to express. Replies
-                    // are far under any socket buffer, so treat it as fatal
-                    // rather than inventing a resume rule that never runs.
                     offset += sent
-                    break
+                    message.msg_control = nil
+                    message.msg_controllen = 0
                 }
             }
         }
@@ -86,11 +88,13 @@ enum FileDescriptorChannel {
     /// **The caller owns any descriptor returned and must close it.** This is
     /// the one place in the codebase where a return value is a resource.
     ///
-    /// Read a byte at a time on purpose: on a stream socket the ancillary data
-    /// is delivered by the `recvmsg` that returns the byte it was attached to,
-    /// so a buffered read spanning two replies could hand a descriptor to the
-    /// wrong one. Replies are ~100 bytes and rare — this is the control channel,
-    /// not the pty, and the pty is precisely what we avoided putting here.
+    /// Every read takes the ancillary data with it, and none reads past the
+    /// newline: on a stream socket a descriptor arrives with the byte it was
+    /// attached to, so a read spanning two lines could hand it to the wrong
+    /// one. Each read first peeks at what is waiting, then takes exactly up to
+    /// the end of the line. A line used to be read a byte at a time, which for
+    /// a full replay (700 KB of base64) was 700,000 syscalls on the main
+    /// thread, about half a second per restored session.
     static func receiveLine(from socket: Int32) throws -> (line: Data, descriptor: Int32?)? {
         var line = Data()
         var descriptor: Int32?
@@ -98,12 +102,26 @@ enum FileDescriptorChannel {
         let control = UnsafeMutableRawPointer.allocate(
             byteCount: controlSpace, alignment: MemoryLayout<cmsghdr>.alignment)
         defer { control.deallocate() }
+        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
 
         while true {
+            // How much of what's waiting belongs to this line.
+            let peeked = chunk.withUnsafeMutableBytes { recv(socket, $0.baseAddress, $0.count, MSG_PEEK) }
+            if peeked < 0 {
+                if errno == EINTR { continue }
+                if let descriptor { close(descriptor) }
+                throw ChannelError.failed("recv", errno)
+            }
+            if peeked == 0 {
+                if line.isEmpty, descriptor == nil { return nil }
+                return (line, descriptor)
+            }
+            let newline = chunk[0..<peeked].firstIndex(of: 0x0A)
+            let wanted = newline.map { $0 + 1 } ?? peeked
+
             memset(control, 0, controlSpace)
-            var byte: UInt8 = 0
-            let received: Int = withUnsafeMutablePointer(to: &byte) { bytePointer -> Int in
-                var iov = iovec(iov_base: UnsafeMutableRawPointer(bytePointer), iov_len: 1)
+            let received: Int = chunk.withUnsafeMutableBytes { raw -> Int in
+                var iov = iovec(iov_base: raw.baseAddress, iov_len: wanted)
                 return withUnsafeMutablePointer(to: &iov) { iovPointer -> Int in
                     var message = msghdr()
                     message.msg_iov = iovPointer
@@ -137,8 +155,11 @@ enum FileDescriptorChannel {
                 if line.isEmpty, descriptor == nil { return nil }
                 return (line, descriptor)
             }
-            if byte == 0x0A { return (line, descriptor) }
-            line.append(byte)
+            if received > 0, chunk[received - 1] == 0x0A {
+                line.append(contentsOf: chunk[0..<(received - 1)])
+                return (line, descriptor)
+            }
+            line.append(contentsOf: chunk[0..<received])
             if line.count > Keeper.maximumLineBytes {
                 if let descriptor { close(descriptor) }
                 throw ChannelError.failed("line too long", EMSGSIZE)

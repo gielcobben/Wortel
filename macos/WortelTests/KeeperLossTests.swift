@@ -18,6 +18,24 @@ final class KeeperLossTests: XCTestCase {
         XCTAssertTrue(KeeperConnection.shouldReplace(afterPing: .success()))
     }
 
+    /// Same protocol, other build: still talked to, but outdated, and replaced
+    /// once it holds nothing. A keeper too old to name its build is one of
+    /// those by definition, and its reply has to decode for that to be said.
+    func testAKeeperFromAnotherBuildIsOutdated() throws {
+        let current = KeeperResponse.success(version: Keeper.version, build: "42")
+        XCTAssertFalse(KeeperConnection.isOutdated(current, appBuild: "42"))
+        XCTAssertTrue(KeeperConnection.isOutdated(.success(version: Keeper.version, build: "41"),
+                                                  appBuild: "42"))
+
+        let previousRelease = Data(#"{"ok":true,"message":"wortel-keeper","version":"1"}"#.utf8)
+        let old = try JSONDecoder().decode(KeeperResponse.self, from: previousRelease)
+        XCTAssertFalse(KeeperConnection.shouldReplace(afterPing: old), "a working keeper was killed")
+        XCTAssertTrue(KeeperConnection.isOutdated(old, appBuild: "42"))
+
+        // An app that can't name its own build has nothing to compare with.
+        XCTAssertFalse(KeeperConnection.isOutdated(old, appBuild: nil))
+    }
+
     func testAShellIsGoneOnlyOnTheTablesWord() {
         let table = [ProcessEntry(pid: 200, ppid: 1, pgid: 200, uid: 501, name: "zsh", startedAt: Date())]
         XCTAssertFalse(AgentLiveness.shellIsGone(shellPID: 200, table: table))

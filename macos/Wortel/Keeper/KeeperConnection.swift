@@ -18,7 +18,10 @@ final class KeeperConnection {
     private let client: KeeperClient
     private let binary: String?
 
+    private let socketPath: String
+
     init(socketPath: String = Keeper.socketPath, binary: String? = KeeperConnection.bundledBinary) {
+        self.socketPath = socketPath
         self.client = KeeperClient(path: socketPath)
         self.binary = binary
     }
@@ -35,29 +38,42 @@ final class KeeperConnection {
     /// And check what answered. **This matters from the first release, not from
     /// the first protocol change**: updating the app does not restart the
     /// keeper, so a new Wortel routinely meets a keeper built from the version
-    /// you just replaced. Without this, the day the wire changes is the day
-    /// sessions break in a way nobody can reproduce on a clean machine.
+    /// you just replaced. Two things can be wrong with it, and they are
+    /// answered differently:
     ///
-    /// A mismatch is resolved by replacing it, which costs the shells it was
-    /// holding. That is the lesser evil: refusing to talk to it would leave
-    /// those shells alive and permanently unreachable, whereas an app update has
-    /// always meant losing your sessions anyway. It only ever happens on an
-    /// update, and only once.
+    /// - **Another protocol.** It cannot be talked to, so it is replaced, which
+    ///   costs the shells it was holding. That is the lesser evil: refusing to
+    ///   talk to it would leave those shells alive and permanently unreachable.
+    /// - **Another build, same protocol** (`isOutdated`). It works, but every
+    ///   shell it forks runs under an old binary, and macOS judges privacy
+    ///   grants (Full Disk Access) by the binary: one keeper survived four
+    ///   updates, and its shells could not read what the app could. Replaced
+    ///   only while it holds no sessions, because a stale binary is never
+    ///   worth a live shell. With sessions it is kept, and said so; it ends by
+    ///   itself 30 seconds after it holds nothing with no app connected, so the
+    ///   launch after its last session has ended gets a current one.
     @discardableResult
     func connect() -> Bool {
         guard connectStarting() else { return false }
-        let ping = (try? client.send(.ping))?.response
-        guard !Self.shouldReplace(afterPing: ping) else {
+        var ping = (try? client.send(.ping))?.response
+        if Self.shouldReplace(afterPing: ping) {
             NSLog("wortel: keeper speaks a different protocol; replacing it")
             KeeperLog.log.notice("""
                 keeper \(self.keeperPID ?? -1, privacy: .public) speaks protocol \
                 \(ping?.version ?? "?", privacy: .public), not \(Keeper.version, privacy: .public); replacing it
                 """)
-            replaceMismatchedKeeper()
-            return connectStarting()
-                && (try? client.send(.ping))?.response.version == Keeper.version
+            ping = replaceKeeper()
+            guard ping?.version == Keeper.version else { return false }
+        } else if let answer = ping, answer.ok, Self.isOutdated(answer, appBuild: Self.appBuild),
+                  heldSessions()?.isEmpty == true {
+            KeeperLog.log.notice("""
+                keeper \(self.keeperPID ?? -1, privacy: .public) is from build \
+                \(answer.build ?? "unknown", privacy: .public), not \(Self.appBuild ?? "?", privacy: .public), \
+                and holds nothing; replacing it
+                """)
+            ping = replaceKeeper()
         }
-        guard ping?.ok == true else {
+        guard let ping, ping.ok else {
             // Something holds the socket and would not say who it is: busy,
             // wedged or stopped. Every session it holds may still be alive,
             // so this launch goes without it rather than killing them. The
@@ -69,8 +85,30 @@ final class KeeperConnection {
             client.disconnect()
             return false
         }
+        if Self.isOutdated(ping, appBuild: Self.appBuild) {
+            KeeperLog.log.notice("""
+                keeper \(self.keeperPID ?? -1, privacy: .public) at \(ping.executable ?? "?", privacy: .public) \
+                is from build \(ping.build ?? "unknown", privacy: .public), not \
+                \(Self.appBuild ?? "?", privacy: .public); using it, since it holds sessions or was just started
+                """)
+        }
         KeeperLog.log.notice("connected to keeper \(self.keeperPID ?? -1, privacy: .public)")
         return true
+    }
+
+
+    /// Whether a keeper that answered a ping came from another build of the
+    /// app. One too old to report its build counts as outdated: the field is
+    /// newer than every keeper that lacks it. An app that cannot name its own
+    /// build has nothing to compare with, and calls nothing outdated.
+    static func isOutdated(_ ping: KeeperResponse, appBuild: String?) -> Bool {
+        guard let appBuild else { return false }
+        return ping.build != appBuild
+    }
+
+    /// This app's build, which a keeper from the same bundle reports as its own.
+    static var appBuild: String? {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     }
 
     /// Whether a keeper should be killed and replaced, judged by its answer to
@@ -108,8 +146,10 @@ final class KeeperConnection {
         (try? client.connect(startingWith: { try self.launch() })) == true
     }
 
-    /// Stop a keeper we cannot talk to, and clear its socket so a new one can
-    /// bind.
+    /// Stop the keeper on the other end, clear its socket so a new one can
+    /// bind, start one from this bundle, and return its answer to a ping (nil
+    /// if it gave none). For a keeper that speaks another protocol, or one from
+    /// another build that holds no sessions.
     ///
     /// The pid comes from the **socket itself** (`LOCAL_PEERPID`), not from
     /// `pgrep`. That is not a micro-optimisation: this runs during surface
@@ -125,7 +165,7 @@ final class KeeperConnection {
     /// from a bad old version, since that is the version least likely to
     /// cooperate. Killing it closes its ptys, which hangs its shells up rather
     /// than orphaning them.
-    private func replaceMismatchedKeeper() {
+    private func replaceKeeper() -> KeeperResponse? {
         let pid = client.peerProcessID()
         client.disconnect()
         if let pid, pid > 1 {
@@ -134,6 +174,17 @@ final class KeeperConnection {
             if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
         }
         try? FileManager.default.removeItem(atPath: Keeper.socketPath)
+        guard connectStarting() else { return nil }
+        return (try? client.send(.ping))?.response
+    }
+
+    /// The sessions the keeper holds, or nil if it would not say. Not `running`,
+    /// whose empty answer on a failure is fine for what it is used for and
+    /// fatal here: "no sessions" is what makes replacing a keeper safe.
+    private func heldSessions() -> [KeeperSessionState]? {
+        guard client.isConnected, let (response, _) = try? client.send(.list),
+              response.ok else { return nil }
+        return response.sessions ?? []
     }
 
     /// Start the keeper as a process of its own.
@@ -142,6 +193,18 @@ final class KeeperConnection {
     /// the app's process group and does not receive the signals the app
     /// receives. A keeper that died with its parent would be an elaborate way
     /// to change nothing.
+    ///
+    /// **It inherits nothing it was not given.** `POSIX_SPAWN_CLOEXEC_DEFAULT`
+    /// closes every descriptor the app has open, and stdio is `/dev/null`. A
+    /// keeper outlives the app by days, and every descriptor it inherited
+    /// lived as long: the app's sockets and files, and the stdout of whatever
+    /// launched the app (a terminal, Xcode), held open long after they were
+    /// gone. Every shell it forked inherited them in turn.
+    ///
+    /// **Without disclaiming responsibility, deliberately.** macOS counts the
+    /// keeper as Wortel's responsible child, and that is what makes its shells
+    /// run under Wortel's privacy grants (Full Disk Access and the rest). A
+    /// disclaimed keeper would ask for each grant again, as itself.
     ///
     /// **Not a launchd agent, deliberately.** Tried and removed on 2026-10-07.
     /// Registered through `SMAppService`, the keeper was launchd's process and
@@ -165,12 +228,19 @@ final class KeeperConnection {
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID))
+        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
+
+        var actions: posix_spawn_file_actions_t?
+        posix_spawn_file_actions_init(&actions)
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
+        posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0)
+        posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0)
 
         var argv: [UnsafeMutablePointer<CChar>?] = [strdup(binary), nil]
         defer { argv.forEach { free($0) } }
         var pid: pid_t = 0
-        let result = posix_spawn(&pid, binary, nil, &attributes, &argv, environ)
+        let result = posix_spawn(&pid, binary, &actions, &attributes, &argv, environ)
         guard result == 0 else {
             throw WortelCLI.SocketError.failed("spawning the keeper", errno: result)
         }
@@ -254,18 +324,35 @@ final class KeeperConnection {
             .open(session: id, plan: keeperPlan, columns: columns, rows: rows)),
             response.ok, let descriptor
         else { return nil }
+        // `open` attaches when the session exists after all: another attach
+        // let go of it in between, or the attach above failed for a reason
+        // that has passed. Then nothing was forked and nothing typed, and
+        // treating it as a fresh shell would type a resume into a live agent.
+        // A keeper too old to say is taken at its old word: fresh.
         return Attachment(session: session, descriptor: descriptor,
                           pid: response.pid ?? -1,
-                          replay: response.replay ?? Data(), resumed: false,
+                          replay: response.replay ?? Data(), resumed: response.existing ?? false,
                           inputDelivered: response.inputDelivered ?? false,
                           startedAt: response.startedAt.map(Date.init(timeIntervalSince1970:)))
     }
 
     /// End a session for good — the user closed it, so the shell goes too.
     /// Distinct from the app quitting, which must leave it running.
+    ///
+    /// Over a connection of its own once the main one is out of step (see
+    /// `KeeperClient.send`): otherwise a closed session's shell and agent
+    /// would run on in the keeper with nobody reading them, and come back at
+    /// the next launch. The keeper closes a session whoever asks.
     func close(session: UUID) {
-        guard client.isConnected else { return }
-        _ = try? client.send(.close(session: session.uuidString))
+        let command = KeeperCommand.close(session: session.uuidString)
+        if client.isConnected {
+            _ = try? client.send(command)
+            return
+        }
+        let once = KeeperClient(path: socketPath)
+        guard (try? once.connect()) == true else { return }
+        _ = try? once.send(command)
+        once.disconnect()
     }
 
     /// Sessions the keeper is still holding. Used to tell whether anything

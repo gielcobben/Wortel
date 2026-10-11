@@ -20,7 +20,7 @@ final class KeeperClient {
 
     deinit { disconnect() }
 
-    var isConnected: Bool { socket >= 0 }
+    var isConnected: Bool { socket >= 0 && !isOutOfStep }
 
     /// Connect to a running keeper, or start one and connect to that.
     ///
@@ -84,10 +84,13 @@ final class KeeperClient {
         return pid
     }
 
+    /// Close the connection. The next `connect` starts a new one, which is in
+    /// step again: nothing is owed on a socket that has never been sent on.
     func disconnect() {
         guard socket >= 0 else { return }
         close(socket)
         socket = -1
+        isOutOfStep = false
     }
 
     /// Send a command and read the reply.
@@ -95,20 +98,41 @@ final class KeeperClient {
     /// The returned descriptor is **owned by the caller**. For `open` and
     /// `attach` it is the pty, and dropping it without closing leaks a
     /// descriptor for the life of the app.
+    ///
+    /// **A failure leaves the connection unusable, on purpose.** Replies carry
+    /// no request id, so once one is missed (a timeout, half a line) the next
+    /// reply read would be the late answer to the previous request, and an
+    /// `attach` could be handed another session's pty: typing into one agent
+    /// would land in another. The socket stays open rather than closed,
+    /// because closing it tells the keeper the app is gone, and it would start
+    /// reading the ptys this app is still reading.
     @discardableResult
     func send(_ command: KeeperCommand) throws -> (response: KeeperResponse, descriptor: Int32?) {
-        guard socket >= 0 else { throw WortelCLI.SocketError.notRunning }
-        var data = try JSONEncoder().encode(command)
-        data.append(0x0A)
-        try FileDescriptorChannel.send(data, descriptor: nil, over: socket)
+        guard socket >= 0, !isOutOfStep else { throw WortelCLI.SocketError.notRunning }
+        do {
+            var data = try JSONEncoder().encode(command)
+            data.append(0x0A)
+            try FileDescriptorChannel.send(data, descriptor: nil, over: socket)
 
-        guard let (line, descriptor) = try FileDescriptorChannel.receiveLine(from: socket) else {
-            throw WortelCLI.SocketError.notRunning
+            guard let (line, descriptor) = try FileDescriptorChannel.receiveLine(from: socket) else {
+                throw WortelCLI.SocketError.notRunning
+            }
+            guard let response = try? JSONDecoder().decode(KeeperResponse.self, from: line) else {
+                if let descriptor { close(descriptor) }
+                throw WortelCLI.SocketError.badResponse
+            }
+            return (response, descriptor)
+        } catch {
+            isOutOfStep = true
+            KeeperLog.log.error("""
+                keeper \(command.verb, privacy: .public) failed (\(String(describing: error), privacy: .public)); \
+                not using this connection again
+                """)
+            throw error
         }
-        guard let response = try? JSONDecoder().decode(KeeperResponse.self, from: line) else {
-            if let descriptor { close(descriptor) }
-            throw WortelCLI.SocketError.badResponse
-        }
-        return (response, descriptor)
     }
+
+    /// See `send`. New terminals then start without the keeper; the ones
+    /// already attached carry on.
+    private(set) var isOutOfStep = false
 }

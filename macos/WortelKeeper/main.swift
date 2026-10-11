@@ -20,22 +20,27 @@ import Foundation
 setvbuf(stdout, nil, _IOLBF, 0)
 
 let server = KeeperServer()
+/// `idleWork` is touched only on this queue: `onIdle` is called from whichever
+/// connection or pty queue noticed, and two of them at once raced on it.
 let idleQueue = DispatchQueue(label: "sh.wortel.keeper.idle")
 var idleWork: DispatchWorkItem?
 
 // Nothing held and nobody connected: go away rather than linger as a stray
 // process. Delayed, because "the app is restarting" looks exactly like "the app
-// has gone" for a second or two, and re-spawning is slower than waiting.
+// has gone" for a second or two, and re-spawning is slower than waiting. Whether
+// it is *still* idle when the wait is over is the server's to answer, in one
+// step with any `open` that might be arriving: see `stopIfIdle`.
 server.onIdle = {
-    idleWork?.cancel()
-    let work = DispatchWorkItem {
-        guard server.sessionCount == 0 else { return }
-        KeeperLog.log.notice("keeper \(getpid(), privacy: .public) ending: nothing left to hold")
-        server.stop()
-        exit(0)
+    idleQueue.async {
+        idleWork?.cancel()
+        let work = DispatchWorkItem {
+            guard server.stopIfIdle() else { return }
+            KeeperLog.log.notice("keeper \(getpid(), privacy: .public) ending: nothing left to hold")
+            exit(0)
+        }
+        idleWork = work
+        idleQueue.asyncAfter(deadline: .now() + 30, execute: work)
     }
-    idleWork = work
-    idleQueue.asyncAfter(deadline: .now() + 30, execute: work)
 }
 
 do {
@@ -49,7 +54,10 @@ do {
 // investigation can tell which keeper held the shells, and since when. An end
 // by SIGKILL (a Force Quit, the Dock stopping it) can't be logged from here;
 // the app logs that one when it sees the process go.
-KeeperLog.log.notice("keeper \(getpid(), privacy: .public) started, protocol \(Keeper.version, privacy: .public)")
+KeeperLog.log.notice("""
+    keeper \(getpid(), privacy: .public) started, protocol \(Keeper.version, privacy: .public), \
+    build \(server.build ?? "unknown", privacy: .public)
+    """)
 
 // SIGHUP would otherwise arrive when the terminal that launched us goes away —
 // which, for a process whose entire job is outliving things, is exactly wrong.

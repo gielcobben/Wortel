@@ -230,11 +230,6 @@ final class GhosttyRuntime {
             envVars.append(ghostty_env_var_s(key: dup("WORTEL_BIN_DIR"), value: dup(directory)))
         }
 
-        // The process-survival spike, opt-in via WORTEL_HOST_MANAGED=1. See
-        // PtyHost: we own the pty, libghostty is only the emulator. Everything
-        // above that describes a *process* — working_directory, initial_input,
-        // env_vars — has nothing to act on in this mode, which is exactly the
-        // cost the spike is here to measure.
         // Process survival, and the default: ask the keeper for this session's
         // pty. If it already has one the shell outlived the last quit and we are
         // picking it back up; if not, the keeper forks a fresh one. Either way
@@ -247,11 +242,28 @@ final class GhosttyRuntime {
         // always used, with libghostty doing its own spawning and its own shell
         // integration. A missing helper should cost you survival and nothing
         // else.
-        if let sessionID, let keeper = Self.keeper,
-           let attachment = keeper.attachOrOpen(
-               session: sessionID, plan: Self.shellPlan(sessionID: sessionID),
-               workingDirectory: workingDirectory, initialInput: initialInput,
-               columns: 80, rows: 24) {
+        if let sessionID, let keeper = Self.keeper {
+            guard let attachment = keeper.attachOrOpen(
+                session: sessionID, plan: Self.shellPlan(sessionID: sessionID),
+                workingDirectory: workingDirectory, initialInput: initialInput,
+                columns: 80, rows: 24)
+            else {
+                // **A keeper that would not hand this session over is not a
+                // keeper without it.** "Attached elsewhere", a timeout, a
+                // connection out of step: the session's shell may be alive in
+                // there with its agent still running. The exec backend still
+                // gives this terminal a shell, but typing the resume into it
+                // would start a second agent on the same conversation.
+                let droppedResume = cfg.initial_input != nil
+                cfg.initial_input = nil
+                view.initialInputDropped = droppedResume
+                KeeperLog.log.error("""
+                    keeper did not give session \(sessionID.uuidString, privacy: .public) its shell; \
+                    starting one without the keeper\
+                    \(droppedResume ? ", and without typing its resume" : "", privacy: .public)
+                    """)
+                return newExecSurface(config: &cfg, environment: &envVars)
+            }
             // The resume is typed by the keeper when it forks the shell, so
             // libghostty must not type it a second time. A session that never
             // died has, as a rule, nothing to resume either — with one
@@ -276,10 +288,17 @@ final class GhosttyRuntime {
             // did before the keeper could. A survived shell never gets it here.
             if attachment.resumed || attachment.inputDelivered { cfg.initial_input = nil }
             return hostManagedSurface(view: view, config: &cfg, attachment: attachment,
-                                      resumeAgain: resumeAgain)
+                                      keeperPID: keeper.keeperPID, resumeAgain: resumeAgain)
         }
 
-        return envVars.withUnsafeMutableBufferPointer { buf in
+        return newExecSurface(config: &cfg, environment: &envVars)
+    }
+
+    /// A surface whose shell libghostty spawns itself: the exec backend.
+    private func newExecSurface(
+        config cfg: inout ghostty_surface_config_s, environment envVars: inout [ghostty_env_var_s]
+    ) -> ghostty_surface_t? {
+        envVars.withUnsafeMutableBufferPointer { buf in
             if let base = buf.baseAddress {
                 cfg.env_vars = base
                 cfg.env_var_count = buf.count
@@ -297,12 +316,13 @@ final class GhosttyRuntime {
     /// wire, replay, and only then start reading.
     private func hostManagedSurface(
         view: SurfaceView, config cfg: inout ghostty_surface_config_s,
-        attachment: KeeperConnection.Attachment, resumeAgain: String? = nil
+        attachment: KeeperConnection.Attachment, keeperPID: pid_t?, resumeAgain: String? = nil
     ) -> ghostty_surface_t? {
         let session = attachment.session
         let pty = PtyHost(adopting: attachment.descriptor)
         view.ptyHost = pty // the view's lifetime is the session's
         view.keeperSession = attachment.session
+        view.keeperPID = keeperPID
         // The keeper forked the shell, so it is the only one that knows the pid.
         // Everything the session goes on to run hangs off it.
         view.shellPID = attachment.pid > 0 ? attachment.pid : nil
@@ -346,9 +366,18 @@ final class GhosttyRuntime {
             TerminalModeRecorder.shared.feed(session: session, bytes: bytes, count: count)
             ghostty_surface_write_buffer(surface, bytes, UInt(count))
         }
-        pty.onExit = { code, milliseconds in
+        // The shell ended. The keeper reaps it, so its exit code is the
+        // keeper's; what reaches this side is the pty hanging up. Whoever owns
+        // the session decides what that means, and without an owner the
+        // terminal is told directly, as the exec backend's would have been.
+        //
+        // Only for the pty the view still has: `restartShell` can give it a
+        // new one while this hop is on its way, and that terminal's shell has
+        // only just started. Weak, because the pty holds this closure.
+        pty.onHangup = { [weak view, weak pty] in
             DispatchQueue.main.async {
-                ghostty_surface_process_exit(surface, UInt32(bitPattern: code), milliseconds)
+                guard let view, let pty, view.ptyHost === pty else { return }
+                if let shellEnded = view.onShellEnded { shellEnded() } else { view.finishProcess() }
             }
         }
 

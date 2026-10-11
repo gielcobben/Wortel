@@ -5,26 +5,26 @@ import os
 /// A pty and the process on the other end of it, owned by **us** rather than by
 /// libghostty.
 ///
-/// This is the spike behind process survival. Today every shell is a child of
-/// libghostty's exec backend, which is why quitting the app takes the agents
-/// with it. libghostty turns out not to need that: `ghostty.h` declares a second
-/// IO backend, `GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED`, where it is purely the
-/// emulator and the host does the forkpty, the read loop, the TIOCSWINSZ and the
-/// waitpid. Nothing has to *adopt* an existing descriptor — the note that said
-/// otherwise was wrong. Once we own the pty, moving that ownership into a
-/// process that outlives the app is ordinary plumbing.
+/// The ground process survival stands on. `ghostty.h` declares a second IO
+/// backend, `GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED`, where libghostty is
+/// purely the emulator and the host does the forkpty, the read loop, the
+/// TIOCSWINSZ and the waitpid. Once the pty is ours, moving that ownership into
+/// a process that outlives the app (`wortel-keeper`) is ordinary plumbing.
 ///
-/// **What this class is not** is a replacement for the exec backend. That
-/// backend also wraps the shell in `/usr/bin/login`, sets TERM and the terminfo
-/// path, and injects the shell integration (`ZDOTDIR` for zsh, `--rcfile` for
-/// bash) that busy detection, agent markers, OSC 133 timing, cwd reporting and
-/// the `wortel` command's PATH all depend on. None of that is here, and none of
-/// it is free. Knowing exactly how much of it goes dead is the point of the
-/// spike: turn it on, look at what the session loses.
+/// One class, two roles, because both ends share this file:
 ///
-/// In the app this only ever *adopts* a descriptor the keeper passed; the keeper
-/// is the one that forks. `WORTEL_NO_KEEPER=1` opts a launch out entirely and
+/// - **In the keeper** it forks (`start`): it owns the child, reaps it, and
+///   reads the pty only while no app is attached (`pauseReading`).
+/// - **In the app** it only ever *adopts* the descriptor the keeper passed
+///   (`init(adopting:)`): it reads and writes it, and never signals or reaps a
+///   process that isn't its own. It learns the shell ended from the pty
+///   hanging up (`onHangup`).
+///
+/// What the exec backend did for a child beyond forking it (`/usr/bin/login`,
+/// TERM and terminfo, the shell integration) is `ShellSpawn`'s, and arrives
+/// here as a finished plan. `WORTEL_NO_KEEPER=1` opts a launch out entirely and
 /// puts it back on libghostty's exec backend.
+
 /// Something that wants a copy of the bytes the terminal sends the program.
 protocol PtyInputListener: AnyObject, Sendable {
     func feed(_ bytes: UnsafePointer<UInt8>, count: Int)
@@ -103,8 +103,18 @@ final class PtyHost: @unchecked Sendable {
     /// path, and a terminal that hops to the main actor per read is a terminal
     /// that stutters under `cat` of a large file.
     var onOutput: ((UnsafePointer<UInt8>, Int) -> Void)?
-    /// The program exited: code, and how long it ran.
+    /// The program exited: code, and how long it ran. Only for a host that
+    /// forked its process; an adopted pty has no child to reap.
     var onExit: ((Int32, UInt64) -> Void)?
+    /// The far side of an **adopted** pty hung up: the shell and everything
+    /// else that had the tty open are gone. Called once, on `queue`, and never
+    /// after `release`.
+    ///
+    /// The app's only way to learn that a keeper-hosted shell ended. The
+    /// keeper reaps it, but while the app is attached the keeper is not
+    /// reading, and the exec backend's "process exited" never comes because
+    /// libghostty spawned nothing. Without this the terminal just stopped.
+    var onHangup: (() -> Void)?
 
     private let queue = DispatchQueue(label: "sh.wortel.pty", qos: .userInteractive)
     private var startedAt = DispatchTime.now()
@@ -154,6 +164,40 @@ final class PtyHost: @unchecked Sendable {
         queue.async(execute: work)
     }
 
+    /// Wait until a read already under way has delivered its bytes.
+    ///
+    /// `pauseReading` stops the next read, not the current one: suspending a
+    /// source does not interrupt a handler that is running. The keeper's
+    /// handover needs both, or a chunk read just before the pause lands in the
+    /// replay buffer *after* the app has taken it, and turns up stale in the
+    /// next replay instead of this one. The read loop checks `isReading` before
+    /// every `read`, so once this returns nothing more is read until
+    /// `resumeReading`.
+    ///
+    /// Never call it on `queue`, or while holding anything a read hands its
+    /// bytes to (the keeper's state queue): the read being waited for may be
+    /// waiting on exactly that.
+    func finishReadInFlight() {
+        dispatchPrecondition(condition: .notOnQueue(queue))
+        queue.sync {}
+    }
+
+    /// A descriptor of our own for the pty, or nil once it has closed.
+    ///
+    /// Duplicated under the lock the read source's cancel handler closes the
+    /// master under, so the number cannot be closed, and handed to something
+    /// else by the kernel, between being read here and being duplicated. The
+    /// keeper sends the copy and closes it after: a shell that ends while the
+    /// reply is on its way then costs the app a dead pty, never someone
+    /// else's file.
+    func duplicateMaster() -> Int32? {
+        shared.withLock { state -> Int32? in
+            guard state.master >= 0 else { return nil }
+            let copy = dup(state.master)
+            return copy >= 0 ? copy : nil
+        }
+    }
+
     /// Start reading a descriptor adopted from the keeper. Separate from `init`
     /// so nothing is read before there is somewhere to put it.
     func beginReading() {
@@ -171,14 +215,34 @@ final class PtyHost: @unchecked Sendable {
     /// `forkpty` rather than `posix_spawn`, because the child needs the slave as
     /// its *controlling* terminal — that's what makes job control, `Ctrl-C` and
     /// window-size signals work at all — and `forkpty` does the `setsid` +
-    /// `TIOCSCTTY` dance for you. The child does nothing but `execve` before
-    /// handing over, which is the only thing that's safe after a fork in a
-    /// process with threads.
+    /// `TIOCSCTTY` dance for you.
+    ///
+    /// **The child allocates nothing.** After a fork in a process with threads,
+    /// only async-signal-safe calls are safe: another thread may have held the
+    /// malloc lock at the instant of the fork, and the child's copy of it is
+    /// then held forever. So every C string the child needs is built here,
+    /// before the fork, and the child only resets signals, changes directory
+    /// and execs. The keeper forks from libdispatch's pool, where other threads
+    /// are always running.
     @discardableResult
     func start(
         executable: String, arguments: [String], environment: [String: String],
         workingDirectory: String?, columns: UInt16, rows: UInt16
     ) -> Bool {
+        let argv = CStringArray([executable] + arguments)
+        let envp = CStringArray(environment.map { "\($0.key)=\($0.value)" })
+        let directory = CStringArray(workingDirectory.map { [$0] } ?? [])
+        defer { [argv, envp, directory].forEach { $0.free() } }
+        // **Give the child default signal handling.** An *ignored* disposition
+        // survives `execve` (handlers reset, SIG_IGN does not), and the keeper
+        // ignores SIGHUP on purpose, because its whole job is outliving the
+        // terminal that started it. Without this reset every shell it forks
+        // inherits that, and closing a session politely does nothing at all:
+        // the kill succeeds, and the process carries on. That is exactly how
+        // it presented: `kill(-pid, SIGHUP)` returning 0 with `sleep 60` still
+        // in state Ss+.
+        let defaulted = [SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGPIPE, SIGTTIN, SIGTTOU]
+
         var size = winsize(ws_row: rows, ws_col: columns, ws_xpixel: 0, ws_ypixel: 0)
         var master: Int32 = -1
         let pid = forkpty(&master, nil, nil, &size)
@@ -188,31 +252,17 @@ final class PtyHost: @unchecked Sendable {
         }
 
         if pid == 0 {
-            // **Give the child default signal handling.** An *ignored*
-            // disposition survives `execve` — handlers reset, SIG_IGN does not —
-            // and the keeper ignores SIGHUP on purpose, because its whole job is
-            // outliving the terminal that started it. Without this reset every
-            // shell it forks inherits that, and closing a session politely does
-            // nothing at all: the kill succeeds, and the process carries on.
-            // That is exactly how it presented — `kill(-pid, SIGHUP)` returning
-            // 0 with `sleep 60` still in state Ss+.
-            for ignored in [SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGPIPE, SIGTTIN, SIGTTOU] {
-                signal(ignored, SIG_DFL)
-            }
+            for signalNumber in defaulted { signal(signalNumber, SIG_DFL) }
             // And an unblocked mask: libdispatch blocks signals on its worker
             // threads, and the child inherits the mask of whichever thread
-            // happened to fork it — which would otherwise make this
+            // happened to fork it, which would otherwise make this
             // nondeterministic rather than merely wrong.
             var empty = sigset_t()
             sigemptyset(&empty)
             sigprocmask(SIG_SETMASK, &empty, nil)
 
-            if let workingDirectory { _ = workingDirectory.withCString { chdir($0) } }
-            var argv: [UnsafeMutablePointer<CChar>?] =
-                ([executable] + arguments).map { strdup($0) } + [nil]
-            var envp: [UnsafeMutablePointer<CChar>?] =
-                environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
-            execve(executable, &argv, &envp)
+            if let cwd = directory.pointer[0] { _ = chdir(cwd) }
+            execve(argv.pointer[0], argv.pointer, envp.pointer) // argv[0] is the executable
             _exit(127) // exec failed; the parent sees the pty close
         }
 
@@ -243,7 +293,11 @@ final class PtyHost: @unchecked Sendable {
         source.setEventHandler { [weak self] in
             guard let self else { return }
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-            while true {
+            // Asked before every read, not once: the keeper pauses this source
+            // to hand the pty to the app, and a suspended source does not stop
+            // a handler already in this loop. Without the check it went on
+            // reading beside the app, two readers splitting one stream.
+            while self.shared.withLock({ $0.isReading }) {
                 let count = read(fd, &buffer, buffer.count)
                 if count > 0 {
                     buffer.withUnsafeBufferPointer { raw in
@@ -258,10 +312,7 @@ final class PtyHost: @unchecked Sendable {
                     // a pty once the last slave fd goes. Anything else that
                     // isn't "try later" is fatal for this descriptor.
                     if count < 0 && (errno == EAGAIN || errno == EINTR) { return }
-                    // Read back out of `shared` rather than capturing `source`,
-                    // which would make the handler retain the source that owns
-                    // it until something cancelled it.
-                    self.shared.withLock { $0.reader }?.cancel()
+                    self.hangUp()
                     return
                 }
             }
@@ -284,6 +335,18 @@ final class PtyHost: @unchecked Sendable {
         source.resume()
     }
 
+    /// The pty's far side is gone. Stop reading, and for an adopted pty say so.
+    ///
+    /// Taking the reader out of `shared` is what makes `onHangup` fire once and
+    /// never for a pty already let go of: whoever takes it first owns the
+    /// ending, and `release` taking it means the app chose to stop listening,
+    /// which is not news about the shell.
+    private func hangUp() {
+        guard let reader = takeReader() else { return }
+        reader.cancel()
+        if !ownsProcess { onHangup?() }
+    }
+
     /// Notice the child exiting, and reap it.
     ///
     /// A `DispatchSource` rather than a thread parked in `waitpid`. The obvious
@@ -296,6 +359,12 @@ final class PtyHost: @unchecked Sendable {
     ///
     /// `waitpid` still runs, because it is the only way to learn the exit *code*
     /// — but only once, when there is genuinely something to collect.
+    ///
+    /// **And once more, straight after arming.** The kernel never reports an
+    /// exit that happened before it was asked, so a child whose `execve`
+    /// failed at once (a shell path that no longer exists) could be gone
+    /// before the source was registered. It then sat as a zombie, and the
+    /// keeper held its session until something else noticed the pty close.
     private func reapWhenItExits() {
         let pid = self.pid
         let started = self.startedAt
@@ -303,19 +372,62 @@ final class PtyHost: @unchecked Sendable {
         // moment it closes a session, and `stop`'s SIGKILL follow-up reads this
         // to know the pid hasn't been reaped and recycled.
         let shared = self.shared
-        let source = DispatchSource.makeProcessSource(
-            identifier: pid, eventMask: .exit, queue: queue)
-        source.setEventHandler { [weak self] in
-            var status: Int32 = 0
-            while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
+        // Whichever of the two below collects the child reports it; the other
+        // finds nothing to collect. Both run on `queue`, one after the other.
+        let report: (Int32) -> Void = { [weak self] status in
             let code: Int32 = (status & 0x7F) == 0 ? (status >> 8) & 0xFF : -1
             let ms = (DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
-            shared.withLock { $0.hasExited = true }
             self?.onExit?(code, ms)
+        }
+        let source = DispatchSource.makeProcessSource(
+            identifier: pid, eventMask: .exit, queue: queue)
+        source.setEventHandler {
             source.cancel()
+            // Blocking: the exit has been reported, so this returns as soon as
+            // the kernel has finished making it collectable.
+            if let status = Self.reap(pid, in: shared, options: 0) { report(status) }
         }
         childSource = source
         source.resume()
+        queue.async {
+            guard let status = Self.reap(pid, in: shared, options: WNOHANG) else { return }
+            source.cancel()
+            report(status)
+        }
+    }
+
+    private typealias SharedState = OSAllocatedUnfairLock<Shared>
+
+    /// Collect the child's exit status, once.
+    ///
+    /// Under the lock `signalGroup` takes, and that is the point: the moment
+    /// `waitpid` returns, the pid is free for the system to hand to someone
+    /// else, so "not reaped yet" and "signal it" have to be one step. A flag
+    /// set after the fact left a window where `stop` could SIGHUP a stranger.
+    private static func reap(_ pid: pid_t, in shared: SharedState, options: Int32) -> Int32? {
+        shared.withLock { state -> Int32? in
+            guard !state.hasExited else { return nil }
+            var status: Int32 = 0
+            var reaped: pid_t
+            repeat { reaped = waitpid(pid, &status, options) } while reaped < 0 && errno == EINTR
+            guard reaped == pid else { return nil }
+            state.hasExited = true
+            return status
+        }
+    }
+
+    /// Signal the child's **process group**, unless it has been reaped. See
+    /// `reap` for why the check and the signal share the lock.
+    ///
+    /// The group, not just the shell: forkpty makes the child a session
+    /// leader, so its own children share its group, and signalling only the
+    /// leader leaves a `sleep`, a build or an agent running with nobody to
+    /// reap it. The negative pid is what says "the group".
+    private static func signalGroup(_ signalNumber: Int32, of pid: pid_t, in shared: SharedState) {
+        shared.withLock { state in
+            guard !state.hasExited else { return }
+            if kill(-pid, signalNumber) != 0 { kill(pid, signalNumber) }
+        }
     }
 
     // MARK: - The two directions
@@ -341,11 +453,37 @@ final class PtyHost: @unchecked Sendable {
             let written = Darwin.write(master, bytes + offset, count - offset)
             if written > 0 {
                 offset += written
-            } else if errno == EINTR || errno == EAGAIN {
-                continue // a full pty buffer; the reader on the far side will drain it
+            } else if errno == EINTR {
+                continue
+            } else if errno == EAGAIN, Self.waitForRoom(in: master) {
+                continue
             } else {
                 return
             }
+        }
+    }
+
+    /// How long a write waits for a program to take any of its input.
+    private static let inputPatience: Int32 = 5_000 // ms
+
+    /// Wait for the pty's input buffer to have room, and say whether it does.
+    ///
+    /// A full buffer is a program not reading its input: a large paste into
+    /// one that is busy, or one that never reads at all. This used to spin on
+    /// EAGAIN, a core at 100% for as long as the program took, and forever for
+    /// one that never read, on libghostty's IO thread. Waiting is free, and
+    /// giving up after a while with no room at all drops the rest of that one
+    /// write rather than wedging the terminal behind it.
+    private static func waitForRoom(in descriptor: Int32) -> Bool {
+        var request = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
+        while true {
+            let ready = poll(&request, 1, inputPatience)
+            if ready < 0, errno == EINTR { continue }
+            guard ready > 0, request.revents & Int16(POLLOUT) != 0 else {
+                if ready == 0 { NSLog("wortel: the program took no input for 5s; dropping the rest of a write") }
+                return false
+            }
+            return true
         }
     }
 
@@ -406,6 +544,9 @@ final class PtyHost: @unchecked Sendable {
     /// before handing the descriptor to the app, and resumes when the app lets
     /// go. Anything that arrives in the gap stays in the kernel's buffer, which
     /// is why nothing is lost between the two.
+    ///
+    /// This stops the *next* read; one already under way finishes first. A
+    /// handover that must not race it follows this with `finishReadInFlight`.
     func pauseReading() {
         shared.withLock { state in
             guard let reader = state.reader, state.isReading else { return }
@@ -444,11 +585,11 @@ final class PtyHost: @unchecked Sendable {
     func stop() {
         takeReader()?.cancel()
         guard ownsProcess, pid > 0 else { return }
-        // The **process group**, not just the shell. forkpty makes the child a
-        // session leader, so its own children share its group — signalling only
-        // the leader leaves a `sleep`, a build or an agent running with nobody
-        // to reap it. The negative pid is what says "the group".
-        if kill(-pid, SIGHUP) != 0 { kill(pid, SIGHUP) }
+        // Both signals are guarded on `hasExited` (see `signalGroup`) rather than a
+        // `kill(pid, 0)` probe: once the reaper has collected the child the
+        // number is free to be reused, and signalling a recycled pid would kill
+        // something that has nothing to do with us.
+        Self.signalGroup(SIGHUP, of: pid, in: shared)
 
         // Then insist. Closing a session is the user saying so, and plenty of
         // things decline a SIGHUP — an agent with its own handler, a program
@@ -456,26 +597,39 @@ final class PtyHost: @unchecked Sendable {
         // A "closed" session with a live process in it is worse than either
         // outcome, because nothing on screen says it is still running.
         //
-        // Guarded on `hasExited` rather than a `kill(pid, 0)` probe: once the
-        // reaper has collected the child the number is free to be reused, and
-        // signalling a recycled pid would kill something that has nothing to do
-        // with us.
-        //
         // The state, not `self`, is what's held: the keeper drops the host as
         // it closes the session, so a `[weak self]` here was always nil by the
         // time it ran, and the SIGKILL never happened.
         let target = pid
         let shared = self.shared
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) {
-            guard !shared.withLock({ $0.hasExited }) else { return }
-            if kill(-target, SIGKILL) != 0 { kill(target, SIGKILL) }
+            Self.signalGroup(SIGKILL, of: target, in: shared)
         }
     }
 
     /// Let go of the pty without ending the session — the app detaching. The
     /// descriptor is closed (ours was a `dup`; the keeper still holds one) and
-    /// the shell carries on with nobody watching.
+    /// the shell carries on with nobody watching. `onHangup` does not fire.
     func release() {
         takeReader()?.cancel()
+    }
+}
+
+/// A NULL-terminated array of C strings, for `execve`, built before the fork so
+/// the child only reads memory that already exists. Freed by the parent.
+private struct CStringArray {
+    let pointer: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+    private let count: Int
+
+    init(_ strings: [String]) {
+        count = strings.count
+        pointer = .allocate(capacity: count + 1)
+        for (index, string) in strings.enumerated() { pointer[index] = strdup(string) }
+        pointer[count] = nil
+    }
+
+    func free() {
+        for index in 0..<count { Darwin.free(pointer[index]) }
+        pointer.deallocate()
     }
 }

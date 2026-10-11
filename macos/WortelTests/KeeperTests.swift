@@ -1,4 +1,5 @@
 import Darwin
+import os
 import XCTest
 
 /// The keeper, exercised for real: a server on a temporary socket, actual ptys
@@ -286,6 +287,10 @@ final class KeeperTests: XCTestCase {
         if let fd2 { descriptors.append(fd2) }
         XCTAssertEqual(second.pid, first.pid, "a second shell was forked for one session")
         XCTAssertEqual(server?.sessionCount, 1)
+        // And says so, or the app takes it for a fresh shell and types a
+        // resume into the agent still running in it.
+        XCTAssertEqual(second.existing, true)
+        XCTAssertNil(first.existing)
     }
 
     func testListReportsWhatIsRunning() throws {
@@ -407,5 +412,237 @@ extension KeeperTests {
         let (response, again) = try client.send(.attach(session: "brief"))
         if let again { close(again) }
         XCTAssertFalse(response.ok)
+    }
+}
+
+// MARK: - Handing a pty over
+
+extension KeeperTests {
+    /// Read from a pty until `count` bytes have arrived, or give up.
+    private func read(_ fd: Int32, bytes count: Int, timeout: TimeInterval = 5) -> Data {
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        let deadline = Date().addingTimeInterval(timeout)
+        while data.count < count, Date() < deadline {
+            let got = Darwin.read(fd, &buffer, min(buffer.count, count - data.count))
+            if got > 0 {
+                data.append(contentsOf: buffer[0..<got])
+            } else if got < 0 && (errno == EAGAIN || errno == EINTR) {
+                usleep(5_000)
+            } else {
+                break
+            }
+        }
+        return data
+    }
+
+    /// A new shell's first words, written before the keeper let go of the pty,
+    /// arrive in the `open` reply's replay. Read by the keeper and left in its
+    /// buffer, they used to be lost from this terminal and replayed, stale, on
+    /// the next attach instead.
+    func testAShellsFirstOutputIsNeverLostOnOpen() throws {
+        try startServer()
+        let client = try connect()
+        let (opened, fd) = try client.send(
+            .open(session: "s", plan: plan("echo FIRST-WORDS; sleep 30"), columns: 80, rows: 24))
+        let descriptor = try XCTUnwrap(fd)
+        var seen = String(decoding: opened.replay ?? Data(), as: UTF8.self)
+        if !seen.contains("FIRST-WORDS") { seen += read(descriptor, until: "FIRST-WORDS") }
+        // And nothing more: a second copy would be the same bytes read twice.
+        seen += read(descriptor, until: "FIRST-WORDS", timeout: 0.3)
+        XCTAssertEqual(seen.components(separatedBy: "FIRST-WORDS").count - 1, 1,
+                       "the first output did not arrive exactly once: \(seen.debugDescription)")
+
+        close(descriptor)
+        _ = try client.send(.detach(session: "s"))
+        let (again, fd2) = try client.send(.attach(session: "s"))
+        if let fd2 { descriptors.append(fd2) }
+        XCTAssertFalse(String(decoding: again.replay ?? Data(), as: UTF8.self).contains("FIRST-WORDS"),
+                       "output from before the open was replayed on the next attach")
+    }
+
+    /// **The handover under load.** A shell counting as fast as it can while
+    /// detached, then attached: the replay and what the pty gives next must
+    /// join without a gap or a repeat. A chunk the keeper read just as the app
+    /// attached went missing (it reached the buffer after the replay was
+    /// taken), and a keeper read loop that did not notice the pause went on
+    /// taking lines from under the app.
+    func testAttachingUnderHeavyOutputLosesNothing() throws {
+        try startServer()
+        let client = try connect()
+        let (_, fd) = try client.send(.open(
+            session: "count",
+            plan: plan("i=0; while [ $i -lt 3000000 ]; do echo L$i; i=$((i+1)); done; sleep 30"),
+            columns: 80, rows: 24))
+        close(try XCTUnwrap(fd))
+        _ = try client.send(.detach(session: "count"))
+        usleep(300_000)
+
+        let (attached, again) = try client.send(.attach(session: "count"))
+        let reattached = try XCTUnwrap(again)
+        descriptors.append(reattached)
+        var replay = attached.replay ?? Data()
+        if replay.starts(with: ReplayBuffer.resync) { replay = replay.dropFirst(ReplayBuffer.resync.count) }
+        let live = read(reattached, bytes: 256 * 1024)
+
+        // The replay's first line may be cut, and so may the last line read.
+        let text = String(decoding: replay + live, as: UTF8.self).replacingOccurrences(of: "\r", with: "")
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        lines.removeFirst()
+        lines.removeLast()
+        let numbers = lines.compactMap { $0.hasPrefix("L") ? Int($0.dropFirst()) : nil }
+        XCTAssertEqual(numbers.count, lines.count, "a line was torn: \(lines.prefix(3))")
+        XCTAssertGreaterThan(numbers.count, 1000, "too little output to say anything")
+        for (previous, next) in zip(numbers, numbers.dropFirst()) where next != previous + 1 {
+            return XCTFail("output jumped from L\(previous) to L\(next) across the handover")
+        }
+    }
+
+    /// A shell whose exec fails dies before the keeper has finished starting
+    /// it. It still has to be reaped and forgotten, rather than sit as a
+    /// zombie that the exit watch, armed a moment too late, never reports.
+    func testAShellThatFailsToStartIsForgotten() throws {
+        try startServer()
+        let client = try connect()
+        var dud = plan("")
+        dud.executable = "/no/such/shell"
+        let (_, fd) = try client.send(.open(session: "dud", plan: dud, columns: 80, rows: 24))
+        if let fd { close(fd) }
+        var gone = false
+        for _ in 0..<40 where !gone {
+            usleep(50_000)
+            gone = server?.sessionCount == 0
+        }
+        XCTAssertTrue(gone, "a shell that never started was still held")
+    }
+
+    // MARK: - Ending the keeper
+
+    /// The keeper ends only with nothing to keep **and** nobody to keep it for,
+    /// decided in one step. An app that had connected but not yet opened a
+    /// session was having the keeper stopped under it.
+    func testTheKeeperStopsOnlyWhenNothingAndNobodyIsLeft() throws {
+        let server = try startServer()
+        let first = try connect()
+        _ = try first.send(.ping) // answered, so accepted: the connect alone may still be queued
+        XCTAssertFalse(server.stopIfIdle(), "stopped with an app connected and nothing opened yet")
+
+        let (_, fd) = try first.send(.open(session: "s", plan: plan("sleep 30"), columns: 80, rows: 24))
+        close(try XCTUnwrap(fd))
+        first.disconnect()
+        usleep(100_000)
+        XCTAssertFalse(server.stopIfIdle(), "stopped while holding a shell")
+
+        let second = try connect()
+        _ = try second.send(.close(session: "s"))
+        second.disconnect()
+        usleep(100_000)
+        XCTAssertTrue(server.stopIfIdle())
+        XCTAssertFalse(server.stopIfIdle(), "stopped twice")
+        XCTAssertThrowsError(try WortelCLIClient.connect(to: path), "still listening after it stopped")
+    }
+
+    // MARK: - Which keeper
+
+    /// A keeper says which build of the app it came from, read beside its own
+    /// binary when it started. Same protocol is not same binary: one keeper
+    /// outlived four updates, and its shells ran outside the app's privacy
+    /// grants the whole time.
+    func testPingSaysWhichBuildTheKeeperIs() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("kb-\(UInt32.random(in: 0..<0xFFFF_FFFF))")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let contents = root.appendingPathComponent("Wortel.app/Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let info = try PropertyListSerialization.data(
+            fromPropertyList: ["CFBundleVersion": "4242"], format: .xml, options: 0)
+        try info.write(to: contents.appendingPathComponent("Info.plist"))
+        let binary = contents.appendingPathComponent("Resources/bin/wortel-keeper").path
+
+        let server = KeeperServer(path: path, executable: binary)
+        try server.start()
+        self.server = server
+        let (response, _) = try connect().send(.ping)
+        XCTAssertEqual(response.build, "4242")
+        XCTAssertEqual(response.executable, binary)
+        XCTAssertEqual(response.version, Keeper.version)
+
+        XCTAssertNil(KeeperServer.build(ofExecutable: "/usr/bin/true"), "a build read from outside any app")
+    }
+}
+
+// MARK: - Pausing a pty
+
+extension KeeperTests {
+    /// The primitive the handover rests on, made deterministic: a read that
+    /// has its bytes but not yet the keeper's lock (held here by a semaphore)
+    /// when the pause comes. `finishReadInFlight` has to wait it out, so its
+    /// bytes are in the buffer before the replay is taken, and nothing at all
+    /// may be read after it.
+    func testAPauseWaitsOutTheReadInFlight() throws {
+        let pty = PtyHost()
+        defer { pty.stop() }
+        let reading = DispatchSemaphore(value: 0)
+        let proceed = DispatchSemaphore(value: 0)
+        // Counted once each read has handed its bytes over, as the keeper's
+        // append does once it has the lock.
+        let delivered = OSAllocatedUnfairLock(initialState: 0)
+        pty.onOutput = { _, _ in
+            if delivered.withLock({ $0 }) == 0 {
+                reading.signal()
+                proceed.wait()
+            }
+            delivered.withLock { $0 += 1 }
+        }
+        XCTAssertTrue(pty.start(executable: "/usr/bin/yes", arguments: [], environment: [:],
+                                workingDirectory: nil, columns: 80, rows: 24))
+        XCTAssertEqual(reading.wait(timeout: .now() + 5), .success, "nothing was read")
+
+        pty.pauseReading()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { proceed.signal() }
+        pty.finishReadInFlight()
+        let afterHandover = delivered.withLock { $0 }
+        XCTAssertEqual(afterHandover, 1, "the handover did not wait for the read in flight")
+        usleep(200_000)
+        XCTAssertEqual(delivered.withLock { $0 }, afterHandover, "the keeper read on after the pause")
+    }
+}
+
+// MARK: - The app's end of a pty
+
+extension KeeperTests {
+    /// Adopt the pty of a fresh keeper session running `script`.
+    private func adoptedPty(running script: String) throws -> PtyHost {
+        let (_, fd) = try connect().send(
+            .open(session: UUID().uuidString, plan: plan(script), columns: 80, rows: 24))
+        let pty = PtyHost(adopting: try XCTUnwrap(fd))
+        pty.onOutput = { _, _ in }
+        return pty
+    }
+
+    /// A keeper-hosted shell that ends is news to the app only through its pty
+    /// hanging up: the keeper reaps it, and libghostty spawned nothing. Without
+    /// this the terminal simply stopped.
+    func testAnAdoptedPtySaysWhenItsShellIsGone() throws {
+        try startServer()
+        let pty = try adoptedPty(running: "echo bye; exit 0")
+        let hungUp = expectation(description: "hung up")
+        hungUp.assertForOverFulfill = true
+        pty.onHangup = { hungUp.fulfill() }
+        pty.beginReading()
+        wait(for: [hungUp], timeout: 5)
+    }
+
+    /// Letting go of a pty (the app quitting, a shell being restarted) is not
+    /// the shell ending, and must not be reported as if it were.
+    func testAReleasedPtySaysNothing() throws {
+        try startServer()
+        let pty = try adoptedPty(running: "sleep 0.3; exit 0")
+        let hungUp = expectation(description: "hung up")
+        hungUp.isInverted = true
+        pty.onHangup = { hungUp.fulfill() }
+        pty.beginReading()
+        pty.release()
+        wait(for: [hungUp], timeout: 1)
     }
 }

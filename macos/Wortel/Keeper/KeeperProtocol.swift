@@ -48,7 +48,9 @@ enum KeeperCommand: Codable, Equatable {
     /// was buffered while nobody was attached, and the descriptor.
     case attach(session: String)
     /// Hand reading back. Implied by disconnecting, which is what a crash looks
-    /// like.
+    /// like, and that is the only way the app ever detaches: it never sends
+    /// this. Kept because a keeper has to understand every verb an app it may
+    /// meet could send, and removing one is a protocol change.
     case detach(session: String)
     /// End it: SIGHUP the shell and forget the session.
     case close(session: String)
@@ -97,9 +99,21 @@ struct KeeperResponse: Codable, Equatable {
     var replay: Data?
     /// For `list`.
     var sessions: [KeeperSessionState]?
-    /// The keeper's own build, so a stale keeper left over from an older app can
-    /// be recognised instead of talked to.
+    /// For `ping`: the protocol the keeper speaks (`Keeper.version`). A
+    /// different one is a keeper that cannot be talked to at all.
     var version: String?
+    /// For `ping`: the app build the keeper binary came from (the bundle's
+    /// `CFBundleVersion`), read when the keeper started. nil from a keeper that
+    /// predates the field or could not read it, which the app treats as
+    /// outdated. See `KeeperConnection.connect`.
+    var build: String?
+    /// For `ping`: the keeper's own executable, for the log line that says
+    /// which keeper an app found.
+    var executable: String?
+    /// For `open`: the session already existed and this attached to it, so
+    /// nothing was forked and the plan, `initialInput` included, was ignored.
+    /// nil from a keeper that predates the field.
+    var existing: Bool?
     /// For `open` and `attach`: whether this keeper typed the session's
     /// `initialInput` into the pty when it forked the shell. nil from a keeper
     /// that predates the field, which the app reads as "don't know", never as
@@ -118,10 +132,12 @@ struct KeeperResponse: Codable, Equatable {
     static func success(
         message: String? = nil, pid: Int32? = nil, replay: Data? = nil,
         sessions: [KeeperSessionState]? = nil, version: String? = nil,
+        build: String? = nil, executable: String? = nil, existing: Bool? = nil,
         inputDelivered: Bool? = nil, startedAt: Double? = nil
     ) -> KeeperResponse {
         KeeperResponse(ok: true, message: message, pid: pid, replay: replay,
                        sessions: sessions, version: version,
+                       build: build, executable: executable, existing: existing,
                        inputDelivered: inputDelivered, startedAt: startedAt)
     }
 }
@@ -143,17 +159,23 @@ enum Keeper {
         DataDirectory.file("keeper.sock").path
     }
 
-    /// The protocol version. Bumped when the wire changes shape; a keeper that
-    /// doesn't match is killed and replaced rather than negotiated with, because
-    /// it is *our* process and there is no user data in it to preserve beyond
-    /// the shells — which is exactly what a mismatch would put at risk.
+    /// The **wire protocol**, not the build. A keeper speaking another one
+    /// cannot be talked to, so it is replaced, shells and all (see
+    /// `KeeperConnection.connect`); bumping this is therefore the most
+    /// expensive change in the app, and only a change in the wire's shape
+    /// warrants it.
     ///
-    /// Still "1" after `initialInput`, `inputDelivered` and `startedAt` were
-    /// added, deliberately: all three are optional both ways, so an old keeper
-    /// decodes a new request and a new app reads an old reply, and the app
-    /// handles an old keeper by typing the resume itself (see `newSurface`).
-    /// Bumping it would kill every running shell on the update that ships it,
-    /// for a change that needs nothing killed.
+    /// Still "1" after `initialInput`, `inputDelivered`, `startedAt`, `build`,
+    /// `executable` and `existing` were added, deliberately: all are optional
+    /// both ways, so an old keeper decodes a new request and a new app reads an
+    /// old reply. The app handles an old keeper by typing the resume itself
+    /// (see `newSurface`).
+    ///
+    /// A matching protocol says nothing about how old the keeper *binary* is,
+    /// and that matters on its own: updating the app does not restart the
+    /// keeper, and one keeper ran for days across four updates, so every shell
+    /// it forked ran under an old binary that macOS's privacy grants (Full
+    /// Disk Access) did not cover. That is `KeeperResponse.build`'s job.
     static let version = "1"
 
     /// A JSON reply is small; anything near this is a confused peer. The replay

@@ -121,10 +121,9 @@ final class SurfaceView: NSView {
         sizeDidChange(frame.size)
     }
 
-    /// The pty and shell, when this surface's process is ours rather than
-    /// libghostty's — the process-survival spike, off unless
-    /// `WORTEL_HOST_MANAGED=1`. Held here because the view's lifetime is the
-    /// session's, and nothing else outlives both the surface and the child.
+    /// The pty, when this surface's shell belongs to the keeper rather than to
+    /// libghostty's exec backend. Held here because the view's lifetime is the
+    /// session's, and nothing else outlives both the surface and the shell.
     var ptyHost: PtyHost?
 
     /// The keeper's id for this session, when its shell belongs to the keeper
@@ -132,6 +131,28 @@ final class SurfaceView: NSView {
     /// merely *quitting* must not, which is the difference the whole feature
     /// turns on.
     var keeperSession: UUID?
+
+    /// The keeper process that hosted this terminal's shell, as the keeper
+    /// socket named it when the surface was created. Set only for a surface
+    /// made from a keeper attachment; nil for one on the exec backend. Kept
+    /// per terminal because the keeper can be replaced while the app runs, and
+    /// a shell belongs to the one that forked it.
+    var keeperPID: pid_t?
+
+    /// The input this terminal was created with was not typed: its keeper
+    /// would not hand the session over, and typing a resume into a shell of
+    /// the app's own could start a second agent beside the first. The
+    /// session goes on owing it.
+    var initialInputDropped = false
+
+    /// The keeper-hosted shell ended: everything on its tty is gone and the pty
+    /// hung up. Called on the main thread, once per shell. When unset the
+    /// terminal is simply told (`finishProcess`), which is what the exec
+    /// backend does when its shell exits.
+    var onShellEnded: (() -> Void)?
+
+    /// Whether `finishProcess` has run for the current surface.
+    private var processFinished = false
 
     /// The pid of this session's shell, as reported by whoever spawned it.
     ///
@@ -195,6 +216,20 @@ final class SurfaceView: NSView {
         return ghostty_surface_needs_confirm_quit(surface)
     }
 
+    /// Tell libghostty this terminal's process has exited, so it behaves as it
+    /// does when an exec-backend shell exits: it says so on screen, stops
+    /// asking for confirmation to close, and asks to close the surface unless
+    /// configured to wait. Exit code 0 and no runtime, because the keeper
+    /// reaped the shell and only the pty hanging up reached this side; a
+    /// non-zero code would read as a crash at startup.
+    ///
+    /// Once per surface, and nothing at all once the surface is gone.
+    func finishProcess() {
+        guard let surface, !processFinished else { return }
+        processFinished = true
+        ghostty_surface_process_exit(surface, 0, 0)
+    }
+
     /// Explicit teardown (deinit ordering with AppKit view hierarchies is
     /// unreliable; call this when the session closes).
     func close() {
@@ -241,10 +276,13 @@ final class SurfaceView: NSView {
     func restartShell(workingDirectory: String?, sessionID: UUID, initialInput: String?) {
         guard let runtime else { return }
         let pty = ptyHost
-        pty?.release()
+        pty?.release() // let go of, not hung up: no `onShellEnded` for it
         ptyHost = nil
         keeperSession = nil
+        keeperPID = nil
+        initialInputDropped = false
         shellPID = nil
+        processFinished = false
         // Whatever the old program told its terminal is not true of a new
         // shell, and a relaunch would otherwise replay it into one.
         TerminalModeRecorder.shared.forget(session: sessionID)

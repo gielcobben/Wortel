@@ -10,38 +10,52 @@ import Foundation
 /// Deliberately not scrollback. It only fills while a session is detached, so
 /// it answers one question — "what happened while I was gone" — and a session
 /// that is attached the whole time never allocates anything at all.
-struct ReplayBuffer: Equatable {
-    private(set) var bytes: [UInt8] = []
-    /// Bytes dropped off the front. Not shown anywhere yet, but the count is the
-    /// difference between "you have everything" and "you have the tail", and a
-    /// replay that silently omits the start would be indistinguishable from one
-    /// that didn't.
+///
+/// **A ring once full.** It grows like an array up to `limit`, and from then on
+/// new bytes overwrite the oldest in place. It used to trim with
+/// `removeFirst`, which moves every remaining byte: once full, every read from
+/// a busy detached session copied half a megabyte to make room for a few
+/// hundred bytes.
+struct ReplayBuffer {
+    /// Grows to `limit`, then wraps: the oldest byte is at `head`.
+    private var storage: [UInt8] = []
+    private var head = 0
+    /// Bytes dropped off the front since the last `take`. The difference
+    /// between "you have everything" and "you have the tail", which is also
+    /// what decides whether a replay needs `resync` in front of it.
     private(set) var dropped = 0
 
     let limit: Int
+
+    /// Put in front of a replay whose start was dropped.
+    ///
+    /// The cut falls wherever the limit did, so the first byte kept can be the
+    /// middle of an escape sequence, and the terminal would read the rest of it
+    /// as text or as a different sequence. CAN abandons a sequence in progress
+    /// (and does nothing outside one), and the SGR reset clears a colour or
+    /// style whose start was cut off and would otherwise bleed over the screen.
+    static let resync = Data("\u{18}\u{1b}[0m".utf8)
 
     init(limit: Int = Keeper.replayLimit) {
         self.limit = max(0, limit)
     }
 
-    var isEmpty: Bool { bytes.isEmpty }
-    var count: Int { bytes.count }
+    var isEmpty: Bool { storage.isEmpty }
+    var count: Int { storage.count }
 
     mutating func append(_ incoming: UnsafePointer<UInt8>, count: Int) {
         guard limit > 0, count > 0 else { return }
         // A single write larger than the whole buffer: keep only its tail, and
         // don't bother appending the part that is about to be dropped.
         if count >= limit {
-            dropped += bytes.count + (count - limit)
-            bytes = Array(UnsafeBufferPointer(start: incoming + (count - limit), count: limit))
+            dropped += storage.count + (count - limit)
+            storage = Array(UnsafeBufferPointer(start: incoming + (count - limit), count: limit))
+            head = 0
             return
         }
-        bytes.append(contentsOf: UnsafeBufferPointer(start: incoming, count: count))
-        if bytes.count > limit {
-            let excess = bytes.count - limit
-            bytes.removeFirst(excess)
-            dropped += excess
-        }
+        let filling = min(count, limit - storage.count)
+        storage.append(contentsOf: UnsafeBufferPointer(start: incoming, count: filling))
+        overwriteOldest(with: incoming + filling, count: count - filling)
     }
 
     mutating func append(_ data: Data) {
@@ -56,9 +70,31 @@ struct ReplayBuffer: Equatable {
     /// how a reattach loop would duplicate a screenful of output.
     mutating func take() -> Data {
         defer {
-            bytes = []
+            storage = []
+            head = 0
             dropped = 0
         }
-        return Data(bytes)
+        guard !storage.isEmpty else { return Data() }
+        var data = Data(capacity: storage.count + Self.resync.count)
+        if dropped > 0 { data.append(Self.resync) }
+        data.append(contentsOf: storage[head...])
+        data.append(contentsOf: storage[..<head])
+        return data
+    }
+
+    /// Write `count` bytes over the oldest ones, in at most two copies. Only
+    /// once full, so `storage.count == limit`, and `count < limit`.
+    private mutating func overwriteOldest(with incoming: UnsafePointer<UInt8>, count: Int) {
+        guard count > 0 else { return }
+        let limit = self.limit
+        let head = self.head
+        storage.withUnsafeMutableBufferPointer { ring in
+            guard let base = ring.baseAddress else { return }
+            let first = min(count, limit - head)
+            (base + head).update(from: incoming, count: first)
+            base.update(from: incoming + first, count: count - first)
+        }
+        self.head = (head + count) % limit
+        dropped += count
     }
 }

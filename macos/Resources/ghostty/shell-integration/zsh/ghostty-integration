@@ -212,21 +212,16 @@ _ghostty_deferred_init() {
         fi
     }
 
-    # Wortel: true if the command line launches a long-lived interactive
-    # program (agent CLI, editor, pager, REPL, system monitor, TUI) that sits
-    # at its own prompt instead of returning to the shell. For those the
-    # synthetic busy spinner (OSC 9;4;3 in preexec) would never clear until you
-    # quit — no OSC 133;D fires — so we skip it and let the program drive its
-    # own progress if it reports any. Batch commands (builds, tests) still spin.
-    _ghostty_wortel_interactive() {
+    # Wortel: walk to the program a simple command launches. Advances `i` (the
+    # caller's index into its `words`, which this sees because zsh's scoping is
+    # dynamic) past env assignments (FOO=bar), launchers (sudo, nohup, exec...)
+    # and package runners (npx, `pnpm dlx`), stopping at `e`, the segment's last
+    # word. REPLY is the program's word, or empty when the segment has none.
+    _ghostty_wortel_program() {
         builtin emulate -L zsh -o no_warn_create_global -o no_aliases
-        builtin local -a words
-        words=(${(z)1})
-        builtin local -i i=1 n=$#words
-        builtin local w cmd=
-        # Skip leading env assignments (FOO=bar) and command wrappers to find
-        # the program actually being launched.
-        while (( i <= n )); do
+        builtin local w
+        REPLY=
+        while (( i <= e )); do
             w=$words[i]
             case $w in
                 *=*)                                              (( i++ )); continue ;;
@@ -237,63 +232,127 @@ _ghostty_deferred_init() {
                     # Package runners: in `pnpm dlx codex` or `bun x pi` the
                     # program is the word after the subcommand. Only skip when
                     # the subcommand is actually there — a bare `bun` is a REPL,
-                    # and it must keep reaching the dual-use check below.
+                    # and it must keep reaching the dual-use check.
                     case $words[i+1] in
                         x|dlx|exec|run)                           (( i += 2 )); continue ;;
                     esac
-                    cmd=$w; break ;;
+                    REPLY=$w; return ;;
                 -*)                                               (( i++ )); continue ;;
-                *)                                                cmd=$w; break ;;
+                *)                                                REPLY=$w; return ;;
             esac
         done
-        [[ -z $cmd ]] && return 1
-        cmd=${cmd:t}
-        case $cmd in
-            claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp) return 0 ;;
-            vi|vim|nvim|vis|nano|emacs|emacsclient|helix|hx|kak|micro|ne|joe) return 0 ;;
-            less|more|most|moar|man|bat|w3m|lynx) return 0 ;;
-            top|htop|btop|btm|glances|gtop|nvtop|s-tui) return 0 ;;
-            ssh|mosh|telnet|tmux|screen|zellij|dtach|abduco) return 0 ;;
-            watch|journalctl|dmesg) return 0 ;;
-            fzf|sk|gitui|lazygit|lazydocker|k9s|tig|ranger|nnn|yazi|lf|vifm|mc|broot|xplr) return 0 ;;
-            gdb|lldb|pdb) return 0 ;;
-            psql|mysql|mariadb|sqlite3|litecli|pgcli|mycli|redis-cli|mongosh|mongo|usql|duckdb|clickhouse-client|cqlsh) return 0 ;;
-            python|python2|python3|ipython|bpython|ptpython|node|nodejs|bun|deno|irb|pry|php|lua|luajit|julia|R|ghci|iex|erl|scala|clj|clojure)
-                # Dual-use: a bare REPL is interactive, but `python script.py`,
-                # `node app.js`, `python -m mod` and `-c ...` are batch jobs that
-                # should keep the spinner. Interactive only with no such arg.
-                builtin local a
-                for a in ${words[i+1,-1]}; do
-                    case $a in
-                        -i|-q|-u|-B|-E|-O|-OO|-s|-S|-I|--) continue ;;
-                        -c|-m)             return 1 ;;
-                        *[\<\>\|\&\;]*)    return 0 ;;
-                        -*)                continue ;;
-                        *)                 return 1 ;;
-                    esac
-                done
-                return 0 ;;
+    }
+
+    # Wortel: the agent a word names, in REPLY; false (and REPLY empty) when it
+    # names none. Either the program itself or the package a runner fetches it
+    # as: `npx @anthropic-ai/claude-code` is the documented way to run Claude
+    # without installing it, and the app still has to know it is `claude` to
+    # resume it (likewise `bunx @mariozechner/pi-coding-agent` is pi). Quotes
+    # and a leading backslash (`\claude`, to skip an alias) are not part of the
+    # name, and neither is a version pin (`opencode-ai@latest`).
+    _ghostty_wortel_agent_name() {
+        builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+        REPLY=${${(Q)1}:t}
+        [[ $REPLY == ?*@* ]] && REPLY=${REPLY%%@*}
+        case $REPLY in
+            claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp) ;;
+            claude-code)        REPLY=claude ;;
+            pi-coding-agent)    REPLY=pi ;;
+            gemini-cli)         REPLY=gemini ;;
+            opencode-ai)        REPLY=opencode ;;
+            aider-chat)         REPLY=aider ;;
+            *)                  REPLY=; return 1 ;;
         esac
-        # The leading word is not a program we know. It may well be a wrapper no
-        # list can ever enumerate — `devx pi`, a repo's own `./run claude`, a
-        # company shim — so look just past it: if one of the next couple of bare
-        # words names an agent, believe that over the wrapper.
-        #
-        # Only two words, and flags skipped, to keep it from reading an agent's
-        # name out of an unrelated argument. The asymmetry is deliberate: a
-        # false positive costs a missing spinner on one command, while a false
-        # negative leaves a spinner turning for the entire session — which is
-        # the failure people actually report.
-        # (Output discarded here — this caller only wants the verdict. Letting
-        # it through would print the agent's name into the user's terminal at
-        # every command.)
-        _ghostty_wortel_wrapped_agent $cmd ${words[i+1,-1]} >/dev/null && return 0
+    }
+
+    # Wortel: true if a REPL that is also a script runner (python, node...)
+    # was started bare. `python script.py`, `node app.js`, `python -m mod` and
+    # `-c ...` are batch jobs that should keep the spinner; arguments are the
+    # words after the program.
+    _ghostty_wortel_bare_repl() {
+        builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+        builtin local a
+        for a in "$@"; do
+            case $a in
+                -i|-q|-u|-B|-E|-O|-OO|-s|-S|-I|--) continue ;;
+                -c|-m)             return 1 ;;
+                *[\<\>\|\&\;]*)    return 0 ;;
+                -*)                continue ;;
+                *)                 return 1 ;;
+            esac
+        done
+        return 0
+    }
+
+    # Wortel: true if the command line launches a long-lived interactive
+    # program (agent CLI, editor, pager, REPL, system monitor, TUI) that sits
+    # at its own prompt instead of returning to the shell. For those the
+    # synthetic busy spinner (OSC 9;4;3 in preexec) would never clear until you
+    # quit — no OSC 133;D fires — so we skip it and let the program drive its
+    # own progress if it reports any. Batch commands (builds, tests) still spin.
+    #
+    # Every command on the line is looked at, not just the first: `cd x &&
+    # claude` and `git diff | less` end in a program that holds the terminal,
+    # and judged by their first word they spun for as long as it ran.
+    _ghostty_wortel_interactive() {
+        builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+        builtin local -a words
+        words=(${(z)1})
+        builtin local -i s=1 e i n=$#words
+        builtin local cmd REPLY
+        while (( s <= n )); do
+            # The segment runs to the next word that starts another command
+            # on the same line (`&&`, `;`, `|`, `&`...).
+            for (( e = s; e <= n; e++ )); do
+                case $words[e] in
+                    ';'|'&&'|'||'|'|'|'|&'|'&'|'&|'|'&!') break ;;
+                esac
+            done
+            (( i = s, s = e + 1, e-- ))
+            _ghostty_wortel_program
+            cmd=${${(Q)REPLY}:t}
+            [[ -z $cmd ]] && continue
+            case $cmd in
+                claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp) return 0 ;;
+                vi|vim|nvim|vis|nano|emacs|emacsclient|helix|hx|kak|micro|ne|joe) return 0 ;;
+                less|more|most|moar|man|bat|w3m|lynx) return 0 ;;
+                top|htop|btop|btm|glances|gtop|nvtop|s-tui) return 0 ;;
+                ssh|mosh|et|autossh|telnet|tmux|screen|byobu|zellij|dtach|abduco) return 0 ;;
+                watch|journalctl|dmesg) return 0 ;;
+                fzf|sk|gitui|lazygit|lazydocker|k9s|tig|ranger|nnn|yazi|lf|vifm|mc|broot|xplr) return 0 ;;
+                gdb|lldb|pdb) return 0 ;;
+                psql|mysql|mariadb|sqlite3|litecli|pgcli|mycli|redis-cli|mongosh|mongo|usql|duckdb|clickhouse-client|cqlsh) return 0 ;;
+                # A job brought back to the foreground is, nearly always, the
+                # editor or agent that Ctrl-Z put there. Spinning for it spun
+                # for the rest of that program's life.
+                fg|%*) return 0 ;;
+                python|python2|python3|ipython|bpython|ptpython|node|nodejs|bun|deno|irb|pry|php|lua|luajit|julia|R|ghci|iex|erl|scala|clj|clojure)
+                    _ghostty_wortel_bare_repl ${words[i+1,e]} && return 0
+                    continue ;;
+            esac
+            # The leading word is not a program we know. It may well be a
+            # wrapper no list can ever enumerate — `devx pi`, a repo's own
+            # `./run claude`, a company shim — so look just past it: if one of
+            # the next couple of bare words names an agent, believe that over
+            # the wrapper.
+            #
+            # Only two words, and flags skipped, to keep it from reading an
+            # agent's name out of an unrelated argument. The asymmetry is
+            # deliberate: a false positive costs a missing spinner on one
+            # command, while a false negative leaves a spinner turning for the
+            # entire session — which is the failure people actually report.
+            # (Package names count too: `npx @anthropic-ai/claude-code` is
+            # Claude, and that arrives here, with `npx` already walked past.)
+            _ghostty_wortel_agent_name $REPLY && return 0
+            _ghostty_wortel_wrapped_agent $cmd ${words[i+1,e]} && return 0
+        done
         return 1
     }
 
-    # Wortel: given the leading command and the words after it, echo the agent it
-    # wraps — else nothing. Shared by the interactive check and the marker so a
-    # wrapper-launched agent is both spinner-exempt and resumable.
+    # Wortel: given the leading command and the words after it, set REPLY to
+    # the agent it wraps and return true — else false. Shared by the
+    # interactive check and the marker so a wrapper-launched agent is both
+    # spinner-exempt and resumable.
     #
     # Guarded on both ends. Tools whose arguments are patterns or paths are
     # excluded outright, because `rg claude src` and `git log claude` are
@@ -303,14 +362,24 @@ _ghostty_deferred_init() {
     # argument list is not mistaken for the program being launched.
     _ghostty_wortel_wrapped_agent() {
         builtin emulate -L zsh -o no_warn_create_global -o no_aliases
-        builtin local lead=${1:t} w
+        builtin local lead=${${(Q)1}:t} w
         builtin shift
+        REPLY=
         case $lead in
             git|hg|svn|jj|grep|rg|ag|ack|fd|find|ls|cat|sed|awk|jq|yq|xargs|echo|printf) return 1 ;;
             cp|mv|rm|ln|mkdir|touch|tar|zip|unzip|open|chmod|chown|stat|file|du|df) return 1 ;;
             curl|wget|scp|rsync|diff|patch|wc|sort|uniq|head|tail|tr|cut|comm|tee) return 1 ;;
-            make|cargo|go|rustc|swift|swiftc|xcodebuild|gradle|mvn|pip|pip3|brew|docker|kubectl) return 1 ;;
+            make|cargo|go|rustc|swift|swiftc|xcodebuild|gradle|mvn|pip|pip3|brew) return 1 ;;
             which|type|whereis|whatis|history|kill|pkill|pgrep|ps|test) return 1 ;;
+            # Somewhere else entirely: another machine, a multiplexer's own
+            # server, a container. `ssh box claude`, `tmux new claude` and
+            # `docker exec -it c claude` were recorded as a claude running
+            # *here*, so a relaunch typed `claude --resume` into the local
+            # shell — and for tmux, whose server outlives the session, a
+            # second copy beside the one still running in it. (These are
+            # interactive for the spinner by name, before this is asked.)
+            ssh|mosh|et|autossh|telnet|tmux|screen|byobu|zellij|dtach|abduco) return 1 ;;
+            docker|podman|nerdctl|kubectl|oc|limactl|lima|multipass|vagrant|distrobox|toolbox|devcontainer|orb|orbctl) return 1 ;;
         esac
         builtin local -i looked=0
         for w in "$@"; do
@@ -318,77 +387,100 @@ _ghostty_deferred_init() {
                 -*|*=*) continue ;;
             esac
             (( looked++ ))
-            case ${w:t} in
-                claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp)
-                    builtin print -r -- ${w:t}; return 0 ;;
-            esac
+            _ghostty_wortel_agent_name $w && return 0
             (( looked >= 2 )) && break
         done
         return 1
     }
 
-    # Wortel: echo the agent-CLI basename if the command line launches one, else
-    # nothing. Same launcher/env-assignment skipping as _ghostty_wortel_interactive,
-    # but matches only the resumable agent subset. Wortel records this per session
-    # (keyed by WORTEL_SESSION_ID) so a relaunch can resume the agent.
+    # Wortel: if the command line launches an agent CLI, set `reply` to
+    # (agent model cwd argv) for the marker; else leave it empty. Recorded per
+    # session (keyed by WORTEL_SESSION_ID) so a relaunch can resume the agent.
+    #
+    # `cd ~/proj && claude` launches the agent somewhere other than $PWD,
+    # which is where it is resumed (and where Claude keeps its transcripts),
+    # so the walk follows leading `cd`s it can resolve without running
+    # anything — `-`, `~`, absolute and relative paths — to a directory that
+    # exists. Anything it can't see the end of (a dirstack entry, CDPATH, a
+    # failed cd, `z proj`) records nothing rather than the wrong directory.
+    # Otherwise only the line's first command is considered, as before.
     _ghostty_wortel_agent() {
         builtin emulate -L zsh -o no_warn_create_global -o no_aliases
-        builtin local -a words
+        reply=()
+        builtin local -a words args
         words=(${(z)1})
-        builtin local -i i=1 n=$#words
-        builtin local w cmd=
-        while (( i <= n )); do
-            w=$words[i]
-            case $w in
-                *=*)                                              (( i++ )); continue ;;
-                sudo|doas|command|builtin|exec|nohup|nice|stdbuf|setsid|env)
-                                                                  (( i++ )); continue ;;
-                npx|bunx|pnpx|uvx|pipx)                           (( i++ )); continue ;;
-                npm|pnpm|yarn|bun|deno)
-                    # Package runners: in `pnpm dlx codex` or `bun x pi` the
-                    # program is the word after the subcommand. Only skip when
-                    # the subcommand is actually there — a bare `bun` is a REPL,
-                    # and it must keep reaching the dual-use check below.
-                    case $words[i+1] in
-                        x|dlx|exec|run)                           (( i += 2 )); continue ;;
-                    esac
-                    cmd=$w; break ;;
-                -*)                                               (( i++ )); continue ;;
-                *)                                                cmd=$w; break ;;
+        builtin local -i s=1 e i k sep n=$#words
+        builtin local cwd=$PWD dir model= REPLY
+        while (( s <= n )); do
+            # The segment runs to the next word that starts another command
+            # on the same line (`&&`, `;`, `|`, `&`...).
+            for (( e = s; e <= n; e++ )); do
+                case $words[e] in
+                    ';'|'&&'|'||'|'|'|'|&'|'&'|'&|'|'&!') break ;;
+                esac
+            done
+            (( i = s, sep = e, e-- ))
+            _ghostty_wortel_program
+            case ${(Q)REPLY} in
+                cd|pushd) ;;
+                *) break ;;
+            esac
+            # Only `cd x && …` and `cd x; …`: after `||` or `|` the next
+            # command may run in a directory the cd never reached.
+            case $words[sep] in
+                ';'|'&&') ;;
+                *) return ;;
+            esac
+            args=("${(@Q)words[i+1,e]}")
+            [[ $args[1] == (-L|-P|-q|--) ]] && builtin shift args
+            (( $#args <= 1 )) || return
+            dir=${args[1]-}
+            case $dir in
+                '')         dir=$HOME ;;
+                -)          dir=$OLDPWD ;;
+                '~')        dir=$HOME ;;
+                '~/'*)      dir=$HOME/${dir#'~/'} ;;
+                [-+~]*)     return ;;
+                /*)         ;;
+                *)          [[ -n $CDPATH && $dir != (.|..)(|/*) ]] && return
+                            dir=$cwd/$dir ;;
+            esac
+            dir=${dir:a}
+            [[ -n $dir && -d $dir ]] || return
+            cwd=$dir
+            (( s = sep + 1 ))
+        done
+        (( s <= n )) || return
+        builtin local program=$REPLY
+        if ! _ghostty_wortel_agent_name "$program"; then
+            # Wrapper form (`devx pi`): record the agent, not the wrapper, so
+            # the session is resumable and the app knows which agent is running.
+            _ghostty_wortel_wrapped_agent "$program" ${words[i+1,e]} || return
+        fi
+        # The model the command selects (--model/-m/--models value), if any.
+        # Best-effort, for the sidebar badge and to record what an agent was
+        # using.
+        args=("${(@Q)words[i+1,e]}")
+        for (( k = 1; k <= $#args; k++ )); do
+            case $args[k] in
+                --model=*|--models=*|-m=*)  model=${args[k]#*=}; break ;;
+                --model|--models|-m)        model=${args[k+1]-}; break ;;
             esac
         done
-        [[ -z $cmd ]] && return
-        cmd=${cmd:t}
-        case $cmd in
-            claude|pi|aider|codex|cursor-agent|gemini|opencode|goose|cline|ollama|llm|crush|amp)
-                builtin print -r -- $cmd; return ;;
-        esac
-        # Wrapper form (`devx pi`): record the agent, not the wrapper, so the
-        # session is resumable and the app knows which agent is running.
-        _ghostty_wortel_wrapped_agent $cmd ${words[i+1,-1]}
-    }
-
-    # Wortel: echo the model the command line selects (--model/-m/--models value),
-    # else nothing. Best-effort, for the sidebar badge and to record what an agent
-    # was using. Only consulted for commands _ghostty_wortel_agent already matched.
-    _ghostty_wortel_model() {
-        builtin emulate -L zsh -o no_warn_create_global -o no_aliases
-        builtin local -a words
-        words=(${(Q)${(z)1}})
-        builtin local -i i=1 n=$#words
-        builtin local w
-        while (( i <= n )); do
-            w=$words[i]
-            case $w in
-                --model=*|--models=*|-m=*)  builtin print -r -- ${w#*=}; return ;;
-                --model|--models|-m)        (( i++ )); [[ -n $words[i] ]] && builtin print -r -- $words[i]; return ;;
-            esac
-            (( i++ ))
-        done
+        # The command from the agent on (the whole line, unless a cd chain was
+        # walked past), one line: the resume fallback for agents with no
+        # "continue last" of their own. Rebuilt from the words, since zsh hands
+        # preexec the expanded text with each `;` turned into a newline.
+        reply=($REPLY "$model" "$cwd" "${${(j: :)words[s,n]}//$'\n'/ }")
     }
 
     # Wortel: directory shared with the app (AgentResumeStore) for agent markers.
     _ghostty_wortel_agent_dir="${WORTEL_DATA_DIR:-$HOME/Library/Application Support/Wortel}/agents"
+    # For the marker's start time and the exit log, without forking `date`.
+    builtin zmodload -F zsh/datetime p:EPOCHSECONDS 2>/dev/null
+    # "<pid> <agent> <startedat>" of an agent Ctrl-Z stopped, while it lives.
+    # See _ghostty_wortel_clear_agent.
+    builtin typeset -g _ghostty_wortel_stopped=
 
     # Wortel: clear this session's agent marker. Runs at every prompt (registered
     # into precmd below), so a marker only survives while an agent is actually
@@ -400,7 +492,7 @@ _ghostty_deferred_init() {
     # SIGHUP, 130 SIGINT, 143 SIGTERM), anything else the agent's own choice.
     # On 2026-10-07 nine agents exited within a minute of a relaunch and nothing
     # on the machine could say how. One line, appended on this path only; a
-    # plain prompt does nothing beyond the rm it always did.
+    # plain prompt does nothing beyond the stat it always did.
     #
     # **Only a marker this shell wrote.** The file is keyed by session, and a
     # session can briefly have two shells: the one a relaunch forked and the
@@ -409,16 +501,29 @@ _ghostty_deferred_init() {
     # logged the dead one's agent as an exit that never happened. So: our own
     # marker is cleared and logged; a dead shell's is cleared quietly; a live
     # other shell's is left alone.
+    #
+    # **Not an agent that was only stopped.** Ctrl-Z returns to a prompt with
+    # the agent still alive as a suspended job (status 128+SIGTSTP, 146 here),
+    # and `fg` launches no agent, so clearing the marker then left the agent
+    # untracked for the rest of its life: no badge, and nothing to resume. So
+    # a stop keeps the marker and remembers the job's pid (and which marker it
+    # belongs to), and every prompt after that keeps it for as long as that
+    # process lives — through `fg`, `bg` and stopping again. Its real exit is
+    # logged at the first prompt after it, as any other.
     _ghostty_wortel_clear_agent() {
         builtin emulate -L zsh -o no_warn_create_global -o no_aliases
         [[ -n $WORTEL_SESSION_ID ]] || return
         builtin local marker="$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID"
-        [[ -f $marker ]] || return
-        builtin local line agent= owner=
+        if [[ ! -f $marker ]]; then
+            _ghostty_wortel_stopped=
+            return
+        fi
+        builtin local line agent= owner= started= job state
         while IFS= builtin read -r line; do
             case $line in
-                agent=*)    agent=${line#agent=} ;;
-                shellpid=*) owner=${line#shellpid=} ;;
+                agent=*)     agent=${line#agent=} ;;
+                shellpid=*)  owner=${line#shellpid=} ;;
+                startedat=*) started=${line#startedat=} ;;
             esac
         done < "$marker" 2>/dev/null
         if [[ -n $owner && $owner != $$ ]]; then
@@ -426,7 +531,30 @@ _ghostty_deferred_init() {
             command rm -f "$marker" 2>/dev/null
             return
         fi
-        builtin print -r -- "$(command date +%s) session=$WORTEL_SESSION_ID agent=$agent status=${1:-?} shellpid=$$" \
+        if [[ -n $_ghostty_wortel_stopped &&
+              ${_ghostty_wortel_stopped#* } == "$agent $started" ]] &&
+           builtin kill -0 ${_ghostty_wortel_stopped%% *} 2>/dev/null; then
+            return
+        fi
+        case $1 in
+            14[5-9]|150)
+                # SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU (macOS numbers 17, 18,
+                # 21, 22; 19 and 20 are Linux's). The status alone could be an
+                # exit code, so it also takes the current job being suspended,
+                # which is where a stop leaves the command it stopped.
+                for job state in "${(@kv)jobstates}"; do
+                    [[ $state == suspended:+:* ]] || continue
+                    _ghostty_wortel_stopped="${${state#suspended:+:}%%=*} $agent $started"
+                    # Nothing is in progress while it is stopped, but the app
+                    # ignores the prompt's 133;D while a marker is live (see
+                    # docs/agent-signals.md), so a turn stopped halfway would
+                    # keep its spinner for as long as it stays stopped.
+                    builtin print -nu $_ghostty_fd '\e]9;4;0\a'
+                    return
+                done ;;
+        esac
+        _ghostty_wortel_stopped=
+        builtin print -r -- "${EPOCHSECONDS:-$(command date +%s)} session=$WORTEL_SESSION_ID agent=$agent status=${1:-?} shellpid=$$" \
             >> "$_ghostty_wortel_agent_dir/exits.log" 2>/dev/null
         command rm -f "$marker" 2>/dev/null
     }
@@ -455,39 +583,52 @@ _ghostty_deferred_init() {
         # long-lived interactive programs never return to the prompt, so for
         # those we skip it (see _ghostty_wortel_interactive) to avoid a spinner
         # that spins for the whole session.
-        if ! _ghostty_wortel_interactive "$1"; then
+        #
+        # Both checks read `$3`, the text that actually runs, not `$1`, the
+        # line as typed: with `alias cc='claude --dangerously-skip-permissions'`
+        # the typed line is `cc`, which names no agent, so the agent got no
+        # marker and spun the spinner for as long as it ran. `$3` also carries
+        # the alias's flags into argv, which is what a resume is rebuilt from.
+        if ! _ghostty_wortel_interactive "${3:-$1}"; then
             builtin print -nu $_ghostty_fd '\e]9;4;3;\a'
         fi
         # Wortel: record a launched agent CLI so a relaunch can resume it. Keyed
         # by the surface's session id; cleared at the next prompt. A marker that
         # outlives the app means the agent was still running at quit.
         if [[ -n $WORTEL_SESSION_ID ]]; then
-            builtin local _wortel_agent="$(_ghostty_wortel_agent "$1")"
-            if [[ -n $_wortel_agent ]]; then
+            # REPLY/reply are the detection's out-parameters (not a `$(...)`,
+            # which forked a subshell for every command anyone typed).
+            builtin local REPLY
+            builtin local -a reply
+            _ghostty_wortel_agent "${3:-$1}"
+            if (( $#reply )); then
+                builtin local dir=$_ghostty_wortel_agent_dir
+                builtin local tmp="$dir/.$WORTEL_SESSION_ID.$$"
+                [[ -d $dir ]] || command mkdir -p "$dir" 2>/dev/null
                 # key=value marker read by AgentResumeStore: the agent, the model
                 # it was launched with (if any), the cwd (to resume the right
-                # project), and the exact command (one line) as a resume fallback.
-                command mkdir -p "$_ghostty_wortel_agent_dir" 2>/dev/null
+                # project), and the command (one line) as a resume fallback.
                 {
-                    builtin print -r -- "agent=$_wortel_agent"
-                    builtin print -r -- "model=$(_ghostty_wortel_model "$1")"
-                    builtin print -r -- "cwd=$PWD"
-                    builtin print -r -- "argv=${1//$'\n'/ }"
+                    builtin print -r -- "agent=$reply[1]"
+                    builtin print -r -- "model=$reply[2]"
+                    builtin print -r -- "cwd=$reply[3]"
+                    builtin print -r -- "argv=$reply[4]"
                     # The shell's own pid. The agent runs as a descendant of it,
                     # so the app can ask the process table whether it is *really*
                     # still running rather than trusting this file to be current.
                     builtin print -r -- "shellpid=$$"
                     # When the agent started, so the app can tell which transcript
                     # the agent created (and so which conversation it is in).
-                    builtin print -r -- "startedat=$(command date +%s)"
-                } > "$_ghostty_wortel_agent_dir/.$WORTEL_SESSION_ID.$$" 2>/dev/null
+                    builtin print -r -- "startedat=${EPOCHSECONDS:-$(command date +%s)}"
+                } > "$tmp" 2>/dev/null &&
                 # Renamed into place whole. The app watches the folder, which
                 # fires once, when the name appears; written in place, it read
                 # the marker after its first line and never again, so it knew
                 # the agent but not its command, start or shell, and could not
-                # tell which conversation it was in.
-                command mv -f "$_ghostty_wortel_agent_dir/.$WORTEL_SESSION_ID.$$" \
-                    "$_ghostty_wortel_agent_dir/$WORTEL_SESSION_ID" 2>/dev/null
+                # tell which conversation it was in. A write or rename that
+                # fails takes its dot-file with it: nothing else would.
+                command mv -f "$tmp" "$dir/$WORTEL_SESSION_ID" 2>/dev/null ||
+                    command rm -f "$tmp" 2>/dev/null
             fi
         fi
         (( _ghostty_state = 1 ))

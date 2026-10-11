@@ -3,6 +3,43 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.41.9</title>
+            <pubDate>Sun, 11 Oct 2026 00:01:12 -0400</pubDate>
+            <sparkle:version>2026.41.9</sparkle:version>
+            <sparkle:shortVersionString>2026.41.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Agents come back where they were</h1>
+<p class="date">Wortel 2026.41.9 &middot; 2026-10-10</p>
+<p><strong>The right conversation, every time.</strong> After a <code>/clear</code> or <code>/resume</code> inside Claude Code, a session that had to be brought back reopened the conversation Claude was started in, not the one it was in. Wortel now keeps track of the conversation while the agent runs.</p>
+<p><strong>Nothing left behind.</strong> When the process that keeps your terminals running was stopped, an agent that happened to finish closing first was taken as one you had quit, and stayed closed. Each terminal now comes back when its own shell ends, and a resume counts as done only once the agent is running again.</p>
+<p><strong>Started the way you started it.</strong> A resumed agent keeps <code>--dangerously-skip-permissions</code>, its model, its permission mode, an environment variable in front of it, and a wrapper like <code>devx pi</code>. Before, it came back asking for permission at every step. A command line with more than one command in it is typed for you rather than run again.</p>
+<p><strong>Agents found in more places.</strong> Aliases, <code>npx</code> and <code>bunx</code>, <code>cd project &#x26;&#x26; claude</code>, and an agent you suspend with Ctrl-Z and bring back with <code>fg</code> are all followed now. <code>ssh host claude</code> and <code>tmux new claude</code> are no longer mistaken for an agent running in Wortel.</p>
+<p><strong>Typing <code>exit</code> ends the session.</strong> A shell that ended used to leave a terminal that did nothing.</p>
+<p>Also in this release: a full restore no longer holds the window up for half a second per session; the process that keeps your terminals is replaced once it holds none when it came from an older version, which is what kept Full Disk Access from reaching your shells after an update; a missed reply can no longer hand one session’s terminal to another; and prompts are faster in zsh and bash.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.9.zip" length="21871602" type="application/octet-stream" sparkle:edSignature="hV0kLBn7hk4Qk7IbO8vqooabtvxVdk+VRY4EOIy1u21UzVsUZtk5w94ENLAJeytvjM0lAhBKOzC92DZfY5O7Dw=="/>
+        </item>
+        <item>
             <title>2026.41.8</title>
             <pubDate>Fri, 09 Oct 2026 16:10:25 -0400</pubDate>
             <sparkle:version>2026.41.8</sparkle:version>
@@ -75,39 +112,6 @@
 <p><strong>Stop All.</strong> With two or more things running in a session, the heading of its running list offers Stop All.</p>
 <p>Also in this release: a branch name typed with spaces for a new worktree session becomes one git accepts. A session whose folder was deleted says so under its name. And Wortel does less work while it’s behind other apps, especially in repositories with many worktrees.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.41.7.zip" length="21592066" type="application/octet-stream" sparkle:edSignature="98wNKtdBtRdeEklm706WJtKiHzXX2GgpP2Yen7z1z4BLC/tLOszSDgrenWMFSm1k7Zw+ogNITWa8oQUJyaJLBg=="/>
-        </item>
-        <item>
-            <title>2026.41.6</title>
-            <pubDate>Wed, 07 Oct 2026 14:31:10 -0400</pubDate>
-            <sparkle:version>2026.41.6</sparkle:version>
-            <sparkle:shortVersionString>2026.41.6</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Closing a file takes you back</h1>
-<p class="date">Wortel 2026.41.6 &middot; 2026-10-07</p>
-<p><strong>Closing a file takes you back.</strong> Double-click a file in Changes or History, read it, close it, and you’re back where you opened it, not on whichever tab happened to sit next to it. If you switched to another tab in the meantime, the neighbouring tab comes forward, as before.</p>
-<p><strong>Menus that say what they’ll do.</strong> Check for Updates Automatically and Share Anonymous Usage Data in the Wortel menu now show a checkmark when they’re on. Show and Hide commands for the sidebar, the panes and the side column now name what they’ll actually do, Pin Session reads Unpin Session for a pinned one, and commands that don’t apply right now are greyed out.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.6.zip" length="21301346" type="application/octet-stream" sparkle:edSignature="YenDKRRp3RguRKLeVB4QSK9sEqQSNW117uASLZ3suGCXVZ5JKpi+J8SChSKhlO13zVz8IfhiEwRoUccMdXb6Bw=="/>
         </item>
     </channel>
 </rss>

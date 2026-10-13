@@ -65,13 +65,6 @@ final class GitRepoModel {
     private(set) var isPulling = false
     private(set) var isFetching = false
     private(set) var isGeneratingMessage = false
-    /// The checked-out branch's pull request, or that it has none, as `gh`
-    /// says (see `PullRequest`). nil when unknown. Read by the header while
-    /// it's on screen.
-    private(set) var pullRequest: PullRequestState?
-    /// Which branch (and upstream) was last asked about, and when.
-    @ObservationIgnored private var pullRequestLookedUp: (key: String, at: Date)?
-    private static let pullRequestMaxAge: TimeInterval = 300
     /// stderr from the last failed action (commit conflicts, hook rejects…).
     private(set) var lastError: String?
 
@@ -545,42 +538,6 @@ final class GitRepoModel {
 
     /// The notice over the commit box, closed by hand.
     func dismissError() { lastError = nil }
-
-    /// Ask again which pull request the checked-out branch has. Only for a
-    /// branch that has been pushed (one with an upstream): there's no PR for
-    /// one that hasn't, and no reason to make a network call to hear so.
-    ///
-    /// A network call, so at most one per branch every five minutes: the
-    /// header asks on every session switch and every minute, and almost all
-    /// of those are answered by the last one. A push (a new upstream) asks
-    /// again at once.
-    func refreshPullRequest() async {
-        guard let branch = status.branch, let upstream = status.upstream else {
-            pullRequest = nil
-            return
-        }
-        let key = branch + "\u{0}" + upstream
-        if let last = pullRequestLookedUp, last.key == key,
-           Date().timeIntervalSince(last.at) < Self.pullRequestMaxAge { return }
-        pullRequestLookedUp = (key, Date())
-        // Never beside another branch while the lookup runs.
-        if pullRequest?.branch != branch { pullRequest = nil }
-        var found = await PullRequest.lookUp(branch: branch, root: root)
-        // Trunk is what a PR goes *into*: none there is not a gap to fill.
-        if case .none = found, await GitService.defaultBranch(root: root) == branch { found = nil }
-        // The branch may have changed while `gh` was out.
-        guard status.branch == branch else { return }
-        if found != pullRequest { pullRequest = found }
-    }
-
-    /// Open the host's page for a new PR from this branch (see
-    /// `PullRequest.create`). The header's next look (within the minute, the
-    /// five-minute rest is waived) turns the button into the PR once you've
-    /// made it.
-    func createPullRequest() async {
-        pullRequestLookedUp = nil
-        if let error = await PullRequest.create(root: root) { lastError = error }
-    }
 
     /// Append the next page as the reader nears the bottom of the list.
     ///

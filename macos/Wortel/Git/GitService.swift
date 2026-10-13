@@ -62,7 +62,7 @@ enum GitService {
     /// can't check anything out without (`filter.lfs.required`), a credential
     /// helper, a hook's tools. Without them a Fork in such a repository failed
     /// with "git-lfs: command not found" while the same command worked in every
-    /// shell. `gh` is looked for in the same places (`PullRequest`).
+    /// shell.
     static let installDirectories: [String] = {
         let home = NSHomeDirectory()
         return ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.nix-profile/bin",

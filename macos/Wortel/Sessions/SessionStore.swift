@@ -121,6 +121,9 @@ struct PersistedSession: Codable {
     /// which hands two sessions in one repo the same conversation. Overwritten
     /// when a newer conversation is observed; never cleared by an exit.
     let lastConversationID: String?
+    /// The session's port block (`PortBlock`), by its first port. Absent in
+    /// files from before sessions had one; `restore` gives those one.
+    let portBase: Int?
 
     // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
@@ -129,7 +132,7 @@ struct PersistedSession: Codable {
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
         case runningAgent, runningModel, runningArgv, runningConversationID
-        case lastConversationID
+        case lastConversationID, portBase
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
     /// so the synthesised encoder never writes it again.
@@ -150,7 +153,8 @@ struct PersistedSession: Codable {
          gitCheckout: String? = nil,
          tabHabits: [String: String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
-         runningConversationID: String? = nil, lastConversationID: String? = nil) {
+         runningConversationID: String? = nil, lastConversationID: String? = nil,
+         portBase: Int? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
         self.originCwd = originCwd
         self.selected = selected; self.nameSource = nameSource
@@ -175,6 +179,7 @@ struct PersistedSession: Codable {
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
         self.lastConversationID = lastConversationID
+        self.portBase = portBase
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -239,6 +244,7 @@ struct PersistedSession: Codable {
         // the same fact for a session whose agent was alive at quit.
         lastConversationID = try c.decodeIfPresent(String.self, forKey: .lastConversationID)
             ?? runningConversationID
+        portBase = try c.decodeIfPresent(Int.self, forKey: .portBase)
     }
 }
 

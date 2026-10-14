@@ -179,8 +179,10 @@ final class GhosttyRuntime {
 
     /// Create a new surface attached to `view`. The view is the surface
     /// userdata for all callbacks.
+    /// `environment` is added to the shell's (the session's port block).
     func newSurface(view: SurfaceView, workingDirectory: String? = nil,
                     sessionID: UUID? = nil, initialInput: String? = nil,
+                    environment: [String: String] = [:],
                     fontSize: Float = 0) -> ghostty_surface_t? {
         var cfg = ghostty_surface_config_new()
         cfg.platform_tag = GHOSTTY_PLATFORM_MACOS
@@ -229,6 +231,9 @@ final class GhosttyRuntime {
         if let directory = Self.commandLineToolDirectory {
             envVars.append(ghostty_env_var_s(key: dup("WORTEL_BIN_DIR"), value: dup(directory)))
         }
+        for (key, value) in environment.sorted(by: { $0.key < $1.key }) {
+            envVars.append(ghostty_env_var_s(key: dup(key), value: dup(value)))
+        }
 
         // Process survival, and the default: ask the keeper for this session's
         // pty. If it already has one the shell outlived the last quit and we are
@@ -244,7 +249,7 @@ final class GhosttyRuntime {
         // else.
         if let sessionID, let keeper = Self.keeper {
             guard let attachment = keeper.attachOrOpen(
-                session: sessionID, plan: Self.shellPlan(sessionID: sessionID),
+                session: sessionID, plan: Self.shellPlan(sessionID: sessionID, environment: environment),
                 workingDirectory: workingDirectory, initialInput: initialInput,
                 columns: 80, rows: 24)
             else {
@@ -475,9 +480,9 @@ final class GhosttyRuntime {
     /// emits OSC 133 command marks, writes the agent marker files, reports the
     /// cwd and puts `wortel` on PATH, so a session without it silently stops
     /// driving busy detection, the attention system and agent resume.
-    private static func shellPlan(sessionID: UUID?) -> ShellSpawn.Plan {
+    private static func shellPlan(sessionID: UUID?, environment: [String: String] = [:]) -> ShellSpawn.Plan {
         let resources = Bundle.main.resourceURL
-        var extra: [String: String] = [:]
+        var extra = environment
         if let sessionID { extra["WORTEL_SESSION_ID"] = sessionID.uuidString }
         if let directory = commandLineToolDirectory { extra["WORTEL_BIN_DIR"] = directory }
 

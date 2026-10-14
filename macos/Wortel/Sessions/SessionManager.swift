@@ -722,6 +722,7 @@ final class SessionManager {
             }
             let conversationID = observedID ?? entry.runningConversationID ?? lastID
             session.lastConversationID = observedID ?? entry.lastConversationID
+            session.portBase = entry.portBase
             // An agent still running is owed nothing: the marker mirrors onto
             // the session below, and its own turns say which conversation it
             // is in. Anything less certain is owed, and the shell decides
@@ -734,6 +735,7 @@ final class SessionManager {
         }
         syncFolderOrder() // seed/prune the persisted folder order for the restored set
         adoptFolderRoots() // give folders that predate directories one, from where they already are
+        assignPortBlocks() // before any surface: the first shell is spawned with its ports
         // Mirror the markers that outlived the last launch onto the sessions that
         // just came back. The directory watcher can't do it: it was armed before
         // there were any sessions to mirror onto, and a marker whose agent is
@@ -1494,6 +1496,8 @@ final class SessionManager {
         let leaf = uniqueLeaf(Self.defaultTitle(forCwd: directory), in: dir)
         let session = Session(name: dir.map { "\($0)/\(leaf)" } ?? leaf, cwd: directory)
         session.title = Self.defaultTitle(forCwd: session.cwd)
+        session.portBase = PortBlock.allocate(for: session.id, taken: Set(sessions.compactMap(\.portBase)),
+                                              isFree: PortBlock.isFree)
         wire(session)
         // Right after the selected row when that row is in the same section,
         // so the round trip in `close` (⌘N, do the thing, ⌘W) lands back where
@@ -1949,12 +1953,32 @@ final class SessionManager {
             appendRestored(session)
             recovered = true
         }
-        if recovered { scheduleSave() }
+        // Its own shell is long running, but terminals opened beside it start
+        // with the session's ports.
+        if recovered { assignPortBlocks(); scheduleSave() }
     }
 
     private func appendRestored(_ session: Session) {
         wire(session)
         sessions.append(session)
+    }
+
+    /// Give each session without a port block one (`PortBlock`): sessions from
+    /// a file written before they had them, recovered shells, and the second
+    /// of two that somehow hold the same block (only a hand-edited or merged
+    /// file can do that). A block a session already holds is never re-checked:
+    /// after a relaunch its own server may be the thing listening there.
+    private func assignPortBlocks() {
+        var held = Set<Int>()
+        var changed = false
+        for session in sessions {
+            if let base = session.portBase, held.insert(base).inserted { continue }
+            let reserved = held.union(sessions.compactMap(\.portBase))
+            session.portBase = PortBlock.allocate(for: session.id, taken: reserved, isFree: PortBlock.isFree)
+            if let base = session.portBase { held.insert(base) }
+            changed = true
+        }
+        if changed { scheduleSave() }
     }
 
     func close(_ session: Session) {
@@ -2950,7 +2974,8 @@ final class SessionManager {
                 runningAgent: agent?.agent, runningModel: agent?.model,
                 runningArgv: agent?.argv,
                 runningConversationID: agent == nil ? nil : conversationID,
-                lastConversationID: session.lastConversationID)
+                lastConversationID: session.lastConversationID,
+                portBase: session.portBase)
         }
     }
 

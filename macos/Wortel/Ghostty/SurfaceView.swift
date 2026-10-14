@@ -170,9 +170,15 @@ final class SurfaceView: NSView {
 
     // MARK: - Lifecycle
 
+    /// Added to every shell this view starts, its first and any restart: the
+    /// session's port block (`PortBlock.environment`).
+    private let environment: [String: String]
+
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
-         sessionID: UUID? = nil, initialInput: String? = nil, fontSize: Float = 0) {
+         sessionID: UUID? = nil, initialInput: String? = nil,
+         environment: [String: String] = [:], fontSize: Float = 0) {
         self.runtime = runtime
+        self.environment = environment
 
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -182,6 +188,7 @@ final class SurfaceView: NSView {
             workingDirectory: workingDirectory,
             sessionID: sessionID,
             initialInput: initialInput,
+            environment: environment,
             fontSize: fontSize)
 
         NotificationCenter.default.addObserver(
@@ -300,7 +307,8 @@ final class SurfaceView: NSView {
         }
 
         surface = runtime.newSurface(view: self, workingDirectory: workingDirectory,
-                                     sessionID: sessionID, initialInput: initialInput)
+                                     sessionID: sessionID, initialInput: initialInput,
+                                     environment: environment)
         guard let surface else { return }
         // What `viewDidMoveToWindow` and the host told the old surface, told
         // again: the screen, the scale and last real size, the appearance,

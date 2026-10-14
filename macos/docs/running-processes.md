@@ -220,6 +220,46 @@ Copy Address is what carries the rows this cannot classify. A database, a gRPC
 server or a broker is not something to open, but `localhost:6379` is exactly
 what its client wants, which is why the address is host and port with no scheme.
 
+## A session's own ports
+
+Seeing the ports is half of it; the other half is two worktrees not fighting
+over one. A worktree isolates files, not the machine: two agents each running
+`npm run dev` in their own checkout still both want :3000, and the second either
+fails or quietly moves somewhere nobody looks.
+
+So every session gets **ten ports of its own**, and its shells get the first as
+`WORTEL_PORT` (`PortBlock`, `Wortel/Sessions/PortBlock.swift`):
+
+```sh
+npm run dev -- --port $WORTEL_PORT
+python -m http.server $((WORTEL_PORT + 1))
+```
+
+- **From 20000 to 29999, in blocks of ten**, above the usual dev-server and
+  database ports and below the ephemeral range macOS hands out. Blocks holding a
+  well-known port in that range (Redis Sentinel, MongoDB, Minecraft, Synergy)
+  are never handed out.
+- **Chosen once, kept for good.** The search starts at a block derived from the
+  session's id and walks forward past blocks another session holds or anything
+  on the machine is listening on (a `bind` on IPv4 and IPv6, which sees every
+  user's listeners). The result goes into `sessions.json`, and is never
+  re-checked: after a relaunch the session's own server is usually the thing
+  listening there.
+- **Side terminals share the session's block.** A terminal beside an agent is
+  for what the agent is working on.
+- **`CONDUCTOR_PORT` carries the same value.** Conductor reserves the same
+  "first of ten" per workspace, so a repository whose scripts already say
+  `--port $CONDUCTOR_PORT` runs here unchanged. An inherited `CONDUCTOR_*` is
+  scrubbed at launch (`InheritedEnvironment`), or the exec fallback, which can
+  only add variables, would hand every session the launching workspace's ports.
+- **`PORT` is deliberately left alone.** Next, Express, Rails and Vite read it,
+  and setting it would move every dev server in every session off the port its
+  README names.
+
+A shell the keeper kept across the update that brought this has no `WORTEL_PORT`
+until it is restarted; its session has a block all the same, and side terminals
+opened from then on get it.
+
 ## Quitting
 
 SIGTERM to `-pgid`, then SIGKILL after three seconds. SIGTERM rather than the

@@ -53,6 +53,25 @@ final class PersistedSessionTests: XCTestCase {
         }
     }
 
+    // MARK: - Port block
+
+    /// A file from before port blocks has none, and must read as none rather
+    /// than as port 0: `restore` gives those sessions a block, and a decoded
+    /// zero would be a block nobody can bind.
+    func testAbsentPortBlockStaysUnrecorded() throws {
+        XCTAssertNil(try decode(#"{"id":"\#(UUID())"}"#).portBase)
+    }
+
+    /// The block is what keeps a session's dev server on the same port across a
+    /// relaunch, so it has to survive the file.
+    func testPortBlockRoundTrips() throws {
+        let original = PersistedSession(
+            id: UUID(), name: "web", title: "shell", cwd: "/tmp",
+            selected: true, nameSource: "user", gitPanelVisible: nil, portBase: 21_340)
+        let data = try JSONEncoder().encode([original])
+        XCTAssertEqual(try JSONDecoder().decode([PersistedSession].self, from: data).first?.portBase, 21_340)
+    }
+
     // MARK: - Inspector pane
 
     /// The pane is per-session, but "no pane recorded" is a real and common

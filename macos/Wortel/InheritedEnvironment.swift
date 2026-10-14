@@ -66,7 +66,12 @@ enum InheritedEnvironment {
     /// both agent resume and every agent notification, since the sampler only
     /// watches sessions with a live marker. Launching Wortel from a shell inside
     /// Wortel is exactly how it's developed, so this is the common path.
-    private static let terminalHostPrefixes = ["GHOSTTY_", "WORTEL_"]
+    ///
+    /// `CONDUCTOR_` because Wortel sets `CONDUCTOR_PORT` to a session's own
+    /// port block (`PortBlock`), and the exec fallback can only add variables:
+    /// a copy inherited from a Conductor workspace would win there and hand
+    /// every session that workspace's ports.
+    private static let terminalHostPrefixes = ["GHOSTTY_", "WORTEL_", "CONDUCTOR_"]
 
     /// Scrub this process's environment. Call before anything spawns a child —
     /// a surface's shell, or a `git` read from `GitService`.

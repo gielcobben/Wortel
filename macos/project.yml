@@ -457,6 +457,10 @@ targets:
       # API error or a pending question looks like any finished turn from the
       # terminal, and a misread is a wrong dot. Foundation only.
       - path: Wortel/Sessions/ClaudeTranscriptTail.swift
+      # A session's ten ports. A block handed out twice, or one that moves
+      # between launches, is two dev servers fighting over a port with nothing
+      # on screen saying why. Foundation and Darwin only.
+      - path: Wortel/Sessions/PortBlock.swift
       # What a resume carries over from the line that started the agent: its
       # launcher and the flags that set how it runs. A slip here drops a
       # permission mode or turns a flag's value into a prompt. Foundation only.

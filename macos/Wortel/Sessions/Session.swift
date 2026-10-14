@@ -235,6 +235,12 @@ final class Session: Identifiable {
     /// is left to read, instead of guessing by the newest file in the folder.
     /// See `PersistedSession.lastConversationID`.
     @ObservationIgnored var lastConversationID: String?
+    /// The first of this session's ten TCP ports (`PortBlock`), exported to
+    /// its shells as `WORTEL_PORT`. Chosen once and kept; nil only when every
+    /// block was taken.
+    @ObservationIgnored var portBase: Int?
+    /// What every shell of this session gets added to its environment.
+    var shellEnvironment: [String: String] { PortBlock.environment(base: portBase) }
 
     /// The conversation the running agent was last seen in, observed while it
     /// ran: at its start, at every turn, and at a quit. Best evidence first,
@@ -373,7 +379,8 @@ final class Session: Identifiable {
     func ensureSurfaceView(runtime: GhosttyRuntime) -> SurfaceView {
         if let surfaceView { return surfaceView }
         let view = SurfaceView(runtime: runtime, workingDirectory: cwd,
-                               sessionID: id, initialInput: pendingResumeInput)
+                               sessionID: id, initialInput: pendingResumeInput,
+                               environment: shellEnvironment)
         // Typed, not settled: still owed until the agent shows up running,
         // which it already is if its shell survived with it.
         if owedResume != nil, owedResume?.typedAt == nil, !view.initialInputDropped {
@@ -396,7 +403,10 @@ final class Session: Identifiable {
     @discardableResult
     func ensureSideSurface(_ id: UUID, runtime: GhosttyRuntime) -> SurfaceView {
         if let view = sideSurfaces[id] { return view }
-        let view = SurfaceView(runtime: runtime, workingDirectory: cwd ?? originCwd, sessionID: id)
+        // The session's ports, not a block of its own: a terminal beside an
+        // agent is for the thing the agent is working on.
+        let view = SurfaceView(runtime: runtime, workingDirectory: cwd ?? originCwd, sessionID: id,
+                               environment: shellEnvironment)
         sideSurfaces[id] = view
         onSideSurfaceCreated?(id, view)
         return view

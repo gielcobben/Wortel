@@ -1504,7 +1504,7 @@ final class SessionManager {
     /// that exists to escape it.
     private func makeSession(
         cwd directory: String?, inFolder dir: String?, via origin: SessionOrigin,
-        reported: Bool = true
+        reported: Bool = true, prepare: ((Session) -> Void)? = nil
     ) -> Session {
         // Named for where it is, not for what number it is. "Session 3" tells you
         // nothing, and it's what a session is stuck with until an agent turn ends
@@ -1518,6 +1518,11 @@ final class SessionManager {
         session.portBase = PortBlock.allocate(for: session.id, taken: Set(sessions.compactMap(\.portBase)),
                                               isFree: PortBlock.isFree)
         wire(session)
+        // Before it's selected: selecting is what starts a shell, and a row
+        // waiting on its worktree must not get one. A shell started there with
+        // no directory yet came up in the keeper's, `/`, and the worktree it
+        // was waiting for arrived too late to move it.
+        prepare?(session)
         // Right after the selected row when that row is in the same section,
         // so the round trip in `close` (⌘N, do the thing, ⌘W) lands back where
         // it started; otherwise at the end of its folder. A pinned row is
@@ -1673,10 +1678,11 @@ final class SessionManager {
         inFolder folder: String?, after fetch: Task<Void, Never>?, completion: WorktreeCompletion?
     ) -> Session {
         let session = makeSession(cwd: nil, inFolder: folder ?? selected?.folderPath,
-                                  via: .worktree, reported: false)
-        session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
-        session.worktreeBranch = branch
-        session.preparation = WorktreePreparation(request: request, from: from, branch: branch ?? "")
+                                  via: .worktree, reported: false) { session in
+            session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
+            session.worktreeBranch = branch
+            session.preparation = WorktreePreparation(request: request, from: from, branch: branch ?? "")
+        }
         if let completion { worktreeCompletions[session.id] = completion }
         prepareWorktree(for: session, after: fetch)
         return session

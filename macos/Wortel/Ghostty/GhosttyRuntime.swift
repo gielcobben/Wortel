@@ -250,7 +250,11 @@ final class GhosttyRuntime {
         if let sessionID, let keeper = Self.keeper {
             guard let attachment = keeper.attachOrOpen(
                 session: sessionID, plan: Self.shellPlan(sessionID: sessionID, environment: environment),
-                workingDirectory: workingDirectory, initialInput: initialInput,
+                // Home when none was given, as `wortel.conf`'s
+                // `working-directory = home` gives the exec backend. Left nil,
+                // the shell inherits the keeper's own directory, which is `/`
+                // for anything launchd or the Finder started.
+                workingDirectory: workingDirectory ?? NSHomeDirectory(), initialInput: initialInput,
                 columns: 80, rows: 24)
             else {
                 // **A keeper that would not hand this session over is not a

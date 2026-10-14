@@ -412,9 +412,14 @@ private struct SwitcherRow: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isHighlighted ? Color.white.opacity(0.22) : Color.primary.opacity(0.07))
+                // The sidebar's own vocabulary, so a session reads the same in
+                // both places: the kinds that pulse there pulse here, and a
+                // working one shows the working dots.
                 if let kind = session?.attention {
                     AttentionDot(color: SessionStatusIndicator.attentionColor(kind),
-                                 motion: kind == .needsInput ? .pulse : .still)
+                                 motion: kind.pulses ? .pulse : .still)
+                } else if session?.isBusy == true {
+                    WorkingIndicator()
                 } else {
                     Image(systemName: "terminal")
                         .font(.system(size: 13, weight: .medium))

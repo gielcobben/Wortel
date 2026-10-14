@@ -391,6 +391,12 @@ final class SessionManager {
         folder.flatMap { folderRoots[$0] }
     }
 
+    /// The folder whose directory covers `path`, deepest root winning: where
+    /// ⌘O files a directory, and where a session started in it belongs.
+    func folder(covering path: String) -> String? {
+        FolderRoot.folder(containing: FolderRoot.normalize(path) ?? path, in: folderRoots)
+    }
+
     /// Point a folder at a directory, or clear it with nil. Normalized on the
     /// way in so two spellings of one path can't become two different folders.
     func setRoot(_ path: String?, ofFolder folder: String) {
@@ -1489,8 +1495,16 @@ final class SessionManager {
         let session = Session(name: dir.map { "\($0)/\(leaf)" } ?? leaf, cwd: directory)
         session.title = Self.defaultTitle(forCwd: session.cwd)
         wire(session)
-        sessions.append(session)
-        normalizeOrder() // slot the append into its folder's contiguous block
+        // Right after the selected row when that row is in the same section,
+        // so the round trip in `close` (⌘N, do the thing, ⌘W) lands back where
+        // it started; otherwise at the end of its folder. A pinned row is
+        // drawn in Pinned, not in its folder, so it is no anchor for one.
+        if let index = selectedIndex, sessions[index].folderPath == dir, !isPinned(sessions[index]) {
+            sessions.insert(session, at: index + 1)
+        } else {
+            sessions.append(session)
+        }
+        normalizeOrder() // slot the new row into its folder's contiguous block
         // Never select into a hidden row.
         if let dir { collapsedFolders.remove(dir) } else { setLooseCollapsed(false) }
         selectedID = session.id
@@ -1574,16 +1588,10 @@ final class SessionManager {
     /// from where the remote is now (see `newSessionOnBranch`); the session is
     /// on screen while it runs.
     @discardableResult
-    func newSession(onBranch branch: String, base: String? = nil,
+    func newSession(onBranch branch: String, base: String? = nil, from: String?,
                     inFolder folder: String? = nil, after fetch: Task<Void, Never>? = nil) -> Session? {
         let branch = GitWorktree.branchName(from: branch)
-        // The repository comes from the selection *now*, before the new row
-        // takes it over.
-        // A session still preparing has no directory yet, but knows where it
-        // came from: forking beside it means the same repository.
-        guard !branch.isEmpty,
-              let from = selected?.cwd ?? selected?.originCwd ?? selected?.preparation?.from
-        else { return nil }
+        guard !branch.isEmpty, let from else { return nil }
         let session = makeSession(cwd: nil, inFolder: folder ?? selected?.folderPath,
                                   via: .worktree, reported: false)
         let leaf = GitWorktree.sessionLeaf(forBranch: branch)
@@ -1782,8 +1790,34 @@ final class SessionManager {
     /// Local branches of the selected session's repository, most recently
     /// committed first — the order a picker wants, since the branch you mean is
     /// nearly always one you touched recently. Empty outside a repository.
-    func localBranches() async -> [GitBranch] {
-        guard let cwd = selected?.cwd,
+    /// The directory "New Session on Branch…" takes its repository from,
+    /// decided once when it starts so the dialog, the fetch and the worktree
+    /// all agree, and before the new row takes the selection over.
+    ///
+    /// A row's own menu means that row. A folder's means the folder: the
+    /// selected session if it's in that folder (it's the one you're looking
+    /// at), else the folder's directory, else where its sessions are. Before
+    /// this, a folder's menu forked whichever repository the selected session
+    /// happened to be in, and filed the result under the folder you clicked.
+    /// Otherwise it's the selected session. A session still preparing has no
+    /// directory yet, but knows where it came from: forking beside it means
+    /// the same repository.
+    func branchSource(for session: Session? = nil, inFolder folder: String? = nil) -> String? {
+        func directory(of session: Session) -> String? {
+            session.cwd ?? session.originCwd ?? session.preparation?.from
+        }
+        if let session { return directory(of: session) }
+        if let folder, selected?.folderPath != folder {
+            if let root = existingDirectory(root(ofFolder: folder)) { return root }
+            if let inside = sessions.first(where: { $0.folderPath == folder && directory(of: $0) != nil }) {
+                return directory(of: inside)
+            }
+        }
+        return selected.flatMap(directory(of:))
+    }
+
+    func localBranches(in cwd: String?) async -> [GitBranch] {
+        guard let cwd,
               let root = await GitService.repoRoot(for: cwd) else { return [] }
         return await GitService.localBranches(root: root)
     }
@@ -1794,8 +1828,8 @@ final class SessionManager {
     /// the one list whose size tracks the repository rather than the person
     /// using it, so it is asked for after the sheet is on screen and never on
     /// the way to putting it there.
-    func remoteBranches() async -> [GitBranch] {
-        guard let cwd = selected?.cwd,
+    func remoteBranches(in cwd: String?) async -> [GitBranch] {
+        guard let cwd,
               let root = await GitService.repoRoot(for: cwd) else { return [] }
         return await GitService.remoteBranches(root: root)
     }
@@ -1803,8 +1837,8 @@ final class SessionManager {
     /// The repository's trunk, for the dialog's "From" default — the remote-
     /// tracking copy where there is one, so a new branch starts level with
     /// origin. nil outside a repository, or in one with no branch to name yet.
-    func defaultBase() async -> String? {
-        guard let cwd = selected?.cwd,
+    func defaultBase(in cwd: String?) async -> String? {
+        guard let cwd,
               let root = await GitService.repoRoot(for: cwd) else { return nil }
         return await GitService.defaultBase(root: root)
     }
@@ -1819,8 +1853,8 @@ final class SessionManager {
     /// point is as fresh as the last successful fetch, which is where it was
     /// before. Skipped entirely without a remote, where it is a guaranteed error
     /// message about nothing.
-    func fetchFromOrigin() async {
-        guard let cwd = selected?.cwd,
+    func fetchFromOrigin(in cwd: String?) async {
+        guard let cwd,
               let root = await GitService.repoRoot(for: cwd),
               await GitService.hasRemotes(root: root) else { return }
         _ = await GitService.fetch(root: root)
@@ -1828,8 +1862,8 @@ final class SessionManager {
 
     /// Which of those already have a worktree — the picker says so on the row,
     /// because choosing one goes to it rather than making a second.
-    func branchesWithWorktrees() async -> Set<String> {
-        guard let cwd = selected?.cwd,
+    func branchesWithWorktrees(in cwd: String?) async -> Set<String> {
+        guard let cwd,
               let root = await GitService.repoRoot(for: cwd) else { return [] }
         return Set(await GitService.worktrees(root: root)
             .filter { !$0.isPrimary }
@@ -1961,10 +1995,14 @@ final class SessionManager {
         onSessionClosed?(session)
         // Closing the last session in a folder removes that section — including
         // explicitly-created ("New Folder") ones, which otherwise linger empty.
+        // Its directory goes with it, as it does when the folder is ungrouped:
+        // left behind, it was handed to the next folder given the same name,
+        // and quietly decided where that one's sessions started.
         if let folder, !sessions.contains(where: { $0.folderPath == folder }) {
             declaredFolders.removeAll { $0 == folder }
             folderOrder.removeAll { $0 == folder }
             collapsedFolders.remove(folder)
+            folderRoots.removeValue(forKey: folder)
         }
         if hadAttention { refreshDockBadge() }
         // Retract any notification still sitting in Notification Center for a
@@ -2064,15 +2102,19 @@ final class SessionManager {
         sessions.contains { $0.attention != nil }
     }
 
-    /// Jump to the next session (cyclically from the current selection) that's
-    /// waiting on the user — "take me to whatever needs me." No-op when nothing
-    /// is waiting. Selecting it clears its attention and flashes the ring.
+    /// Jump to the session that most needs the user — "take me to whatever
+    /// needs me." The loudest kind goes first (a question before a finished
+    /// turn), and among equals the next one cyclically from the selection, so
+    /// pressing it again walks the rest in sidebar order. No-op when nothing is
+    /// waiting. Selecting it clears its attention and flashes the ring.
     func selectNextAttention() {
-        guard !sessions.isEmpty else { return }
+        guard !sessions.isEmpty,
+              let loudest = sessions.compactMap(\.attention).max(by: { $0.priority < $1.priority })
+        else { return }
         let start = selectedIndex ?? -1
         for offset in 1...sessions.count {
             let candidate = sessions[(start + offset) % sessions.count]
-            if candidate.attention != nil {
+            if candidate.attention == loudest {
                 selectedID = candidate.id
                 // Only when it actually lands. Counting the misses would report
                 // the shortcut as used by someone who pressed it and got

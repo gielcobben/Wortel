@@ -144,7 +144,12 @@ final class WortelCLIService {
             }
         }
         guard let branch else {
-            let session = manager.newSession(cwd: cwd, via: .cli)
+            // Filed where ⌘O would file that directory, when a folder covers
+            // it; only otherwise next to the selection. A script run in one
+            // project must not land its session in whichever folder the
+            // sidebar happens to be showing.
+            let session = manager.newSession(cwd: cwd, inFolder: cwd.flatMap(manager.folder(covering:)),
+                                             via: .cli)
             if let name { manager.rename(session, to: name) }
             orderFront()
             return reply(.success("Started \u{201c}\(session.name)\u{201d}.",

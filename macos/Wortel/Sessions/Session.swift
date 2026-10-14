@@ -193,11 +193,11 @@ final class Session: Identifiable {
     var isBusy: Bool = false
     /// The agent CLI currently running in this session (its command basename,
     /// e.g. `claude`), or nil when none is. Mirrors the live shell-integration
-    /// marker, kept in sync by `SessionManager`'s agents-directory watcher, and
-    /// drives the sidebar's small "which agent" line. Observed so it updates live.
+    /// marker, kept in sync by `SessionManager`'s agents-directory watcher.
+    /// Drives agent tracking, resume and naming; nothing draws it today.
     var runningAgent: String?
     /// The model the running agent was launched with (`--model`/`-m` value), when
-    /// it carried one — shown next to `runningAgent`. nil for the agent's default.
+    /// it carried one, so a resume carries it too. nil for the agent's default.
     var runningModel: String?
     /// The running agent's exact launch command, kept so a quit can record it for
     /// agents with no "continue last" flag. Not shown, so not observed.

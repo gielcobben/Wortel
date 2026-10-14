@@ -542,12 +542,10 @@ enum SessionActions {
         menu.addItem(SessionColourMenu.item(for: session, manager: manager))
 
         menu.addItem(.separator())
-        // Its own branch in its own worktree, from this session's repository.
-        // `newSessionOnBranch` reads the selected session's repository: from
-        // another row's "…" (which doesn't select it), select that row first.
+        // Its own branch in its own worktree, from this session's repository,
+        // whichever row is selected: the menu is this row's.
         _ = item("Fork\u{2026}", "arrow.triangle.branch") {
-            manager.selectedID = session.id
-            newSessionOnBranch(manager, inFolder: session.folderPath)
+            newSessionOnBranch(manager, for: session, inFolder: session.folderPath)
         }
         if let cwd = session.cwd {
             _ = item("Show in Finder", "folder.badge.gearshape") {
@@ -623,7 +621,9 @@ func openFolderSession(_ manager: SessionManager) {
 /// wrote them — "already checked out at …" names the directory you want, and
 /// rewriting it would take that away.
 @MainActor
-func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = nil) {
+func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
+                        inFolder folder: String? = nil) {
+    let from = manager.branchSource(for: session, inFolder: folder)
     Task { @MainActor in
         // Started before the dialog and collected after it, so the network time
         // overlaps the typing rather than following it. Nothing on screen is
@@ -631,10 +631,10 @@ func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = ni
         // moves `refs/remotes/*`, and both lists in the dialog are built from
         // `refs/heads`. What it changes is where the branch is about to start —
         // see GitService.defaultBase.
-        let fetch = Task { await manager.fetchFromOrigin() }
-        let branches = await manager.localBranches()
-        let withWorktree = await manager.branchesWithWorktrees()
-        let defaultBase = await manager.defaultBase()
+        let fetch = Task { await manager.fetchFromOrigin(in: from) }
+        let branches = await manager.localBranches(in: from)
+        let withWorktree = await manager.branchesWithWorktrees(in: from)
+        let defaultBase = await manager.defaultBase(in: from)
         let catalog = BranchCatalog(local: branches, withWorktree: withWorktree)
         guard let window = AppDelegate.mainWindow else { return }
         // The remote branches are loaded *while the sheet is up*, never before
@@ -655,10 +655,10 @@ func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = ni
                     // trip and may have added or pruned branches. Waiting for
                     // the fetch before showing anything would put the network
                     // between you and a list that was sitting there already.
-                    catalog.finishLoadingRemote(await manager.remoteBranches())
+                    catalog.finishLoadingRemote(await manager.remoteBranches(in: from))
                     sheet.catalogChanged()
                     await fetch.value
-                    catalog.finishLoadingRemote(await manager.remoteBranches())
+                    catalog.finishLoadingRemote(await manager.remoteBranches(in: from))
                     sheet.catalogChanged()
                 }
             })
@@ -688,7 +688,8 @@ func newSessionOnBranch(_ manager: SessionManager, inFolder folder: String? = ni
         // That wait happens with the new session already on screen, saying it's
         // preparing (`SessionManager.newSession(onBranch:)`), and so does a
         // refusal: on its own page, not in an alert.
-        manager.newSession(onBranch: choice.branch, base: choice.base, inFolder: folder, after: fetch)
+        manager.newSession(onBranch: choice.branch, base: choice.base, from: from,
+                           inFolder: folder, after: fetch)
     }
 }
 

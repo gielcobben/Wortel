@@ -73,10 +73,6 @@ final class SessionManager {
     /// layer (it owns the window to sheet onto). When nil, closes without
     /// asking.
     @ObservationIgnored var confirmClose: ((Session, @escaping (Bool) -> Void) -> Void)?
-    /// Closing a session that stands in a worktree Wortel made: the app shows
-    /// what's in it and what closing will do to it (`WorktreeCleanupSheet`),
-    /// and closes from there. Replaces `confirmClose` for those sessions.
-    @ObservationIgnored var closeWorktreeSession: ((Session) -> Void)?
 
     /// Whether a session has work running that the terminal itself cannot see:
     /// a server behind the prompt (`bun dev &`), or one that has left the shell
@@ -355,8 +351,9 @@ final class SessionManager {
         for session in sessions where !pinnedSet.contains(session.id) {
             byKey[session.folderPath ?? "", default: []].append(session)
         }
-        // A folder whose sessions are all pinned stays, empty, to come back to.
-        let pinnedFolders = Set(pinned.compactMap(\.folderPath))
+        // A folder whose sessions are all pinned stays, empty, to come back to;
+        // so does one whose sessions are all archived, which is where they are.
+        let pinnedFolders = Set(pinned.compactMap(\.folderPath)).union(archived.compactMap(\.folderPath))
 
         var groups: [SidebarGroup] = []
         if !pinned.isEmpty {
@@ -610,6 +607,7 @@ final class SessionManager {
             }
         }
         let persisted = store.load()
+        archived = ArchiveStore.load()
         hasRestored = true
         if store.loadedCleanly { Self.retireDeadDefaults(persisted: persisted) }
         // Once launch has settled: the keeper is asked what it holds, which is
@@ -626,132 +624,7 @@ final class SessionManager {
         // One read of the process table for every surviving agent below.
         lazy var table = ProcessTable.snapshot()
         for entry in persisted {
-            // A file written before sessions recorded an origin has only the
-            // last known cwd to offer, which is exactly what the old behaviour
-            // would have inherited — so the migration changes nothing on the
-            // launch that reads it, and the drift stops from the next one on.
-            let session = Session(id: entry.id, name: entry.name, title: entry.title,
-                                  cwd: entry.cwd, originCwd: entry.originCwd ?? entry.cwd)
-            // An unrecognised source (a file from a newer build) is treated as the
-            // user's: the one reading that can never relabel work by surprise.
-            session.nameSource = Session.NameSource(rawValue: entry.nameSource) ?? .user
-            session.worktreeBranch = entry.worktreeBranch
-            noteCheckout(session)
-            // A colour only a newer build knows reads as none.
-            session.colour = entry.colour.flatMap(SessionColour.init(rawValue:))
-            // An earlier build named these "<folder>/<branch>" with the branch
-            // whole, which read back as a folder of their own. The rename that
-            // gave them their real names kept that folder half, so stopping it
-            // isn't enough — the ones already filed there move on this launch.
-            if let branch = session.worktreeBranch,
-               let repaired = GitWorktree.repairedSessionName(session.name, branch: branch) {
-                session.name = repaired
-            }
-            // nil means the file predates per-session visibility — inherit the
-            // old app-wide flag just this once.
-            session.gitPanelVisible = entry.gitPanelVisible ?? SessionStore.legacyGitPanelVisible
-            // nil (a file predating per-session panes, or a session that never
-            // had one chosen) and an unrecognised raw value both mean "no
-            // preference" — leave it nil and let GitPanelModel.defaultPane
-            // answer, so the session follows the last pane chosen anywhere
-            // rather than being pinned to a guess made here.
-            session.inspectorPane = entry.inspectorPane.flatMap(InspectorPane.init(rawValue:))
-            // The column's tabs. A file from before the column had them said only
-            // whether it was up and on which pane, and that becomes a strip of
-            // one: a session with Changes open opens on a Changes tab, and one
-            // that never had the column up starts with none, which is also what
-            // makes its first ⌘⌥G open the pane you'd expect.
-            var tabs = WorkspaceTabs(
-                main: (entry.mainTabs ?? []).compactMap(SideTab.init(rawValue:)),
-                activeMain: entry.activeMainTab.flatMap(SideTab.init(rawValue:)),
-                side: (entry.sideTabs ?? []).compactMap(SideTab.init(rawValue:)),
-                activeSide: entry.activeSideTab.flatMap(SideTab.init(rawValue:)),
-                sideVisible: session.gitPanelVisible,
-                bottom: (entry.bottomTabs ?? []).compactMap(Self.stripTab),
-                activeBottom: entry.activeBottomTab.flatMap(Self.stripTab),
-                bottomVisible: entry.bottomVisible ?? false,
-                closed: (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)),
-                habits: Dictionary(uniqueKeysWithValues: (entry.tabHabits ?? [:]).compactMap { key, value in
-                    TabKind(rawValue: key).flatMap { kind in TabRegion(rawValue: value).map { (kind, $0) } }
-                }))
-            if entry.sideTabs == nil, session.gitPanelVisible {
-                let pane = session.inspectorPane ?? GitPanelModel.defaultPane
-                tabs.side = [.pane(pane)]
-                tabs.activeSide = .pane(pane)
-            }
-            // Whatever the file said, made consistent: the terminal in the main
-            // row exactly once, what's in front something the row has, an empty
-            // column or strip hidden. See `WorkspaceTabs.normalized`.
-            session.workspace = tabs.normalized()
-            session.sideColumnWidth = entry.sideColumnWidth
-            session.sideColumnLeading = entry.sideColumnLeading ?? false
-            // A checkout that's gone (a worktree removed since) is forgotten:
-            // the panes follow the terminal again.
-            session.gitCheckout = entry.gitCheckout.flatMap {
-                FileManager.default.fileExists(atPath: $0) ? $0 : nil
-            }
-            for (key, address) in entry.browserAddresses ?? [:] {
-                if let id = UUID(uuidString: key) { session.browserAddresses[id] = address }
-            }
-            // A surviving marker means the app died without cleaning up (a crash),
-            // and is the most direct evidence. A clean quit leaves none — killing
-            // the agent hands control back to the shell, whose last prompt clears
-            // it on the way down — so fall back to what we recorded at termination.
-            let agent = resume[entry.id] ?? entry.runningAgent.map {
-                // No pid: the shell that ran it died with the last launch. Liveness
-                // was already checked when this was recorded at quit.
-                AgentMarker(agent: $0, model: entry.runningModel,
-                            cwd: entry.cwd, argv: entry.runningArgv,
-                            shellPID: nil, startedAt: nil)
-            }
-            // Which conversation to resume, best evidence first. A surviving
-            // marker knows when its agent started, and a fresh `claude` creates
-            // its transcript at that moment: that is exact, and it is newer than
-            // anything saved, which matters after a crash where a new
-            // conversation began after the last save. A resume appends instead
-            // of creating, so nothing is found and the saved ids stand: the one
-            // recorded at quit, else the last one this session was ever seen
-            // in, before the newest-file guess as the last resort.
-            //
-            // The marker's command line counts as evidence too: a resume names
-            // its conversation there. And the last id only counts in the
-            // directory it belongs to; Claude can't resume it anywhere else.
-            //
-            // Claude, Pi and Codex alike: see `AgentConversation`.
-            let marker = resume[entry.id]
-            var agentIsRunning = false
-            let observedID: String? = {
-                guard let marker, AgentConversation.exact.contains(marker.agent),
-                      let cwd = marker.cwd else { return nil }
-                // A surviving marker is an agent still running (the snapshot
-                // drops the rest), so whatever it can tell about itself counts.
-                var livePID: pid_t?
-                if case .running(let pid) = AgentLiveness.locate(
-                    agent: marker.agent, shellPID: marker.shellPID, table: table) {
-                    livePID = pid
-                    agentIsRunning = true
-                }
-                return AgentConversation.observe(agent: marker.agent, livePID: livePID, cwd: cwd,
-                                                 argv: marker.argv, startedAt: marker.startedAt)
-            }()
-            let resumingAgent = marker?.agent ?? entry.runningAgent
-            let lastID = entry.lastConversationID.flatMap { id -> String? in
-                guard let agent = resumingAgent, let cwd = marker?.cwd ?? entry.cwd,
-                      AgentConversation.exists(agent: agent, id: id, cwd: cwd) else { return nil }
-                return id
-            }
-            let conversationID = observedID ?? entry.runningConversationID ?? lastID
-            session.lastConversationID = observedID ?? entry.lastConversationID
-            session.portBase = entry.portBase
-            // An agent still running is owed nothing: the marker mirrors onto
-            // the session below, and its own turns say which conversation it
-            // is in. Anything less certain is owed, and the shell decides
-            // whether to type it (`Attachment.resumeIsOwed`).
-            if let agent, !agentIsRunning,
-               let input = AgentResumeStore.resumeInput(for: agent, knownConversationID: conversationID) {
-                session.owedResume = OwedResume(agent: agent, conversationID: conversationID, input: input)
-            }
-            appendRestored(session)
+            appendRestored(restoredSession(from: entry, marker: resume[entry.id], table: { table }))
         }
         syncFolderOrder() // seed/prune the persisted folder order for the restored set
         adoptFolderRoots() // give folders that predate directories one, from where they already are
@@ -766,6 +639,141 @@ final class SessionManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.warmRemainingSurfaces()
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.refreshWorktreeListings()
+        }
+    }
+
+    /// A session as `entry` saved it, agent resume owed and all: what launch
+    /// does for every saved session, and Restore for an archived one.
+    /// `marker` is the agent marker that outlived the last launch, if any.
+    private func restoredSession(from entry: PersistedSession, marker: AgentMarker?,
+                                 table: () -> [ProcessEntry]) -> Session {
+        // A file written before sessions recorded an origin has only the
+        // last known cwd to offer, which is exactly what the old behaviour
+        // would have inherited — so the migration changes nothing on the
+        // launch that reads it, and the drift stops from the next one on.
+        let session = Session(id: entry.id, name: entry.name, title: entry.title,
+                              cwd: entry.cwd, originCwd: entry.originCwd ?? entry.cwd)
+        // An unrecognised source (a file from a newer build) is treated as the
+        // user's: the one reading that can never relabel work by surprise.
+        session.nameSource = Session.NameSource(rawValue: entry.nameSource) ?? .user
+        session.worktreeBranch = entry.worktreeBranch
+        noteCheckout(session)
+        // A colour only a newer build knows reads as none.
+        session.colour = entry.colour.flatMap(SessionColour.init(rawValue:))
+        // An earlier build named these "<folder>/<branch>" with the branch
+        // whole, which read back as a folder of their own. The rename that
+        // gave them their real names kept that folder half, so stopping it
+        // isn't enough — the ones already filed there move on this launch.
+        if let branch = session.worktreeBranch,
+           let repaired = GitWorktree.repairedSessionName(session.name, branch: branch) {
+            session.name = repaired
+        }
+        // nil means the file predates per-session visibility — inherit the
+        // old app-wide flag just this once.
+        session.gitPanelVisible = entry.gitPanelVisible ?? SessionStore.legacyGitPanelVisible
+        // nil (a file predating per-session panes, or a session that never
+        // had one chosen) and an unrecognised raw value both mean "no
+        // preference" — leave it nil and let GitPanelModel.defaultPane
+        // answer, so the session follows the last pane chosen anywhere
+        // rather than being pinned to a guess made here.
+        session.inspectorPane = entry.inspectorPane.flatMap(InspectorPane.init(rawValue:))
+        // The column's tabs. A file from before the column had them said only
+        // whether it was up and on which pane, and that becomes a strip of
+        // one: a session with Changes open opens on a Changes tab, and one
+        // that never had the column up starts with none, which is also what
+        // makes its first ⌘⌥G open the pane you'd expect.
+        var tabs = WorkspaceTabs(
+            main: (entry.mainTabs ?? []).compactMap(SideTab.init(rawValue:)),
+            activeMain: entry.activeMainTab.flatMap(SideTab.init(rawValue:)),
+            side: (entry.sideTabs ?? []).compactMap(SideTab.init(rawValue:)),
+            activeSide: entry.activeSideTab.flatMap(SideTab.init(rawValue:)),
+            sideVisible: session.gitPanelVisible,
+            bottom: (entry.bottomTabs ?? []).compactMap(Self.stripTab),
+            activeBottom: entry.activeBottomTab.flatMap(Self.stripTab),
+            bottomVisible: entry.bottomVisible ?? false,
+            closed: (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)),
+            habits: Dictionary(uniqueKeysWithValues: (entry.tabHabits ?? [:]).compactMap { key, value in
+                TabKind(rawValue: key).flatMap { kind in TabRegion(rawValue: value).map { (kind, $0) } }
+            }))
+        if entry.sideTabs == nil, session.gitPanelVisible {
+            let pane = session.inspectorPane ?? GitPanelModel.defaultPane
+            tabs.side = [.pane(pane)]
+            tabs.activeSide = .pane(pane)
+        }
+        // Whatever the file said, made consistent: the terminal in the main
+        // row exactly once, what's in front something the row has, an empty
+        // column or strip hidden. See `WorkspaceTabs.normalized`.
+        session.workspace = tabs.normalized()
+        session.sideColumnWidth = entry.sideColumnWidth
+        session.sideColumnLeading = entry.sideColumnLeading ?? false
+        // A checkout that's gone (a worktree removed since) is forgotten:
+        // the panes follow the terminal again.
+        session.gitCheckout = entry.gitCheckout.flatMap {
+            FileManager.default.fileExists(atPath: $0) ? $0 : nil
+        }
+        for (key, address) in entry.browserAddresses ?? [:] {
+            if let id = UUID(uuidString: key) { session.browserAddresses[id] = address }
+        }
+        // A surviving marker means the app died without cleaning up (a crash),
+        // and is the most direct evidence. A clean quit leaves none — killing
+        // the agent hands control back to the shell, whose last prompt clears
+        // it on the way down — so fall back to what we recorded at termination.
+        let agent = marker ?? entry.runningAgent.map {
+            // No pid: the shell that ran it died with the last launch. Liveness
+            // was already checked when this was recorded at quit.
+            AgentMarker(agent: $0, model: entry.runningModel,
+                        cwd: entry.cwd, argv: entry.runningArgv,
+                        shellPID: nil, startedAt: nil)
+        }
+        // Which conversation to resume, best evidence first. A surviving
+        // marker knows when its agent started, and a fresh `claude` creates
+        // its transcript at that moment: that is exact, and it is newer than
+        // anything saved, which matters after a crash where a new
+        // conversation began after the last save. A resume appends instead
+        // of creating, so nothing is found and the saved ids stand: the one
+        // recorded at quit, else the last one this session was ever seen
+        // in, before the newest-file guess as the last resort.
+        //
+        // The marker's command line counts as evidence too: a resume names
+        // its conversation there. And the last id only counts in the
+        // directory it belongs to; Claude can't resume it anywhere else.
+        //
+        // Claude, Pi and Codex alike: see `AgentConversation`.
+        var agentIsRunning = false
+        let observedID: String? = {
+            guard let marker, AgentConversation.exact.contains(marker.agent),
+                  let cwd = marker.cwd else { return nil }
+            // A surviving marker is an agent still running (the snapshot
+            // drops the rest), so whatever it can tell about itself counts.
+            var livePID: pid_t?
+            if case .running(let pid) = AgentLiveness.locate(
+                agent: marker.agent, shellPID: marker.shellPID, table: table()) {
+                livePID = pid
+                agentIsRunning = true
+            }
+            return AgentConversation.observe(agent: marker.agent, livePID: livePID, cwd: cwd,
+                                             argv: marker.argv, startedAt: marker.startedAt)
+        }()
+        let resumingAgent = marker?.agent ?? entry.runningAgent
+        let lastID = entry.lastConversationID.flatMap { id -> String? in
+            guard let agent = resumingAgent, let cwd = marker?.cwd ?? entry.cwd,
+                  AgentConversation.exists(agent: agent, id: id, cwd: cwd) else { return nil }
+            return id
+        }
+        let conversationID = observedID ?? entry.runningConversationID ?? lastID
+        session.lastConversationID = observedID ?? entry.lastConversationID
+        session.portBase = entry.portBase
+        // An agent still running is owed nothing: the marker mirrors onto
+        // the session below, and its own turns say which conversation it
+        // is in. Anything less certain is owed, and the shell decides
+        // whether to type it (`Attachment.resumeIsOwed`).
+        if let agent, !agentIsRunning,
+           let input = AgentResumeStore.resumeInput(for: agent, knownConversationID: conversationID) {
+            session.owedResume = OwedResume(agent: agent, conversationID: conversationID, input: input)
+        }
+        return session
     }
 
     // MARK: - Live agent activity
@@ -1609,30 +1617,21 @@ final class SessionManager {
     }
 
     /// Continue in a worktree that's already on disk: the session already
-    /// standing in it if there is one, else a new one there, filed with its
-    /// repository (`openFolder`).
+    /// standing in it if there is one, else the one archived there, else a
+    /// new one, filed with its repository (`openFolder`).
     @discardableResult
-    func openWorktree(at path: String) -> Session {
+    func openWorktree(at path: String) -> Session? {
         let root = GitWorktree.realPath(path)
-        if let open = sessions.first(where: { $0.preparation == nil && $0.linkedCheckout?.root == root }) {
+        if let open = sessions.first(where: {
+            $0.preparation == nil && ($0.linkedCheckout?.root == root || $0.homeCheckout?.root == root)
+        }) {
             selectedID = open.id
             return open
         }
+        if let item = archived.first(where: { GitWorktree.realPath($0.checkout) == root }) {
+            return restore(archived: item.id)
+        }
         return openFolder(root)
-    }
-
-    /// The worktrees of the repository at `cwd`, for "Open Worktree": every
-    /// linked one git knows of, whoever made it, that's still on disk. One
-    /// `git worktree list`, which reads a few files and walks nothing.
-    func openableWorktrees(in cwd: String?) async -> [GitWorktree] {
-        guard let cwd, let root = await GitService.repoRoot(for: cwd) else { return [] }
-        return await GitService.worktrees(root: root).filter { !$0.isPrimary && !$0.isPrunable }
-    }
-
-    /// Whether a session is standing in the worktree at `path`.
-    func hasSession(inWorktree path: String) -> Bool {
-        let root = GitWorktree.realPath(path)
-        return sessions.contains { $0.linkedCheckout?.root == root }
     }
 
     /// `base`, or `base 2`, `base 3`… — the first that no session in `folder`
@@ -1877,6 +1876,7 @@ final class SessionManager {
         // it's next selected, as a restored session's does.
         if session.id == selectedID { session.ensureSurfaceView(runtime: runtime) }
         scheduleSave()
+        refreshWorktreeListings()
         finishWorktreeSession(session, .success(session), warnings: warnings)
     }
 
@@ -2373,6 +2373,17 @@ final class SessionManager {
         if changed { scheduleSave() }
     }
 
+    /// A folder with no sessions left, live or archived, goes, and its
+    /// directory with it.
+    private func dropFolderIfEmpty(_ folder: String) {
+        guard !sessions.contains(where: { $0.folderPath == folder }),
+              !archived.contains(where: { $0.folderPath == folder }) else { return }
+        declaredFolders.removeAll { $0 == folder }
+        folderOrder.removeAll { $0 == folder }
+        collapsedFolders.remove(folder)
+        folderRoots.removeValue(forKey: folder)
+    }
+
     func close(_ session: Session) {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
         // On the record because its shell and agent end with it, and after
@@ -2417,12 +2428,7 @@ final class SessionManager {
         // Its directory goes with it, as it does when the folder is ungrouped:
         // left behind, it was handed to the next folder given the same name,
         // and quietly decided where that one's sessions started.
-        if let folder, !sessions.contains(where: { $0.folderPath == folder }) {
-            declaredFolders.removeAll { $0 == folder }
-            folderOrder.removeAll { $0 == folder }
-            collapsedFolders.remove(folder)
-            folderRoots.removeValue(forKey: folder)
-        }
+        if let folder { dropFolderIfEmpty(folder) }
         if hadAttention { refreshDockBadge() }
         // Retract any notification still sitting in Notification Center for a
         // session that no longer exists.
@@ -2449,13 +2455,9 @@ final class SessionManager {
     /// Interactive close (menu / context menu / ⌘W): confirms first if the
     /// session still has a running process, otherwise closes immediately.
     func requestClose(_ session: Session) {
-        if session.isInOwnWorktree, let closeWorktreeSession {
-            closeWorktreeSession(session)
-            return
-        }
         let needsConfirm = session.needsConfirmClose || hasBackgroundWork?(session) == true
         guard needsConfirm, let confirmClose else {
-            close(session)
+            end(session)
             return
         }
         confirmClose(session) { [weak self] proceed in
@@ -2463,8 +2465,289 @@ final class SessionManager {
             // Re-check membership: the sheet is async, the session may have
             // gone away (e.g. the shell exited while it was open).
             guard let self, self.sessions.contains(where: { $0.id == session.id }) else { return }
-            self.close(session)
+            self.end(session)
         }
+    }
+
+    /// The way a session ends when you close it, or its shell exits: a
+    /// session that lives in a worktree is archived, any other is closed.
+    func end(_ session: Session) {
+        if session.preparation == nil, worktreeHome(of: session) != nil {
+            archive(session)
+        } else {
+            close(session)
+        }
+    }
+
+    // MARK: - Archive
+
+    /// Worktree sessions you closed, newest first: each folder's Archived
+    /// fold, and what Restore brings back. Not in `sessions`, so nothing
+    /// that walks the live list (⌘1-9, attention, the warm-up, saving)
+    /// ever sees one.
+    private(set) var archived: [ArchivedSession] = []
+    /// Archived sessions whose worktree is being removed right now, which
+    /// can't be restored until that's settled.
+    @ObservationIgnored private var removingArchived: Set<UUID> = []
+    /// What the last inspection of each archived worktree found, for the
+    /// row's "Merged". Only inspections already made: none is run for this.
+    private(set) var archivedReports: [UUID: WorktreeReport] = [:]
+    /// Something about an archived worktree went wrong and the user should
+    /// hear it (restoring one whose folder can't be made again). Set by
+    /// AppDelegate.
+    @ObservationIgnored var onArchiveProblem: ((String, String) -> Void)?
+
+    /// The worktree a session lives in: the one it was opened in, not one its
+    /// shell has since `cd`'d into, so a plain session that looked into a
+    /// worktree is closed as the plain session it is.
+    private func worktreeHome(of session: Session) -> GitWorktree.Linked? {
+        session.homeCheckout ?? (session.originCwd ?? session.cwd).flatMap(GitWorktree.linked(containing:))
+    }
+
+    /// Archive a worktree session: the shell and its agent end, the worktree
+    /// and branch stay, and the session (name, tabs, colour, the agent's
+    /// conversation) waits in its folder's Archived fold to be continued.
+    ///
+    /// **Then, if there's nothing to keep, the worktree goes.** Wortel's own,
+    /// clean, with nothing on its branch that isn't elsewhere or in trunk
+    /// (`WorktreeCloseDecision`): the folder to the Trash, the branch with it
+    /// when Wortel made it, and the archived row with them. Inspected after
+    /// the row has moved, never before: a `git status` on a monorepo can
+    /// take seconds, and ⌘W must not.
+    func archive(_ session: Session) {
+        guard session.preparation == nil, let home = worktreeHome(of: session) else {
+            close(session)
+            return
+        }
+        noteConversation(session)
+        // Taken while the shell still lives: once it's gone its processes are
+        // reparented and no longer look like the session's.
+        let usage = WorktreeUsage(manager: self, excluding: session)
+        let entry = persistedEntry(for: session, now: Date(), vouching: false, table: { ProcessTable.snapshot() })
+        let item = ArchivedSession(session: entry, archivedAt: Date(), checkout: home.root,
+                                   repoHome: home.repoHome, isOwned: home.isOwned)
+        archived.removeAll { $0.id == item.id }
+        archived.insert(item, at: 0)
+        ArchiveStore.save(archived)
+        close(session)
+        settleArchived(item, usage: usage)
+        refreshWorktreeListings()
+    }
+
+    /// Inspect an archived worktree, and remove it when there's nothing to
+    /// keep. A while after the close, so its processes have gone.
+    private func settleArchived(_ item: ArchivedSession, usage: WorktreeUsage) {
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+            let users = usage.users(of: item.checkout, in: processes)
+            let repos = item.repoHome.map { [$0] } ?? []
+            let report = await WorktreeCleanup.inspect(path: item.checkout, knownRepos: repos, usedBy: users)
+            guard let self, self.archived.contains(where: { $0.id == item.id }) else { return }
+            self.archivedReports[item.id] = report
+            guard case .remove(let deleteBranch) = WorktreeCloseDecision.decide(report) else { return }
+            self.removingArchived.insert(item.id)
+            let error = await WorktreeCleanup.remove(path: item.checkout, knownRepos: repos, usedBy: users,
+                                                     deleteBranch: deleteBranch)
+            self.removingArchived.remove(item.id)
+            guard error == nil else { return }
+            self.forgetArchived(item.id)
+        }
+    }
+
+    /// Continue an archived session: its shell starts in its worktree again,
+    /// and its agent resumes its conversation. A worktree whose folder has
+    /// gone is made again from its branch first.
+    @discardableResult
+    func restore(archived id: UUID) -> Session? {
+        guard !removingArchived.contains(id),
+              let item = archived.first(where: { $0.id == id }) else { return nil }
+        guard FileManager.default.fileExists(atPath: item.checkout) else {
+            recreateArchivedWorktree(item)
+            return nil
+        }
+        archived.removeAll { $0.id == id }
+        archivedReports[id] = nil
+        ArchiveStore.save(archived)
+        let session = restoredSession(from: item.session, marker: nil, table: { ProcessTable.snapshot() })
+        appendRestored(session)
+        normalizeOrder()
+        assignPortBlocks()
+        if let folder = session.folderPath { collapsedFolders.remove(folder) }
+        selectedID = session.id
+        scheduleSave()
+        return session
+    }
+
+    /// The folder of an archived worktree is gone (removed by hand, or by
+    /// another tool): check its branch out there again, then restore.
+    private func recreateArchivedWorktree(_ item: ArchivedSession) {
+        guard let branch = item.branch, let repo = item.repoHome else {
+            onArchiveProblem?("Couldn\u{2019}t restore \u{201c}\(item.leafName)\u{201d}",
+                              "Its worktree is gone, and Wortel doesn\u{2019}t know which branch it was on.")
+            return
+        }
+        removingArchived.insert(item.id)
+        Task { [weak self] in
+            let error = await GitService.addWorktree(root: repo, at: item.checkout, branch: branch,
+                                                     source: .existingBranch)
+            guard let self else { return }
+            self.removingArchived.remove(item.id)
+            if let error {
+                self.onArchiveProblem?("Couldn\u{2019}t restore \u{201c}\(item.leafName)\u{201d}",
+                                       GitMessage.readable(error, while: .worktree(branch: branch)))
+                return
+            }
+            self.restore(archived: item.id)
+        }
+    }
+
+    // MARK: - Dormant worktrees (the Archived fold)
+
+    /// A row in a folder's Archived fold: a session you archived, or a
+    /// worktree of the folder's repository that no session is in, whoever
+    /// made it.
+    struct DormantEntry: Identifiable, Equatable {
+        enum Kind: Equatable {
+            case archived(UUID)
+            case notOpen
+        }
+        let kind: Kind
+        /// The worktree's folder.
+        let path: String
+        let name: String
+        let branch: String?
+        /// Wortel made it, so Delete Worktree… is on its menu.
+        let isOwned: Bool
+        /// The default branch its work is already in, when an inspection made
+        /// for something else found so.
+        var mergedInto: String?
+        /// Its folder is gone (an archived session's worktree removed since).
+        var isMissing = false
+
+        var id: String {
+            switch kind {
+            case .archived(let id): return id.uuidString
+            case .notOpen: return path
+            }
+        }
+    }
+
+    /// Folders whose Archived fold is open. Not saved: each launch starts
+    /// with them folded, as the work in them is put away.
+    private(set) var openArchiveFolds: Set<String> = []
+
+    func setArchiveFold(_ folder: String, open: Bool) {
+        if open { openArchiveFolds.insert(folder) } else { openArchiveFolds.remove(folder) }
+    }
+
+    /// `git worktree list` for each repository a folder stands for, by the
+    /// repository's home: what the "Not open" rows come from. Read when
+    /// something says it changed, never on a timer and never per row.
+    private(set) var worktreeListings: [String: [GitWorktree]] = [:]
+    @ObservationIgnored private var listingsInFlight: Set<String> = []
+    @ObservationIgnored private var listingWatchers: [String: DirectoryWatcher] = [:]
+
+    /// The repository a folder stands for: its directory's, else the one its
+    /// first session started in.
+    private func repositoryHome(ofFolder folder: String) -> String? {
+        let directory = root(ofFolder: folder)
+            ?? sessions.first(where: { $0.folderPath == folder })?.originCwd
+            ?? archived.first(where: { $0.folderPath == folder })?.repoHome
+        return directory.flatMap(GitWorktree.repositoryHome(containing:))
+    }
+
+    /// Every folder's Archived fold, built in one pass: archived sessions
+    /// first (newest first), then the worktrees nothing is open in, by name.
+    /// Reads no disk beyond a `stat` per archived worktree: the listings are
+    /// cached and each session's worktree was noted as it moved.
+    func dormantByFolder() -> [String: [DormantEntry]] {
+        let fm = FileManager.default
+        var result: [String: [DormantEntry]] = [:]
+        for item in archived {
+            guard let folder = item.folderPath else { continue }
+            result[folder, default: []].append(DormantEntry(
+                kind: .archived(item.id), path: item.checkout, name: item.leafName,
+                branch: item.branch, isOwned: item.isOwned,
+                mergedInto: archivedReports[item.id]?.mergedInto,
+                isMissing: !fm.fileExists(atPath: item.checkout)))
+        }
+        guard !worktreeListings.isEmpty else { return result }
+        var taken = Set(archived.map { GitWorktree.realPath($0.checkout) })
+        for session in sessions {
+            if let root = session.linkedCheckout?.root { taken.insert(root) }
+            if let root = session.homeCheckout?.root { taken.insert(root) }
+            if let made = session.preparation?.resolved?.path { taken.insert(GitWorktree.realPath(made)) }
+        }
+        for (home, listing) in worktreeListings {
+            var open: [String: [DormantEntry]] = [:]
+            for worktree in listing where !worktree.isPrimary && !worktree.isBare && !worktree.isPrunable
+                && !taken.contains(GitWorktree.realPath(worktree.path)) {
+                // Each worktree in one folder only: the deepest that covers it.
+                guard let folder = folder(forWorktreeAt: worktree.path, repoHome: home) else { continue }
+                open[folder, default: []].append(DormantEntry(
+                    kind: .notOpen, path: worktree.path,
+                    name: worktree.branch.map(GitWorktree.sessionLeaf(forBranch:))
+                        ?? (worktree.path as NSString).lastPathComponent,
+                    branch: worktree.branch,
+                    isOwned: GitWorktree.Ownership.isOwned(root: worktree.path)))
+            }
+            for (folder, entries) in open {
+                result[folder, default: []] += entries.sorted {
+                    $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                }
+            }
+        }
+        return result
+    }
+
+    /// Continue in a row of the fold: restore the archived session, or open
+    /// a session in the worktree.
+    func openDormant(_ entry: DormantEntry) {
+        switch entry.kind {
+        case .archived(let id): restore(archived: id)
+        case .notOpen: openWorktree(at: entry.path)
+        }
+    }
+
+    /// Read the worktrees of every repository a folder stands for, and watch
+    /// each for worktrees coming and going (`.git/worktrees`, a vnode watch:
+    /// an idle one costs nothing). At launch after the first frame, and when
+    /// a worktree is made, archived or removed.
+    func refreshWorktreeListings() {
+        let homes = Set(folderNames.compactMap(repositoryHome(ofFolder:)))
+        for home in homes { readListing(home) }
+        for (home, _) in listingWatchers where !homes.contains(home) { listingWatchers[home] = nil }
+        for home in homes where listingWatchers[home] == nil {
+            let dir = (home as NSString).appendingPathComponent(".git/worktrees")
+            listingWatchers[home] = DirectoryWatcher(path: dir) { [weak self] _ in
+                DispatchQueue.main.async { self?.readListing(home) }
+            }
+        }
+        worktreeListings = worktreeListings.filter { homes.contains($0.key) }
+    }
+
+    /// One read per repository at a time; a change during one is read after.
+    private func readListing(_ home: String) {
+        guard listingsInFlight.insert(home).inserted else { return }
+        Task { [weak self] in
+            let listing = await GitService.worktrees(root: home)
+            guard let self else { return }
+            self.listingsInFlight.remove(home)
+            if self.worktreeListings[home] != listing { self.worktreeListings[home] = listing }
+        }
+    }
+
+    /// Drop an archived session for good: its worktree is gone, or you
+    /// deleted it. Its folder goes too when nothing else is in it.
+    func forgetArchived(_ id: UUID) {
+        guard let index = archived.firstIndex(where: { $0.id == id }) else { return }
+        let folder = archived[index].folderPath
+        archived.remove(at: index)
+        archivedReports[id] = nil
+        ArchiveStore.save(archived)
+        if let folder { dropFolderIfEmpty(folder) }
+        refreshWorktreeListings()
     }
 
     func requestCloseSelected() {
@@ -3298,6 +3581,9 @@ final class SessionManager {
     private func noteCheckout(_ session: Session) {
         let linked = session.cwd.flatMap(GitWorktree.linked(containing:))
         if linked != session.linkedCheckout { session.linkedCheckout = linked }
+        let home = session.originCwd == session.cwd
+            ? linked : session.originCwd.flatMap(GitWorktree.linked(containing:))
+        if home != session.homeCheckout { session.homeCheckout = home }
     }
 
     /// The branch checked out where `session` is now: at launch for the ones
@@ -3351,37 +3637,43 @@ final class SessionManager {
         // A session still waiting for its worktree was never opened, and has
         // no folder to come back to.
         return sessions.filter { $0.preparation == nil }.map { session in
-            if vouching, session.runningAgent != nil { noteConversation(session, table: table) }
-            let (agent, conversationID) = agentToResume(session, now: now,
-                                                        table: vouching ? table : nil)
-            return PersistedSession(
-                id: session.id, name: session.name, title: session.title, cwd: session.cwd,
-                originCwd: session.originCwd,
-                selected: session.id == selectedID, nameSource: session.nameSource.rawValue,
-                worktreeBranch: session.worktreeBranch,
-                colour: session.colour?.rawValue,
-                gitPanelVisible: session.gitPanelVisible,
-                inspectorPane: session.inspectorPane?.rawValue,
-                sideTabs: session.sideTabs.map(\.rawValue),
-                activeSideTab: session.activeSideTab?.rawValue,
-                sideColumnWidth: session.sideColumnWidth,
-                bottomTabs: session.bottomTabs.map(\.rawValue),
-                activeBottomTab: session.activeBottomTab?.rawValue,
-                bottomVisible: session.bottomVisible,
-                closedTabs: session.closedTabs.map(\.rawValue),
-                mainTabs: session.mainTabs.map(\.rawValue),
-                activeMainTab: session.activeMainTab?.rawValue,
-                sideColumnLeading: session.sideColumnLeading,
-                browserAddresses: Self.persistedBrowserAddresses(of: session),
-                gitCheckout: session.gitCheckout,
-                tabHabits: session.tabHabits.isEmpty ? nil
-                    : Dictionary(uniqueKeysWithValues: session.tabHabits.map { ($0.key.rawValue, $0.value.rawValue) }),
-                runningAgent: agent?.agent, runningModel: agent?.model,
-                runningArgv: agent?.argv,
-                runningConversationID: agent == nil ? nil : conversationID,
-                lastConversationID: session.lastConversationID,
-                portBase: session.portBase)
+            persistedEntry(for: session, now: now, vouching: vouching, table: { table })
         }
+    }
+
+    /// One session as it's saved, which is also how an archived one is kept.
+    private func persistedEntry(for session: Session, now: Date, vouching: Bool,
+                                table: () -> [ProcessEntry]) -> PersistedSession {
+        if vouching, session.runningAgent != nil { noteConversation(session, table: table()) }
+        let (agent, conversationID) = agentToResume(session, now: now,
+                                                    table: vouching ? table() : nil)
+        return PersistedSession(
+            id: session.id, name: session.name, title: session.title, cwd: session.cwd,
+            originCwd: session.originCwd,
+            selected: session.id == selectedID, nameSource: session.nameSource.rawValue,
+            worktreeBranch: session.worktreeBranch,
+            colour: session.colour?.rawValue,
+            gitPanelVisible: session.gitPanelVisible,
+            inspectorPane: session.inspectorPane?.rawValue,
+            sideTabs: session.sideTabs.map(\.rawValue),
+            activeSideTab: session.activeSideTab?.rawValue,
+            sideColumnWidth: session.sideColumnWidth,
+            bottomTabs: session.bottomTabs.map(\.rawValue),
+            activeBottomTab: session.activeBottomTab?.rawValue,
+            bottomVisible: session.bottomVisible,
+            closedTabs: session.closedTabs.map(\.rawValue),
+            mainTabs: session.mainTabs.map(\.rawValue),
+            activeMainTab: session.activeMainTab?.rawValue,
+            sideColumnLeading: session.sideColumnLeading,
+            browserAddresses: Self.persistedBrowserAddresses(of: session),
+            gitCheckout: session.gitCheckout,
+            tabHabits: session.tabHabits.isEmpty ? nil
+                : Dictionary(uniqueKeysWithValues: session.tabHabits.map { ($0.key.rawValue, $0.value.rawValue) }),
+            runningAgent: agent?.agent, runningModel: agent?.model,
+            runningArgv: agent?.argv,
+            runningConversationID: agent == nil ? nil : conversationID,
+            lastConversationID: session.lastConversationID,
+            portBase: session.portBase)
     }
 
     /// The agent the next launch should bring back in `session`, and its
@@ -3660,7 +3952,7 @@ final class SessionManager {
             view.onCloseRequest = { [weak self] in
                 guard let self, let session = self.sessions.first(where: { $0.id == id }) else { return }
                 KeeperLog.log.notice("session \(id.uuidString, privacy: .public) closed: its terminal ended")
-                self.close(session)
+                self.end(session)
             }
             view.onShellEnded = { [weak self, weak session, weak view] in
                 guard let self, let session, let view else { return }

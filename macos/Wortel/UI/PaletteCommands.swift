@@ -101,7 +101,6 @@ enum PaletteCommands {
         "showPreviewFind:": "magnifyingglass",
         "markSessionUnread:": "circle.dashed",
         "togglePinSession:": "pin",
-        "removeSessionWorktree:": "trash",
         "cleanUpWorktrees:": "folder.badge.minus",
     ]
 

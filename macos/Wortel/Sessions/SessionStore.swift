@@ -317,3 +317,79 @@ final class SessionStore {
         }
     }
 }
+
+/// A worktree session you closed, waiting in its folder's Archived fold to be
+/// continued: the session exactly as it would have been saved, its agent and
+/// conversation included, and the worktree it lives in.
+///
+/// **Kept in a file of its own** (`archived-sessions.json`), never in
+/// `sessions.json`: an older build reads that one, and would start every
+/// archived session again as a live shell. This file it never opens.
+struct ArchivedSession: Codable, Identifiable {
+    let session: PersistedSession
+    let archivedAt: Date
+    /// The worktree's folder: where the shell starts again, and what's
+    /// recreated from the branch when it has gone.
+    let checkout: String
+    /// The repository the worktree belongs to (`GitWorktree.Linked.repoHome`).
+    let repoHome: String?
+    /// Wortel made the worktree, so it may offer to delete it.
+    let isOwned: Bool
+
+    var id: UUID { session.id }
+    var name: String { session.name }
+    var folderPath: String? { SessionName.folder(of: session.name) }
+    var leafName: String { SessionName.leaf(of: session.name) }
+    var branch: String? { session.worktreeBranch }
+
+    init(session: PersistedSession, archivedAt: Date, checkout: String, repoHome: String?, isOwned: Bool) {
+        self.session = session
+        self.archivedAt = archivedAt
+        self.checkout = checkout
+        self.repoHome = repoHome
+        self.isOwned = isOwned
+    }
+
+    enum CodingKeys: String, CodingKey { case session, archivedAt, checkout, repoHome, isOwned }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        session = try c.decode(PersistedSession.self, forKey: .session)
+        checkout = try c.decode(String.self, forKey: .checkout)
+        // Absent only in a hand-edited file; "now" keeps it in the fold.
+        archivedAt = try c.decodeIfPresent(Date.self, forKey: .archivedAt) ?? Date()
+        repoHome = try c.decodeIfPresent(String.self, forKey: .repoHome)
+        // Unknown means not Wortel's: the one reading that can't delete work.
+        isOwned = try c.decodeIfPresent(Bool.self, forKey: .isOwned) ?? false
+    }
+}
+
+/// `archived-sessions.json`. Written whole on every change: it changes only
+/// when you archive, restore or delete one, and it's small.
+enum ArchiveStore {
+    private static var fileURL: URL { DataDirectory.file("archived-sessions.json") }
+
+    static func load(from url: URL = fileURL) -> [ArchivedSession] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        // One unreadable entry costs that entry, not the fold.
+        struct Lenient: Decodable {
+            let value: ArchivedSession?
+            init(from decoder: Decoder) throws { value = try? ArchivedSession(from: decoder) }
+        }
+        return ((try? JSONDecoder().decode([Lenient].self, from: data)) ?? []).compactMap(\.value)
+    }
+
+    static func save(_ archived: [ArchivedSession], to url: URL = fileURL) {
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if archived.isEmpty {
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+            try JSONEncoder().encode(archived).write(to: url, options: .atomic)
+        } catch {
+            NSLog("archived sessions save failed: %@", error.localizedDescription)
+        }
+    }
+}

@@ -340,15 +340,10 @@ enum MainMenu {
         moveToMenu.delegate = moveToFiller
         moveTo.submenu = moveToMenu
         moveToItem = moveTo
-        // The worktree commands together, behind one row: the selected
-        // session's own, and every worktree Wortel made, including those of
-        // sessions long closed. Neither has a shortcut, and two rows of them
-        // read as session commands they aren't.
-        let worktree = sessionMenu.addItem(withTitle: "Worktree", action: nil, keyEquivalent: "")
-        let worktreeMenu = NSMenu(title: "Worktree")
-        worktree.submenu = worktreeMenu
-        worktreeMenu.addItem(withTitle: "Remove This Worktree\u{2026}", action: #selector(AppDelegate.removeSessionWorktree(_:)), keyEquivalent: "")
-        worktreeMenu.addItem(withTitle: "Clean Up Worktrees\u{2026}", action: #selector(AppDelegate.cleanUpWorktrees(_:)), keyEquivalent: "")
+        // Every worktree Wortel made, including those of sessions long
+        // archived. A session's own goes when you close it, if there's
+        // nothing in it worth keeping (`SessionManager.archive`).
+        sessionMenu.addItem(withTitle: "Clean Up Worktrees\u{2026}", action: #selector(AppDelegate.cleanUpWorktrees(_:)), keyEquivalent: "")
 
         // ⇧⌘W always means the whole session, as in iTerm and Ghostty. ⌘W,
         // which closes what you're in, is Tab ▸ Close Tab.

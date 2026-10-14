@@ -54,6 +54,9 @@ final class Session: Identifiable {
     /// (`GitWorktree.linked`). Re-read on every `cd`, never persisted: it is
     /// what's on disk, not something the session decided.
     var linkedCheckout: GitWorktree.Linked?
+    /// The linked worktree the session was opened in (`originCwd`'s), which
+    /// is the one closing it archives, wherever its shell is now.
+    var homeCheckout: GitWorktree.Linked?
     /// The colour you gave this session, drawn as a bar at the row's leading
     /// edge. Persisted, and only ever changed by hand: opening the session
     /// leaves it, which is the point of a "come back to this".

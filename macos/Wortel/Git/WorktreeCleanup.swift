@@ -145,6 +145,27 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
     }
 }
 
+/// What closing a worktree session does to its worktree, once it has been
+/// inspected: removed when nothing in it is worth keeping, else kept, with
+/// the session archived beside it.
+///
+/// Nothing to keep means all of: Wortel made it; no changes, untracked files
+/// included; nothing using it; not locked; and every commit on its branch
+/// either elsewhere or already in trunk by content (`verdict == .safe`). A
+/// worktree another tool made is never removed, however clean, and neither
+/// is one git couldn't fully answer for.
+enum WorktreeCloseDecision: Equatable {
+    case remove(deleteBranch: Bool)
+    case keep
+
+    static func decide(_ report: WorktreeReport) -> WorktreeCloseDecision {
+        guard report.isOwned, !report.isMissing, report.changedFiles.isEmpty, report.usedBy.isEmpty,
+              !report.isLocked, report.verdict == .safe
+        else { return .keep }
+        return .remove(deleteBranch: report.branchIsDeletable)
+    }
+}
+
 enum WorktreeCleanup {
     /// Every worktree Wortel made: the folders under `GitWorktree.root`, plus
     /// any registration under it whose folder is gone, found through the

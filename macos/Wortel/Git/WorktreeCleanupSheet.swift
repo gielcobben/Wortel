@@ -144,9 +144,9 @@ final class WorktreeCleanupModel {
     enum Mode {
         /// Every worktree Wortel made.
         case cleanUp
-        /// One session's worktree, as part of closing it. `note` is what
-        /// closing ends (a running agent), when anything.
-        case closing(Session, note: String?)
+        /// One archived session's worktree, which deleting the session takes
+        /// with it (the archived row's Delete Worktree…).
+        case deleting(ArchivedSession)
     }
 
     let mode: Mode
@@ -167,20 +167,16 @@ final class WorktreeCleanupModel {
     init(mode: Mode, manager: SessionManager) {
         self.mode = mode
         self.manager = manager
-        if case .closing(let session, _) = mode {
-            usage = WorktreeUsage(manager: manager, excluding: session)
-        } else {
-            usage = WorktreeUsage(manager: manager)
-        }
+        usage = WorktreeUsage(manager: manager)
     }
 
-    var closingSession: Session? {
-        if case .closing(let session, _) = mode { return session }
+    var deletingItem: ArchivedSession? {
+        if case .deleting(let item) = mode { return item }
         return nil
     }
 
     var title: String {
-        if let session = closingSession { return "Close \u{201c}\(session.name)\u{201d}?" }
+        if let item = deletingItem { return "Delete \u{201c}\(item.leafName)\u{201d}?" }
         return "Clean Up Worktrees"
     }
 
@@ -202,8 +198,8 @@ final class WorktreeCleanupModel {
     /// about (a registration whose folder is gone) is found alongside and
     /// added when it's found.
     func load() async {
-        if let session = closingSession {
-            rows = (await Self.worktreePath(of: session)).map { [Row(path: $0)] } ?? []
+        if let item = deletingItem {
+            rows = [Row(path: item.checkout)]
             isLoading = false
             knownRepos = await Self.repos(of: manager)
             await check(rows.map(\.path))
@@ -226,7 +222,7 @@ final class WorktreeCleanupModel {
         guard !paths.isEmpty else { return }
         let usage = self.usage
         let repos = knownRepos
-        let urgent = closingSession != nil
+        let urgent = deletingItem != nil
         let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
         await withTaskGroup(of: WorktreeReport.self) { group in
             var queue = paths[...]
@@ -301,32 +297,16 @@ final class WorktreeCleanupModel {
         if rows.allSatisfy({ $0.error == nil }) { dismiss() }
     }
 
-    /// Close the session, then remove its worktree if that was chosen. The
-    /// removal waits a moment for the session's processes to go, and re-checks:
-    /// anything that turned up since the sheet was read keeps it, and says so.
-    func closeSession() {
-        guard let session = closingSession else { return }
-        // Not read yet (a big repo, a slow disk): the session closes and the
-        // worktree stays, because nothing has said it's safe to remove.
-        let row = rows.first.flatMap { $0.report == nil ? nil : $0 }
-        let deleteBranch = row.map(deletesBranch) ?? false
-        let usage = self.usage
-        dismiss()
-        manager.close(session)
-        guard let row, row.remove else { return }
-        let repos = knownRepos
-        Task {
-            try? await Task.sleep(for: .milliseconds(400))
-            let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
-            let users = usage.users(of: row.path, in: processes)
-            let error = await WorktreeCleanup.remove(
-                path: row.path, knownRepos: repos, usedBy: users, deleteBranch: deleteBranch)
-            guard let error else { return }
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "The worktree was kept"
-            alert.informativeText = error
-            alert.runModal()
+    /// Delete the archived session: its worktree to the Trash (re-checked
+    /// first, as any removal is), then the session itself. A worktree that's
+    /// already gone takes the session with it whatever git still says.
+    func deleteArchived() async {
+        guard let item = deletingItem else { return }
+        await removeSelected()
+        if !rows.contains(where: { $0.path == item.checkout })
+            || !FileManager.default.fileExists(atPath: item.checkout) {
+            manager.forgetArchived(item.id)
+            dismiss()
         }
     }
 
@@ -344,21 +324,6 @@ final class WorktreeCleanupModel {
         return Array(repos)
     }
 
-    /// The worktree a session stands in: the folder two levels under the root
-    /// (`<root>/<repo>/<branch>`), which is where Wortel puts every one it
-    /// makes. By position, not by asking git for the repository around the
-    /// session's directory: from inside a nested clone or a submodule that
-    /// answer is the nested repository, which would then be the one offered
-    /// for removal.
-    private static func worktreePath(of session: Session) async -> String? {
-        guard let cwd = session.cwd else { return nil }
-        let root = WorktreeCleanup.canonical(GitWorktree.root.path)
-        let resolved = WorktreeCleanup.canonical(cwd)
-        guard resolved.hasPrefix(root + "/") else { return nil }
-        let parts = resolved.dropFirst(root.count + 1).split(separator: "/")
-        guard parts.count >= 2 else { return nil }
-        return root + "/" + parts[0] + "/" + parts[1]
-    }
 }
 
 /// The sheet. Minimal, and in today's macOS idiom (System Settings, Reminders):
@@ -420,14 +385,8 @@ struct WorktreeCleanupView: View {
     }
 
     private var subtitle: String {
-        if case .closing(_, let note) = model.mode {
-            // Closing before the check lands keeps the worktree (see
-            // `closeSession`), so until then the sheet must not suggest
-            // otherwise.
-            let worktree = model.rows.first?.report == nil && !model.rows.isEmpty
-                ? "Checking its worktree for unsaved work. Closing now keeps the worktree."
-                : "Its worktree can go to the Trash if nothing in it is unsaved."
-            return [note, worktree].compactMap { $0 }.joined(separator: " ")
+        if model.deletingItem != nil {
+            return "Its worktree goes to the Trash, and the session with it. Anything with unsaved work stays."
         }
         return "Selected worktrees go to the Trash. Anything with unsaved work stays."
     }
@@ -452,9 +411,7 @@ struct WorktreeCleanupView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 96)
         } else if model.rows.isEmpty {
-            Text(model.closingSession == nil
-                 ? "Nothing to clean up. Every worktree Wortel made is in use or already gone."
-                 : "This session's folder isn't a worktree Wortel made.")
+            Text("Nothing to clean up. Every worktree Wortel made is in use or already gone.")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: 96)
         } else {
@@ -465,7 +422,7 @@ struct WorktreeCleanupView: View {
     private static let groupHeaderHeight: CGFloat = 22
     private static let groupSpacing: CGFloat = 16
 
-    private var showsHeaders: Bool { model.closingSession == nil }
+    private var showsHeaders: Bool { model.deletingItem == nil }
 
     private var cards: some View {
         VStack(alignment: .leading, spacing: Self.groupSpacing) {
@@ -507,7 +464,7 @@ struct WorktreeCleanupView: View {
 
     private var footerControls: some View {
         HStack(spacing: 10) {
-            if model.isChecking && model.closingSession == nil {
+            if model.isChecking && model.deletingItem == nil {
                 // Where the branch switch will be: how far the checks are,
                 // so a long list in a big repository is visibly moving.
                 HStack(spacing: 6) {
@@ -531,14 +488,14 @@ struct WorktreeCleanupView: View {
             Button("Cancel") { model.dismiss() }
                 .keyboardShortcut(.cancelAction)
                 .controlSize(.large)
-            if model.closingSession != nil {
-                // Never waits on the check: a big repo's status can take a
-                // while, and closing a session shouldn't. Until the worktree
-                // is read, closing keeps it (see `closeSession`).
-                Button("Close Session") { model.closeSession() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+            if model.deletingItem != nil {
+                Button(model.isWorking ? "Deleting\u{2026}" : "Delete") {
+                    Task { await model.deleteArchived() }
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(model.removableCount == 0 || model.isWorking)
             } else {
                 Button(model.isWorking ? "Moving to Trash\u{2026}"
                        : model.removableCount == 0 ? "Move to Trash" : "Move \(model.removableCount) to Trash") {

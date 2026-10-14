@@ -161,8 +161,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
-        manager.closeWorktreeSession = { [weak self] session in
-            self?.closeWorktreeSession(session)
+        manager.onArchiveProblem = { [weak self] title, detail in
+            guard let window = self?.window else { return }
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = title
+            alert.informativeText = detail
+            alert.beginSheetModal(for: window)
         }
         // A fresh scan, not the last snapshot: closing silently stops what the
         // session runs, and a server started in the last ten seconds is exactly
@@ -730,25 +735,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // MARK: - Close confirmation
-
-    /// Closing a session in a worktree Wortel made: one sheet that says what
-    /// closing ends (as `confirmClose` does) and what's in the worktree, and
-    /// offers to remove it only as far as that loses nothing.
-    private func closeWorktreeSession(_ session: Session) {
-        guard let window else {
-            manager.close(session)
-            return
-        }
-        var note: String?
-        if session.needsConfirmClose || manager.hasBackgroundWork?(session) == true {
-            let scanned = processes.scanNow()
-            let running = scanned.jobs(for: session.id)
-                + scanned.orphans.filter { $0.lastSessionID == session.id }
-            note = RunningJobs.closeSummary(for: running)
-                ?? "A process is still running in this session. Closing it will terminate the process."
-        }
-        WorktreeCleanupSheet.present(.closing(session, note: note), manager: manager, over: window)
-    }
 
     /// Sheets a warning when closing a session that still has a running
     /// process. `completion(true)` proceeds with the close. Falls back to
@@ -1330,12 +1316,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         WorktreeCleanupSheet.present(.cleanUp, manager: manager, over: window)
     }
 
-    @objc func removeSessionWorktree(_ sender: Any?) {
-        focusMainWindow()
-        guard let session = manager.selected, session.isInOwnWorktree else { return }
-        SessionActions.removeWorktree(session, manager: manager)
-    }
-
     @objc func renameSession(_ sender: Any?) {
         focusMainWindow()
         manager.beginRenameSelected()
@@ -1446,9 +1426,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(selectPreviousSession(_:))
             || menuItem.action == #selector(selectNextSession(_:)) {
             return manager.sessions.count > 1
-        }
-        if menuItem.action == #selector(removeSessionWorktree(_:)) {
-            return manager.selected?.isInOwnWorktree == true
         }
         if menuItem.action == #selector(markSessionUnread(_:)) {
             return manager.selected != nil

@@ -268,6 +268,18 @@ it's off screen, and catches up when shown. And a hidden terminal takes no
 resize (`SurfaceView.isHidden`): switching between sessions whose columns
 differ used to re-wrap every session's terminal and SIGWINCH every agent.
 
+**A new worktree gets the ignored files it needs to run** (`WorktreeInclude`):
+whatever `.worktreeinclude` names in the checkout it was made from (gitignore
+syntax, the convention Claude Code, Codex, Conductor and Orca share), else
+`.env*`. Only ignored, untracked files; never into an existing file or a nested
+repository; cloned, not copied, where APFS allows. The listing is
+`ls-files --others --ignored --directory`, which reports `node_modules` as one
+line instead of walking it, and a pattern only looks inside an ignored directory
+when it names a path there. A worktree that already existed is never written
+into. Anything that didn't copy is held on the preparing page
+(`WorktreePreparation.warnings`) until "Open Session", because the terminal
+replacing the page would hide it.
+
 **Removing a worktree never loses work without you choosing it.** Closing a
 session in a worktree Wortel made, "Remove Worktree…" and "Clean Up
 Worktrees…" all go through `WorktreeCleanupSheet`, which inspects first

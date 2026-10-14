@@ -158,20 +158,28 @@ final class WortelCLIService {
         // The worktree path: git work, so the answer comes later. The repository
         // is taken from the caller's directory rather than from the selection —
         // a script in one repo must not open a worktree of whichever repo the
-        // sidebar happens to be pointing at.
-        Task { @MainActor in
-            switch await manager.openSession(onBranch: branch, base: base, from: cwd) {
-            case .success(let session):
-                if let name { manager.rename(session, to: name) }
-                orderFront()
-                reply(.success("Started \u{201c}\(session.name)\u{201d}.",
-                               value: session.id.uuidString))
-            case .failure(let failure):
-                // git's own words. "already checked out at …" names the
-                // directory you want; a paraphrase would drop the path.
-                reply(.failure(failure.message))
-            }
+        // sidebar happens to be pointing at. The row is on screen meanwhile,
+        // saying it's preparing, as it is for the sheet.
+        guard let cwd = cwd ?? manager.selected?.cwd else {
+            return reply(.failure("No session to take a repository from."))
         }
+        let created = manager.newSession(
+            onBranch: branch, base: base, from: cwd, inFolder: manager.folder(covering: cwd),
+            completion: { [weak self] result, warnings in
+                switch result {
+                case .success(let session):
+                    if let name { self?.manager.rename(session, to: name) }
+                    self?.orderFront()
+                    let notes = warnings.isEmpty ? "" : "\n" + warnings.joined(separator: "\n")
+                    reply(.success("Started \u{201c}\(session.name)\u{201d}.\(notes)",
+                                   value: session.id.uuidString))
+                case .failure(let failure):
+                    // git's own words. "already checked out at …" names the
+                    // directory you want; a paraphrase would drop the path.
+                    reply(.failure(failure.message))
+                }
+            })
+        if created == nil { reply(.failure("No branch given.")) }
     }
 
     /// Run `body` on the session a command is about: the one it was run in.

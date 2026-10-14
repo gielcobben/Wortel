@@ -359,6 +359,11 @@ targets:
       # against real git: a branch whose commits are counted as shared when
       # they aren't is a silent loss of work.
       - path: Wortel/Git/WorktreeCleanup.swift
+      # The ignored files a new worktree gets copied in (.worktreeinclude). The
+      # pattern language is checked against git's own, and the copy against the
+      # three ways it could hurt: a nested repository, a file overwritten, a
+      # dependency folder cloned whole.
+      - path: Wortel/Git/WorktreeInclude.swift
       # The diff table. Its *views* aren't testable without a window, but its
       # metrics are, and they carry an invariant nothing else enforces: the
       # coordinator's row height must equal the static `rowHeight(forFontSize:)`

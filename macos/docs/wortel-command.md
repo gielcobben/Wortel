@@ -55,6 +55,13 @@ wortel new --branch fix/1482 --from release/2026
 own files — so an agent working in it can't collide with anything else you have
 open. A branch that already has a worktree is reused rather than duplicated.
 
+A new worktree also gets the **ignored files the project needs to run**, copied
+from the checkout you ran the command in: whatever `.worktreeinclude` at its
+root names (gitignore syntax, the file Claude Code, Codex and Conductor read
+too), or `.env*` when there is none. Copies are instant APFS clones, nothing is
+ever overwritten, and anything that couldn't be copied is printed after the
+"Started" line.
+
 The branch may be new, in which case `--from` says what it forks from. Left out,
 that's **the repository's default branch** — `origin/HEAD` where it exists, then
 `main`, then `master`, then whatever is checked out. It is deliberately *not*

@@ -1440,6 +1440,7 @@ struct DetailPane: View {
                     WorktreePreparingPage(
                         preparation: preparation,
                         retry: { manager.retryWorktree(session) },
+                        open: { manager.openPreparedWorktree(session) },
                         close: { manager.close(session) })
                 }
             }

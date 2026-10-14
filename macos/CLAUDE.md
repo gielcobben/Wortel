@@ -280,15 +280,38 @@ into. Anything that didn't copy is held on the preparing page
 (`WorktreePreparation.warnings`) until "Open Session", because the terminal
 replacing the page would hide it.
 
-**Any linked worktree is a worktree**, whoever made it: one beside the
-repository, inside it, a bare clone's (`repo/.bare` + `repo/main`), Wortel's.
-`GitWorktree.linked` reads the nearest `.git` file on every `cd` (no git), and
-the row gets the glyph and the branch line; ⌘O files one with its repository's
-folder, and "Open Worktree" (sidebar menus, and Open Session in the git panel
-while looking at another worktree) lists `git worktree list` to continue in
-one. Removing stays `isInOwnWorktree`'s alone. A worktree row is marked as
-preparing *before* it's selected (`makeSession(prepare:)`): selecting starts the
-shell, and one started with no directory came up in the keeper's, `/`.
+**Worktrees: the session is the unit** (`docs/worktrees.md`). You manage
+sessions; a worktree is where one lives. Three ways in: ⇧⌘N New Worktree
+Session (no sheet), ⇧⌘O Open Branch (`OpenTarget`, ⌘P's panel in a third mode:
+go to the session, restore the archived one, open the worktree, check the
+branch out, or create it, and a branch with a place is listed only there), and
+⌥⇧⌘N Fork. One way out: closing (⇧⌘W, ×, `exit`) a session that lives in a
+worktree **archives** it (`SessionManager.archive`), then, after the row has
+moved, inspects the worktree and Trashes it only when there's nothing to keep
+(`WorktreeCloseDecision`). Archived sessions are in `archived-sessions.json`,
+never `sessions.json`, which an older build would start them from; restoring
+one goes through the same `restoredSession` launch uses, agent resume and all.
+Each folder's **Archived** fold lists them plus the worktrees of its
+repository no session is in, whoever made them, from one cached `git worktree
+list` per repository (`worktreeListings`, refreshed by a vnode watch on
+`.git/worktrees` and after creates and archives; never per row or on a timer).
+
+**Any linked worktree is a worktree; only Wortel's are Wortel's to remove.**
+`GitWorktree.linked` reads the nearest `.git` file on every `cd` (no git): the
+row gets the glyph and branch line, ⌘O files it with its repository.
+Ownership is a **marker** in the worktree's git folder and
+`branch.<b>.wortelCreated` in git config (`GitWorktree.Ownership`), not a path;
+`~/.wortel/worktrees` and `worktree/` still count, for what was made before.
+Never lock a worktree, ours or anyone's. A repository may put its worktrees
+elsewhere with `git config wortel.worktreePath` (a folder or a `{repo}`/
+`{branch}` template; the folder menu's Worktree Location…, or `includeIf` for a
+whole tree of repositories); one inside the repository goes in `info/exclude`.
+A generated branch is renamed for the session's name while unpushed
+(`GitWorktree.mayRename`); the folder never moves, since agents key history by
+directory, and a folder that held a worktree (or Claude history) is never
+reused. A worktree row is marked as preparing *before* it's selected
+(`makeSession(prepare:)`): selecting starts the shell, and one started with no
+directory came up in the keeper's, `/`.
 
 **Fork Session** (⌥⇧⌘N, `wortel fork`, `WorktreeFork`) is the session as it
 is, in a worktree of its own: a new branch at the source's HEAD (not trunk),
@@ -305,23 +328,22 @@ transcript's *path* (`--resume <path> --fork-session`): by id it looks only in
 the new worktree's project folder and finds nothing. Codex's carried `--cd` is
 dropped so the fork doesn't work in the source folder. The fork is named
 "<name> (fork)" with the user's authority, or the forked agent's identical
-title would make two identical rows. The old "Fork…" (a new branch from trunk)
-is "New Session on Branch…".
+title would make two identical rows.
 
 **Removing a worktree never loses work without you choosing it.** Closing a
-session in a worktree Wortel made, "Remove Worktree…" and "Clean Up
-Worktrees…" all go through `WorktreeCleanupSheet`, which inspects first
+session archives it (above); Delete Worktree… on an archived row and Clean Up
+Worktrees… go through `WorktreeCleanupSheet`, which inspects first
 (`WorktreeCleanup.inspect`): uncommitted or untracked files, something running
 there or another session in it, a lock, or a folder that isn't a checkout any
 more → **blocked**, with the reason; commits found on no other branch or
 remote → the folder may go, the branch stays unless you tick it; otherwise
-**safe**, folder and (Wortel-namespaced) branch both. Removal re-inspects, moves
+**safe**, folder and (Wortel-made) branch both. Removal re-inspects, moves
 the folder to the **Trash** (a clean status says nothing about an ignored
 `.env`), then drops only that registration (`worktree remove` on the now-missing
 folder, not `prune`, which would also forget a worktree on an unmounted
-volume). Only worktrees under `~/.wortel/worktrees`, and only branches in
-`worktree/`, are ever Wortel's to remove; a commit count git can't give is
-treated as "may have commits". A branch whose commits are on no other branch
+volume; `addWorktree` likewise drops only a stale registration in its way).
+Only worktrees Wortel made, and only branches it created, are ever Wortel's to
+remove; a commit count git can't give is treated as "may have commits". A branch whose commits are on no other branch
 but whose **work is already in the default branch** (squash or rebase merged,
 the way most pull requests land) is safe too (`WorktreeReport.mergedInto`,
 `GitService.isMerged`): `merge-tree --write-tree` of the branch into trunk

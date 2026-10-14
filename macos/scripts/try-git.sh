@@ -143,20 +143,30 @@ Look over, with the git panel open (⌃⌘1):
   [ ] origin/giel/remote-only: checks out as a new local branch
   [ ] … › Pull and … › Push: each refuses in one sentence
   [ ] Edit README.md, then switch to giel/conflict: names README.md
-  [ ] New Session on Branch, name "Jump to": becomes Jump-to
+  [ ] Open Branch (⇧⌘O), type "Jump to": Create “Jump-to”, from main
   [ ] Run two servers in the session, open the running list: Stop All
       python3 -m http.server 8801 & python3 -m http.server 8802 &
-  [ ] New Session on Branch, type #7: opens worktree/pr-7 with seven.txt;
+  [ ] Open Branch, type #7: opens worktree/pr-7 with seven.txt;
       type #8: checks out giel/shape-lab itself, tracking origin
   [ ] Session › Worktree › Clean Up Worktrees: squashed and picked say
       "Merged · branch too"; calm-test says "Branch kept"
   [ ] Open worktree/squashed: Changes says "Merged into main"
   [ ] echo $WORTEL_PORT in two sessions: different; after a relaunch, the same
-  [ ] New Session on Branch: the new row's shell starts in its worktree, not /
-  [ ] Folder menu › Open Worktree: lists every worktree (shop-toolbar-clean
-      and the rest made by hand, calm-test made by Wortel), ticks the open
-      ones; picking a ticked one goes to it, an unticked one opens a session
-      named for its branch, in this folder, with the worktree glyph
+  [ ] New Worktree Session (⇧⌘N): the row's shell starts in its worktree,
+      not /, in this folder; ask the agent something and the branch is
+      renamed for the session's name (git branch)
+  [ ] The folder's Archived fold lists shop-toolbar-clean and the rest made
+      by hand as not open; clicking one opens a session there; none of them
+      offers Delete
+  [ ] Close (⇧⌘W) a worktree session with changes: it goes to Archived;
+      click it: back in its worktree, agent resumed
+  [ ] Close a fresh, untouched worktree session: its folder is in the Trash
+      a moment later, and it's not in Archived
+  [ ] exit in a worktree session: archived, like closing it
+  [ ] Open Branch with nothing typed: the open, archived and not open ones;
+      type giel/toolbar-clean: only its worktree, no second one
+  [ ] Folder menu › Worktree Location…, pick ../shop-trees: the next
+      ⇧⌘N lands there; Use Wortel's Worktree Folder puts it back
   [ ] ⌘O on ../shop-toolbar-proposal: lands in the shop folder, not a new
       one, named for its branch; rename it and the branch shows under it
   [ ] cd ../shop-toolbar-clean in a session: the branch line appears

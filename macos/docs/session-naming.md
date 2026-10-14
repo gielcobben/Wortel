@@ -109,6 +109,15 @@ snapshot carries the set of tall rows: height is the one visual fact the
 hosted SwiftUI row can't change on its own. Sessions persisted before the
 branch was recorded ask git for it once at restore.
 
+**The branch follows the name, once.** A worktree made without a branch name
+(⇧⌘N, `wortel new --worktree`) starts on a placeholder, `worktree/brave-river-1a2f`.
+When the session gets a real name from any source, the branch is renamed for
+it (`fix-login-redirect`), but only while nobody else can know the old one:
+Wortel made it, it was never pushed, and it's checked out in that worktree
+alone (`GitWorktree.mayRename`). The worktree's folder keeps its name, since
+agents keep their history by directory. After that the branch is no longer a
+placeholder, so later names leave it alone.
+
 ## What `AgentTitle` accepts
 
 A title counts as an agent's only if it *leads with a marker glyph*: Claude's

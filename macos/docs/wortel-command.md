@@ -40,7 +40,7 @@ waits for you rather than yanking you out of what you were doing.
 
 Directories are refused rather than guessed at; use `wortel new --cwd` for those.
 
-### `wortel new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>]`
+### `wortel new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>] [--worktree]`
 
 Starts a session. With no arguments it opens one in your current directory.
 
@@ -85,6 +85,30 @@ paste the URL where the branch name goes.
 
 ```sh
 wortel new --pr 1482 --name "review 1482"
+```
+
+`--worktree` is ⇧⌘N from a script: a worktree of its own on a new branch
+Wortel names, from the default branch. The branch starts as a placeholder
+(`worktree/brave-river-1a2f`) and is renamed for the session once it has a
+name, as long as it hasn't been pushed.
+
+```sh
+wortel new --worktree --name "try a queue"
+```
+
+Worktrees go in `~/.wortel/worktrees/<repo>/<branch>` unless the repository
+names its own place in git config, `wortel.worktreePath`: a folder, or a
+template with `{repo}` and `{branch}`, relative to the repository or not. The
+folder menu's Worktree Location… sets it; git's `includeIf` sets it for every
+repository under a folder:
+
+```ini
+# ~/.gitconfig
+[includeIf "gitdir:~/work/"]
+    path = ~/.gitconfig-work
+# ~/.gitconfig-work
+[wortel]
+    worktreePath = ~/work/worktrees/{repo}/{branch}
 ```
 
 The repository comes from *where you ran the command*, not from whatever the

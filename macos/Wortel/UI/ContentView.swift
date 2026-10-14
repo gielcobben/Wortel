@@ -318,8 +318,11 @@ struct NewSessionButton: NSViewRepresentable {
             // the thing it's the exception to.
             add("New Session at Home", "house") { manager.newHomeSession() }
             // Its own branch and its own files: what makes running two agents
-            // in one repository safe.
-            add("Fork\u{2026}", "arrow.triangle.branch") { newSessionOnBranch(manager) }
+            // in one repository safe. Fork carries the selected session itself.
+            if let selected = manager.selected, selected.preparation == nil {
+                add("Fork Session", "arrow.triangle.branch") { manager.fork(selected) }
+            }
+            add("New Session on Branch\u{2026}", "arrow.branch") { newSessionOnBranch(manager) }
             menu.addItem(.separator())
             add("New Folder\u{2026}", "folder.badge.plus") {
                 if let name = promptFolderName(title: "New Folder", confirm: "Create") {
@@ -542,9 +545,17 @@ enum SessionActions {
         menu.addItem(SessionColourMenu.item(for: session, manager: manager))
 
         menu.addItem(.separator())
+        // This session as it is, in a worktree of its own: its changes, its
+        // agent's conversation. Short titles, because the longest one sets
+        // the menu's width and inside a session's own menu these need no more.
+        if session.preparation == nil {
+            _ = item("Fork", "arrow.triangle.branch", key: "n", [.command, .option, .shift]) {
+                manager.fork(session)
+            }
+        }
         // Its own branch in its own worktree, from this session's repository,
         // whichever row is selected: the menu is this row's.
-        _ = item("Fork\u{2026}", "arrow.triangle.branch") {
+        _ = item("New Branch\u{2026}", "arrow.branch") {
             newSessionOnBranch(manager, for: session, inFolder: session.folderPath)
         }
         if let cwd = session.cwd {
@@ -688,8 +699,12 @@ func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
         // That wait happens with the new session already on screen, saying it's
         // preparing (`SessionManager.newSession(onBranch:)`), and so does a
         // refusal: on its own page, not in an alert.
-        manager.newSession(onBranch: choice.branch, base: choice.base, from: from,
-                           inFolder: folder, after: fetch)
+        switch choice {
+        case .branch(let branch, let base):
+            manager.newSession(onBranch: branch, base: base, from: from, inFolder: folder, after: fetch)
+        case .pullRequest(let pr):
+            manager.newSession(onPullRequest: pr, from: from, inFolder: folder, after: fetch)
+        }
     }
 }
 
@@ -749,7 +764,7 @@ enum FolderActions {
         // "New Session", as in the Session menu: the menu is the folder's, so
         // naming the folder again only made it the widest item.
         item("New Session", "plus.square") { manager.newSession(inFolder: folder) }
-        item("Fork\u{2026}", "arrow.triangle.branch") { newSessionOnBranch(manager, inFolder: folder) }
+        item("New Session on Branch\u{2026}", "arrow.branch") { newSessionOnBranch(manager, inFolder: folder) }
         item("Rename\u{2026}", "pencil") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
                 manager.renameFolder(folder, to: name)

@@ -74,6 +74,19 @@ final class WortelCLIService {
         case .newSession(let cwd, let name, let branch, let base):
             newSession(cwd: cwd, name: name, branch: branch, base: base, reply: reply)
 
+        case .newFromPullRequest(let cwd, let name, let text):
+            guard let pr = PullRequestRef.parse(text) else {
+                return reply(.failure("\u{201c}\(text)\u{201d} isn't a pull request: give its number or its URL."))
+            }
+            guard let cwd = cwd ?? manager.selected?.cwd else {
+                return reply(.failure("No session to take a repository from."))
+            }
+            _ = manager.newSession(
+                onPullRequest: pr, from: cwd, inFolder: manager.folder(covering: cwd),
+                completion: { [weak self] result, warnings in
+                    self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
+                })
+
         case .rename(let session, let name):
             reply(withSession(session) { session in
                 manager.rename(session, to: name)
@@ -93,6 +106,26 @@ final class WortelCLIService {
                 return .success(colour.map { "Coloured \($0.rawValue)." } ?? "Colour cleared.",
                                 value: colour?.rawValue ?? SessionColour.none)
             })
+
+        case .fork(let session, let name, let branch):
+            // The answer comes once the worktree is ready, as for
+            // `new --branch`; only a refusal on the spot is replied here.
+            var started = false
+            let refusal = withSession(session) { source in
+                started = manager.fork(source, name: name, branch: branch, completion: { [weak self] result, warnings in
+                    switch result {
+                    case .success(let forked):
+                        self?.orderFront()
+                        let notes = warnings.isEmpty ? "" : "\n" + warnings.joined(separator: "\n")
+                        reply(.success("Forked into \u{201c}\(forked.name)\u{201d}.\(notes)",
+                                       value: forked.id.uuidString))
+                    case .failure(let failure):
+                        reply(.failure(failure.message))
+                    }
+                }) != nil
+                return .failure("\u{201c}\(source.name)\u{201d} can't be forked until its worktree is ready.")
+            }
+            if !started { reply(refusal) }
 
         case .notify(let session, let title, let body):
             reply(withSession(session) { session in
@@ -166,20 +199,26 @@ final class WortelCLIService {
         let created = manager.newSession(
             onBranch: branch, base: base, from: cwd, inFolder: manager.folder(covering: cwd),
             completion: { [weak self] result, warnings in
-                switch result {
-                case .success(let session):
-                    if let name { self?.manager.rename(session, to: name) }
-                    self?.orderFront()
-                    let notes = warnings.isEmpty ? "" : "\n" + warnings.joined(separator: "\n")
-                    reply(.success("Started \u{201c}\(session.name)\u{201d}.\(notes)",
-                                   value: session.id.uuidString))
-                case .failure(let failure):
-                    // git's own words. "already checked out at …" names the
-                    // directory you want; a paraphrase would drop the path.
-                    reply(.failure(failure.message))
-                }
+                self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
             })
         if created == nil { reply(.failure("No branch given.")) }
+    }
+
+    /// The answer to a `new` that waited on git: the session's id, and any
+    /// notes from the way there after the "Started" line.
+    private func replyStarted(_ result: Result<Session, SessionManager.Failure>, warnings: [String],
+                              name: String?, reply: @escaping @Sendable (WortelResponse) -> Void) {
+        switch result {
+        case .success(let session):
+            if let name { manager.rename(session, to: name) }
+            orderFront()
+            let notes = warnings.isEmpty ? "" : "\n" + warnings.joined(separator: "\n")
+            reply(.success("Started \u{201c}\(session.name)\u{201d}.\(notes)", value: session.id.uuidString))
+        case .failure(let failure):
+            // git's own words. "already checked out at …" names the
+            // directory you want; a paraphrase would drop the path.
+            reply(.failure(failure.message))
+        }
     }
 
     /// Run `body` on the session a command is about: the one it was run in.

@@ -92,6 +92,33 @@ enum AgentConversation {
         }
     }
 
+    /// The agent's own words for "a new conversation that starts as a copy of
+    /// `id`", after its name: what Fork Session types in the new worktree. nil
+    /// for an agent that can't fork, or an id that can't be typed. Checked
+    /// against each agent's `--help` on 2026-10-14 (Claude Code 2.1.299, Pi
+    /// 0.82.1, Codex 0.142.3).
+    ///
+    /// Claude is the one with a catch: it files conversations by the folder
+    /// they ran in, so `--resume <id>` from the new worktree looked in the new
+    /// worktree's folder and found nothing ("No conversation found", the bug
+    /// cmux hit). `--resume` also takes the transcript's path, which works
+    /// from anywhere and writes nothing into `~/.claude`, so that is what's
+    /// typed when it's known and plain. Pi searches every project for an id
+    /// and Codex's `-C .` says the fork works here, not in the source folder.
+    static func forkWords(agent: String, id: String, transcript: String? = nil) -> [String]? {
+        guard AgentCommandLine.isSafeID(id) else { return nil }
+        switch agent {
+        case "claude":
+            if let transcript, AgentCommandLine.isPlain(transcript) {
+                return ["--resume", transcript, "--fork-session"]
+            }
+            return ["--resume", id, "--fork-session"]
+        case "pi": return ["--fork", id]
+        case "codex": return ["fork", "-C", ".", id]
+        default: return nil
+        }
+    }
+
     // MARK: - A lost keeper
 
     /// An agent whose marker went at a prompt, kept a moment in case the

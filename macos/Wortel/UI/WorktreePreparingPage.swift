@@ -26,8 +26,22 @@ struct WorktreePreparingPage: View {
         }
     }
 
+    /// The source session's name when this is a fork.
+    private var forkedName: String? {
+        if case .fork(let source) = preparation.request { return source.name }
+        return nil
+    }
+
+    private var title: String {
+        forkedName.map { "Forking \u{201c}\($0)\u{201d}" } ?? "Preparing worktree"
+    }
+
     private var stageCaption: String {
         switch preparation.stage {
+        case .reading:
+            return "Reading its uncommitted changes. \u{201c}\(forkedName ?? "")\u{201d} itself isn't touched."
+        case .applying:
+            return "Putting the changes into the new worktree."
         case .fetching:
             return "Fetching the latest from the remote first. Your other sessions work as usual meanwhile, and this one opens when it's ready."
         case .checkingOut:
@@ -41,11 +55,13 @@ struct WorktreePreparingPage: View {
         VStack(spacing: 10) {
             ProgressView()
                 .controlSize(.small)
-            Text("Preparing worktree")
+            Text(title)
                 .font(.system(size: 13, weight: .semibold))
-            Text(verbatim: preparation.branch)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.secondary)
+            if !preparation.branch.isEmpty {
+                Text(verbatim: preparation.branch)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
             Text(stageCaption)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -91,7 +107,8 @@ struct WorktreePreparingPage: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 22))
                 .foregroundStyle(.orange)
-            Text("Couldn't open a worktree for \u{201c}\(preparation.branch)\u{201d}")
+            Text(forkedName.map { "Couldn't fork \u{201c}\($0)\u{201d}" }
+                 ?? "Couldn't open a worktree for \u{201c}\(preparation.branch)\u{201d}")
                 .font(.system(size: 13, weight: .semibold))
                 .multilineTextAlignment(.center)
             // git's words, as it wrote them: they name the path or the ref

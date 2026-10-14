@@ -130,6 +130,24 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertEqual(try parse(["mark", "teal"]), .mark(session: session, colour: "teal"))
     }
 
+    /// `--pr` is its own command on the wire, so an older app refuses it
+    /// rather than opening a plain session, and it can't be mixed with a branch.
+    func testNewFromPullRequest() throws {
+        XCTAssertEqual(try parse(["new", "--pr", "#12"]),
+                       .newFromPullRequest(cwd: "/Users/x/project", name: nil, pr: "#12"))
+        XCTAssertThrowsError(try parse(["new", "--pr", "12", "--branch", "x"]))
+        XCTAssertThrowsError(try parse(["new", "--pr", "12", "--from", "main"]))
+    }
+
+    /// Fork means the caller's own session, like rename and mark: an agent
+    /// forking itself is the case it's for.
+    func testForkActsOnThisSession() throws {
+        XCTAssertEqual(try parse(["fork"]), .fork(session: session, name: nil, branch: nil))
+        XCTAssertEqual(try parse(["fork", "--name", "try two", "--branch", "fix/2"]),
+                       .fork(session: session, name: "try two", branch: "fix/2"))
+        XCTAssertThrowsError(try parse(["fork", "--from", "main"]))
+    }
+
     /// What the app accepts, and the other spelling of grey with it.
     func testColourNames() {
         XCTAssertEqual(SessionColour.named("yellow"), .yellow)

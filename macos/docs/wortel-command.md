@@ -40,7 +40,7 @@ waits for you rather than yanking you out of what you were doing.
 
 Directories are refused rather than guessed at; use `wortel new --cwd` for those.
 
-### `wortel new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>]`
+### `wortel new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>]`
 
 Starts a session. With no arguments it opens one in your current directory.
 
@@ -75,6 +75,17 @@ wortel new --branch fix/1482-followup --from HEAD
 
 `--from` takes anything git will resolve — a branch, a tag, a commit — and is
 ignored for a branch that already exists, which is checked out as it is.
+
+`--pr` checks out a pull request instead, by number or by its URL (GitHub's
+`/pull/123` or GitLab's `/-/merge_requests/123`). Plain git, no `gh`: one
+pushed from a branch of this repository is checked out as that branch, so you
+can push to it; one from a fork lands on `worktree/pr-123`. Opening it again
+reuses the worktree. The branch sheet takes the same thing: type `#123` or
+paste the URL where the branch name goes.
+
+```sh
+wortel new --pr 1482 --name "review 1482"
+```
 
 The repository comes from *where you ran the command*, not from whatever the
 sidebar is pointing at. The new session's id goes to stdout:
@@ -123,6 +134,24 @@ wortel mark none
 A colour is a note to yourself, and only you take it off: opening the session
 leaves it. Use it for a session you're nearly done with but want to keep, like
 a review waiting on CI.
+
+### `wortel fork [--name <name>] [--branch <branch>]`
+
+Forks the session you're in: a new session in a worktree of its own, starting
+at the same commit with the same uncommitted changes (staged stays staged,
+untracked files come along), and the agent running there continuing a copy of
+its conversation. The session you forked is not touched. Exactly what Fork
+Session in the Session menu does (⌥⇧⌘N).
+
+```sh
+wortel fork --name "try it with a queue"
+```
+
+It's how an agent tries a second approach without losing the first: fork, and
+the original carries on where it was. The new session's id goes to stdout once
+its worktree is ready. Claude Code, Codex and Pi have their conversation
+forked; any other agent's session forks its files and opens a shell. Outside a
+repository there is nothing to isolate, so the fork opens in the same folder.
 
 ## Which session a command means
 

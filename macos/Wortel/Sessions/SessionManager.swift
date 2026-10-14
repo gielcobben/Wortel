@@ -590,6 +590,18 @@ final class SessionManager {
         // still needs the watcher, or nothing would ever record a running agent and
         // the *next* launch would have nothing to resume.
         startAgentActivityWatch()
+        // No fork survives a relaunch (a preparing row isn't saved), so any
+        // staging folder left is from one that was cut short. Moved aside at
+        // once and deleted off the main thread: a fork can't be pressed
+        // before this, and must not find a half-deleted folder.
+        let staging = WorktreeFork.stagingRoot
+        if FileManager.default.fileExists(atPath: staging.path) {
+            let aside = staging.deletingLastPathComponent()
+                .appendingPathComponent("staging-\(UUID().uuidString)", isDirectory: true)
+            if (try? FileManager.default.moveItem(at: staging, to: aside)) != nil {
+                DispatchQueue.global(qos: .utility).async { try? FileManager.default.removeItem(at: aside) }
+            }
+        }
         let persisted = store.load()
         hasRestored = true
         if store.loadedCleanly { Self.retireDeadDefaults(persisted: persisted) }
@@ -1602,6 +1614,45 @@ final class SessionManager {
                                     from: from, inFolder: folder, after: fetch, completion: completion)
     }
 
+    /// A session on pull request `pr`, in a worktree of its own on
+    /// `worktree/pr-<n>`: the sheet given `#123` or a URL, or `wortel new --pr`.
+    @discardableResult
+    func newSession(onPullRequest pr: PullRequestRef, from: String?, inFolder folder: String? = nil,
+                    after fetch: Task<Void, Never>? = nil, completion: WorktreeCompletion? = nil) -> Session? {
+        guard let from else { return nil }
+        return beginWorktreeSession(.pullRequest(pr), branch: pr.branch,
+                                    leaf: GitWorktree.sessionLeaf(forBranch: pr.branch),
+                                    from: from, inFolder: folder, after: fetch, completion: completion)
+    }
+
+    /// Fork Session: `source` as it is right now, in a worktree of its own. The
+    /// new worktree starts at the source's commit with its staged, unstaged
+    /// and untracked changes (`WorktreeFork`), and the agent running there, if
+    /// it can, continues a copy of its conversation (`forkWords`). Outside a
+    /// repository there's nothing to isolate: the same folder, agent forked.
+    ///
+    /// Named "<name> (fork)" by the user's authority, not the agent's: the
+    /// fork's agent pushes the same conversation title the source's does, and
+    /// letting it rename the row would give two identical ones.
+    @discardableResult
+    func fork(_ source: Session, name: String? = nil, branch: String? = nil,
+              completion: WorktreeCompletion? = nil) -> Session? {
+        guard source.preparation == nil, let from = source.cwd ?? source.originCwd else { return nil }
+        noteConversation(source)
+        let agent = source.runningAgent.flatMap { AgentConversation.exact.contains($0) ? $0 : nil }
+        let request = ForkSource(
+            name: source.leafName, branch: branch.map(GitWorktree.branchName(from:)),
+            agent: agent, argv: agent == nil ? nil : source.runningArgv,
+            model: agent == nil ? nil : source.runningModel,
+            conversationID: agent == nil ? nil : source.liveConversationID,
+            agentCwd: source.runningCwd ?? source.cwd)
+        let leaf = name ?? uniqueLeaf("\(source.leafName) (fork)", in: source.folderPath)
+        let session = beginWorktreeSession(.fork(request), branch: nil, leaf: leaf, from: from,
+                                           inFolder: source.folderPath, after: nil, completion: completion)
+        session.nameSource = .user
+        return session
+    }
+
     /// What a caller waiting on a worktree session hears once it's ready: the
     /// session, or why there isn't one, and the warnings from the way there.
     /// The CLI is that caller; the sheet isn't, it has the page.
@@ -1611,14 +1662,14 @@ final class SessionManager {
     /// The row, on screen at once, for a worktree git hasn't made yet: it says
     /// it's preparing on its own page, and becomes a terminal when git is done.
     private func beginWorktreeSession(
-        _ request: WorktreePreparation.Request, branch: String, leaf: String, from: String,
+        _ request: WorktreePreparation.Request, branch: String?, leaf: String, from: String,
         inFolder folder: String?, after fetch: Task<Void, Never>?, completion: WorktreeCompletion?
     ) -> Session {
         let session = makeSession(cwd: nil, inFolder: folder ?? selected?.folderPath,
                                   via: .worktree, reported: false)
         session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
         session.worktreeBranch = branch
-        session.preparation = WorktreePreparation(request: request, from: from, branch: branch)
+        session.preparation = WorktreePreparation(request: request, from: from, branch: branch ?? "")
         if let completion { worktreeCompletions[session.id] = completion }
         prepareWorktree(for: session, after: fetch)
         return session
@@ -1653,7 +1704,8 @@ final class SessionManager {
             }
             session.preparation?.stage = .checkingOut
             guard let self else { return }
-            let result = await self.resolveWorktree(preparation.request, from: preparation.from)
+            let result = await self.resolveWorktree(preparation.request, from: preparation.from,
+                                                    for: session)
             guard self.sessions.contains(where: { $0 === session }) else { return }
             let resolved: ResolvedWorktree
             switch result {
@@ -1664,7 +1716,26 @@ final class SessionManager {
             case .success(let worktree):
                 resolved = worktree
             }
-            var warnings: [String] = []
+            if let branch = resolved.branch { session.preparation?.branch = branch }
+            var warnings = resolved.notes
+            if resolved.created, case .fork(let source) = preparation.request, let snapshot = source.snapshot {
+                session.preparation?.stage = .applying
+                switch await WorktreeFork.apply(snapshot, to: resolved.path) {
+                case .success(let notes):
+                    warnings += notes
+                case .failure(let refusal):
+                    guard self.sessions.contains(where: { $0 === session }) else { return }
+                    // The worktree is there either way. A caller waiting on
+                    // this gets it with the note; the page offers it as is.
+                    if self.worktreeCompletions[session.id] != nil {
+                        warnings.append(refusal.message)
+                    } else {
+                        session.preparation?.resolved = resolved
+                        session.preparation?.failure = refusal.message
+                        return
+                    }
+                }
+            }
             if resolved.created {
                 session.preparation?.stage = .copying
                 let report = await WorktreeInclude.copy(from: resolved.sourceRoot, to: resolved.path)
@@ -1685,16 +1756,52 @@ final class SessionManager {
     /// Give a waiting row its worktree: the terminal starts there.
     private func attachWorktree(_ session: Session, _ resolved: ResolvedWorktree, warnings: [String] = []) {
         guard sessions.contains(where: { $0 === session }) else { return }
+        let request = session.preparation?.request
         session.cwd = resolved.path
         session.originCwd = resolved.path
         session.worktreeBranch = resolved.branch
         session.preparation = nil
-        Telemetry.capture(.sessionCreated(via: .worktree))
+        if case .fork(let source)? = request {
+            source.snapshot?.discard()
+            // Typed into the new shell the way a resume is, and owed the same
+            // way: until the agent shows up running here.
+            if let agent = source.agent {
+                let command = Self.forkCommand(source, agent: agent)
+                session.owedResume = OwedResume(
+                    agent: AgentMarker(agent: agent, model: source.model, cwd: resolved.path,
+                                       argv: source.argv, shellPID: nil, startedAt: nil),
+                    conversationID: nil, input: command + "\n")
+            }
+            Telemetry.capture(.sessionCreated(via: .fork))
+        } else {
+            Telemetry.capture(.sessionCreated(via: .worktree))
+        }
         // Its shell starts here when it's the one on screen; otherwise when
         // it's next selected, as a restored session's does.
         if session.id == selectedID { session.ensureSurfaceView(runtime: runtime) }
         scheduleSave()
         finishWorktreeSession(session, .success(session), warnings: warnings)
+    }
+
+    /// The line that starts a fork's agent: how the source's was started, its
+    /// flags, and its own words for "a copy of this conversation" when the
+    /// conversation is known (otherwise a fresh one, same flags). Claude gets
+    /// the transcript's path, which it can resume from any folder.
+    private static func forkCommand(_ source: ForkSource, agent: String) -> String {
+        var words: [String] = []
+        if let id = source.conversationID {
+            let transcript = agent == "claude"
+                ? source.agentCwd.flatMap { cwd in
+                    AgentResumeStore.claudeProjectDirectories(for: cwd)
+                        .map { $0.appendingPathComponent("\(id).jsonl").path }
+                        .first { FileManager.default.fileExists(atPath: $0) }
+                }
+                : nil
+            words = AgentConversation.forkWords(agent: agent, id: id, transcript: transcript) ?? []
+        }
+        // Codex's `--cd` would send the fork back to the folder it came from.
+        let excluded: Set<String> = agent == "codex" ? ["--cd", "-C"] : []
+        return AgentCommandLine.command(agent: agent, argv: source.argv, resume: words, excluding: excluded)
     }
 
     /// Tell a waiting caller how it went. A caller that asked from outside
@@ -1732,12 +1839,135 @@ final class SessionManager {
     /// is the whole point of running the command *somewhere*: a script in one
     /// repo must not open a worktree of whichever repo the sidebar happens to
     /// be pointing at.
-    private func resolveWorktree(_ request: WorktreePreparation.Request, from cwd: String) async
-        -> Result<ResolvedWorktree, Failure> {
+    private func resolveWorktree(_ request: WorktreePreparation.Request, from cwd: String,
+                                 for session: Session) async -> Result<ResolvedWorktree, Failure> {
         switch request {
         case .branch(let branch, let base):
             return await resolveWorktree(onBranch: branch, base: base, from: cwd)
+        case .fork(let source):
+            return await resolveFork(source, from: cwd, for: session)
+        case .pullRequest(let pr):
+            return await resolvePullRequest(pr, from: cwd)
         }
+    }
+
+    /// A pull request's worktree, with plain git: the forge publishes every
+    /// pull request's head under a ref of its own, forks' included.
+    ///
+    /// One pushed from this repository's own remote is checked out *as its
+    /// branch*, tracking, so Push works from the session; one from a fork has
+    /// no branch here to track, and lands on `worktree/pr-<n>`. Fetched without
+    /// force, so commits made on that branch here are never lost to a
+    /// force-push: the copy here is kept, and said so.
+    private func resolvePullRequest(_ pr: PullRequestRef, from cwd: String) async
+        -> Result<ResolvedWorktree, Failure> {
+        guard let root = await GitService.repoRoot(for: cwd) else {
+            return .failure(Failure(message: "\(cwd) isn't inside a git repository."))
+        }
+        let names = await GitService.run(["remote"], in: root).stdout
+            .split(separator: "\n").map(String.init)
+        var urls: [String: String] = [:]
+        for name in names {
+            urls[name] = await GitService.run(["remote", "get-url", name], in: root).stdout
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let remote: String
+        if pr.host != nil {
+            guard let match = names.first(where: { urls[$0].map(pr.matches(remoteURL:)) ?? false }) else {
+                return .failure(Failure(message: """
+                    No remote of this repository points at \(pr.host ?? "")/\(pr.path ?? "").
+                    """))
+            }
+            remote = match
+        } else {
+            // Trunk's remote, which is `upstream` in a fork's checkout: that
+            // is where the project's pull requests are, not your fork.
+            let trunk = await GitService.defaultBase(root: root)
+            let trunkRemote = trunk.flatMap { $0.split(separator: "/").first.map(String.init) }
+            if let trunkRemote, names.contains(trunkRemote) {
+                remote = trunkRemote
+            } else if names.contains("origin") {
+                remote = "origin"
+            } else if let first = names.first {
+                remote = first
+            } else {
+                return .failure(Failure(message: "This repository has no remote to fetch \(pr.label) from."))
+            }
+        }
+        let ref = pr.ref(remoteURL: urls[remote])
+        let branch = pr.branch
+        let existing = await GitService.worktrees(root: root)
+        if let match = existing.first(where: { $0.branch == branch }) {
+            return .success(ResolvedWorktree(path: match.path, branch: branch, sourceRoot: root, created: false))
+        }
+        let listed = await GitService.run(["ls-remote", remote, ref], in: root, timeout: GitService.networkTimeout)
+        guard listed.ok, let sha = listed.stdout.split(separator: "\t").first.map(String.init), !sha.isEmpty else {
+            return .failure(Failure(message: listed.ok
+                ? "\(remote) has no pull request \(pr.label)."
+                : GitMessage.readable(listed.stderr, while: .worktree(branch: branch))))
+        }
+        // Pushed from this repository: check out its own branch, as typing
+        // its name would.
+        let pointing = await GitService.run(
+            ["for-each-ref", "--points-at", sha, "--format=%(refname:short)", "refs/remotes/\(remote)/"],
+            in: root).stdout.split(separator: "\n").map(String.init).filter { !$0.hasSuffix("/HEAD") }
+        if pointing.count == 1, let tracking = pointing.first {
+            let local = String(tracking.dropFirst(remote.count + 1))
+            return await resolveWorktree(onBranch: local, base: nil, from: cwd)
+        }
+        var notes: [String] = []
+        let fetched = await GitService.run(["fetch", "--no-tags", remote, "\(ref):refs/heads/\(branch)"],
+                                           in: root, timeout: GitService.networkTimeout)
+        let haveBranch = await GitService.localBranches(root: root).contains { $0.name == branch }
+        if !fetched.ok {
+            guard haveBranch else {
+                return .failure(Failure(message: GitMessage.readable(fetched.stderr, while: .worktree(branch: branch))))
+            }
+            let rejected = fetched.stderr.contains("non-fast-forward") || fetched.stderr.contains("rejected")
+            notes.append(rejected
+                ? "Pull request \(pr.label) was force-pushed since the copy here was made, so this opens that copy."
+                : "Couldn't fetch pull request \(pr.label), so this opens the copy here from before.")
+        }
+        let path = GitWorktree.path(forBranch: branch, repoRoot: existing.first(where: \.isPrimary)?.path ?? root)
+        if let error = await GitService.addWorktree(root: root, at: path, branch: branch, source: .existingBranch) {
+            return .failure(Failure(message: GitMessage.readable(error, while: .worktree(branch: branch))))
+        }
+        return .success(ResolvedWorktree(path: path, branch: branch, sourceRoot: root, created: true, notes: notes))
+    }
+
+    /// A fork's worktree: the source's uncommitted work read first (once, so
+    /// Try Again forks the same moment), then a new branch in Wortel's
+    /// namespace at the source's commit.
+    private func resolveFork(_ source: ForkSource, from cwd: String, for session: Session) async
+        -> Result<ResolvedWorktree, Failure> {
+        guard let root = await GitService.repoRoot(for: cwd) else {
+            return .success(ResolvedWorktree(path: cwd, branch: nil, sourceRoot: cwd, created: false))
+        }
+        if source.snapshot == nil {
+            session.preparation?.stage = .reading
+            switch await WorktreeFork.snapshot(of: root, named: source.name) {
+            case .failure(let refusal): return .failure(Failure(message: refusal.message))
+            case .success(let snapshot): source.snapshot = snapshot
+            }
+        }
+        session.preparation?.stage = .checkingOut
+        let existing = await GitService.worktrees(root: root)
+        // The repository, not this checkout: see `resolveWorktree(onBranch:)`.
+        let repoRoot = existing.first(where: \.isPrimary)?.path ?? root
+        let current = await GitService.run(["symbolic-ref", "--short", "-q", "HEAD"], in: root)
+        let taken = Set(await GitService.localBranches(root: root).map(\.name))
+        let branch = source.branch ?? WorktreeFork.branchName(
+            forking: current.ok ? current.stdout.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
+            taken: taken)
+        if taken.contains(branch) {
+            return .failure(Failure(message: "A branch named \u{201c}\(branch)\u{201d} already exists."))
+        }
+        let path = GitWorktree.path(forBranch: branch, repoRoot: repoRoot)
+        if let error = await GitService.addWorktree(
+            root: root, at: path, branch: branch, source: .newBranch(from: source.snapshot?.head)) {
+            return .failure(Failure(message: GitMessage.readable(error, while: .worktree(branch: branch))))
+        }
+        return .success(ResolvedWorktree(path: path, branch: branch, sourceRoot: root, created: true))
     }
 
     private func resolveWorktree(onBranch branch: String, base: String?, from cwd: String) async
@@ -2038,6 +2268,9 @@ final class SessionManager {
             """)
         let wasSelected = session.id == selectedID
         let hadAttention = session.needsAttention
+        // A fork closed before it was opened: its snapshot's untracked files
+        // are waiting in a staging folder nobody will come back for.
+        if case .fork(let source)? = session.preparation?.request { source.snapshot?.discard() }
         busyTimers.removeValue(forKey: session.id)?.cancel()
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
         unreadDwellTimers.removeValue(forKey: session.id)?.cancel()

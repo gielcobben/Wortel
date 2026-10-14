@@ -22,6 +22,11 @@ enum WortelCommand: Codable, Equatable {
     /// *new* branch forks from — nil means the repository's own default branch,
     /// which is the answer a script almost always wants and never has to say.
     case newSession(cwd: String?, name: String?, branch: String?, base: String?)
+    /// `new --pr`: a session on a pull request, by number or URL. A case of
+    /// its own rather than a field on `newSession`, because an older app
+    /// decoding a field it doesn't know would ignore it and open a plain
+    /// session; an unknown case is refused, which says what happened.
+    case newFromPullRequest(cwd: String?, name: String?, pr: String)
     /// Rename a session — by default the one the caller is running in.
     case rename(session: String?, name: String)
     /// Raise attention on a session: the dot, the badge, the notification.
@@ -31,6 +36,10 @@ enum WortelCommand: Codable, Equatable {
     /// app's (`SessionColour`), and this file is also compiled into the CLI
     /// and the keeper, which have no business knowing them.
     case mark(session: String?, colour: String)
+    /// Fork a session (by default the caller's) into a worktree of its own:
+    /// its uncommitted changes carried over, its agent's conversation forked.
+    /// `branch` names the new branch instead of letting one be made.
+    case fork(session: String?, name: String?, branch: String?)
     /// Which Wortel is actually listening.
     ///
     /// Asked over the socket rather than read off disk because the two are
@@ -45,10 +54,11 @@ enum WortelCommand: Codable, Equatable {
     var verb: String {
         switch self {
         case .open: return "open"
-        case .newSession: return "new"
+        case .newSession, .newFromPullRequest: return "new"
         case .rename: return "rename"
         case .notify: return "notify"
         case .mark: return "mark"
+        case .fork: return "fork"
         case .version: return "--version"
         }
     }
@@ -176,13 +186,17 @@ enum WortelCommandParser {
         usage: wortel <command> [arguments]
 
           open <path>              open a file in a preview window
-          new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>]
+          new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>]
                                    start a session; --branch gives it a worktree,
-                                   --from picks what a new branch forks from
+                                   --from picks what a new branch forks from,
+                                   --pr checks out a pull request in one
           rename <name>            rename this session
           notify <title> [body]    raise attention on this session
           mark <colour>            colour this session in the sidebar: red, orange,
                                    yellow, green, blue, purple, grey, or none
+          fork [--name <name>] [--branch <branch>]
+                                   this session as it is, in a worktree of its own,
+                                   its agent's conversation forked
 
           --version                this command's version, and the running app's
           --help                   this
@@ -207,7 +221,15 @@ enum WortelCommandParser {
             return .open(path: absolute(path, from: currentDirectory))
 
         case "new":
-            let flags = try Flags(rest, allowed: ["--cwd", "--name", "--branch", "--from"])
+            let flags = try Flags(rest, allowed: ["--cwd", "--name", "--branch", "--from", "--pr"])
+            if let pr = flags["--pr"] {
+                guard flags["--branch"] == nil, flags["--from"] == nil else {
+                    throw ParseError.conflict("--pr", "--branch or --from")
+                }
+                return .newFromPullRequest(
+                    cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
+                    name: flags["--name"], pr: pr)
+            }
             return .newSession(
                 cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
                 name: flags["--name"],
@@ -232,6 +254,10 @@ enum WortelCommandParser {
             }
             return .mark(session: session, colour: colour)
 
+        case "fork":
+            let flags = try Flags(rest, allowed: ["--name", "--branch"])
+            return .fork(session: session, name: flags["--name"], branch: flags["--branch"])
+
         default:
             throw ParseError.unknown(verb)
         }
@@ -248,6 +274,8 @@ enum WortelCommandParser {
         case noCommand
         case unknown(String)
         case missing(String, String)
+        /// Two options that can't be given together.
+        case conflict(String, String)
 
         var description: String {
             switch self {
@@ -262,6 +290,8 @@ enum WortelCommandParser {
                     : "unknown command \"\(token)\""
             case .missing(let what, let verb):
                 return "\(verb) needs \(what)"
+            case .conflict(let option, let others):
+                return "\(option) can't be used with \(others)"
             }
         }
     }

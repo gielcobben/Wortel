@@ -1,6 +1,14 @@
 import AppKit
 
-/// "New Session on Branch": a name, and the ref it forks from.
+/// What the sheet was told: a branch (and what a new one forks from), or a
+/// pull request to check out.
+enum BranchChoice: Equatable {
+    case branch(String, base: String?)
+    case pullRequest(PullRequestRef)
+}
+
+/// "New Session on Branch": a name, and the ref it forks from. Or a pull
+/// request, by `#123` or its URL, typed into the same field.
 ///
 /// Two inputs, a line saying what the button will do, and the two buttons. The
 /// "From" control opens the branch list right under itself; there is no menu in
@@ -18,7 +26,7 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     private var createButton: NSButton!
 
     /// Where the answer goes. Called exactly once, with nil for Cancel.
-    private var finish: (((branch: String, base: String?)?) -> Void)?
+    private var finish: ((BranchChoice?) -> Void)?
 
     /// What we put in the field, kept so we can tell "still ours" from "typed
     /// over" when the remote branches land.
@@ -81,6 +89,14 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
         return name.isEmpty ? nil : name
     }
 
+    /// A pull request, when that's what was typed: `#123`, its URL, or a bare
+    /// number no branch is called.
+    var pullRequest: PullRequestRef? {
+        let raw = nameField.stringValue.trimmingCharacters(in: .whitespaces)
+        let isBranchName = catalog.hasLocal(raw) || !catalog.remotes(carrying: raw).isEmpty
+        return PullRequestRef.parse(raw, allowsBareNumber: !isBranchName)
+    }
+
     /// What a new branch forks from. nil for a branch that already exists, which
     /// is checked out as it is rather than forked.
     var base: String? { existsAlready ? nil : baseChooser.branch }
@@ -124,10 +140,10 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     }
 
     override func loadView() {
-        let title = NSTextField(labelWithString: "Fork")
+        let title = NSTextField(labelWithString: "New Session on Branch")
         title.font = .preferredFont(forTextStyle: .headline)
 
-        nameField.placeholderString = "Branch name"
+        nameField.placeholderString = "Branch name, or a pull request"
         suggested = Self.suggestedName(in: catalog)
         nameField.stringValue = suggested
         nameField.controlSize = .large
@@ -240,17 +256,21 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     private func sync() {
         // An existing branch has its own history; there is nothing to fork it
         // from, so the row greys rather than sitting there looking answerable.
-        baseChooser.isEnabled = !existsAlready
+        // A pull request has its own history too, so the same goes for it.
+        baseChooser.isEnabled = !existsAlready && pullRequest == nil
         status.stringValue = statusText()
         // Nothing to create until the field names something. Accepting the click
         // and then quietly doing nothing is the same answer delivered worse.
-        createButton.isEnabled = branch != nil
+        createButton.isEnabled = branch != nil || pullRequest != nil
     }
 
     /// Never empty. The line is reserved either way, because one that appeared
     /// as you typed would move the buttons out from under the pointer, and an
     /// empty reservation is just a hole in the sheet.
     private func statusText() -> String {
+        if let pullRequest {
+            return "Checks out pull request \(pullRequest.label) in a new worktree."
+        }
         guard let branch else { return "Type a name to create a branch, or pick one that exists." }
         if catalog.withWorktree.contains(branch) {
             return "\u{201c}\(branch)\u{201d} already has a worktree. This opens it."
@@ -276,13 +296,14 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     }
 
     @objc private func create() {
+        if let pullRequest { return complete(.pullRequest(pullRequest)) }
         guard let branch else { return }
-        complete((branch, base))
+        complete(.branch(branch, base: base))
     }
 
     @objc private func cancel() { complete(nil) }
 
-    private func complete(_ answer: (branch: String, base: String?)?) {
+    private func complete(_ answer: BranchChoice?) {
         let finish = finish
         self.finish = nil
         // Answered *before* dismissing, and the order is load-bearing:
@@ -298,7 +319,7 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     static func present(
         over window: NSWindow, catalog: BranchCatalog, defaultBase: String?,
         whileOpen: @escaping (BranchSheet) -> Void = { _ in }
-    ) async -> (branch: String, base: String?)? {
+    ) async -> BranchChoice? {
         // The window it belongs to comes forward first. A window-modal sheet on
         // a window that is behind another one is indistinguishable from a
         // lock-up: the blocked window is not the one you are looking at.

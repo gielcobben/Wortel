@@ -847,9 +847,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.newHomeSession()
     }
 
+    @objc func newSessionOnBranch(_ sender: Any?) {
+        focusMainWindow()
+        Wortel.newSessionOnBranch(manager, inFolder: manager.selected?.folderPath)
+    }
+
     @objc func forkSession(_ sender: Any?) {
         focusMainWindow()
-        newSessionOnBranch(manager, inFolder: manager.selected?.folderPath)
+        guard let source = manager.selected else { return }
+        manager.fork(source)
     }
 
     /// Bring the window forward *before* the panel, not after: the open panel is
@@ -1346,8 +1352,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Nothing to act on without a session, and nowhere to step to with one.
         if menuItem.action == #selector(renameSession(_:))
             || menuItem.action == #selector(closeWholeSession(_:))
-            || menuItem.action == #selector(forkSession(_:)) {
+            || menuItem.action == #selector(newSessionOnBranch(_:)) {
             return manager.selected != nil
+        }
+        // A session still waiting for its worktree has nothing to fork yet.
+        if menuItem.action == #selector(forkSession(_:)) {
+            return manager.selected.map { $0.preparation == nil } ?? false
         }
         if menuItem.action == #selector(selectPreviousSession(_:))
             || menuItem.action == #selector(selectNextSession(_:)) {

@@ -224,6 +224,9 @@ enum SessionOrigin: String {
     /// current directory is the right default, so it has to be countable
     /// separately from the ⌘N it sits next to.
     case home
+    /// Fork Session: a session as it is, in a worktree of its own, its agent's
+    /// conversation forked.
+    case fork
 }
 
 /// What opened the inspector. The toolbar and the shortcut are different
@@ -312,5 +315,6 @@ enum CommandVerb: String {
     case rename
     case notify
     case mark
+    case fork
     case version
 }

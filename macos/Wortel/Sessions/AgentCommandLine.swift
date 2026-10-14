@@ -104,18 +104,42 @@ enum AgentCommandLine {
 
     /// The resume to type: how the agent was started, then `resume` (the
     /// agent's own words for "this conversation"), then the carried flags.
-    /// Codex takes its options after its `resume` subcommand, so they go
-    /// between it and the conversation.
-    static func command(agent: String, argv: String?, resume: [String]) -> String {
+    /// Codex takes its options after its `resume` and `fork` subcommands, so
+    /// they go between it and the conversation. `excluding` drops flags that
+    /// would be wrong where it's typed: a fork must not carry Codex's `--cd`
+    /// back to the folder it forked from.
+    static func command(agent: String, argv: String?, resume: [String],
+                        excluding: Set<String> = []) -> String {
         let launcher = launcher(agent: agent, argv: argv) ?? [agent]
-        let flags = carriedFlags(agent: agent, argv: argv)
+        let flags = without(excluding, carriedFlags(agent: agent, argv: argv))
         let tail: [String]
-        if resume.first == "resume" {
-            tail = ["resume"] + flags + resume.dropFirst()
+        if let first = resume.first, first == "resume" || first == "fork" {
+            tail = [first] + flags + resume.dropFirst()
         } else {
             tail = resume + flags
         }
         return (launcher + tail).joined(separator: " ")
+    }
+
+    /// `flags` without the ones named in `excluded`, and without their values:
+    /// `-C dir` and `--cd=dir` both go.
+    private static func without(_ excluded: Set<String>, _ flags: [String]) -> [String] {
+        guard !excluded.isEmpty else { return flags }
+        var kept: [String] = []
+        var index = 0
+        while index < flags.count {
+            let flag = flags[index]
+            index += 1
+            if let equals = flag.firstIndex(of: "="), excluded.contains(String(flag[..<equals])) { continue }
+            if excluded.contains(flag) {
+                // A valued flag is always carried with its value (see
+                // `carriedFlags`), so the next word is that value.
+                if index < flags.count, !flags[index].hasPrefix("-") { index += 1 }
+                continue
+            }
+            kept.append(flag)
+        }
+        return kept
     }
 
     /// Whether `id` can be typed into a shell as it is: every exact resume

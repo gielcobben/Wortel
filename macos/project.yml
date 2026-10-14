@@ -364,6 +364,16 @@ targets:
       # three ways it could hurt: a nested repository, a file overwritten, a
       # dependency folder cloned whole.
       - path: Wortel/Git/WorktreeInclude.swift
+      # Fork Session's git half: everything uncommitted, read without touching
+      # the source and put back byte for byte. Pinned against git on both
+      # sides, because a fork that quietly drops a staged hunk or turns a
+      # binary into text looks like it worked.
+      - path: Wortel/Git/WorktreeFork.swift
+      # What a pull request typed into the branch field is: `#123`, a bare
+      # number only when no branch has it, a GitHub or GitLab URL, and which
+      # remote a URL means. A misread opens the wrong code, or a branch
+      # nobody asked for.
+      - path: Wortel/Git/PullRequestRef.swift
       # The diff table. Its *views* aren't testable without a window, but its
       # metrics are, and they carry an invariant nothing else enforces: the
       # coordinator's row height must equal the static `rowHeight(forFontSize:)`

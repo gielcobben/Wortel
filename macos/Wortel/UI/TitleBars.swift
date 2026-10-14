@@ -710,8 +710,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     /// The session's "…": its own actions, as ChatGPT's menu is the
     /// conversation's. Native, small, glyphs that show, shortcuts on the right.
     /// The titles are short on purpose: the longest title decides the menu's
-    /// width, and inside a session's own menu "Fork…" needs no more words to
-    /// say it forks this session onto a branch. Below its own three items it
+    /// width, and inside a session's own menu "Fork" and "New Branch…" need no
+    /// more words to say they're about this session. Below its own three items it
     /// is the sidebar row's menu (SessionActions), so the two always agree.
     @objc private func presentSessionMenu(_ sender: NSView) {
         guard let session = manager.selected else { return }

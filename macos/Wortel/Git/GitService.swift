@@ -991,8 +991,8 @@ enum GitService {
 
     /// `status` for work nobody is looking at yet: the other worktrees' change
     /// counts behind the repo header's hint. Queued app-wide, one at a time,
-    /// so however many of these pile up (a read per session flicked past, the
-    /// header's timer) they cost one core at most, and the scan for the repo
+    /// so however many of these pile up (a worktree list opened on a repository
+    /// with many) they cost one core at most, and the scan for the repo
     /// on screen, which isn't queued, never waits behind them.
     /// `light`: the counts only, as the other-worktree scans want them:
     /// `normal` untracked files (a new folder is one change, not a walk of

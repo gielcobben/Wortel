@@ -8,8 +8,8 @@
 #   scripts/try-git.sh --clean  remove everything it made
 #
 # What's in it:
-#   shop/                     main: 2 commits not pushed, 1 on the remote you
-#                             don't have (↑2 ↓1: Pull and Push both refuse,
+#   shop/                     main: 4 commits not pushed, 1 on the remote you
+#                             don't have (↑4 ↓1: Pull and Push both refuse,
 #                             in a sentence), clean, so the Changes pane points
 #                             at the work in another folder
 #   shop-toolbar-clean/       giel/toolbar-clean, clean and pushed: Bring Here
@@ -17,7 +17,14 @@
 #   shop-agent-running/       giel/agent-running, something running in it:
 #                             Bring Here says why not
 #   ~/.wortel/worktrees/...   worktree/calm-test, made "by Wortel": Bring Here
-#                             moves it to the Trash
+#                             moves it to the Trash; worktree/squashed and
+#                             worktree/picked, whose work main has without
+#                             their commits: Clean Up says Merged
+#   shop-fork-me/             giel/fork-me, every kind of uncommitted change,
+#                             a .env, a .worktreeinclude, a nested repo: what
+#                             Fork Session and the file copy have to carry
+#   origin pull requests      refs/pull/7/head (a commit on no branch) and
+#                             refs/pull/8/head (giel/shape-lab's tip)
 #   branches                  giel/shape-lab (2d), giel/old-idea (3w),
 #                             giel/conflict (switching with README.md edited
 #                             says which file is in the way), origin/giel/remote-only
@@ -34,7 +41,11 @@ clean() {
     if ps -o command= -p "$pid" 2>/dev/null | grep -q "sleep 86400"; then kill "$pid"; fi
   fi
   if [ -d "$BASE/shop" ]; then
-    git -C "$BASE/shop" worktree remove --force "$WORTEL_TREE/calm-test" 2>/dev/null || true
+    # Every worktree the app made for this repo (forks, pull requests, new
+    # branches): only those registered here, never a folder by its name.
+    git -C "$BASE/shop" worktree list --porcelain | sed -n 's/^worktree //p' | while read -r tree; do
+      case "$tree" in "$HOME/.wortel/worktrees/"*) git -C "$BASE/shop" worktree remove --force "$tree" 2>/dev/null || true ;; esac
+    done
   fi
   rm -rf "$BASE" "$WORTEL_TREE"
   echo "Removed $BASE and the worktree Wortel made for it. Close the \"Try git\" session with ⇧⌘W."
@@ -83,9 +94,40 @@ mkdir -p "$WORTEL_TREE"
 git worktree add -q -b worktree/calm-test "$WORTEL_TREE/calm-test"
 (cd "$WORTEL_TREE/calm-test" && echo calm > calm.txt && git add . && git commit -q -m "Calm test")
 
+# Work main has without the commits: squash-merged, and cherry-picked as a
+# rebase merge would. Their own commits are on no other branch.
+git worktree add -q -b worktree/squashed "$WORTEL_TREE/squashed"
+(cd "$WORTEL_TREE/squashed" && echo one > squash.txt && git add . && git commit -q -m "Squash one" \
+  && echo two >> squash.txt && git commit -q -am "Squash two")
+git merge -q --squash worktree/squashed >/dev/null && git commit -q -m "Squashed"
+git worktree add -q -b worktree/picked "$WORTEL_TREE/picked"
+(cd "$WORTEL_TREE/picked" && echo picked > picked.txt && git add . && git commit -q -m "Picked")
+git cherry-pick worktree/picked >/dev/null
+
+# Pull requests, as GitHub publishes them: one from a fork (on no branch
+# here) and one pushed from a branch of this repository.
+git checkout -q -b pr-seven main && echo seven > seven.txt && git add . && git commit -q -m "Pull request seven" \
+  && git push -q origin pr-seven:refs/pull/7/head && git checkout -q main && git branch -q -D pr-seven
+git push -q origin giel/shape-lab:refs/pull/8/head
+
+# Something to fork: every kind of uncommitted change, ignored files to copy
+# and one not to, and a nested repository the fork must skip.
+git worktree add -q -b giel/fork-me ../shop-fork-me
+(cd ../shop-fork-me \
+  && printf '.env*\nconfig/local.json\nnode_modules/\n' > .gitignore \
+  && printf '.env*\nconfig/local.json\n' > .worktreeinclude \
+  && echo "run" > run.sh && git add . && git commit -q -m "Fork material" \
+  && echo "SECRET=1" > .env && mkdir -p config node_modules/pkg \
+  && echo '{"local":true}' > config/local.json && echo "NOPE=1" > node_modules/pkg/.env \
+  && echo "staged" > staged.txt && git add staged.txt \
+  && echo "# Shop, staged" > README.md && git add README.md && echo "# Shop, staged, then more" > README.md \
+  && chmod +x run.sh && head -c 4096 /dev/urandom > blob.bin \
+  && mkdir -p vendor/lib && git -C vendor/lib init -q)
+
 if command -v wortel >/dev/null 2>&1; then
   wortel new --cwd "$BASE/shop" --name "Try git" >/dev/null
-  echo "Opened the \"Try git\" session in $BASE/shop."
+  wortel new --cwd "$BASE/shop-fork-me" --name "Try fork" >/dev/null
+  echo "Opened the \"Try git\" and \"Try fork\" sessions in $BASE."
 else
   echo "Built $BASE/shop. Run this inside Wortel to get a session opened in it."
 fi
@@ -94,7 +136,7 @@ cat <<'EOF'
 
 Look over, with the git panel open (⌃⌘1):
   [ ] Changes says "No changes here" with a link to shop-toolbar-proposal
-  [ ] Branch list: This folder (main ↑2 ↓1), In other folders, Switch to, Remote
+  [ ] Branch list: This folder (main ↑4 ↓1), In other folders, Switch to, Remote
   [ ] giel/toolbar-proposal: Show, and "19 changes there"
   [ ] giel/agent-running: Bring Here says something is running there
   [ ] giel/toolbar-clean and worktree/calm-test: Bring Here works
@@ -104,6 +146,21 @@ Look over, with the git panel open (⌃⌘1):
   [ ] New Session on Branch, name "Jump to": becomes Jump-to
   [ ] Run two servers in the session, open the running list: Stop All
       python3 -m http.server 8801 & python3 -m http.server 8802 &
+  [ ] New Session on Branch, type #7: opens worktree/pr-7 with seven.txt;
+      type #8: checks out giel/shape-lab itself, tracking origin
+  [ ] Session › Worktree › Clean Up Worktrees: squashed and picked say
+      "Merged · branch too"; calm-test says "Branch kept"
+  [ ] Open worktree/squashed: Changes says "Merged into main"
+  [ ] echo $WORTEL_PORT in two sessions: different; after a relaunch, the same
+
+In "Try fork":
+  [ ] Fork Session (⌥⇧⌘N): "Try fork (fork)" opens with README.md staged plus
+      an unstaged edit, staged.txt staged, run.sh executable, blob.bin
+      untracked, and a note that vendor/lib was skipped
+  [ ] The fork has .env and config/local.json, and no node_modules
+  [ ] git status in "Try fork" itself: unchanged
+  [ ] With claude running in "Try fork", Fork Session starts
+      claude --resume <…>.jsonl --fork-session in the fork, same conversation
 
 Done: scripts/try-git.sh --clean
 EOF

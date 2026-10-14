@@ -704,6 +704,42 @@ enum GitService {
         return name.isEmpty ? nil : name
     }
 
+    /// Whether `branch`'s changes are already in `trunk`, however they got
+    /// there: merging it would change nothing. True for a merge commit, and,
+    /// which is the point, for a squash merge, a rebase merge or cherry-picks,
+    /// whose commits are on no other branch even though their work is.
+    ///
+    /// `merge-tree --write-tree` does the merge without a work tree, and the
+    /// question is whether its result is trunk's own tree. Its cost follows the
+    /// branch's changes, not trunk's history, which is what makes it fit to
+    /// ask on a monorepo. It writes tree objects into the object store and
+    /// nothing else (no ref, no index), which `gc` collects. A conflict, or
+    /// trunk having since changed the same lines, says no: the branch is kept,
+    /// which is the safe way to be wrong. So does a branch that changed
+    /// nothing since it forked (empty commits, or work undone again): merging
+    /// it would change nothing too, but there was never anything to merge, and
+    /// its commits are all it has. nil when git can't answer (older than 2.38,
+    /// a timeout).
+    static func isMerged(branch: String, into trunk: String, root: String) async -> Bool? {
+        let ref = "refs/heads/\(branch)"
+        let base = await run(["merge-base", ref, trunk], in: root)
+        guard base.ok else { return nil }
+        let forkPoint = base.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let branchTree = await tree(of: ref, root: root),
+              let baseTree = await tree(of: forkPoint, root: root) else { return nil }
+        if branchTree == baseTree { return false }
+        let merged = await run(["merge-tree", "--write-tree", "--no-messages", ref, trunk], in: root, timeout: 10)
+        guard merged.status == 0 || merged.status == 1 else { return nil }
+        guard merged.ok, let result = merged.stdout.split(separator: "\n").first.map(String.init) else { return false }
+        return result == (await tree(of: trunk, root: root))
+    }
+
+    private static func tree(of revision: String, root: String) async -> String? {
+        let result = await run(["rev-parse", "\(revision)^{tree}"], in: root)
+        guard result.ok else { return nil }
+        return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Whether the repo has any remote configured — decides whether "unpushed"
     /// means anything (see unpushedSHAs).
     static func hasRemotes(root: String) async -> Bool {

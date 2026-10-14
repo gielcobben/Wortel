@@ -280,6 +280,24 @@ into. Anything that didn't copy is held on the preparing page
 (`WorktreePreparation.warnings`) until "Open Session", because the terminal
 replacing the page would hide it.
 
+**Fork Session** (⌥⇧⌘N, `wortel fork`, `WorktreeFork`) is the session as it
+is, in a worktree of its own: a new branch at the source's HEAD (not trunk),
+its staged changes staged, its unstaged ones unstaged, its untracked files
+there, and the agent's conversation forked (`AgentConversation.forkWords`). The
+source is only read: two binary diffs under `GIT_OPTIONAL_LOCKS=0` and a clone
+of the untracked files into `~/.wortel/staging`, never `git stash`, which would
+rewrite the index under an agent running git there and drops untracked files.
+The snapshot is taken once, at the press, and kept on `ForkSource` so Try Again
+forks the same moment. Patches go through `runData`, because `run` decodes
+UTF-8 and would corrupt a Latin-1 file. If `git apply` refuses, the changed
+files' bytes are copied instead, with a note. Claude is resumed by its
+transcript's *path* (`--resume <path> --fork-session`): by id it looks only in
+the new worktree's project folder and finds nothing. Codex's carried `--cd` is
+dropped so the fork doesn't work in the source folder. The fork is named
+"<name> (fork)" with the user's authority, or the forked agent's identical
+title would make two identical rows. The old "Fork…" (a new branch from trunk)
+is "New Session on Branch…".
+
 **Removing a worktree never loses work without you choosing it.** Closing a
 session in a worktree Wortel made, "Remove Worktree…" and "Clean Up
 Worktrees…" all go through `WorktreeCleanupSheet`, which inspects first
@@ -293,7 +311,15 @@ the folder to the **Trash** (a clean status says nothing about an ignored
 folder, not `prune`, which would also forget a worktree on an unmounted
 volume). Only worktrees under `~/.wortel/worktrees`, and only branches in
 `worktree/`, are ever Wortel's to remove; a commit count git can't give is
-treated as "may have commits".
+treated as "may have commits". A branch whose commits are on no other branch
+but whose **work is already in the default branch** (squash or rebase merged,
+the way most pull requests land) is safe too (`WorktreeReport.mergedInto`,
+`GitService.isMerged`): `merge-tree --write-tree` of the branch into trunk
+gives trunk's own tree. Its cost follows the branch, not trunk's history. A
+branch that changed nothing since it forked is never "merged" (its commits are
+all it has), and trunk editing the same lines since says no, which keeps the
+branch: the safe way to be wrong. The git panel says "Merged into origin/main"
+for the clean worktree on screen, cached per (HEAD, trunk).
 
 **The changes list holds a selection, not a selected row.** ⌘ toggles a row, ⇧
 takes the run from the anchor, ⇧↑/⇧↓ do the same from the keyboard, ⌘A takes the

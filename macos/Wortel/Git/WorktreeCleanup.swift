@@ -44,6 +44,11 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
     /// What is using it right now, as a reader would say it: "the session
     /// “fix login”", "node".
     var usedBy: [String] = []
+    /// The default branch its changes are already in (`origin/main`), when
+    /// its commits are on no other branch but merging it would change nothing:
+    /// a squash merge, a rebase merge, a cherry-pick. nil when not, or when
+    /// git couldn't say. Only asked when `uniqueCommits` isn't 0.
+    var mergedInto: String?
 
     var id: String { path }
 
@@ -60,7 +65,7 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
         // A detached HEAD's commits have no branch to survive on: removing the
         // worktree drops the only thing pointing at them.
         if detachedCommitsAtRisk { return .blocked }
-        return uniqueCommits == 0 ? .safe : .keepsCommits
+        return uniqueCommits == 0 || mergedInto != nil ? .safe : .keepsCommits
     }
 
     private var detachedCommitsAtRisk: Bool { branch == nil && uniqueCommits != 0 }
@@ -74,9 +79,10 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
     }
 
     /// Whether removing it may take its branch too: Wortel's own, with every
-    /// commit also on another branch or a remote. A branch with commits found
-    /// nowhere else is never deleted here; that's the terminal's job.
-    var branchIsDeletable: Bool { ownsBranch && uniqueCommits == 0 }
+    /// commit also on another branch or a remote, or its changes already in
+    /// the default branch. A branch with work found nowhere else is never
+    /// deleted here; that's the terminal's job.
+    var branchIsDeletable: Bool { ownsBranch && (uniqueCommits == 0 || mergedInto != nil) }
 
     /// The folder's name, which is what the worktree is called on disk.
     var folderName: String { (path as NSString).lastPathComponent }
@@ -119,6 +125,9 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
         if isMissing { return "Its folder is already gone. Only git's record of it is left." }
         switch verdict {
         case .safe:
+            if let trunk = mergedInto, uniqueCommits != 0 {
+                return "Its changes are already in \(trunk), so the branch can go too."
+            }
             return "No uncommitted changes, and its commits are on other branches."
         case .keepsCommits:
             guard let n = uniqueCommits else {
@@ -237,6 +246,7 @@ enum WorktreeCleanup {
             report.branch = entry.branch
             report.isLocked = entry.isLocked
             report.uniqueCommits = await uniqueCommits(branch: entry.branch, head: entry.head, primary: repo)
+            report.mergedInto = await mergedTrunk(of: report, primary: repo)
             return report
         }
         guard let primary = await primaryCheckout(of: path),
@@ -262,7 +272,20 @@ enum WorktreeCleanup {
         report.changedFiles = status.changes.map(\.path)
 
         report.uniqueCommits = await uniqueCommits(branch: entry.branch, head: entry.head, primary: primary)
+        report.mergedInto = await mergedTrunk(of: report, primary: primary)
         return report
+    }
+
+    /// The default branch `report`'s branch is merged into, by content: only
+    /// asked for a branch whose commits are on no other branch, because one
+    /// whose commits are elsewhere is already safe, and one that never
+    /// committed was never "merged".
+    private static func mergedTrunk(of report: WorktreeReport, primary: String) async -> String? {
+        guard report.uniqueCommits != 0, let branch = report.branch,
+              let trunk = await GitService.defaultBase(root: primary),
+              await GitService.isMerged(branch: branch, into: trunk, root: primary) == true
+        else { return nil }
+        return trunk
     }
 
     /// Remove a worktree, re-checking first: the sheet may have been open a

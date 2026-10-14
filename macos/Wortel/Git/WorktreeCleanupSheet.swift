@@ -525,7 +525,7 @@ struct WorktreeCleanupView: View {
                 }
                 .toggleStyle(.switch)
                 .controlSize(.mini)
-                .help("Only branches Wortel created, and only when every commit on them is also on another branch or a remote. Any other branch is kept.")
+                .help("Only branches Wortel created, and only when every commit on them is also on another branch or a remote, or their changes are already in the default branch. Any other branch is kept.")
             }
             Spacer(minLength: 12)
             Button("Cancel") { model.dismiss() }
@@ -648,6 +648,8 @@ private struct WorktreeRow: View {
         } else if let report {
             if let problem = problem(report) {
                 pill(problem, tint: .orange)
+            } else if report.mergedInto != nil, report.uniqueCommits != 0 {
+                pill(model.deletesBranch(row) ? "Merged \u{00b7} branch too" : "Merged", tint: .green)
             } else {
                 Text(quietStatus(report))
                     .font(.callout)

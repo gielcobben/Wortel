@@ -46,6 +46,13 @@ final class GitRepoModel {
     let root: String
 
     private(set) var status = GitStatus()
+    /// The default branch this worktree's work is already in, by content (a
+    /// squash or rebase merge), for the panel's quiet "Merged into
+    /// origin/main". Only for a clean worktree Wortel made, and asked at most
+    /// once per (HEAD, trunk): the model only refreshes while it's on screen,
+    /// so a repository off screen never asks at all.
+    private(set) var mergedInto: String?
+    @ObservationIgnored private var mergedKey: String?
     private(set) var isRefreshing = false
     /// What's on screen may be out of date: nothing has been read yet, or the
     /// work tree changed while this model wasn't the one shown and the scan
@@ -421,6 +428,8 @@ final class GitRepoModel {
                 if moved, loadedHistory { await loadHistory() }
             }
 
+            await refreshMerged()
+
             // A push or a fetch moves the ahead count without moving HEAD, and the
             // dots have to follow or they'd contradict the header sitting right
             // above them. Keyed so an ordinary status — the common case, several a
@@ -435,6 +444,23 @@ final class GitRepoModel {
                 try? await Task.sleep(for: .seconds(min(lastStatusDuration, 2)))
             }
         } while refreshQueued
+    }
+
+    private func refreshMerged() async {
+        guard status.isClean, let branch = status.branch, let head = status.head,
+              WorktreeCleanup.isUnder(GitWorktree.root, root),
+              let trunk = await GitService.defaultBase(root: root)
+        else {
+            mergedKey = nil
+            if mergedInto != nil { mergedInto = nil }
+            return
+        }
+        let trunkHead = await GitService.run(["rev-parse", "--verify", "-q", trunk], in: root)
+        let key = head + " " + trunkHead.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard key != mergedKey else { return }
+        mergedKey = key
+        let merged = await GitService.isMerged(branch: branch, into: trunk, root: root) == true ? trunk : nil
+        if merged != mergedInto { mergedInto = merged }
     }
 
     // MARK: - History

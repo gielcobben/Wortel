@@ -215,6 +215,27 @@ private struct RepoView: View {
             .padding(.horizontal, 16)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if repo.status.isClean, let trunk = repo.mergedInto {
+            // The work is in trunk already (squash-merged, most likely), so
+            // this worktree has done its job. Said quietly, and pointed at the
+            // sheet that checks everything again before removing anything.
+            VStack(spacing: 6) {
+                Text("No changes")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                Text(verbatim: "Merged into \(trunk)")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Button("Clean Up Worktrees\u{2026}") {
+                    NSApp.sendAction(#selector(AppDelegate.cleanUpWorktrees(_:)), to: nil, from: nil)
+                }
+                .buttonStyle(.link)
+                .font(.callout)
+                .help("Its changes are already in \(trunk). The worktree and its branch can go.")
+            }
+            .padding(.horizontal, 16)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if repo.status.isClean {
             centered("No changes")
         } else {

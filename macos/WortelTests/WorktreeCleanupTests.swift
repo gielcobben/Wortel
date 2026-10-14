@@ -81,6 +81,87 @@ final class WorktreeCleanupTests: XCTestCase {
         XCTAssertEqual(report.verdict, .safe)
     }
 
+    // MARK: - Merged by content
+
+    /// A branch with real work on it: two commits editing `f.txt`.
+    private func branchWithWork(_ name: String) -> (path: String, dir: URL) {
+        GitFixture.sh("printf 'a\\nb\\nc\\n' > f.txt && git add f.txt && git commit -q -m f", in: repo)
+        let path = addWorktree(name)
+        let dir = URL(fileURLWithPath: path)
+        GitFixture.sh("printf 'a\\nB\\nc\\n' > f.txt && git commit -q -am one", in: dir)
+        GitFixture.sh("printf 'a\\nB\\nc\\nd\\n' > f.txt && git commit -q -am two", in: dir)
+        return (path, dir)
+    }
+
+    /// Squash-merged: its commits are on no other branch, but its work is in
+    /// trunk, so the folder and the branch may both go.
+    func testSquashMergedBranchIsSafeAndDeletable() async {
+        let (path, _) = branchWithWork("squashed")
+        GitFixture.sh("git merge -q --squash worktree/squashed && git commit -q -m squash", in: repo)
+        let report = await WorktreeCleanup.inspect(path: path)
+        XCTAssertNotEqual(report.uniqueCommits, 0)
+        XCTAssertEqual(report.mergedInto, "main")
+        XCTAssertEqual(report.verdict, .safe)
+        XCTAssertTrue(report.branchIsDeletable)
+
+        let error = await WorktreeCleanup.remove(path: path, deleteBranch: true, discard: delete)
+        XCTAssertNil(error)
+        XCTAssertFalse(branches().contains("worktree/squashed"))
+    }
+
+    /// Rebase-merged, or cherry-picked: new commits in trunk, same work.
+    func testCherryPickedBranchIsMerged() async {
+        let (path, _) = branchWithWork("picked")
+        // Trunk moves on first, as it does, so the picks are new commits:
+        // picked straight onto the commit they came from, git would recreate
+        // the very same ones and the branch would simply be merged.
+        GitFixture.sh("echo other > other.txt && git add other.txt && git commit -q -m other", in: repo)
+        GitFixture.sh("git cherry-pick main~1..worktree/picked >/dev/null", in: repo)
+        let report = await WorktreeCleanup.inspect(path: path)
+        XCTAssertEqual(report.mergedInto, "main")
+        XCTAssertEqual(report.verdict, .safe)
+    }
+
+    /// Trunk changed the same lines afterwards: no longer provably in, so kept.
+    func testMergedThenEditedIsKept() async {
+        let (path, _) = branchWithWork("edited")
+        GitFixture.sh("git merge -q --squash worktree/edited && git commit -q -m squash", in: repo)
+        GitFixture.sh("printf 'a\\nX\\nc\\nd\\n' > f.txt && git commit -q -am later", in: repo)
+        let report = await WorktreeCleanup.inspect(path: path)
+        XCTAssertNil(report.mergedInto)
+        XCTAssertEqual(report.verdict, .keepsCommits)
+        XCTAssertFalse(report.branchIsDeletable)
+    }
+
+    func testMergedThenRevertedIsKept() async {
+        let (path, _) = branchWithWork("reverted")
+        GitFixture.sh("git merge -q --squash worktree/reverted && git commit -q -m squash && git revert --no-edit HEAD >/dev/null",
+                      in: repo)
+        let report = await WorktreeCleanup.inspect(path: path)
+        XCTAssertNil(report.mergedInto)
+        XCTAssertEqual(report.verdict, .keepsCommits)
+    }
+
+    /// Merged doesn't outrank uncommitted work.
+    func testMergedButDirtyIsStillBlocked() async {
+        let (path, dir) = branchWithWork("dirty")
+        GitFixture.sh("git merge -q --squash worktree/dirty && git commit -q -m squash", in: repo)
+        GitFixture.sh("echo more >> f.txt", in: dir)
+        let report = await WorktreeCleanup.inspect(path: path)
+        XCTAssertEqual(report.mergedInto, "main")
+        XCTAssertEqual(report.verdict, .blocked)
+    }
+
+    /// Commits that changed nothing were never "merged": they are all the
+    /// branch has, so it is kept.
+    func testBranchThatChangedNothingIsNotMerged() async {
+        let path = addWorktree("empty")
+        GitFixture.commit("nothing", in: URL(fileURLWithPath: path))
+        let report = await WorktreeCleanup.inspect(path: path)
+        XCTAssertNil(report.mergedInto)
+        XCTAssertEqual(report.verdict, .keepsCommits)
+    }
+
     func testUncommittedAndUntrackedFilesBlockRemoval() async {
         let path = addWorktree("dirty")
         GitFixture.sh("echo work > notes.txt", in: URL(fileURLWithPath: path))

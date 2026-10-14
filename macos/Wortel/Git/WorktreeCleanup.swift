@@ -53,6 +53,15 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
     var isOwned = false
     /// Wortel made the branch: recorded in git config, or in its namespace.
     var createdBranch = false
+    /// `git status` failed (a corrupt index, a broken submodule, a partial
+    /// clone missing a blob offline), so `changedFiles` says nothing. Read
+    /// as "there may be changes": an empty list from a status that never ran
+    /// is how a worktree full of work would look clean.
+    var statusFailed = false
+    /// The commit the branch (or detached HEAD) was at when inspected. A
+    /// branch is only ever deleted at that commit: one that moved since
+    /// holds something nobody looked at.
+    var head: String?
 
     var id: String { path }
 
@@ -63,7 +72,8 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
     }
 
     var verdict: Verdict {
-        if isOrphanedFolder || isPrimaryCheckout || isLocked || !changedFiles.isEmpty || !usedBy.isEmpty {
+        if isOrphanedFolder || isPrimaryCheckout || isLocked || statusFailed || !changedFiles.isEmpty
+            || !usedBy.isEmpty {
             return .blocked
         }
         // A detached HEAD's commits have no branch to survive on: removing the
@@ -112,6 +122,9 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
             }
         }
         if isLocked { reasons.append("It's locked in git (git worktree lock).") }
+        if statusFailed {
+            reasons.append("Git couldn't read its changes, so Wortel can't tell what's in it. Check it with git status.")
+        }
         if !changedFiles.isEmpty {
             let count = changedFiles.count
             let named = changedFiles.prefix(3).joined(separator: ", ")
@@ -274,8 +287,11 @@ enum WorktreeCleanup {
             else { return report }
             report.repoRoot = repo
             report.branch = entry.branch
+            report.head = entry.head
             report.isLocked = entry.isLocked
-            report.isOwned = GitWorktree.Ownership.isUnderLegacyRoot(path)
+            // The marker outlives the folder: it's in the git dir.
+            report.isOwned = GitWorktree.Ownership.isOwned(
+                root: path, gitDir: await registeredGitDir(of: path, primary: repo))
             report.createdBranch = await createdByWortel(entry.branch, primary: repo)
             report.uniqueCommits = await uniqueCommits(branch: entry.branch, head: entry.head, primary: repo)
             report.mergedInto = await mergedTrunk(of: report, primary: repo)
@@ -293,6 +309,7 @@ enum WorktreeCleanup {
             return report
         }
         report.branch = entry.branch
+        report.head = entry.head
         report.isLocked = entry.isLocked
         report.usedBy = usedBy
         report.isOwned = GitWorktree.Ownership.isOwned(root: path)
@@ -300,10 +317,13 @@ enum WorktreeCleanup {
 
         // The full scan, untracked files included: an untracked file is
         // exactly the work a "clean" status would otherwise miss.
-        let status = urgent
-            ? await GitService.status(root: path)
-            : await GitService.backgroundStatus(root: path)
-        report.changedFiles = status.changes.map(\.path)
+        if let status = urgent
+            ? await GitService.checkedStatus(root: path)
+            : await GitService.checkedBackgroundStatus(root: path) {
+            report.changedFiles = status.changes.map(\.path)
+        } else {
+            report.statusFailed = true
+        }
 
         report.uniqueCommits = await uniqueCommits(branch: entry.branch, head: entry.head, primary: primary)
         report.mergedInto = await mergedTrunk(of: report, primary: primary)
@@ -335,10 +355,29 @@ enum WorktreeCleanup {
     /// re-checked here: a branch Wortel made, with nothing on it to lose.
     /// `discard` moves the folder away; the app passes the Trash, the tests a
     /// plain delete.
+    ///
+    /// One at a time, app-wide. Two branches holding the same unpushed
+    /// commits (a session and its fork) each count the other as where those
+    /// commits also are; inspected and removed at once, both would go. In
+    /// turn, the second's re-inspection finds the first gone and keeps it.
     static func remove(
         path: String, knownRepos: [String] = [], usedBy: [String] = [],
         deleteBranch: Bool,
-        discard: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+        discard: @escaping @Sendable (URL) throws -> Void = {
+            try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
+        }
+    ) async -> String? {
+        await removals.run {
+            await removeNow(path: path, knownRepos: knownRepos, usedBy: usedBy, deleteBranch: deleteBranch,
+                            discard: discard)
+        }
+    }
+
+    private static let removals = SerialGate()
+
+    private static func removeNow(
+        path: String, knownRepos: [String], usedBy: [String], deleteBranch: Bool,
+        discard: (URL) throws -> Void
     ) async -> String? {
         let report = await inspect(path: path, knownRepos: knownRepos, usedBy: usedBy)
         if report.verdict == .blocked {
@@ -369,8 +408,23 @@ enum WorktreeCleanup {
             // `-D`: `-d` asks whether the branch is merged into *HEAD*, which a
             // branch that was pushed and merged elsewhere isn't, and refuses.
             // What `-d` protects is checked above, and more precisely.
-            let deleted = await GitService.run(["branch", "-D", branch], in: primary)
-            if !deleted.ok {
+            //
+            // And only at the commit inspected: `update-ref -d <ref> <old>`
+            // refuses when the branch has moved since, where `branch -D`
+            // deletes whatever it points at by then. (`branch -D` also drops
+            // the branch's config section; update-ref leaves it, so that goes
+            // after.)
+            let result: GitService.CommandResult
+            if let head = report.head {
+                result = await GitService.run(["update-ref", "-d", "refs/heads/\(branch)", head], in: primary)
+                if result.ok {
+                    _ = await GitService.run(["config", "--remove-section", "branch.\(branch)"], in: primary)
+                }
+            } else {
+                result = await GitService.run(["branch", "-D", branch], in: primary)
+            }
+            if !result.ok {
+                let deleted = result
                 let message = deleted.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
                 return "The worktree is removed, but its branch isn't: \(message)"
             }
@@ -405,15 +459,37 @@ enum WorktreeCleanup {
         let result = await GitService.run(args, in: primary)
         guard result.ok else {
             // A branch with no commits yet has no ref at all: nothing to lose.
-            // Anything else git couldn't answer is "may have commits".
+            // Anything else git couldn't answer is "may have commits", and so
+            // is a repository too broken to say whether the ref is there
+            // (`--verify --quiet` exits 1 for a missing ref, 128 for that).
             if let branch {
                 let exists = await GitService.run(
-                    ["rev-parse", "--verify", "--quiet", "refs/heads/\(branch)"], in: primary).ok
-                return exists ? nil : 0
+                    ["rev-parse", "--verify", "--quiet", "refs/heads/\(branch)"], in: primary)
+                return exists.status == 1 ? 0 : nil
             }
             return nil
         }
         return Int(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// The git folder of a worktree whose own folder is gone, so its `.git`
+    /// file can't say: the one under `<common>/worktrees/` whose `gitdir`
+    /// file points back at it.
+    static func registeredGitDir(of path: String, primary: String) async -> String? {
+        let common = await GitService.run(["rev-parse", "--path-format=absolute", "--git-common-dir"], in: primary)
+        guard common.ok else { return nil }
+        let worktrees = (common.stdout.trimmingCharacters(in: .whitespacesAndNewlines) as NSString)
+            .appendingPathComponent("worktrees")
+        let target = (path as NSString).appendingPathComponent(".git")
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: worktrees)) ?? [] {
+            let dir = (worktrees as NSString).appendingPathComponent(name)
+            guard let pointer = try? String(contentsOfFile: (dir as NSString).appendingPathComponent("gitdir"),
+                                            encoding: .utf8),
+                  samePath(pointer.trimmingCharacters(in: .whitespacesAndNewlines), target)
+            else { continue }
+            return dir
+        }
+        return nil
     }
 
     /// The primary checkout a linked worktree belongs to, from git's common dir.

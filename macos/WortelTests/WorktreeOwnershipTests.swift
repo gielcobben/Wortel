@@ -197,4 +197,49 @@ final class WorktreeOwnershipTests: XCTestCase {
                                                    broughtHere: [])
         XCTAssertEqual(found.map(GitWorktree.realPath), [GitWorktree.realPath(path)])
     }
+
+    /// A location deeper in the repository (Claude Code's `.claude/worktrees`)
+    /// excludes that folder, never its parent: `/.claude/` would hide every
+    /// new file under `.claude` from status, and so from every commit.
+    func testANestedLocationExcludesOnlyItsOwnFolder() async {
+        GitFixture.sh("git config wortel.worktreePath .claude/worktrees", in: repo)
+        let location = await GitService.worktreeLocation(root: repo.path)
+        let path = GitWorktree.newWorktreePath(forBranch: "deep", repoRoot: repo.path, location: location)
+        let error = await GitService.addWorktree(root: repo.path, at: path, branch: "deep", source: .newBranch(from: "main"))
+        XCTAssertNil(error)
+        let exclude = GitFixture.sh("cat .git/info/exclude", in: repo)
+        XCTAssertTrue(exclude.contains("/.claude/worktrees/"))
+        XCTAssertFalse(exclude.split(separator: "\n").contains("/.claude/"))
+        GitFixture.sh("mkdir -p .claude/commands && echo x > .claude/commands/new.md", in: repo)
+        XCTAssertEqual(GitFixture.sh("git status --porcelain", in: repo), "?? .claude/")
+    }
+
+    /// The git dir every checkout shares, from the repository's home, off the
+    /// disk: the `worktrees` folder the sidebar watches lives in it.
+    func testCommonDir() {
+        XCTAssertEqual(GitWorktree.commonDir(ofHome: repo.path), repo.appendingPathComponent(".git").path)
+        let bare = base.appendingPathComponent("bare-home")
+        GitFixture.sh("mkdir -p bare-home && git clone -q --bare app bare-home/.bare", in: base)
+        XCTAssertEqual(GitWorktree.commonDir(ofHome: bare.path), bare.appendingPathComponent(".bare").path)
+        XCTAssertNil(GitWorktree.commonDir(ofHome: base.appendingPathComponent("nowhere").path))
+    }
+
+    /// Restoring an archived session in someone else's worktree makes its
+    /// folder again without making it Wortel's to remove.
+    func testAWorktreePutBackUnmarkedIsntOwned() async {
+        GitFixture.sh("git branch theirs", in: repo)
+        let path = base.appendingPathComponent("back/theirs").path
+        let error = await GitService.addWorktree(root: repo.path, at: path, branch: "theirs",
+                                                 source: .existingBranch, mark: false)
+        XCTAssertNil(error)
+        XCTAssertEqual(GitWorktree.linked(containing: path)?.isOwned, false)
+    }
+
+    /// A folder only looks gone when its volume isn't mounted, and its
+    /// registration must survive that.
+    func testAnUnmountedVolumeIsntGone() {
+        XCTAssertTrue(GitService.isOnUnmountedVolume("/Volumes/wortel-no-such-disk-\(UUID().uuidString)/wt/x"))
+        XCTAssertFalse(GitService.isOnUnmountedVolume(base.appendingPathComponent("gone").path))
+        XCTAssertFalse(GitService.isOnUnmountedVolume("/Volumes"))
+    }
 }

@@ -405,6 +405,11 @@ final class SessionManager {
     /// way in so two spellings of one path can't become two different folders.
     func setRoot(_ path: String?, ofFolder folder: String) {
         folderRoots[folder] = path.flatMap(FolderRoot.normalize)
+        // A repository nothing was watching yet gets its listing now, not at
+        // the next archive or launch.
+        if let home = repositoryHome(ofFolder: folder), listingWatchers[home] == nil {
+            refreshWorktreeListings()
+        }
     }
 
     /// `path`, if there is still a directory there.
@@ -474,6 +479,7 @@ final class SessionManager {
         for session in sessions where session.folderPath == folder {
             session.name = "\(trimmed)/\(session.leafName)"
         }
+        refileArchived(from: folder, to: trimmed)
         if let i = declaredFolders.firstIndex(of: folder) {
             if declaredFolders.contains(trimmed) { declaredFolders.remove(at: i) }
             else { declaredFolders[i] = trimmed }
@@ -493,6 +499,18 @@ final class SessionManager {
         scheduleSave()
     }
 
+    /// The archived sessions filed in `folder` go with it to `name` (nil: the
+    /// top level), as its live ones do: the folder is part of their names.
+    private func refileArchived(from folder: String, to name: String?) {
+        var changed = false
+        for i in archived.indices where archived[i].folderPath == folder {
+            let leaf = archived[i].leafName
+            archived[i].session.name = name.map { "\($0)/\(leaf)" } ?? leaf
+            changed = true
+        }
+        if changed { ArchiveStore.save(archived) }
+    }
+
     /// Delete a folder: its sessions drop to the top level (nothing is closed),
     /// and the section disappears.
     func deleteFolder(_ folder: String) {
@@ -501,6 +519,7 @@ final class SessionManager {
             session.name = session.leafName
             released = true
         }
+        refileArchived(from: folder, to: nil)
         // They land in Sessions, which must not be folded over them.
         if released { setLooseCollapsed(false) }
         declaredFolders.removeAll { $0 == folder }
@@ -561,6 +580,8 @@ final class SessionManager {
             if let f = session.folderPath, seen.insert(f).inserted { present.append(f) }
         }
         for f in declaredFolders where seen.insert(f).inserted { present.append(f) }
+        // A folder whose sessions are all archived is still there: its fold is.
+        for f in archived.compactMap(\.folderPath) where seen.insert(f).inserted { present.append(f) }
 
         var order: [String] = []
         var added = Set<String>()
@@ -608,14 +629,23 @@ final class SessionManager {
                 DispatchQueue.global(qos: .utility).async { try? FileManager.default.removeItem(at: aside) }
             }
         }
-        let persisted = store.load()
+        var persisted = store.load()
         archived = ArchiveStore.load()
+        // In both files: archived, then the app ended before sessions.json
+        // caught up. Archiving was the last word on it, and its shell is
+        // already gone; started again here, the same id would be live and
+        // in the fold at once.
+        let archivedIDs = Set(archived.map(\.id))
+        persisted.removeAll { archivedIDs.contains($0.id) }
         hasRestored = true
         if store.loadedCleanly { Self.retireDeadDefaults(persisted: persisted) }
         // Once launch has settled: the keeper is asked what it holds, which is
         // a round trip, and nothing about it is urgent.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             self?.recoverOrphanedShells()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.refreshWorktreeListings()
         }
         guard !persisted.isEmpty else {
             newSession()
@@ -640,9 +670,6 @@ final class SessionManager {
         selectedID = (persisted.first(where: \.selected) ?? persisted[0]).id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.warmRemainingSurfaces()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.refreshWorktreeListings()
         }
     }
 
@@ -1633,6 +1660,8 @@ final class SessionManager {
         if let item = archived.first(where: { GitWorktree.realPath($0.checkout) == root }) {
             return restore(archived: item.id)
         }
+        // Gone since it was listed: a session there would start in `/`.
+        guard FileManager.default.fileExists(atPath: root) else { return nil }
         return openFolder(root)
     }
 
@@ -1879,6 +1908,9 @@ final class SessionManager {
         if session.id == selectedID { session.ensureSurfaceView(runtime: runtime) }
         scheduleSave()
         refreshWorktreeListings()
+        // Named while it was preparing (by you, or the CLI): the branch
+        // couldn't be renamed then, there was none yet.
+        nameBranchForWork(session)
         finishWorktreeSession(session, .success(session), warnings: warnings)
     }
 
@@ -1996,7 +2028,7 @@ final class SessionManager {
         let ref = pr.ref(remoteURL: urls[remote])
         let branch = pr.branch
         let existing = await GitService.worktrees(root: root)
-        if let match = existing.first(where: { $0.branch == branch }) {
+        if let match = existing.first(where: { $0.branch == branch && !$0.isPrunable }) {
             return .success(ResolvedWorktree(path: match.path, branch: branch, sourceRoot: root, created: false))
         }
         let listed = await GitService.run(["ls-remote", remote, ref], in: root, timeout: GitService.networkTimeout)
@@ -2104,7 +2136,10 @@ final class SessionManager {
         let repoRoot = existing.first(where: \.isPrimary)?.path ?? root
         let path: String
         var created = false
-        if let match = existing.first(where: { $0.branch == branch }) {
+        // A registration whose folder is gone isn't somewhere to open a
+        // session (its shell would start in `/`): the branch is checked out
+        // again in a new folder, and `addWorktree` drops the stale record.
+        if let match = existing.first(where: { $0.branch == branch && !$0.isPrunable }) {
             path = match.path
         } else {
             path = await Self.newWorktreePath(forBranch: branch, repoRoot: repoRoot)
@@ -2145,7 +2180,12 @@ final class SessionManager {
             // refusing regardless would break a case that works and, worse,
             // answer it with advice ("check out the one you want first") aimed
             // at a problem that person does not have.
-            if onRemotes.count > 1,
+            // A remote named with the branch (Open Branch's row said which)
+            // settles it.
+            let named = base.flatMap { base in
+                onRemotes.first { base == "\($0)/\(branch)" }.map { _ in base }
+            }
+            if named == nil, onRemotes.count > 1,
                await GitService.defaultRemote(root: root).map({ !onRemotes.contains($0) }) ?? true {
                 return .failure(Failure(message: """
                     \u{201c}\(branch)\u{201d} exists on more than one remote \
@@ -2160,7 +2200,9 @@ final class SessionManager {
             // then a session" fail with `invalid reference: HEAD`, and a named
             // base is no better: there is no ref for it to be.
             let source: GitService.WorktreeSource
-            if known || onRemotes.count == 1 {
+            if let named {
+                source = .remoteBranch(named)
+            } else if known || onRemotes.count == 1 {
                 source = .existingBranch
             } else if await GitService.hasCommits(root: root) {
                 // Resolved in steps rather than with `??`, which can't carry an
@@ -2499,7 +2541,13 @@ final class SessionManager {
                             completion: WorktreeCompletion? = nil) -> Session? {
         guard let from = directory ?? branchSource() else { return nil }
         let fetch = Task { await fetchFromOrigin(in: from) }
-        let branch = GitWorktree.generatedBranch { _ in false }
+        // Taken by what's known without asking git (sessions live, preparing
+        // and archived); `resolveWorktree` would otherwise reuse a worktree
+        // already on the name, someone else's session in it.
+        let known = Set(sessions.compactMap { $0.worktreeBranch ?? $0.preparation?.branch }
+            + archived.compactMap(\.branch)
+            + worktreeListings.values.flatMap { $0.compactMap(\.branch) })
+        let branch = GitWorktree.generatedBranch { known.contains($0) }
         return newSession(onBranch: branch, base: nil, from: from, inFolder: folder, after: fetch,
                           completion: completion)
     }
@@ -2514,9 +2562,12 @@ final class SessionManager {
     /// Once, since a renamed branch isn't a placeholder any more. The folder
     /// stays where it is: agents keep their history by directory.
     private func nameBranchForWork(_ session: Session) {
-        guard session.preparation == nil, let branch = session.worktreeBranch,
-              GitWorktree.isGenerated(branch), let checkout = session.homeCheckout, checkout.isOwned,
-              renamingBranches.insert(session.id).inserted
+        // The branch of the worktree the session lives in, read off its HEAD:
+        // not `worktreeBranch`, which is whichever checkout the shell is
+        // standing in, maybe another session's.
+        guard session.preparation == nil, let checkout = session.homeCheckout, checkout.isOwned,
+              let branch = GitWorktree.checkedOutBranch(at: checkout.root),
+              GitWorktree.isGenerated(branch), renamingBranches.insert(session.id).inserted
         else { return }
         let name = session.leafName
         let root = checkout.root
@@ -2533,13 +2584,31 @@ final class SessionManager {
             guard let target = GitWorktree.renamedBranch(forName: name, isTaken: { local.contains($0) }),
                   target != branch,
                   await GitService.run(["branch", "-m", branch, target], in: root).ok,
-                  let self, session.worktreeBranch == branch
+                  let self
             else { return }
-            session.worktreeBranch = target
-            self.scheduleSave()
+            self.branchRenamed(from: branch, to: target, in: root)
         }
     }
     @ObservationIgnored private var renamingBranches: Set<Session.ID> = []
+
+    /// Everything that knows the worktree at `root` by its branch hears the
+    /// new name: every session there (a ⌘T beside it too), and an archived
+    /// one, which the rename may have landed after.
+    private func branchRenamed(from old: String, to new: String, in root: String) {
+        for session in sessions where session.worktreeBranch == old
+            && (session.homeCheckout?.root == root || session.linkedCheckout?.root == root) {
+            session.worktreeBranch = new
+        }
+        var archiveChanged = false
+        for i in archived.indices where archived[i].branch == old
+            && GitWorktree.realPath(archived[i].checkout) == root {
+            archived[i].session.worktreeBranch = new
+            archiveChanged = true
+        }
+        if archiveChanged { ArchiveStore.save(archived) }
+        scheduleSave()
+        refreshWorktreeListings()
+    }
 
     // MARK: - Archive
 
@@ -2582,16 +2651,25 @@ final class SessionManager {
             return
         }
         noteConversation(session)
-        // Taken while the shell still lives: once it's gone its processes are
-        // reparented and no longer look like the session's.
-        let usage = WorktreeUsage(manager: self, excluding: session)
-        let entry = persistedEntry(for: session, now: Date(), vouching: false, table: { ProcessTable.snapshot() })
+        var entry = persistedEntry(for: session, now: Date(), vouching: false, table: { ProcessTable.snapshot() })
+        // The branch of the worktree it's archived in, which is what Restore
+        // checks out again if the folder goes: the shell may be standing in
+        // another worktree, or none.
+        if let branch = GitWorktree.checkedOutBranch(at: home.root) { entry.worktreeBranch = branch }
         let item = ArchivedSession(session: entry, archivedAt: Date(), checkout: home.root,
                                    repoHome: home.repoHome, isOwned: home.isOwned)
         archived.removeAll { $0.id == item.id }
         archived.insert(item, at: 0)
         ArchiveStore.save(archived)
         close(session)
+        // Both files at once: a crash between them would leave it live and
+        // archived, or neither.
+        saveNow()
+        // Who else is in it, taken once this session is out of the list. Its
+        // own processes aren't set aside, unlike the sheet's: whatever of
+        // them is still running when the inspection looks (a `nohup`ed
+        // server) is using the worktree.
+        let usage = WorktreeUsage(manager: self)
         settleArchived(item, usage: usage)
         refreshWorktreeListings()
     }
@@ -2607,7 +2685,8 @@ final class SessionManager {
             let report = await WorktreeCleanup.inspect(path: item.checkout, knownRepos: repos, usedBy: users)
             guard let self, self.archived.contains(where: { $0.id == item.id }) else { return }
             self.archivedReports[item.id] = report
-            guard case .remove(let deleteBranch) = WorktreeCloseDecision.decide(report) else { return }
+            guard case .remove(let deleteBranch) = WorktreeCloseDecision.decide(report),
+                  !self.isShared(item) else { return }
             self.removingArchived.insert(item.id)
             let error = await WorktreeCleanup.remove(path: item.checkout, knownRepos: repos, usedBy: users,
                                                      deleteBranch: deleteBranch)
@@ -2617,13 +2696,31 @@ final class SessionManager {
         }
     }
 
+    /// Another session, live or archived, is in `item`'s worktree too (a ⌘T
+    /// beside it, closed first or still open): it's that one's as much.
+    private func isShared(_ item: ArchivedSession) -> Bool {
+        let root = GitWorktree.realPath(item.checkout)
+        return archived.contains { $0.id != item.id && GitWorktree.realPath($0.checkout) == root }
+            || sessions.contains { $0.homeCheckout?.root == root || $0.linkedCheckout?.root == root }
+    }
+
     /// Continue an archived session: its shell starts in its worktree again,
     /// and its agent resumes its conversation. A worktree whose folder has
     /// gone is made again from its branch first.
     @discardableResult
     func restore(archived id: UUID) -> Session? {
-        guard !removingArchived.contains(id),
-              let item = archived.first(where: { $0.id == id }) else { return nil }
+        guard let item = archived.first(where: { $0.id == id }) else { return nil }
+        // Not while its worktree, or one it shares, is being removed.
+        let root = GitWorktree.realPath(item.checkout)
+        guard !archived.contains(where: { removingArchived.contains($0.id)
+            && GitWorktree.realPath($0.checkout) == root }) else { return nil }
+        if let live = sessions.first(where: { $0.id == id }) {
+            // Already back (a crash between the two files): drop the copy.
+            archived.removeAll { $0.id == id }
+            ArchiveStore.save(archived)
+            selectedID = live.id
+            return live
+        }
         guard FileManager.default.fileExists(atPath: item.checkout) else {
             recreateArchivedWorktree(item)
             return nil
@@ -2632,12 +2729,25 @@ final class SessionManager {
         archivedReports[id] = nil
         ArchiveStore.save(archived)
         let session = restoredSession(from: item.session, marker: nil, table: { ProcessTable.snapshot() })
+        // In the worktree: where the shell last stood if that's still in it
+        // and still there (a recreated worktree has no `build/`), else where
+        // the session began, else the worktree's top. A shell given a folder
+        // that doesn't exist starts in the keeper's, `/`.
+        let inside = { (path: String?) -> String? in
+            guard let path, FolderRoot.root(root, contains: GitWorktree.realPath(path)),
+                  FileManager.default.fileExists(atPath: path) else { return nil }
+            return path
+        }
+        let start = inside(session.cwd) ?? inside(session.originCwd) ?? item.checkout
+        if session.cwd != start { session.cwd = start }
+        if inside(session.originCwd) == nil { session.originCwd = item.checkout }
+        noteCheckout(session)
         appendRestored(session)
         normalizeOrder()
         assignPortBlocks()
         if let folder = session.folderPath { collapsedFolders.remove(folder) }
         selectedID = session.id
-        scheduleSave()
+        saveNow()
         return session
     }
 
@@ -2652,7 +2762,7 @@ final class SessionManager {
         removingArchived.insert(item.id)
         Task { [weak self] in
             let error = await GitService.addWorktree(root: repo, at: item.checkout, branch: branch,
-                                                     source: .existingBranch)
+                                                     source: .existingBranch, mark: item.isOwned)
             guard let self else { return }
             self.removingArchived.remove(item.id)
             if let error {
@@ -2750,10 +2860,12 @@ final class SessionManager {
         }
         guard !worktreeListings.isEmpty else { return result }
         let taken = takenWorktrees()
+        let preparing = preparingBranches()
         for (home, listing) in worktreeListings {
             var open: [String: [DormantEntry]] = [:]
             for worktree in listing where !worktree.isPrimary && !worktree.isBare && !worktree.isPrunable
-                && !taken.contains(GitWorktree.realPath(worktree.path)) {
+                && !taken.contains(GitWorktree.realPath(worktree.path))
+                && !(worktree.branch.map(preparing.contains) ?? false) {
                 // Each worktree in one folder only: the deepest that covers it.
                 guard let folder = folder(forWorktreeAt: worktree.path, repoHome: home) else { continue }
                 open[folder, default: []].append(DormantEntry(
@@ -2787,9 +2899,20 @@ final class SessionManager {
             return inputs
         }
         inputs.hasRepository = true
-        inputs.open = sessions.filter {
-            $0.preparation == nil && ($0.homeCheckout?.repoHome == home || $0.linkedCheckout?.repoHome == home)
-        }.map { .init(id: $0.id, name: $0.leafName, branch: $0.worktreeBranch) }
+        // Each by the branch of the worktree it lives in (a shell standing in
+        // another one doesn't move it there), and a preparing one by the
+        // branch it's being made on: it has that place already, and offering
+        // the branch again would make a second session in its worktree.
+        inputs.open = sessions.compactMap { session in
+            if let preparation = session.preparation {
+                guard GitWorktree.repositoryHome(containing: preparation.from) == home else { return nil }
+                return .init(id: session.id, name: session.leafName, branch: preparation.branch)
+            }
+            guard let checkout = session.homeCheckout ?? session.linkedCheckout, checkout.repoHome == home
+            else { return nil }
+            let branch = GitWorktree.checkedOutBranch(at: checkout.root) ?? session.worktreeBranch
+            return .init(id: session.id, name: session.leafName, branch: branch)
+        }
         inputs.archived = archived.filter { $0.repoHome == home }.map {
             .init(id: $0.id, name: $0.leafName, branch: $0.branch)
         }
@@ -2804,9 +2927,17 @@ final class SessionManager {
             inputs.main = .init(path: main.path, branch: main.branch)
         }
         let taken = takenWorktrees()
+        let preparing = preparingBranches()
         inputs.notOpen = listing.filter {
             !$0.isPrimary && !$0.isBare && !$0.isPrunable && !taken.contains(GitWorktree.realPath($0.path))
+                && !($0.branch.map(preparing.contains) ?? false)
         }.map { .init(path: $0.path, branch: $0.branch) }
+    }
+
+    /// The branches worktrees are being made on right now: git lists such a
+    /// worktree as soon as `worktree add` starts, long before its row has it.
+    private func preparingBranches() -> Set<String> {
+        Set(sessions.compactMap { $0.preparation?.branch })
     }
 
     /// The worktrees a session (live, preparing or archived) is in.
@@ -2866,8 +2997,10 @@ final class SessionManager {
             } else {
                 openFolder(path)
             }
-        case .checkOut(let branch, _):
-            newSession(onBranch: branch, from: directory)
+        case .checkOut(let branch, let remote):
+            // From the remote the row named: with the branch on two remotes,
+            // git won't guess. A local branch made there tracks it.
+            newSession(onBranch: branch, base: remote.map { "\($0)/\(branch)" }, from: directory)
         case .pullRequest(let text):
             guard let pr = PullRequestRef.parse(text) else { return }
             newSession(onPullRequest: pr, from: directory, after: Task { await fetchFromOrigin(in: directory) })
@@ -2894,18 +3027,39 @@ final class SessionManager {
         let homes = Set(folderNames.compactMap(repositoryHome(ofFolder:)))
         for home in homes { readListing(home) }
         for (home, _) in listingWatchers where !homes.contains(home) { listingWatchers[home] = nil }
-        for home in homes where listingWatchers[home] == nil {
-            let dir = (home as NSString).appendingPathComponent(".git/worktrees")
-            listingWatchers[home] = DirectoryWatcher(path: dir) { [weak self] _ in
-                DispatchQueue.main.async { self?.readListing(home) }
+        for home in homes where listingWatchers[home] == nil { watchListing(home) }
+        worktreeListings = worktreeListings.filter { homes.contains($0.key) }
+    }
+
+    /// Watch the repository's `worktrees` folder (in its git dir, `.git` or a
+    /// worktree-first clone's `.bare`). It exists only while there is a linked
+    /// worktree: git makes it with the first and removes it with the last.
+    /// Until then the git dir itself is watched, for it to appear, and the
+    /// watch moves across whenever it comes or goes.
+    private func watchListing(_ home: String) {
+        guard let common = GitWorktree.commonDir(ofHome: home) else {
+            listingWatchers[home] = nil
+            return
+        }
+        let worktrees = (common as NSString).appendingPathComponent("worktrees")
+        let exists = FileManager.default.fileExists(atPath: worktrees)
+        listingWatchers[home] = DirectoryWatcher(path: exists ? worktrees : common) { [weak self] vanished in
+            DispatchQueue.main.async {
+                guard let self, self.listingWatchers[home] != nil else { return }
+                self.readListing(home)
+                if vanished || FileManager.default.fileExists(atPath: worktrees) != exists {
+                    self.watchListing(home)
+                }
             }
         }
-        worktreeListings = worktreeListings.filter { homes.contains($0.key) }
     }
 
     /// One read per repository at a time; a change during one is read after.
     private func readListing(_ home: String) {
-        guard listingsInFlight.insert(home).inserted else { return }
+        guard listingsInFlight.insert(home).inserted else {
+            listingsOwed.insert(home)
+            return
+        }
         Task { [weak self] in
             let listing = await GitService.worktrees(root: home)
             let location = await GitService.worktreeLocation(root: home)
@@ -2913,8 +3067,10 @@ final class SessionManager {
             self.listingsInFlight.remove(home)
             if self.worktreeListings[home] != listing { self.worktreeListings[home] = listing }
             if self.worktreeLocations[home] != location { self.worktreeLocations[home] = location }
+            if self.listingsOwed.remove(home) != nil { self.readListing(home) }
         }
     }
+    @ObservationIgnored private var listingsOwed: Set<String> = []
 
     /// Drop an archived session for good: its worktree is gone, or you
     /// deleted it. Its folder goes too when nothing else is in it.
@@ -3766,6 +3922,22 @@ final class SessionManager {
         if home != session.homeCheckout { session.homeCheckout = home }
     }
 
+    /// The branch checked out in the worktree the shell is in, off its HEAD
+    /// file (no git): after every command and every `cd`, so a `git switch`
+    /// typed there or a checkout from the git panel shows on the row, and is
+    /// what's archived and offered. False when HEAD names no branch (detached,
+    /// or not a linked worktree), for git to answer.
+    @discardableResult
+    private func noteBranch(_ session: Session) -> Bool {
+        guard let root = session.linkedCheckout?.root,
+              let branch = GitWorktree.checkedOutBranch(at: root) else { return false }
+        if session.worktreeBranch != branch {
+            session.worktreeBranch = branch
+            scheduleSave()
+        }
+        return true
+    }
+
     /// The branch checked out where `session` is now: at launch for the ones
     /// that don't know, and whenever a shell lands in another worktree (one an
     /// agent made with `git worktree add`, or `cd`'d into), which is how most
@@ -4026,9 +4198,10 @@ final class SessionManager {
                 self.noteCheckout(session)
                 // Into a worktree, or from one into another: whose branch the
                 // row shows has changed.
-                if let checkout = session.linkedCheckout?.root,
-                   checkout != previous || session.worktreeBranch == nil {
-                    self.resolveWorktreeBranch(session)
+                if let checkout = session.linkedCheckout?.root {
+                    if !self.noteBranch(session), checkout != previous || session.worktreeBranch == nil {
+                        self.resolveWorktreeBranch(session)
+                    }
                 } else if session.linkedCheckout == nil, session.worktreeBranch != nil {
                     // Out of every worktree: no branch to show, or to save.
                     session.worktreeBranch = nil
@@ -4089,6 +4262,8 @@ final class SessionManager {
                 //
                 // The git nudge stays: the agent has very likely just written
                 // files, which is the one thing this event is still right about.
+                // So is the branch: a `git switch` doesn't move the shell.
+                self.noteBranch(session)
                 if session.runningAgent != nil {
                     self.onCommandFinished?(session)
                     return

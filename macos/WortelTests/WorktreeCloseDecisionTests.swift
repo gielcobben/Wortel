@@ -38,6 +38,7 @@ final class WorktreeCloseDecisionTests: XCTestCase {
             ("untracked", report { $0.changedFiles = ["notes.txt"] }),
             ("in use", report { $0.usedBy = ["node, running there"] }),
             ("locked", report { $0.isLocked = true }),
+            ("status failed", report { $0.statusFailed = true }),
             ("not Wortel's", report { $0.isOwned = false }),
             ("missing", report { $0.isMissing = true }),
             ("not a checkout", report { $0.isOrphanedFolder = true }),
@@ -107,5 +108,19 @@ final class ArchivedSessionStoreTests: XCTestCase {
         ArchiveStore.save([], to: file)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
         XCTAssertTrue(ArchiveStore.load(from: file).isEmpty)
+    }
+
+    /// A file that isn't a list (damaged, or a newer build's) is set aside,
+    /// not read as empty and written over by the next archive.
+    func testAnUnreadableFileIsSetAside() throws {
+        try Data("{\"version\": 2}".utf8).write(to: file)
+        XCTAssertTrue(ArchiveStore.load(from: file).isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        let folder = file.deletingLastPathComponent()
+        let stem = file.deletingPathExtension().lastPathComponent
+        let aside = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+            .filter { $0.hasPrefix(stem + ".unreadable-") }
+        XCTAssertEqual(aside.count, 1)
+        for name in aside { try? FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
     }
 }

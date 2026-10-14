@@ -605,6 +605,11 @@ enum GitService {
         /// `HEAD` as a base when HEAD doesn't resolve, which is what a freshly
         /// `git init`ed repo does and where this used to fail outright.
         case newBranch(from: String?)
+        /// A branch that exists only on a remote, from that remote by name
+        /// (`origin/feature`): a local branch made at it and tracking it. What
+        /// `existingBranch` does by itself, except when two remotes carry the
+        /// name and git won't choose.
+        case remoteBranch(String)
     }
 
     /// Add a worktree for `branch` at `path`.
@@ -613,8 +618,11 @@ enum GitService {
     /// surfacing verbatim rather than rewriting: "already checked out at …" and
     /// "not a valid object name" both tell the user exactly what to do next, and
     /// a paraphrase would only lose the path.
+    /// `mark: false` puts back a worktree someone else made (Restore of an
+    /// archived session in one): making its folder again doesn't make it
+    /// Wortel's to remove.
     static func addWorktree(
-        root: String, at path: String, branch: String, source: WorktreeSource
+        root: String, at path: String, branch: String, source: WorktreeSource, mark: Bool = true
     ) async -> String? {
         try? FileManager.default.createDirectory(
             at: URL(fileURLWithPath: path).deletingLastPathComponent(),
@@ -636,6 +644,8 @@ enum GitService {
             if base != nil { args.append("--no-track") }
             args.append(path)
             if let base { args.append(base) }
+        case .remoteBranch(let ref):
+            args += ["--track", "-b", branch, path, ref]
         }
         var result = await run(args, in: root)
         // **A registration whose folder is gone** (deleted by hand) still
@@ -650,7 +660,7 @@ enum GitService {
             let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             return message.isEmpty ? "git worktree add failed" : message
         }
-        GitWorktree.Ownership.mark(root: path)
+        if mark { GitWorktree.Ownership.mark(root: path) }
         if let home = GitWorktree.repositoryHome(containing: root) { await excludeIfInside(path, repoHome: home) }
         if case .newBranch(let base) = source {
             _ = await run(["config", "branch.\(branch).\(GitWorktree.Ownership.createdKey)", "true"], in: root)
@@ -668,6 +678,7 @@ enum GitService {
         let fm = FileManager.default
         let stale = await worktrees(root: root).filter { worktree in
             !worktree.isPrimary && !worktree.isLocked && !fm.fileExists(atPath: worktree.path)
+                && !isOnUnmountedVolume(worktree.path)
                 && (worktree.branch == branch || WorktreeCleanup.samePath(worktree.path, path))
         }
         var dropped = false
@@ -675,6 +686,16 @@ enum GitService {
             dropped = true
         }
         return dropped
+    }
+
+    /// A path on a volume that isn't mounted (`/Volumes/<name>` is missing):
+    /// its folder only looks gone. Its registration holds its index and
+    /// HEAD's reflog, and dropping it would leave the folder, plugged back
+    /// in, a checkout git no longer knows.
+    nonisolated static func isOnUnmountedVolume(_ path: String) -> Bool {
+        let parts = (path as NSString).standardizingPath.split(separator: "/")
+        guard parts.count >= 2, parts[0] == "Volumes" else { return false }
+        return !FileManager.default.fileExists(atPath: "/Volumes/\(parts[1])")
     }
 
     /// Where the repository at `root` wants its worktrees (`GitWorktree.locationKey`),
@@ -705,8 +726,15 @@ enum GitService {
         let home = GitWorktree.realPath(repoHome)
         let target = GitWorktree.realPath(path)
         guard target.hasPrefix(home + "/") else { return }
+        // The folder the worktrees are made in (`.worktrees`,
+        // `.claude/worktrees`), never more of the repository than that:
+        // excluding the first component of `.claude/worktrees/x` would hide
+        // every new file under `.claude` from status, and so from commits.
+        // A worktree straight in the repository's folder is its own entry.
         let relative = String(target.dropFirst(home.count + 1))
-        guard let top = relative.split(separator: "/").first.map(String.init) else { return }
+        let parent = (relative as NSString).deletingLastPathComponent
+        let top = parent.isEmpty ? relative : parent
+        guard !top.isEmpty else { return }
         if await run(["check-ignore", "-q", "--no-index", top + "/"], in: home).ok { return }
         let common = await run(["rev-parse", "--path-format=absolute", "--git-common-dir"], in: home)
         guard common.ok else { return }
@@ -984,11 +1012,23 @@ enum GitService {
     private static let backgroundScans = SerialGate()
 
     static func status(root: String) async -> GitStatus {
+        await checkedStatus(root: root) ?? GitStatus()
+    }
+
+    /// `status`, saying when it failed instead of reading as clean: for a
+    /// decision to remove something, where "no changes" from a status that
+    /// never ran would throw the changes away.
+    static func checkedStatus(root: String) async -> GitStatus? {
         let result = await run(
             ["status", "--porcelain=v2", "--branch", "--untracked-files=all"],
             in: root)
-        guard result.ok else { return GitStatus() }
+        guard result.ok else { return nil }
         return GitStatusParser.parse(result.stdout)
+    }
+
+    /// `checkedStatus`, queued behind the other background scans.
+    static func checkedBackgroundStatus(root: String) async -> GitStatus? {
+        await backgroundScans.run { await checkedStatus(root: root) }
     }
 
     /// Which of `paths` (repo-relative) git ignores.

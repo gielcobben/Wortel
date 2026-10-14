@@ -111,7 +111,8 @@ enum OpenTarget {
         }
 
         if !query.isEmpty, inputs.hasRepository,
-           let pr = PullRequestRef.parse(query, allowsBareNumber: !inputs.local.contains(query)) {
+           let pr = PullRequestRef.parse(query, allowsBareNumber: !inputs.local.contains(query)
+                                            && !inputs.remote.contains { $0.branch == query }) {
             result.append(Choice(action: .pullRequest(query), group: .pullRequest,
                                  title: "Pull request \(pr.label)", branch: nil,
                                  status: "Checks out pull request \(pr.label) in a new worktree."))
@@ -154,8 +155,8 @@ enum OpenTarget {
         let local = Set(inputs.local)
         var seenRemote = Set<String>()
         for (remote, branch) in inputs.remote
-        where !local.contains(branch) && !placed.contains(branch) && seenRemote.insert(branch).inserted
-            && matches(branch, remote) {
+        where !local.contains(branch) && !placed.contains(branch) && matches(branch, "\(remote)/\(branch)")
+            && seenRemote.insert(branch).inserted {
             branches.append(Choice(action: .checkOut(branch: branch, remote: remote), group: .branches,
                                    title: branch, branch: nil,
                                    status: "Checks out \u{201c}\(branch)\u{201d} from \(remote) in a new worktree."))
@@ -170,7 +171,10 @@ enum OpenTarget {
 
         // Always offered while what's typed would be a new branch.
         let name = GitWorktree.branchName(from: query)
-        let exists = local.contains(name) || inputs.remote.contains { $0.branch == name }
+        // `origin/foo` typed or pasted is the remote branch, never a new
+        // local one wearing its name.
+        let exists = local.contains(name)
+            || inputs.remote.contains { $0.branch == name || "\($0.remote)/\($0.branch)" == name }
             || placed.contains(name) || inputs.main?.branch == name
         if inputs.hasRepository, !name.isEmpty, !exists, result.first?.group != .pullRequest {
             result.append(Choice(action: .create(branch: name), group: .create,

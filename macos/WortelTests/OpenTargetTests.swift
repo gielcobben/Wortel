@@ -80,4 +80,18 @@ final class OpenTargetTests: XCTestCase {
         XCTAssertEqual(actions.prefix(2), [.checkOut(branch: "lab-notes", remote: nil),
                                            .checkOut(branch: "feature/lab", remote: nil)])
     }
+
+    /// `origin/foo` typed or pasted is the remote branch, not a new local one
+    /// wearing its name.
+    func testARemoteRefTypedIsTheRemoteBranch() {
+        let actions = OpenTarget.choices(for: "upstream/giel/remote-only", in: inputs).map(\.action)
+        XCTAssertEqual(actions, [.checkOut(branch: "giel/remote-only", remote: "upstream")])
+    }
+
+    /// A bare number that's a branch on a remote isn't a pull request.
+    func testANumberThatsARemoteBranchIsntAPullRequest() {
+        var inputs = self.inputs
+        inputs.remote.append(("origin", "4242"))
+        XCTAssertFalse(OpenTarget.choices(for: "4242", in: inputs).contains { $0.group == .pullRequest })
+    }
 }

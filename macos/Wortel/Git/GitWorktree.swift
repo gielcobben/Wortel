@@ -43,8 +43,8 @@ extension GitWorktree {
             .appendingPathComponent(".wortel/worktrees", isDirectory: true)
     }
 
-    /// The namespace every branch Wortel generates lives in (`BranchSheet`
-    /// suggests `worktree/<adjective>-<noun>-<hex>`). It exists to group them
+    /// The namespace every branch Wortel generates lives in (⇧⌘N names its
+    /// branch `worktree/<adjective>-<noun>-<hex>` until the work has a name). It exists to group them
     /// under one heading in `git branch`, where they are disposable and you will
     /// want to sweep them later. One constant, because the half that makes the
     /// name and the half that reads it back must never drift apart.
@@ -334,6 +334,31 @@ extension GitWorktree {
     static func mayRename(_ branch: String, createdByWortel: Bool, hasUpstream: Bool,
                           onRemote: Bool, checkouts: Int) -> Bool {
         isGenerated(branch) && createdByWortel && !hasUpstream && !onRemote && checkouts == 1
+    }
+
+    /// The git dir shared by every checkout of the repository living at
+    /// `home` (a `repoHome`): its `.git` folder, a worktree-first clone's
+    /// `.bare`, or wherever a `.git` file points. Off the disk, no git.
+    nonisolated static func commonDir(ofHome home: String) -> String? {
+        let files = FileManager.default
+        var isDirectory: ObjCBool = false
+        let dotGit = (home as NSString).appendingPathComponent(".git")
+        if files.fileExists(atPath: dotGit, isDirectory: &isDirectory) {
+            if isDirectory.boolValue { return dotGit }
+            guard let pointer = try? String(contentsOfFile: dotGit, encoding: .utf8),
+                  pointer.hasPrefix("gitdir:") else { return nil }
+            let target = pointer.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
+            let gitDir = target.hasPrefix("/") ? target : (home as NSString).appendingPathComponent(target)
+            // A linked worktree's `.git` points into `<common>/worktrees/<name>`.
+            let parts = (gitDir as NSString).standardizingPath.split(separator: "/").map(String.init)
+            if parts.count >= 3, parts[parts.count - 2] == "worktrees" {
+                return "/" + parts.dropLast(2).joined(separator: "/")
+            }
+            return (gitDir as NSString).standardizingPath
+        }
+        let bare = (home as NSString).appendingPathComponent(".bare")
+        if files.fileExists(atPath: bare, isDirectory: &isDirectory), isDirectory.boolValue { return bare }
+        return nil
     }
 
     /// Where the repository `path` is in lives, at any depth: a linked

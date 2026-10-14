@@ -231,6 +231,10 @@ private struct SwitcherView: View {
 
     @State private var query = ""
     @State private var highlighted = 0
+    /// The highlighted row by id, so rows arriving above it (Open Branch's
+    /// branches, then the remote ones after the fetch, seconds later) leave
+    /// it on the row you chose: Return does what it said when you looked.
+    @State private var highlightedID: String?
 
     enum Row: Identifiable {
         case session(SessionSwitcherMatch.Candidate)
@@ -314,7 +318,13 @@ private struct SwitcherView: View {
                                               targetHeaders: targetGroups(targets).filter { $0.title != nil }.count,
                                               targets: targets.count))
                     .onChange(of: highlighted) { _, index in
+                        highlightedID = rows[safe: index]?.id
                         withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(rows[safe: index]?.id) }
+                    }
+                    .onChange(of: rows.map(\.id)) { _, ids in
+                        if let id = highlightedID, let index = ids.firstIndex(of: id), index != highlighted {
+                            highlighted = index
+                        }
                     }
                 }
                 SwitcherFooter()
@@ -339,7 +349,10 @@ private struct SwitcherView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resize($0) }
         .frame(maxHeight: .infinity, alignment: .top)
         .ignoresSafeArea()
-        .onChange(of: query) { _, _ in highlighted = 0 }
+        .onChange(of: query) { _, _ in
+            highlighted = 0
+            highlightedID = nil
+        }
     }
 
     /// A titled group of rows; `offset` is where its rows start in the one

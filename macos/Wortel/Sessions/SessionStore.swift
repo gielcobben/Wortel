@@ -2,7 +2,7 @@ import Foundation
 
 struct PersistedSession: Codable {
     let id: UUID
-    let name: String
+    var name: String
     let title: String
     let cwd: String?
     /// Where the session was created, as opposed to where its shell had wandered
@@ -24,8 +24,10 @@ struct PersistedSession: Codable {
     /// `SessionManager.restore`'s call.
     let nameSource: String
     /// The branch a worktree session was opened on, for the row's second line.
-    /// nil for a session outside one of Wortel's worktrees.
-    let worktreeBranch: String?
+    /// nil for a session outside one of Wortel's worktrees. A var, like
+    /// `name`, for an archived session: its folder can be renamed and its
+    /// branch can be, while it waits.
+    var worktreeBranch: String?
     /// The colour you gave the session, as `SessionColour`'s raw value. A raw
     /// string like `nameSource`: a colour only a newer build knows is read as
     /// none by `restore`, without failing the decode.
@@ -326,7 +328,7 @@ final class SessionStore {
 /// `sessions.json`: an older build reads that one, and would start every
 /// archived session again as a live shell. This file it never opens.
 struct ArchivedSession: Codable, Identifiable {
-    let session: PersistedSession
+    var session: PersistedSession
     let archivedAt: Date
     /// The worktree's folder: where the shell starts again, and what's
     /// recreated from the branch when it has gone.
@@ -376,7 +378,17 @@ enum ArchiveStore {
             let value: ArchivedSession?
             init(from decoder: Decoder) throws { value = try? ArchivedSession(from: decoder) }
         }
-        return ((try? JSONDecoder().decode([Lenient].self, from: data)) ?? []).compactMap(\.value)
+        guard let entries = try? JSONDecoder().decode([Lenient].self, from: data) else {
+            // Not a list at all: a damaged file, or one a newer build wrote.
+            // Set aside rather than read as empty, or the next archive would
+            // write one entry over every session in it.
+            let aside = url.deletingPathExtension()
+                .appendingPathExtension("unreadable-\(Int(Date().timeIntervalSince1970)).json")
+            try? FileManager.default.moveItem(at: url, to: aside)
+            NSLog("archived sessions unreadable, kept as %@", aside.lastPathComponent)
+            return []
+        }
+        return entries.compactMap(\.value)
     }
 
     static func save(_ archived: [ArchivedSession], to url: URL = fileURL) {

@@ -368,4 +368,46 @@ final class WorktreeCleanupTests: XCTestCase {
         XCTAssertFalse(after.contains { WorktreeCleanup.samePath($0, elsewhere.path) },
                        "a folder with a branch again is somebody's")
     }
+
+    /// A status that fails says nothing about changes: blocked, never "clean".
+    func testAFailedStatusBlocks() async {
+        let path = addWorktree("broken")
+        GitFixture.sh("echo work > notes.txt", in: URL(fileURLWithPath: path))
+        // A corrupt index: status fails outright.
+        let gitDir = GitFixture.sh("git rev-parse --absolute-git-dir", in: URL(fileURLWithPath: path))
+        GitFixture.sh("printf garbage > \(GitFixture.shellQuoted(gitDir + "/index"))", in: repo)
+        let report = await WorktreeCleanup.inspect(path: path)
+        XCTAssertTrue(report.statusFailed)
+        XCTAssertEqual(report.verdict, .blocked)
+        let error = await WorktreeCleanup.remove(path: path, deleteBranch: true, discard: delete)
+        XCTAssertNotNil(error)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+    }
+
+    /// Two branches holding the same unpushed commits (a session and its
+    /// fork) each count the other as where those commits also are. Removed
+    /// at once, in turn: the second sees the first gone and keeps its branch.
+    func testTwinBranchesRemovedAtOnceKeepTheirCommits() async {
+        let a = addWorktree("twin-a")
+        GitFixture.commit("only here", in: URL(fileURLWithPath: a))
+        let head = GitFixture.sh("git rev-parse HEAD", in: URL(fileURLWithPath: a))
+        let b = base.appendingPathComponent("repo/twin-b").path
+        GitFixture.sh("git worktree add -q -b worktree/twin-b \(GitFixture.shellQuoted(b)) \(head)", in: repo)
+        async let first = WorktreeCleanup.remove(path: a, deleteBranch: true, discard: delete)
+        async let second = WorktreeCleanup.remove(path: b, deleteBranch: true, discard: delete)
+        _ = await (first, second)
+        let kept = GitFixture.sh("git branch --contains \(head) --format='%(refname:short)'", in: repo)
+        XCTAssertFalse(kept.isEmpty, "the commit is on no branch any more")
+    }
+
+    /// Removing a branch deletes it at the commit inspected, and its config
+    /// (Wortel's record of making it) with it.
+    func testARemovedBranchTakesItsRecord() async {
+        let path = addWorktree("recorded")
+        GitFixture.sh("git config branch.worktree/recorded.wortelCreated true", in: repo)
+        let error = await WorktreeCleanup.remove(path: path, deleteBranch: true, discard: delete)
+        XCTAssertNil(error)
+        XCTAssertFalse(branches().contains("worktree/recorded"))
+        XCTAssertEqual(GitFixture.sh("git config --get-regexp '^branch\\.worktree/recorded\\.' || true", in: repo), "")
+    }
 }

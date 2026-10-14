@@ -1039,6 +1039,9 @@ struct SidebarOutlineView: NSViewRepresentable {
             // mouse-up) would undo it.
             guard row >= 0 else { return }
             if let dormant = sender.item(atRow: row) as? DormantItem {
+                // The second click of a double-click: the first already opened it.
+                guard !justOpenedDormant else { return }
+                dormantOpenedAt = Date()
                 manager.openDormant(dormant.entry)
                 return
             }
@@ -1050,6 +1053,10 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// the chevron. If the press turns out to be the start of a drag,
         /// `draggingSession:willBeginAt:` undoes it.
         func headerPressed(_ item: Any, in outline: NSOutlineView) {
+            // Opening a row of the fold puts a session above it, so a
+            // double-click's second press lands on whatever moved under the
+            // pointer: often the fold's header, which it would close.
+            guard !justOpenedDormant else { return }
             if item is PinnedItem {
                 if outline.isItemExpanded(pinnedItem) {
                     outline.animator().collapseItem(pinnedItem)
@@ -1081,9 +1088,15 @@ struct SidebarOutlineView: NSViewRepresentable {
             // Sessions rename on double-click. Headers have no double-click
             // meaning at all — each press just toggles them, and rename lives in
             // their context menu.
-            guard row >= 0, let session = sender.item(atRow: row) as? SessionItem else { return }
+            guard row >= 0, !justOpenedDormant, let session = sender.item(atRow: row) as? SessionItem
+            else { return }
             manager.selectedID = session.id
             manager.editingID = session.id
+        }
+
+        private var dormantOpenedAt = Date.distantPast
+        private var justOpenedDormant: Bool {
+            Date().timeIntervalSince(dormantOpenedAt) < NSEvent.doubleClickInterval
         }
 
         /// Put the folderless sessions in the outline or take them out, sliding

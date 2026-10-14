@@ -664,10 +664,13 @@ _ghostty_deferred_init() {
 
     if [[ "$GHOSTTY_SHELL_FEATURES" == *"title"* ]]; then
       # Enable terminal title changes, formatted for user-friendly display.
+      # The command's title is cut to 200 characters: libghostty drops an OSC
+      # longer than 2048 bytes whole, so a pasted heredoc or a long
+      # `claude "<prompt>"` would otherwise leave the old title standing.
       functions[_ghostty_precmd]+="
           builtin print -rnu $_ghostty_fd \$'\\e]2;'\"\${(%):-%(4~|…/%3~|%~)}\"\$'\\a'"
       functions[_ghostty_preexec]+="
-          builtin print -rnu $_ghostty_fd \$'\\e]2;'\"\${1//[[:cntrl:]]}\"\$'\\a'"
+          builtin print -rnu $_ghostty_fd \$'\\e]2;'\"\${\${1//[[:cntrl:]]}[1,200]}\"\$'\\a'"
     fi
 
     if [[ "$GHOSTTY_SHELL_FEATURES" == *"cursor"* ]]; then

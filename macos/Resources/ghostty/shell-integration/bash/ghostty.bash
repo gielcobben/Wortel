@@ -711,9 +711,11 @@ function __ghostty_preexec() {
   PS1="$_GHOSTTY_SAVE_PS1"
   PS2="$_GHOSTTY_SAVE_PS2"
 
-  # Title (current command)
+  # Title (current command), cut to 200 characters: libghostty drops an OSC
+  # longer than 2048 bytes whole, which would leave the old title standing.
   if [[ -n $cmd && "${GHOSTTY_SHELL_FEATURES-}" == *"title"* ]]; then
-    builtin printf "\e]2;%s\a" "${cmd//[[:cntrl:]]/}"
+    builtin local title="${cmd//[[:cntrl:]]/}"
+    builtin printf "\e]2;%s\a" "${title:0:200}"
   fi
 
   # End of input, start of output.

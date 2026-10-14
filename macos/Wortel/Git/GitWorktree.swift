@@ -331,24 +331,61 @@ extension GitWorktree {
     ///   directory (Claude's transcripts are per folder), so a new worktree in
     ///   an old one's place would offer the old conversation. `wasUsed` says
     ///   so; an existing folder always counts. A `-2`, `-3` goes on the end.
+    ///
+    /// `location` is where the repository wants its worktrees instead
+    /// (`locationKey`, a `location(template:…)`), which replaces Wortel's
+    /// folder and the same-name rule with it; the never-reused rule stands.
     nonisolated static func newWorktreePath(
         forBranch branch: String, repoRoot: String, under base: URL = root,
-        wasUsed: (String) -> Bool = { _ in false }
+        location: String? = nil, wasUsed: (String) -> Bool = { _ in false }
     ) -> String {
         let repo = (repoRoot as NSString).lastPathComponent
-        var folder = base.appendingPathComponent(slug(forBranch: repo), isDirectory: true).path
-        if holdsAnotherRepository(folder, than: repoRoot) {
-            folder = base.appendingPathComponent(
-                "\(slug(forBranch: repo))-\(digest(realPath(repoRoot)))", isDirectory: true).path
-        }
         let leaf = slug(forBranch: branch)
-        var candidate = (folder as NSString).appendingPathComponent(leaf)
+        var candidate: String
+        if let location {
+            candidate = self.location(template: location, repoRoot: repoRoot, branch: branch)
+        } else {
+            var folder = base.appendingPathComponent(slug(forBranch: repo), isDirectory: true).path
+            if holdsAnotherRepository(folder, than: repoRoot) {
+                folder = base.appendingPathComponent(
+                    "\(slug(forBranch: repo))-\(digest(realPath(repoRoot)))", isDirectory: true).path
+            }
+            candidate = (folder as NSString).appendingPathComponent(leaf)
+        }
+        let first = candidate
         var n = 2
         while FileManager.default.fileExists(atPath: candidate) || wasUsed(candidate) {
-            candidate = (folder as NSString).appendingPathComponent("\(leaf)-\(n)")
+            candidate = "\(first)-\(n)"
             n += 1
         }
         return candidate
+    }
+
+    /// The git config key a repository names its worktree location in:
+    /// `git config wortel.worktreePath <template>`, set by the folder menu's
+    /// Worktree Location…, or for every repository under a folder with git's
+    /// own `includeIf` (which is how a team's machines can share one rule
+    /// with nothing of Wortel's to set up). Unset means Wortel's folder.
+    static let locationKey = "wortel.worktreePath"
+
+    /// Where a worktree goes for `template`:
+    /// - `{repo}` is the repository's folder name, `{branch}` the branch as
+    ///   a folder name (`slug`);
+    /// - without `{branch}` the template names a folder, and the branch goes
+    ///   inside it;
+    /// - `~` is home, and a relative path is from the repository's folder,
+    ///   so `.worktrees` puts them inside it and `../{repo}-worktrees` beside.
+    nonisolated static func location(template: String, repoRoot: String, branch: String) -> String {
+        var path = template.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !path.contains("{branch}") {
+            path = path.hasSuffix("/") ? path + "{branch}" : path + "/{branch}"
+        }
+        path = path
+            .replacingOccurrences(of: "{repo}", with: slug(forBranch: (repoRoot as NSString).lastPathComponent))
+            .replacingOccurrences(of: "{branch}", with: slug(forBranch: branch))
+        path = (path as NSString).expandingTildeInPath
+        if !path.hasPrefix("/") { path = (repoRoot as NSString).appendingPathComponent(path) }
+        return (path as NSString).standardizingPath
     }
 
     /// Whether `folder` holds worktrees of a repository other than `repoRoot`.

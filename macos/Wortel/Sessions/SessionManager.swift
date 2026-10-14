@@ -440,8 +440,10 @@ final class SessionManager {
         let home = NSHomeDirectory()
         let worktrees = [GitWorktree.root.path]
         for folder in folderNames where folderRoots[folder] == nil {
+            // Worktrees don't vote, wherever they are: their common folder
+            // is a place for branches, not the project.
             let cwds = sessions
-                .filter { $0.folderPath == folder }
+                .filter { $0.folderPath == folder && $0.homeCheckout == nil }
                 .compactMap { $0.originCwd }
             guard let root = FolderRoot.derived(
                 from: cwds, excludingUnder: worktrees, home: home) else { continue }
@@ -2025,7 +2027,7 @@ final class SessionManager {
                 ? "Pull request \(pr.label) was force-pushed since the copy here was made, so this opens that copy."
                 : "Couldn't fetch pull request \(pr.label), so this opens the copy here from before.")
         }
-        let path = Self.newWorktreePath(forBranch: branch, repoRoot: existing.first(where: \.isPrimary)?.path ?? root)
+        let path = await Self.newWorktreePath(forBranch: branch, repoRoot: existing.first(where: \.isPrimary)?.path ?? root)
         if let error = await GitService.addWorktree(root: root, at: path, branch: branch, source: .existingBranch) {
             return .failure(Failure(message: GitMessage.readable(error, while: .worktree(branch: branch))))
         }
@@ -2059,7 +2061,7 @@ final class SessionManager {
         if taken.contains(branch) {
             return .failure(Failure(message: "A branch named \u{201c}\(branch)\u{201d} already exists."))
         }
-        let path = Self.newWorktreePath(forBranch: branch, repoRoot: repoRoot)
+        let path = await Self.newWorktreePath(forBranch: branch, repoRoot: repoRoot)
         if let error = await GitService.addWorktree(
             root: root, at: path, branch: branch, source: .newBranch(from: source.snapshot?.head)) {
             return .failure(Failure(message: GitMessage.readable(error, while: .worktree(branch: branch))))
@@ -2070,8 +2072,14 @@ final class SessionManager {
     /// Where a worktree Wortel is about to create goes (`GitWorktree.newWorktreePath`):
     /// never a folder Claude already keeps a conversation history for, since
     /// a new session there would be offered the old one.
-    private static func newWorktreePath(forBranch branch: String, repoRoot: String) -> String {
-        GitWorktree.newWorktreePath(forBranch: branch, repoRoot: repoRoot) { path in
+    /// In the repository's own location when it names one (`GitWorktree.locationKey`).
+    private static func newWorktreePath(forBranch branch: String, repoRoot: String) async -> String {
+        // A bare clone's worktrees are named for the folder holding it
+        // (`repo/.bare` is "repo"), as everything else here names them.
+        let repoRoot = (repoRoot as NSString).lastPathComponent == ".bare"
+            ? (repoRoot as NSString).deletingLastPathComponent : repoRoot
+        let location = await GitService.worktreeLocation(root: repoRoot)
+        return GitWorktree.newWorktreePath(forBranch: branch, repoRoot: repoRoot, location: location) { path in
             !AgentResumeStore.claudeProjectDirectories(for: path).isEmpty
         }
     }
@@ -2099,7 +2107,7 @@ final class SessionManager {
         if let match = existing.first(where: { $0.branch == branch }) {
             path = match.path
         } else {
-            path = Self.newWorktreePath(forBranch: branch, repoRoot: repoRoot)
+            path = await Self.newWorktreePath(forBranch: branch, repoRoot: repoRoot)
             // A branch that exists gets checked out; one that doesn't is created
             // from `base` — or from HEAD when the caller named none, which is
             // what "new session on a new branch" means when you're standing on
@@ -2646,11 +2654,25 @@ final class SessionManager {
     /// something says it changed, never on a timer and never per row.
     private(set) var worktreeListings: [String: [GitWorktree]] = [:]
     @ObservationIgnored private var listingsInFlight: Set<String> = []
+    /// Each repository's own worktree location (`GitWorktree.locationKey`),
+    /// read with its listing; absent for Wortel's folder.
+    private(set) var worktreeLocations: [String: String] = [:]
+
+    /// Point a repository's new worktrees somewhere of its choosing, or back
+    /// at Wortel's folder (nil). Written to its local git config, where
+    /// `wortel new --branch` and any other tool can read it too. Worktrees
+    /// already made stay where they are.
+    func setWorktreeLocation(_ location: String?, forRepository home: String) {
+        Task { [weak self] in
+            _ = await GitService.setWorktreeLocation(location, root: home)
+            self?.readListing(home)
+        }
+    }
     @ObservationIgnored private var listingWatchers: [String: DirectoryWatcher] = [:]
 
     /// The repository a folder stands for: its directory's, else the one its
     /// first session started in.
-    private func repositoryHome(ofFolder folder: String) -> String? {
+    func repositoryHome(ofFolder folder: String) -> String? {
         let directory = root(ofFolder: folder)
             ?? sessions.first(where: { $0.folderPath == folder })?.originCwd
             ?? archived.first(where: { $0.folderPath == folder })?.repoHome
@@ -2732,9 +2754,11 @@ final class SessionManager {
         guard listingsInFlight.insert(home).inserted else { return }
         Task { [weak self] in
             let listing = await GitService.worktrees(root: home)
+            let location = await GitService.worktreeLocation(root: home)
             guard let self else { return }
             self.listingsInFlight.remove(home)
             if self.worktreeListings[home] != listing { self.worktreeListings[home] = listing }
+            if self.worktreeLocations[home] != location { self.worktreeLocations[home] = location }
         }
     }
 

@@ -142,4 +142,59 @@ final class WorktreeOwnershipTests: XCTestCase {
                        GitWorktree.realPath(repo.path))
         XCTAssertNil(GitWorktree.repositoryHome(containing: "/nonexistent/at/all"))
     }
+
+    // MARK: - The repository's own location
+
+    func testLocationTemplates() {
+        let repo = "/w/shop"
+        XCTAssertEqual(GitWorktree.location(template: ".worktrees", repoRoot: repo, branch: "feature/x"),
+                       "/w/shop/.worktrees/" + GitWorktree.slug(forBranch: "feature/x"))
+        XCTAssertEqual(GitWorktree.location(template: "../{repo}-worktrees/", repoRoot: repo, branch: "fix"),
+                       "/w/shop-worktrees/fix")
+        XCTAssertEqual(GitWorktree.location(template: "/srv/wt/{repo}/{branch}", repoRoot: repo, branch: "fix"),
+                       "/srv/wt/shop/fix")
+        XCTAssertEqual(GitWorktree.location(template: "~/work/trees/{repo}.{branch}", repoRoot: repo, branch: "a b"),
+                       NSHomeDirectory() + "/work/trees/shop." + GitWorktree.slug(forBranch: "a b"))
+    }
+
+    /// Set in git config (any level), read by the add path, and the folder
+    /// it names replaces Wortel's; a worktree inside the repository is kept
+    /// out of its status by info/exclude, never .gitignore.
+    func testTheRepositorysLocationIsUsedAndKeptOutOfStatus() async {
+        GitFixture.sh("git config wortel.worktreePath .worktrees", in: repo)
+        let location = await GitService.worktreeLocation(root: repo.path)
+        XCTAssertEqual(location, ".worktrees")
+        let path = GitWorktree.newWorktreePath(forBranch: "inside", repoRoot: repo.path,
+                                               under: base.appendingPathComponent("unused"), location: location)
+        XCTAssertEqual(path, repo.appendingPathComponent(".worktrees/inside").path)
+        let error = await GitService.addWorktree(root: repo.path, at: path, branch: "inside", source: .newBranch(from: "main"))
+        XCTAssertNil(error)
+        XCTAssertEqual(GitWorktree.linked(containing: path)?.isOwned, true)
+        XCTAssertEqual(GitFixture.sh("git status --porcelain", in: repo), "")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: repo.appendingPathComponent(".gitignore").path))
+        XCTAssertTrue(GitFixture.sh("cat .git/info/exclude", in: repo).contains("/.worktrees/"))
+
+        // A second one adds no second line.
+        let next = GitWorktree.newWorktreePath(forBranch: "again", repoRoot: repo.path, location: location)
+        _ = await GitService.addWorktree(root: repo.path, at: next, branch: "again", source: .newBranch(from: "main"))
+        XCTAssertEqual(GitFixture.sh("grep -c '^/.worktrees/$' .git/info/exclude", in: repo), "1")
+
+        // Clearing it goes back to Wortel's folder.
+        let cleared = await GitService.setWorktreeLocation(nil, root: repo.path)
+        XCTAssertTrue(cleared)
+        let after = await GitService.worktreeLocation(root: repo.path)
+        XCTAssertNil(after)
+    }
+
+    /// Wortel's own worktrees made in a repository's location are found by
+    /// Clean Up, through the repository, by their marker; one made by hand
+    /// beside them isn't.
+    func testCleanUpFindsOwnedWorktreesInTheRepositorysLocation() async {
+        let path = base.appendingPathComponent("trees/mine").path
+        _ = await GitService.addWorktree(root: repo.path, at: path, branch: "mine", source: .newBranch(from: "main"))
+        GitFixture.sh("git worktree add -q -b theirs ../trees/theirs", in: repo)
+        let found = await WorktreeCleanup.discover(knownRepos: [repo.path], under: base.appendingPathComponent("none"),
+                                                   broughtHere: [])
+        XCTAssertEqual(found.map(GitWorktree.realPath), [GitWorktree.realPath(path)])
+    }
 }

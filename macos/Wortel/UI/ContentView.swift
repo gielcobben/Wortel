@@ -27,14 +27,15 @@ func promptFolderName(title: String, confirm: String, initial: String = "") -> S
 /// prompt above is — one question, one answer, and no state to thread through
 /// the sidebar. Returns nil on Cancel.
 @MainActor
-func chooseDirectory(title: String, startingAt current: String? = nil) -> String? {
+func chooseDirectory(title: String, startingAt current: String? = nil,
+                     prompt: String = "Open", canCreate: Bool = false) -> String? {
     let panel = NSOpenPanel()
     panel.message = title
-    panel.prompt = "Open"
+    panel.prompt = prompt
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.allowsMultipleSelection = false
-    panel.canCreateDirectories = false
+    panel.canCreateDirectories = canCreate
     // Start where the folder already points, so "Set Directory…" opens on the
     // thing it is about to change rather than on wherever the panel was last.
     if let current { panel.directoryURL = URL(fileURLWithPath: current) }
@@ -773,6 +774,28 @@ enum FolderActions {
         // a network, not "Clear", which reads as emptying it.
         if manager.root(ofFolder: folder) != nil {
             item("Forget Directory", "folder.badge.minus") { manager.setRoot(nil, ofFolder: folder) }
+        }
+        // Where this repository's new worktrees go: Wortel's folder unless
+        // the repository says otherwise (`GitWorktree.locationKey`, in its
+        // git config, where a team's setup or `includeIf` may already have
+        // put it).
+        if let home = manager.repositoryHome(ofFolder: folder) {
+            let current = manager.worktreeLocations[home]
+            item("Worktree Location\u{2026}", "arrow.triangle.branch") {
+                let start = current.map {
+                    (GitWorktree.location(template: $0, repoRoot: home, branch: "x") as NSString)
+                        .deletingLastPathComponent
+                } ?? (home as NSString).deletingLastPathComponent
+                guard let chosen = chooseDirectory(
+                    title: "Where new worktrees of \u{201c}\((home as NSString).lastPathComponent)\u{201d} go. Each gets a folder of its own in it, named for its branch.",
+                    startingAt: start, prompt: "Use This Folder", canCreate: true) else { return }
+                manager.setWorktreeLocation((chosen as NSString).abbreviatingWithTildeInPath, forRepository: home)
+            }
+            if current != nil {
+                item("Use Wortel\u{2019}s Worktree Folder", "arrow.uturn.backward") {
+                    manager.setWorktreeLocation(nil, forRepository: home)
+                }
+            }
         }
         menu.addItem(.separator())
         // Non-destructive: the sessions drop to the top level, they're not

@@ -448,7 +448,7 @@ final class GitRepoModel {
 
     private func refreshMerged() async {
         guard status.isClean, let branch = status.branch, let head = status.head,
-              WorktreeCleanup.isUnder(GitWorktree.root, root),
+              GitWorktree.Ownership.isOwned(root: root),
               let trunk = await GitService.defaultBase(root: root)
         else {
             mergedKey = nil

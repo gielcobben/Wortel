@@ -188,10 +188,14 @@ enum WorktreeCleanup {
             if let primary = await primaryCheckout(of: path) { repos.insert(primary) }
         }
         for repo in repos {
-            for worktree in await GitService.worktrees(root: repo)
-            where !worktree.isPrimary && isUnder(base, worktree.path)
-                && !fm.fileExists(atPath: worktree.path) {
-                found.append(worktree.path)
+            for worktree in await GitService.worktrees(root: repo) where !worktree.isPrimary {
+                if isUnder(base, worktree.path) {
+                    if !fm.fileExists(atPath: worktree.path) { found.append(worktree.path) }
+                } else if fm.fileExists(atPath: worktree.path), GitWorktree.Ownership.isOwned(root: worktree.path) {
+                    // Made by Wortel somewhere a repository chose
+                    // (`GitWorktree.locationKey`): Wortel's all the same.
+                    found.append(worktree.path)
+                }
             }
         }
         for path in broughtHere {

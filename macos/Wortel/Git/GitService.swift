@@ -651,6 +651,7 @@ enum GitService {
             return message.isEmpty ? "git worktree add failed" : message
         }
         GitWorktree.Ownership.mark(root: path)
+        if let home = GitWorktree.repositoryHome(containing: root) { await excludeIfInside(path, repoHome: home) }
         if case .newBranch(let base) = source {
             _ = await run(["config", "branch.\(branch).\(GitWorktree.Ownership.createdKey)", "true"], in: root)
             if let base {
@@ -674,6 +675,51 @@ enum GitService {
             dropped = true
         }
         return dropped
+    }
+
+    /// Where the repository at `root` wants its worktrees (`GitWorktree.locationKey`),
+    /// from any level of git's config, `includeIf` included. nil for Wortel's folder.
+    static func worktreeLocation(root: String) async -> String? {
+        let result = await run(["config", "--get", GitWorktree.locationKey], in: root)
+        let value = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.ok && !value.isEmpty ? value : nil
+    }
+
+    /// Set the repository's own worktree location, or clear it (nil), in its
+    /// local config. A location from a global or included config still applies
+    /// after a clear: that's where it was set.
+    static func setWorktreeLocation(_ template: String?, root: String) async -> Bool {
+        if let template {
+            return await run(["config", "--local", GitWorktree.locationKey, template], in: root).ok
+        }
+        let result = await run(["config", "--local", "--unset", GitWorktree.locationKey], in: root)
+        // 5: there was nothing to unset.
+        return result.ok || result.status == 5
+    }
+
+    /// A worktree inside its repository's folder would show as untracked
+    /// files there. Keep it out with the repository's own `info/exclude`,
+    /// which is never committed, never `.gitignore`. Nothing when git
+    /// already ignores it.
+    static func excludeIfInside(_ path: String, repoHome: String) async {
+        let home = GitWorktree.realPath(repoHome)
+        let target = GitWorktree.realPath(path)
+        guard target.hasPrefix(home + "/") else { return }
+        let relative = String(target.dropFirst(home.count + 1))
+        guard let top = relative.split(separator: "/").first.map(String.init) else { return }
+        if await run(["check-ignore", "-q", "--no-index", top + "/"], in: home).ok { return }
+        let common = await run(["rev-parse", "--path-format=absolute", "--git-common-dir"], in: home)
+        guard common.ok else { return }
+        let exclude = (common.stdout.trimmingCharacters(in: .whitespacesAndNewlines) as NSString)
+            .appendingPathComponent("info/exclude")
+        let existing = (try? String(contentsOfFile: exclude, encoding: .utf8)) ?? ""
+        let line = "/\(top)/"
+        guard !existing.split(separator: "\n").contains(Substring(line)) else { return }
+        let addition = (existing.isEmpty || existing.hasSuffix("\n") ? "" : "\n")
+            + "# Worktrees Wortel makes here\n\(line)\n"
+        try? FileManager.default.createDirectory(
+            atPath: (exclude as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        try? (existing + addition).write(toFile: exclude, atomically: true, encoding: .utf8)
     }
 
     /// Whether Wortel created `branch` (`GitWorktree.Ownership`), as recorded

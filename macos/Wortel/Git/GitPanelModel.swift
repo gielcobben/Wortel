@@ -415,7 +415,7 @@ final class GitPanelModel {
             if !report.changedFiles.isEmpty { reasons.append("Commit them there first.") }
             return "\(name) stays in \(folder). " + reasons.joined(separator: " ")
         }
-        if WorktreeCleanup.isUnder(GitWorktree.root, path) {
+        if GitWorktree.Ownership.isOwned(root: path) {
             if let error = await WorktreeCleanup.remove(path: path, usedBy: users, deleteBranch: false) {
                 return error
             }

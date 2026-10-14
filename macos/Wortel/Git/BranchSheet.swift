@@ -7,8 +7,13 @@ enum BranchChoice: Equatable {
     case pullRequest(PullRequestRef)
 }
 
-/// "New Session on Branch": a name, and the ref it forks from. Or a pull
-/// request, by `#123` or its URL, typed into the same field.
+/// "New Branch From…": a name, and the ref it forks from. Or a pull request,
+/// by `#123` or its URL, typed into the same field.
+///
+/// What's left of "New Session on Branch" now that ⇧⌘N makes a worktree
+/// session without asking and ⇧⌘O opens any branch: Open Branch's ⌥↩ on
+/// Create, for a branch that should start somewhere other than the default
+/// branch. It always arrives with the name typed there (`initialName`).
 ///
 /// Two inputs, a line saying what the button will do, and the two buttons. The
 /// "From" control opens the branch list right under itself; there is no menu in
@@ -28,20 +33,9 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     /// Where the answer goes. Called exactly once, with nil for Cancel.
     private var finish: ((BranchChoice?) -> Void)?
 
-    /// What we put in the field, kept so we can tell "still ours" from "typed
-    /// over" when the remote branches land.
-    private var suggested = ""
-    /// A name typed before the sheet came up (Open Branch's ⌥↩ on Create):
-    /// the sheet is then for picking where it starts from.
+    /// The name typed before the sheet came up (Open Branch's ⌥↩ on Create):
+    /// the sheet is for picking where it starts from.
     var initialName: String?
-
-    /// A name you can simply accept, so the common case is: open the sheet,
-    /// press Return (`GitWorktree.generatedBranch`).
-    private static func suggestedName(in catalog: BranchCatalog, now: Date = Date()) -> String {
-        GitWorktree.generatedBranch(now: now) {
-            catalog.hasLocal($0) || !catalog.remotes(carrying: $0).isEmpty
-        }
-    }
 
     /// Wide enough for a real branch name (`feature/the-thing-i-am-doing`) and
     /// for the status line under it, which is the longest thing here and the
@@ -95,26 +89,15 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     /// now be a branch somebody else pushed.
     func catalogChanged() {
         baseChooser.catalogChanged()
-        // The suggestion was made against the local branches alone, so a remote
-        // one could have been carrying that name all along. Only re-rolled if
-        // the field is still exactly what we put there: once you have typed,
-        // the name is yours and the status line says what it will do.
-        if initialName == nil, nameField.stringValue == suggested,
-           !catalog.remotes(carrying: suggested).isEmpty {
-            suggested = Self.suggestedName(in: catalog)
-            nameField.stringValue = suggested
-            selectName()
-        }
         sync()
     }
 
     override func loadView() {
-        let title = NSTextField(labelWithString: initialName == nil ? "New Session on Branch" : "New Branch From\u{2026}")
+        let title = NSTextField(labelWithString: "New Branch From\u{2026}")
         title.font = .preferredFont(forTextStyle: .headline)
 
         nameField.placeholderString = "Branch name, or a pull request"
-        suggested = initialName ?? Self.suggestedName(in: catalog)
-        nameField.stringValue = suggested
+        nameField.stringValue = initialName ?? ""
         nameField.controlSize = .large
         nameField.font = .systemFont(ofSize: NSFont.systemFontSize)
 
@@ -214,8 +197,8 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
 
     func controlTextDidChange(_ obj: Notification) { sync() }
 
-    /// The suggestion arrives selected, so it costs one keystroke to replace
-    /// and none to accept. A prefilled field you have to clear first is worse
+    /// The name arrives selected, so it costs one keystroke to replace and
+    /// none to accept. A prefilled field you have to clear first is worse
     /// than an empty one.
     private func selectName() { nameField.currentEditor()?.selectAll(nil) }
 

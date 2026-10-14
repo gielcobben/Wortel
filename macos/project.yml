@@ -453,6 +453,10 @@ targets:
       # own files. Three layouts nobody documents; a drift resumes the wrong
       # conversation without a sound. Foundation only.
       - path: Wortel/Sessions/AgentConversation.swift
+      # How a quiet Claude turn ended, read from the end of its transcript: an
+      # API error or a pending question looks like any finished turn from the
+      # terminal, and a misread is a wrong dot. Foundation only.
+      - path: Wortel/Sessions/ClaudeTranscriptTail.swift
       # What a resume carries over from the line that started the agent: its
       # launcher and the flags that set how it runs. A slip here drops a
       # permission mode or turns a flag's value into a prompt. Foundation only.

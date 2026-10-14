@@ -684,6 +684,9 @@ final class GhosttyRuntime {
             guard let view = surfaceView(fromTarget: target) else { return false }
             let state = action.action.progress_report.state
             let active = state != GHOSTTY_PROGRESS_STATE_REMOVE && state != GHOSTTY_PROGRESS_STATE_PAUSE
+            // ERROR is still working, but the program has said the work is
+            // failing: when the span then ends, it ended badly.
+            let errored = state == GHOSTTY_PROGRESS_STATE_ERROR
             // Gated like the title trace: a program reporting real progress can
             // emit these many times a second, and this runs on libghostty's
             // thread.
@@ -691,7 +694,7 @@ final class GhosttyRuntime {
                 AgentStatusLog.log.debug(
                     "progress state=\(state.rawValue, privacy: .public) → busy=\(active, privacy: .public)")
             }
-            DispatchQueue.main.async { view.onProgress?(active) }
+            DispatchQueue.main.async { view.onProgress?(active, errored) }
             return true
 
         case GHOSTTY_ACTION_COMMAND_FINISHED:

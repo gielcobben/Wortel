@@ -149,6 +149,9 @@ final class SessionManager {
     /// When each session's busy spinner actually turned on; drives the
     /// minimum-duration gate above.
     @ObservationIgnored private var busyStartedAt: [Session.ID: Date] = [:]
+    /// Sessions whose latest OSC 9;4 report was the error state. A span that
+    /// ends from there is announced as a failure, not a finished turn.
+    @ObservationIgnored private var progressErrored: Set<Session.ID> = []
     /// The last (start, cleared) busy interval per session. If busy re-arms
     /// shortly after clearing, it's a continuation of the same run of work —
     /// e.g. Pi's OSC 133 zone marks make the core synthesize a command-finished
@@ -1934,6 +1937,7 @@ final class SessionManager {
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
         unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
         busyStartedAt.removeValue(forKey: session.id)
+        progressErrored.remove(session.id)
         lastBusyInterval.removeValue(forKey: session.id)
         titleShowsWorking.remove(session.id)
         agentScreenTrackers.removeValue(forKey: session.id)
@@ -2301,7 +2305,8 @@ final class SessionManager {
                                source: String, corroborating: Bool = false) {
         let required = corroborating
             ? Self.minBusyForCorroboratedQuiesce : Self.minBusyForQuiesceAttention
-        let busyLongEnough = busyStartedAt[session.id].map {
+        let startedAt = busyStartedAt[session.id]
+        let busyLongEnough = startedAt.map {
             Date().timeIntervalSince($0) >= required
         } ?? false
         clearBusy(session)
@@ -2323,10 +2328,7 @@ final class SessionManager {
             // turn-end. If it *did* prompt (a notification / action-required
             // title), that already raised a louder .needsInput which priority
             // keeps from being downgraded here.
-            self.raiseAttention(
-                session, kind: kind, title: session.name,
-                body: kind == .needsInput ? "Waiting on you" : "Finished, your move",
-                source: "\(source)-quiesce")
+            self.announceTurnEnd(session, kind: kind, startedAt: startedAt, source: source)
             // A finished turn is the best moment to (re)name the session from
             // what's now on screen — even when it's the one you're watching.
             self.considerAutoName(session)
@@ -2336,6 +2338,52 @@ final class SessionManager {
         // A pending notification is the one thing that must fire on time even
         // with the app buried; hold off App Nap for it.
         updateAgentActivityAssertion()
+    }
+
+    /// Raises the attention for a turn that went quiet. For Claude, whose
+    /// terminal signals look the same however a turn ended, the end of its
+    /// transcript is read first (`ClaudeTranscriptTail`): an API error is a
+    /// failure, not "your move", and a question or a plan it is waiting on is
+    /// input it needs. Anything else, or a transcript that can't be found,
+    /// keeps the inferred kind.
+    private func announceTurnEnd(_ session: Session, kind: AttentionKind, startedAt: Date?,
+                                 source: String) {
+        let raise = { [weak self, weak session] (kind: AttentionKind, body: String, tag: String) in
+            guard let self, let session else { return }
+            self.raiseAttention(session, kind: kind, title: session.name, body: body,
+                                source: "\(source)-quiesce\(tag)")
+        }
+        let inferredBody: String
+        switch kind {
+        case .needsInput: inferredBody = "Waiting on you"
+        case .failed: inferredBody = "Stopped with an error"
+        default: inferredBody = "Finished, your move"
+        }
+        guard kind == .turnDone, session.runningAgent == "claude",
+              let id = session.liveConversationID, let cwd = session.runningCwd ?? session.cwd,
+              let startedAt
+        else { return raise(kind, inferredBody, "") }
+        // Two seconds of slack: the prompt that opened the turn is stamped
+        // when Claude wrote it, which can be a moment before its busy edge
+        // reached us.
+        let since = startedAt.addingTimeInterval(-2)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let verdict = AgentResumeStore.claudeProjectDirectories(for: cwd).lazy
+                .compactMap { ClaudeTranscriptTail.readTail(of: $0.appendingPathComponent("\(id).jsonl")) }
+                .first
+                .flatMap { ClaudeTranscriptTail.verdict($0, since: since) }
+            DispatchQueue.main.async { [weak self, weak session] in
+                guard let self, let session else { return }
+                // Busy again while the file was read: the turn didn't end.
+                guard !session.isBusy, self.busyTimers[session.id] == nil else { return }
+                switch verdict {
+                case .apiError(let message): raise(.failed, message, "-apierror")
+                case .question: raise(.needsInput, "Asking you a question", "-question")
+                case .plan: raise(.needsInput, "Plan ready for review", "-plan")
+                case nil: raise(kind, inferredBody, "")
+                }
+            }
+        }
     }
 
     // MARK: - Attention
@@ -3046,12 +3094,21 @@ final class SessionManager {
                 self.raiseAttention(session, kind: .needsInput, title: session.name, body: "Bell",
                                     source: "bell")
             }
-            view.onProgress = { [weak self, weak session] active in
+            view.onProgress = { [weak self, weak session] active, errored in
                 guard let self, let session else { return }
                 // An agent reporting its own progress is authoritative — note
                 // it so the screen sampler stays out of this session's way.
                 self.noteExplicitSignal(session)
-                if active { self.markBusy(session) } else { self.progressEnded(session, source: "osc") }
+                if active {
+                    // The last state before the span ends is the one that
+                    // counts: an error the program then recovered from (a
+                    // later set or indeterminate) is not how it finished.
+                    if errored { self.progressErrored.insert(session.id) } else { self.progressErrored.remove(session.id) }
+                    self.markBusy(session)
+                } else {
+                    let failed = self.progressErrored.remove(session.id) != nil
+                    self.progressEnded(session, inferred: failed ? .failed : .turnDone, source: "osc")
+                }
             }
             // A resize re-wraps every session's screen at once, hidden ones
             // included. That is a repaint the agents had no part in, so it must

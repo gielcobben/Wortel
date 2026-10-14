@@ -1739,7 +1739,7 @@ final class SessionManager {
         _ request: WorktreePreparation.Request, branch: String?, leaf: String, from: String,
         inFolder folder: String?, after fetch: Task<Void, Never>?, completion: WorktreeCompletion?
     ) -> Session {
-        let session = makeSession(cwd: nil, inFolder: folder ?? selected?.folderPath,
+        let session = makeSession(cwd: nil, inFolder: folder ?? self.folder(forRepositoryAt: from),
                                   via: .worktree, reported: false) { session in
             session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
             session.worktreeBranch = branch
@@ -1748,6 +1748,27 @@ final class SessionManager {
         if let completion { worktreeCompletions[session.id] = completion }
         prepareWorktree(for: session, after: fetch)
         return session
+    }
+
+    /// The folder a new worktree of the repository at `directory` is filed
+    /// in, when the caller named none: the one covering the repository (or
+    /// the worktree itself), else the folder of a session already in that
+    /// repository, else one made for it, as ⌘O makes one. Never the selected
+    /// row's: that's how a worktree of one project landed in another's folder.
+    private func folder(forRepositoryAt directory: String) -> String? {
+        guard let home = GitWorktree.repositoryHome(containing: directory) else { return nil }
+        if let covering = folder(forWorktreeAt: directory, repoHome: home) { return covering }
+        let inRepository = sessions.first { session in
+            guard session.folderPath != nil else { return false }
+            if let other = session.linkedCheckout?.repoHome { return other == home }
+            return session.originCwd.map { FolderRoot.root(home, contains: GitWorktree.realPath($0)) } ?? false
+        }
+        if let folder = inRepository?.folderPath { return folder }
+        let leaf = (home as NSString).lastPathComponent
+        guard leaf != "/", !leaf.isEmpty, home != NSHomeDirectory() else { return nil }
+        let folder = addFolder(named: leaf)
+        setRoot(home, ofFolder: folder)
+        return folder
     }
 
     /// Ask git again for a session whose worktree it refused, as it was asked
@@ -2004,7 +2025,7 @@ final class SessionManager {
                 ? "Pull request \(pr.label) was force-pushed since the copy here was made, so this opens that copy."
                 : "Couldn't fetch pull request \(pr.label), so this opens the copy here from before.")
         }
-        let path = GitWorktree.path(forBranch: branch, repoRoot: existing.first(where: \.isPrimary)?.path ?? root)
+        let path = Self.newWorktreePath(forBranch: branch, repoRoot: existing.first(where: \.isPrimary)?.path ?? root)
         if let error = await GitService.addWorktree(root: root, at: path, branch: branch, source: .existingBranch) {
             return .failure(Failure(message: GitMessage.readable(error, while: .worktree(branch: branch))))
         }
@@ -2038,12 +2059,21 @@ final class SessionManager {
         if taken.contains(branch) {
             return .failure(Failure(message: "A branch named \u{201c}\(branch)\u{201d} already exists."))
         }
-        let path = GitWorktree.path(forBranch: branch, repoRoot: repoRoot)
+        let path = Self.newWorktreePath(forBranch: branch, repoRoot: repoRoot)
         if let error = await GitService.addWorktree(
             root: root, at: path, branch: branch, source: .newBranch(from: source.snapshot?.head)) {
             return .failure(Failure(message: GitMessage.readable(error, while: .worktree(branch: branch))))
         }
         return .success(ResolvedWorktree(path: path, branch: branch, sourceRoot: root, created: true))
+    }
+
+    /// Where a worktree Wortel is about to create goes (`GitWorktree.newWorktreePath`):
+    /// never a folder Claude already keeps a conversation history for, since
+    /// a new session there would be offered the old one.
+    private static func newWorktreePath(forBranch branch: String, repoRoot: String) -> String {
+        GitWorktree.newWorktreePath(forBranch: branch, repoRoot: repoRoot) { path in
+            !AgentResumeStore.claudeProjectDirectories(for: path).isEmpty
+        }
     }
 
     private func resolveWorktree(onBranch branch: String, base: String?, from cwd: String) async
@@ -2069,7 +2099,7 @@ final class SessionManager {
         if let match = existing.first(where: { $0.branch == branch }) {
             path = match.path
         } else {
-            path = GitWorktree.path(forBranch: branch, repoRoot: repoRoot)
+            path = Self.newWorktreePath(forBranch: branch, repoRoot: repoRoot)
             // A branch that exists gets checked out; one that doesn't is created
             // from `base` — or from HEAD when the caller named none, which is
             // what "new session on a new branch" means when you're standing on
@@ -2157,8 +2187,17 @@ final class SessionManager {
     /// directory yet, but knows where it came from: forking beside it means
     /// the same repository.
     func branchSource(for session: Session? = nil, inFolder folder: String? = nil) -> String? {
+        // Where the session belongs, not where its shell wandered: a `cd`
+        // into another repository, a submodule or `~` would otherwise make a
+        // worktree of the wrong one. The shell's own directory while it's
+        // inside the one the session started in (the same checkout, deeper),
+        // or when it started at home, which is no project at all.
         func directory(of session: Session) -> String? {
-            session.cwd ?? session.originCwd ?? session.preparation?.from
+            guard let origin = session.originCwd, origin != NSHomeDirectory() else {
+                return session.cwd ?? session.originCwd ?? session.preparation?.from
+            }
+            if let cwd = session.cwd, FolderRoot.root(origin, contains: cwd) { return cwd }
+            return origin
         }
         if let session { return directory(of: session) }
         if let folder, selected?.folderPath != folder {
@@ -3518,6 +3557,9 @@ final class SessionManager {
                 if let checkout = session.linkedCheckout?.root,
                    checkout != previous || session.worktreeBranch == nil {
                     self.resolveWorktreeBranch(session)
+                } else if session.linkedCheckout == nil, session.worktreeBranch != nil {
+                    // Out of every worktree: no branch to show, or to save.
+                    session.worktreeBranch = nil
                 }
                 // The shell moved somewhere: a folder it reports is one it's in.
                 if session.folderIsGone { session.folderIsGone = !FileManager.default.fileExists(atPath: pwd) }

@@ -49,6 +49,10 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
     /// a squash merge, a rebase merge, a cherry-pick. nil when not, or when
     /// git couldn't say. Only asked when `uniqueCommits` isn't 0.
     var mergedInto: String?
+    /// Wortel made the worktree (`GitWorktree.Ownership`).
+    var isOwned = false
+    /// Wortel made the branch: recorded in git config, or in its namespace.
+    var createdBranch = false
 
     var id: String { path }
 
@@ -70,12 +74,13 @@ struct WorktreeReport: Identifiable, Equatable, Sendable {
 
     private var detachedCommitsAtRisk: Bool { branch == nil && uniqueCommits != 0 }
 
-    /// Whether Wortel may offer to delete the branch at all. Only a branch in
-    /// its own namespace: a branch you checked out into a worktree yourself is
-    /// yours, and removing the folder you looked at it in says nothing about
-    /// wanting it gone.
+    /// Whether Wortel may offer to delete the branch at all. Only a branch it
+    /// created (`GitWorktree.Ownership`), or one in its namespace from before
+    /// that was recorded: a branch you checked out into a worktree yourself
+    /// is yours, and removing the folder you looked at it in says nothing
+    /// about wanting it gone.
     var ownsBranch: Bool {
-        branch?.hasPrefix(GitWorktree.branchNamespace) == true
+        createdBranch || branch?.hasPrefix(GitWorktree.branchNamespace) == true
     }
 
     /// Whether removing it may take its branch too: Wortel's own, with every
@@ -245,6 +250,8 @@ enum WorktreeCleanup {
             report.repoRoot = repo
             report.branch = entry.branch
             report.isLocked = entry.isLocked
+            report.isOwned = GitWorktree.Ownership.isUnderLegacyRoot(path)
+            report.createdBranch = await createdByWortel(entry.branch, primary: repo)
             report.uniqueCommits = await uniqueCommits(branch: entry.branch, head: entry.head, primary: repo)
             report.mergedInto = await mergedTrunk(of: report, primary: repo)
             return report
@@ -263,6 +270,8 @@ enum WorktreeCleanup {
         report.branch = entry.branch
         report.isLocked = entry.isLocked
         report.usedBy = usedBy
+        report.isOwned = GitWorktree.Ownership.isOwned(root: path)
+        report.createdBranch = await createdByWortel(entry.branch, primary: primary)
 
         // The full scan, untracked files included: an untracked file is
         // exactly the work a "clean" status would otherwise miss.
@@ -274,6 +283,11 @@ enum WorktreeCleanup {
         report.uniqueCommits = await uniqueCommits(branch: entry.branch, head: entry.head, primary: primary)
         report.mergedInto = await mergedTrunk(of: report, primary: primary)
         return report
+    }
+
+    private static func createdByWortel(_ branch: String?, primary: String) async -> Bool {
+        guard let branch else { return false }
+        return await GitService.isCreatedByWortel(branch: branch, root: primary)
     }
 
     /// The default branch `report`'s branch is merged into, by content: only

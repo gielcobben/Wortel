@@ -139,7 +139,7 @@ extension GitWorktree {
     /// rewritten carries a short digest of the original, which restores the
     /// distinction the rewrite destroyed. `main` stays `main`; `feature/x`
     /// becomes `feature-x-<digest>`.
-    static func slug(forBranch branch: String) -> String {
+    nonisolated static func slug(forBranch branch: String) -> String {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
         let isSafe = !branch.isEmpty
             && branch.unicodeScalars.allSatisfy { allowed.contains($0) }
@@ -158,7 +158,7 @@ extension GitWorktree {
     /// FNV-1a, and hand-written for one reason: the path has to be the *same
     /// path* next launch. Swift's `hashValue` is seeded per process, so a
     /// worktree keyed on it would be unfindable the moment the app restarts.
-    private static func digest(_ text: String) -> String {
+    private nonisolated static func digest(_ text: String) -> String {
         var hash: UInt32 = 2_166_136_261
         for byte in Array(text.utf8) {
             hash ^= UInt32(byte)
@@ -212,6 +212,11 @@ extension GitWorktree {
         /// `repo/main`, `repo/feature`), the folder holding it and its
         /// worktrees. nil for a bare clone anywhere else.
         let repoHome: String?
+        /// The worktree's own folder inside the repository's git dir
+        /// (`.git/worktrees/<name>`), where its HEAD and index live.
+        var gitDir: String = ""
+        /// Wortel made it (`Ownership`): the one kind it may remove.
+        var isOwned = false
     }
 
     /// The linked worktree `path` is in, at any depth, read from the files git
@@ -238,11 +243,123 @@ extension GitWorktree {
                 let common = "/" + parts.dropLast(2).joined(separator: "/")
                 let leaf = (common as NSString).lastPathComponent
                 let home = leaf == ".git" || leaf == ".bare" ? (common as NSString).deletingLastPathComponent : nil
-                return Linked(root: realPath(directory), repoHome: home.map(realPath))
+                let root = realPath(directory)
+                return Linked(root: root, repoHome: home.map(realPath), gitDir: gitDir,
+                              isOwned: Ownership.isOwned(root: root, gitDir: gitDir))
             }
             let parent = (directory as NSString).deletingLastPathComponent
             guard parent != directory, !parent.isEmpty else { return nil }
             directory = parent
+        }
+    }
+
+    /// Where the repository `path` is in lives, at any depth: a linked
+    /// worktree's `repoHome`, else the nearest folder holding a `.git`. Read
+    /// off the disk, for a decision (which sidebar folder) that can't wait
+    /// for git. nil outside a repository.
+    nonisolated static func repositoryHome(containing path: String) -> String? {
+        if let linked = linked(containing: path) { return linked.repoHome ?? linked.root }
+        var directory = (path as NSString).standardizingPath
+        while true {
+            if FileManager.default.fileExists(atPath: (directory as NSString).appendingPathComponent(".git")) {
+                return realPath(directory)
+            }
+            let parent = (directory as NSString).deletingLastPathComponent
+            guard parent != directory, !parent.isEmpty else { return nil }
+            directory = parent
+        }
+    }
+
+    /// Which worktrees are Wortel's to remove, and which branches its to
+    /// delete: the ones it made, as it recorded making them, wherever they
+    /// are and whatever they're called since.
+    ///
+    /// **A marker, not a path.** A worktree Wortel creates gets a file in its
+    /// own git folder (`.git/worktrees/<name>/wortel`), which git leaves alone
+    /// and removes with the worktree; a branch it creates gets
+    /// `branch.<name>.wortelCreated` in the repository's config, which git
+    /// carries along when the branch is renamed and drops when it's deleted.
+    /// A folder under `~/.wortel/worktrees` and a branch in `worktree/` count
+    /// too, which is how everything made before the markers stays Wortel's.
+    /// Nothing else ever is: a worktree another tool or a person made is
+    /// shown, opened and archived like any, and never removed.
+    enum Ownership {
+        static let markerName = "wortel"
+        static let createdKey = "wortelCreated"
+        static let baseKey = "wortelBase"
+
+        /// The worktree's git folder, from the `gitdir:` line of its `.git` file.
+        nonisolated static func gitDir(ofWorktree root: String) -> String? {
+            let dotGit = (root as NSString).appendingPathComponent(".git")
+            guard let pointer = try? String(contentsOfFile: dotGit, encoding: .utf8),
+                  pointer.hasPrefix("gitdir:") else { return nil }
+            let gitDir = pointer.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
+            return gitDir.hasPrefix("/") ? gitDir : (root as NSString).appendingPathComponent(gitDir)
+        }
+
+        /// Mark the worktree at `root` as Wortel's. Best effort: an unmarked
+        /// worktree is only one Wortel won't offer to remove.
+        nonisolated static func mark(root: String) {
+            guard let gitDir = gitDir(ofWorktree: root) else { return }
+            let marker = (gitDir as NSString).appendingPathComponent(markerName)
+            let stamp = ISO8601DateFormatter().string(from: Date())
+            try? Data("created by Wortel \(stamp)\n".utf8).write(to: URL(fileURLWithPath: marker))
+        }
+
+        nonisolated static func isOwned(root: String, gitDir: String? = nil, under base: URL = GitWorktree.root) -> Bool {
+            if let gitDir = gitDir ?? Self.gitDir(ofWorktree: root),
+               FileManager.default.fileExists(atPath: (gitDir as NSString).appendingPathComponent(markerName)) {
+                return true
+            }
+            return isUnderLegacyRoot(root, base: base)
+        }
+
+        /// The rule before markers: anything in Wortel's own folder.
+        nonisolated static func isUnderLegacyRoot(_ path: String, base: URL = GitWorktree.root) -> Bool {
+            path.hasPrefix(base.path + "/") || realPath(path).hasPrefix(realPath(base.path) + "/")
+        }
+    }
+
+    /// The folder for a worktree Wortel is about to create.
+    ///
+    /// `path(forBranch:repoRoot:)`, with two exceptions that keep a new
+    /// worktree from landing where another's history is:
+    /// - **Two repositories with the same name** (`work/app`, `side/app`)
+    ///   would share `~/.wortel/worktrees/app`. The second gets
+    ///   `app-<digest of its path>` once the first is there.
+    /// - **A folder that was a worktree before.** Agents key their history by
+    ///   directory (Claude's transcripts are per folder), so a new worktree in
+    ///   an old one's place would offer the old conversation. `wasUsed` says
+    ///   so; an existing folder always counts. A `-2`, `-3` goes on the end.
+    nonisolated static func newWorktreePath(
+        forBranch branch: String, repoRoot: String, under base: URL = root,
+        wasUsed: (String) -> Bool = { _ in false }
+    ) -> String {
+        let repo = (repoRoot as NSString).lastPathComponent
+        var folder = base.appendingPathComponent(slug(forBranch: repo), isDirectory: true).path
+        if holdsAnotherRepository(folder, than: repoRoot) {
+            folder = base.appendingPathComponent(
+                "\(slug(forBranch: repo))-\(digest(realPath(repoRoot)))", isDirectory: true).path
+        }
+        let leaf = slug(forBranch: branch)
+        var candidate = (folder as NSString).appendingPathComponent(leaf)
+        var n = 2
+        while FileManager.default.fileExists(atPath: candidate) || wasUsed(candidate) {
+            candidate = (folder as NSString).appendingPathComponent("\(leaf)-\(n)")
+            n += 1
+        }
+        return candidate
+    }
+
+    /// Whether `folder` holds worktrees of a repository other than `repoRoot`.
+    private nonisolated static func holdsAnotherRepository(_ folder: String, than repoRoot: String) -> Bool {
+        let mine = realPath(repoRoot)
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
+        return entries.contains { entry in
+            let path = (folder as NSString).appendingPathComponent(entry)
+            guard let home = linked(containing: path)?.repoHome, linked(containing: path)?.root == realPath(path)
+            else { return false }
+            return home != mine
         }
     }
 

@@ -619,11 +619,6 @@ enum GitService {
         try? FileManager.default.createDirectory(
             at: URL(fileURLWithPath: path).deletingLastPathComponent(),
             withIntermediateDirectories: true)
-        // Drop records for worktrees whose directories are gone — deleted by
-        // hand, or on a volume that isn't mounted. Git keeps the registration
-        // either way, and the next `add` for that branch fails on a directory
-        // nobody can see.
-        _ = await run(["worktree", "prune"], in: root)
 
         var args = ["worktree", "add"]
         switch source {
@@ -642,10 +637,51 @@ enum GitService {
             args.append(path)
             if let base { args.append(base) }
         }
-        let result = await run(args, in: root)
-        guard !result.ok else { return nil }
-        let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.isEmpty ? "git worktree add failed" : message
+        var result = await run(args, in: root)
+        // **A registration whose folder is gone** (deleted by hand) still
+        // holds its path and its branch, and `add` refuses both. Only those
+        // that stand in this add's way are dropped, one by one, and only
+        // then: `worktree prune` before every add would also forget a
+        // worktree on a volume that simply isn't mounted.
+        if !result.ok, await dropStaleRegistrations(blocking: path, branch: branch, root: root) {
+            result = await run(args, in: root)
+        }
+        guard result.ok else {
+            let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            return message.isEmpty ? "git worktree add failed" : message
+        }
+        GitWorktree.Ownership.mark(root: path)
+        if case .newBranch(let base) = source {
+            _ = await run(["config", "branch.\(branch).\(GitWorktree.Ownership.createdKey)", "true"], in: root)
+            if let base {
+                _ = await run(["config", "branch.\(branch).\(GitWorktree.Ownership.baseKey)", base], in: root)
+            }
+        }
+        return nil
+    }
+
+    /// Drop the registrations of worktrees whose folder is gone and that hold
+    /// `path` or `branch`. Locked ones are left: someone said to keep them.
+    /// True when one went, so the add is worth trying again.
+    private static func dropStaleRegistrations(blocking path: String, branch: String, root: String) async -> Bool {
+        let fm = FileManager.default
+        let stale = await worktrees(root: root).filter { worktree in
+            !worktree.isPrimary && !worktree.isLocked && !fm.fileExists(atPath: worktree.path)
+                && (worktree.branch == branch || WorktreeCleanup.samePath(worktree.path, path))
+        }
+        var dropped = false
+        for worktree in stale where await run(["worktree", "remove", "--force", worktree.path], in: root).ok {
+            dropped = true
+        }
+        return dropped
+    }
+
+    /// Whether Wortel created `branch` (`GitWorktree.Ownership`), as recorded
+    /// in the repository's config.
+    static func isCreatedByWortel(branch: String, root: String) async -> Bool {
+        let result = await run(["config", "--get", "--type=bool",
+                                "branch.\(branch).\(GitWorktree.Ownership.createdKey)"], in: root)
+        return result.ok && result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
     }
 
     /// Whether the repository has any commit yet. A fresh `git init` has none,

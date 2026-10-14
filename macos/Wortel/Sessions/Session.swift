@@ -312,11 +312,12 @@ final class Session: Identifiable {
         return base.isEmpty ? "/" : base
     }
 
-    /// Whether this session lives in a worktree Wortel made. Cheap, a path
-    /// prefix and no git call: the authoritative check happens in the manager
-    /// before anything is removed.
+    /// Whether this session lives in a worktree Wortel made: its marker
+    /// (`GitWorktree.Ownership`, read with the checkout on every `cd`), or
+    /// Wortel's own folder, which is what made one before markers. Cheap, no
+    /// git call: the authoritative check happens before anything is removed.
     var isInOwnWorktree: Bool {
-        cwd?.hasPrefix(GitWorktree.root.path + "/") == true
+        linkedCheckout?.isOwned == true || cwd?.hasPrefix(GitWorktree.root.path + "/") == true
     }
 
     /// What the row's second line says for a worktree session: the branch, or

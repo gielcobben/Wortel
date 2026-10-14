@@ -253,6 +253,89 @@ extension GitWorktree {
         }
     }
 
+    // MARK: - Generated branches, and naming them for the work
+
+    /// Herdr's scheme, because it had the right idea and there is nothing to
+    /// improve on: `worktree/brave-river-1a2f`. An adjective and a noun make it
+    /// sayable and tellable apart in a sidebar, where a timestamp is just a
+    /// number you have to read carefully; the hex tail keeps it unique; and the
+    /// `worktree/` prefix groups every branch the app made under one heading in
+    /// `git branch`. See `worktree.rs:generated_branch_slug` in
+    /// ogulcancelik/herdr, whose word lists these are.
+    ///
+    /// It's a placeholder: once the session has a real name, the branch is
+    /// renamed for it (`renamedBranch`).
+    private static let slugAdjectives = [
+        "brave", "calm", "clear", "green", "lucky", "quiet", "rapid", "silver",
+    ]
+    private static let slugNouns = [
+        "river", "cloud", "field", "forest", "harbor", "meadow", "stone", "valley",
+    ]
+
+    static func generatedBranch(seed: UInt64) -> String {
+        let adjective = slugAdjectives[Int(seed % UInt64(slugAdjectives.count))]
+        let noun = slugNouns[Int((seed / UInt64(slugAdjectives.count)) % UInt64(slugNouns.count))]
+        return branchNamespace + String(format: "%@-%@-%04x", adjective, noun, Int(seed & 0xffff))
+    }
+
+    /// Seeded from the clock, then walked until the name is free. A name that
+    /// already exists is not a new branch, it is a checkout of somebody's work,
+    /// and offering that by default is a quiet way to land in the wrong place.
+    static func generatedBranch(now: Date = Date(), isTaken: (String) -> Bool) -> String {
+        var seed = UInt64(max(0, now.timeIntervalSince1970) * 1_000_000)
+        // Bounded: 64 collisions in a row means something is wrong with the
+        // list, not with the name, and a loop is not the place to find out.
+        for _ in 0..<64 {
+            let candidate = generatedBranch(seed: seed)
+            if !isTaken(candidate) { return candidate }
+            seed &+= 1
+        }
+        return generatedBranch(seed: seed)
+    }
+
+    /// Whether `branch` is still the placeholder `generatedBranch` made.
+    static func isGenerated(_ branch: String) -> Bool {
+        guard branch.hasPrefix(branchNamespace) else { return false }
+        let parts = branch.dropFirst(branchNamespace.count).split(separator: "-")
+        guard parts.count == 3, let hex = parts.last, hex.count == 4,
+              hex.allSatisfy(\.isHexDigit) else { return false }
+        return slugAdjectives.contains(String(parts[0])) && slugNouns.contains(String(parts[1]))
+    }
+
+    /// The branch a session called `name` should be on, renamed from its
+    /// placeholder: the name as a branch, lower case, cut at a word to stay
+    /// readable in `git branch` and a pull request, and `-2`, `-3` past one
+    /// that's taken. nil when the name makes no branch (all punctuation), or
+    /// is itself still a placeholder.
+    static func renamedBranch(forName name: String, isTaken: (String) -> Bool) -> String? {
+        let words = name.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        var stem = ""
+        for word in words {
+            let next = stem.isEmpty ? word : stem + "-" + word
+            if next.count > 40, !stem.isEmpty { break }
+            stem = String(next.prefix(40))
+        }
+        guard !stem.isEmpty, !isGenerated(branchNamespace + stem) else { return nil }
+        let base = branchName(from: stem)
+        var candidate = base, n = 2
+        while isTaken(candidate) {
+            candidate = "\(base)-\(n)"
+            n += 1
+        }
+        return candidate
+    }
+
+    /// Whether a placeholder branch may still be renamed: Wortel made it, it
+    /// was never pushed (no upstream, and no remote carries the name), and
+    /// it's checked out in this one worktree. Past any of those, someone may
+    /// already know it by name.
+    static func mayRename(_ branch: String, createdByWortel: Bool, hasUpstream: Bool,
+                          onRemote: Bool, checkouts: Int) -> Bool {
+        isGenerated(branch) && createdByWortel && !hasUpstream && !onRemote && checkouts == 1
+    }
+
     /// Where the repository `path` is in lives, at any depth: a linked
     /// worktree's `repoHome`, else the nearest folder holding a `.git`. Read
     /// off the disk, for a decision (which sidebar folder) that can't wait

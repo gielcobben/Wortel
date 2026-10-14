@@ -75,7 +75,7 @@ extension CommandVerb {
     init(_ command: WortelCommand) {
         switch command {
         case .open: self = .open
-        case .newSession, .newFromPullRequest: self = .new
+        case .newSession, .newFromPullRequest, .newWorktree: self = .new
         case .rename: self = .rename
         case .notify: self = .notify
         case .mark: self = .mark

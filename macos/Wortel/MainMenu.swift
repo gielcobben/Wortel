@@ -247,6 +247,12 @@ enum MainMenu {
         // on the same day. Free of a wortel.conf keybind (alt+n isn't bound).
         let newHome = sessionMenu.addItem(withTitle: "New Session at Home", action: #selector(AppDelegate.newHomeSession(_:)), keyEquivalent: "n")
         newHome.keyEquivalentModifierMask = [.command, .option]
+        // ⌘N's isolated sibling: the same repository, in a worktree and on a
+        // branch of its own, at once. No dialog: the branch is named for the
+        // work once the session has a name. Took ⇧⌘N from New Folder, which
+        // is made once in a long while and asks for a name anyway.
+        let newWorktree = sessionMenu.addItem(withTitle: "New Worktree Session", action: #selector(AppDelegate.newWorktreeSession(_:)), keyEquivalent: "n")
+        newWorktree.keyEquivalentModifierMask = [.command, .shift]
         // The selected session as it is, in a worktree of its own: its
         // uncommitted changes carried over, its agent's conversation forked.
         // No dialog, so no ellipsis. ⌥⇧⌘N because it's ⌘N's sibling and free
@@ -268,8 +274,7 @@ enum MainMenu {
         // context menus and every type and method say folder — and one letter
         // from "New Session" is a bad place to keep a synonym. Ellipsis because
         // it asks for a name.
-        let newFolder = sessionMenu.addItem(withTitle: "New Folder\u{2026}", action: #selector(AppDelegate.newFolder(_:)), keyEquivalent: "n")
-        newFolder.keyEquivalentModifierMask = [.command, .shift]
+        sessionMenu.addItem(withTitle: "New Folder\u{2026}", action: #selector(AppDelegate.newFolder(_:)), keyEquivalent: "")
         // ⌘O is every Mac app's "open", and a directory is the only thing
         // Wortel opens. Files are opened by the tree and by ⌘-clicking a path,
         // which are both already in front of the file you mean.

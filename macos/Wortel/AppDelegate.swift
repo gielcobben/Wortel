@@ -916,6 +916,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Wortel.newSessionOnBranch(manager, inFolder: manager.selected?.folderPath)
     }
 
+    @objc func newWorktreeSession(_ sender: Any?) {
+        focusMainWindow()
+        manager.newWorktreeSession()
+    }
+
     @objc func forkSession(_ sender: Any?) {
         focusMainWindow()
         guard let source = manager.selected else { return }

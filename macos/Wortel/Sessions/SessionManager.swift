@@ -2487,6 +2487,60 @@ final class SessionManager {
         }
     }
 
+    // MARK: - New worktree session, and its branch's name
+
+    /// ⇧⌘N: a session in a worktree of its own, at once, no questions: a new
+    /// branch from the repository's default branch (fetched first, for a few
+    /// seconds at most), named for now with a placeholder, and for the work
+    /// once the session has a name (`nameBranchForWork`). The repository is
+    /// the selected session's, as for any new branch (`branchSource`).
+    @discardableResult
+    func newWorktreeSession(from directory: String? = nil, inFolder folder: String? = nil,
+                            completion: WorktreeCompletion? = nil) -> Session? {
+        guard let from = directory ?? branchSource() else { return nil }
+        let fetch = Task { await fetchFromOrigin(in: from) }
+        let branch = GitWorktree.generatedBranch { _ in false }
+        return newSession(onBranch: branch, base: nil, from: from, inFolder: folder, after: fetch,
+                          completion: completion)
+    }
+
+    /// Rename a worktree's placeholder branch (`worktree/brave-river-1a2f`)
+    /// for what the session turned out to be about, once it has a name: a
+    /// branch called `fix-login-redirect` says in `git branch`, a push and a
+    /// pull request what `brave-river` never will.
+    ///
+    /// Only while nobody else can know the old name (`GitWorktree.mayRename`):
+    /// Wortel made it, it was never pushed, and it's checked out here alone.
+    /// Once, since a renamed branch isn't a placeholder any more. The folder
+    /// stays where it is: agents keep their history by directory.
+    private func nameBranchForWork(_ session: Session) {
+        guard session.preparation == nil, let branch = session.worktreeBranch,
+              GitWorktree.isGenerated(branch), let checkout = session.homeCheckout, checkout.isOwned,
+              renamingBranches.insert(session.id).inserted
+        else { return }
+        let name = session.leafName
+        let root = checkout.root
+        Task { [weak self] in
+            defer { self?.renamingBranches.remove(session.id) }
+            let created = await GitService.isCreatedByWortel(branch: branch, root: root)
+            let upstream = await GitService.run(
+                ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "\(branch)@{upstream}"], in: root).ok
+            let remotes = await GitService.remotesWithBranch(root: root, branch: branch)
+            let checkouts = await GitService.worktrees(root: root).filter { $0.branch == branch }.count
+            guard GitWorktree.mayRename(branch, createdByWortel: created, hasUpstream: upstream,
+                                        onRemote: !remotes.isEmpty, checkouts: checkouts) else { return }
+            let local = Set(await GitService.localBranches(root: root).map(\.name))
+            guard let target = GitWorktree.renamedBranch(forName: name, isTaken: { local.contains($0) }),
+                  target != branch,
+                  await GitService.run(["branch", "-m", branch, target], in: root).ok,
+                  let self, session.worktreeBranch == branch
+            else { return }
+            session.worktreeBranch = target
+            self.scheduleSave()
+        }
+    }
+    @ObservationIgnored private var renamingBranches: Set<Session.ID> = []
+
     // MARK: - Archive
 
     /// Worktree sessions you closed, newest first: each folder's Archived
@@ -2791,6 +2845,7 @@ final class SessionManager {
         // An explicit rename is the user's word — neither an agent's title nor
         // the model may touch this session again.
         session.nameSource = .user
+        nameBranchForWork(session)
         // A rename can re-folder the session ("hello" -> "giel/hello"): keep the
         // flat order matching the render order, and make sure the row it moved
         // to is actually visible.
@@ -3474,6 +3529,7 @@ final class SessionManager {
         session.nameSource = source
         normalizeOrder()
         scheduleSave()
+        nameBranchForWork(session)
         // The rename that races the turn-end banner: this is the one that
         // arrives seconds after `progressEnded` posted it.
         refreshAttentionNotification(session)

@@ -27,6 +27,10 @@ enum WortelCommand: Codable, Equatable {
     /// decoding a field it doesn't know would ignore it and open a plain
     /// session; an unknown case is refused, which says what happened.
     case newFromPullRequest(cwd: String?, name: String?, pr: String)
+    /// `new --worktree`: a session in a worktree of its own on a new branch
+    /// Wortel names, as ⇧⌘N makes one. Its own case for the reason
+    /// `newFromPullRequest` is.
+    case newWorktree(cwd: String?, name: String?)
     /// Rename a session — by default the one the caller is running in.
     case rename(session: String?, name: String)
     /// Raise attention on a session: the dot, the badge, the notification.
@@ -54,7 +58,7 @@ enum WortelCommand: Codable, Equatable {
     var verb: String {
         switch self {
         case .open: return "open"
-        case .newSession, .newFromPullRequest: return "new"
+        case .newSession, .newFromPullRequest, .newWorktree: return "new"
         case .rename: return "rename"
         case .notify: return "notify"
         case .mark: return "mark"
@@ -186,10 +190,11 @@ enum WortelCommandParser {
         usage: wortel <command> [arguments]
 
           open <path>              open a file in a preview window
-          new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>]
+          new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>] [--worktree]
                                    start a session; --branch gives it a worktree,
                                    --from picks what a new branch forks from,
-                                   --pr checks out a pull request in one
+                                   --pr checks out a pull request in one,
+                                   --worktree makes one on a new branch
           rename <name>            rename this session
           notify <title> [body]    raise attention on this session
           mark <colour>            colour this session in the sidebar: red, orange,
@@ -221,7 +226,16 @@ enum WortelCommandParser {
             return .open(path: absolute(path, from: currentDirectory))
 
         case "new":
-            let flags = try Flags(rest, allowed: ["--cwd", "--name", "--branch", "--from", "--pr"])
+            let flags = try Flags(rest, allowed: ["--cwd", "--name", "--branch", "--from", "--pr"],
+                                  switches: ["--worktree"])
+            if flags.isOn("--worktree") {
+                guard flags["--branch"] == nil, flags["--from"] == nil, flags["--pr"] == nil else {
+                    throw ParseError.conflict("--worktree", "--branch, --from or --pr")
+                }
+                return .newWorktree(
+                    cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
+                    name: flags["--name"])
+            }
             if let pr = flags["--pr"] {
                 guard flags["--branch"] == nil, flags["--from"] == nil else {
                     throw ParseError.conflict("--pr", "--branch or --from")
@@ -303,11 +317,18 @@ enum WortelCommandParser {
     /// worse ten minutes than an error message.
     private struct Flags {
         private var values: [String: String] = [:]
+        private var on: Set<String> = []
 
-        init(_ arguments: [String], allowed: Set<String>) throws {
+        /// `allowed` take a value; `switches` stand alone.
+        init(_ arguments: [String], allowed: Set<String>, switches: Set<String> = []) throws {
             var index = 0
             while index < arguments.count {
                 let flag = arguments[index]
+                if switches.contains(flag) {
+                    on.insert(flag)
+                    index += 1
+                    continue
+                }
                 guard allowed.contains(flag) else { throw ParseError.unknown(flag) }
                 guard index + 1 < arguments.count else {
                     throw ParseError.missing("a value", flag)
@@ -318,5 +339,6 @@ enum WortelCommandParser {
         }
 
         subscript(flag: String) -> String? { values[flag] }
+        func isOn(_ flag: String) -> Bool { on.contains(flag) }
     }
 }

@@ -321,6 +321,7 @@ struct NewSessionButton: NSViewRepresentable {
             // folder the selection is in. This is the way out of that, next to
             // the thing it's the exception to.
             add("New Session at Home", "house") { manager.newHomeSession() }
+            add("New Worktree Session", "plus.square.dashed") { manager.newWorktreeSession() }
             // Its own branch and its own files: what makes running two agents
             // in one repository safe. Fork carries the selected session itself.
             if let selected = manager.selected, selected.preparation == nil {

@@ -139,6 +139,18 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertThrowsError(try parse(["new", "--pr", "12", "--from", "main"]))
     }
 
+    /// `--worktree` stands alone (no value), is its own command on the wire,
+    /// and names no branch, so it can't be given one.
+    func testNewWorktree() throws {
+        XCTAssertEqual(try parse(["new", "--worktree"]), .newWorktree(cwd: "/Users/x/project", name: nil))
+        XCTAssertEqual(try parse(["new", "--worktree", "--name", "Fix"]),
+                       .newWorktree(cwd: "/Users/x/project", name: "Fix"))
+        XCTAssertEqual(try parse(["new", "--name", "Fix", "--worktree"]),
+                       .newWorktree(cwd: "/Users/x/project", name: "Fix"))
+        XCTAssertThrowsError(try parse(["new", "--worktree", "--branch", "x"]))
+        XCTAssertThrowsError(try parse(["new", "--worktree", "--pr", "7"]))
+    }
+
     /// Fork means the caller's own session, like rename and mark: an agent
     /// forking itself is the case it's for.
     func testForkActsOnThisSession() throws {

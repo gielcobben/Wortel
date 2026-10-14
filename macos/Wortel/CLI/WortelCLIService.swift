@@ -74,6 +74,16 @@ final class WortelCLIService {
         case .newSession(let cwd, let name, let branch, let base):
             newSession(cwd: cwd, name: name, branch: branch, base: base, reply: reply)
 
+        case .newWorktree(let cwd, let name):
+            guard let cwd = cwd ?? manager.selected?.cwd else {
+                return reply(.failure("No session to take a repository from."))
+            }
+            _ = manager.newWorktreeSession(
+                from: cwd, inFolder: manager.folder(covering: cwd),
+                completion: { [weak self] result, warnings in
+                    self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
+                })
+
         case .newFromPullRequest(let cwd, let name, let text):
             guard let pr = PullRequestRef.parse(text) else {
                 return reply(.failure("\u{201c}\(text)\u{201d} isn't a pull request: give its number or its URL."))

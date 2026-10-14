@@ -63,6 +63,7 @@ enum PaletteCommands {
         "newSession:": "plus.square",
         "newHomeSession:": "house",
         "forkSession:": "arrow.triangle.branch",
+        "newWorktreeSession:": "plus.square.dashed",
         "newSessionOnBranch:": "arrow.branch",
         "newFolder:": "folder.badge.plus",
         "openFolder:": "folder",

@@ -33,45 +33,11 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     private var suggested = ""
 
     /// A name you can simply accept, so the common case is: open the sheet,
-    /// press Return.
-    ///
-    /// Herdr's scheme, because it had the right idea and there is nothing to
-    /// improve on: `worktree/brave-river-1a2f`. An adjective and a noun make it
-    /// sayable and tellable apart in a sidebar, where a timestamp is just a
-    /// number you have to read carefully; the hex tail keeps it unique; and the
-    /// `worktree/` prefix groups every branch the app made under one heading in
-    /// `git branch`, which matters when they are disposable and you will want
-    /// to sweep them later. See `worktree.rs:generated_branch_slug` in
-    /// ogulcancelik/herdr, whose word lists these are.
-    private static let slugAdjectives = [
-        "brave", "calm", "clear", "green", "lucky", "quiet", "rapid", "silver",
-    ]
-    private static let slugNouns = [
-        "river", "cloud", "field", "forest", "harbor", "meadow", "stone", "valley",
-    ]
-
-    private static func slug(seed: UInt64) -> String {
-        let adjective = slugAdjectives[Int(seed % UInt64(slugAdjectives.count))]
-        let noun = slugNouns[Int((seed / UInt64(slugAdjectives.count)) % UInt64(slugNouns.count))]
-        return GitWorktree.branchNamespace
-            + String(format: "%@-%@-%04x", adjective, noun, Int(seed & 0xffff))
-    }
-
-    /// Seeded from the clock, then walked until the name is free. A name that
-    /// already exists is not a new branch, it is a checkout of somebody's work,
-    /// and offering that by default is a quiet way to land in the wrong place.
+    /// press Return (`GitWorktree.generatedBranch`).
     private static func suggestedName(in catalog: BranchCatalog, now: Date = Date()) -> String {
-        var seed = UInt64(max(0, now.timeIntervalSince1970) * 1_000_000)
-        // Bounded: 64 collisions in a row means something is wrong with the
-        // catalogue, not with the name, and a loop is not the place to find out.
-        for _ in 0..<64 {
-            let candidate = slug(seed: seed)
-            if !catalog.hasLocal(candidate), catalog.remotes(carrying: candidate).isEmpty {
-                return candidate
-            }
-            seed &+= 1
+        GitWorktree.generatedBranch(now: now) {
+            catalog.hasLocal($0) || !catalog.remotes(carrying: $0).isEmpty
         }
-        return slug(seed: seed)
     }
 
     /// Wide enough for a real branch name (`feature/the-thing-i-am-doing`) and

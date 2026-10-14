@@ -152,6 +152,16 @@ Look over, with the git panel open (⌃⌘1):
       "Merged · branch too"; calm-test says "Branch kept"
   [ ] Open worktree/squashed: Changes says "Merged into main"
   [ ] echo $WORTEL_PORT in two sessions: different; after a relaunch, the same
+  [ ] New Session on Branch: the new row's shell starts in its worktree, not /
+  [ ] Folder menu › Open Worktree: lists every worktree (shop-toolbar-clean
+      and the rest made by hand, calm-test made by Wortel), ticks the open
+      ones; picking a ticked one goes to it, an unticked one opens a session
+      named for its branch, in this folder, with the worktree glyph
+  [ ] ⌘O on ../shop-toolbar-proposal: lands in the shop folder, not a new
+      one, named for its branch; rename it and the branch shows under it
+  [ ] cd ../shop-toolbar-clean in a session: the branch line appears
+  [ ] Git panel › worktree chip › shop-toolbar-clean › Open Session: goes to
+      that session
 
 In "Try fork":
   [ ] Fork Session (⌥⇧⌘N): "Try fork (fork)" opens with README.md staged plus

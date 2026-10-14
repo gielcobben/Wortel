@@ -90,6 +90,9 @@ final class GitPanelModel {
     /// Hand the keyboard back to the session's main terminal, for when the tab
     /// that had it closes. Set by AppDelegate.
     @ObservationIgnored var onFocusMainTerminal: (() -> Void)?
+    /// Continue in another worktree of the repository: its session, or a new
+    /// one there. Set by AppDelegate.
+    @ObservationIgnored var onOpenWorktree: ((String) -> Void)?
     /// Take the keyboard from whatever has it, for when what's in front can't
     /// hold it (a file). Set by AppDelegate.
     @ObservationIgnored var onClearKeyboard: (() -> Void)?

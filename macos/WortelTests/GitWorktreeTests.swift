@@ -299,4 +299,98 @@ final class GitWorktreeTests: XCTestCase {
         XCTAssertNil(GitWorktree.checkedOutBranch(at: repo.path))
         XCTAssertNil(GitWorktree.checkedOutBranch(at: "/nonexistent"))
     }
+
+    // MARK: - Linked worktrees, whoever made them
+
+    /// Every layout worktree tools use is recognised from any depth inside it,
+    /// and each knows where its repository lives, which is what files it in
+    /// the sidebar. Git is the oracle for the paths.
+    func testLinkedWorktreeInEveryLayout() {
+        let base = GitFixture.newRepo("linked")
+        defer { GitFixture.destroy(base) }
+        let repo = base.appendingPathComponent("repo")
+        GitFixture.sh("git init -q -b main repo", in: base)
+        GitFixture.commit("first", in: repo)
+        let home = GitWorktree.realPath(repo.path)
+
+        // Beside the repository, inside it, and somewhere else entirely.
+        GitFixture.sh("git worktree add -q -b beside ../repo-beside", in: repo)
+        GitFixture.sh("git worktree add -q -b inside .worktrees/inside", in: repo)
+        GitFixture.sh("git worktree add -q -b far \(base.path)/elsewhere/far", in: repo)
+        for (path, _) in [("repo-beside", "beside"), ("repo/.worktrees/inside", "inside"),
+                          ("elsewhere/far", "far")] {
+            let root = base.appendingPathComponent(path)
+            GitFixture.sh("mkdir -p src/deep", in: root)
+            for probe in [root.path, root.appendingPathComponent("src/deep").path, root.path + "/"] {
+                let linked = GitWorktree.linked(containing: probe)
+                XCTAssertEqual(linked?.root, GitWorktree.realPath(root.path), probe)
+                XCTAssertEqual(linked?.repoHome, home, probe)
+            }
+        }
+        // The repository's own checkout is not a linked worktree, nor is a
+        // folder in it, even one holding the worktrees.
+        XCTAssertNil(GitWorktree.linked(containing: repo.path))
+        XCTAssertNil(GitWorktree.linked(containing: repo.appendingPathComponent(".worktrees").path))
+        XCTAssertNil(GitWorktree.linked(containing: base.path))
+        XCTAssertNil(GitWorktree.linked(containing: "/nonexistent/at/all"))
+    }
+
+    /// The worktree-first layout: a bare clone in `.bare` beside its
+    /// worktrees. The folder holding both is where the repository lives.
+    func testLinkedWorktreeOfABareClone() {
+        let base = GitFixture.newRepo("bare")
+        defer { GitFixture.destroy(base) }
+        GitFixture.commit("first", in: base)
+        let project = base.appendingPathComponent("project")
+        GitFixture.sh("git clone -q --bare . project/.bare", in: base)
+        let bare = project.appendingPathComponent(".bare")
+        GitFixture.sh("git worktree add -q ../main main", in: bare)
+        let linked = GitWorktree.linked(containing: project.appendingPathComponent("main").path)
+        XCTAssertEqual(linked?.root, GitWorktree.realPath(project.appendingPathComponent("main").path))
+        XCTAssertEqual(linked?.repoHome, GitWorktree.realPath(project.path))
+
+        // A bare clone anywhere else: a worktree still, with no home to name.
+        GitFixture.sh("git clone -q --bare . other.git", in: base)
+        GitFixture.sh("git worktree add -q ../loose main", in: base.appendingPathComponent("other.git"))
+        let loose = GitWorktree.linked(containing: base.appendingPathComponent("loose").path)
+        XCTAssertNotNil(loose)
+        XCTAssertNil(loose?.repoHome)
+
+        // And git lists the bare entry as such.
+        let listing = GitFixture.sh("git worktree list --porcelain", in: bare)
+        let parsed = GitWorktree.parse(porcelain: listing)
+        XCTAssertEqual(parsed.first?.isBare, true)
+        XCTAssertEqual(parsed.dropFirst().map(\.isBare), [false])
+    }
+
+    /// A submodule's `.git` is a file too, pointing into `modules/`: a
+    /// repository of its own, not a worktree.
+    func testSubmoduleIsNotAWorktree() {
+        let base = GitFixture.newRepo("submodule")
+        defer { GitFixture.destroy(base) }
+        let library = base.appendingPathComponent("library")
+        GitFixture.sh("git init -q -b main library", in: base)
+        GitFixture.commit("lib", in: library)
+        let app = base.appendingPathComponent("app")
+        GitFixture.sh("git init -q -b main app", in: base)
+        GitFixture.commit("app", in: app)
+        GitFixture.sh("git -c protocol.file.allow=always submodule add -q ../library vendor/library", in: app)
+        XCTAssertNil(GitWorktree.linked(containing: app.appendingPathComponent("vendor/library").path))
+    }
+
+    /// A worktree whose folder is gone is listed by git as prunable, and is
+    /// no worktree to open.
+    func testPrunableIsParsed() {
+        let repo = GitFixture.newRepo("prunable")
+        defer { GitFixture.destroy(repo) }
+        GitFixture.commit("first", in: repo)
+        GitFixture.sh("git worktree add -q -b gone ../gone-\(UUID().uuidString)", in: repo)
+        let listed = GitWorktree.parse(porcelain: GitFixture.sh("git worktree list --porcelain", in: repo))
+        guard let gone = listed.last else { return XCTFail("no worktree") }
+        XCTAssertFalse(gone.isPrunable)
+        GitFixture.destroy(URL(fileURLWithPath: gone.path))
+        let after = GitWorktree.parse(porcelain: GitFixture.sh("git worktree list --porcelain", in: repo))
+        XCTAssertEqual(after.map(\.isPrunable), [false, true])
+        XCTAssertEqual(after.last?.branch, "gone")
+    }
 }

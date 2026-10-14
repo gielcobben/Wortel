@@ -59,6 +59,23 @@ struct RepoHeader: View {
             // Changes pane (SourceControlPanel), where it's the news.
             Spacer(minLength: 4)
 
+            if isAway, let away = panel.pinnedCheckout {
+                // Looking is often the step before working there: this goes
+                // to the session in that worktree, or opens one.
+                Button {
+                    panel.onOpenWorktree?(away)
+                } label: {
+                    Text("Open Session")
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(HeaderButtonStyle())
+                .fixedSize()
+                .help("Work in this folder, in its own session")
+            }
+
             if isAway {
                 // Said in words as well as by the dropdown: the clearest way
                 // out of "I'm looking at someone else's folder".

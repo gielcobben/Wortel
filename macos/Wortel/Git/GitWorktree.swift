@@ -27,6 +27,11 @@ struct GitWorktree: Equatable {
     /// The commit checked out. For a detached HEAD this is the only thing
     /// holding its commits, so cleanup has to know it.
     var head: String?
+    /// Its folder is gone: git still lists it until `worktree prune`.
+    var isPrunable = false
+    /// The repository has no working tree of its own (a bare clone, as
+    /// worktree-first tools set them up). Only ever the first entry.
+    var isBare = false
 }
 
 extension GitWorktree {
@@ -197,6 +202,60 @@ extension GitWorktree {
         return branch.isEmpty ? nil : branch
     }
 
+    /// A linked worktree, wherever it is and whoever made it: Wortel, another
+    /// app, a script, or `git worktree add` by hand.
+    struct Linked: Equatable {
+        /// The checkout's own folder, the one holding its `.git` file.
+        let root: String
+        /// Where the repository lives: the primary checkout's folder, or for a
+        /// bare clone set up the worktree-first way (`repo/.bare` beside
+        /// `repo/main`, `repo/feature`), the folder holding it and its
+        /// worktrees. nil for a bare clone anywhere else.
+        let repoHome: String?
+    }
+
+    /// The linked worktree `path` is in, at any depth, read from the files git
+    /// keeps rather than by running git, so it's cheap enough for every `cd`.
+    ///
+    /// The nearest `.git` decides. A folder is a repository's own checkout
+    /// (nil); a file pointing into `<common>/worktrees/<name>` is a linked
+    /// worktree. A file pointing anywhere else is a submodule, which is a
+    /// repository of its own, not a worktree (nil).
+    nonisolated static func linked(containing path: String) -> Linked? {
+        var directory = (path as NSString).standardizingPath
+        let files = FileManager.default
+        while true {
+            let dotGit = (directory as NSString).appendingPathComponent(".git")
+            var isDirectory: ObjCBool = false
+            if files.fileExists(atPath: dotGit, isDirectory: &isDirectory) {
+                guard !isDirectory.boolValue,
+                      let pointer = try? String(contentsOfFile: dotGit, encoding: .utf8),
+                      pointer.hasPrefix("gitdir:") else { return nil }
+                var gitDir = pointer.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !gitDir.hasPrefix("/") { gitDir = (directory as NSString).appendingPathComponent(gitDir) }
+                let parts = (gitDir as NSString).standardizingPath.split(separator: "/").map(String.init)
+                guard parts.count >= 3, parts[parts.count - 2] == "worktrees" else { return nil }
+                let common = "/" + parts.dropLast(2).joined(separator: "/")
+                let leaf = (common as NSString).lastPathComponent
+                let home = leaf == ".git" || leaf == ".bare" ? (common as NSString).deletingLastPathComponent : nil
+                return Linked(root: realPath(directory), repoHome: home.map(realPath))
+            }
+            let parent = (directory as NSString).deletingLastPathComponent
+            guard parent != directory, !parent.isEmpty else { return nil }
+            directory = parent
+        }
+    }
+
+    /// `path` with its symlinks resolved, as git records worktrees
+    /// (`/private/var/…`), where a shell reports the way it was reached
+    /// (`/var/…`, or a symlinked `~/work`). Unchanged when it can't be.
+    /// Not `NSString.resolvingSymlinksInPath`, which strips `/private` again.
+    nonisolated static func realPath(_ path: String) -> String {
+        guard let resolved = realpath(path, nil) else { return path }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
     static func path(forBranch branch: String, repoRoot: String) -> String {
         let repo = (repoRoot as NSString).lastPathComponent
         return root
@@ -216,15 +275,19 @@ extension GitWorktree {
         var branch: String?
         var locked = false
         var head: String?
+        var prunable = false
+        var bare = false
 
         func flush() {
             guard let current = path else { return }
             result.append(GitWorktree(path: current, branch: branch, isPrimary: result.isEmpty,
-                                      isLocked: locked, head: head))
+                                      isLocked: locked, head: head, isPrunable: prunable, isBare: bare))
             path = nil
             branch = nil
             locked = false
             head = nil
+            prunable = false
+            bare = false
         }
 
         for line in porcelain.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -239,6 +302,10 @@ extension GitWorktree {
                 head = String(line.dropFirst("HEAD ".count))
             } else if line == "locked" || line.hasPrefix("locked ") {
                 locked = true
+            } else if line == "prunable" || line.hasPrefix("prunable ") {
+                prunable = true
+            } else if line == "bare" {
+                bare = true
             }
         }
         flush()

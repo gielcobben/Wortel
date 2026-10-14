@@ -359,6 +359,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let window = self?.window, window.firstResponder is SurfaceView else { return }
             window.makeFirstResponder(nil)
         }
+        gitPanel.onOpenWorktree = { [weak self] path in
+            guard let self else { return }
+            self.gitPanel.showCheckout(nil)
+            self.manager.openWorktree(at: path)
+        }
         gitPanel.onFocusMainTerminal = { [weak self] in
             // Not while a tab in the main area's row covers the terminal.
             guard let self, self.gitPanel.activeMainTab == nil,

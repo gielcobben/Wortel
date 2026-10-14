@@ -280,6 +280,16 @@ into. Anything that didn't copy is held on the preparing page
 (`WorktreePreparation.warnings`) until "Open Session", because the terminal
 replacing the page would hide it.
 
+**Any linked worktree is a worktree**, whoever made it: one beside the
+repository, inside it, a bare clone's (`repo/.bare` + `repo/main`), Wortel's.
+`GitWorktree.linked` reads the nearest `.git` file on every `cd` (no git), and
+the row gets the glyph and the branch line; ⌘O files one with its repository's
+folder, and "Open Worktree" (sidebar menus, and Open Session in the git panel
+while looking at another worktree) lists `git worktree list` to continue in
+one. Removing stays `isInOwnWorktree`'s alone. A worktree row is marked as
+preparing *before* it's selected (`makeSession(prepare:)`): selecting starts the
+shell, and one started with no directory came up in the keeper's, `/`.
+
 **Fork Session** (⌥⇧⌘N, `wortel fork`, `WorktreeFork`) is the session as it
 is, in a worktree of its own: a new branch at the source's HEAD (not trunk),
 its staged changes staged, its unstaged ones unstaged, its untracked files

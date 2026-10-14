@@ -636,6 +636,7 @@ final class SessionManager {
             // user's: the one reading that can never relabel work by surprise.
             session.nameSource = Session.NameSource(rawValue: entry.nameSource) ?? .user
             session.worktreeBranch = entry.worktreeBranch
+            noteCheckout(session)
             // A colour only a newer build knows reads as none.
             session.colour = entry.colour.flatMap(SessionColour.init(rawValue:))
             // An earlier build named these "<folder>/<branch>" with the branch
@@ -1515,6 +1516,7 @@ final class SessionManager {
         let leaf = uniqueLeaf(Self.defaultTitle(forCwd: directory), in: dir)
         let session = Session(name: dir.map { "\($0)/\(leaf)" } ?? leaf, cwd: directory)
         session.title = Self.defaultTitle(forCwd: session.cwd)
+        noteCheckout(session)
         session.portBase = PortBlock.allocate(for: session.id, taken: Set(sessions.compactMap(\.portBase)),
                                               isFree: PortBlock.isFree)
         wire(session)
@@ -1549,9 +1551,31 @@ final class SessionManager {
     /// "Wortel" when both exist. Only when nothing covers it does this create a
     /// folder, named for the directory and pointed at it, which is how a folder
     /// comes to have a directory without anyone visiting a menu.
+    ///
+    /// **A linked worktree goes with its repository**, whoever made it. One
+    /// beside the repository (`~/work/repo-feature`) is covered by no folder
+    /// of the repository's, so it would have become a folder of its own, or
+    /// joined `~/work`'s; it joins the repository's folder when that root is
+    /// the deeper match, or makes one for the repository. It's named for its
+    /// branch, as Wortel's own worktree sessions are.
     @discardableResult
     func openFolder(_ path: String, via origin: SessionOrigin = .openFolder) -> Session {
         let path = FolderRoot.normalize(path) ?? path
+        let linked = GitWorktree.linked(containing: path)
+        if let linked, let home = linked.repoHome.flatMap(FolderRoot.normalize) {
+            var target = folder(forWorktreeAt: path, repoHome: home)
+            let repo = (home as NSString).lastPathComponent
+            if target == nil, repo != "/", !repo.isEmpty {
+                target = addFolder(named: repo)
+                setRoot(home, ofFolder: target!)
+            }
+            let branch = GitWorktree.checkedOutBranch(at: linked.root)
+            let leaf = branch.map(GitWorktree.sessionLeaf(forBranch:)).map { uniqueLeaf($0, in: target) }
+            return makeSession(cwd: path, inFolder: target, via: origin) { [target] session in
+                if let leaf { session.name = target.map { "\($0)/\(leaf)" } ?? leaf }
+                session.worktreeBranch = branch
+            }
+        }
         if let existing = FolderRoot.folder(containing: path, in: folderRoots) {
             return newSession(cwd: path, inFolder: existing, via: origin)
         }
@@ -1571,6 +1595,44 @@ final class SessionManager {
         let folder = addFolder(named: leaf)
         setRoot(path, ofFolder: folder)
         return newSession(cwd: path, inFolder: folder, via: origin)
+    }
+
+    /// The folder for a worktree at `path`: the deepest root covering it, or
+    /// its repository's folder where that root is deeper. A folder made for
+    /// the worktree itself still wins, being deepest of all.
+    private func folder(forWorktreeAt path: String, repoHome: String) -> String? {
+        let direct = FolderRoot.folder(containing: path, in: folderRoots)
+        guard let viaRepo = FolderRoot.folder(containing: repoHome, in: folderRoots) else { return direct }
+        guard let direct else { return viaRepo }
+        let depth = { (folder: String) in self.folderRoots[folder]?.count ?? 0 }
+        return depth(viaRepo) > depth(direct) ? viaRepo : direct
+    }
+
+    /// Continue in a worktree that's already on disk: the session already
+    /// standing in it if there is one, else a new one there, filed with its
+    /// repository (`openFolder`).
+    @discardableResult
+    func openWorktree(at path: String) -> Session {
+        let root = GitWorktree.realPath(path)
+        if let open = sessions.first(where: { $0.preparation == nil && $0.linkedCheckout?.root == root }) {
+            selectedID = open.id
+            return open
+        }
+        return openFolder(root)
+    }
+
+    /// The worktrees of the repository at `cwd`, for "Open Worktree": every
+    /// linked one git knows of, whoever made it, that's still on disk. One
+    /// `git worktree list`, which reads a few files and walks nothing.
+    func openableWorktrees(in cwd: String?) async -> [GitWorktree] {
+        guard let cwd, let root = await GitService.repoRoot(for: cwd) else { return [] }
+        return await GitService.worktrees(root: root).filter { !$0.isPrimary && !$0.isPrunable }
+    }
+
+    /// Whether a session is standing in the worktree at `path`.
+    func hasSession(inWorktree path: String) -> Bool {
+        let root = GitWorktree.realPath(path)
+        return sessions.contains { $0.linkedCheckout?.root == root }
     }
 
     /// `base`, or `base 2`, `base 3`… — the first that no session in `folder`
@@ -1773,6 +1835,7 @@ final class SessionManager {
         session.cwd = resolved.path
         session.originCwd = resolved.path
         session.worktreeBranch = resolved.branch
+        noteCheckout(session)
         session.preparation = nil
         if case .fork(let source)? = request {
             source.snapshot?.discard()
@@ -3185,9 +3248,17 @@ final class SessionManager {
     /// whose checkout was switched by hand, otherwise show the directory's slug
     /// where the branch should be.
     private func resolveWorktreeBranches() {
-        for session in sessions where session.isInOwnWorktree && session.worktreeBranch == nil {
+        for session in sessions where session.isInWorktree && session.worktreeBranch == nil {
             resolveWorktreeBranch(session)
         }
+    }
+
+    /// Which linked worktree the session's shell is in, read off the disk
+    /// (a stat per level and one small file), so it's current for every row
+    /// whoever made the worktree.
+    private func noteCheckout(_ session: Session) {
+        let linked = session.cwd.flatMap(GitWorktree.linked(containing:))
+        if linked != session.linkedCheckout { session.linkedCheckout = linked }
     }
 
     /// The branch checked out where `session` is now: at launch for the ones
@@ -3202,7 +3273,8 @@ final class SessionManager {
             let result = await GitService.run(["rev-parse", "--abbrev-ref", "HEAD"], in: cwd)
             // Still in that checkout (a `cd macos` meanwhile is the same one).
             guard result.ok, let session,
-                  GitWorktree.checkout(containing: session.cwd) == GitWorktree.checkout(containing: cwd)
+                  session.cwd.flatMap(GitWorktree.linked(containing:))?.root
+                    == GitWorktree.linked(containing: cwd)?.root
             else { return }
             let branch = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
             let known: String? = branch.isEmpty || branch == "HEAD" ? nil : branch
@@ -3438,12 +3510,13 @@ final class SessionManager {
             }
             view.onPwdChange = { [weak self, weak session] pwd in
                 guard let self, let session else { return }
-                let previous = session.cwd
+                let previous = session.linkedCheckout?.root
                 session.cwd = pwd // observed → sidebar row + navigation subtitle update
+                self.noteCheckout(session)
                 // Into a worktree, or from one into another: whose branch the
                 // row shows has changed.
-                if let checkout = GitWorktree.checkout(containing: pwd),
-                   checkout != GitWorktree.checkout(containing: previous) || session.worktreeBranch == nil {
+                if let checkout = session.linkedCheckout?.root,
+                   checkout != previous || session.worktreeBranch == nil {
                     self.resolveWorktreeBranch(session)
                 }
                 // The shell moved somewhere: a folder it reports is one it's in.

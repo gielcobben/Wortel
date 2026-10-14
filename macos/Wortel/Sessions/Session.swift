@@ -47,9 +47,13 @@ final class Session: Identifiable {
     var nameSource: NameSource = .placeholder
     /// The branch this session's worktree was opened on, when Wortel opened it.
     /// Shown under the name: a worktree session is named for its task and this
-    /// is where the task lives. Persisted; nil for a session that isn't in one
-    /// of Wortel's worktrees.
+    /// is where the task lives. Persisted; nil for a session that isn't in a
+    /// worktree.
     var worktreeBranch: String?
+    /// The linked worktree the shell is in, Wortel's or anyone's
+    /// (`GitWorktree.linked`). Re-read on every `cd`, never persisted: it is
+    /// what's on disk, not something the session decided.
+    var linkedCheckout: GitWorktree.Linked?
     /// The colour you gave this session, drawn as a bar at the row's leading
     /// edge. Persisted, and only ever changed by hand: opening the session
     /// leaves it, which is the point of a "come back to this".
@@ -321,10 +325,15 @@ final class Session: Identifiable {
     /// "macos" or "src" under its name said where the prompt was, not which
     /// checkout. nil outside a worktree.
     var worktreeLabel: String? {
-        guard isInOwnWorktree else { return nil }
+        guard isInWorktree else { return nil }
         if let worktreeBranch { return worktreeBranch }
-        return GitWorktree.checkout(containing: cwd).map { ($0 as NSString).lastPathComponent } ?? displayName
+        return (GitWorktree.checkout(containing: cwd) ?? linkedCheckout?.root)
+            .map { ($0 as NSString).lastPathComponent } ?? displayName
     }
+
+    /// In a linked worktree, whoever made it: what the row's glyph and branch
+    /// line follow. Removing one is still `isInOwnWorktree`'s alone.
+    var isInWorktree: Bool { isInOwnWorktree || linkedCheckout != nil }
 
     /// A worktree session shows its branch under the name, unless the name
     /// *is* the branch, which is what a fresh one is called until an agent or

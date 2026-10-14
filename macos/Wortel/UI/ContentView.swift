@@ -323,6 +323,7 @@ struct NewSessionButton: NSViewRepresentable {
                 add("Fork Session", "arrow.triangle.branch") { manager.fork(selected) }
             }
             add("New Session on Branch\u{2026}", "arrow.branch") { newSessionOnBranch(manager) }
+            menu.addItem(WorktreeMenu.item(manager: manager, from: manager.branchSource()))
             menu.addItem(.separator())
             add("New Folder\u{2026}", "folder.badge.plus") {
                 if let name = promptFolderName(title: "New Folder", confirm: "Create") {
@@ -366,7 +367,7 @@ struct SidebarRowContent: View {
             session: session,
             isSelected: manager.selectedID == session.id,
             isEditing: manager.editingID == session.id,
-            isInWorktree: session.isInOwnWorktree,
+            isInWorktree: session.isInWorktree,
             isHovered: manager.hoveredRowID == session.id,
             waiting: session.attention.map { kind in
                 let note = manager.attentionNote(for: session)
@@ -558,6 +559,7 @@ enum SessionActions {
         _ = item("New Branch\u{2026}", "arrow.branch") {
             newSessionOnBranch(manager, for: session, inFolder: session.folderPath)
         }
+        menu.addItem(WorktreeMenu.item(manager: manager, from: manager.branchSource(for: session)))
         if let cwd = session.cwd {
             _ = item("Show in Finder", "folder.badge.gearshape") {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
@@ -765,6 +767,7 @@ enum FolderActions {
         // naming the folder again only made it the widest item.
         item("New Session", "plus.square") { manager.newSession(inFolder: folder) }
         item("New Session on Branch\u{2026}", "arrow.branch") { newSessionOnBranch(manager, inFolder: folder) }
+        menu.addItem(WorktreeMenu.item(manager: manager, from: manager.branchSource(inFolder: folder)))
         item("Rename\u{2026}", "pencil") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
                 manager.renameFolder(folder, to: name)

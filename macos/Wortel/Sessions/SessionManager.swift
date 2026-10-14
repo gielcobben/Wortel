@@ -95,6 +95,9 @@ final class SessionManager {
     /// The app layer uses this to retract the session's notification from
     /// Notification Center so stale "needs you" banners don't linger.
     @ObservationIgnored var onAttentionCleared: ((Session) -> Void)?
+    /// Which sessions are waiting changed: what the Dock badge and the menu
+    /// bar's list follow.
+    @ObservationIgnored var onAttentionChanged: (() -> Void)?
 
     /// A foreground command finished in a session — its work tree may have
     /// changed. The app layer uses this to refresh the source-control panel.
@@ -2981,6 +2984,7 @@ final class SessionManager {
         // Setting the label is supposed to be enough, and mostly is; asking for
         // the redraw costs nothing and removes the one case where it isn't.
         NSApp.dockTile.display()
+        onAttentionChanged?()
     }
 
     // MARK: - Auto-naming

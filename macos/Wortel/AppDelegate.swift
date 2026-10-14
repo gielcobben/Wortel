@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// What every session is still running. Sampled slowly in the background,
     /// and read synchronously by the close sheet.
     private let processes = ProcessMonitor()
+    /// The waiting sessions in the menu bar, while there are any.
+    private var attentionItem: AttentionStatusItem?
     /// Drives the Files pane — the third view of the same column. Reads the repo
     /// the git panel has already resolved, so it costs no extra git work.
     private lazy var fileTree = FileTreeModel(git: gitPanel)
@@ -170,6 +172,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.onNeedsAttention = { [weak self] session, kind, title, body, alert in
             self?.postAttentionNotification(session, kind: kind, title: title, body: body, alert: alert)
         }
+        // Picking a row there is a click on its notification: that session,
+        // with Wortel in front.
+        let attentionItem = AttentionStatusItem(
+            manager: manager,
+            open: { [weak self] id in
+                self?.manager.select(id: id)
+                NSApp.activate(ignoringOtherApps: true)
+                self?.window?.makeKeyAndOrderFront(nil)
+            },
+            showApp: { [weak self] in
+                NSApp.activate(ignoringOtherApps: true)
+                self?.window?.makeKeyAndOrderFront(nil)
+            })
+        self.attentionItem = attentionItem
+        manager.onAttentionChanged = { [weak attentionItem] in attentionItem?.refresh() }
         // A command finished in the selected session → refresh the git panel
         // (it debounces and no-ops while hidden).
         manager.onCommandFinished = { [weak self] session in

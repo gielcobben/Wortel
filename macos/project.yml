@@ -386,6 +386,10 @@ targets:
       # Return does. A wrong row checks out the wrong branch, or makes a
       # second session where one already was.
       - path: Wortel/Git/OpenTarget.swift
+      # What the git panel calls a checkout: the session in it, else its
+      # branch, else its folder. A wrong pick doesn't throw, it names the
+      # placeholder folder (`worktree-brave-river-1a2f`) nobody remembers.
+      - path: Wortel/Git/CheckoutPlace.swift
       # The diff table. Its *views* aren't testable without a window, but its
       # metrics are, and they carry an invariant nothing else enforces: the
       # coordinator's row height must equal the static `rowHeight(forFontSize:)`

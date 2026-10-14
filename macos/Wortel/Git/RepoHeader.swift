@@ -37,10 +37,13 @@ struct RepoHeader: View {
     /// fill and a "Back", and the branch can't be switched from here.
     private var isAway: Bool { panel.pinnedCheckout != nil }
 
-    /// A worktree is named for its folder: that's the "desk", and the branch
-    /// chip beside it already says which branch is on it.
-    private static func folderName(_ path: String) -> String {
-        (path as NSString).lastPathComponent
+    /// A worktree is named for the session in it, the way you know it
+    /// (`CheckoutPlace`): its folder is named once, often for a placeholder
+    /// branch long since renamed. The main folder keeps its own name, the
+    /// repository's, with the branch chip beside it saying what's on it.
+    private var shownTitle: String {
+        panel.placeTitle(of: repo.root, branch: repo.status.branch,
+                         isPrimary: panel.checkouts.first { $0.path == repo.root }?.isPrimary ?? false)
     }
 
     var body: some View {
@@ -121,9 +124,9 @@ struct RepoHeader: View {
         // Away from your own folder: a faint fill, enough to tell it from
         // your own changes without shouting.
         .background(isAway ? Color.primary.opacity(0.05) : Color.clear)
-        // Kept fresh while it's on screen, so what the lists and a clean pane
-        // say about other folders follows the work (a read is a `git status`
-        // per checkout, and only when stale).
+        // What the other folders hold is read when a list that shows it
+        // opens, not kept fresh behind the header: on a monorepo each read is
+        // a `git status` of seconds, per worktree (GitPanelModel.checkouts).
         .task(id: CatchUpKey(root: repo.root, stale: repo.isStale)) {
             guard repo.isStale else {
                 showsCatchUp = false
@@ -131,14 +134,6 @@ struct RepoHeader: View {
             }
             try? await Task.sleep(for: .milliseconds(250))
             if !Task.isCancelled { showsCatchUp = true }
-        }
-        .task(id: repo.root) {
-            while !Task.isCancelled {
-                // Runs git only for a worktree whose watch fired (or a list a
-                // minute old), and nothing while Wortel isn't in front.
-                if NSApp.isActive { await panel.refreshCheckoutsIfStale() }
-                try? await Task.sleep(for: .seconds(10))
-            }
         }
     }
 
@@ -206,11 +201,10 @@ struct RepoHeader: View {
     /// files.
     private var worktreeChip: some View {
         Button {
-            Task {
-                // Read before it opens, so the list sizes for what it shows.
-                await panel.loadCheckouts()
-                showsWorktrees = true
-            }
+            // The list is known (the manager's); it opens at once and what's
+            // in each folder fills in as it's read (WorktreeList).
+            panel.updateCheckouts(rereadBranches: true)
+            showsWorktrees = true
         } label: {
             HStack(spacing: 5) {
                 // A stack: one of several copies of the repo, which is what a
@@ -218,7 +212,7 @@ struct RepoHeader: View {
                 Image(systemName: "rectangle.stack")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                Text(verbatim: Self.folderName(repo.root))
+                Text(verbatim: shownTitle)
                     .font(.system(size: 13))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -280,7 +274,12 @@ struct RepoHeader: View {
     /// known number of commits.
     private var pushTitle: String {
         if repo.isPushing { return "Pushing\u{2026}" }
-        if repo.status.upstream == nil { return "Publish Branch" }
+        // By name: publishing is what freezes it (a placeholder is renamed for
+        // the work only while it has no upstream), so `worktree/brave-river-1a2f`
+        // going out under that name should be something you see you chose.
+        if repo.status.upstream == nil {
+            return repo.status.branch.map { "Publish \($0)" } ?? "Publish Branch"
+        }
         let ahead = repo.status.ahead
         return ahead > 0 ? "Push \(ahead) Commit\(ahead == 1 ? "" : "s")" : "Push"
     }
@@ -363,7 +362,7 @@ private struct WorktreeList: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if let yours {
-                        row(yours, detail: "yours \u{00B7} " + GitPanelModel.summary(of: yours))
+                        row(yours, detail: GitPanelModel.summary(of: yours).map { "yours \u{00B7} " + $0 } ?? "yours")
                     }
                     if !others.isEmpty {
                         Text("Other worktrees")
@@ -389,11 +388,16 @@ private struct WorktreeList: View {
                 .padding(.vertical, 6)
         }
         .frame(width: Self.width)
+        // What's in each, read now that someone is looking (and stopped if
+        // the list closes first): the rows are up already, the counts land
+        // one by one.
+        .task { await panel.readCheckoutCounts() }
     }
 
-    private func row(_ checkout: GitPanelModel.Checkout, detail: String) -> some View {
+    private func row(_ checkout: GitPanelModel.Checkout, detail: String?) -> some View {
         OptionRow(glyph: checkout.path == shown ? "checkmark" : "rectangle.stack",
-                  title: (checkout.path as NSString).lastPathComponent,
+                  title: panel.placeTitle(of: checkout.path, branch: checkout.branch,
+                                          isPrimary: checkout.isPrimary),
                   isCurrent: checkout.path == shown,
                   trailing: detail,
                   style: OptionRow.Style(help: checkout.path),

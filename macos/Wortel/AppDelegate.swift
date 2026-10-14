@@ -325,7 +325,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Panel visibility and the chosen pane are session state, so a toggle has
         // to reach sessions.json.
         gitPanel.onStateChanged = { [weak manager] in manager?.sessionStateChanged() }
-        gitPanel.worktreeUsage = { [weak manager] in manager.map { WorktreeUsage(manager: $0) } }
+        // Bring Here: an archived session's worktree is in use too, waiting
+        // for it to come back.
+        gitPanel.worktreeUsage = { [weak manager] in
+            manager.map { WorktreeUsage(manager: $0, countingArchived: true) }
+        }
+        // The git panel's worktree list is the manager's: one cached `git
+        // worktree list` per repository, which the sidebar's Archived folds
+        // already keep (`worktreeListings`), rather than a read of its own on
+        // every session switch.
+        gitPanel.worktreeListing = { [weak manager] home in manager?.worktreeListings[home] }
+        // What the panel calls a checkout: the session in it, live or
+        // archived (`CheckoutPlace`).
+        gitPanel.placeName = { [weak manager] path in
+            guard let manager else { return nil }
+            return CheckoutPlace.sessionName(
+                at: GitWorktree.realPath(path),
+                live: manager.sessions.map {
+                    CheckoutPlace.Live(home: $0.homeCheckout?.root, visiting: $0.linkedCheckout?.root,
+                                       name: $0.leafName)
+                },
+                archived: manager.archived.map { CheckoutPlace.Archived(checkout: $0.checkout, name: $0.leafName) })
+        }
         // The side column's tabs: a side shell that exits takes its tab with it,
         // closing one that still runs something asks first, and the tab that had
         // the keyboard hands it back to the session's own terminal.
@@ -367,7 +388,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.onOpenWorktree = { [weak self] path in
             guard let self else { return }
             self.gitPanel.showCheckout(nil)
-            self.manager.openWorktree(at: path)
+            if GitWorktree.linked(containing: path) == nil {
+                // The repository's own folder: the session already standing in
+                // it, as Open Branch goes there, else a new one. Not
+                // `openWorktree`, which only knows linked worktrees and made a
+                // new session every time.
+                self.manager.perform(.mainCheckout(path: path), from: path)
+            } else {
+                self.manager.openWorktree(at: path)
+            }
         }
         gitPanel.onFocusMainTerminal = { [weak self] in
             // Not while a tab in the main area's row covers the terminal.

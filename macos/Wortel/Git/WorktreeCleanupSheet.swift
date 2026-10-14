@@ -13,6 +13,9 @@ struct WorktreeUsage: Sendable {
         let name: String
         let paths: [String]
         let shellPIDs: [pid_t]
+        /// Closed and waiting in its folder's Archived fold: no shell, but
+        /// restoring it starts one in its worktree, on its branch.
+        var isArchived = false
     }
 
     /// Your processes and where each one stands, read once and asked about
@@ -67,14 +70,24 @@ struct WorktreeUsage: Sendable {
     /// longer look like anyone's.
     let excludedPIDs: Set<pid_t>
 
+    /// `countingArchived`: archived sessions' worktrees count as in use too.
+    /// For Bring Here, which would otherwise take an archived session's
+    /// branch and Trash the folder it's waiting to be restored in. Not for
+    /// the cleanup sheet, whose Delete Worktree… is how an archived one goes
+    /// on purpose, nor for the close that is archiving one right now.
+    ///
+    /// Where a session's git panes are *looking* (`gitCheckout`) is not a
+    /// place it stands: only its shell's directories count.
     @MainActor
-    init(manager: SessionManager, excluding closing: Session? = nil) {
+    init(manager: SessionManager, excluding closing: Session? = nil, countingArchived: Bool = false) {
         sessions = manager.sessions.filter { $0 !== closing }.map { session in
             SessionPlace(
                 name: session.name,
-                paths: [session.cwd, session.originCwd, session.gitCheckout].compactMap { $0 },
+                paths: [session.cwd, session.originCwd].compactMap { $0 },
                 shellPIDs: [session.shellPID].compactMap { $0 } + session.sideShells.map(\.pid))
-        }
+        } + (countingArchived ? manager.archived.map {
+            SessionPlace(name: $0.leafName, paths: [$0.checkout], shellPIDs: [], isArchived: true)
+        } : [])
         if let closing {
             let roots = [closing.shellPID].compactMap { $0 } + closing.sideShells.map(\.pid)
             // Parent links only, no directories: this runs on the main thread
@@ -97,7 +110,9 @@ struct WorktreeUsage: Sendable {
         var users: [String] = []
         var accounted = excludedPIDs
         for session in sessions where session.paths.contains(where: inside) {
-            users.append("the session \u{201c}\(session.name)\u{201d}")
+            users.append(session.isArchived
+                         ? "the archived session \u{201c}\(session.name)\u{201d}"
+                         : "the session \u{201c}\(session.name)\u{201d}")
             // Its own processes are that session, already said.
             accounted.formUnion(processes.tree(under: session.shellPIDs))
         }

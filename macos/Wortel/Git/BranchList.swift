@@ -24,8 +24,9 @@ struct BranchList: View {
         branches
             .frame(width: 320)
             // Who has what changes, for the Other Folders rows. Not awaited
-            // before opening: on a big repo it's a `git status` per worktree.
-            .task { await panel.refreshCheckoutsIfStale() }
+            // before opening: on a big repo it's a `git status` per worktree,
+            // read now because someone is looking, and stopped if they stop.
+            .task { await panel.readCheckoutCounts() }
     }
 
     /// Git lets a branch be checked out in one folder at a time, so a list that
@@ -108,11 +109,13 @@ struct BranchList: View {
         guard !branch.isRemote, let path = branch.worktreePath, isElsewhere(branch) else {
             return .standard(for: branch)
         }
-        let folder = (path as NSString).lastPathComponent
         let checkout = panel.checkouts.first { WorktreeCleanup.samePath($0.path, path) }
+        // Where it is, by the session working there (the row already says
+        // the branch), else the folder.
+        let place = panel.placeTitle(of: path, branch: nil, isPrimary: checkout?.isPrimary ?? false)
         var style = OptionRow.Style(
             glyph: "rectangle.stack",
-            detail: folder,
+            detail: place,
             help: "Checked out in \(path). Click to show that folder here: nothing is switched.")
         style.actions = [.init(title: "Show") { show(path) }]
         // Offered only when it can work; the full check runs on the click

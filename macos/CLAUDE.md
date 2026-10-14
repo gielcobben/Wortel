@@ -257,10 +257,17 @@ root it has shown, and each keeps its watch, but only the shown one scans on a
 write (`GitRepoModel.setActive`); the rest mark themselves `isStale`, and a
 switch back re-reads only if stale (the header's spinner covers the catch-up).
 Before this, an agent merging in one worktree woke a full scan in every cached
-checkout at once. The other worktrees' change counts behind the header's hint
-go through `GitService.backgroundStatus`, one at a time app-wide, reuse a
-cached model's status when it's current, and stop when a newer read supersedes
-them. Every git we run gets `-c core.fsmonitor=false`: with fsmonitor in the
+checkout at once. The other worktrees are the manager's cached listing
+(`worktreeListings`, no `git worktree list` of the panel's own), and what's in
+them is read **only when asked**: the worktree or branch list opening (they
+open at once, the counts fill in), or the shown checkout coming clean, once,
+for the "N changes in …" hint. No watch per worktree and no timer: on the
+work laptop's monorepo (`git status` 7s) both used to run for as long as the
+panel was up. Those reads go through `GitService.backgroundStatus`, one at a
+time app-wide, reuse a cached model's status when it's current, and stop when
+a newer read supersedes them or the list closes. Other checkouts are named for
+the session in them (`CheckoutPlace`), not their folder, which keeps the
+placeholder branch's name forever. Every git we run gets `-c core.fsmonitor=false`: with fsmonitor in the
 user's config each repo touched left a daemon running for good, for no gain
 (our reads never write the index the daemon's answers are keyed to). The Files
 tree follows the same rule: it doesn't re-root, re-list or `check-ignore` while
@@ -351,7 +358,10 @@ gives trunk's own tree. Its cost follows the branch, not trunk's history. A
 branch that changed nothing since it forked is never "merged" (its commits are
 all it has), and trunk editing the same lines since says no, which keeps the
 branch: the safe way to be wrong. The git panel says "Merged into origin/main"
-for the clean worktree on screen, cached per (HEAD, trunk).
+for the clean worktree on screen, cached per (HEAD, trunk), and offers Close
+Session when the session lives there (closing is how a worktree is put away).
+Bring Here counts an archived session's worktree as in use: restoring it
+needs its branch.
 
 **The changes list holds a selection, not a selected row.** ⌘ toggles a row, ⇧
 takes the run from the anchor, ⇧↑/⇧↓ do the same from the keyboard, ⌘A takes the
@@ -391,11 +401,16 @@ file edits and no git operation at all, and the panel goes on listing files that
 were committed minutes ago. So `GitRepoModel` widens the watch to that gitdir
 (`GitService.externalGitDir`), and the primary — whose `.git` holds *every*
 worktree's state under `worktrees/` — excludes that subtree in exchange, or every
-`git add` an agent runs next door walks this work tree. (Only that subtree: a
-worktree's commit also writes a ref and objects in the shared `.git`, which the
-primary still sees. Rarer, and real news.) The widened watch is the checkout's
-own gitdir and not the common dir, which also holds `objects/` — one fetch would
-scan the work tree of every open session.
+`git add` an agent runs next door walks this work tree; `objects/` goes too, as
+a `git add` there writes a blob and nothing else of this checkout's. (A
+worktree's commit also writes a ref in the shared `.git`, which the primary
+still sees. Rarer, and real news.) Any linked worktree *inside* the checkout
+(`wortel.worktreePath = .worktrees`, Claude Code's `.claude/worktrees`) is left
+out as well, a folder of nothing but worktrees as one path; FSEvents takes
+eight exclusions and the callback filters past that
+(`GitRepoWatcher.exclusions(forCheckoutAt:)`, re-read after each status). The
+widened watch is the checkout's own gitdir and not the common dir, which also
+holds `objects/` — one fetch would scan the work tree of every open session.
 
 Whether the panel is up is **per session**, not app-wide: it's a property of what
 the session is for — a manager sitting in `~` never wants it, the one in a repo

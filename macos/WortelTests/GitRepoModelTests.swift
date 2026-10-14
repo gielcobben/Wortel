@@ -356,6 +356,35 @@ final class GitRepoModelTests: XCTestCase {
         XCTAssertTrue(hidden.status.changes.contains { $0.path == "new.txt" })
     }
 
+    /// A worktree inside the checkout (`wortel.worktreePath = .worktrees`)
+    /// takes an agent's every write. Those must not wake the main checkout,
+    /// including from one made after the model started watching: its creation
+    /// wakes it once, and after that it's left out.
+    func testWritesInAWorktreeInsideTheCheckoutDoNotScanIt() async {
+        repo = GitFixture.newRepo("inside")
+        GitFixture.sh("printf '.worktrees/\\n' >> .git/info/exclude", in: repo)
+        GitFixture.commit("base", in: repo)
+        let model = GitRepoModel(root: repo.path)
+        await model.refresh()
+        try? await Task.sleep(for: .milliseconds(500))
+
+        GitFixture.sh("git worktree add -q -b agent .worktrees/agent", in: repo)
+        // Woken by the creation; the refresh that follows leaves it out.
+        await waitUntil { model.statusScans > 1 }
+        try? await Task.sleep(for: .milliseconds(800))
+        let before = model.statusScans
+
+        let agent = repo.appendingPathComponent(".worktrees/agent")
+        GitFixture.sh("printf 'x\\n' > work.txt && git add work.txt", in: agent)
+        try? await Task.sleep(for: .milliseconds(1500))
+        XCTAssertEqual(model.statusScans, before, "the agent's writes must not scan the main checkout")
+
+        // The checkout's own files are still watched.
+        GitFixture.sh("echo x > mine.txt", in: repo)
+        await waitUntil { model.statusScans > before }
+        XCTAssertGreaterThan(model.statusScans, before)
+    }
+
     /// Switching back to a repo nothing happened in runs no git at all.
     func testSwitchingBackToAQuietRepoRunsNoScan() async {
         repo = GitFixture.newRepo("quiet")

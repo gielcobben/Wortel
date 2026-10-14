@@ -79,3 +79,119 @@ final class GitRepoWatcherTests: XCTestCase {
         withExtendedLifetime(watcher) {}
     }
 }
+
+/// Worktrees *inside* the checkout: `wortel.worktreePath = .worktrees`, or
+/// Claude Code's `.claude/worktrees/<name>`. Every file an agent writes in one
+/// is under the main checkout's root too, and on the work laptop's monorepo
+/// each was a seven-second `git status` there for nothing. The way this goes
+/// wrong is quiet in both directions: leave one in and the cost is back, with
+/// nothing on screen to say so; leave out a folder that holds the repository's
+/// own files and edits there stop showing up.
+final class GitRepoWatcherExclusionTests: XCTestCase {
+    private func contents(_ tree: [String: [String]]) -> (String) -> [String]? {
+        { tree[$0] }
+    }
+
+    func testAFolderOfNothingButWorktreesIsLeftOutWhole() {
+        let found = GitRepoWatcher.exclusions(
+            root: "/r", always: ["/r/.git/worktrees"],
+            worktrees: ["/r/.worktrees/a", "/r/.worktrees/b"],
+            contents: contents(["/r/.worktrees": ["a", "b", ".DS_Store"]]))
+        XCTAssertEqual(found, ["/r/.git/worktrees", "/r/.worktrees"])
+    }
+
+    /// `.claude` holds settings and commands the checkout's status must still
+    /// see; only `.claude/worktrees` is the agent's.
+    func testOnlyTheFolderTheWorktreesAreIn() {
+        let found = GitRepoWatcher.exclusions(
+            root: "/r", always: [],
+            worktrees: ["/r/.claude/worktrees/x"],
+            contents: contents(["/r/.claude/worktrees": ["x"], "/r/.claude": ["settings.json", "worktrees"]]))
+        XCTAssertEqual(found, ["/r/.claude/worktrees"])
+    }
+
+    func testAFolderThatAlsoHoldsTheRepositorysFilesIsNot() {
+        let found = GitRepoWatcher.exclusions(
+            root: "/r", always: [],
+            worktrees: ["/r/tools/wt"],
+            contents: contents(["/r/tools": ["wt", "build.sh"]]))
+        XCTAssertEqual(found, ["/r/tools/wt"])
+    }
+
+    /// Worktrees beside the root, or the root itself, are never collapsed into
+    /// the root: that would leave out the whole checkout.
+    func testNeverTheRootAndNeverOutside() {
+        let found = GitRepoWatcher.exclusions(
+            root: "/r", always: [],
+            worktrees: ["/r", "/r-feature", "/r/wt", "/elsewhere/x"],
+            contents: contents(["/r": ["wt"]]))
+        XCTAssertEqual(found, ["/r/wt"])
+    }
+
+    func testAWorktreeInsideAnotherIsCoveredByIt() {
+        let found = GitRepoWatcher.exclusions(
+            root: "/r", always: [],
+            worktrees: ["/r/a", "/r/a/.claude/worktrees/x"],
+            contents: contents(["/r": ["a", "src"], "/r/a/.claude/worktrees": ["x"]]))
+        XCTAssertEqual(found, ["/r/a"])
+    }
+
+    func testIsExcludedByWholeComponents() {
+        let excluded = ["/r/.worktrees"]
+        XCTAssertTrue(GitRepoWatcher.isExcluded("/r/.worktrees", by: excluded))
+        XCTAssertTrue(GitRepoWatcher.isExcluded("/r/.worktrees/", by: excluded))
+        XCTAssertTrue(GitRepoWatcher.isExcluded("/r/.worktrees/a/file", by: excluded))
+        XCTAssertFalse(GitRepoWatcher.isExcluded("/r/.worktrees-old/file", by: excluded))
+        XCTAssertFalse(GitRepoWatcher.isExcluded("/r/src/file", by: excluded))
+    }
+
+    /// Against real git: what `git worktree add` writes is what's read.
+    func testReadFromTheRepositoryOnDisk() {
+        let repo = GitFixture.newRepo("exclusions")
+        defer { GitFixture.destroy(repo) }
+        GitFixture.sh("printf 'a\\n' > a.txt && git add a.txt", in: repo)
+        GitFixture.commit("first", in: repo)
+        GitFixture.sh("mkdir -p tools && printf 'x\\n' > tools/build.sh", in: repo)
+        GitFixture.sh("git worktree add -q -b one .worktrees/one", in: repo)
+        GitFixture.sh("git worktree add -q -b two .worktrees/two", in: repo)
+        GitFixture.sh("git worktree add -q -b three tools/three", in: repo)
+        let outside = repo.deletingLastPathComponent().appendingPathComponent("outside-\(UUID().uuidString)").path
+        defer { GitFixture.destroy(URL(fileURLWithPath: outside)) }
+        GitFixture.sh("git worktree add -q -b four \(GitFixture.shellQuoted(outside))", in: repo)
+
+        let root = GitWorktree.realPath(repo.path)
+        XCTAssertEqual(GitRepoWatcher.exclusions(forCheckoutAt: repo.path), [
+            root + "/.git/worktrees",
+            root + "/.git/objects",
+            root + "/.worktrees",
+            root + "/tools/three",
+        ])
+        // From a linked worktree: nothing inside it, and no `.git/worktrees`.
+        XCTAssertEqual(GitRepoWatcher.exclusions(forCheckoutAt: outside), [])
+    }
+
+    /// Past FSEvents' eight, the callback has to drop what the kernel
+    /// couldn't. The ninth exclusion is the one written to.
+    func testExclusionsPastTheKernelsLimitAreFiltered() {
+        let repo = GitFixture.newRepo("overflow")
+        defer { GitFixture.destroy(repo) }
+        GitFixture.sh("mkdir -p ninth && printf 'a\\n' > a.txt", in: repo)
+        let root = GitWorktree.realPath(repo.path)
+        let excluding = (1...8).map { "\(root)/nothing-\($0)" } + ["\(root)/ninth"]
+
+        let quiet = expectation(description: "a write in the ninth exclusion woke the watch")
+        quiet.isInverted = true
+        quiet.assertForOverFulfill = false
+        let watcher = GitRepoWatcher(paths: [root], excluding: excluding) { quiet.fulfill() }
+        GitFixture.sh("printf 'b\\n' > ninth/file", in: repo)
+        wait(for: [quiet], timeout: 2)
+        withExtendedLifetime(watcher) {}
+
+        let seen = expectation(description: "a write elsewhere woke the watch")
+        seen.assertForOverFulfill = false
+        let second = GitRepoWatcher(paths: [root], excluding: excluding) { seen.fulfill() }
+        GitFixture.sh("printf 'c\\n' >> a.txt", in: repo)
+        wait(for: [seen], timeout: 5)
+        withExtendedLifetime(second) {}
+    }
+}

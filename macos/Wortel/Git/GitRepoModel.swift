@@ -162,7 +162,18 @@ final class GitRepoModel {
     /// FSEvents watcher on the work tree; keeps the changes list live when the
     /// repo changes out of band (an external commit, an agent editing files).
     @ObservationIgnored private var watcher: GitRepoWatcher?
+    /// What the stream covers and leaves out now (`watch`).
+    @ObservationIgnored private var watchedPaths: [String] = []
+    @ObservationIgnored private var watchedExclusions: [String] = []
+    /// A linked worktree's own git dir, once `externalGitDir` has answered
+    /// (`watchResolved`); nil for a primary checkout.
+    @ObservationIgnored private var gitDir: String?
+    @ObservationIgnored private var watchResolved = false
     @ObservationIgnored private var watchRefreshItem: DispatchWorkItem?
+    /// The checkout's folder is gone (a worktree removed, most likely while it
+    /// was being looked at). Set by `GitPanelModel`, which puts the session's
+    /// own checkout back rather than leave a pane reading "detached".
+    @ObservationIgnored var onRootVanished: (() -> Void)?
     /// Coalescing state for `refresh()` — one `git status` at a time, with one
     /// more queued at most. See the note there.
     @ObservationIgnored private var refreshInFlight = false
@@ -214,18 +225,41 @@ final class GitRepoModel {
     /// Resolving it needs a `git` call, so the root watch goes up first and the
     /// stream is replaced when the answer lands (the old one stops on release).
     /// File edits — the common case — are covered for the whole of that gap.
+    ///
+    /// Either shape also leaves out the linked worktrees that live *inside* it
+    /// (`GitRepoWatcher.exclusions(forCheckoutAt:)`): a repository that keeps
+    /// its worktrees in `.worktrees`, or an agent that keeps them in
+    /// `.claude/worktrees`, would otherwise have every write in one of them
+    /// walk this whole work tree. That list is read off the disk again after
+    /// each status (`updateWatch`), so a worktree made inside later is left
+    /// out after the one wake its creation costs.
     private func startWatching() {
-        watcher = makeWatcher(paths: [root], excluding: [Self.worktreesDir(inside: root)])
+        watch(paths: [root], excluding: [Self.worktreesDir(inside: root)])
         Task { @MainActor [weak self] in
-            guard let self, let gitDir = await GitService.externalGitDir(root: self.root) else { return }
-            // A worktree's own gitdir is small and entirely ours: no exclusions,
-            // and nothing here belongs to another session.
-            self.watcher = self.makeWatcher(paths: [self.root, gitDir])
+            guard let self else { return }
+            // A worktree's own gitdir is small and entirely ours: nothing in
+            // it belongs to another session, so it's watched whole.
+            self.gitDir = await GitService.externalGitDir(root: self.root)
+            self.watchResolved = true
+            await self.updateWatch()
         }
     }
 
-    private func makeWatcher(paths: [String], excluding: [String] = []) -> GitRepoWatcher {
-        GitRepoWatcher(paths: paths, excluding: excluding) { [weak self] in
+    /// Re-read what the watch should leave out, and replace the stream only
+    /// when that, or what it covers, moved. Starting a stream on a big tree
+    /// isn't free, and the list almost never changes.
+    private func updateWatch() async {
+        guard watchResolved else { return }
+        let root = self.root
+        let excluding = await Task.detached { GitRepoWatcher.exclusions(forCheckoutAt: root) }.value
+        watch(paths: [root] + [gitDir].compactMap { $0 }, excluding: excluding)
+    }
+
+    private func watch(paths: [String], excluding: [String]) {
+        guard paths != watchedPaths || excluding != watchedExclusions else { return }
+        watchedPaths = paths
+        watchedExclusions = excluding
+        watcher = GitRepoWatcher(paths: paths, excluding: excluding) { [weak self] in
             // Callback is on a background queue — hop to the main actor.
             Task { @MainActor in self?.workTreeChanged() }
         }
@@ -391,6 +425,12 @@ final class GitRepoModel {
 
         repeat {
             refreshQueued = false
+            // A folder that's gone has no status to read: `git status` there
+            // fails, and the empty answer drew as "detached, no changes".
+            guard FileManager.default.fileExists(atPath: root) else {
+                onRootVanished?()
+                return
+            }
             let started = Date()
             let generation = staleGeneration
             isRefreshing = true
@@ -429,6 +469,9 @@ final class GitRepoModel {
             }
 
             await refreshMerged()
+            // Whatever woke this may have been a worktree made inside the
+            // checkout: leave it out from now on. A few small file reads.
+            await updateWatch()
 
             // A push or a fetch moves the ahead count without moving HEAD, and the
             // dots have to follow or they'd contradict the header sitting right

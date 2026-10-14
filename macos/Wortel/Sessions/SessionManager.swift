@@ -2749,12 +2749,7 @@ final class SessionManager {
                 isMissing: !fm.fileExists(atPath: item.checkout)))
         }
         guard !worktreeListings.isEmpty else { return result }
-        var taken = Set(archived.map { GitWorktree.realPath($0.checkout) })
-        for session in sessions {
-            if let root = session.linkedCheckout?.root { taken.insert(root) }
-            if let root = session.homeCheckout?.root { taken.insert(root) }
-            if let made = session.preparation?.resolved?.path { taken.insert(GitWorktree.realPath(made)) }
-        }
+        let taken = takenWorktrees()
         for (home, listing) in worktreeListings {
             var open: [String: [DormantEntry]] = [:]
             for worktree in listing where !worktree.isPrimary && !worktree.isBare && !worktree.isPrunable
@@ -2775,6 +2770,111 @@ final class SessionManager {
             }
         }
         return result
+    }
+
+    // MARK: - Open Branch
+
+    /// What ⇧⌘O starts with for the repository at `directory`: everything
+    /// with a place, from what's already known (no git). The branches come
+    /// after, through `loadBranches`.
+    func openBranchInputs(from directory: String?) -> OpenTarget.Inputs {
+        var inputs = OpenTarget.Inputs()
+        guard let directory, let home = GitWorktree.repositoryHome(containing: directory) else {
+            // No repository: the sessions in worktrees anywhere, to go to.
+            inputs.open = sessions.filter { $0.homeCheckout != nil }.map {
+                .init(id: $0.id, name: $0.leafName, branch: $0.worktreeBranch)
+            }
+            return inputs
+        }
+        inputs.hasRepository = true
+        inputs.open = sessions.filter {
+            $0.preparation == nil && ($0.homeCheckout?.repoHome == home || $0.linkedCheckout?.repoHome == home)
+        }.map { .init(id: $0.id, name: $0.leafName, branch: $0.worktreeBranch) }
+        inputs.archived = archived.filter { $0.repoHome == home }.map {
+            .init(id: $0.id, name: $0.leafName, branch: $0.branch)
+        }
+        if let listing = worktreeListings[home] { apply(listing, to: &inputs, home: home) }
+        return inputs
+    }
+
+    /// The worktree list's part of the inputs: the main checkout, and the
+    /// worktrees nothing is in.
+    private func apply(_ listing: [GitWorktree], to inputs: inout OpenTarget.Inputs, home: String) {
+        if let main = listing.first(where: { $0.isPrimary && !$0.isBare }) {
+            inputs.main = .init(path: main.path, branch: main.branch)
+        }
+        let taken = takenWorktrees()
+        inputs.notOpen = listing.filter {
+            !$0.isPrimary && !$0.isBare && !$0.isPrunable && !taken.contains(GitWorktree.realPath($0.path))
+        }.map { .init(path: $0.path, branch: $0.branch) }
+    }
+
+    /// The worktrees a session (live, preparing or archived) is in.
+    private func takenWorktrees() -> Set<String> {
+        var taken = Set(archived.map { GitWorktree.realPath($0.checkout) })
+        for session in sessions {
+            if let root = session.linkedCheckout?.root { taken.insert(root) }
+            if let root = session.homeCheckout?.root { taken.insert(root) }
+            if let made = session.preparation?.resolved?.path { taken.insert(GitWorktree.realPath(made)) }
+        }
+        return taken
+    }
+
+    /// The branches, read once the panel is up (local first, they're what
+    /// you mostly want), then the remote ones again after a fetch, which is
+    /// the one part that waits on the network.
+    func loadBranches(into inputs: @escaping (OpenTarget.Inputs) -> Void, from directory: String?) {
+        guard let directory, let home = GitWorktree.repositoryHome(containing: directory) else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let fetch = Task { await self.fetchFromOrigin(in: directory) }
+            var current = self.openBranchInputs(from: directory)
+            self.apply(await GitService.worktrees(root: directory), to: &current, home: home)
+            current.local = await GitService.localBranches(root: directory).map(\.name)
+            inputs(current)
+            current.remote = Self.remotes(await GitService.remoteBranches(root: directory))
+            inputs(current)
+            await fetch.value
+            current.remote = Self.remotes(await GitService.remoteBranches(root: directory))
+            inputs(current)
+        }
+    }
+
+    private static func remotes(_ branches: [GitBranch]) -> [(remote: String, branch: String)] {
+        branches.compactMap { branch in
+            guard let slash = branch.name.firstIndex(of: "/") else { return nil }
+            let name = String(branch.name[branch.name.index(after: slash)...])
+            return name == "HEAD" ? nil : (String(branch.name[..<slash]), name)
+        }
+    }
+
+    /// Do what Open Branch's row says, for the repository at `directory`.
+    func perform(_ action: OpenTarget.Action, from directory: String?) {
+        switch action {
+        case .goTo(let id):
+            selectedID = id
+        case .restore(let id):
+            restore(archived: id)
+        case .openWorktree(let path):
+            openWorktree(at: path)
+        case .mainCheckout(let path):
+            let root = GitWorktree.realPath(path)
+            if let there = sessions.first(where: {
+                $0.homeCheckout == nil && $0.cwd.map { FolderRoot.root(root, contains: GitWorktree.realPath($0)) } == true
+            }) {
+                selectedID = there.id
+            } else {
+                openFolder(path)
+            }
+        case .checkOut(let branch, _):
+            newSession(onBranch: branch, from: directory)
+        case .pullRequest(let text):
+            guard let pr = PullRequestRef.parse(text) else { return }
+            newSession(onPullRequest: pr, from: directory, after: Task { await fetchFromOrigin(in: directory) })
+        case .create(let branch):
+            newSession(onBranch: branch, base: nil, from: directory,
+                       after: Task { await fetchFromOrigin(in: directory) })
+        }
     }
 
     /// Continue in a row of the fold: restore the archived session, or open

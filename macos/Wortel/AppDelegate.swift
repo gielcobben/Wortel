@@ -911,9 +911,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.newHomeSession()
     }
 
-    @objc func newSessionOnBranch(_ sender: Any?) {
+    @objc func openBranch(_ sender: Any?) {
+        openBranch(from: manager.branchSource())
+    }
+
+    /// Open Branch for the repository at `directory` (a folder's menu passes
+    /// its own).
+    func openBranch(from directory: String?) {
+        if sessionSwitcher.isShown { return sessionSwitcher.close() }
         focusMainWindow()
-        Wortel.newSessionOnBranch(manager, inFolder: manager.selected?.folderPath)
+        guard let window else { return }
+        sessionSwitcher.showBranches(over: window, from: directory)
     }
 
     @objc func newWorktreeSession(_ sender: Any?) {
@@ -1420,8 +1428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // Nothing to act on without a session, and nowhere to step to with one.
         if menuItem.action == #selector(renameSession(_:))
-            || menuItem.action == #selector(closeWholeSession(_:))
-            || menuItem.action == #selector(newSessionOnBranch(_:)) {
+            || menuItem.action == #selector(closeWholeSession(_:)) {
             return manager.selected != nil
         }
         // A session still waiting for its worktree has nothing to fork yet.

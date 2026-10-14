@@ -327,7 +327,9 @@ struct NewSessionButton: NSViewRepresentable {
             if let selected = manager.selected, selected.preparation == nil {
                 add("Fork Session", "arrow.triangle.branch") { manager.fork(selected) }
             }
-            add("New Session on Branch\u{2026}", "arrow.branch") { newSessionOnBranch(manager) }
+            add("Open Branch\u{2026}", "arrow.branch") {
+                (NSApp.delegate as? AppDelegate)?.openBranch(from: manager.branchSource())
+            }
             menu.addItem(.separator())
             add("New Folder\u{2026}", "folder.badge.plus") {
                 if let name = promptFolderName(title: "New Folder", confirm: "Create") {
@@ -623,8 +625,8 @@ func openFolderSession(_ manager: SessionManager) {
 /// rewriting it would take that away.
 @MainActor
 func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
-                        inFolder folder: String? = nil) {
-    let from = manager.branchSource(for: session, inFolder: folder)
+                        inFolder folder: String? = nil, name: String? = nil, from directory: String? = nil) {
+    let from = directory ?? manager.branchSource(for: session, inFolder: folder)
     Task { @MainActor in
         // Started before the dialog and collected after it, so the network time
         // overlaps the typing rather than following it. Nothing on screen is
@@ -646,7 +648,7 @@ func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
         // sheet opens on the local half and the rest arrives underneath it. The
         // fetch above is the same bargain, one step earlier.
         guard let choice = await BranchSheet.present(
-            over: window, catalog: catalog, defaultBase: defaultBase,
+            over: window, catalog: catalog, defaultBase: defaultBase, name: name,
             whileOpen: { sheet in
                 catalog.beginLoadingRemote()
                 Task { @MainActor in
@@ -754,7 +756,12 @@ enum FolderActions {
         // "New Session", as in the Session menu: the menu is the folder's, so
         // naming the folder again only made it the widest item.
         item("New Session", "plus.square") { manager.newSession(inFolder: folder) }
-        item("New Session on Branch\u{2026}", "arrow.branch") { newSessionOnBranch(manager, inFolder: folder) }
+        item("New Worktree Session", "plus.square.dashed") {
+            manager.newWorktreeSession(from: manager.branchSource(inFolder: folder), inFolder: folder)
+        }
+        item("Open Branch\u{2026}", "arrow.branch") {
+            (NSApp.delegate as? AppDelegate)?.openBranch(from: manager.branchSource(inFolder: folder))
+        }
         item("Rename\u{2026}", "pencil") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
                 manager.renameFolder(folder, to: name)

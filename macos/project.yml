@@ -382,6 +382,10 @@ targets:
       # remote a URL means. A misread opens the wrong code, or a branch
       # nobody asked for.
       - path: Wortel/Git/PullRequestRef.swift
+      # Open Branch's one field: what's listed for what's typed, and what
+      # Return does. A wrong row checks out the wrong branch, or makes a
+      # second session where one already was.
+      - path: Wortel/Git/OpenTarget.swift
       # The diff table. Its *views* aren't testable without a window, but its
       # metrics are, and they carry an invariant nothing else enforces: the
       # coordinator's row height must equal the static `rowHeight(forFontSize:)`

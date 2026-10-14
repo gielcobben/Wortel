@@ -280,6 +280,8 @@ enum TabArea: String, CaseIterable {
 enum PaletteMode: String, CaseIterable {
     case sessions
     case commands
+    /// ⇧⌘O, Open Branch.
+    case branches
 }
 
 /// How the palette closed: a session picked, a command run, or neither.

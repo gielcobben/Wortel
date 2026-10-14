@@ -36,8 +36,15 @@ final class SessionSwitcher {
         if isShown { close() } else { show(over: window, commandsOnly: commandsOnly) }
     }
 
+    /// ⇧⌘O: Open Branch (`OpenTarget`) for the repository at `directory`.
+    func showBranches(over window: NSWindow, from directory: String?) {
+        let model = OpenBranchModel(inputs: manager.openBranchInputs(from: directory), from: directory)
+        show(over: window, branches: model)
+        manager.loadBranches(into: { [weak model] in model?.inputs = $0 }, from: directory)
+    }
+
     /// `commandsOnly`: ⇧⌘P, the menus' commands and no sessions.
-    func show(over window: NSWindow, commandsOnly: Bool = false) {
+    func show(over window: NSWindow, commandsOnly: Bool = false, branches: OpenBranchModel? = nil) {
         close()
         // Read now, while the window is key: validated for it, not the panel.
         let commands = PaletteCommands.all()
@@ -65,8 +72,20 @@ final class SessionSwitcher {
         background.maskImage = Self.roundedMask(radius: SwitcherView.cornerRadius)
         let host = NSHostingView(rootView: SwitcherView(
             manager: manager,
-            commands: commands,
+            commands: branches == nil ? commands : [],
             commandsOnly: commandsOnly,
+            branches: branches,
+            open: { [weak self] action, alternate in
+                self?.report(.session)
+                self?.close()
+                guard let self else { return }
+                // ⌥↩ on Create: the same branch, from a base you pick.
+                if alternate, case .create(let branch) = action {
+                    newSessionOnBranch(self.manager, name: branch, from: branches?.from)
+                } else {
+                    self.manager.perform(action, from: branches?.from)
+                }
+            },
             pick: { [weak self] id in
                 self?.report(.session)
                 self?.close()
@@ -103,7 +122,7 @@ final class SessionSwitcher {
         // change again: the window stayed at the field's height, the card cut
         // off inside it.
         self.panel = panel
-        openMode = commandsOnly ? .commands : .sessions
+        openMode = branches != nil ? .branches : commandsOnly ? .commands : .sessions
         window.addChildWindow(panel, ordered: .above)
 
         // In with a quick fade, as Spotlight comes in.
@@ -163,6 +182,18 @@ final class SessionSwitcher {
     }
 }
 
+/// What Open Branch lists, filled in as the branches arrive.
+@Observable
+@MainActor
+final class OpenBranchModel {
+    var inputs: OpenTarget.Inputs
+    let from: String?
+    init(inputs: OpenTarget.Inputs, from: String?) {
+        self.inputs = inputs
+        self.from = from
+    }
+}
+
 /// A borderless panel that can take the keyboard, and goes away when it
 /// loses it.
 private final class SwitcherPanel: NSPanel {
@@ -189,6 +220,10 @@ private struct SwitcherView: View {
     let manager: SessionManager
     let commands: [PaletteCommand]
     let commandsOnly: Bool
+    /// Open Branch: its rows instead of sessions and commands.
+    let branches: OpenBranchModel?
+    /// A row of Open Branch chosen, and whether with ⌥.
+    let open: (OpenTarget.Action, Bool) -> Void
     let pick: (UUID) -> Void
     let run: (PaletteCommand) -> Void
     let cancel: () -> Void
@@ -200,16 +235,23 @@ private struct SwitcherView: View {
     enum Row: Identifiable {
         case session(SessionSwitcherMatch.Candidate)
         case command(PaletteCommand)
-        var id: UUID {
+        case target(OpenTarget.Choice)
+        var id: String {
             switch self {
-            case .session(let c): return c.id
-            case .command(let c): return c.id
+            case .session(let c): return c.id.uuidString
+            case .command(let c): return c.id.uuidString
+            case .target(let c): return c.id
             }
         }
     }
 
+    private var targetRows: [Row] {
+        guard let branches else { return [] }
+        return OpenTarget.choices(for: query, in: branches.inputs).map(Row.target)
+    }
+
     private var sessionRows: [Row] {
-        guard !commandsOnly else { return [] }
+        guard !commandsOnly, branches == nil else { return [] }
         let candidates = manager.sessions.map { session in
             SessionSwitcherMatch.Candidate(
                 id: session.id, name: session.leafName, folder: session.folderPath,
@@ -232,16 +274,18 @@ private struct SwitcherView: View {
     }
 
     var body: some View {
+        let targets = targetRows
         let sessions = sessionRows
         let commands = commandRows
-        let rows = sessions + commands
+        let rows = targets + sessions + commands
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: commandsOnly ? "command" : "magnifyingglass")
+                Image(systemName: branches != nil ? "arrow.triangle.branch" : commandsOnly ? "command" : "magnifyingglass")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.secondary)
                 PaletteField(text: $query,
-                             placeholder: commandsOnly ? "Run a command" : "Go to a session or run a command",
+                             placeholder: branches != nil ? "Go to a branch, a worktree or a pull request"
+                                : commandsOnly ? "Run a command" : "Go to a session or run a command",
                              submit: { activate(rows) },
                              cancel: cancel,
                              move: { move($0, in: rows.count) == .handled })
@@ -255,24 +299,32 @@ private struct SwitcherView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 0) {
+                            ForEach(targetGroups(targets), id: \.offset) { group in
+                                section(group.title, rows: group.rows, offset: group.offset)
+                            }
                             section(sessions.isEmpty ? nil : (query.isEmpty ? "Recent" : "Sessions"),
-                                    rows: sessions, offset: 0)
+                                    rows: sessions, offset: targets.count)
                             section(commands.isEmpty || commandsOnly ? nil : "Commands",
-                                    rows: commands, offset: sessions.count)
+                                    rows: commands, offset: targets.count + sessions.count)
                         }
                         .padding(Self.listPadding)
                     }
                     .scrollIndicators(.never)
-                    .frame(height: listHeight(sessions: sessions.count, commands: commands.count))
+                    .frame(height: listHeight(sessions: sessions.count, commands: commands.count,
+                                              targetHeaders: targetGroups(targets).filter { $0.title != nil }.count,
+                                              targets: targets.count))
                     .onChange(of: highlighted) { _, index in
                         withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(rows[safe: index]?.id) }
                     }
                 }
                 SwitcherFooter()
                     .frame(height: Self.footerHeight)
-            } else if !query.isEmpty {
+            } else if !query.isEmpty || branches != nil {
                 Divider().opacity(0.6)
-                Text("Nothing matches \u{201c}\(query)\u{201d}")
+                Text(query.isEmpty ? "No worktrees yet. Type a branch, or a pull request\u{2019}s number."
+                     : branches?.inputs.hasRepository == false
+                        ? "Not in a repository: nothing here has branches."
+                        : "Nothing matches \u{201c}\(query)\u{201d}")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
@@ -314,6 +366,8 @@ private struct SwitcherView: View {
                                 isCurrent: candidate.id == manager.selectedID)
                 case .command(let command):
                     CommandRow(command: command, isHighlighted: position == highlighted)
+                case .target(let choice):
+                    TargetRow(choice: choice, isHighlighted: position == highlighted)
                 }
             }
             .id(row.id)
@@ -322,10 +376,25 @@ private struct SwitcherView: View {
         }
     }
 
+    /// Open Branch's rows in their groups, each with where it starts.
+    private func targetGroups(_ rows: [Row]) -> [(title: String?, rows: [Row], offset: Int)] {
+        var groups: [(title: String?, rows: [Row], offset: Int)] = []
+        var last: OpenTarget.Group?
+        for (index, row) in rows.enumerated() {
+            guard case .target(let choice) = row else { continue }
+            if choice.group != last {
+                groups.append((choice.group.title, [], index))
+                last = choice.group
+            }
+            groups[groups.count - 1].rows.append(row)
+        }
+        return groups
+    }
+
     /// Room for up to eight rows, and the section titles among them.
-    private func listHeight(sessions: Int, commands: Int) -> CGFloat {
-        let headers = (sessions > 0 ? 1 : 0) + (commands > 0 && !commandsOnly ? 1 : 0)
-        let rows = min(sessions + commands, Self.visibleRows)
+    private func listHeight(sessions: Int, commands: Int, targetHeaders: Int = 0, targets: Int = 0) -> CGFloat {
+        let headers = (sessions > 0 ? 1 : 0) + (commands > 0 && !commandsOnly ? 1 : 0) + targetHeaders
+        let rows = min(sessions + commands + targets, Self.visibleRows)
         return CGFloat(rows) * Self.rowHeight + CGFloat(headers) * (Self.headerHeight + 2) + Self.listPadding * 2
     }
 
@@ -338,6 +407,8 @@ private struct SwitcherView: View {
         switch row {
         case .session(let candidate): pick(candidate.id)
         case .command(let command): run(command)
+        case .target(let choice):
+            open(choice.action, NSApp.currentEvent?.modifierFlags.contains(.option) == true)
         }
     }
 
@@ -455,6 +526,59 @@ private struct SwitcherRow: View {
     /// "Wortel · ~/Developer/wortel", "networth · worktree/pre-post".
     private var location: String {
         [candidate.folder, candidate.branch ?? candidate.path].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// One row of Open Branch: what it is, and what Return does.
+private struct TargetRow: View {
+    let choice: OpenTarget.Choice
+    let isHighlighted: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHighlighted ? Color.white.opacity(0.22) : Color.primary.opacity(0.07))
+                Image(systemName: glyph)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            }
+            .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(choice.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                    .lineLimit(1)
+                Text([choice.branch, choice.status].compactMap { $0 }.joined(separator: " \u{00b7} "))
+                    .font(.system(size: 11))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 8)
+            if case .create = choice.action, isHighlighted {
+                Text("\u{2325}\u{21a9} from\u{2026}")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .help("Option-Return: pick the branch it starts from")
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 44)
+        .contentShape(Rectangle())
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(isHighlighted ? Color.accentColor : .clear))
+    }
+
+    private var glyph: String {
+        switch choice.action {
+        case .goTo: return "terminal"
+        case .restore: return "archivebox"
+        case .openWorktree, .checkOut: return "arrow.triangle.branch"
+        case .mainCheckout: return "folder"
+        case .pullRequest: return "arrow.triangle.pull"
+        case .create: return "plus"
+        }
     }
 }
 

@@ -259,10 +259,13 @@ enum MainMenu {
         // of a wortel.conf keybind.
         let fork = sessionMenu.addItem(withTitle: "Fork Session", action: #selector(AppDelegate.forkSession(_:)), keyEquivalent: "n")
         fork.keyEquivalentModifierMask = [.command, .option, .shift]
-        // The selected session's repository, on a branch of its own in its own
-        // worktree, from trunk or the base the sheet is told. Was "Fork…"
-        // until Fork came to mean carrying the session itself.
-        sessionMenu.addItem(withTitle: "New Session on Branch\u{2026}", action: #selector(AppDelegate.newSessionOnBranch(_:)), keyEquivalent: "")
+        // Any branch of the selected session's repository, whatever state
+        // it's in: its session, its archived one, its worktree, a new
+        // worktree on it, or the branch made (`OpenTarget`). ⇧⌘O, ⌘O's
+        // sibling: open a folder, open a branch. Replaces "New Session on
+        // Branch…", whose sheet is still ⌥↩ on Create, to pick a base.
+        let openBranch = sessionMenu.addItem(withTitle: "Open Branch\u{2026}", action: #selector(AppDelegate.openBranch(_:)), keyEquivalent: "o")
+        openBranch.keyEquivalentModifierMask = [.command, .shift]
 
         // -- Folders -----------------------------------------------------------
         // The two folder verbs, adjacent because that's how they read: make an

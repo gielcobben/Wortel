@@ -31,6 +31,9 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     /// What we put in the field, kept so we can tell "still ours" from "typed
     /// over" when the remote branches land.
     private var suggested = ""
+    /// A name typed before the sheet came up (Open Branch's ⌥↩ on Create):
+    /// the sheet is then for picking where it starts from.
+    var initialName: String?
 
     /// A name you can simply accept, so the common case is: open the sheet,
     /// press Return (`GitWorktree.generatedBranch`).
@@ -96,7 +99,7 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
         // one could have been carrying that name all along. Only re-rolled if
         // the field is still exactly what we put there: once you have typed,
         // the name is yours and the status line says what it will do.
-        if nameField.stringValue == suggested,
+        if initialName == nil, nameField.stringValue == suggested,
            !catalog.remotes(carrying: suggested).isEmpty {
             suggested = Self.suggestedName(in: catalog)
             nameField.stringValue = suggested
@@ -106,11 +109,11 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     }
 
     override func loadView() {
-        let title = NSTextField(labelWithString: "New Session on Branch")
+        let title = NSTextField(labelWithString: initialName == nil ? "New Session on Branch" : "New Branch From\u{2026}")
         title.font = .preferredFont(forTextStyle: .headline)
 
         nameField.placeholderString = "Branch name, or a pull request"
-        suggested = Self.suggestedName(in: catalog)
+        suggested = initialName ?? Self.suggestedName(in: catalog)
         nameField.stringValue = suggested
         nameField.controlSize = .large
         nameField.font = .systemFont(ofSize: NSFont.systemFontSize)
@@ -283,7 +286,7 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
 
     /// Run the sheet on `window` and return what it was told, or nil on Cancel.
     static func present(
-        over window: NSWindow, catalog: BranchCatalog, defaultBase: String?,
+        over window: NSWindow, catalog: BranchCatalog, defaultBase: String?, name: String? = nil,
         whileOpen: @escaping (BranchSheet) -> Void = { _ in }
     ) async -> BranchChoice? {
         // The window it belongs to comes forward first. A window-modal sheet on
@@ -291,6 +294,7 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
         // lock-up: the blocked window is not the one you are looking at.
         window.makeKeyAndOrderFront(nil)
         let sheet = BranchSheet(catalog: catalog, defaultBase: defaultBase)
+        sheet.initialName = name
         return await withCheckedContinuation { continuation in
             var resumed = false
             sheet.finish = { answer in

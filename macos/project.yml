@@ -216,6 +216,14 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
         NSPrincipalClass: NSApplication
+        # A folder dropped on the Dock icon, or "Open With" on one in Finder,
+        # opens as ⌘O opens one (AppDelegate.application(_:open:)). Alternate,
+        # so Wortel is offered for folders and never becomes their default.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Folder
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.folder]
         NSHumanReadableCopyright: "© Giel Cobben"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSSupportsSuddenTermination: false

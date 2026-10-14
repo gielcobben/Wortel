@@ -142,7 +142,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.window = window
         Self.mainWindow = window
 
-        manager.onAllClosed = { [weak self] in self?.window?.close() }
+        // Closing the last session leaves the window up on an empty page with
+        // Open Folder on it, rather than quitting: the last ⇧⌘W was usually
+        // the end of a task, not of the day. ⌘W on that page closes the
+        // window, and the app with it.
+        manager.onAllClosed = { [weak self] in
+            self?.gitPanel.focus(session: nil)
+            self?.fileTree.focus(session: nil)
+        }
         // Previews are accessories: without this, closing the last session would
         // leave a preview window standing, which both keeps the app alive (the
         // last window hasn't closed) and leaves a terminal with no terminal in it.
@@ -187,6 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             })
         self.attentionItem = attentionItem
         manager.onAttentionChanged = { [weak attentionItem] in attentionItem?.refresh() }
+        watchCommandHold()
         // A command finished in the selected session → refresh the git panel
         // (it debounces and no-ops while hidden).
         manager.onCommandFinished = { [weak self] session in
@@ -367,6 +375,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ = GhosttyRuntime.keeper
 
         manager.restore()
+        // Folders handed over before the sessions were back (a folder dropped
+        // on the Dock icon to launch the app).
+        pendingFolders.forEach { manager.openFolder($0) }
+        pendingFolders = []
         // Point the panel at the restored selection: it's what raises the panel
         // if that session had it up, and it seeds the cwd so the first toggle
         // resolves the right repo (no git work runs while it's hidden).
@@ -496,6 +508,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidResignActive(_ notification: Notification) {
         manager?.appDidResignActive()
         processes.setInBackground(true)
+        commandHold?.cancel()
+        manager?.showsShortcutHints = false
+    }
+
+    /// ⌘ held alone for a moment shows each row's ⌘1…⌘9 (Supacode and Conductor
+    /// do the same). A moment, not at once: ⌘ goes down for every shortcut, and
+    /// hints flashing at each ⌘C would be noise. Any key, or any other
+    /// modifier, puts them away. A local monitor: only Wortel's own events,
+    /// which needs no permission.
+    private var commandHold: DispatchWorkItem?
+
+    private func watchCommandHold() {
+        NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
+            self?.commandHoldChanged(event)
+            return event
+        }
+    }
+
+    private func commandHoldChanged(_ event: NSEvent) {
+        commandHold?.cancel()
+        commandHold = nil
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if event.type == .flagsChanged, modifiers == .command {
+            let show = DispatchWorkItem { [weak self] in self?.manager.showsShortcutHints = true }
+            commandHold = show
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: show)
+        } else if manager.showsShortcutHints {
+            manager.showsShortcutHints = false
+        }
     }
 
     @objc private func windowOcclusionChanged(_ notification: Notification) {
@@ -593,6 +634,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         completionHandler()
     }
+
+    /// A folder dropped on the Dock icon, or opened with Wortel from Finder:
+    /// what ⌘O does with it. Files aren't Wortel's to open from outside.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let folders = urls.filter {
+            (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        }.map(\.path)
+        guard !folders.isEmpty else { return }
+        // At launch this can come before the sessions are restored.
+        guard let manager, manager.hasRestored else { return pendingFolders += folders }
+        folders.forEach { manager.openFolder($0) }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+    }
+    private var pendingFolders: [String] = []
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
@@ -907,6 +963,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // main area means the session, as closing a terminal's last tab does.
         if let tab = gitPanel.activeTab(in: focusedRegion()), tab != .session {
             gitPanel.requestClose(tab)
+            return
+        }
+        // The empty page after the last session closed: ⌘W is the window's,
+        // and the app goes with it.
+        if manager.sessions.isEmpty {
+            window?.performClose(sender)
             return
         }
         manager.requestCloseSelected()

@@ -608,7 +608,8 @@ struct SidebarOutlineView: NSViewRepresentable {
         outline.action = #selector(Coordinator.rowClicked(_:))
         outline.doubleAction = #selector(Coordinator.rowDoubleClicked(_:))
 
-        outline.registerForDraggedTypes([Coordinator.sessionDragType, Coordinator.folderDragType])
+        // And folders from Finder, which open as ⌘O opens one.
+        outline.registerForDraggedTypes([Coordinator.sessionDragType, Coordinator.folderDragType, .fileURL])
         outline.setDraggingSourceOperationMask(.move, forLocal: true)
         outline.setDraggingSourceOperationMask([], forLocal: false)
         // We draw our own insertion indicator (depth-aware, never clipped) —
@@ -1086,11 +1087,29 @@ struct SidebarOutlineView: NSViewRepresentable {
         // the gap" right at section boundaries, which is what made the folder
         // indicator jitter. Position-based targeting is stable and smooth.
 
+        /// The directories among the file URLs on a drag from outside.
+        static func directories(on pasteboard: NSPasteboard) -> [String] {
+            let urls = pasteboard.readObjects(forClasses: [NSURL.self],
+                                              options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+            return urls.filter {
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            }.map(\.path)
+        }
+
         func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo,
                          proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
             guard let outline else { return [] }
             let pb = info.draggingPasteboard
             let point = outline.convert(info.draggingLocation, from: nil)
+
+            // Folders from Finder: no insertion line, they're filed where ⌘O
+            // would file them.
+            if !Self.directories(on: pb).isEmpty {
+                clearDropHighlight()
+                hideInsertion()
+                outline.setDropItem(nil, dropChildIndex: NSOutlineViewDropOnItemIndex)
+                return .copy
+            }
 
             // Reorder folder sections: insertion line always between sections.
             if pb.string(forType: Self.folderDragType) != nil {
@@ -1132,6 +1151,12 @@ struct SidebarOutlineView: NSViewRepresentable {
             hideInsertion()
             let pb = info.draggingPasteboard
             let loose = shownLoose.count
+
+            let folders = Self.directories(on: pb)
+            if !folders.isEmpty {
+                folders.forEach { manager.openFolder($0) }
+                return true
+            }
 
             if let folder = pb.string(forType: Self.folderDragType) {
                 guard item == nil else { return false }

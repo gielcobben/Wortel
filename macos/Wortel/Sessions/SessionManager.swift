@@ -57,6 +57,10 @@ final class SessionManager {
     /// the sidebar so double-click, the context menu, and ⌘R all drive one path.
     var editingID: Session.ID?
 
+    /// ⌘ is being held on its own: the rows show their ⌘1…⌘9 instead of
+    /// their status, so the shortcut can be read off the row it goes to.
+    var showsShortcutHints = false
+
     /// The sidebar row under the pointer: its name makes room for the row's
     /// "…" and × only then (SidebarRowContent), rather than always.
     var hoveredRowID: Session.ID?
@@ -3324,7 +3328,7 @@ final class SessionManager {
     /// building the window, 2026-09-29) had no sessions, and saved that on its
     /// way out over every session there was. The shells lived on in the
     /// keeper; the list of what they were did not.
-    private var hasRestored = false
+    private(set) var hasRestored = false
 
     /// Where each live session's processes hang from, for `ProcessMonitor`.
     ///

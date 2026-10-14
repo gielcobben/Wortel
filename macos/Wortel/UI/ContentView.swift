@@ -1089,7 +1089,32 @@ struct SessionStatusIndicator: View {
 
     private var isSelected: Bool { manager.selectedID == session.id }
 
+    /// This row's ⌘1…⌘9, while ⌘ is held: its place in the drawn order.
+    private var shortcutHint: String? {
+        guard manager.showsShortcutHints,
+              let index = manager.sessions.firstIndex(where: { $0.id == session.id }), index < 9
+        else { return nil }
+        return "\u{2318}\(index + 1)"
+    }
+
     var body: some View {
+        ZStack {
+            if let shortcutHint {
+                Text(verbatim: shortcutHint)
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
+            } else {
+                status.transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: shortcutHint)
+        // Centre in whatever slot the row view gives us — the same rect the
+        // close button gets, so swapping between them doesn't shift anything.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var status: some View {
         HStack(spacing: 4) {
             // A worktree on its way: the same three dots as a working agent,
             // because to the row it's the same news (something is under way
@@ -1135,9 +1160,6 @@ struct SessionStatusIndicator: View {
                 WorkingIndicator()
             }
         }
-        // Centre in whatever slot the row view gives us — the same rect the
-        // close button gets, so swapping between them doesn't shift anything.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     static func attentionColor(_ kind: AttentionKind) -> NSColor {
@@ -1451,6 +1473,11 @@ struct DetailPane: View {
             // Over the terminals rather than instead of them: the host keeps
             // every session's view alive, and taking it out would rebuild them.
             .overlay {
+                if manager.sessions.isEmpty {
+                    EmptySessionsPage(manager: manager)
+                }
+            }
+            .overlay {
                 if let session = manager.selected, let preparation = session.preparation {
                     WorktreePreparingPage(
                         preparation: preparation,
@@ -1637,6 +1664,38 @@ private struct SidebarRenameField: NSViewRepresentable {
             DispatchQueue.main.async { [parent, cancelling] in
                 if cancelling { parent.cancel() } else { parent.commit(text) }
             }
+        }
+    }
+}
+
+/// The window with no session in it: what's left after the last one closes.
+/// Open Folder first, because a new task is nearly always in a project.
+struct EmptySessionsPage: View {
+    let manager: SessionManager
+
+    var body: some View {
+        ZStack {
+            Color(nsColor: Chrome.content)
+            VStack(spacing: 10) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 26, weight: .light))
+                    .foregroundStyle(.tertiary)
+                Text("No sessions")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Open a folder to start a session in it, or drop one on the sidebar.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 300)
+                HStack(spacing: 8) {
+                    Button("New Session") { manager.newSession() }
+                    Button("Open Folder\u{2026}") { openFolderSession(manager) }
+                        .keyboardShortcut(.defaultAction)
+                }
+                .controlSize(.regular)
+                .padding(.top, 4)
+            }
+            .padding(24)
         }
     }
 }

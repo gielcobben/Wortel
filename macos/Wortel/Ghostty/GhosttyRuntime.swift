@@ -414,7 +414,14 @@ final class GhosttyRuntime {
         let dark = Self.systemIsDark
         // The agent running there, by its marker: what it switched on at its
         // own startup may never have been recorded (`TerminalModes.assuming`).
-        let agent = resumed ? AgentResumeStore.currentMarker(for: session)?.agent : nil
+        // Only one seen in the process table: a marker outlives its agent
+        // until the next command, and focus reports or a theme report sent
+        // to the shell it left would be typed at its prompt.
+        let agent: String? = resumed ? AgentResumeStore.currentMarker(for: session).flatMap { marker in
+            guard case .running = AgentLiveness.locate(agent: marker.agent, shellPID: marker.shellPID,
+                                                       table: Self.recentProcessTable()) else { return nil }
+            return marker.agent
+        } : nil
         let prelude = resumed ? TerminalModeRecorder.shared.modes(for: session).assuming(agent: agent).prelude : []
         pty.enqueue {
             if !prelude.isEmpty {

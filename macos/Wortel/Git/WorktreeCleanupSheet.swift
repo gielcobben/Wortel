@@ -279,9 +279,11 @@ final class WorktreeCleanupModel {
                 rows[index].error = error
                 rows[index].remove = false
             } else {
-                // An archived session waiting in it goes with it: there's
-                // nothing left to restore it into.
-                manager.forgetArchived(inWorktreeAt: row.path)
+                // An archived session waiting in it goes too, once its
+                // branch has: there's nothing left to restore it from. With
+                // the branch kept, restoring makes the worktree again, so
+                // the conversation stays findable.
+                if deletesBranch(row) { manager.forgetArchived(inWorktreeAt: row.path) }
                 withAnimation(.easeOut(duration: 0.2)) { rows.removeAll { $0.path == row.path } }
             }
         }

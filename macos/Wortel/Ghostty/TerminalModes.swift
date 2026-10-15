@@ -104,6 +104,27 @@ struct TerminalModes: Equatable {
     /// input at all.
     var wantsColorSchemeReports: Bool { privateModes[2031] == true }
 
+    /// What an agent is known to switch on at startup, and keeps on while it
+    /// runs: Claude Code writes `?2004h?2031h?1004h` before anything else.
+    static let agentStartupModes: [String: [Int]] = ["claude": [1004, 2004, 2031]]
+
+    /// These modes with what the agent running in the session is known to
+    /// have set, whatever was recorded.
+    ///
+    /// The record misses an agent's startup more often than it should: one
+    /// Wortel resumed starts while nobody is attached, and reprinting a long
+    /// conversation pushes its first bytes out of the keeper's 512 KB replay
+    /// before anyone reads them. 8 Claude sessions out of 9 had no `?2031` on
+    /// record (2026-10-15), so a Mac that went light kept them painting dark
+    /// diff blocks on a white screen. The agent's marker says it is running
+    /// now, which is the better word: it is newer than any record.
+    func assuming(agent: String?) -> TerminalModes {
+        guard let agent, let modes = Self.agentStartupModes[agent] else { return self }
+        var assumed = self
+        for mode in modes { assumed.privateModes[mode] = true }
+        return assumed
+    }
+
     /// What a terminal sends a program that turned `?2031` on: `CSI ? 997 ; 1 n`
     /// for dark, `; 2 n` for light. The same bytes ghostty writes on a live
     /// appearance change, which is the point — the program cannot tell a

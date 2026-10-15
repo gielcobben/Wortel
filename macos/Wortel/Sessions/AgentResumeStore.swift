@@ -221,6 +221,12 @@ enum AgentResumeStore {
         directory.appendingPathComponent(sessionID.uuidString)
     }
 
+    /// The agent running in one session right now, by its marker: one small
+    /// file, for a reattach that needs to know before anything else does.
+    static func currentMarker(for sessionID: UUID) -> AgentMarker? {
+        (try? String(contentsOf: markerURL(for: sessionID), encoding: .utf8)).flatMap(parse)
+    }
+
     /// Parse a marker file's contents. The current format is `key=value` lines
     /// (`agent`, `model`, `cwd`, `argv`); a bare single-line token is the legacy
     /// format (agent name only) and is still accepted so an in-flight agent from

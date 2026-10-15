@@ -66,6 +66,19 @@ final class TerminalModesTests: XCTestCase {
         XCTAssertFalse(track(["\u{1B}[?2031h", "\u{1B}[?2031l"]).wantsColorSchemeReports)
     }
 
+    /// A Claude whose startup was never recorded (it began while nobody was
+    /// attached) still gets its theme reports, paste and focus back: it is
+    /// running, so it has them on, whatever the record says.
+    func testARunningClaudeIsAssumedToHaveItsStartupModes() {
+        let assumed = track(["\u{1B}[?1000h", "\u{1B}[?2004l"]).assuming(agent: "claude")
+        XCTAssertTrue(assumed.wantsColorSchemeReports)
+        XCTAssertEqual(String(decoding: assumed.prelude, as: UTF8.self),
+                       "\u{1B}[?1000h\u{1B}[?1004h\u{1B}[?2004h\u{1B}[?2031h")
+        // Another agent, or none: only what was recorded.
+        XCTAssertFalse(TerminalModes().assuming(agent: "codex").wantsColorSchemeReports)
+        XCTAssertFalse(TerminalModes().assuming(agent: nil).wantsColorSchemeReports)
+    }
+
     /// The bytes are ghostty's own, so a catch-up report is indistinguishable
     /// from a live one — which is the point.
     func testTheColorSchemeReportIsWhatGhosttyWouldSend() {

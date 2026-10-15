@@ -412,7 +412,10 @@ final class GhosttyRuntime {
         let resumed = attachment.resumed
         let replay = attachment.replay
         let dark = Self.systemIsDark
-        let prelude = resumed ? TerminalModeRecorder.shared.modes(for: session).prelude : []
+        // The agent running there, by its marker: what it switched on at its
+        // own startup may never have been recorded (`TerminalModes.assuming`).
+        let agent = resumed ? AgentResumeStore.currentMarker(for: session)?.agent : nil
+        let prelude = resumed ? TerminalModeRecorder.shared.modes(for: session).assuming(agent: agent).prelude : []
         pty.enqueue {
             if !prelude.isEmpty {
                 prelude.withUnsafeBufferPointer { raw in
@@ -455,7 +458,7 @@ final class GhosttyRuntime {
             // is a mode recorded as on for a program that has since exited, and
             // the prelude above already accepts that same risk for seventeen
             // modes with far more to say.
-            if resumed, TerminalModeRecorder.shared.modes(for: session).wantsColorSchemeReports {
+            if resumed, TerminalModeRecorder.shared.modes(for: session).assuming(agent: agent).wantsColorSchemeReports {
                 let report = TerminalModes.colorSchemeReport(dark: dark)
                 report.withUnsafeBufferPointer { raw in
                     guard let base = raw.baseAddress else { return }

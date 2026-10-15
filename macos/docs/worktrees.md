@@ -20,8 +20,9 @@ removes worktrees under them.
 | Get to a branch, worktree or pull request | ⇧⌘O Open Branch | Goes to its session, restores the archived one, opens the worktree, checks the branch out, or creates it |
 | Try something from where you are | ⌥⇧⌘N Fork Session | The session as it is, changes and conversation, in a worktree of its own |
 | Stop | ⇧⌘W, the row's ×, or `exit` | Archived: the worktree and branch stay, the conversation is remembered. Trashed instead when nothing in it is worth keeping |
-| Continue | Click it in the folder's Archived fold | The shell starts in the worktree and the agent resumes |
-| Find a worktree another tool made | The same fold ("not open") | Opening it makes a session there; Wortel never deletes it |
+| Continue | ⇧⌘O, pick it under Archived | The shell starts in the worktree and the agent resumes |
+| Find a worktree another tool made | ⇧⌘O, under Not open | Opening it makes a session there; Wortel never deletes it |
+| Delete an archived one | Clean Up Worktrees… | Its worktree to the Trash, the archived session with it |
 
 ## Decisions
 
@@ -35,6 +36,9 @@ removes worktrees under them.
   there's nothing to keep (`WorktreeCloseDecision`): Wortel's own, clean, every
   commit elsewhere or already in trunk by content. The decision runs after the
   row has moved, because a monorepo's `git status` takes seconds and ⌘W can't.
+- **The sidebar shows open sessions only.** A per-folder Archived fold was
+  built and dropped: it was clutter under every folder, and Open Branch
+  already lists everything with a place.
 - **Archived sessions live in their own file** (`archived-sessions.json`): an
   older build reads `sessions.json` and would start them as live shells.
 - **Show everything git knows; delete only what you made.** Hiding foreign

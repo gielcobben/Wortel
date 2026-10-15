@@ -534,8 +534,6 @@ struct SidebarSnapshotGroup: Equatable {
     let tallIDs: Set<UUID>
     /// The Pinned section (see `SidebarGroup.isPinned`).
     var isPinned = false
-    /// The folder's Archived fold (`SessionManager.dormantByFolder`).
-    var dormant: [SessionManager.DormantEntry] = []
 }
 
 /// The sidebar's session list as a native `NSOutlineView` — the same machinery
@@ -558,8 +556,6 @@ struct SidebarFolding: Equatable {
     let folders: Set<String>
     let pinned: Bool
     let loose: Bool
-    /// Folders whose Archived fold is open.
-    var archives: Set<String> = []
 }
 
 struct SidebarOutlineView: NSViewRepresentable {
@@ -684,21 +680,6 @@ struct SidebarOutlineView: NSViewRepresentable {
             init(session: Session) { self.session = session }
         }
 
-        /// A folder's "Archived" row: the last of its children, there while
-        /// it has archived sessions or worktrees nothing is open in. Folds
-        /// (closed by default); its rows are its children. Never dragged, and
-        /// no drop lands past it: a folder's drop indices are its sessions'.
-        final class ArchiveFoldItem {
-            let folder: String
-            init(folder: String) { self.folder = folder }
-        }
-
-        /// One row in an Archived fold.
-        final class DormantItem {
-            var entry: SessionManager.DormantEntry
-            init(entry: SessionManager.DormantEntry) { self.entry = entry }
-        }
-
         let manager: SessionManager
         weak var outline: NSOutlineView?
         var scrollObserver: NSObjectProtocol?
@@ -722,10 +703,6 @@ struct SidebarOutlineView: NSViewRepresentable {
         private var childrenByFolder: [String: [SessionItem]] = [:]
         private var folderCache: [String: FolderItem] = [:]
         private var sessionCache: [UUID: SessionItem] = [:]
-        private var foldByFolder: [String: ArchiveFoldItem] = [:]
-        private var dormantByFolder: [String: [DormantItem]] = [:]
-        private var foldCache: [String: ArchiveFoldItem] = [:]
-        private var dormantCache: [String: DormantItem] = [:]
         /// Suppresses expand/collapse persistence while *we* are the ones
         /// expanding items (reload/sync), so only user toggles are recorded.
         private var isSyncing = false
@@ -773,7 +750,6 @@ struct SidebarOutlineView: NSViewRepresentable {
             // the only loose session changes nothing else, and must still reload.
             a.count == b.count && zip(a, b).allSatisfy {
                 $0.folder == $1.folder && $0.isPinned == $1.isPinned && $0.sessionIDs == $1.sessionIDs
-                    && $0.dormant == $1.dormant
             }
         }
 
@@ -783,8 +759,6 @@ struct SidebarOutlineView: NSViewRepresentable {
             looseItems = []
             folderItems = []
             childrenByFolder = [:]
-            foldByFolder = [:]
-            dormantByFolder = [:]
             for group in snapshot {
                 let items: [SessionItem] = group.sessionIDs.compactMap { id in
                     guard let session = byID[id] else { return nil }
@@ -803,17 +777,6 @@ struct SidebarOutlineView: NSViewRepresentable {
                     }()
                     folderItems.append(item)
                     childrenByFolder[folder] = items
-                    if !group.dormant.isEmpty {
-                        let fold = foldCache[folder] ?? ArchiveFoldItem(folder: folder)
-                        foldCache[folder] = fold
-                        foldByFolder[folder] = fold
-                        dormantByFolder[folder] = group.dormant.map { entry in
-                            let item = dormantCache[entry.id] ?? DormantItem(entry: entry)
-                            item.entry = entry
-                            dormantCache[entry.id] = item
-                            return item
-                        }
-                    }
                 } else {
                     looseItems = items
                 }
@@ -823,9 +786,6 @@ struct SidebarOutlineView: NSViewRepresentable {
             sessionCache = sessionCache.filter { liveIDs.contains($0.key) }
             let liveFolders = Set(snapshot.compactMap(\.folder))
             folderCache = folderCache.filter { liveFolders.contains($0.key) }
-            foldCache = foldCache.filter { foldByFolder[$0.key] != nil }
-            let liveDormant = Set(snapshot.flatMap { $0.dormant.map(\.id) })
-            dormantCache = dormantCache.filter { liveDormant.contains($0.key) }
         }
 
         /// Bring the outline's expansion state in line with the manager's
@@ -848,11 +808,6 @@ struct SidebarOutlineView: NSViewRepresentable {
                     outline.collapseItem(item)
                 }
             }
-            for (folder, fold) in foldByFolder where outline.row(forItem: fold) >= 0 {
-                let open = manager.openArchiveFolds.contains(folder)
-                if open, !outline.isItemExpanded(fold) { outline.expandItem(fold) }
-                if !open, outline.isItemExpanded(fold) { outline.collapseItem(fold) }
-            }
             isSyncing = false
         }
 
@@ -861,10 +816,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
             if item == nil { return rootOffset + shownLoose.count + folderItems.count }
             if item is PinnedItem { return pinnedItems.count }
-            if let folder = item as? FolderItem {
-                return (childrenByFolder[folder.name]?.count ?? 0) + (foldByFolder[folder.name] == nil ? 0 : 1)
-            }
-            if let fold = item as? ArchiveFoldItem { return dormantByFolder[fold.folder]?.count ?? 0 }
+            if let folder = item as? FolderItem { return childrenByFolder[folder.name]?.count ?? 0 }
             return 0
         }
 
@@ -877,14 +829,12 @@ struct SidebarOutlineView: NSViewRepresentable {
                     : folderItems[index - shownLoose.count]
             }
             if item is PinnedItem { return pinnedItems[index] }
-            if let fold = item as? ArchiveFoldItem { return dormantByFolder[fold.folder]![index] }
             let folder = item as! FolderItem
-            let children = childrenByFolder[folder.name]!
-            return index < children.count ? children[index] : foldByFolder[folder.name]!
+            return childrenByFolder[folder.name]![index]
         }
 
         func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
-            item is FolderItem || item is PinnedItem || item is ArchiveFoldItem
+            item is FolderItem || item is PinnedItem
         }
 
 
@@ -908,14 +858,6 @@ struct SidebarOutlineView: NSViewRepresentable {
                 cell = SidebarCellView(content: content)
                 cell.dragTitle = folder.name
                 cell.dragIsHeader = true
-            } else if let fold = item as? ArchiveFoldItem {
-                content = AnyView(SidebarArchiveFoldContent(
-                    count: dormantByFolder[fold.folder]?.count ?? 0,
-                    isOpen: manager.openArchiveFolds.contains(fold.folder)))
-                cell = SidebarCellView(content: content)
-            } else if let dormant = item as? DormantItem {
-                content = AnyView(SidebarDormantRowContent(entry: dormant.entry))
-                cell = SidebarCellView(content: content)
             } else {
                 return nil
             }
@@ -933,7 +875,6 @@ struct SidebarOutlineView: NSViewRepresentable {
             // goes above a header, and a row's pill nearly touches the next.
             if item is FolderItem || item is PinnedItem || item is LooseHeaderItem { return 30 + sectionGap(item) }
             if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 44 }
-            if item is ArchiveFoldItem { return 26 }
             return 30
         }
 
@@ -963,11 +904,6 @@ struct SidebarOutlineView: NSViewRepresentable {
                 let directory = manager.root(ofFolder: name).map { ($0 as NSString).abbreviatingWithTildeInPath }
                 rowView.setAddAction(directory: directory) { manager.newSession(inFolder: name) }
                 rowView.setMoreMenu { FolderActions.menu(for: name, manager: manager) }
-            }
-            if let dormant = item as? DormantItem {
-                let manager = self.manager, entry = dormant.entry
-                rowView.setMoreMenu { DormantActions.menu(for: entry, manager: manager) }
-                return rowView
             }
             guard let session = item as? SessionItem else { return rowView }
 
@@ -1038,13 +974,6 @@ struct SidebarOutlineView: NSViewRepresentable {
             // Folders already toggled on mouse-down; doing it again here (on
             // mouse-up) would undo it.
             guard row >= 0 else { return }
-            if let dormant = sender.item(atRow: row) as? DormantItem {
-                // The second click of a double-click: the first already opened it.
-                guard !justOpenedDormant else { return }
-                dormantOpenedAt = Date()
-                manager.openDormant(dormant.entry)
-                return
-            }
             guard let session = sender.item(atRow: row) as? SessionItem else { return }
             manager.selectedID = session.id
         }
@@ -1053,10 +982,6 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// the chevron. If the press turns out to be the start of a drag,
         /// `draggingSession:willBeginAt:` undoes it.
         func headerPressed(_ item: Any, in outline: NSOutlineView) {
-            // Opening a row of the fold puts a session above it, so a
-            // double-click's second press lands on whatever moved under the
-            // pointer: often the fold's header, which it would close.
-            guard !justOpenedDormant else { return }
             if item is PinnedItem {
                 if outline.isItemExpanded(pinnedItem) {
                     outline.animator().collapseItem(pinnedItem)
@@ -1070,14 +995,6 @@ struct SidebarOutlineView: NSViewRepresentable {
                 setLooseShown(!manager.looseCollapsed, animated: true)
                 return
             }
-            if let fold = item as? ArchiveFoldItem {
-                if outline.isItemExpanded(fold) {
-                    outline.animator().collapseItem(fold)
-                } else {
-                    outline.animator().expandItem(fold)
-                }
-                return
-            }
             guard let folder = item as? FolderItem else { return }
             pressedFolder = folder
             toggle(folder, in: outline)
@@ -1088,15 +1005,10 @@ struct SidebarOutlineView: NSViewRepresentable {
             // Sessions rename on double-click. Headers have no double-click
             // meaning at all — each press just toggles them, and rename lives in
             // their context menu.
-            guard row >= 0, !justOpenedDormant, let session = sender.item(atRow: row) as? SessionItem
+            guard row >= 0, let session = sender.item(atRow: row) as? SessionItem
             else { return }
             manager.selectedID = session.id
             manager.editingID = session.id
-        }
-
-        private var dormantOpenedAt = Date.distantPast
-        private var justOpenedDormant: Bool {
-            Date().timeIntervalSince(dormantOpenedAt) < NSEvent.doubleClickInterval
         }
 
         /// Put the folderless sessions in the outline or take them out, sliding
@@ -1128,10 +1040,6 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineViewItemDidExpand(_ notification: Notification) {
             guard !isSyncing else { return }
             if notification.userInfo?["NSObject"] is PinnedItem { manager.setPinnedCollapsed(false); return }
-            if let fold = notification.userInfo?["NSObject"] as? ArchiveFoldItem {
-                manager.setArchiveFold(fold.folder, open: true)
-                return
-            }
             guard let folder = notification.userInfo?["NSObject"] as? FolderItem else { return }
             manager.setFolder(folder.name, collapsed: false)
         }
@@ -1139,10 +1047,6 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineViewItemDidCollapse(_ notification: Notification) {
             guard !isSyncing else { return }
             if notification.userInfo?["NSObject"] is PinnedItem { manager.setPinnedCollapsed(true); return }
-            if let fold = notification.userInfo?["NSObject"] as? ArchiveFoldItem {
-                manager.setArchiveFold(fold.folder, open: false)
-                return
-            }
             guard let folder = notification.userInfo?["NSObject"] as? FolderItem else { return }
             manager.setFolder(folder.name, collapsed: true)
         }
@@ -1343,15 +1247,6 @@ struct SidebarOutlineView: NSViewRepresentable {
                     return (nil, topLevelEnd, nil)
                 }
                 return (nil, 0, folder) // onto the header → append into the folder
-            }
-            // The fold and its rows take no drops: past the last session of
-            // their folder is as far down as a session goes.
-            if let folder = (item as? ArchiveFoldItem)?.folder
-                ?? (item as? DormantItem).flatMap({ dormant in
-                    dormantByFolder.first { $0.value.contains { $0 === dormant } }?.key
-                }),
-               let parentItem = folderCache[folder] {
-                return (parentItem, childrenByFolder[folder]?.count ?? 0, nil)
             }
             if let session = item as? SessionItem,
                let i = pinnedItems.firstIndex(where: { $0 === session }) {

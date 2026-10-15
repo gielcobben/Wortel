@@ -56,20 +56,17 @@ struct SidebarPane: View {
         // exactly NSOutlineView's home turf and beyond what List exposes. Row
         // *content* stays SwiftUI (SessionRow hosted per row), so the pill,
         // attention dots, and inline rename are unchanged.
-        let dormant = manager.dormantByFolder()
         SidebarOutlineView(
             manager: manager,
             snapshot: manager.sidebarGroups.map {
                 SidebarSnapshotGroup(
                     folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
                     tallIDs: Set($0.sessions.filter(\.hasSecondLine).map(\.id)),
-                    isPinned: $0.isPinned,
-                    dormant: $0.isPinned ? [] : $0.folder.flatMap { dormant[$0] } ?? [])
+                    isPinned: $0.isPinned)
             },
             folding: SidebarFolding(folders: manager.collapsedFolders,
                                     pinned: manager.pinnedCollapsed,
-                                    loose: manager.looseCollapsed,
-                                    archives: manager.openArchiveFolds))
+                                    loose: manager.looseCollapsed))
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 2) {
                     // AppKit, as the ⓘ and the update icon are, so all three
@@ -572,7 +569,7 @@ enum SessionActions {
 
         menu.addItem(.separator())
         // In a worktree, closing archives (`SessionManager.end`): the
-        // session waits in its folder's Archived fold, and its worktree goes
+        // session waits to be restored from Open Branch, and its worktree goes
         // to the Trash only when nothing in it is worth keeping.
         _ = item("Close Session", "xmark.square", key: "w", [.command, .shift]) {
             manager.requestClose(session)
@@ -1716,137 +1713,5 @@ struct EmptySessionsPage: View {
             }
             .padding(24)
         }
-    }
-}
-
-/// A folder's "Archived" row: what's put away in it, folded until asked.
-/// Styled as the section headers are (a grey title with its chevron after
-/// it), one step smaller, since it belongs to the folder above it.
-struct SidebarArchiveFoldContent: View {
-    let count: Int
-    let isOpen: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text("Archived")
-                .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
-            Text("\(count)")
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.quaternary)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .rotationEffect(.degrees(isOpen ? 0 : -90))
-                .animation(.easeOut(duration: 0.15), value: isOpen)
-            Spacer(minLength: 4)
-        }
-        .padding(.leading, 20)
-        .padding(.trailing, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .help("Sessions you closed, and worktrees no session is open in. Click one to continue in it.")
-    }
-}
-
-/// One row of an Archived fold: dimmed, the session's name (or the
-/// worktree's branch), and what's known about it on the right.
-struct SidebarDormantRowContent: View {
-    let entry: SessionManager.DormantEntry
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: entry.kind == .notOpen ? "arrow.triangle.branch" : "archivebox")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-            Text(entry.name)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 4)
-            if entry.isMissing {
-                pill("Gone")
-            } else if entry.mergedInto != nil {
-                pill("Merged")
-            }
-        }
-        .padding(.leading, 28)
-        .padding(.trailing, 34)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .help(help)
-    }
-
-    private func pill(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(Color.primary.opacity(0.06), in: Capsule())
-    }
-
-    private var help: String {
-        let place = (entry.path as NSString).abbreviatingWithTildeInPath
-        var lines = [entry.branch.map { "\($0) in \(place)" } ?? place]
-        switch entry.kind {
-        case .archived:
-            lines.append(entry.isMissing
-                ? "Its folder is gone. Opening it checks the branch out there again."
-                : "Archived. Click to continue where it was, agent and all.")
-        case .notOpen:
-            lines.append(entry.isOwned ? "No session is open in it. Click to open one."
-                         : "Made outside Wortel. Click to open a session in it.")
-        }
-        if let trunk = entry.mergedInto { lines.append("Its changes are already in \(trunk).") }
-        return lines.joined(separator: "\n")
-    }
-}
-
-/// What can be done to a row of an Archived fold.
-@MainActor
-enum DormantActions {
-    static func menu(for entry: SessionManager.DormantEntry, manager: SessionManager) -> NSMenu {
-        let menu = NSMenu()
-        func item(_ title: String, _ glyph: String, _ handler: @escaping () -> Void) {
-            let item = ClosureMenuItem(title: title, handler: handler)
-            item.setGlyph(glyph)
-            menu.addItem(item)
-        }
-        switch entry.kind {
-        case .archived:
-            item("Restore Session", "arrow.uturn.backward") { manager.openDormant(entry) }
-        case .notOpen:
-            item("Open Session", "plus.square") { manager.openDormant(entry) }
-        }
-        if !entry.isMissing {
-            item("Show in Finder", "folder") {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: entry.path)])
-            }
-        }
-        item("Copy Path", "doc.on.doc") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(entry.path, forType: .string)
-        }
-        // Only what Wortel made: another tool's worktree is that tool's, or
-        // yours, to remove.
-        if case .archived(let id) = entry.kind {
-            menu.addItem(.separator())
-            if entry.isOwned {
-                item("Delete Worktree\u{2026}", "trash") {
-                    guard let archived = manager.archived.first(where: { $0.id == id }),
-                          let window = AppDelegate.mainWindow else { return }
-                    WorktreeCleanupSheet.present(.deleting(archived), manager: manager, over: window)
-                }
-            } else {
-                // Its worktree stays where it is, for whoever made it.
-                item("Remove from Archived", "minus.circle") { manager.forgetArchived(id) }
-            }
-        } else if entry.isOwned {
-            menu.addItem(.separator())
-            item("Clean Up Worktrees\u{2026}", "trash") {
-                NSApp.sendAction(#selector(AppDelegate.cleanUpWorktrees(_:)), to: nil, from: nil)
-            }
-        }
-        return menu
     }
 }

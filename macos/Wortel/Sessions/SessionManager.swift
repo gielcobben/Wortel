@@ -351,9 +351,10 @@ final class SessionManager {
         for session in sessions where !pinnedSet.contains(session.id) {
             byKey[session.folderPath ?? "", default: []].append(session)
         }
-        // A folder whose sessions are all pinned stays, empty, to come back to;
-        // so does one whose sessions are all archived, which is where they are.
-        let pinnedFolders = Set(pinned.compactMap(\.folderPath)).union(archived.compactMap(\.folderPath))
+        // A folder whose sessions are all pinned stays, empty, to come back to.
+        // One whose sessions are all archived doesn't: they're found with
+        // Open Branch, and restoring one brings its folder back.
+        let pinnedFolders = Set(pinned.compactMap(\.folderPath))
 
         var groups: [SidebarGroup] = []
         if !pinned.isEmpty {
@@ -634,7 +635,7 @@ final class SessionManager {
         // In both files: archived, then the app ended before sessions.json
         // caught up. Archiving was the last word on it, and its shell is
         // already gone; started again here, the same id would be live and
-        // in the fold at once.
+        // archived at once.
         let archivedIDs = Set(archived.map(\.id))
         persisted.removeAll { archivedIDs.contains($0.id) }
         hasRestored = true
@@ -2612,17 +2613,14 @@ final class SessionManager {
 
     // MARK: - Archive
 
-    /// Worktree sessions you closed, newest first: each folder's Archived
-    /// fold, and what Restore brings back. Not in `sessions`, so nothing
+    /// Worktree sessions you closed, newest first: what Open Branch lists as
+    /// Archived, and what Restore brings back. Not in `sessions`, so nothing
     /// that walks the live list (⌘1-9, attention, the warm-up, saving)
     /// ever sees one.
     private(set) var archived: [ArchivedSession] = []
     /// Archived sessions whose worktree is being removed right now, which
     /// can't be restored until that's settled.
     @ObservationIgnored private var removingArchived: Set<UUID> = []
-    /// What the last inspection of each archived worktree found, for the
-    /// row's "Merged". Only inspections already made: none is run for this.
-    private(set) var archivedReports: [UUID: WorktreeReport] = [:]
     /// Something about an archived worktree went wrong and the user should
     /// hear it (restoring one whose folder can't be made again). Set by
     /// AppDelegate.
@@ -2637,7 +2635,7 @@ final class SessionManager {
 
     /// Archive a worktree session: the shell and its agent end, the worktree
     /// and branch stay, and the session (name, tabs, colour, the agent's
-    /// conversation) waits in its folder's Archived fold to be continued.
+    /// conversation) waits to be continued from Open Branch.
     ///
     /// **Then, if there's nothing to keep, the worktree goes.** Wortel's own,
     /// clean, with nothing on its branch that isn't elsewhere or in trunk
@@ -2684,7 +2682,6 @@ final class SessionManager {
             let repos = item.repoHome.map { [$0] } ?? []
             let report = await WorktreeCleanup.inspect(path: item.checkout, knownRepos: repos, usedBy: users)
             guard let self, self.archived.contains(where: { $0.id == item.id }) else { return }
-            self.archivedReports[item.id] = report
             guard case .remove(let deleteBranch) = WorktreeCloseDecision.decide(report),
                   !self.isShared(item) else { return }
             self.removingArchived.insert(item.id)
@@ -2726,7 +2723,6 @@ final class SessionManager {
             return nil
         }
         archived.removeAll { $0.id == id }
-        archivedReports[id] = nil
         ArchiveStore.save(archived)
         let session = restoredSession(from: item.session, marker: nil, table: { ProcessTable.snapshot() })
         // In the worktree: where the shell last stood if that's still in it
@@ -2774,48 +2770,12 @@ final class SessionManager {
         }
     }
 
-    // MARK: - Dormant worktrees (the Archived fold)
-
-    /// A row in a folder's Archived fold: a session you archived, or a
-    /// worktree of the folder's repository that no session is in, whoever
-    /// made it.
-    struct DormantEntry: Identifiable, Equatable {
-        enum Kind: Equatable {
-            case archived(UUID)
-            case notOpen
-        }
-        let kind: Kind
-        /// The worktree's folder.
-        let path: String
-        let name: String
-        let branch: String?
-        /// Wortel made it, so Delete Worktree… is on its menu.
-        let isOwned: Bool
-        /// The default branch its work is already in, when an inspection made
-        /// for something else found so.
-        var mergedInto: String?
-        /// Its folder is gone (an archived session's worktree removed since).
-        var isMissing = false
-
-        var id: String {
-            switch kind {
-            case .archived(let id): return id.uuidString
-            case .notOpen: return path
-            }
-        }
-    }
-
-    /// Folders whose Archived fold is open. Not saved: each launch starts
-    /// with them folded, as the work in them is put away.
-    private(set) var openArchiveFolds: Set<String> = []
-
-    func setArchiveFold(_ folder: String, open: Bool) {
-        if open { openArchiveFolds.insert(folder) } else { openArchiveFolds.remove(folder) }
-    }
+    // MARK: - Worktree listings
 
     /// `git worktree list` for each repository a folder stands for, by the
-    /// repository's home: what the "Not open" rows come from. Read when
-    /// something says it changed, never on a timer and never per row.
+    /// repository's home: what Open Branch's "Not open" rows and the git
+    /// panel's worktree list come from. Read when something says it changed,
+    /// never on a timer and never per row.
     private(set) var worktreeListings: [String: [GitWorktree]] = [:]
     @ObservationIgnored private var listingsInFlight: Set<String> = []
     /// Each repository's own worktree location (`GitWorktree.locationKey`),
@@ -2843,47 +2803,6 @@ final class SessionManager {
         return directory.flatMap(GitWorktree.repositoryHome(containing:))
     }
 
-    /// Every folder's Archived fold, built in one pass: archived sessions
-    /// first (newest first), then the worktrees nothing is open in, by name.
-    /// Reads no disk beyond a `stat` per archived worktree: the listings are
-    /// cached and each session's worktree was noted as it moved.
-    func dormantByFolder() -> [String: [DormantEntry]] {
-        let fm = FileManager.default
-        var result: [String: [DormantEntry]] = [:]
-        for item in archived {
-            guard let folder = item.folderPath else { continue }
-            result[folder, default: []].append(DormantEntry(
-                kind: .archived(item.id), path: item.checkout, name: item.leafName,
-                branch: item.branch, isOwned: item.isOwned,
-                mergedInto: archivedReports[item.id]?.mergedInto,
-                isMissing: !fm.fileExists(atPath: item.checkout)))
-        }
-        guard !worktreeListings.isEmpty else { return result }
-        let taken = takenWorktrees()
-        let preparing = preparingBranches()
-        for (home, listing) in worktreeListings {
-            var open: [String: [DormantEntry]] = [:]
-            for worktree in listing where !worktree.isPrimary && !worktree.isBare && !worktree.isPrunable
-                && !taken.contains(GitWorktree.realPath(worktree.path))
-                && !(worktree.branch.map(preparing.contains) ?? false) {
-                // Each worktree in one folder only: the deepest that covers it.
-                guard let folder = folder(forWorktreeAt: worktree.path, repoHome: home) else { continue }
-                open[folder, default: []].append(DormantEntry(
-                    kind: .notOpen, path: worktree.path,
-                    name: worktree.branch.map(GitWorktree.sessionLeaf(forBranch:))
-                        ?? (worktree.path as NSString).lastPathComponent,
-                    branch: worktree.branch,
-                    isOwned: GitWorktree.Ownership.isOwned(root: worktree.path)))
-            }
-            for (folder, entries) in open {
-                result[folder, default: []] += entries.sorted {
-                    $0.name.localizedStandardCompare($1.name) == .orderedAscending
-                }
-            }
-        }
-        return result
-    }
-
     // MARK: - Open Branch
 
     /// What ⇧⌘O starts with for the repository at `directory`: everything
@@ -2891,7 +2810,14 @@ final class SessionManager {
     /// after, through `loadBranches`.
     func openBranchInputs(from directory: String?) -> OpenTarget.Inputs {
         var inputs = OpenTarget.Inputs()
-        guard let directory, let home = GitWorktree.repositoryHome(containing: directory) else {
+        let home = directory.flatMap(GitWorktree.repositoryHome(containing:))
+        // Archived sessions of every other repository, by their full name:
+        // the sidebar doesn't list archived ones, so this is how one whose
+        // folder has gone from it is found.
+        inputs.archivedElsewhere = archived.filter { home == nil || $0.repoHome != home }.map {
+            .init(id: $0.id, name: $0.session.name, branch: $0.branch)
+        }
+        guard let home else {
             // No repository: the sessions in worktrees anywhere, to go to.
             inputs.open = sessions.filter { $0.homeCheckout != nil }.map {
                 .init(id: $0.id, name: $0.leafName, branch: $0.worktreeBranch)
@@ -3010,15 +2936,6 @@ final class SessionManager {
         }
     }
 
-    /// Continue in a row of the fold: restore the archived session, or open
-    /// a session in the worktree.
-    func openDormant(_ entry: DormantEntry) {
-        switch entry.kind {
-        case .archived(let id): restore(archived: id)
-        case .notOpen: openWorktree(at: entry.path)
-        }
-    }
-
     /// Read the worktrees of every repository a folder stands for, and watch
     /// each for worktrees coming and going (`.git/worktrees`, a vnode watch:
     /// an idle one costs nothing). At launch after the first frame, and when
@@ -3074,11 +2991,15 @@ final class SessionManager {
 
     /// Drop an archived session for good: its worktree is gone, or you
     /// deleted it. Its folder goes too when nothing else is in it.
+    func forgetArchived(inWorktreeAt path: String) {
+        let root = GitWorktree.realPath(path)
+        for item in archived where GitWorktree.realPath(item.checkout) == root { forgetArchived(item.id) }
+    }
+
     func forgetArchived(_ id: UUID) {
         guard let index = archived.firstIndex(where: { $0.id == id }) else { return }
         let folder = archived[index].folderPath
         archived.remove(at: index)
-        archivedReports[id] = nil
         ArchiveStore.save(archived)
         if let folder { dropFolderIfEmpty(folder) }
         refreshWorktreeListings()

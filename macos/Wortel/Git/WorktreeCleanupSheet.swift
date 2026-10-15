@@ -13,7 +13,7 @@ struct WorktreeUsage: Sendable {
         let name: String
         let paths: [String]
         let shellPIDs: [pid_t]
-        /// Closed and waiting in its folder's Archived fold: no shell, but
+        /// Closed and waiting to be restored from Open Branch: no shell, but
         /// restoring it starts one in its worktree, on its branch.
         var isArchived = false
     }
@@ -73,8 +73,8 @@ struct WorktreeUsage: Sendable {
     /// `countingArchived`: archived sessions' worktrees count as in use too.
     /// For Bring Here, which would otherwise take an archived session's
     /// branch and Trash the folder it's waiting to be restored in. Not for
-    /// the cleanup sheet, whose Delete Worktree… is how an archived one goes
-    /// on purpose, nor for the close that is archiving one right now.
+    /// the cleanup sheet, which is how an archived one goes on purpose, nor
+    /// for the close that is archiving one right now.
     ///
     /// Where a session's git panes are *looking* (`gitCheckout`) is not a
     /// place it stands: only its shell's directories count.
@@ -156,15 +156,6 @@ final class WorktreeCleanupModel {
         }
     }
 
-    enum Mode {
-        /// Every worktree Wortel made.
-        case cleanUp
-        /// One archived session's worktree, which deleting the session takes
-        /// with it (the archived row's Delete Worktree…).
-        case deleting(ArchivedSession)
-    }
-
-    let mode: Mode
     private(set) var rows: [Row] = []
     private(set) var isLoading = true
     private(set) var isWorking = false
@@ -179,21 +170,12 @@ final class WorktreeCleanupModel {
     @ObservationIgnored private var usage: WorktreeUsage
     @ObservationIgnored var dismiss: () -> Void = {}
 
-    init(mode: Mode, manager: SessionManager) {
-        self.mode = mode
+    init(manager: SessionManager) {
         self.manager = manager
         usage = WorktreeUsage(manager: manager)
     }
 
-    var deletingItem: ArchivedSession? {
-        if case .deleting(let item) = mode { return item }
-        return nil
-    }
-
-    var title: String {
-        if let item = deletingItem { return "Delete \u{201c}\(item.leafName)\u{201d}?" }
-        return "Clean Up Worktrees"
-    }
+    let title = "Clean Up Worktrees"
 
     var removableCount: Int { rows.filter(\.remove).count }
 
@@ -213,13 +195,6 @@ final class WorktreeCleanupModel {
     /// about (a registration whose folder is gone) is found alongside and
     /// added when it's found.
     func load() async {
-        if let item = deletingItem {
-            rows = [Row(path: item.checkout)]
-            isLoading = false
-            knownRepos = await Self.repos(of: manager)
-            await check(rows.map(\.path))
-            return
-        }
         rows = WorktreeCleanup.folders().map { Row(path: $0) }
         isLoading = false
         knownRepos = await Self.repos(of: manager)
@@ -237,7 +212,6 @@ final class WorktreeCleanupModel {
         guard !paths.isEmpty else { return }
         let usage = self.usage
         let repos = knownRepos
-        let urgent = deletingItem != nil
         let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
         await withTaskGroup(of: WorktreeReport.self) { group in
             var queue = paths[...]
@@ -245,7 +219,7 @@ final class WorktreeCleanupModel {
             while running < Self.parallelChecks, let path = queue.popFirst() {
                 let users = usage.users(of: path, in: processes)
                 group.addTask {
-                    await WorktreeCleanup.inspect(path: path, knownRepos: repos, usedBy: users, urgent: urgent)
+                    await WorktreeCleanup.inspect(path: path, knownRepos: repos, usedBy: users)
                 }
                 running += 1
             }
@@ -258,7 +232,7 @@ final class WorktreeCleanupModel {
                 if let path = queue.popFirst() {
                     let users = usage.users(of: path, in: processes)
                     group.addTask {
-                        await WorktreeCleanup.inspect(path: path, knownRepos: repos, usedBy: users, urgent: urgent)
+                        await WorktreeCleanup.inspect(path: path, knownRepos: repos, usedBy: users)
                     }
                 }
             }
@@ -305,24 +279,14 @@ final class WorktreeCleanupModel {
                 rows[index].error = error
                 rows[index].remove = false
             } else {
+                // An archived session waiting in it goes with it: there's
+                // nothing left to restore it into.
+                manager.forgetArchived(inWorktreeAt: row.path)
                 withAnimation(.easeOut(duration: 0.2)) { rows.removeAll { $0.path == row.path } }
             }
         }
         WorktreeCleanup.removeEmptyRepoFolders()
         if rows.allSatisfy({ $0.error == nil }) { dismiss() }
-    }
-
-    /// Delete the archived session: its worktree to the Trash (re-checked
-    /// first, as any removal is), then the session itself. A worktree that's
-    /// already gone takes the session with it whatever git still says.
-    func deleteArchived() async {
-        guard let item = deletingItem else { return }
-        await removeSelected()
-        if !rows.contains(where: { $0.path == item.checkout })
-            || !FileManager.default.fileExists(atPath: item.checkout) {
-            manager.forgetArchived(item.id)
-            dismiss()
-        }
     }
 
     // MARK: -
@@ -400,10 +364,7 @@ struct WorktreeCleanupView: View {
     }
 
     private var subtitle: String {
-        if model.deletingItem != nil {
-            return "Its worktree goes to the Trash, and the session with it. Anything with unsaved work stays."
-        }
-        return "Selected worktrees go to the Trash. Anything with unsaved work stays."
+        "Selected worktrees go to the Trash. Anything with unsaved work stays."
     }
 
     /// Repositories in name order, each with its worktrees by branch.
@@ -437,21 +398,17 @@ struct WorktreeCleanupView: View {
     private static let groupHeaderHeight: CGFloat = 22
     private static let groupSpacing: CGFloat = 16
 
-    private var showsHeaders: Bool { model.deletingItem == nil }
-
     private var cards: some View {
         VStack(alignment: .leading, spacing: Self.groupSpacing) {
             ForEach(groups, id: \.repo) { group in
                 VStack(alignment: .leading, spacing: 6) {
-                    if showsHeaders {
-                        // Grouped by folder from the start; named by the
-                        // repository once a check says what it's called.
-                        Text(group.rows.lazy.compactMap { $0.report?.repoName }.first ?? group.repo)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(height: Self.groupHeaderHeight)
-                            .padding(.leading, 4)
-                    }
+                    // Grouped by folder from the start; named by the
+                    // repository once a check says what it's called.
+                    Text(group.rows.lazy.compactMap { $0.report?.repoName }.first ?? group.repo)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(height: Self.groupHeaderHeight)
+                        .padding(.leading, 4)
                     VStack(spacing: 0) {
                         ForEach(group.rows) { row in
                             WorktreeRow(row: row, model: model)
@@ -479,7 +436,7 @@ struct WorktreeCleanupView: View {
 
     private var footerControls: some View {
         HStack(spacing: 10) {
-            if model.isChecking && model.deletingItem == nil {
+            if model.isChecking {
                 // Where the branch switch will be: how far the checks are,
                 // so a long list in a big repository is visibly moving.
                 HStack(spacing: 6) {
@@ -503,24 +460,14 @@ struct WorktreeCleanupView: View {
             Button("Cancel") { model.dismiss() }
                 .keyboardShortcut(.cancelAction)
                 .controlSize(.large)
-            if model.deletingItem != nil {
-                Button(model.isWorking ? "Deleting\u{2026}" : "Delete") {
-                    Task { await model.deleteArchived() }
-                }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(model.removableCount == 0 || model.isWorking)
-            } else {
-                Button(model.isWorking ? "Moving to Trash\u{2026}"
-                       : model.removableCount == 0 ? "Move to Trash" : "Move \(model.removableCount) to Trash") {
-                    Task { await model.removeSelected() }
-                }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(model.removableCount == 0 || model.isWorking)
+            Button(model.isWorking ? "Moving to Trash\u{2026}"
+                   : model.removableCount == 0 ? "Move to Trash" : "Move \(model.removableCount) to Trash") {
+                Task { await model.removeSelected() }
             }
+            .keyboardShortcut(.defaultAction)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(model.removableCount == 0 || model.isWorking)
         }
     }
 }
@@ -686,9 +633,9 @@ enum WorktreeCleanupSheet {
     /// Show the sheet on `window`. It runs itself from there: the buttons act,
     /// and Cancel leaves everything as it was.
     @MainActor
-    static func present(_ mode: WorktreeCleanupModel.Mode, manager: SessionManager, over window: NSWindow) {
+    static func present(manager: SessionManager, over window: NSWindow) {
         window.makeKeyAndOrderFront(nil)
-        let model = WorktreeCleanupModel(mode: mode, manager: manager)
+        let model = WorktreeCleanupModel(manager: manager)
         let controller = NSHostingController(rootView: WorktreeCleanupView(model: model))
         // The sheet follows its content: it opens on "Looking for worktrees…"
         // and must grow when the rows arrive, rather than keep that first

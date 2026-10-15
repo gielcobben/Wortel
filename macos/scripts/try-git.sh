@@ -155,13 +155,12 @@ Look over, with the git panel open (⌃⌘1):
   [ ] New Worktree Session (⇧⌘N): the row's shell starts in its worktree,
       not /, in this folder; ask the agent something and the branch is
       renamed for the session's name (git branch)
-  [ ] The folder's Archived fold lists shop-toolbar-clean and the rest made
-      by hand as not open; clicking one opens a session there; none of them
-      offers Delete
-  [ ] Close (⇧⌘W) a worktree session with changes: it goes to Archived;
-      click it: back in its worktree, agent resumed
+  [ ] Open Branch (⇧⌘O) lists shop-toolbar-clean and the rest made by hand
+      as Not open; picking one opens a session there
+  [ ] Close (⇧⌘W) a worktree session with changes: it leaves the sidebar;
+      ⇧⌘O lists it as Archived; pick it: back in its worktree, agent resumed
   [ ] Close a fresh, untouched worktree session: its folder is in the Trash
-      a moment later, and it's not in Archived
+      a moment later, and ⇧⌘O doesn't list it
   [ ] exit in a worktree session: archived, like closing it
   [ ] Open Branch with nothing typed: the open, archived and not open ones;
       type giel/toolbar-clean: only its worktree, no second one

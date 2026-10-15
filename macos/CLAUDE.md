@@ -298,10 +298,12 @@ moved, inspects the worktree and Trashes it only when there's nothing to keep
 (`WorktreeCloseDecision`). Archived sessions are in `archived-sessions.json`,
 never `sessions.json`, which an older build would start them from; restoring
 one goes through the same `restoredSession` launch uses, agent resume and all.
-Each folder's **Archived** fold lists them plus the worktrees of its
-repository no session is in, whoever made them, from one cached `git worktree
-list` per repository (`worktreeListings`, refreshed by a vnode watch on
-`.git/worktrees` and after creates and archives; never per row or on a timer).
+The sidebar shows open sessions only: **Open Branch** is where archived ones
+are found, with the worktrees of the repository no session is in, whoever made
+them ("Not open"), from one cached `git worktree list` per repository
+(`worktreeListings`, refreshed by a vnode watch on `.git/worktrees` and after
+creates and archives; never per row or on a timer). An Archived fold per
+folder was tried and dropped as clutter.
 
 **Any linked worktree is a worktree; only Wortel's are Wortel's to remove.**
 `GitWorktree.linked` reads the nearest `.git` file on every `cd` (no git): the
@@ -338,8 +340,7 @@ dropped so the fork doesn't work in the source folder. The fork is named
 title would make two identical rows.
 
 **Removing a worktree never loses work without you choosing it.** Closing a
-session archives it (above); Delete Worktree… on an archived row and Clean Up
-Worktrees… go through `WorktreeCleanupSheet`, which inspects first
+session archives it (above); Clean Up Worktrees… goes through `WorktreeCleanupSheet`, which inspects first
 (`WorktreeCleanup.inspect`): uncommitted or untracked files, something running
 there or another session in it, a lock, or a folder that isn't a checkout any
 more → **blocked**, with the reason; commits found on no other branch or

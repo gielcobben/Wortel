@@ -78,6 +78,10 @@ enum OpenTarget {
         }
         var open: [Place] = []
         var archived: [Place] = []
+        /// Archived sessions of other repositories: the sidebar doesn't show
+        /// archived ones, so this is where they're found from anywhere. Their
+        /// branches are another repository's, and place nothing here.
+        var archivedElsewhere: [Place] = []
         var notOpen: [Worktree] = []
         /// The repository's own checkout, and the branch on it.
         var main: Worktree?
@@ -88,7 +92,8 @@ enum OpenTarget {
         var hasRepository = false
 
         static func == (a: Inputs, b: Inputs) -> Bool {
-            a.open == b.open && a.archived == b.archived && a.notOpen == b.notOpen && a.main == b.main
+            a.open == b.open && a.archived == b.archived
+                && a.archivedElsewhere == b.archivedElsewhere && a.notOpen == b.notOpen && a.main == b.main
                 && a.local == b.local && a.hasRepository == b.hasRepository
                 && a.remote.map { "\($0.remote)/\($0.branch)" } == b.remote.map { "\($0.remote)/\($0.branch)" }
         }
@@ -126,6 +131,10 @@ enum OpenTarget {
         for place in inputs.archived {
             if let branch = place.branch { placed.insert(branch) }
             guard matches(place.name, place.branch) else { continue }
+            result.append(Choice(action: .restore(place.id), group: .archived, title: place.name,
+                                 branch: place.branch, status: "Restores the session, agent and all."))
+        }
+        for place in inputs.archivedElsewhere where matches(place.name, place.branch) {
             result.append(Choice(action: .restore(place.id), group: .archived, title: place.name,
                                  branch: place.branch, status: "Restores the session, agent and all."))
         }

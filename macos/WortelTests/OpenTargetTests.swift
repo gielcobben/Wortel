@@ -37,6 +37,22 @@ final class OpenTargetTests: XCTestCase {
         XCTAssertEqual(OpenTarget.choices(for: "main", in: inputs).map(\.action), [.mainCheckout(path: "/w/shop")])
     }
 
+    /// Another repository's archived session is listed, so it can be found
+    /// from anywhere, but its branch is that repository's: a branch here with
+    /// the same name is still offered.
+    func testAnotherRepositorysArchivedSessionPlacesNothing() {
+        let elsewhere = UUID()
+        var inputs = inputs
+        inputs.archivedElsewhere = [.init(id: elsewhere, name: "opjetv/Player", branch: "release")]
+        XCTAssertEqual(OpenTarget.choices(for: "", in: inputs).map(\.action),
+                       [.goTo(fixSession), .restore(oldSession), .restore(elsewhere),
+                        .openWorktree(path: "/w/shop-toolbar")])
+        XCTAssertEqual(OpenTarget.choices(for: "release", in: inputs).map(\.action),
+                       [.restore(elsewhere), .checkOut(branch: "release", remote: nil)])
+        XCTAssertEqual(OpenTarget.choices(for: "player", in: inputs).map(\.action),
+                       [.restore(elsewhere), .create(branch: "player")])
+    }
+
     func testBranchesThenCreate() {
         let shape = OpenTarget.choices(for: "shape", in: inputs).map(\.action)
         XCTAssertEqual(shape, [.checkOut(branch: "giel/shape-lab", remote: nil), .create(branch: "shape")])

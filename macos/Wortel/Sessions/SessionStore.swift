@@ -320,7 +320,7 @@ final class SessionStore {
     }
 }
 
-/// A worktree session you closed, waiting in its folder's Archived fold to be
+/// A worktree session you closed, waiting in Open Branch's Archived rows to be
 /// continued: the session exactly as it would have been saved, its agent and
 /// conversation included, and the worktree it lives in.
 ///
@@ -358,7 +358,7 @@ struct ArchivedSession: Codable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         session = try c.decode(PersistedSession.self, forKey: .session)
         checkout = try c.decode(String.self, forKey: .checkout)
-        // Absent only in a hand-edited file; "now" keeps it in the fold.
+        // Absent only in a hand-edited file; "now" keeps it archived.
         archivedAt = try c.decodeIfPresent(Date.self, forKey: .archivedAt) ?? Date()
         repoHome = try c.decodeIfPresent(String.self, forKey: .repoHome)
         // Unknown means not Wortel's: the one reading that can't delete work.
@@ -373,7 +373,7 @@ enum ArchiveStore {
 
     static func load(from url: URL = fileURL) -> [ArchivedSession] {
         guard let data = try? Data(contentsOf: url) else { return [] }
-        // One unreadable entry costs that entry, not the fold.
+        // One unreadable entry costs that entry, not the file.
         struct Lenient: Decodable {
             let value: ArchivedSession?
             init(from decoder: Decoder) throws { value = try? ArchivedSession(from: decoder) }

@@ -331,9 +331,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             manager.map { WorktreeUsage(manager: $0, countingArchived: true) }
         }
         // The git panel's worktree list is the manager's: one cached `git
-        // worktree list` per repository, which the sidebar's Archived folds
-        // already keep (`worktreeListings`), rather than a read of its own on
-        // every session switch.
+        // worktree list` per repository, which Open Branch already keeps
+        // (`worktreeListings`), rather than a read of its own on every
+        // session switch.
         gitPanel.worktreeListing = { [weak manager] home in manager?.worktreeListings[home] }
         // What the panel calls a checkout: the session in it, live or
         // archived (`CheckoutPlace`).
@@ -1355,7 +1355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func cleanUpWorktrees(_ sender: Any?) {
         focusMainWindow()
         guard let window else { return }
-        WorktreeCleanupSheet.present(.cleanUp, manager: manager, over: window)
+        WorktreeCleanupSheet.present(manager: manager, over: window)
     }
 
     @objc func renameSession(_ sender: Any?) {

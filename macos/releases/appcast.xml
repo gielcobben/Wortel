@@ -3,6 +3,45 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.42.1</title>
+            <pubDate>Thu, 15 Oct 2026 11:54:18 -0400</pubDate>
+            <sparkle:version>2026.42.1</sparkle:version>
+            <sparkle:shortVersionString>2026.42.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Worktrees, made simple</h1>
+<p class="date">Wortel 2026.42.1 &middot; 2026-10-15</p>
+<p><strong>New Worktree Session (⇧⌘N).</strong> A new session in a worktree of its own, on a fresh branch from your default branch, ready at once. Once the session has a name, its branch is named after it too. The files a project needs to run but git ignores, like <code>.env</code>, are copied in; list any others in a <code>.worktreeinclude</code> file.</p>
+<p><strong>Open Branch (⇧⌘O).</strong> One field for any branch, worktree or pull request. Type a name and Wortel goes to the session already there, continues a closed one, opens the worktree, checks the branch out in a new worktree, or creates it. Each row says which before you press Return, so a branch never gets a second worktree. Type <code>#123</code> or paste a GitHub or GitLab link to check out a pull request.</p>
+<p><strong>Closing keeps your work.</strong> Closing a worktree session (⇧⌘W, the ×, or <code>exit</code>) puts it away: the worktree, the branch and the agent’s conversation all stay. Find it with ⇧⌘O and it picks up where it left off. When there’s nothing in it worth keeping, the worktree goes to the Trash instead. Clean Up Worktrees now knows a squash merged branch is merged.</p>
+<p><strong>Fork Session (⌥⇧⌘N).</strong> The session as it is, in a worktree of its own: staged, unstaged and new files, and the agent’s conversation, forked. Try something without touching the original.</p>
+<p><strong>Any worktree, whoever made it.</strong> Worktrees you made yourself or with another tool show up in ⇧⌘O and open as sessions, and Wortel never deletes one it didn’t make. A repository can choose where its worktrees go, with Worktree Location… in the folder’s menu or <code>git config wortel.worktreePath</code>.</p>
+<p><strong>Ports of their own.</strong> Every session gets ten ports to itself, the first in <code>WORTEL_PORT</code>, so two agents running a dev server in two worktrees don’t both want port 3000.</p>
+<p><strong>Know why a session stopped.</strong> A Claude turn that ended on an API error now says it failed, with the error, and one waiting on a question or a plan says it needs you. Both used to read as finished. While any session is waiting on you, a menu bar item shows how many and lists them.</p>
+<p>Also in this release: hold ⌘ to see each session’s ⌘1 to ⌘9 shortcut on its row; closing the last session leaves an empty window instead of quitting; drop a folder on the sidebar or the Dock icon to open it; the shell in a worktree session starts in its worktree, never in <code>/</code>; Claude follows the Mac between light and dark again after Wortel restarts; the git panel names other worktrees after the session in them; very long commands show in the title too; and the pull request button in the git panel is gone, with the network check it made every minute.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.42.1.zip" length="22527608" type="application/octet-stream" sparkle:edSignature="lkZyO8c+0n7j3i6v53YFJ9wTQZBsRvZYyWd/raYn/VJ2mInyTl9ge3xaPlzGDmZg18LC9DCki5k5qpvuMRxrAg=="/>
+        </item>
+        <item>
             <title>2026.41.9</title>
             <pubDate>Sun, 11 Oct 2026 00:01:12 -0400</pubDate>
             <sparkle:version>2026.41.9</sparkle:version>
@@ -75,43 +114,6 @@
 <p><strong>Clean Up Worktrees, faster.</strong> The list appears at once with each branch’s name, checks several worktrees at the same time, and each row says what it’s doing.</p>
 <p>Also in this release: a worktree session always shows its branch under its name, never the folder you happen to be in. And dragging a session shows the whole row.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.41.8.zip" length="21763471" type="application/octet-stream" sparkle:edSignature="NbV+iDNdnZDfZwLevS/PiuuhwX18j+dCEPvXKjA8MR0D928EjTvvPKy+Edh+r/5BBdlyZywIRsPH0hwxoCt2Cw=="/>
-        </item>
-        <item>
-            <title>2026.41.7</title>
-            <pubDate>Thu, 08 Oct 2026 19:46:08 -0400</pubDate>
-            <sparkle:version>2026.41.7</sparkle:version>
-            <sparkle:shortVersionString>2026.41.7</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Terminals that come back on their own</h1>
-<p class="date">Wortel 2026.41.7 &middot; 2026-10-08</p>
-<p><strong>Terminals that come back on their own.</strong> An app you open from a Wortel terminal can take Wortel’s terminals with it when you force quit it from its Dock icon. Wortel used to keep showing those terminals as if nothing had happened, and the agents in them were lost. Now Wortel notices right away, starts each terminal again and brings every agent back into the conversation it was in. A message says when it happened, what came back, and what didn’t, like a dev server you’ll need to start again.</p>
-<p><strong>Branches, and where they are.</strong> The branch list now groups branches by what a click can do: this folder, branches checked out in other folders, branches to switch to, and remote ones. A branch an agent has in its own folder shows that folder, and clicking it shows that folder here. When nothing there can be lost, Bring Here moves the branch into the folder you’re in.</p>
-<p><strong>Git errors you can read.</strong> When git refuses something, the Changes pane and the branch list say what happened and what to do about it, in plain words, and you can dismiss the message.</p>
-<p><strong>The pull request in the header.</strong> If the branch has an open pull request on GitHub, the header shows it, and one click opens it. A pushed branch with none offers Create PR. This uses the <code>gh</code> command, when it’s installed and signed in.</p>
-<p><strong>Stop All.</strong> With two or more things running in a session, the heading of its running list offers Stop All.</p>
-<p>Also in this release: a branch name typed with spaces for a new worktree session becomes one git accepts. A session whose folder was deleted says so under its name. And Wortel does less work while it’s behind other apps, especially in repositories with many worktrees.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.7.zip" length="21592066" type="application/octet-stream" sparkle:edSignature="98wNKtdBtRdeEklm706WJtKiHzXX2GgpP2Yen7z1z4BLC/tLOszSDgrenWMFSm1k7Zw+ogNITWa8oQUJyaJLBg=="/>
         </item>
     </channel>
 </rss>

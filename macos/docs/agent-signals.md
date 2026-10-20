@@ -129,6 +129,18 @@ never return to the prompt; the agent's own signals take over.
 - macOS notification banners require a signed `/Applications` build
   (`./scripts/release.sh`); ad-hoc Debug builds only get the sidebar dot and
   Dock badge.
+- **Codex blinks its action-required title.** While blocked on the user its
+  title alternates "[ ! ] Action Required" and "[ . ] Action Required", a
+  retitle per blink for as long as the question stands. `titleChanged` used to
+  raise attention on every arrival, and the app layer re-posts the session's
+  notification on every raise; a `UNNotificationRequest` with the same id
+  *replaces* the delivered one, but each replacement slides a banner in again.
+  One pending question was a waterfall of banners (reported from a Codex
+  session with a queued mid-turn question, 2026-10-19). Two guards now:
+  `titleShowsActionRequired` makes the marker an edge rather than a level, and
+  `raiseAttention` drops any signal that says exactly what the standing
+  attention already says (same kind, title and body), whichever channel it
+  came in on, so a bell every few seconds is one banner too.
 - **A failed `KERN_PROCARGS2` read is not an absent agent.** `AgentLiveness`
   finds most agents only by their arguments, because the cheap `p_comm` pass
   misses them: pi, gemini and amp are `node`, aider is `python3`, and Claude

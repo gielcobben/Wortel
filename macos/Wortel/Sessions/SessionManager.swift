@@ -169,6 +169,12 @@ final class SessionManager {
     /// Sessions whose terminal title currently shows a "working" marker
     /// (see `titleChanged`).
     @ObservationIgnored private var titleShowsWorking: Set<Session.ID> = []
+    /// Sessions whose terminal title currently shows an action-required
+    /// marker. Codex *blinks* its marker while blocked, "[ ! ] Action Required"
+    /// then "[ . ] Action Required" and back, so the title arrives again and
+    /// again saying the same thing; only the edge into this state is an event
+    /// (see `titleChanged`).
+    @ObservationIgnored private var titleShowsActionRequired: Set<Session.ID> = []
     /// How long a session must stay actively-viewed before its "unread" mark
     /// clears. Long enough that a quick click-through to triage doesn't count as
     /// catching up, short enough that actually landing on it clears promptly.
@@ -2455,6 +2461,7 @@ final class SessionManager {
         progressErrored.remove(session.id)
         lastBusyInterval.removeValue(forKey: session.id)
         titleShowsWorking.remove(session.id)
+        titleShowsActionRequired.remove(session.id)
         agentScreenTrackers.removeValue(forKey: session.id)
         screenInferredBusy.remove(session.id)
         explicitSignalAt.removeValue(forKey: session.id)
@@ -3232,6 +3239,13 @@ final class SessionManager {
         adoptAgentTitle(session, title: trimmed)
         if trimmed.hasPrefix("✋") || trimmed.contains("Action Required") {
             titleShowsWorking.remove(session.id)
+            // An edge, not a level. Codex blinks the marker for as long as it
+            // is blocked ("[ ! ]" / "[ . ]", a retitle per blink), and each
+            // arrival used to raise attention again: the app layer re-posts
+            // the session's notification, and a re-post with the same id is
+            // a fresh banner on screen. One pending question was a waterfall
+            // of banners until it was answered.
+            guard titleShowsActionRequired.insert(session.id).inserted else { return }
             // Deliberately *not* `noteExplicitSignal`. An agent proving it can
             // say "I need you" is no proof it can say "I'm working": those are
             // different titles on different code paths, and Codex and Gemini
@@ -3243,14 +3257,18 @@ final class SessionManager {
             raiseAttention(session, kind: .needsInput, title: session.name, body: "Action required",
                            source: "title")
         } else if Self.hasWorkingMarker(trimmed) {
+            titleShowsActionRequired.remove(session.id)
             titleShowsWorking.insert(session.id)
             // A title spinner is this session speaking for itself; the screen
             // sampler defers to it.
             noteExplicitSignal(session)
             markBusy(session)
         } else if wasWorking {
+            titleShowsActionRequired.remove(session.id)
             titleShowsWorking.remove(session.id)
             progressEnded(session, source: "title")
+        } else {
+            titleShowsActionRequired.remove(session.id)
         }
     }
 
@@ -3482,8 +3500,13 @@ final class SessionManager {
     /// busy spinner), badge the Dock, and post a native notification — unless
     /// the user is already looking at it. A lower-priority signal never
     /// downgrades a louder one already showing (a "finished" ping can't mask a
-    /// pending "needs input"). Safe to call repeatedly; the app layer keys
-    /// notifications by session so they replace, not stack.
+    /// pending "needs input"). Safe to call repeatedly: a signal that says
+    /// what the standing attention already says is dropped here, because the
+    /// app layer keys notifications by session, and replacing one is still a
+    /// banner sliding in (a program ringing the bell every few seconds, or an
+    /// agent re-emitting its prompt, would otherwise be a banner each time).
+    /// New words for the same kind still go out, silently, so the banner
+    /// keeps up with what the agent is asking.
     private func raiseAttention(_ session: Session, kind: AttentionKind, title: String, body: String,
                                 source: String) {
         // Logged before the gates, and always: when a dot shows up on a session
@@ -3497,6 +3520,10 @@ final class SessionManager {
         guard !isActivelyViewing(session) else { return }
         let current = session.attention
         if let current, current.priority > kind.priority { return }
+        if let standing = attentionContent[session.id], standing.kind == kind,
+           (standing.title ?? session.name) == title, standing.body == body {
+            return // already showing exactly this
+        }
         // Play a sound only when the state actually escalates — a fresh episode
         // or a jump to a louder kind. A program that re-emits the same kind
         // (some agents fire a notification per tool call) updates the banner

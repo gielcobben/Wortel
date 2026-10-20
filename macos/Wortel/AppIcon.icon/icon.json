@@ -1,113 +1,73 @@
 {
-  "features" : [ ],
   "fill" : {
-    "automatic-gradient" : "srgb:0.66422,0.66424,0.66423,1.00000"
+    "automatic-gradient" : "display-p3:0.03253,0.03253,0.03253,1.00000"
   },
   "groups" : [
     {
-      "blur-material" : null,
       "layers" : [
         {
           "fill" : {
-            "linear-gradient" : [
-              "display-p3:0.04000,0.04000,0.04000,0.70000",
-              "srgb:0.00000,0.00000,0.00000,1.00000"
-            ]
+            "automatic-gradient" : "display-p3:0.99512,1.00000,1.00000,1.00000"
           },
-          "image-name" : "SVG Image 6.svg",
-          "name" : "Top",
+          "image-name" : "SVG Image.svg",
+          "name" : "SVG Image",
           "position" : {
-            "scale" : 1.2500000000000002,
+            "scale" : 2,
             "translation-in-points" : [
-              38,
-              128
+              -156,
+              156.33799999999997
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "automatic-gradient" : "display-p3:0.00000,0.53021,1.00000,1.00000"
+          },
+          "image-name" : "SVG Image 7.svg",
+          "name" : "SVG Image 7",
+          "position" : {
+            "scale" : 2,
+            "translation-in-points" : [
+              151,
+              156
+            ]
+          }
+        },
+        {
+          "hidden" : true,
+          "image-name" : "SVG Image 3.svg",
+          "name" : "SVG Image 3",
+          "position" : {
+            "scale" : 2,
+            "translation-in-points" : [
+              157.38480000000004,
+              128.66200000000003
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+          },
+          "hidden" : true,
+          "image-name" : "SVG Image 2.svg",
+          "name" : "SVG Image 2",
+          "position" : {
+            "scale" : 2,
+            "translation-in-points" : [
+              158,
+              128.76600000000008
             ]
           }
         }
       ],
-      "name" : "Top",
-      "refractivity" : {
-        "depth" : 0.5265234375,
-        "enabled" : true,
-        "strength" : 0.336796875
-      },
       "shadow" : {
-        "kind" : "layer-color",
-        "opacity" : 0.6
+        "kind" : "neutral",
+        "opacity" : 0.5
       },
-      "specular" : true,
       "translucency" : {
         "enabled" : true,
-        "value" : 0.6
-      }
-    },
-    {
-      "blur-material" : null,
-      "layers" : [
-        {
-          "fill" : {
-            "automatic-gradient" : "srgb:0.00000,0.00000,0.00000,0.49804"
-          },
-          "image-name" : "SVG Image 5.svg",
-          "name" : "Middle",
-          "position" : {
-            "scale" : 1.25,
-            "translation-in-points" : [
-              -149.9609375,
-              -50
-            ]
-          }
-        }
-      ],
-      "name" : "Middle",
-      "refractivity" : {
-        "depth" : 0.1625390625,
-        "enabled" : true,
-        "strength" : 0.305390625
-      },
-      "shadow" : {
-        "kind" : "layer-color",
-        "opacity" : 0.6
-      },
-      "specular" : true,
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.5
-      }
-    },
-    {
-      "blur-material" : null,
-      "layers" : [
-        {
-          "fill" : {
-            "automatic-gradient" : "srgb:0.00000,0.00000,0.00000,0.49804"
-          },
-          "image-name" : "SVG Image 4.svg",
-          "name" : "Bottom",
-          "position" : {
-            "scale" : 1.25,
-            "translation-in-points" : [
-              140,
-              -140
-            ]
-          }
-        }
-      ],
-      "lighting" : "individual",
-      "name" : "Bottom",
-      "refractivity" : {
-        "depth" : 0,
-        "enabled" : true,
-        "strength" : 0.2
-      },
-      "shadow" : {
-        "kind" : "layer-color",
-        "opacity" : 0.6
-      },
-      "specular" : true,
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.2
+        "value" : 0.3
       }
     }
   ],

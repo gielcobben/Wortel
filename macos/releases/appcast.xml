@@ -3,6 +3,39 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.43.1</title>
+            <pubDate>Tue, 20 Oct 2026 19:19:01 -0400</pubDate>
+            <sparkle:version>2026.43.1</sparkle:version>
+            <sparkle:shortVersionString>2026.43.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>A new icon, and one banner per question</h1>
+<p class="date">Wortel 2026.43.1 &middot; 2026-10-20</p>
+<p><strong>A new icon.</strong> Wortel has new artwork in the Dock, in the app switcher and on its notifications.</p>
+<p><strong>One banner per question.</strong> While Codex waits on an answer it blinks its terminal title, and every blink put a fresh “Action required” banner on screen for as long as the question stood. The first one is now the only one. The same holds for anything else that repeats itself, like a program ringing the bell every few seconds: it gets one banner, and a new one only when it has something new to say.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.43.1.zip" length="22472572" type="application/octet-stream" sparkle:edSignature="Hn1yfTD7McEI0iJqGNhxHu3iU8cj4ZyTTOKpvRjoTKXqVd3S0dziUHKe5CAbyfCcVfShtQMjL256ss1tlCx9DA=="/>
+        </item>
+        <item>
             <title>2026.42.1</title>
             <pubDate>Thu, 15 Oct 2026 11:54:18 -0400</pubDate>
             <sparkle:version>2026.42.1</sparkle:version>
@@ -77,43 +110,6 @@
 <p><strong>Typing <code>exit</code> ends the session.</strong> A shell that ended used to leave a terminal that did nothing.</p>
 <p>Also in this release: a full restore no longer holds the window up for half a second per session; the process that keeps your terminals is replaced once it holds none when it came from an older version, which is what kept Full Disk Access from reaching your shells after an update; a missed reply can no longer hand one session’s terminal to another; and prompts are faster in zsh and bash.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.41.9.zip" length="21871602" type="application/octet-stream" sparkle:edSignature="hV0kLBn7hk4Qk7IbO8vqooabtvxVdk+VRY4EOIy1u21UzVsUZtk5w94ENLAJeytvjM0lAhBKOzC92DZfY5O7Dw=="/>
-        </item>
-        <item>
-            <title>2026.41.8</title>
-            <pubDate>Fri, 09 Oct 2026 16:10:25 -0400</pubDate>
-            <sparkle:version>2026.41.8</sparkle:version>
-            <sparkle:shortVersionString>2026.41.8</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Colours, and a Fork that shows its work</h1>
-<p class="date">Wortel 2026.41.8 &middot; 2026-10-09</p>
-<p><strong>Colour a session.</strong> Right-click a session, or open its ”…” menu, and pick a colour: a bar at the edge of its row marks it, say yellow for a review waiting on CI. Only you take it off. From a terminal, <code>wortel mark yellow</code> does the same, and <code>wortel mark none</code> clears it.</p>
-<p><strong>Fork shows its work.</strong> The new session appears the moment you press Create, and its page says the worktree is being prepared while you keep working in your other sessions. Its terminal opens when it’s ready. If git refuses, the page says why, with Try Again. Forking a repository that uses Git LFS works now too: Wortel couldn’t find <code>git-lfs</code> when it was installed with Homebrew or Nix.</p>
-<p><strong>Permissions.</strong> Wortel ▸ Permissions… shows whether notifications are on and whether Wortel has Full Disk Access, with a button to change each. While notifications are off, a hand with an orange dot in the sidebar says so.</p>
-<p><strong>Camera, microphone and the rest.</strong> A program you run in Wortel that needs the camera, the microphone, your contacts or another app now gets the usual macOS prompt. Before, macOS turned it down without asking.</p>
-<p><strong>Clean Up Worktrees, faster.</strong> The list appears at once with each branch’s name, checks several worktrees at the same time, and each row says what it’s doing.</p>
-<p>Also in this release: a worktree session always shows its branch under its name, never the folder you happen to be in. And dragging a session shows the whole row.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.41.8.zip" length="21763471" type="application/octet-stream" sparkle:edSignature="NbV+iDNdnZDfZwLevS/PiuuhwX18j+dCEPvXKjA8MR0D928EjTvvPKy+Edh+r/5BBdlyZywIRsPH0hwxoCt2Cw=="/>
         </item>
     </channel>
 </rss>

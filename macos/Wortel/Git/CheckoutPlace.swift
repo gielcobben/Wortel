@@ -1,8 +1,8 @@
 import Foundation
 
 /// What the git panel calls a checkout of the repository: the worktree chip,
-/// the worktree list, "In other folders" in the branch list, the clean pane's
-/// "N changes in …", and what Bring Here says.
+/// the worktree list, "In other folders" in the branch list, and what Bring
+/// Here says.
 ///
 /// **By the session, not the folder.** The session is the unit
 /// (`docs/worktrees.md`); a worktree is where one lives. A worktree's folder

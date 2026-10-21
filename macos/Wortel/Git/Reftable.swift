@@ -19,23 +19,33 @@ enum Reftable {
     /// `reftable` folder), newest table first. nil when it's a plain object
     /// id (a detached HEAD), deleted, absent, or unreadable.
     nonisolated static func symbolicTarget(of name: String, inStack dir: String) -> String? {
-        guard let list = try? String(contentsOfFile: (dir as NSString).appendingPathComponent("tables.list"),
-                                     encoding: .utf8) else { return nil }
         let key = Array(name.utf8)
-        for table in list.split(separator: "\n").reversed() {
-            // Mapped, not read: only the pages the lookup touches load (the
-            // header and the first block, for HEAD), so a repository's main
-            // stack of a monorepo's refs costs no more than a worktree's.
-            // Tables are never rewritten in place, only replaced, so the
-            // mapping can't change under us.
-            let url = URL(fileURLWithPath: (dir as NSString).appendingPathComponent(String(table)))
-            guard let data = try? Data(contentsOf: url, options: .alwaysMapped)
-            else { return nil } // compacted under us: git will know
-            switch lookup(key, in: data) {
-            case .notHere: continue
-            case .found(let target): return target
-            case .unreadable: return nil
+        // Twice: git compacts a stack by writing the merged table, then a new
+        // tables.list, then deleting the tables it replaced, so one named in
+        // a list read a moment ago can be gone. The list read after that
+        // names what replaced it.
+        for _ in 0..<2 {
+            guard let list = try? String(contentsOfFile: (dir as NSString).appendingPathComponent("tables.list"),
+                                         encoding: .utf8) else { return nil }
+            var compacted = false
+            for table in list.split(separator: "\n").reversed() {
+                // Mapped, not read: only the pages the lookup touches load
+                // (the header and the first block, for HEAD), so a
+                // repository's main stack of a monorepo's refs costs no more
+                // than a worktree's. Tables are never rewritten in place,
+                // only replaced, so the mapping can't change under us.
+                let url = URL(fileURLWithPath: (dir as NSString).appendingPathComponent(String(table)))
+                guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else {
+                    compacted = true
+                    break
+                }
+                switch lookup(key, in: data) {
+                case .notHere: continue
+                case .found(let target): return target
+                case .unreadable: return nil
+                }
             }
+            if !compacted { return nil }
         }
         return nil
     }
@@ -76,8 +86,10 @@ enum Reftable {
 
         // Ref blocks come first, `r` and a uint24 length. The first block's
         // length counts from the start of the file (the header is part of
-        // it); with a block size set, each later block starts on a multiple
-        // of it, and without one, where the last ended.
+        // it). Git pads each block with zeros to the next multiple of the
+        // block size when another block of the section, or an index, follows;
+        // the last one before the logs or the footer it leaves unpadded, so
+        // the next block starts where this one ended.
         var blockStart = 0
         reader.position = headerSize
         while reader.position + 4 <= bytes.count, bytes[reader.position] == UInt8(ascii: "r") {
@@ -116,9 +128,16 @@ enum Reftable {
                 // Sorted: past where it would be, so it isn't in this table.
                 if previous.lexicographicallyPrecedes(key) == false { return .notHere }
             }
-            blockStart = blockSize > 0 ? (blockEnd + blockSize - 1) / blockSize * blockSize : blockEnd
+            let padded = blockEnd < bytes.count && bytes[blockEnd] == 0 && blockSize > 0
+            blockStart = padded ? (blockEnd + blockSize - 1) / blockSize * blockSize : blockEnd
             reader.position = blockStart
         }
+        // Past the ref blocks comes another section (a ref index `i`, objects
+        // `o`, logs `g`) or the footer, which starts like the header. Anything
+        // else is a block boundary read wrong, and saying "not here" would
+        // hand the lookup to an older table and its stale answer.
+        guard reader.position < bytes.count, Array("iogR".utf8).contains(bytes[reader.position])
+        else { return .unreadable }
         return .notHere
     }
 

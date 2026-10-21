@@ -355,6 +355,23 @@ final class GitWorktreeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(tables.count, 2, "the marker should be a table of its own")
         XCTAssertEqual(Reftable.symbolicTarget(of: "HEAD", inStack: stack), "refs/heads/two")
         XCTAssertEqual(GitWorktree.checkedOutBranch(at: worktree.path), "two")
+
+        // A name past every ref in a table runs off the end of its ref
+        // section, into its logs or its footer: not here, not unreadable.
+        let contents = tables.map { FileManager.default.contents(atPath: stack + "/" + $0).map { [UInt8]($0) } ?? [] }
+        for (table, bytes) in zip(tables, contents) {
+            XCTAssertEqual(Reftable.lookup(Array("refs/zzz".utf8), in: bytes), .notHere, String(table))
+        }
+        // Where the ref section ends in something no table has there, a
+        // block boundary was misread, and an older table mustn't be asked.
+        guard var newest = contents.last, newest.count > 28 else { return XCTFail("no newest table") }
+        // (One ref block, which git leaves unpadded: what follows it starts
+        // where it ends.)
+        let header = newest[4] == 2 ? 28 : 24
+        let end = Int(newest[header + 1]) << 16 | Int(newest[header + 2]) << 8 | Int(newest[header + 3])
+        guard end < newest.count, newest[end] != 0 else { return XCTFail("the ref block should be unpadded") }
+        newest[end] = UInt8(ascii: "x")
+        XCTAssertEqual(Reftable.lookup(Array("refs/zzz".utf8), in: newest), .unreadable)
     }
 
     /// A table of many blocks (a compacted primary stack, 4 KiB each): a ref

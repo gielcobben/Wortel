@@ -204,7 +204,7 @@ extension GitWorktree {
         }
         guard ref.hasPrefix("ref: refs/heads/") else { return nil }
         let branch = String(ref.dropFirst("ref: refs/heads/".count))
-        return branch.isEmpty || branch == reftableStubBranch ? nil : branch
+        return branch.isEmpty ? nil : branch
     }
 
     /// What the HEAD file names in a repository that keeps its refs in a

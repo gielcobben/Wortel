@@ -11,10 +11,10 @@ import SwiftUI
 /// tab's address bar. It costs the list its run up under the titlebar, which the
 /// tab strip would have covered anyway.
 ///
-/// A session can show another worktree of the repo than its terminal's (an
-/// agent working in one): chosen from the worktree chip, from a branch in
-/// another folder in the branch list, or from a clean Changes pane that points
-/// at work elsewhere, and undone from the same chip or the "Back" that appears while it's in effect. Looking at one
+/// A session can show another worktree of the repo than its own (an agent
+/// working in one): chosen from the worktree chip or from a branch in
+/// another folder in the branch list, and undone from the same chip or the
+/// "Back" that appears while it's in effect. Looking at one
 /// runs no git command; switching a branch is the branch chip's alone, and
 /// only in your own folder.
 struct RepoHeader: View {

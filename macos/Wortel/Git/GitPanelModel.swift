@@ -184,9 +184,10 @@ final class GitPanelModel {
     /// worktree and a scan going behind each write an agent made in one, for
     /// as long as it was up.
     private(set) var checkouts: [Checkout] = []
-    /// The root of the session terminal's own checkout.
+    /// The root of the session's own checkout (`homeFolder`'s).
     private(set) var terminalCheckout: String?
-    /// Mirrors the focused session's `gitCheckout`: nil follows the terminal.
+    /// Mirrors the focused session's `gitCheckout`: nil follows the session's
+    /// own folder (`homeFolder`).
     private(set) var pinnedCheckout: String?
 
     /// Set by AppDelegate: the manager's cached worktree listing of the
@@ -227,8 +228,20 @@ final class GitPanelModel {
         session.gitCheckout = pinned
         pinnedCheckout = pinned
         onStateChanged?()
-        currentCwd = pinned ?? session.cwd
+        currentCwd = pinned ?? Self.homeFolder(of: session)
         resolveCurrent()
+    }
+
+    /// The folder the panes follow when none is picked: where the session was
+    /// started (`originCwd`), so its worktree for a worktree session, else
+    /// its repository. Not the shell's cwd: an agent or a `cd` into another
+    /// worktree is that worktree's work, not this session's, and following
+    /// it is how the panel ended up somewhere you couldn't place. A session
+    /// started outside any repository (in `~`, then `cd`'d into a project)
+    /// has no folder of its own to show, so it follows the shell
+    /// (`resolve`).
+    static func homeFolder(of session: Session) -> String? {
+        session.originCwd ?? session.cwd
     }
 
     /// The repository home of each root shown, read off the disk once.
@@ -259,8 +272,6 @@ final class GitPanelModel {
     /// A read that landed this recently stands: the branch list and the
     /// worktree list opened one after the other are one question.
     private static let scanFreshness: TimeInterval = 10
-    /// Roots whose clean pane has had its one read, until they're dirty again.
-    @ObservationIgnored private var cleanReads: Set<String> = []
 
     private func home(of root: String) -> String? {
         if let known = homeByRoot[root] { return known }
@@ -350,13 +361,17 @@ final class GitPanelModel {
             }
         }
         if found != checkouts { checkouts = found }
-        // Which checkout is the terminal's: the root, unless the panes are
-        // pinned elsewhere; then the cwd's, as resolved or off the disk.
+        // Which checkout is the session's own: the root, unless the panes are
+        // pinned elsewhere; then its folder's (`homeFolder`, else the shell's
+        // for a session started outside a repository, as `resolve` falls
+        // back), as resolved or off the disk.
         var terminal: String? = root
-        if pinnedCheckout != nil, let cwd = session?.cwd {
-            terminal = rootByCwd[cwd]
-                ?? GitWorktree.linked(containing: cwd)?.root
-                ?? GitWorktree.repositoryHome(containing: cwd)
+        if pinnedCheckout != nil, let session {
+            terminal = [Self.homeFolder(of: session), session.cwd].lazy.compactMap { $0 }.compactMap {
+                self.rootByCwd[$0]
+                    ?? GitWorktree.linked(containing: $0)?.root
+                    ?? GitWorktree.repositoryHome(containing: $0)
+            }.first
         }
         if terminal != terminalCheckout { terminalCheckout = terminal }
     }
@@ -406,22 +421,6 @@ final class GitPanelModel {
         }
         if aheadCounts.count > 500 { aheadCounts.removeAll() }
         if scans.count > 200 { scans = scans.filter { path, _ in checkouts.contains { $0.path == path } } }
-    }
-
-    /// The Changes pane of `root` is clean, or no longer is. Clean, it points
-    /// at work in another checkout ("16 changes in …", `workElsewhere`), and
-    /// that takes knowing what's in them: one read as it comes clean, not one
-    /// per write while it stays so. Only while the panes follow the terminal,
-    /// which is the only time the hint shows.
-    func cleanPaneChanged(root: String, isClean: Bool) async {
-        guard isClean else {
-            cleanReads.remove(root)
-            return
-        }
-        guard pinnedCheckout == nil, repo?.root == root, checkouts.count > 1,
-              !cleanReads.contains(root) else { return }
-        await readCheckoutCounts()
-        if !Task.isCancelled { cleanReads.insert(root) }
     }
 
     /// Set by AppDelegate: what is using a folder (open sessions, processes
@@ -496,19 +495,6 @@ final class GitPanelModel {
         return repo.checkoutError
     }
 
-    /// Where the work is when it isn't here: another checkout of the repo with
-    /// uncommitted changes (the one with the most), most likely an agent in
-    /// this session working in a worktree. Only while the panes follow the
-    /// terminal: a checkout chosen by hand is where you asked to be. Commits
-    /// alone don't count, or every old worktree with unmerged work would be
-    /// pointed at forever.
-    var workElsewhere: Checkout? {
-        guard pinnedCheckout == nil, let root = repo?.root else { return nil }
-        return checkouts
-            .filter { $0.path != root && ($0.changes ?? 0) > 0 }
-            .max { ($0.changes ?? 0) < ($1.changes ?? 0) }
-    }
-
     /// Whether closing the focused session puts away the checkout on screen:
     /// it lives there (it was opened there, so closing archives it with that
     /// worktree), and the panes aren't pinned to another. Asked only when
@@ -532,7 +518,7 @@ final class GitPanelModel {
         session.gitCheckout = nil
         pinnedCheckout = nil
         onStateChanged?()
-        currentCwd = session.cwd
+        currentCwd = Self.homeFolder(of: session)
         resolveCurrent()
     }
 
@@ -579,7 +565,7 @@ final class GitPanelModel {
             session.gitCheckout = nil
             onStateChanged?()
         }
-        currentCwd = session?.gitCheckout ?? session?.cwd
+        currentCwd = session.flatMap { $0.gitCheckout ?? Self.homeFolder(of: $0) }
         if session?.gitCheckout != pinnedCheckout { pinnedCheckout = session?.gitCheckout }
         // Only write `isVisible`/`pane` when they actually move: @Observable
         // fires its observers on every assignment, same value or not, and this
@@ -1264,8 +1250,15 @@ final class GitPanelModel {
                 session.gitCheckout = nil
                 pinnedCheckout = nil
                 onStateChanged?()
-                currentCwd = session.cwd
-                await resolve(cwd: session.cwd)
+                currentCwd = Self.homeFolder(of: session)
+                await resolve(cwd: currentCwd)
+                return
+            }
+            // Started outside any repository: the shell's folder, if that's
+            // in one (`homeFolder`).
+            if let session, cwd == Self.homeFolder(of: session), let shell = session.cwd, shell != cwd {
+                currentCwd = shell
+                await resolve(cwd: shell)
                 return
             }
             repo = nil

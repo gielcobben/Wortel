@@ -20,21 +20,7 @@ struct SourceControlPanel: View {
                     VStack(spacing: 0) {
                         RepoHeader(repo: repo, panel: panel)
                         RepoView(repo: repo, focusRequest: panel.listFocusRequest(in: region),
-                                 elsewhere: panel.workElsewhere,
-                                 elsewhereTitle: panel.workElsewhere.map {
-                                     panel.placeTitle(of: $0.path, branch: $0.branch, isPrimary: $0.isPrimary)
-                                 },
-                                 closesSession: repo.mergedInto != nil && panel.closingPutsAwayShownCheckout,
-                                 showCheckout: { panel.showCheckout($0) })
-                    }
-                    // A clean pane points at work in another folder, which
-                    // takes knowing what's in them: read once as it comes
-                    // clean (after its own status has landed), never per write.
-                    .task(id: CleanPaneKey(root: repo.root,
-                                           clean: repo.status.isClean && !repo.isStale,
-                                           others: panel.checkouts.count > 1)) {
-                        guard !repo.isStale else { return }
-                        await panel.cleanPaneChanged(root: repo.root, isClean: repo.status.isClean)
+                                 closesSession: repo.mergedInto != nil && panel.closingPutsAwayShownCheckout)
                     }
                 } else {
                     emptyState
@@ -82,15 +68,9 @@ private struct RepoView: View {
     /// Monotonic focus-request token from GitPanelModel (⌘⌥L). A change means
     /// "put keyboard focus in the changes list."
     let focusRequest: Int
-    /// Another folder of the repo with uncommitted changes, while this one has
-    /// none: most likely an agent's worktree, and the reason you opened this.
-    var elsewhere: GitPanelModel.Checkout? = nil
-    /// What to call it: the session working there, else its branch.
-    var elsewhereTitle: String? = nil
     /// Closing this session puts the checkout on screen away (it lives
     /// there), which is what a merged worktree is waiting for.
     var closesSession = false
-    var showCheckout: (String) -> Void = { _ in }
     @FocusState private var listFocused: Bool
     /// Whether the native commit editor holds focus (drives its border). Driven
     /// by CommitMessageEditor's focus callback, not @FocusState — the editor is
@@ -214,28 +194,10 @@ private struct RepoView: View {
         // of its pane like the diff's does. Sharing `centered` is the point: the
         // two halves of this panel are empty at the same moments, and they
         // should say so the same way.
-        // A clean pane is where work in another worktree is pointed at: it's
-        // the moment you'd wonder where it went, and the space is empty anyway.
-        if repo.status.isClean, let elsewhere {
-            VStack(spacing: 6) {
-                Text("No changes here")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-                Button {
-                    showCheckout(elsewhere.path)
-                } label: {
-                    let changes = elsewhere.changes ?? 0
-                    let place = elsewhereTitle ?? (elsewhere.path as NSString).lastPathComponent
-                    Text(verbatim: "\(changes) change\(changes == 1 ? "" : "s") in \(place)")
-                        .font(.callout)
-                }
-                .buttonStyle(.link)
-                .help("Show that folder here. Looking only: nothing is switched.")
-            }
-            .padding(.horizontal, 16)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if repo.status.isClean, let trunk = repo.mergedInto {
+        // No pointer to work in other worktrees here: an agent's worktree
+        // isn't this session's, and "37 changes in …" sent you somewhere
+        // you couldn't place. The panel shows the session's own folder.
+        if repo.status.isClean, let trunk = repo.mergedInto {
             // The work is in trunk already (squash-merged, most likely), so
             // this worktree has done its job. Said quietly, with the way to
             // put it away: closing the session, which archives it and then
@@ -748,13 +710,4 @@ private struct ImageDiffView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
-}
-
-/// What the clean pane's one read of the other checkouts waits on: which
-/// repository, whether it's clean (as read, not as first drawn), and whether
-/// there are other checkouts to read yet.
-private struct CleanPaneKey: Equatable {
-    let root: String
-    let clean: Bool
-    let others: Bool
 }

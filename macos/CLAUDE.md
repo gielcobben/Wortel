@@ -252,6 +252,15 @@ FSEvents watcher fires on every write, and bursts used to stack scans), and
 watches `# branch.oid` so a commit made **in the terminal** — the normal way —
 reloads History.
 
+**The panes show the session's own folder**: where it was started
+(`GitPanelModel.homeFolder`, its `originCwd`), so a worktree session's
+worktree, else its repository. Not the shell's cwd, and not where an agent
+is working: an agent `cd`'d or writing into another worktree is that
+worktree's business, and following it (or pointing at it with "N changes in
+…", since removed) left you somewhere you couldn't place. Another checkout
+is shown only when picked from the worktree chip, with Back to return. A
+session started outside any repository follows its shell instead.
+
 **Only the repo on screen does git work.** `GitPanelModel` caches a model per
 root it has shown, and each keeps its watch, but only the shown one scans on a
 write (`GitRepoModel.setActive`); the rest mark themselves `isStale`, and a
@@ -260,8 +269,7 @@ Before this, an agent merging in one worktree woke a full scan in every cached
 checkout at once. The other worktrees are the manager's cached listing
 (`worktreeListings`, no `git worktree list` of the panel's own), and what's in
 them is read **only when asked**: the worktree or branch list opening (they
-open at once, the counts fill in), or the shown checkout coming clean, once,
-for the "N changes in …" hint. No watch per worktree and no timer: on the
+open at once, the counts fill in). No watch per worktree and no timer: on the
 work laptop's monorepo (`git status` 7s) both used to run for as long as the
 panel was up. Those reads go through `GitService.backgroundStatus`, one at a
 time app-wide, reuse a cached model's status when it's current, and stop when

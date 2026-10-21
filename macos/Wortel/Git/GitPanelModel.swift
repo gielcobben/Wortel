@@ -90,9 +90,6 @@ final class GitPanelModel {
     /// Hand the keyboard back to the session's main terminal, for when the tab
     /// that had it closes. Set by AppDelegate.
     @ObservationIgnored var onFocusMainTerminal: (() -> Void)?
-    /// Continue in another worktree of the repository: its session, or a new
-    /// one there. Set by AppDelegate.
-    @ObservationIgnored var onOpenWorktree: ((String) -> Void)?
     /// Take the keyboard from whatever has it, for when what's in front can't
     /// hold it (a file). Set by AppDelegate.
     @ObservationIgnored var onClearKeyboard: (() -> Void)?
@@ -508,7 +505,7 @@ final class GitPanelModel {
 
     /// The pinned checkout's folder is gone (a worktree removed while you
     /// looked at it): show the session's own again, rather than a pane that
-    /// reads "detached, no changes" with Open Session on a missing path.
+    /// reads "detached, no changes" for a missing path.
     private func checkoutVanished(_ model: GitRepoModel) {
         let root = model.root
         if model !== repo { cache[root] = nil }

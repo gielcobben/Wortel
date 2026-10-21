@@ -58,26 +58,13 @@ struct RepoHeader: View {
 
             // Work in another folder isn't said here: beside the branch chip,
             // "web-next: 16 changes" read as being about this branch. It's in
-            // the two lists, on the folder it belongs to, and in a clean
-            // Changes pane (SourceControlPanel), where it's the news.
+            // the two lists, on the folder it belongs to.
+            //
+            // Nor is a way to go and work there ("Open Session" was): the
+            // panes stay on the session's own folder, so looking elsewhere
+            // is a glance, and Back is the only way out it needs. The
+            // sidebar and Open Branch (⇧⌘O) are where you go to work.
             Spacer(minLength: 4)
-
-            if isAway, let away = panel.pinnedCheckout {
-                // Looking is often the step before working there: this goes
-                // to the session in that worktree, or opens one.
-                Button {
-                    panel.onOpenWorktree?(away)
-                } label: {
-                    Text("Open Session")
-                        .font(.system(size: 12))
-                        .padding(.horizontal, 8)
-                        .frame(height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(HeaderButtonStyle())
-                .fixedSize()
-                .help("Work in this folder, in its own session")
-            }
 
             if isAway {
                 // Said in words as well as by the dropdown: the clearest way

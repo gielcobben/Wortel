@@ -373,6 +373,18 @@ extension GitWorktree {
         return nil
     }
 
+    /// The git dir every checkout of `path`'s repository shares, at any
+    /// depth, so two folders are in the same repository exactly when theirs
+    /// match, whichever worktree each is in. Off the disk, no git; nil
+    /// outside a repository.
+    nonisolated static func commonDir(containing path: String) -> String? {
+        if let linked = linked(containing: path) {
+            let worktrees = ((linked.gitDir as NSString).standardizingPath as NSString).deletingLastPathComponent
+            return realPath((worktrees as NSString).deletingLastPathComponent)
+        }
+        return repositoryHome(containing: path).flatMap(commonDir(ofHome:)).map(realPath)
+    }
+
     /// Where the repository `path` is in lives, at any depth: a linked
     /// worktree's `repoHome`, else the nearest folder holding a `.git`. Read
     /// off the disk, for a decision (which sidebar folder) that can't wait

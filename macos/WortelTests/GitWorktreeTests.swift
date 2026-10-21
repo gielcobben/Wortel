@@ -300,6 +300,32 @@ final class GitWorktreeTests: XCTestCase {
         XCTAssertNil(GitWorktree.checkedOutBranch(at: "/nonexistent"))
     }
 
+    /// What the git panel asks to tell "another worktree of this project"
+    /// (stay on the session's own) from "another project" (follow the shell):
+    /// every checkout of a repository, at any depth, shares one; another
+    /// repository, a submodule included, doesn't; outside any, nil.
+    func testCommonDirIsSharedByEveryCheckoutOfARepository() {
+        let repo = GitFixture.newRepo("common-dir")
+        let other = GitFixture.newRepo("common-dir-other")
+        defer { GitFixture.destroy(repo); GitFixture.destroy(other) }
+        GitFixture.commit("first", in: repo)
+        GitFixture.commit("first", in: other)
+        GitFixture.sh("mkdir -p sub/deeper", in: repo)
+        let worktree = repo.deletingLastPathComponent().appendingPathComponent("wt-\(UUID().uuidString)")
+        defer { GitFixture.destroy(worktree) }
+        GitFixture.sh("git worktree add -q -b feature/x \(GitFixture.shellQuoted(worktree.path)) "
+                      + "&& mkdir -p \(GitFixture.shellQuoted(worktree.path))/sub", in: repo)
+
+        let common = GitWorktree.commonDir(containing: repo.path)
+        XCTAssertNotNil(common)
+        XCTAssertEqual(GitWorktree.commonDir(containing: repo.appendingPathComponent("sub/deeper").path), common)
+        XCTAssertEqual(GitWorktree.commonDir(containing: worktree.path), common)
+        XCTAssertEqual(GitWorktree.commonDir(containing: worktree.appendingPathComponent("sub").path), common)
+        XCTAssertNotNil(GitWorktree.commonDir(containing: other.path))
+        XCTAssertNotEqual(GitWorktree.commonDir(containing: other.path), common)
+        XCTAssertNil(GitWorktree.commonDir(containing: "/"))
+    }
+
     /// A reftable repository's HEAD file is a stub naming `.invalid`; the
     /// branch is read from the table instead, and agrees with git through
     /// switches, a detach, and either hash.

@@ -227,26 +227,29 @@ final class GitPanelModel {
         resolveCurrent()
     }
 
-    /// The folder the panes follow when none is picked: where the session was
-    /// started (`originCwd`), so its worktree for a worktree session, else
-    /// its repository. Not the shell's cwd: an agent or a `cd` into another
-    /// worktree is that worktree's work, not this session's, and following
-    /// it is how the panel ended up somewhere you couldn't place. A session
-    /// started outside any repository (in `~`, then `cd`'d into a project)
-    /// has no folder of its own to show, so it follows the shell
-    /// (`resolve`).
+    /// The session's own folder: where it was started (`originCwd`), so
+    /// its worktree for a worktree session (New Worktree Session, Fork, Open
+    /// Branch all start one there), else its repository.
     static func homeFolder(of session: Session) -> String? {
         session.originCwd ?? session.cwd
     }
 
-    /// The folder to resolve for `session`: its own (`homeFolder`), or
-    /// straight to the shell's once its own is known not to be in a
-    /// repository. Otherwise each prompt would ask `rev-parse` about `~`
-    /// before the shell's folder, and switching to the session couldn't put
-    /// its repo up from `rootByCwd` without waiting on both.
+    /// The folder the panes follow when none is picked: the session's own
+    /// (`homeFolder`) while the shell is anywhere in the same repository.
+    /// An agent or a `cd` into another worktree of it is that worktree's
+    /// work, usually gone again when the agent is done, and following it is
+    /// how the panel ended up somewhere you couldn't place. A `cd` into a
+    /// different repository is a different project, and staying behind
+    /// there would put a commit in the one you left: the shell's folder
+    /// then. So is a home known not to be in a repository at all (started in
+    /// `~`), without asking `rev-parse` about `~` again at every prompt. A
+    /// shell outside any repository keeps the session's own.
     private func shownFolder(of session: Session) -> String? {
         let home = Self.homeFolder(of: session)
-        if let home, nonRepoCwds.contains(home), let shell = session.cwd { return shell }
+        guard let home, let shell = session.cwd, shell != home else { return home }
+        if nonRepoCwds.contains(home) { return shell }
+        if let there = GitWorktree.commonDir(containing: shell),
+           there != GitWorktree.commonDir(containing: home) { return shell }
         return home
     }
 
@@ -368,12 +371,12 @@ final class GitPanelModel {
         }
         if found != checkouts { checkouts = found }
         // Which checkout is the session's own: the root, unless the panes are
-        // pinned elsewhere; then its folder's (`homeFolder`, else the shell's
-        // for a session started outside a repository, as `resolve` falls
-        // back), as resolved or off the disk.
+        // pinned elsewhere; then the folder they'd follow (`shownFolder`, else
+        // the shell's for a session started outside a repository, as
+        // `resolve` falls back), as resolved or off the disk.
         var terminal: String? = root
         if pinnedCheckout != nil, let session {
-            terminal = [Self.homeFolder(of: session), session.cwd].lazy.compactMap { $0 }.compactMap {
+            terminal = [shownFolder(of: session), session.cwd].lazy.compactMap { $0 }.compactMap {
                 self.rootByCwd[$0]
                     ?? GitWorktree.linked(containing: $0)?.root
                     ?? GitWorktree.repositoryHome(containing: $0)

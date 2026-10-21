@@ -254,12 +254,17 @@ reloads History.
 
 **The panes show the session's own folder**: where it was started
 (`GitPanelModel.homeFolder`, its `originCwd`), so a worktree session's
-worktree, else its repository. Not the shell's cwd, and not where an agent
-is working: an agent `cd`'d or writing into another worktree is that
-worktree's business, and following it (or pointing at it with "N changes in
-…", since removed) left you somewhere you couldn't place. Another checkout
-is shown only when picked from the worktree chip, with Back to return. A
-session started outside any repository follows its shell instead.
+worktree (New Worktree Session, Fork and Open Branch all start one there),
+else its repository. Not where an agent is working: an agent `cd`'d or
+writing into another worktree of the same repository is that worktree's
+business, usually removed when it's done, and following it (or pointing at
+it with "N changes in …", since removed) left you somewhere you couldn't
+place. Another checkout is shown only when picked from the worktree chip,
+with Back to return. The shell is followed only out of the repository
+(`shownFolder`): a `cd` into a different one is a different project, and
+staying behind would commit to the one you left; a session started outside
+any repository follows its shell too. Same repository or not is read off
+the disk (`GitWorktree.commonDir(containing:)`), no git per prompt.
 
 **Only the repo on screen does git work.** `GitPanelModel` caches a model per
 root it has shown, and each keeps its watch, but only the shown one scans on a

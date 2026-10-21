@@ -680,12 +680,43 @@ final class GhosttyRuntime {
             // Wortel is zero-config, so there is nothing to reload from disk —
             // we simply re-apply the single bundled config, which makes the
             // core re-derive conditionals for the surface's current scheme.
+            //
+            // **Synchronously, before returning**, as Ghostty.app does. This
+            // callback runs inside `ghostty_surface_set_color_scheme`, and the
+            // very next thing the core does after it returns is send the
+            // program its `?997` light/dark report. Claude Code doesn't take
+            // that report's word for it: it answers by asking the terminal its
+            // background colour (`OSC 11`) and judging light or dark from
+            // that. The answer comes from the colours this update installs, so
+            // the update has to be queued to the IO thread ahead of the report.
+            // Deferred to a later main-queue turn, it lost that race whenever
+            // the main thread was busy, and an appearance flip is exactly when
+            // it is (every view redraws): the agent asked, heard the old
+            // background, and settled on the wrong palette for good. That was
+            // the "light diff blocks on a dark screen after sunset" that the
+            // reattach fixes in `TerminalModes` could never reach, because it
+            // happens to a session that was attached all along.
+            //
+            // Main-thread only: everything that raises this (a scheme change, a
+            // keybind) runs there. Off it, the hop below would bring the race
+            // back, so a debug build says so instead of quietly deferring; a
+            // release build still hops rather than call into the core from a
+            // thread it isn't expecting.
             guard let app, let runtime = runtime(fromApp: app) else { return false }
             let config = runtime.config
-            if target.tag == GHOSTTY_TARGET_SURFACE, let surface = target.target.surface {
-                DispatchQueue.main.async { ghostty_surface_update_config(surface, config) }
+            let surface = target.tag == GHOSTTY_TARGET_SURFACE ? target.target.surface : nil
+            let update = {
+                if let surface {
+                    ghostty_surface_update_config(surface, config)
+                } else {
+                    ghostty_app_update_config(app, config)
+                }
+            }
+            if Thread.isMainThread {
+                update()
             } else {
-                DispatchQueue.main.async { ghostty_app_update_config(app, config) }
+                assertionFailure("RELOAD_CONFIG off the main thread: the ?997 report will beat the new colours")
+                DispatchQueue.main.async(execute: update)
             }
             return true
 

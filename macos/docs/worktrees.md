@@ -39,6 +39,12 @@ removes worktrees under them.
 - **The sidebar shows open sessions only.** A per-folder Archived fold was
   built and dropped: it was clutter under every folder, and Open Branch
   already lists everything with a place.
+- **A worktree is just a directory to move to.** Change Directory (`wortel
+  cd`) lists the repository's free worktrees beside the sidebar folders, and
+  moving there is an ordinary move: the agent's conversation goes along, the
+  row gets the branch line, ⌘W then archives it with that worktree. Making a
+  new worktree is Fork's job, which also brings the uncommitted changes; a
+  worktree a session moves out of stays on disk, shown as "Not open".
 - **Archived sessions live in their own file** (`archived-sessions.json`): an
   older build reads `sessions.json` and would start them as live shells.
 - **Show everything git knows; delete only what you made.** Hiding foreign

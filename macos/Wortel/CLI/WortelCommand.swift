@@ -44,6 +44,11 @@ enum WortelCommand: Codable, Equatable {
     /// its uncommitted changes carried over, its agent's conversation forked.
     /// `branch` names the new branch instead of letting one be made.
     case fork(session: String?, name: String?, branch: String?)
+    /// Move a session (by default the caller's) to another directory: its
+    /// shell `cd`s there, and an agent running in it is quit at the end of
+    /// its turn and continues the same conversation there. `path` is
+    /// absolute by the time it's sent; the app checks it exists.
+    case changeDirectory(session: String?, path: String)
     /// Which Wortel is actually listening.
     ///
     /// Asked over the socket rather than read off disk because the two are
@@ -63,6 +68,7 @@ enum WortelCommand: Codable, Equatable {
         case .notify: return "notify"
         case .mark: return "mark"
         case .fork: return "fork"
+        case .changeDirectory: return "cd"
         case .version: return "--version"
         }
     }
@@ -202,6 +208,9 @@ enum WortelCommandParser {
           fork [--name <name>] [--branch <branch>]
                                    this session as it is, in a worktree of its own,
                                    its agent's conversation forked
+          cd <dir>                 move this session, and its agent, to another
+                                   directory; an agent moves when its turn ends,
+                                   and continues the same conversation there
 
           --version                this command's version, and the running app's
           --help                   this
@@ -272,6 +281,17 @@ enum WortelCommandParser {
             let flags = try Flags(rest, allowed: ["--name", "--branch"])
             return .fork(session: session, name: flags["--name"], branch: flags["--branch"])
 
+        case "cd":
+            guard let path = rest.first, !path.isEmpty else {
+                throw ParseError.missing("a directory", verb)
+            }
+            // A second word is nearly always the rest of an unquoted path with
+            // a space in it; moving to its first half would be a surprise.
+            guard rest.count == 1 else { throw ParseError.extra(rest[1], verb) }
+            // Against the caller's directory, which for an agent is where its
+            // own shell tool stands: `cd ../site && wortel cd .` means the site.
+            return .changeDirectory(session: session, path: absolute(path, from: currentDirectory))
+
         default:
             throw ParseError.unknown(verb)
         }
@@ -290,6 +310,8 @@ enum WortelCommandParser {
         case missing(String, String)
         /// Two options that can't be given together.
         case conflict(String, String)
+        /// An argument after the ones a command takes.
+        case extra(String, String)
 
         var description: String {
             switch self {
@@ -306,6 +328,8 @@ enum WortelCommandParser {
                 return "\(verb) needs \(what)"
             case .conflict(let option, let others):
                 return "\(option) can't be used with \(others)"
+            case .extra(let token, let verb):
+                return "\(verb) takes one directory, not \"\(token)\" too (quote a path with spaces)"
             }
         }
     }

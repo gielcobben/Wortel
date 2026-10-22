@@ -377,6 +377,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let self, let session = self.manager.selected else { return menu.removeAllItems() }
             SessionActions.fillMoveTo(menu, for: session, manager: self.manager)
         }
+        MainMenu.canChangeDirectory = { [weak self] in
+            guard let session = self?.manager.selected else { return false }
+            return SessionActions.canChangeDirectory(session)
+        }
+        MainMenu.fillChangeDirectory = { [weak self] menu in
+            guard let self, let session = self.manager.selected else { return menu.removeAllItems() }
+            SessionActions.fillChangeDirectory(menu, for: session, manager: self.manager)
+        }
+        // A move that failed after it was accepted, in the session you're
+        // looking at: no notification would interrupt it, so say it here.
+        manager.onMoveFailed = { [weak self] session, message in
+            guard let window = self?.window else { return }
+            let alert = NSAlert()
+            alert.messageText = "\u{201c}\(session.leafName)\u{201d} didn't move"
+            alert.informativeText = message
+            alert.addButton(withTitle: "OK")
+            alert.beginSheetModal(for: window)
+        }
         gitPanel.onAreaFocused = { [weak self] region in
             // A turn later: an area the command brought forward has its frame then.
             DispatchQueue.main.async { self?.splitController.blink(region) }

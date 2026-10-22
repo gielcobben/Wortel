@@ -80,6 +80,7 @@ extension CommandVerb {
         case .notify: self = .notify
         case .mark: self = .mark
         case .fork: self = .fork
+        case .changeDirectory: self = .cd
         case .version: self = .version
         }
     }

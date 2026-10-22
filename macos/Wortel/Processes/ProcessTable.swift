@@ -26,6 +26,15 @@ struct ProcessEntry: Equatable {
     /// with output nobody drained sits like this for as long as its pty is
     /// held open, which is exactly the shell a lost keeper leaves behind.
     var isExiting = false
+    /// The process group in the foreground of the process's controlling
+    /// terminal (0 without one). A shell sitting at its prompt is the
+    /// foreground itself; anything else that has the terminal (vim, a dev
+    /// server, an agent) is a group of its own, which is how "is this shell
+    /// free to be typed into" gets an answer no busy signal gives.
+    var foregroundGroup: pid_t = 0
+    /// Stopped by a signal: a job suspended with ^Z. It keeps its agent
+    /// marker, and nothing it is asked to do will happen until `fg`.
+    var isStopped = false
 }
 
 /// Everything this app asks the kernel about other processes, in one place.
@@ -74,7 +83,9 @@ enum ProcessTable {
                 name: name,
                 startedAt: Date(timeIntervalSince1970:
                     Double(started.tv_sec) + Double(started.tv_usec) / 1_000_000),
-                isExiting: Int32(proc.kp_proc.p_stat) == SZOMB || proc.kp_proc.p_flag & P_WEXIT != 0)
+                isExiting: Int32(proc.kp_proc.p_stat) == SZOMB || proc.kp_proc.p_flag & P_WEXIT != 0,
+                foregroundGroup: proc.kp_eproc.e_tpgid,
+                isStopped: Int32(proc.kp_proc.p_stat) == SSTOP)
         }
     }
 

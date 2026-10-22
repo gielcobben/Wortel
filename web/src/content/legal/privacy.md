@@ -59,6 +59,9 @@ about the thing it happened to:
   command, a worktree, opening a folder, or the shortcut that starts one in
   your home directory (never which folder, or where it was opened)
 - a session was renamed
+- a session was moved to another directory, whether from the `wortel` command
+  or the menu, and whether an agent's conversation moved with it (never which
+  directory)
 - the git panel was opened, on which of the three panes, and whether from the
   toolbar or the keyboard
 - a file preview was opened, whether it showed source, a diff or Markdown, and
@@ -81,7 +84,7 @@ about the thing it happened to:
 - the jump-to-next-waiting shortcut was used
 - the shortcut that shows and hides Wortel from any app was used
 - a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`,
-  `version`)
+  `mark`, `fork`, `cd`, `version`)
 - one last message when you turn reporting off, and then silence
 
 Each carries the app version, your macOS version to one decimal place, and

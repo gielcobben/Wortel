@@ -47,4 +47,15 @@ final class ClaudeResumeTargetTests: XCTestCase {
         XCTAssertTrue(AgentResumeStore.claudeContinuesLatest(argv: "claude -c"))
         XCTAssertFalse(AgentResumeStore.claudeContinuesLatest(argv: "claude --resume \(id)"))
     }
+
+    /// A moved session's resume names the transcript by its path
+    /// (`AgentResumeStore.claudeResumeWords`); that's the same conversation.
+    func testATranscriptPathNamesItsConversation() {
+        XCTAssertEqual(AgentResumeStore.claudeResumeTarget(
+            argv: "claude --resume /Users/x/.claude/projects/-Users-x-a/\(id).jsonl --model opus"), id)
+        XCTAssertNil(AgentResumeStore.claudeResumeTarget(
+            argv: "claude --resume /Users/x/.claude/projects/-a/\(id).jsonl --fork-session"),
+            "a fork is a new conversation")
+        XCTAssertNil(AgentResumeStore.claudeResumeTarget(argv: "claude --resume /tmp/notes.jsonl"))
+    }
 }

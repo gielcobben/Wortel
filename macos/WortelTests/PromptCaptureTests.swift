@@ -108,4 +108,31 @@ final class PromptCaptureTests: XCTestCase {
         XCTAssertEqual(FirstPrompt.fallbackTitle("e.g. handle the edge case in parsing"),
                        "E.g. handle the edge case in parsing", "a stop inside the first 12 characters is not a sentence end")
     }
+
+    // MARK: - A draft (`wortel cd` waits on one)
+
+    private func draft(_ text: String) -> Bool {
+        var builder = TypedLineBuilder()
+        _ = builder.feed(Array(text.utf8))
+        return builder.hasDraft
+    }
+
+    /// Something typed and not sent is a draft; quitting the agent would
+    /// throw it away, so a move waits.
+    func testATypedLineIsADraftUntilSentOrCleared() {
+        XCTAssertFalse(draft(""))
+        XCTAssertTrue(draft("half a thought"))
+        XCTAssertFalse(draft("sent\r"))
+        XCTAssertFalse(draft("gone\u{15}"), "ctrl-U")
+        XCTAssertFalse(draft("gone\u{03}"), "ctrl-C")
+    }
+
+    /// Esc Esc clears Claude's input box, in either keyboard protocol; one
+    /// Esc alone doesn't, so neither does it here.
+    func testEscapeTwiceClearsTheDraft() {
+        XCTAssertFalse(draft("gone\u{1B}[27u\u{1B}[27u"), "kitty")
+        XCTAssertTrue(draft("kept\u{1B}[27u"), "one Esc")
+        XCTAssertTrue(draft("kept\u{1B}[27ux"), "Esc, then typing")
+        XCTAssertFalse(draft("gone\u{1B}\u{1B}"), "legacy")
+    }
 }

@@ -33,13 +33,13 @@ final class WortelCLIService {
     }
 
     func start() {
-        let server = WortelCLIServer { [weak self] command, reply in
+        let server = WortelCLIServer(callerHandler: { [weak self] command, caller, reply in
             // The socket's queue, so hop before touching anything.
             Task { @MainActor in
                 guard let self else { return reply(.failure("Wortel is shutting down.")) }
-                self.handle(command, reply: reply)
+                self.handle(command, caller: caller, reply: reply)
             }
-        }
+        })
         do {
             try server.start()
             self.server = server
@@ -59,7 +59,8 @@ final class WortelCLIService {
 
     // MARK: - Commands
 
-    private func handle(_ command: WortelCommand, reply: @escaping @Sendable (WortelResponse) -> Void) {
+    private func handle(_ command: WortelCommand, caller: pid_t?,
+                        reply: @escaping @Sendable (WortelResponse) -> Void) {
         // Which verbs anyone actually uses. The whole argument for having a
         // socket instead of per-agent integrations is that people wire it into
         // their own hooks, and this is the only way to find out whether they
@@ -136,6 +137,18 @@ final class WortelCLIService {
                 return .failure("\u{201c}\(source.name)\u{201d} can't be forked until its worktree is ready.")
             }
             if !started { reply(refusal) }
+
+        case .changeDirectory(let session, let path):
+            // Answered at once even when the move waits for an agent's turn to
+            // end: that agent is the one waiting on this reply, and its turn
+            // can't end until it has it.
+            reply(withSession(session) { target in
+                // The id a side terminal's shell carries is its tab's, so a
+                // different id from the session's means one of those asked.
+                let fromSide = session.flatMap(UUID.init(uuidString:)).map { $0 != target.id } ?? false
+                return manager.changeDirectory(target, to: path, callerPID: caller,
+                                               fromSideTerminal: fromSide, via: .cli)
+            })
 
         case .notify(let session, let title, let body):
             reply(withSession(session) { session in

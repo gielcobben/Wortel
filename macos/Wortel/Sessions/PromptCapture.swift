@@ -25,8 +25,16 @@ struct TypedLineBuilder {
     private var state: State = .normal
     private var csi: [UInt8] = []
     private var inPaste = false
+    /// Esc presses in a row. Two clear an agent's input box (Claude's Esc
+    /// Esc), so the line being rebuilt here goes too.
+    private var escapes = 0
 
     init() {}
+
+    /// Whether something has been typed that hasn't been sent: the line so
+    /// far isn't empty. What a move (`wortel cd`) waits on, since quitting the
+    /// agent would throw that draft away.
+    var hasDraft: Bool { !line.isEmpty }
 
     /// Feed raw input bytes; returns every line completed by them, in order.
     mutating func feed(_ bytes: UnsafeBufferPointer<UInt8>) -> [String] {
@@ -37,7 +45,8 @@ struct TypedLineBuilder {
                 switch byte {
                 case 0x5B: state = .csi; csi = []          // [
                 case 0x4F: state = .ss3                     // O
-                default: state = .normal                    // alt+key, or a bare ESC
+                case 0x1B: escapes = 1; pressedEscape()     // a bare Esc, then another
+                default: state = .normal; escapes = 0       // alt+key, or a bare ESC
                 }
             case .csi:
                 if (0x40...0x7E).contains(byte) {
@@ -49,6 +58,7 @@ struct TypedLineBuilder {
             case .ss3:
                 state = .normal                             // one byte of key code
             case .normal:
+                if byte != 0x1B { escapes = 0 }
                 switch byte {
                 case 0x1B: state = .escape
                 case 0x0D:                                  // Enter
@@ -92,14 +102,24 @@ struct TypedLineBuilder {
             else { return }
             let modifiers = fields.count > 1
                 ? Int(fields[1].split(separator: ":").first ?? "") ?? 1 : 1
+            if code != 27 { escapes = 0 }
             switch code {
             case 13 where (modifiers - 1) & 0b101 != 0:     // shift or alt: newline
                 line.append(0x0A)
             case 13: complete(into: &completed)
+            case 27 where modifiers == 1: pressedEscape()   // Esc, kitty's way
             case 127: deleteLastCharacter()
             default: break
             }
         default: break
+        }
+    }
+
+    private mutating func pressedEscape() {
+        escapes += 1
+        if escapes >= 2 {
+            line.removeAll()
+            escapes = 0
         }
     }
 

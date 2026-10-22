@@ -19,11 +19,12 @@ func promptFolderName(title: String, confirm: String, initial: String = "") -> S
     return field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
 }
 
-/// Pick a directory. The whole of ⌘O and of a folder's "Set Directory…", and
-/// the only part of Wortel that ever opens a file panel.
+/// Pick a directory. The whole of ⌘O, of a folder's "Set Directory…" and of
+/// Change Directory's Choose…, and the only part of Wortel that ever opens a
+/// file panel.
 ///
-/// Directories only, and no "New Folder" button: this points at a project that
-/// already exists. Modal rather than a sheet for the same reason the name
+/// Directories only, and no "New Folder" button unless asked (`canCreate`):
+/// mostly this points at a project that already exists. Modal rather than a sheet for the same reason the name
 /// prompt above is — one question, one answer, and no state to thread through
 /// the sidebar. Returns nil on Cancel.
 @MainActor
@@ -539,6 +540,14 @@ enum SessionActions {
             move.submenu = moveTo
             menu.addItem(move)
         }
+        if canChangeDirectory(session) {
+            let change = NSMenuItem(title: "Change Directory", action: nil, keyEquivalent: "")
+            change.setGlyph("arrow.turn.down.right")
+            let submenu = NSMenu(title: "Change Directory")
+            fillChangeDirectory(submenu, for: session, manager: manager)
+            change.submenu = submenu
+            menu.addItem(change)
+        }
         let pinned = manager.isPinned(session)
         _ = item(pinned ? "Unpin" : "Pin", pinned ? "pin.slash" : "pin", key: "p", [.command, .option]) {
             manager.setPinned(session, !pinned)
@@ -591,6 +600,65 @@ enum SessionActions {
         let submenu = NSMenu(title: "Move To")
         fillMoveTo(submenu, for: session, manager: manager)
         return submenu
+    }
+
+    /// Whether a session can be offered Change Directory at all: not while
+    /// its worktree is still being made. Cheap, for the same reason `canMove`
+    /// is.
+    static func canChangeDirectory(_ session: Session) -> Bool {
+        session.preparation == nil
+    }
+
+    /// "Change Directory": this repository's free worktrees, the sidebar
+    /// folders' directories, and Choose… (with New Folder, since a fresh
+    /// directory is the usual reason). While a move waits, its Cancel instead.
+    static func fillChangeDirectory(_ submenu: NSMenu, for session: Session, manager: SessionManager) {
+        submenu.removeAllItems()
+        if let pending = manager.pendingMovePath(of: session) {
+            let name = (pending as NSString).lastPathComponent
+            submenu.addItem(ClosureMenuItem(title: "Cancel Move to \u{201c}\(name)\u{201d}") {
+                manager.cancelMove(session)
+            })
+            return
+        }
+        let targets = manager.changeDirectoryTargets(for: session)
+        for target in targets.worktrees {
+            let item = ClosureMenuItem(title: target.title) { changeDirectory(session, to: target.path, manager: manager) }
+            item.setGlyph("arrow.triangle.branch")
+            item.toolTip = (target.path as NSString).abbreviatingWithTildeInPath
+            submenu.addItem(item)
+        }
+        if !targets.worktrees.isEmpty, !targets.folders.isEmpty { submenu.addItem(.separator()) }
+        for target in targets.folders {
+            let item = ClosureMenuItem(title: target.title) { changeDirectory(session, to: target.path, manager: manager) }
+            item.setGlyph("folder")
+            item.toolTip = (target.path as NSString).abbreviatingWithTildeInPath
+            submenu.addItem(item)
+        }
+        if !targets.worktrees.isEmpty || !targets.folders.isEmpty { submenu.addItem(.separator()) }
+        submenu.addItem(ClosureMenuItem(title: "Choose\u{2026}") {
+            // Beside where it is now, where a new project usually goes.
+            let start = (session.cwd ?? session.originCwd).map { ($0 as NSString).deletingLastPathComponent }
+            guard let path = chooseDirectory(title: "Move \u{201c}\(session.leafName)\u{201d} to another directory",
+                                             startingAt: start, prompt: "Move", canCreate: true) else { return }
+            changeDirectory(session, to: path, manager: manager)
+        })
+    }
+
+    /// Ask for the move, and say why when it can't: the menu has no caller to
+    /// print a refusal to. An accepted move speaks for itself on the row.
+    static func changeDirectory(_ session: Session, to path: String, manager: SessionManager) {
+        let answer = manager.changeDirectory(session, to: path, via: .menu)
+        guard !answer.ok else { return }
+        let alert = NSAlert()
+        alert.messageText = "Can't move \u{201c}\(session.leafName)\u{201d}"
+        alert.informativeText = answer.message ?? ""
+        alert.addButton(withTitle: "OK")
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
     }
 
     static func fillMoveTo(_ submenu: NSMenu, for session: Session, manager: SessionManager) {
@@ -876,7 +944,18 @@ struct SessionRow: View {
                     // slides to show the rest, as the ChatGPT app's do.
                     MarqueeName(text: session.leafName, active: isHovered)
                 }
-                if session.folderIsGone, !isEditing {
+                if let moving = session.movingTo, !isEditing {
+                    // A move waiting on the agent's turn (or the prompt), in
+                    // the second line's place: where it's going, and when.
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.turn.down.right")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                        TruncatingLabel(text: SessionMove.pendingLine(to: moving), font: .systemFont(ofSize: 11),
+                                        color: .tertiaryLabelColor)
+                    }
+                    .help("Moving to \(SessionMove.display(moving)). Cancel it from the session menu, under Change Directory.")
+                } else if session.folderIsGone, !isEditing {
                     // Under the name, where a worktree's branch would be: the
                     // row's folder was deleted. Close it with its ×.
                     HStack(spacing: 3) {

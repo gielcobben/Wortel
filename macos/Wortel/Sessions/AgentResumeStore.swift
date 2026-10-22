@@ -343,7 +343,10 @@ enum AgentResumeStore {
     /// as typed.
     static func resumeCommand(for marker: AgentMarker, knownConversationID: String? = nil) -> String? {
         let agent = marker.agent
-        if let id = knownConversationID, let words = AgentConversation.resumeWords(agent: agent, id: id) {
+        if let id = knownConversationID,
+           let words = agent == "claude"
+               ? claudeResumeWords(id: id, cwd: marker.cwd)
+               : AgentConversation.resumeWords(agent: agent, id: id) {
             return AgentCommandLine.command(agent: agent, argv: marker.argv, resume: words)
         }
         if agent == "claude" {
@@ -505,13 +508,50 @@ enum AgentResumeStore {
         transcripts(cwd: cwd).max { $0.modified < $1.modified }?.id
     }
 
-    /// Whether conversation `id` belongs to `cwd`: Claude only resumes a
-    /// conversation from the directory it was held in, so an id remembered from
-    /// another directory is no id at all there.
+    /// Whether conversation `id` can be resumed from `cwd`: its transcript is
+    /// in `cwd`'s folder, or (a session moved by `wortel cd`) in another one.
     static func claudeTranscriptExists(id: String, cwd: String) -> Bool {
-        claudeProjectDirectories(for: cwd).contains {
-            FileManager.default.fileExists(atPath: $0.appendingPathComponent("\(id).jsonl").path)
+        claudeTranscript(id: id, cwd: cwd) != nil
+    }
+
+    /// Where conversation `id`'s transcript is: `cwd`'s own folder first, which
+    /// is where it nearly always is, else any project's.
+    ///
+    /// The second look is for a conversation that moved. Resumed from another
+    /// directory (`wortel cd`), Claude carries on in the same transcript and
+    /// leaves it where it was: on 2026-10-20 (Claude Code 2.1.305), an
+    /// interactive `--resume` from B kept appending to A's file. So a session
+    /// whose agent now runs in B still has its conversation under A, and every
+    /// question asked of it by directory alone (does it exist, how did its turn
+    /// end) would say it had none. One `fileExists` per project folder, and only
+    /// when the first look found nothing.
+    static func claudeTranscript(id: String, cwd: String) -> URL? {
+        guard UUID(uuidString: id) != nil else { return nil }
+        let name = "\(id).jsonl"
+        let fileManager = FileManager.default
+        for dir in claudeProjectDirectories(for: cwd) {
+            let url = dir.appendingPathComponent(name)
+            if fileManager.fileExists(atPath: url.path) { return url }
         }
+        guard let entries = try? fileManager.contentsOfDirectory(atPath: claudeProjectsRoot.path) else { return nil }
+        for entry in entries {
+            let url = claudeProjectsRoot.appendingPathComponent(entry, isDirectory: true).appendingPathComponent(name)
+            if fileManager.fileExists(atPath: url.path) { return url }
+        }
+        return nil
+    }
+
+    /// Claude's words for resuming `id` from `cwd`: by id while its transcript
+    /// is in `cwd`'s own folder, else by the transcript's path. A resume by id
+    /// from another folder works on Claude Code 2.1.305 but found nothing on
+    /// 2.1.299 (`forkWords`), and the path works on both.
+    static func claudeResumeWords(id: String, cwd: String?) -> [String]? {
+        guard let words = AgentConversation.resumeWords(agent: "claude", id: id) else { return nil }
+        guard let cwd, let transcript = claudeTranscript(id: id, cwd: cwd),
+              !claudeProjectDirectories(for: cwd).contains(transcript.deletingLastPathComponent()),
+              AgentCommandLine.isPlain(transcript.path)
+        else { return words }
+        return ["--resume", transcript.path]
     }
 
     /// The conversation a `claude` command line names: `--resume <id>`,
@@ -536,6 +576,13 @@ enum AgentResumeStore {
                 } else if word == flag, index + 1 < words.count {
                     value = words[index + 1]
                 }
+            }
+            // A transcript's path is the conversation too: a resume typed for
+            // a session that moved (`claudeResumeWords`) names it that way.
+            if let value, value.hasSuffix(".jsonl"),
+               case let id = ((value as NSString).lastPathComponent as NSString).deletingPathExtension,
+               UUID(uuidString: id) != nil {
+                return id.lowercased()
             }
             if let value, UUID(uuidString: value) != nil { return value.lowercased() }
         }

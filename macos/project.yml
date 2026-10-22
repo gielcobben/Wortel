@@ -496,6 +496,10 @@ targets:
       # launcher and the flags that set how it runs. A slip here drops a
       # permission mode or turns a flag's value into a prompt. Foundation only.
       - path: Wortel/Sessions/AgentCommandLine.swift
+      # Moving a session to another directory: whether it can, when, what's
+      # typed and what the caller is told. A wrong row in that table quits an
+      # agent mid-question, or types `cd` into vim. Foundation only.
+      - path: Wortel/Sessions/SessionMove.swift
       # The auto-naming gate. Pure, and every one of its failure modes is
       # timing-shaped and invisible: too eager and the sidebar relabels itself
       # while you read it, too shy and a session keeps a name that stopped being

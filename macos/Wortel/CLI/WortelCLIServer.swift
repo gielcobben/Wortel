@@ -19,9 +19,16 @@ final class WortelCLIServer: @unchecked Sendable {
     typealias Handler = @Sendable (
         WortelCommand, @escaping @Sendable (WortelResponse) -> Void
     ) -> Void
+    /// The same, told which process sent the command (nil if the kernel
+    /// wouldn't say). `wortel cd` needs it: an agent asking to be moved has
+    /// to be waited for, and the session can't tell that from the command,
+    /// only from who ran it.
+    typealias CallerHandler = @Sendable (
+        WortelCommand, pid_t?, @escaping @Sendable (WortelResponse) -> Void
+    ) -> Void
 
     private let path: String
-    private let handler: Handler
+    private let handler: CallerHandler
     /// Accept on one queue, serve on another: a connection whose peer stops
     /// reading must not stop the app from accepting the next one.
     private let acceptQueue = DispatchQueue(label: "sh.wortel.cli.accept")
@@ -37,7 +44,12 @@ final class WortelCLIServer: @unchecked Sendable {
 
     init(path: String = WortelCLI.socketPath, handler: @escaping Handler) {
         self.path = path
-        self.handler = handler
+        self.handler = { command, _, reply in handler(command, reply) }
+    }
+
+    init(path: String = WortelCLI.socketPath, callerHandler: @escaping CallerHandler) {
+        self.path = path
+        self.handler = callerHandler
     }
 
     deinit { stopListening() }
@@ -149,9 +161,18 @@ final class WortelCLIServer: @unchecked Sendable {
             Self.reply(.failure("This Wortel doesn't understand that command."), to: client)
             return
         }
-        handler(command) { response in
+        handler(command, Self.peerPID(of: client)) { response in
             Self.reply(response, to: client)
         }
+    }
+
+    /// The pid of the process on the other end, from the kernel rather than
+    /// from anything the peer says about itself.
+    private static func peerPID(of client: Int32) -> pid_t? {
+        var pid: pid_t = 0
+        var length = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(client, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0, pid > 0 else { return nil }
+        return pid
     }
 
     /// Read up to the first newline. Returns nil if the peer goes away, sends

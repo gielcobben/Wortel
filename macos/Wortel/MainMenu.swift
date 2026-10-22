@@ -123,7 +123,15 @@ enum MainMenu {
     /// it says there's nowhere to go, as the Finder's does.
     private static let sessionMenuUpdater = MenuFiller { _ in
         MainMenu.moveToItem?.isEnabled = MainMenu.canMoveTo()
+        MainMenu.changeDirectoryItem?.isEnabled = MainMenu.canChangeDirectory()
     }
+
+    /// The same pair for "Change Directory", which moves the session itself
+    /// to another directory on disk (`wortel cd`). Set by AppDelegate.
+    static var fillChangeDirectory: (NSMenu) -> Void = { _ in }
+    private static let changeDirectoryFiller = MenuFiller { MainMenu.fillChangeDirectory($0) }
+    static var canChangeDirectory: () -> Bool = { false }
+    private static weak var changeDirectoryItem: NSMenuItem?
 
     private static func arrow(_ key: Int) -> String {
         String(UnicodeScalar(UInt16(key))!)
@@ -348,6 +356,11 @@ enum MainMenu {
         moveToMenu.delegate = moveToFiller
         moveTo.submenu = moveToMenu
         moveToItem = moveTo
+        let changeDirectory = sessionMenu.addItem(withTitle: "Change Directory", action: nil, keyEquivalent: "")
+        let changeDirectoryMenu = NSMenu(title: "Change Directory")
+        changeDirectoryMenu.delegate = changeDirectoryFiller
+        changeDirectory.submenu = changeDirectoryMenu
+        changeDirectoryItem = changeDirectory
         // Every worktree Wortel made, including those of sessions long
         // archived. A session's own goes when you close it, if there's
         // nothing in it worth keeping (`SessionManager.archive`).

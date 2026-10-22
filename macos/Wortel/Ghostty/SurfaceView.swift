@@ -566,6 +566,24 @@ final class SurfaceView: NSView {
         }
     }
 
+    /// Type a command line into the shell and run it, as if it had been typed
+    /// and Enter pressed: raw into the pty, after ^E ^U to clear whatever was
+    /// half-typed at the prompt (^E first, since fish's ^U only clears what's
+    /// behind the cursor). Not `sendText`, which arrives as a bracketed paste:
+    /// zsh puts a pasted newline in the line instead of running it. The same
+    /// way `GhosttyRuntime` types a resume into a shell that survived. False
+    /// when there's no pty to write to (the exec backend owns its own).
+    @discardableResult
+    func typeCommand(_ line: String) -> Bool {
+        guard let pty = ptyHost else { return false }
+        let bytes = Array(("\u{05}\u{15}" + line + "\n").utf8)
+        bytes.withUnsafeBufferPointer { raw in
+            guard let base = raw.baseAddress else { return }
+            pty.write(base, count: raw.count)
+        }
+        return true
+    }
+
     @objc override func selectAll(_ sender: Any?) {
         performBinding("select_all")
     }

@@ -39,3 +39,30 @@ final class PromptTap: PtyInputListener, @unchecked Sendable {
         DispatchQueue.main.async { for line in lines { deliver(line) } }
     }
 }
+
+/// A listener on a pty's input while a move waits on its session's agent
+/// (`wortel cd`): it says whether the user has a draft in the agent's input
+/// and when they last typed, and nothing else. Quitting the agent would throw
+/// a draft away, and a keystroke means someone is at the keyboard.
+///
+/// Holds the line being typed only to know whether it's empty; the text is
+/// never read out, kept or sent anywhere, and the tap is detached as soon as
+/// the move happens or is cancelled.
+final class DraftTap: PtyInputListener, @unchecked Sendable {
+    private struct State {
+        var builder = TypedLineBuilder()
+        var lastInput: Date?
+    }
+    private let state = OSAllocatedUnfairLock(uncheckedState: State())
+
+    /// Called from the pty write path, on whichever thread libghostty uses.
+    func feed(_ bytes: UnsafePointer<UInt8>, count: Int) {
+        state.withLock { s in
+            _ = s.builder.feed(UnsafeBufferPointer(start: bytes, count: count))
+            s.lastInput = Date()
+        }
+    }
+
+    var hasDraft: Bool { state.withLock { $0.builder.hasDraft } }
+    var lastInput: Date? { state.withLock { $0.lastInput } }
+}

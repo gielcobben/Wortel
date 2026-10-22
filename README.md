@@ -288,6 +288,7 @@ wortel new --cwd ~/Developer/lijn           # a session there
 wortel new --branch fix/1482 --from main    # a session in its own worktree
 wortel rename "css rules"                   # rename the session you are in
 wortel notify "Build finished"              # raise attention on this session
+wortel cd ../new-site                       # move this session, agent and all
 ```
 
 Two decisions shape it: it **never steals focus** (windows are ordered front, the

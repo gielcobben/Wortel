@@ -142,6 +142,64 @@ enum AgentCommandLine {
         return kept
     }
 
+    /// The agent's own command (`words`) with every relative path in it made
+    /// absolute against `directory`, where it was started: a relative launcher
+    /// (`./bin/claude`), an assignment's value (`CLAUDE_CONFIG_DIR=./cfg`) and
+    /// the values of the flags that name a file or a folder (`pathFlags`).
+    ///
+    /// For a resume typed somewhere else (`wortel cd`). Carried as it was, a
+    /// relative `--add-dir ../shared` would name a different folder after the
+    /// `cd`, or none, and the agent would start without what it had. Only
+    /// what's already carried can change, so only plain words are touched.
+    static func absolutized(agent: String, argv: String?, from directory: String) -> String? {
+        let words = words(argv)
+        guard !words.isEmpty else { return argv }
+        let agentIndex = words.firstIndex(where: { names(agent, $0) })
+        let pathFlags = pathFlags[agent] ?? []
+        func absolute(_ path: String) -> String {
+            guard isPlain(path), !path.hasPrefix("/"), !path.hasPrefix("~") else { return path }
+            return URL(fileURLWithPath: directory).appendingPathComponent(path).standardizedFileURL.path
+        }
+        var rewritten: [String] = []
+        var index = 0
+        while index < words.count {
+            let word = words[index]
+            index += 1
+            guard let agentIndex else { rewritten.append(word); continue }
+            if index - 1 < agentIndex {
+                // The launcher: `NAME=value` with a value that's a relative
+                // path, or a relative path to the agent itself.
+                if let equals = word.firstIndex(of: "="), !word.hasPrefix("-") {
+                    let value = String(word[word.index(after: equals)...])
+                    let relative = value.hasPrefix("./") || value.hasPrefix("../")
+                    rewritten.append(relative ? String(word[...equals]) + absolute(value) : word)
+                } else {
+                    rewritten.append(word)
+                }
+            } else if index - 1 == agentIndex {
+                rewritten.append(word.contains("/") ? absolute(word) : word)
+            } else if let equals = word.firstIndex(of: "="), word.hasPrefix("-"),
+                      pathFlags.contains(String(word[..<equals])) {
+                rewritten.append(String(word[...equals]) + absolute(String(word[word.index(after: equals)...])))
+            } else if pathFlags.contains(word), index < words.count, !words[index].hasPrefix("-") {
+                rewritten += [word, absolute(words[index])]
+                index += 1
+            } else {
+                rewritten.append(word)
+            }
+        }
+        return rewritten.joined(separator: " ")
+    }
+
+    /// The carried flags (`flagTable`) whose value is a path, from each
+    /// agent's `--help`. `--settings` and `--mcp-config` also take JSON, which
+    /// is never plain and so never touched.
+    private static let pathFlags: [String: Set<String>] = [
+        "claude": ["--settings", "--add-dir", "--mcp-config", "--plugin-dir"],
+        "pi": ["--extension", "-e", "--skill", "--session-dir", "--prompt-template", "--theme"],
+        "codex": ["--cd", "-C", "--add-dir"],
+    ]
+
     /// Whether `id` can be typed into a shell as it is: every exact resume
     /// puts a conversation id on a command line, and the ids come from files
     /// other programs wrote.

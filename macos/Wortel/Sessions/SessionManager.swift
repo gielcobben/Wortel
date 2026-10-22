@@ -888,6 +888,9 @@ final class SessionManager {
                 clearBusy(session)
             }
         }
+        // An agent quitting is what a waiting move waits for; don't make it
+        // wait for the next tick too.
+        if !pendingMoves.isEmpty { advancePendingMoves() }
         // Markers appearing/vanishing is exactly when the screen sampler has
         // work to start or stop doing.
         updateAgentScreenSampling()
@@ -1212,7 +1215,10 @@ final class SessionManager {
                               initialInput: nil)
             return
         }
-        if let owed = owedResume(forLostShellOf: session, lostAt: lostAt) {
+        // A resume a move typed is still the one owed: the agent was quit on
+        // purpose, and resuming it where it was would undo the move.
+        if session.owedResume?.isOwed(at: Date()) != true,
+           let owed = owedResume(forLostShellOf: session, lostAt: lostAt) {
             session.owedResume = owed
         }
         // The new shell's agent writes a marker of its own; this one names a
@@ -1330,7 +1336,8 @@ final class SessionManager {
     /// speaking one, and the assertion must not be fooled along with it); and a
     /// settle window already ticking towards a notification.
     private var wantsActivityAssertion: Bool {
-        sessions.contains {
+        if !pendingMoves.isEmpty { return true }
+        return sessions.contains {
             guard $0.runningAgent != nil else { return false }
             return !speaksForItself($0)
                 || screenInferredBusy.contains($0.id)
@@ -1606,13 +1613,8 @@ final class SessionManager {
     func openFolder(_ path: String, via origin: SessionOrigin = .openFolder) -> Session {
         let path = FolderRoot.normalize(path) ?? path
         let linked = GitWorktree.linked(containing: path)
-        if let linked, let home = linked.repoHome.flatMap(FolderRoot.normalize) {
-            var target = folder(forWorktreeAt: path, repoHome: home)
-            let repo = (home as NSString).lastPathComponent
-            if target == nil, repo != "/", !repo.isEmpty {
-                target = addFolder(named: repo)
-                setRoot(home, ofFolder: target!)
-            }
+        let target = folder(forDirectory: path)
+        if let linked, linked.repoHome.flatMap(FolderRoot.normalize) != nil {
             let branch = GitWorktree.checkedOutBranch(at: linked.root)
             let leaf = branch.map(GitWorktree.sessionLeaf(forBranch:)).map { uniqueLeaf($0, in: target) }
             return makeSession(cwd: path, inFolder: target, via: origin) { [target] session in
@@ -1620,25 +1622,10 @@ final class SessionManager {
                 session.worktreeBranch = branch
             }
         }
-        if let existing = FolderRoot.folder(containing: path, in: folderRoots) {
-            return newSession(cwd: path, inFolder: existing, via: origin)
-        }
-        // A directory's name is always a usable folder name — it cannot contain
-        // the separator sidebar names are split on — with exactly one
-        // exception: the filesystem root, whose last component *is* that
-        // separator. Opening `/` isn't opening a project, so it gets a session
-        // and no folder rather than a folder named "/" that `SessionName` would
-        // then have to make sense of.
-        let leaf = (path as NSString).lastPathComponent
-        guard leaf != "/", !leaf.isEmpty else {
-            return makeSession(cwd: path, inFolder: nil, via: origin)
-        }
-        // `addFolder` makes the name unique, so opening a second `web` from
-        // another project gets "web 2" rather than joining the first one — two
-        // directories are two projects however they're spelled.
-        let folder = addFolder(named: leaf)
-        setRoot(path, ofFolder: folder)
-        return newSession(cwd: path, inFolder: folder, via: origin)
+        // The deepest folder covering it, or a new one named for it; `/` gets
+        // a session and no folder (see `folder(forDirectory:)`).
+        guard let target else { return makeSession(cwd: path, inFolder: nil, via: origin) }
+        return newSession(cwd: path, inFolder: target, via: origin)
     }
 
     /// The folder for a worktree at `path`: the deepest root covering it, or
@@ -1929,11 +1916,7 @@ final class SessionManager {
         var words: [String] = []
         if let id = source.conversationID {
             let transcript = agent == "claude"
-                ? source.agentCwd.flatMap { cwd in
-                    AgentResumeStore.claudeProjectDirectories(for: cwd)
-                        .map { $0.appendingPathComponent("\(id).jsonl").path }
-                        .first { FileManager.default.fileExists(atPath: $0) }
-                }
+                ? source.agentCwd.flatMap { AgentResumeStore.claudeTranscript(id: id, cwd: $0)?.path }
                 : nil
             words = AgentConversation.forkWords(agent: agent, id: id, transcript: transcript) ?? []
         }
@@ -2471,6 +2454,7 @@ final class SessionManager {
         recentSessionIDs.removeAll { $0 == session.id }
         pinnedIDs.removeAll { $0 == session.id }
         endPromptCapture(session)
+        cancelMove(session)
         // The killed shell never reaches its prompt to clear its own agent
         // marker; drop it so a closed session isn't resumed on next launch.
         AgentResumeStore.remove(sessionID: session.id)
@@ -3175,6 +3159,12 @@ final class SessionManager {
         if session.isBusy {
             session.isBusy = false
             noteConversation(session)
+            // A turn (or a stretch of one) ended after a move was asked for:
+            // what a move the agent asked for has to see before it can go.
+            if var move = pendingMoves[session.id], !move.sawTurnEnd {
+                move.sawTurnEnd = true
+                pendingMoves[session.id] = move
+            }
         }
     }
 
@@ -3386,9 +3376,8 @@ final class SessionManager {
         // reached us.
         let since = startedAt.addingTimeInterval(-2)
         DispatchQueue.global(qos: .userInitiated).async {
-            let verdict = AgentResumeStore.claudeProjectDirectories(for: cwd).lazy
-                .compactMap { ClaudeTranscriptTail.readTail(of: $0.appendingPathComponent("\(id).jsonl")) }
-                .first
+            let verdict = AgentResumeStore.claudeTranscript(id: id, cwd: cwd)
+                .flatMap(ClaudeTranscriptTail.readTail(of:))
                 .flatMap { ClaudeTranscriptTail.verdict($0, since: since) }
             DispatchQueue.main.async { [weak self, weak session] in
                 guard let self, let session else { return }
@@ -3402,6 +3391,555 @@ final class SessionManager {
                 }
             }
         }
+    }
+
+    // MARK: - Changing directory (`wortel cd`, Change Directory)
+
+    /// Moves accepted and not yet done, by session. In memory only: a quit
+    /// drops them, since a relaunch has no turn to wait for.
+    @ObservationIgnored private var pendingMoves: [Session.ID: PendingMove] = [:]
+    /// What the user types while a move waits on the agent (`DraftTap`).
+    @ObservationIgnored private var moveDraftTaps: [Session.ID: DraftTap] = [:]
+    /// Ticks while any move is pending; nothing runs otherwise.
+    @ObservationIgnored private var moveTimer: Timer?
+    /// A move that failed after its caller was answered, for the session on
+    /// screen, which `raiseAttention` won't interrupt. The app shows it.
+    @ObservationIgnored var onMoveFailed: ((Session, String) -> Void)?
+
+    /// How long a quit agent has to give the shell its prompt back, and how
+    /// long the shell has to report the new directory once the `cd` is typed.
+    private static let moveStopPatience: TimeInterval = 8
+    private static let moveCdPatience: TimeInterval = 5
+    /// How long since a keystroke before a waiting move goes ahead.
+    private static let moveTypingQuiet: TimeInterval = 3
+
+    /// Move `session` to `rawPath`: now, at its next prompt, or once its agent
+    /// is idle (`SessionMove.decide`). The answer comes at once in every case:
+    /// the agent that asked is waiting on it, and its turn can't end until it
+    /// has it. `callerPID` is who asked, when the CLI did.
+    func changeDirectory(_ session: Session, to rawPath: String, callerPID: pid_t? = nil,
+                         fromSideTerminal: Bool = false, via: MoveOrigin) -> WortelResponse {
+        let path = FolderRoot.normalize(rawPath) ?? rawPath
+        // A session not shown since launch has no surface yet, so no signals
+        // and nothing to type into. Attaching it is what the warm-up does.
+        if sessions.contains(where: { $0 === session }), session.preparation == nil {
+            _ = session.ensureSurfaceView(runtime: runtime)
+        }
+        let previous = pendingMoves[session.id]
+        if let previous {
+            switch previous.stage {
+            case .waiting, .atPrompt: break
+            case .stopping, .typed:
+                return .failure("This session is already moving to \(SessionMove.display(previous.path)).")
+            }
+        }
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+        let here = session.cwd ?? session.originCwd
+        if let previous, let here, AgentConversation.samePath(here, path) {
+            cancelMove(session)
+            return .success("Staying in \(SessionMove.display(path)); the move to \(SessionMove.display(previous.path)) is cancelled.")
+        }
+        guard SessionMove.lines(path: path, resume: nil) != nil else {
+            return .failure("Wortel can't type that directory into a shell: \(SessionMove.display(path))")
+        }
+
+        // Where the shell, the agent and the session's own record of where it
+        // lives each stand. All three already there is nothing to do; only the
+        // record behind (the shell was `cd`'d there by hand) is a re-file.
+        let shellHere = session.cwd.map { AgentConversation.samePath($0, path) } ?? false
+        let agentHere = session.runningAgent == nil
+            || (session.runningCwd.map { AgentConversation.samePath($0, path) } ?? shellHere)
+        let recordHere = session.originCwd.map { AgentConversation.samePath($0, path) } ?? shellHere
+        if exists, shellHere, agentHere, !recordHere, previous == nil, session.preparation == nil {
+            refile(session, to: path)
+            Telemetry.capture(.sessionMoved(via: via, carriedAgent: false))
+            return .success("Moved to \(SessionMove.display(path)).", value: path)
+        }
+
+        let table = ProcessTable.snapshot()
+        noteConversation(session, table: table)
+        let facts = moveFacts(session, table: table, callerPID: callerPID)
+        var situation = facts.situation
+        situation.directoryExists = exists
+        situation.sameDirectory = shellHere && agentHere && recordHere
+        situation.preparing = session.preparation != nil
+        situation.hasPty = session.surfaceView?.ptyHost != nil
+        let decision = SessionMove.decide(situation, to: path)
+        if case .refuse(let message) = decision { return .failure(message) }
+
+        let agent = session.runningAgent.map {
+            AgentMarker(agent: $0, model: session.runningModel, cwd: session.runningCwd ?? session.cwd,
+                        argv: session.runningArgv, shellPID: session.runningShellPID,
+                        startedAt: session.runningStartedAt)
+        }
+        let stage: PendingMove.Stage
+        var needsTurnEnd = false
+        switch decision {
+        case .now: stage = .waiting
+        case .atPrompt: stage = .atPrompt
+        case .whenIdle(let turnEnd): stage = .waiting; needsTurnEnd = turnEnd
+        case .refuse: return .failure("")
+        }
+        pendingMoves[session.id] = PendingMove(
+            path: path, requestedAt: Date(), needsTurnEnd: needsTurnEnd,
+            agent: decision == .now ? nil : agent,
+            agentGroup: facts.agentGroup,
+            conversationID: decision == .now ? nil : session.liveConversationID,
+            via: via, stage: stage)
+        session.movingTo = path
+        let message = SessionMove.acceptedMessage(
+            decision, agent: session.runningAgent, path: path,
+            instead: previous?.path, fromSideTerminal: fromSideTerminal,
+            stopping: facts.backgroundJobs, terminalStaysIn: fromSideTerminal ? callerDirectory(callerPID) : nil)
+        if case .whenIdle = decision, let pty = session.surfaceView?.ptyHost, moveDraftTaps[session.id] == nil {
+            let tap = DraftTap()
+            moveDraftTaps[session.id] = tap
+            pty.draftTap = tap
+        }
+        if decision == .now {
+            typeMove(session)
+        } else {
+            startMoveTimer()
+        }
+        return .success(message, value: path)
+    }
+
+    /// Drop a waiting move. Nothing has been touched yet, so nothing to undo.
+    func cancelMove(_ session: Session) {
+        guard pendingMoves.removeValue(forKey: session.id) != nil else { return }
+        finishMoveBookkeeping(session)
+    }
+
+    /// Where `session` will move, while a move waits.
+    func pendingMovePath(of session: Session) -> String? { pendingMoves[session.id]?.path }
+
+    /// A place Change Directory offers.
+    struct DirectoryTarget: Equatable {
+        let title: String
+        let path: String
+    }
+
+    /// Where Change Directory offers to take `session`: the other checkouts
+    /// of its repository that no session is in (a worktree is just a
+    /// directory), then the sidebar folders' directories. From what's cached
+    /// only, no git and no disk, because the menu asks while it opens.
+    func changeDirectoryTargets(for session: Session) -> (worktrees: [DirectoryTarget], folders: [DirectoryTarget]) {
+        guard let here = (session.cwd ?? session.originCwd).flatMap(FolderRoot.normalize) else { return ([], []) }
+        func isHere(_ path: String) -> Bool { FolderRoot.normalize(path) == here }
+        var worktrees: [DirectoryTarget] = []
+        let listing = worktreeListings.values.first { list in
+            list.contains { FolderRoot.root($0.path, contains: here) }
+        }
+        let taken = takenWorktrees()
+        for worktree in listing ?? []
+        where !worktree.isPrunable && !worktree.isBare && !isHere(worktree.path)
+            && (worktree.isPrimary || !taken.contains(worktree.path)) {
+            worktrees.append(DirectoryTarget(
+                title: CheckoutPlace.title(path: worktree.path, sessionName: nil,
+                                           branch: worktree.branch, isPrimary: worktree.isPrimary),
+                path: worktree.path))
+        }
+        let offered = Set(worktrees.map(\.path))
+        var folders: [DirectoryTarget] = []
+        for name in folderNames {
+            guard let root = root(ofFolder: name), !isHere(root), !offered.contains(root),
+                  !folders.contains(where: { $0.path == root }) else { continue }
+            folders.append(DirectoryTarget(title: name, path: root))
+        }
+        return (worktrees, folders)
+    }
+
+    /// What the process table says about the session, for `SessionMove`.
+    private func moveFacts(_ session: Session, table: [ProcessEntry], callerPID: pid_t?)
+        -> (situation: SessionMove.Situation, backgroundJobs: [String], agentGroup: pid_t?) {
+        var situation = SessionMove.Situation()
+        situation.agent = session.runningAgent
+        situation.conversationID = session.liveConversationID
+        var parentOf: [pid_t: pid_t] = [:]
+        for entry in table { parentOf[entry.pid] = entry.ppid }
+        let byPID = Dictionary(table.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+        // The shell: the one the marker names, else the one under the keeper's
+        // `login`.
+        let shellPID = session.runningShellPID ?? session.shellPID.map { ProcessTable.shell(of: $0, in: table) }
+        guard let shellPID, let shell = byPID[shellPID] else {
+            situation.shellInForeground = false
+            situation.agentFound = false
+            return (situation, [], nil)
+        }
+        let foreground = shell.foregroundGroup
+        situation.shellInForeground = foreground == shell.pgid
+        if let callerPID, let caller = byPID[callerPID] {
+            situation.callerInForeground = caller.pgid == foreground
+        }
+        var backgroundJobs: [String] = []
+        var agentGroup: pid_t?
+        if let agent = session.runningAgent {
+            if let entry = Self.agentProcess(agent, shell: shellPID, foreground: foreground,
+                                             table: table, parentOf: parentOf) {
+                situation.agentFound = true
+                agentGroup = entry.pgid
+                situation.agentIsShell = entry.pid == shellPID || entry.pgid == shell.pgid
+                situation.agentStopped = table.contains { $0.pgid == entry.pgid && $0.isStopped }
+                situation.agentInForeground = entry.pgid == foreground
+                // Asked by the agent: something in the agent's own process
+                // group is among the caller's ancestors.
+                if let callerPID {
+                    if byPID[callerPID]?.pgid == entry.pgid { situation.callerIsAgent = true }
+                    var current = callerPID
+                    for _ in 0..<64 {
+                        guard let parent = parentOf[current], parent > 1 else { break }
+                        if byPID[parent]?.pgid == entry.pgid { situation.callerIsAgent = true; break }
+                        current = parent
+                    }
+                }
+                // Its background tasks: groups of their own started by it,
+                // which go when it does (Claude's `run_in_background`).
+                // Not the one running this very `wortel cd`.
+                let callerGroup = callerPID.flatMap { byPID[$0]?.pgid }
+                let groupMembers = Set(table.filter { $0.pgid == entry.pgid }.map(\.pid))
+                for leader in table where groupMembers.contains(leader.ppid) && leader.pgid == leader.pid
+                    && leader.pgid != entry.pgid && leader.pgid != callerGroup && !leader.isExiting {
+                    let job = table.first { $0.ppid == leader.pid } ?? leader
+                    if let label = RunningJobs.label(forArguments: ProcessTable.arguments(of: job.pid)),
+                       !backgroundJobs.contains(label) {
+                        backgroundJobs.append(label)
+                    }
+                }
+            } else {
+                situation.agentFound = false
+            }
+        }
+        if !situation.shellInForeground, !situation.agentInForeground,
+           let leader = byPID[foreground] ?? table.first(where: { $0.pgid == foreground }) {
+            situation.foregroundName = RunningJobs.label(forArguments: ProcessTable.arguments(of: leader.pid))
+                ?? leader.name
+        }
+        return (situation, Array(backgroundJobs.prefix(3)), agentGroup)
+    }
+
+    /// The session's agent process, for a move to signal. The terminal's
+    /// foreground job first: its leader, or one of its group, whose name or
+    /// arguments name the agent. Else a job of the shell's own that does
+    /// (one suspended with ^Z isn't in the foreground). Never the first
+    /// descendant that mentions it, as `AgentLiveness.locate` takes: its
+    /// arguments pass matches `claude-501` in a path, which made the `wortel
+    /// cd` the agent ran look like the agent, and the move would have quit
+    /// that instead.
+    private static func agentProcess(_ agent: String, shell: pid_t, foreground: pid_t,
+                                     table: [ProcessEntry], parentOf: [pid_t: pid_t]) -> ProcessEntry? {
+        let short = String(agent.prefix(ProcessTable.maxCommandNameLength - 1))
+        func names(_ entry: ProcessEntry) -> Bool {
+            entry.name == agent || entry.name == short
+                || (ProcessTable.argumentsIfReadable(of: entry.pid)?.dropFirst()
+                    .prefix(2).contains { AgentLiveness.argumentNames(agent, $0) } ?? false)
+        }
+        if foreground > 1 {
+            let group = table.filter {
+                $0.pgid == foreground && ProcessTable.isDescendant($0.pid, of: shell, parentOf: parentOf)
+            }
+            if let leader = group.first(where: { $0.pid == foreground }), names(leader) { return leader }
+            if let member = group.first(where: names) { return member }
+        }
+        return table.first { $0.ppid == shell && $0.pgid == $0.pid && names($0) }
+    }
+
+    /// The directory of the shell a command came from: a side terminal's,
+    /// which a move leaves where it is.
+    private func callerDirectory(_ pid: pid_t?) -> String? {
+        pid.flatMap { ProcessTable.workingDirectory(of: $0) }
+    }
+
+    private func startMoveTimer() {
+        guard moveTimer == nil else { return }
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.advancePendingMoves() }
+        }
+        timer.tolerance = 0.1
+        moveTimer = timer
+        // A move mostly waits while you're in another app; App Nap would make
+        // it wait a lot longer.
+        updateAgentActivityAssertion()
+    }
+
+    /// One look at every waiting move.
+    private func advancePendingMoves() {
+        let now = Date()
+        for (id, move) in pendingMoves {
+            guard let session = sessions.first(where: { $0.id == id }) else {
+                pendingMoves.removeValue(forKey: id)
+                moveDraftTaps.removeValue(forKey: id)
+                continue
+            }
+            switch move.stage {
+            case .atPrompt:
+                // The `wortel` that asked has exited once the shell has the
+                // terminal back.
+                if shellHasTerminal(session) { typeMove(session) }
+            case .waiting:
+                if move.agent != nil, session.runningAgent == nil {
+                    // Quit already (by you, or it ended): nothing to wait for.
+                    typeMove(session)
+                } else if let agent = move.agent, session.runningStartedAt != agent.startedAt {
+                    // Another run of an agent: not the one the move was for.
+                    failMove(session, "The move to \(SessionMove.display(move.path)) was cancelled: \(agent.agent) was restarted.")
+                } else {
+                    checkIdleForMove(session, move, now: now)
+                }
+            case .stopping(let since):
+                if session.runningAgent == nil {
+                    typeMove(session)
+                } else if now.timeIntervalSince(since) > Self.moveStopPatience {
+                    failMove(session, "Couldn't move to \(SessionMove.display(move.path)): \(move.agent?.agent ?? "the agent") didn't quit.")
+                }
+            case .typed(let at):
+                if now.timeIntervalSince(at) > Self.moveCdPatience {
+                    failMove(session, "Couldn't move to \(SessionMove.display(move.path)): the shell didn't change directory.")
+                }
+            }
+        }
+        if pendingMoves.isEmpty { stopMoveTimer() }
+    }
+
+    /// Whether nothing but the shell has the session's terminal.
+    private func shellHasTerminal(_ session: Session) -> Bool {
+        let table = ProcessTable.snapshot()
+        guard let root = session.runningShellPID ?? session.shellPID.map({ ProcessTable.shell(of: $0, in: table) }),
+              let shell = table.first(where: { $0.pid == root }) else { return false }
+        return shell.foregroundGroup == shell.pgid
+    }
+
+    /// Count a sample towards quitting the agent, or start counting again.
+    ///
+    /// Truly idle, not just quiet: no busy signal or one about to start, no
+    /// title asking for action, no question waiting, nothing you're typing,
+    /// and for Claude a transcript whose last word is Claude's (a Bash or Edit
+    /// waiting on permission ends Claude's progress exactly as a finished turn
+    /// does). Two samples in a row, half a second apart.
+    private func checkIdleForMove(_ session: Session, _ move: PendingMove, now: Date) {
+        let id = session.id
+        let tap = moveDraftTaps[id]
+        let quietSince = tap?.lastInput.map { now.timeIntervalSince($0) >= Self.moveTypingQuiet } ?? true
+        let idle = !session.isBusy && busyTimers[id] == nil && quiesceTimers[id] == nil
+            && !titleShowsActionRequired.contains(id)
+            && session.attention != .needsInput
+            && (!move.needsTurnEnd || move.sawTurnEnd)
+            && !(tap?.hasDraft ?? false) && quietSince
+        guard idle else {
+            pendingMoves[id]?.idleSamples = 0
+            return
+        }
+        guard let agent = move.agent?.agent else { return }
+        guard agent == "claude" else {
+            // Only Claude is movable (`AgentConversation.movable`); anything
+            // else has no way to say a permission is pending.
+            return failMove(session, "Wortel can't tell when \(agent) is idle.")
+        }
+        let unreadable = "Couldn't move to \(SessionMove.display(move.path)): Wortel can't read claude's conversation to tell when it's idle."
+        guard let conversation = move.conversationID else { return failMove(session, unreadable) }
+        let cwd = move.agent?.cwd ?? session.cwd ?? move.path
+        DispatchQueue.global(qos: .userInitiated).async {
+            let transcript = AgentResumeStore.claudeTranscript(id: conversation, cwd: cwd)
+            let open = transcript.flatMap(ClaudeTranscriptTail.readTail(of:)).map(ClaudeTranscriptTail.turnIsOpen) ?? true
+            DispatchQueue.main.async { [weak self, weak session] in
+                guard let self, let session, var current = self.pendingMoves[id],
+                      current.stage == .waiting, current.requestedAt == move.requestedAt else { return }
+                guard transcript != nil else { return self.failMove(session, unreadable) }
+                guard !open, !session.isBusy, self.busyTimers[id] == nil else {
+                    current.idleSamples = 0
+                    self.pendingMoves[id] = current
+                    return
+                }
+                current.idleSamples += 1
+                self.pendingMoves[id] = current
+                if current.idleSamples >= 2 { self.stopAgentForMove(session) }
+            }
+        }
+    }
+
+    /// Ask the agent to quit: SIGTERM to its process group, as a terminal
+    /// would end a job. Claude exits 143 in under a second and resets the
+    /// terminal on the way (2026-10-20); its background tasks, groups of their
+    /// own, go with it, which the caller was told. Never SIGKILL: that leaves
+    /// the keyboard and paste modes set and can cut the transcript mid-line.
+    private func stopAgentForMove(_ session: Session) {
+        guard var move = pendingMoves[session.id], let agent = move.agent?.agent else { return }
+        let table = ProcessTable.snapshot()
+        var parentOf: [pid_t: pid_t] = [:]
+        for entry in table { parentOf[entry.pid] = entry.ppid }
+        guard let shellPID = session.runningShellPID ?? session.shellPID.map({ ProcessTable.shell(of: $0, in: table) }),
+              let shell = table.first(where: { $0.pid == shellPID }) else { return }
+        guard let entry = Self.agentProcess(agent, shell: shellPID, foreground: shell.foregroundGroup,
+                                            table: table, parentOf: parentOf) else {
+            // Gone between the samples: the shell is getting its prompt back.
+            return
+        }
+        // The group it was in when the move was asked for, and never the
+        // shell's own: a signal to that would end the session. Anything else
+        // means the agent isn't the one this move was for.
+        guard entry.pgid == move.agentGroup, entry.pgid != shell.pgid, entry.pgid > 1 else {
+            return failMove(session, "The move to \(SessionMove.display(move.path)) was cancelled: \(agent) isn't the one it was asked for any more.")
+        }
+        KeeperLog.log.notice("""
+            session \(session.id.uuidString, privacy: .public) moving: quitting \(agent, privacy: .public) \
+            (group \(entry.pgid, privacy: .public))
+            """)
+        kill(-entry.pgid, SIGTERM)
+        move.stage = .stopping(since: Date())
+        pendingMoves[session.id] = move
+    }
+
+    /// Type the move into the shell: the `cd`, then the agent's resume.
+    private func typeMove(_ session: Session) {
+        guard var move = pendingMoves[session.id] else { return }
+        guard let view = session.surfaceView else {
+            return failMove(session, "Couldn't move to \(SessionMove.display(move.path)): the session has no terminal.")
+        }
+        var resume: String?
+        var owed: OwedResume?
+        if let marker = move.agent, let id = move.conversationID {
+            let from = marker.cwd ?? session.cwd ?? move.path
+            let argv = AgentCommandLine.absolutized(agent: marker.agent, argv: marker.argv, from: from)
+            let transcript = marker.agent == "claude"
+                ? AgentResumeStore.claudeTranscript(id: id, cwd: from)?.path : nil
+            if let words = AgentConversation.moveWords(agent: marker.agent, id: id, transcript: transcript) {
+                let excluded: Set<String> = marker.agent == "codex" ? ["--cd", "-C"] : []
+                let line = AgentCommandLine.command(agent: marker.agent, argv: argv, resume: words, excluding: excluded)
+                resume = line
+                owed = OwedResume(
+                    agent: AgentMarker(agent: marker.agent, model: marker.model, cwd: move.path,
+                                       argv: argv, shellPID: nil, startedAt: nil),
+                    conversationID: id, input: line + "\n", typedAt: nil)
+            }
+        }
+        guard let lines = SessionMove.lines(path: move.path, resume: resume) else {
+            return failMove(session, "Wortel can't type that directory into a shell: \(SessionMove.display(move.path))")
+        }
+        // The draft tap goes before typing, so what's typed here isn't
+        // mistaken for the user's.
+        if moveDraftTaps.removeValue(forKey: session.id) != nil { view.ptyHost?.draftTap = nil }
+        let now = Date()
+        for line in lines { view.typeCommand(line) }
+        if var owed {
+            // Owed from now: a relaunch or a lost keeper before the agent is
+            // up types it again, there. The old marker is gone by now, so
+            // nothing confirms it against the agent that just quit.
+            owed.typedAt = now
+            session.owedResume = owed
+            session.lastConversationID = owed.conversationID
+        }
+        move.stage = .typed(at: now)
+        pendingMoves[session.id] = move
+        startMoveTimer()
+        scheduleSave()
+        // A `cd` to where the shell already is reports nothing new; it has
+        // arrived as far as it ever will.
+        if let cwd = session.cwd, AgentConversation.samePath(cwd, move.path) {
+            noteMoveArrived(session, pwd: cwd)
+        }
+    }
+
+    /// The shell reported a directory. If it's where a typed move was going,
+    /// the session now belongs there.
+    private func noteMoveArrived(_ session: Session, pwd: String) {
+        guard let move = pendingMoves[session.id], case .typed = move.stage,
+              AgentConversation.samePath(pwd, move.path) else { return }
+        pendingMoves.removeValue(forKey: session.id)
+        refile(session, to: move.path)
+        Telemetry.capture(.sessionMoved(via: move.via, carriedAgent: move.agent != nil))
+        finishMoveBookkeeping(session)
+    }
+
+    /// File a session that now lives in `path`: its birth directory, its
+    /// checkout, its sidebar folder and (when it's still the placeholder) its
+    /// name. The old folder is kept, as Move To keeps it; a worktree it left
+    /// stays on disk.
+    private func refile(_ session: Session, to path: String) {
+        session.originCwd = path
+        session.gitCheckout = nil
+        session.folderIsGone = false
+        noteCheckout(session)
+        let target = folder(forDirectory: path)
+        if session.nameSource == .placeholder {
+            let base: String
+            if let linked = session.linkedCheckout,
+               let branch = GitWorktree.checkedOutBranch(at: linked.root) {
+                base = GitWorktree.sessionLeaf(forBranch: branch)
+            } else {
+                base = Self.defaultTitle(forCwd: path)
+            }
+            // Unique among the target folder's other sessions, not counting
+            // this one, which may already be there.
+            let taken = Set(sessions.filter { $0.folderPath == target && $0 !== session }.map(\.leafName))
+            var leaf = base
+            var n = 2
+            while taken.contains(leaf) { leaf = "\(base) \(n)"; n += 1 }
+            session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
+        }
+        if target != session.folderPath {
+            moveSession(id: session.id, toFolder: target, at: .max)
+        }
+        rememberProjectRoots()
+        refreshWorktreeListings()
+        scheduleSave()
+    }
+
+    /// A move that can't go on. The caller was answered long ago, so the
+    /// session says it: the red dot and a notification, or, for the session
+    /// you're looking at (which a notification won't interrupt), the app.
+    private func failMove(_ session: Session, _ message: String) {
+        pendingMoves.removeValue(forKey: session.id)
+        finishMoveBookkeeping(session)
+        KeeperLog.log.notice("session \(session.id.uuidString, privacy: .public) move failed")
+        if isActivelyViewing(session) {
+            onMoveFailed?(session, message)
+        } else {
+            raiseAttention(session, kind: .failed, title: session.name, body: message, source: "move")
+        }
+    }
+
+    private func finishMoveBookkeeping(_ session: Session) {
+        session.movingTo = nil
+        if moveDraftTaps.removeValue(forKey: session.id) != nil { session.surfaceView?.ptyHost?.draftTap = nil }
+        if pendingMoves.isEmpty { stopMoveTimer() }
+    }
+
+    private func stopMoveTimer() {
+        moveTimer?.invalidate()
+        moveTimer = nil
+        updateAgentActivityAssertion()
+    }
+
+    /// The folder a session in `path` belongs in, made if there's none: a
+    /// worktree's goes with its repository (`folder(forWorktreeAt:)`, else a
+    /// new folder for the repository), anything else in the deepest folder
+    /// covering it, else a new folder named for the directory. nil for `/`,
+    /// which is no project. ⌘O's rule (`openFolder`), and a move's.
+    private func folder(forDirectory path: String) -> String? {
+        let path = FolderRoot.normalize(path) ?? path
+        if let linked = GitWorktree.linked(containing: path),
+           let home = linked.repoHome.flatMap(FolderRoot.normalize) {
+            if let existing = folder(forWorktreeAt: path, repoHome: home) { return existing }
+            let repo = (home as NSString).lastPathComponent
+            guard repo != "/", !repo.isEmpty else { return nil }
+            let folder = addFolder(named: repo)
+            setRoot(home, ofFolder: folder)
+            return folder
+        }
+        if let existing = FolderRoot.folder(containing: path, in: folderRoots) { return existing }
+        // A directory's name is always a usable folder name (it cannot
+        // contain the separator sidebar names are split on), with exactly one
+        // exception: the filesystem root, whose last component *is* that
+        // separator. `/` isn't a project, so it gets no folder rather than one
+        // named "/" that `SessionName` would then have to make sense of.
+        let leaf = (path as NSString).lastPathComponent
+        guard leaf != "/", !leaf.isEmpty else { return nil }
+        // `addFolder` makes the name unique, so a second `web` from another
+        // project gets "web 2" rather than joining the first one: two
+        // directories are two projects however they're spelled.
+        let folder = addFolder(named: leaf)
+        setRoot(path, ofFolder: folder)
+        return folder
     }
 
     // MARK: - Attention
@@ -4156,6 +4694,7 @@ final class SessionManager {
                 }
                 // The shell moved somewhere: a folder it reports is one it's in.
                 if session.folderIsGone { session.folderIsGone = !FileManager.default.fileExists(atPath: pwd) }
+                self.noteMoveArrived(session, pwd: pwd)
                 self.scheduleSave()
             }
             view.onBell = { [weak self, weak session] in
@@ -4223,6 +4762,9 @@ final class SessionManager {
                 // harmless, and priority keeps a "needs input" from being
                 // downgraded to a plain "finished".
                 self.clearBusy(session)
+                // The `wortel cd` typed at this prompt has just exited: the
+                // shell is back, and the move it asked for can be typed.
+                if case .atPrompt? = self.pendingMoves[session.id]?.stage { self.typeMove(session) }
                 // A command likely touched files — nudge the git panel to
                 // re-read status/diff (it debounces and no-ops when hidden).
                 self.onCommandFinished?(session)

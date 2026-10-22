@@ -11,10 +11,10 @@ import SwiftUI
 /// tab's address bar. It costs the list its run up under the titlebar, which the
 /// tab strip would have covered anyway.
 ///
-/// A session can show another worktree of the repo than its terminal's (an
-/// agent working in one): chosen from the worktree chip, from a branch in
-/// another folder in the branch list, or from a clean Changes pane that points
-/// at work elsewhere, and undone from the same chip or the "Back" that appears while it's in effect. Looking at one
+/// A session can show another worktree of the repo than its own (an agent
+/// working in one): chosen from the worktree chip or from a branch in
+/// another folder in the branch list, and undone from the same chip or the
+/// "Back" that appears while it's in effect. Looking at one
 /// runs no git command; switching a branch is the branch chip's alone, and
 /// only in your own folder.
 struct RepoHeader: View {
@@ -58,26 +58,13 @@ struct RepoHeader: View {
 
             // Work in another folder isn't said here: beside the branch chip,
             // "web-next: 16 changes" read as being about this branch. It's in
-            // the two lists, on the folder it belongs to, and in a clean
-            // Changes pane (SourceControlPanel), where it's the news.
+            // the two lists, on the folder it belongs to.
+            //
+            // Nor is a way to go and work there ("Open Session" was): the
+            // panes stay on the session's own folder, so looking elsewhere
+            // is a glance, and Back is the only way out it needs. The
+            // sidebar and Open Branch (⇧⌘O) are where you go to work.
             Spacer(minLength: 4)
-
-            if isAway, let away = panel.pinnedCheckout {
-                // Looking is often the step before working there: this goes
-                // to the session in that worktree, or opens one.
-                Button {
-                    panel.onOpenWorktree?(away)
-                } label: {
-                    Text("Open Session")
-                        .font(.system(size: 12))
-                        .padding(.horizontal, 8)
-                        .frame(height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(HeaderButtonStyle())
-                .fixedSize()
-                .help("Work in this folder, in its own session")
-            }
 
             if isAway {
                 // Said in words as well as by the dropdown: the clearest way

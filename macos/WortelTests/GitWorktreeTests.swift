@@ -300,6 +300,140 @@ final class GitWorktreeTests: XCTestCase {
         XCTAssertNil(GitWorktree.checkedOutBranch(at: "/nonexistent"))
     }
 
+    /// What the git panel asks to tell "another worktree of this project"
+    /// (stay on the session's own) from "another project" (follow the shell):
+    /// every checkout of a repository, at any depth, shares one; another
+    /// repository, a submodule included, doesn't; outside any, nil.
+    func testCommonDirIsSharedByEveryCheckoutOfARepository() {
+        let repo = GitFixture.newRepo("common-dir")
+        let other = GitFixture.newRepo("common-dir-other")
+        defer { GitFixture.destroy(repo); GitFixture.destroy(other) }
+        GitFixture.commit("first", in: repo)
+        GitFixture.commit("first", in: other)
+        GitFixture.sh("mkdir -p sub/deeper", in: repo)
+        let worktree = repo.deletingLastPathComponent().appendingPathComponent("wt-\(UUID().uuidString)")
+        defer { GitFixture.destroy(worktree) }
+        GitFixture.sh("git worktree add -q -b feature/x \(GitFixture.shellQuoted(worktree.path)) "
+                      + "&& mkdir -p \(GitFixture.shellQuoted(worktree.path))/sub", in: repo)
+
+        let common = GitWorktree.commonDir(containing: repo.path)
+        XCTAssertNotNil(common)
+        XCTAssertEqual(GitWorktree.commonDir(containing: repo.appendingPathComponent("sub/deeper").path), common)
+        XCTAssertEqual(GitWorktree.commonDir(containing: worktree.path), common)
+        XCTAssertEqual(GitWorktree.commonDir(containing: worktree.appendingPathComponent("sub").path), common)
+        XCTAssertNotNil(GitWorktree.commonDir(containing: other.path))
+        XCTAssertNotEqual(GitWorktree.commonDir(containing: other.path), common)
+        XCTAssertNil(GitWorktree.commonDir(containing: "/"))
+    }
+
+    /// A reftable repository's HEAD file is a stub naming `.invalid`; the
+    /// branch is read from the table instead, and agrees with git through
+    /// switches, a detach, and either hash.
+    func testCheckedOutBranchIsReadFromAReftable() {
+        for format in ["sha1", "sha256"] {
+            let repo = GitFixture.newRepo("reftable-\(format)")
+            defer { GitFixture.destroy(repo) }
+            GitFixture.sh("rm -rf .git && git init -q -b main --ref-format=reftable --object-format=\(format) "
+                          + "&& git config user.email t@t && git config user.name t", in: repo)
+            GitFixture.commit("first", in: repo)
+            let worktree = repo.appendingPathComponent(".wt")
+            GitFixture.sh("git worktree add -q -b feature/x \(worktree.path)", in: repo)
+            let gitDir = GitFixture.sh("git rev-parse --absolute-git-dir", in: worktree)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            XCTAssertEqual(try? String(contentsOfFile: gitDir + "/HEAD", encoding: .utf8),
+                           "ref: refs/heads/.invalid\n", format)
+            XCTAssertEqual(GitWorktree.checkedOutBranch(at: worktree.path), "feature/x", format)
+
+            // Each switch writes a new table on the stack until git compacts
+            // it; ORIG_HEAD and refs/bisect sit in the same table as HEAD.
+            for branch in ["b", "a-much-longer-branch-name/with/slashes", "c"] {
+                GitFixture.sh("git switch -q -c \(branch)", in: worktree)
+                XCTAssertEqual(GitWorktree.checkedOutBranch(at: worktree.path), branch, format)
+            }
+            GitFixture.sh("git update-ref ORIG_HEAD HEAD && git update-ref refs/bisect/bad HEAD", in: worktree)
+            XCTAssertEqual(GitWorktree.checkedOutBranch(at: worktree.path), "c", format)
+            GitFixture.sh("git checkout -q --detach", in: worktree)
+            XCTAssertNil(GitWorktree.checkedOutBranch(at: worktree.path), format)
+            GitFixture.sh("git switch -q b", in: worktree)
+            XCTAssertEqual(GitWorktree.checkedOutBranch(at: worktree.path), "b", format)
+            GitFixture.sh("git pack-refs --all", in: worktree)
+            XCTAssertEqual(GitWorktree.checkedOutBranch(at: worktree.path), "b", format)
+        }
+    }
+
+    /// A table that doesn't mention HEAD defers to the one before: here the
+    /// newest holds only refs/worktree/marker (a switch compacts the stack
+    /// even with auto-compaction off, so HEAD is in the older).
+    func testReftableReadsTheStackNewestFirst() {
+        let repo = GitFixture.newRepo("reftable-stack")
+        defer { GitFixture.destroy(repo) }
+        GitFixture.sh("rm -rf .git && git init -q -b main --ref-format=reftable "
+                      + "&& git config user.email t@t && git config user.name t "
+                      + "&& git config reftable.autoCompaction false", in: repo)
+        GitFixture.commit("first", in: repo)
+        let worktree = repo.appendingPathComponent(".wt")
+        GitFixture.sh("git worktree add -q -b one \(worktree.path) && git -C \(worktree.path) switch -q -c two "
+                      + "&& git -C \(worktree.path) update-ref refs/worktree/marker HEAD", in: repo)
+        let stack = GitFixture.sh("git rev-parse --absolute-git-dir", in: worktree)
+            .trimmingCharacters(in: .whitespacesAndNewlines) + "/reftable"
+        let tables = (try? String(contentsOfFile: stack + "/tables.list", encoding: .utf8))?
+            .split(separator: "\n") ?? []
+        XCTAssertGreaterThanOrEqual(tables.count, 2, "the marker should be a table of its own")
+        XCTAssertEqual(Reftable.symbolicTarget(of: "HEAD", inStack: stack), "refs/heads/two")
+        XCTAssertEqual(GitWorktree.checkedOutBranch(at: worktree.path), "two")
+
+        // A name past every ref in a table runs off the end of its ref
+        // section, into its logs or its footer: not here, not unreadable.
+        let contents = tables.map { FileManager.default.contents(atPath: stack + "/" + $0).map { [UInt8]($0) } ?? [] }
+        for (table, bytes) in zip(tables, contents) {
+            XCTAssertEqual(Reftable.lookup(Array("refs/zzz".utf8), in: bytes), .notHere, String(table))
+        }
+        // Where the ref section ends in something no table has there, a
+        // block boundary was misread, and an older table mustn't be asked.
+        guard var newest = contents.last, newest.count > 28 else { return XCTFail("no newest table") }
+        // (One ref block, which git leaves unpadded: what follows it starts
+        // where it ends.)
+        let header = newest[4] == 2 ? 28 : 24
+        let end = Int(newest[header + 1]) << 16 | Int(newest[header + 2]) << 8 | Int(newest[header + 3])
+        guard end < newest.count, newest[end] != 0 else { return XCTFail("the ref block should be unpadded") }
+        newest[end] = UInt8(ascii: "x")
+        XCTAssertEqual(Reftable.lookup(Array("refs/zzz".utf8), in: newest), .unreadable)
+    }
+
+    /// A table of many blocks (a compacted primary stack, 4 KiB each): a ref
+    /// is found in whichever block holds it, and one that sorts between two
+    /// others is absent rather than misread. A HEAD lookup never gets past
+    /// the first block, but nothing about the reader is specific to HEAD.
+    func testReftableFindsRefsPastTheFirstBlock() {
+        let repo = GitFixture.newRepo("reftable-blocks")
+        defer { GitFixture.destroy(repo) }
+        GitFixture.sh("rm -rf .git && git init -q -b main --ref-format=reftable "
+                      + "&& git config user.email t@t && git config user.name t", in: repo)
+        GitFixture.commit("first", in: repo)
+        let creates = (1...2000).map { "create refs/heads/team-\($0)/a-fairly-long-feature-branch-name HEAD" }
+        GitFixture.sh("printf '%s\\n' \(creates.map(GitFixture.shellQuoted).joined(separator: " ")) "
+                      + "| git update-ref --stdin", in: repo)
+        for n in [5, 1000, 1999] {
+            GitFixture.sh("git symbolic-ref refs/heads/team-\(n)/zz refs/heads/main", in: repo)
+        }
+        GitFixture.sh("git pack-refs --all", in: repo)
+        let stack = repo.appendingPathComponent(".git/reftable").path
+        let table = (try? String(contentsOfFile: stack + "/tables.list", encoding: .utf8))?
+            .split(separator: "\n").last.map { stack + "/" + $0 }
+        let size = table.flatMap { try? FileManager.default.attributesOfItem(atPath: $0)[.size] as? Int } ?? 0
+        XCTAssertGreaterThan(size, 16 * 4096, "should span many blocks")
+
+        for n in [5, 1000, 1999] {
+            XCTAssertEqual(Reftable.symbolicTarget(of: "refs/heads/team-\(n)/zz", inStack: stack), "refs/heads/main")
+        }
+        XCTAssertEqual(Reftable.symbolicTarget(of: "HEAD", inStack: stack), "refs/heads/main")
+        let bytes = table.flatMap { FileManager.default.contents(atPath: $0) }.map { [UInt8]($0) } ?? []
+        XCTAssertEqual(Reftable.lookup(Array("refs/heads/team-1500/a-fairly-long-feature-branch-name".utf8),
+                                       in: bytes), .found(nil))
+        XCTAssertEqual(Reftable.lookup(Array("refs/heads/team-1500/b".utf8), in: bytes), .notHere)
+        XCTAssertEqual(Reftable.lookup(Array("refs/heads/zzz".utf8), in: bytes), .notHere)
+    }
+
     // MARK: - Linked worktrees, whoever made them
 
     /// Every layout worktree tools use is recognised from any depth inside it,

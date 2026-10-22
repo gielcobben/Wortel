@@ -210,7 +210,10 @@ struct PersistedSession: Codable {
         // Absent for every session written before worktree sessions carried
         // their branch, and for any session outside a worktree; both mean "no
         // branch to show", and `restore` asks git for the ones that are in one.
+        // So is the reftable stub, which earlier builds saved as the branch
+        // (`GitWorktree.reftableStubBranch`).
         worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
+            .flatMap { $0 == GitWorktree.reftableStubBranch ? nil : $0 }
         // Absent for every session never given a colour, and in every file
         // written before there were any: both mean none.
         colour = try c.decodeIfPresent(String.self, forKey: .colour)

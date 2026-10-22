@@ -41,7 +41,9 @@ def read_until(fd: int, pattern: re.Pattern, buffer: bytearray, timeout: float):
     while True:
         match = pattern.search(buffer)
         if match:
-            del buffer[: match.end()]
+            # Only the match: a report that came in ahead of it is still owed
+            # its own check.
+            del buffer[match.start() : match.end()]
             return match
         ready, _, _ = select.select([fd], [], [], timeout)
         if not ready:

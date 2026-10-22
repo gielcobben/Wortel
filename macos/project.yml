@@ -362,6 +362,10 @@ targets:
       # one directory, and a mis-parsed listing hides an existing worktree so the
       # next attempt tries to create it again.
       - path: Wortel/Git/GitWorktree.swift
+      # The branch of a worktree whose refs are in a reftable, read from the
+      # binary table without git. Pinned against what git writes, since a
+      # misread is a wrong branch on a row, not an error.
+      - path: Wortel/Git/Reftable.swift
       # What removing a worktree would cost, and the removal itself. The one
       # place Wortel deletes a folder of the user's, so every verdict is pinned
       # against real git: a branch whose commits are counted as shared when

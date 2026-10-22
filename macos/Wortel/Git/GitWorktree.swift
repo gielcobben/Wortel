@@ -196,11 +196,23 @@ extension GitWorktree {
         if !gitDir.hasPrefix("/") { gitDir = (path as NSString).appendingPathComponent(gitDir) }
         guard let head = try? String(contentsOfFile: (gitDir as NSString).appendingPathComponent("HEAD"),
                                      encoding: .utf8) else { return nil }
-        let ref = head.trimmingCharacters(in: .whitespacesAndNewlines)
+        var ref = head.trimmingCharacters(in: .whitespacesAndNewlines)
+        if ref == "ref: refs/heads/\(reftableStubBranch)" {
+            guard let target = Reftable.symbolicTarget(
+                of: "HEAD", inStack: (gitDir as NSString).appendingPathComponent("reftable")) else { return nil }
+            ref = "ref: " + target
+        }
         guard ref.hasPrefix("ref: refs/heads/") else { return nil }
         let branch = String(ref.dropFirst("ref: refs/heads/".count))
         return branch.isEmpty ? nil : branch
     }
+
+    /// What the HEAD file names in a repository that keeps its refs in a
+    /// reftable (`git init --ref-format=reftable`): the real HEAD is in the
+    /// table (`Reftable`), and the file is a stub pointing at a name no
+    /// branch can have, so a tool that reads only the file fails instead of
+    /// guessing. Taken for a branch, every worktree row said ".invalid".
+    nonisolated static let reftableStubBranch = ".invalid"
 
     /// A linked worktree, wherever it is and whoever made it: Wortel, another
     /// app, a script, or `git worktree add` by hand.
@@ -359,6 +371,18 @@ extension GitWorktree {
         let bare = (home as NSString).appendingPathComponent(".bare")
         if files.fileExists(atPath: bare, isDirectory: &isDirectory), isDirectory.boolValue { return bare }
         return nil
+    }
+
+    /// The git dir every checkout of `path`'s repository shares, at any
+    /// depth, so two folders are in the same repository exactly when theirs
+    /// match, whichever worktree each is in. Off the disk, no git; nil
+    /// outside a repository.
+    nonisolated static func commonDir(containing path: String) -> String? {
+        if let linked = linked(containing: path) {
+            let worktrees = ((linked.gitDir as NSString).standardizingPath as NSString).deletingLastPathComponent
+            return realPath((worktrees as NSString).deletingLastPathComponent)
+        }
+        return repositoryHome(containing: path).flatMap(commonDir(ofHome:)).map(realPath)
     }
 
     /// Where the repository `path` is in lives, at any depth: a linked

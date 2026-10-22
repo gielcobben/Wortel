@@ -1585,6 +1585,9 @@ struct DetailPane: View {
             .onAppear { focusInspector() }
             .onChange(of: manager.selectedID) { _, _ in focusInspector() }
             .onChange(of: manager.selected?.cwd) { _, _ in focusInspector() }
+            // The git panes follow where the session started (`homeFolder`),
+            // which a worktree being attached or restored moves.
+            .onChange(of: manager.selected?.originCwd) { _, _ in focusInspector() }
             // The repo resolves a beat after the cwd (a work-tree root has to be
             // walked to), and the tree roots on it — so re-root when it lands,
             // or a session would show its cwd where its repo root belongs until

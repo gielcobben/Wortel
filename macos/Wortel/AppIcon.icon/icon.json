@@ -14,8 +14,8 @@
           "position" : {
             "scale" : 2,
             "translation-in-points" : [
-              -156,
-              156.33799999999997
+              -144.22737499999994,
+              145.70518749999997
             ]
           }
         },
@@ -26,10 +26,10 @@
           "image-name" : "SVG Image 7.svg",
           "name" : "SVG Image 7",
           "position" : {
-            "scale" : 2,
+            "scale" : 2.5000000000000004,
             "translation-in-points" : [
-              151,
-              156
+              161.41022499999985,
+              128.66200000000003
             ]
           }
         },

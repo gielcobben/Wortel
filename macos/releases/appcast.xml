@@ -3,6 +3,40 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.43.3</title>
+            <pubDate>Fri, 23 Oct 2026 07:53:24 -0400</pubDate>
+            <sparkle:version>2026.43.3</sparkle:version>
+            <sparkle:shortVersionString>2026.43.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Move a session to another folder</h1>
+<p class="date">Wortel 2026.43.3 &middot; 2026-10-23</p>
+<p><strong>Move a session, agent and all.</strong> You ask Claude to start a new project next door, it makes the folder and keeps working there, and the session, its Git panel and its sidebar folder stay behind on the old project. Change Directory in the session menu, or <code>wortel cd &#x3C;folder></code> from inside the session, now moves it. The shell changes to the new folder, keeping its scrollback, and Claude picks up the same conversation there. The session is filed under that folder in the sidebar (a new folder if none covers it, the way Open Folder makes one), and the Git panel and Files follow.</p>
+<p><strong>It waits for the right moment.</strong> A move never cuts Claude off. It happens once the turn has ended, not while Claude waits on a permission or a question, and not while you’re typing into its box. Until then the session’s row says where it’s going. Claude can ask for the move itself, and Wortel tells it straight away what will happen, including any background task that will stop. Run the command again with another folder to change the destination, or with the folder you’re in to call it off.</p>
+<p>Claude Code is the agent that can move today. Other agents, and a program running in the foreground like an editor or a dev server, are refused with a reason rather than interrupted.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.43.3.zip" length="22667817" type="application/octet-stream" sparkle:edSignature="4K+JxBgfrLGaunvA6HW7EoDuo6FBMSyFEZjaCSgnBU8+ikRrtE5bZOhbb0kIDp3mBBpHmF4Y8nuOkIVjJTBDCA=="/>
+        </item>
+        <item>
             <title>2026.43.2</title>
             <pubDate>Wed, 21 Oct 2026 16:22:32 -0400</pubDate>
             <sparkle:version>2026.43.2</sparkle:version>
@@ -69,45 +103,6 @@
 <p><strong>A new icon.</strong> Wortel has new artwork in the Dock, in the app switcher and on its notifications.</p>
 <p><strong>One banner per question.</strong> While Codex waits on an answer it blinks its terminal title, and every blink put a fresh “Action required” banner on screen for as long as the question stood. The first one is now the only one. The same holds for anything else that repeats itself, like a program ringing the bell every few seconds: it gets one banner, and a new one only when it has something new to say.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.43.1.zip" length="22472572" type="application/octet-stream" sparkle:edSignature="Hn1yfTD7McEI0iJqGNhxHu3iU8cj4ZyTTOKpvRjoTKXqVd3S0dziUHKe5CAbyfCcVfShtQMjL256ss1tlCx9DA=="/>
-        </item>
-        <item>
-            <title>2026.42.1</title>
-            <pubDate>Thu, 15 Oct 2026 11:54:18 -0400</pubDate>
-            <sparkle:version>2026.42.1</sparkle:version>
-            <sparkle:shortVersionString>2026.42.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Worktrees, made simple</h1>
-<p class="date">Wortel 2026.42.1 &middot; 2026-10-15</p>
-<p><strong>New Worktree Session (⇧⌘N).</strong> A new session in a worktree of its own, on a fresh branch from your default branch, ready at once. Once the session has a name, its branch is named after it too. The files a project needs to run but git ignores, like <code>.env</code>, are copied in; list any others in a <code>.worktreeinclude</code> file.</p>
-<p><strong>Open Branch (⇧⌘O).</strong> One field for any branch, worktree or pull request. Type a name and Wortel goes to the session already there, continues a closed one, opens the worktree, checks the branch out in a new worktree, or creates it. Each row says which before you press Return, so a branch never gets a second worktree. Type <code>#123</code> or paste a GitHub or GitLab link to check out a pull request.</p>
-<p><strong>Closing keeps your work.</strong> Closing a worktree session (⇧⌘W, the ×, or <code>exit</code>) puts it away: the worktree, the branch and the agent’s conversation all stay. Find it with ⇧⌘O and it picks up where it left off. When there’s nothing in it worth keeping, the worktree goes to the Trash instead. Clean Up Worktrees now knows a squash merged branch is merged.</p>
-<p><strong>Fork Session (⌥⇧⌘N).</strong> The session as it is, in a worktree of its own: staged, unstaged and new files, and the agent’s conversation, forked. Try something without touching the original.</p>
-<p><strong>Any worktree, whoever made it.</strong> Worktrees you made yourself or with another tool show up in ⇧⌘O and open as sessions, and Wortel never deletes one it didn’t make. A repository can choose where its worktrees go, with Worktree Location… in the folder’s menu or <code>git config wortel.worktreePath</code>.</p>
-<p><strong>Ports of their own.</strong> Every session gets ten ports to itself, the first in <code>WORTEL_PORT</code>, so two agents running a dev server in two worktrees don’t both want port 3000.</p>
-<p><strong>Know why a session stopped.</strong> A Claude turn that ended on an API error now says it failed, with the error, and one waiting on a question or a plan says it needs you. Both used to read as finished. While any session is waiting on you, a menu bar item shows how many and lists them.</p>
-<p>Also in this release: hold ⌘ to see each session’s ⌘1 to ⌘9 shortcut on its row; closing the last session leaves an empty window instead of quitting; drop a folder on the sidebar or the Dock icon to open it; the shell in a worktree session starts in its worktree, never in <code>/</code>; Claude follows the Mac between light and dark again after Wortel restarts; the git panel names other worktrees after the session in them; very long commands show in the title too; and the pull request button in the git panel is gone, with the network check it made every minute.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.42.1.zip" length="22527608" type="application/octet-stream" sparkle:edSignature="lkZyO8c+0n7j3i6v53YFJ9wTQZBsRvZYyWd/raYn/VJ2mInyTl9ge3xaPlzGDmZg18LC9DCki5k5qpvuMRxrAg=="/>
         </item>
     </channel>
 </rss>

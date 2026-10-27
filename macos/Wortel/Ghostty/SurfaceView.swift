@@ -43,6 +43,17 @@ final class SurfaceView: NSView {
     /// doing, not the program's. The agent-activity sampler listens so that
     /// typing a prompt into a TUI is never read as the agent working.
     var onUserInput: (() -> Void)?
+    /// When the user last sent something here, by those same events rather
+    /// than the bytes the program gets, which also carry the terminal's
+    /// replies to its queries. A move waiting on the agent goes ahead only
+    /// once this has been quiet a while.
+    private(set) var lastUserInputAt: Date?
+
+    /// Every input path reports here, so the time and the hook can't drift apart.
+    private func noteUserInput() {
+        lastUserInputAt = Date()
+        onUserInput?()
+    }
 
     private(set) var pwd: String?
     private(set) var focused: Bool = false
@@ -560,7 +571,7 @@ final class SurfaceView: NSView {
         guard let surface else { return }
         let len = string.utf8CString.count
         guard len > 1 else { return }
-        onUserInput?()
+        noteUserInput()
         string.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(len - 1))
         }
@@ -603,7 +614,7 @@ final class SurfaceView: NSView {
     @discardableResult
     private func performBinding(_ action: String) -> Bool {
         guard let surface else { return false }
-        onUserInput?()
+        noteUserInput()
         return action.withCString { ptr in
             ghostty_surface_binding_action(surface, ptr, UInt(action.utf8.count))
         }
@@ -622,7 +633,7 @@ final class SurfaceView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let surface else { return }
-        onUserInput?()
+        noteUserInput()
         let mods = GhosttyInput.mods(event.modifierFlags)
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
     }
@@ -698,7 +709,7 @@ final class SurfaceView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-        onUserInput?()
+        noteUserInput()
 
         var x = event.scrollingDeltaX
         var y = event.scrollingDeltaY
@@ -933,7 +944,7 @@ final class SurfaceView: NSView {
         composing: Bool = false
     ) -> Bool {
         guard let surface else { return false }
-        onUserInput?()
+        noteUserInput()
 
         var keyEvent = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
         keyEvent.composing = composing
@@ -1056,7 +1067,7 @@ extension SurfaceView: NSTextInputClient {
 
         let len = chars.utf8CString.count
         guard len > 1 else { return }
-        onUserInput?()
+        noteUserInput()
         chars.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(len - 1))
         }

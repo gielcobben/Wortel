@@ -9,21 +9,43 @@ import Foundation
 /// Reconstruction, not recording. The stream carries editing (backspace,
 /// ctrl-U, ctrl-W), key escape sequences (arrows, function keys, the kitty
 /// keyboard protocol's `CSI … u`), bracketed-paste markers, and the terminal's
-/// own replies to the program's queries (cursor position reports); a prompt is
-/// what is left once those have been applied or dropped. It is deliberately
-/// approximate: the model that turns a prompt into a title forgives a stray
-/// character, and the alternative, a terminal emulator's worth of input
-/// handling, would be a second parser for a problem that only needs the gist.
+/// own replies to the program's queries (cursor position, background colour,
+/// version); a prompt is what is left once those have been applied or dropped.
+/// It is deliberately approximate: the model that turns a prompt into a title
+/// forgives a stray character, and the alternative, a terminal emulator's
+/// worth of input handling, would be a second parser for a problem that only
+/// needs the gist.
+///
+/// **One `feed` is one write**, and that is what keeps the replies out.
+/// libghostty queues every key press as one message and every reply as
+/// another, and its IO thread hands each to `PtyHost.write` whole (a paste is
+/// three: the opening marker, the text, the closing marker). So no sequence
+/// spans two writes: a reply (`ESC ] 11;rgb:…`, which Claude asks for at
+/// launch) is skipped to its end and can't run into the next key, and an ESC
+/// alone in its write is the Esc key, not the start of whatever comes next.
+/// Before this, the colour reply became the first "prompt" the next Enter
+/// completed, and sessions were named after hex colours. Should a reply ever
+/// arrive cut in two, the part already inside it carries on into the next
+/// write; only a key's worth (`ESC ]` alone, which is Alt+]) is dropped there.
 ///
 /// Pure and Foundation-only so `PromptCaptureTests` can pin it: every failure
 /// here is silent, and the worst of them names a session after an escape
 /// sequence.
 struct TypedLineBuilder {
-    private enum State { case normal, escape, csi, ss3 }
+    private enum State {
+        case normal, escape, csi, ss3
+        /// The body of an OSC, DCS, APC, PM or SOS string, which runs to a BEL
+        /// or an ST (`ESC \`) rather than to one final byte, and the ESC
+        /// inside it.
+        case string, stringEscape
+    }
 
     private var line: [UInt8] = []
     private var state: State = .normal
     private var csi: [UInt8] = []
+    /// How far into the current string; zero is `ESC ]` and nothing yet.
+    private var stringLength = 0
+    /// Spans writes, unlike `state`: a paste's markers are writes of their own.
     private var inPaste = false
     /// Esc presses in a row. Two clear an agent's input box (Claude's Esc
     /// Esc), so the line being rebuilt here goes too.
@@ -36,51 +58,89 @@ struct TypedLineBuilder {
     /// agent would throw that draft away.
     var hasDraft: Bool { !line.isEmpty }
 
-    /// Feed raw input bytes; returns every line completed by them, in order.
+    /// Feed one write to the pty; returns every line completed by it, in order.
     mutating func feed(_ bytes: UnsafeBufferPointer<UInt8>) -> [String] {
         var completed: [String] = []
-        for byte in bytes {
-            switch state {
-            case .escape:
-                switch byte {
-                case 0x5B: state = .csi; csi = []          // [
-                case 0x4F: state = .ss3                     // O
-                case 0x1B: escapes = 1; pressedEscape()     // a bare Esc, then another
-                default: state = .normal; escapes = 0       // alt+key, or a bare ESC
-                }
-            case .csi:
-                if (0x40...0x7E).contains(byte) {
-                    state = .normal
-                    apply(csi: csi, final: byte, into: &completed)
-                } else {
-                    csi.append(byte)
-                }
-            case .ss3:
-                state = .normal                             // one byte of key code
-            case .normal:
-                if byte != 0x1B { escapes = 0 }
-                switch byte {
-                case 0x1B: state = .escape
-                case 0x0D:                                  // Enter
-                    if inPaste {
-                        line.append(0x0A)
-                    } else if line.last == 0x5C {           // "\" + Enter continues the line
-                        line.removeLast()
-                        line.append(0x0A)
-                    } else {
-                        complete(into: &completed)
-                    }
-                case 0x0A: line.append(0x0A)                // ctrl-J, or a pasted newline
-                case 0x7F, 0x08: deleteLastCharacter()      // backspace
-                case 0x15, 0x03: line.removeAll()           // ctrl-U, ctrl-C
-                case 0x17: deleteLastWord()                 // ctrl-W
-                case 0x09: line.append(0x20)                // tab
-                case 0x00..<0x20: break                     // other control keys
-                default: line.append(byte)
-                }
-            }
+        for byte in bytes { step(byte, into: &completed) }
+        // The write is over, and so is any key in it. An ESC still waiting
+        // for a second byte had none coming: it was the Esc key. An introducer
+        // with nothing after it was Alt and that key, which like any key ends
+        // a run of Escs. Only a reply already under way may continue in the
+        // next write.
+        switch state {
+        case .escape: pressedEscape(); state = .normal
+        case .string where stringLength == 0, .csi where csi.isEmpty, .ss3:
+            state = .normal
+            escapes = 0
+        default: break
         }
         return completed
+    }
+
+    private mutating func step(_ byte: UInt8, into completed: inout [String]) {
+        switch state {
+        case .escape:
+            switch byte {
+            case 0x5B: state = .csi; csi = []              // [
+            case 0x4F: state = .ss3                         // O
+            case 0x5D, 0x50, 0x5F, 0x5E, 0x58:              // ] P _ ^ X
+                state = .string
+                stringLength = 0
+            case 0x1B: pressedEscape()                      // Esc, and another ESC
+            default: state = .normal; escapes = 0           // alt+key
+            }
+        case .string:
+            switch byte {
+            case 0x07: state = .normal                      // BEL ends it
+            case 0x1B: state = .stringEscape
+            // No reply carries a control byte, so this is a key in a paste
+            // that only looked like a string: end it and let the key act.
+            case 0x00..<0x20: state = .normal; step(byte, into: &completed)
+            default: stringLength += 1
+            }
+        case .stringEscape:
+            if byte == 0x5C {                               // ST ends it
+                state = .normal
+            } else {                                        // or a new sequence starts
+                state = .escape
+                step(byte, into: &completed)
+            }
+        case .csi:
+            if (0x40...0x7E).contains(byte) {
+                state = .normal
+                apply(csi: csi, final: byte, into: &completed)
+            } else if byte < 0x20 {                         // not a sequence after all
+                state = .normal
+                step(byte, into: &completed)
+            } else {
+                csi.append(byte)
+            }
+        case .ss3:
+            state = .normal                                 // one byte of key code
+            escapes = 0
+            if byte < 0x20 { step(byte, into: &completed) }
+        case .normal:
+            if byte != 0x1B { escapes = 0 }
+            switch byte {
+            case 0x1B: state = .escape
+            case 0x0D:                                      // Enter
+                if inPaste {
+                    line.append(0x0A)
+                } else if line.last == 0x5C {               // "\" + Enter continues the line
+                    line.removeLast()
+                    line.append(0x0A)
+                } else {
+                    complete(into: &completed)
+                }
+            case 0x0A: line.append(0x0A)                    // ctrl-J, or a pasted newline
+            case 0x7F, 0x08: deleteLastCharacter()          // backspace
+            case 0x15, 0x03: line.removeAll()               // ctrl-U, ctrl-C
+            case 0x17: deleteLastWord()                     // ctrl-W
+            case 0x09: line.append(0x20)                    // tab
+            case 0x00..<0x20: break                         // other control keys
+            default: line.append(byte)
+            }
+        }
     }
 
     mutating func feed(_ bytes: [UInt8]) -> [String] {
@@ -90,9 +150,20 @@ struct TypedLineBuilder {
     /// A CSI sequence ended. The three that matter: bracketed paste on/off,
     /// and the kitty keyboard protocol's Enter (`CSI 13 u`, or `CSI 13;2 u`
     /// for shift+Enter, which inserts a newline). Everything else is a key or a
-    /// terminal reply and is dropped.
+    /// terminal reply and is dropped, though a key still ends a run of Escs:
+    /// Esc, an arrow, Esc clears nothing in an agent. A reply doesn't, since
+    /// it arrives between keys on its own: a private `?` or `>` (`CSI ? 1 u`,
+    /// `CSI ? 62;22 c`) or a report's final (`CSI 12;40 R`, `CSI 0 n`).
     private mutating func apply(csi params: [UInt8], final: UInt8, into completed: inout [String]) {
         let text = String(decoding: params, as: UTF8.self)
+        let isReply: Bool
+        switch (params.first, final) {
+        case (0x3F, _), (0x3E, _), (_, 0x52), (_, 0x6E), (_, 0x63), (_, 0x74), (_, 0x79): // ? > R n c t y
+            isReply = true
+        default:
+            isReply = false
+        }
+        if !isReply, final != 0x75 { escapes = 0 }
         switch final {
         case 0x7E where text == "200": inPaste = true      // ~
         case 0x7E where text == "201": inPaste = false
@@ -100,8 +171,11 @@ struct TypedLineBuilder {
             let fields = text.split(separator: ";", omittingEmptySubsequences: false)
             guard let code = fields.first.flatMap({ Int($0.split(separator: ":").first ?? "") })
             else { return }
-            let modifiers = fields.count > 1
-                ? Int(fields[1].split(separator: ":").first ?? "") ?? 1 : 1
+            let modifierField = fields.count > 1 ? fields[1].split(separator: ":") : []
+            let modifiers = modifierField.first.flatMap { Int($0) } ?? 1
+            // An agent asking for event types (kitty flag 2) gets each key's
+            // release as well, `CSI 27;1:3 u`; only the press is typing.
+            if modifierField.count > 1, modifierField[1] == "3" { return }
             if code != 27 { escapes = 0 }
             switch code {
             case 13 where (modifiers - 1) & 0b101 != 0:     // shift or alt: newline

@@ -3420,7 +3420,8 @@ final class SessionManager {
     /// long the shell has to report the new directory once the `cd` is typed.
     private static let moveStopPatience: TimeInterval = 8
     private static let moveCdPatience: TimeInterval = 5
-    /// How long since a keystroke before a waiting move goes ahead.
+    /// How long since the user last touched the session (a key, a paste, a
+    /// click, a scroll) before a waiting move goes ahead.
     private static let moveTypingQuiet: TimeInterval = 3
 
     /// Move `session` to `rawPath`: now, at its next prompt, or once its agent
@@ -3729,7 +3730,8 @@ final class SessionManager {
     private func checkIdleForMove(_ session: Session, _ move: PendingMove, now: Date) {
         let id = session.id
         let tap = moveDraftTaps[id]
-        let quietSince = tap?.lastInput.map { now.timeIntervalSince($0) >= Self.moveTypingQuiet } ?? true
+        let quietSince = session.surfaceView?.lastUserInputAt
+            .map { now.timeIntervalSince($0) >= Self.moveTypingQuiet } ?? true
         let idle = !session.isBusy && busyTimers[id] == nil && quiesceTimers[id] == nil
             && !titleShowsActionRequired.contains(id)
             && session.attention != .needsInput

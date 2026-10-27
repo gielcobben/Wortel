@@ -53,7 +53,9 @@ keystroke passes through `PtyHost.write` on its way to the agent; while an
 agent is freshly launched (the marker file says when), a `PromptTap` on that
 path reconstructs typed lines (`TypedLineBuilder`: backspace, ctrl-U/W,
 bracketed paste, the kitty keyboard protocol, and the terminal's own query
-replies all handled or dropped), and the first line that is a prompt rather
+replies all handled or dropped; it reads one write at a time, since libghostty
+writes each key press and each reply separately, which is what keeps a reply
+like the background colour out of the prompt), and the first line that is a prompt rather
 than a dialog answer or a slash command (`FirstPrompt.accept`) goes to the
 on-device model with a prompt tuned to Claude's style. A prompt on the
 agent's command line (`codex "add a changelog page"`) is taken as is. Without

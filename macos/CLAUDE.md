@@ -363,8 +363,9 @@ resume as two lines (one line with `&&` leaves bash and fish unable to see the
 agent start, so it would run untracked). An agent is quit first, by SIGTERM to
 its process group, and only once it is idle for real: Claude ends its `9;4`
 progress at a permission prompt exactly as at a finished turn, so its
-transcript decides (`ClaudeTranscriptTail.turnIsOpen`), with a draft or a
-keystroke in the box holding it off too (`DraftTap`). An agent that asked for
+transcript decides (`ClaudeTranscriptTail.turnIsOpen`), with a draft in the
+box (`DraftTap`) or input in the last few seconds (`SurfaceView.lastUserInputAt`)
+holding it off too. An agent that asked for
 its own move waits for a turn that ends after it asked; who asked comes from
 the socket's peer pid. Once the shell reports the new directory the session is
 re-filed: `originCwd`, the checkout, the sidebar folder (made as ⌘O makes one;

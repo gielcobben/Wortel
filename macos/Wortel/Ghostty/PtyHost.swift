@@ -26,6 +26,8 @@ import os
 /// puts it back on libghostty's exec backend.
 
 /// Something that wants a copy of the bytes the terminal sends the program.
+/// Each `feed` is one whole write: one key press, one reply to a query, one
+/// part of a paste, never a sequence cut in two (see `TypedLineBuilder`).
 protocol PtyInputListener: AnyObject, Sendable {
     func feed(_ bytes: UnsafePointer<UInt8>, count: Int)
 }

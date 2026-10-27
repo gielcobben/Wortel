@@ -16,7 +16,7 @@ removes worktrees under them.
 
 | You want to | You do | What happens |
 |---|---|---|
-| Work isolated, beside your checkout | ⇧⌘N New Worktree Session | A worktree on a new branch from a fresh default branch; the row is there at once |
+| Work isolated, beside your checkout | ⇧⌘N New Worktree Session, then Return | A worktree on a new branch from a fresh default branch; the sheet's From and Location rows change either |
 | Get to a branch, worktree or pull request | ⇧⌘O Open Branch | Goes to its session, restores the archived one, opens the worktree, checks the branch out, or creates it |
 | Try something from where you are | ⌥⇧⌘N Fork Session | The session as it is, changes and conversation, in a worktree of its own |
 | Stop | ⇧⌘W, the row's ×, or `exit` | Archived: the worktree and branch stay, the conversation is remembered. Trashed instead when nothing in it is worth keeping |
@@ -63,6 +63,12 @@ removes worktrees under them.
   place in git config, `wortel.worktreePath`, which `includeIf` can set for a
   whole tree of repositories; inside the repository it goes in `info/exclude`,
   never `.gitignore`. Two repositories with the same name get two folders.
+  ⇧⌘N's sheet shows the place and changes it for the repository, not for one
+  worktree: a place you'd pick once is a place you'd pick every time.
+- **⇧⌘N asks, but Return is the old instant path.** It was a no-sheet
+  command for a while (2026.43); choosing the base and the place in one form
+  was missed. The placeholder name arrives selected, so the fast path costs
+  one keystroke and typing names the branch.
 - **Cost follows the screen.** One `git worktree list` per repository with a
   folder, cached, refreshed when `.git/worktrees` changes. No git per row, no
   timers, nothing that writes the index from the background. Supacode's

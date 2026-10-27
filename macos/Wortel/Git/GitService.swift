@@ -706,6 +706,14 @@ enum GitService {
         return result.ok && !value.isEmpty ? value : nil
     }
 
+    /// Whether clearing the repository's own location (`setWorktreeLocation`
+    /// with nil) really goes back to Wortel's folder: false when a global or
+    /// included config names one too, which a clear would leave in force.
+    static func worktreeLocationIsOnlyLocal(root: String) async -> Bool {
+        let result = await run(["config", "--show-scope", "--get-all", GitWorktree.locationKey], in: root)
+        return result.stdout.split(separator: "\n").allSatisfy { $0.hasPrefix("local\t") }
+    }
+
     /// Set the repository's own worktree location, or clear it (nil), in its
     /// local config. A location from a global or included config still applies
     /// after a clear: that's where it was set.

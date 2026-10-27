@@ -960,7 +960,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc func newWorktreeSession(_ sender: Any?) {
         focusMainWindow()
-        manager.newWorktreeSession()
+        newWorktreeSessionFromSheet(manager)
     }
 
     @objc func forkSession(_ sender: Any?) {

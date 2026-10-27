@@ -319,7 +319,7 @@ struct NewSessionButton: NSViewRepresentable {
             // folder the selection is in. This is the way out of that, next to
             // the thing it's the exception to.
             add("New Session at Home", "house") { manager.newHomeSession() }
-            add("New Worktree Session", "plus.square.dashed") { manager.newWorktreeSession() }
+            add("New Worktree Session\u{2026}", "plus.square.dashed") { newWorktreeSessionFromSheet(manager) }
             // Its own branch and its own files: what makes running two agents
             // in one repository safe. Fork carries the selected session itself.
             if let selected = manager.selected, selected.preparation == nil {
@@ -690,7 +690,8 @@ func openFolderSession(_ manager: SessionManager) {
 /// rewriting it would take that away.
 @MainActor
 func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
-                        inFolder folder: String? = nil, name: String? = nil, from directory: String? = nil) {
+                        inFolder folder: String? = nil, name: String? = nil, from directory: String? = nil,
+                        title: String = "New Branch From\u{2026}") {
     let from = directory ?? manager.branchSource(for: session, inFolder: folder)
     Task { @MainActor in
         // Started before the dialog and collected after it, so the network time
@@ -704,6 +705,15 @@ func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
         let withWorktree = await manager.branchesWithWorktrees(in: from)
         let defaultBase = await manager.defaultBase(in: from)
         let catalog = BranchCatalog(local: branches, withWorktree: withWorktree)
+        // Read fresh rather than from the listing's cache: the row names where
+        // this worktree will go, and a stale answer would be a wrong one.
+        let home = from.flatMap(GitWorktree.repositoryHome(containing:))
+        var location: WorktreeLocationChoice?
+        if let home {
+            location = WorktreeLocationChoice(
+                repoHome: home, template: await GitService.worktreeLocation(root: home),
+                canReset: await GitService.worktreeLocationIsOnlyLocal(root: home))
+        }
         guard let window = AppDelegate.mainWindow else { return }
         // The remote branches are loaded *while the sheet is up*, never before
         // it. They are the one list whose length tracks the repository rather
@@ -712,8 +722,9 @@ func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
         // came here to do is usually type a name that doesn't exist yet. So the
         // sheet opens on the local half and the rest arrives underneath it. The
         // fetch above is the same bargain, one step earlier.
-        guard let choice = await BranchSheet.present(
+        guard let answer = await BranchSheet.present(
             over: window, catalog: catalog, defaultBase: defaultBase, name: name,
+            title: title, location: location,
             whileOpen: { sheet in
                 catalog.beginLoadingRemote()
                 Task { @MainActor in
@@ -756,13 +767,33 @@ func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
         // That wait happens with the new session already on screen, saying it's
         // preparing (`SessionManager.newSession(onBranch:)`), and so does a
         // refusal: on its own page, not in an alert.
-        switch choice {
+        // Written before the worktree is made, which reads it.
+        if let home, let changed = answer.location {
+            await manager.applyWorktreeLocation(changed, forRepository: home)
+        }
+        switch answer.choice {
         case .branch(let branch, let base):
             manager.newSession(onBranch: branch, base: base, from: from, inFolder: folder, after: fetch)
         case .pullRequest(let pr):
             manager.newSession(onPullRequest: pr, from: from, inFolder: folder, after: fetch)
         }
     }
+}
+
+/// ⇧⌘N: New Worktree Session, as a sheet with a placeholder branch already
+/// in it, selected, so Return makes the session at once and typing names
+/// the branch. The From and Location rows are there to change when the
+/// default branch or Wortel's folder isn't the one. Outside a repository
+/// there's nothing to ask: the instant path says why on the session's page.
+@MainActor
+func newWorktreeSessionFromSheet(_ manager: SessionManager, inFolder folder: String? = nil) {
+    let from = manager.branchSource(inFolder: folder)
+    guard let from, GitWorktree.repositoryHome(containing: from) != nil else {
+        manager.newWorktreeSession(from: from, inFolder: folder)
+        return
+    }
+    newSessionOnBranch(manager, inFolder: folder, name: manager.placeholderBranch(), from: from,
+                       title: "New Worktree Session")
 }
 
 /// A folder header row's SwiftUI content: the section title styled like a
@@ -821,8 +852,8 @@ enum FolderActions {
         // "New Session", as in the Session menu: the menu is the folder's, so
         // naming the folder again only made it the widest item.
         item("New Session", "plus.square") { manager.newSession(inFolder: folder) }
-        item("New Worktree Session", "plus.square.dashed") {
-            manager.newWorktreeSession(from: manager.branchSource(inFolder: folder), inFolder: folder)
+        item("New Worktree Session\u{2026}", "plus.square.dashed") {
+            newWorktreeSessionFromSheet(manager, inFolder: folder)
         }
         item("Open Branch\u{2026}", "arrow.branch") {
             (NSApp.delegate as? AppDelegate)?.openBranch(from: manager.branchSource(inFolder: folder))

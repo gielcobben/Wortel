@@ -256,10 +256,12 @@ enum MainMenu {
         let newHome = sessionMenu.addItem(withTitle: "New Session at Home", action: #selector(AppDelegate.newHomeSession(_:)), keyEquivalent: "n")
         newHome.keyEquivalentModifierMask = [.command, .option]
         // ⌘N's isolated sibling: the same repository, in a worktree and on a
-        // branch of its own, at once. No dialog: the branch is named for the
-        // work once the session has a name. Took ⇧⌘N from New Folder, which
-        // is made once in a long while and asks for a name anyway.
-        let newWorktree = sessionMenu.addItem(withTitle: "New Worktree Session", action: #selector(AppDelegate.newWorktreeSession(_:)), keyEquivalent: "n")
+        // branch of its own. A sheet with a placeholder name selected, so
+        // Return is as quick as the no-dialog version was, and From and
+        // Location are there when they aren't the defaults. Took ⇧⌘N from
+        // New Folder, which is made once in a long while and asks for a name
+        // anyway.
+        let newWorktree = sessionMenu.addItem(withTitle: "New Worktree Session\u{2026}", action: #selector(AppDelegate.newWorktreeSession(_:)), keyEquivalent: "n")
         newWorktree.keyEquivalentModifierMask = [.command, .shift]
         // The selected session as it is, in a worktree of its own: its
         // uncommitted changes carried over, its agent's conversation forked.

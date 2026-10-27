@@ -302,7 +302,9 @@ replacing the page would hide it.
 
 **Worktrees: the session is the unit** (`docs/worktrees.md`). You manage
 sessions; a worktree is where one lives. Three ways in: ⇧⌘N New Worktree
-Session (no sheet), ⇧⌘O Open Branch (`OpenTarget`, ⌘P's panel in a third mode:
+Session (`BranchSheet`: a placeholder name selected so Return is instant, From,
+and Location, which writes the repository's `wortel.worktreePath`; `wortel new
+--worktree` skips it), ⇧⌘O Open Branch (`OpenTarget`, ⌘P's panel in a third mode:
 go to the session, restore the archived one, open the worktree, check the
 branch out, or create it, and a branch with a place is listed only there), and
 ⌥⇧⌘N Fork. One way out: closing (⇧⌘W, ×, `exit`) a session that lives in a

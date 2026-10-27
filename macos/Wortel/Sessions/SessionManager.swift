@@ -2523,25 +2523,31 @@ final class SessionManager {
 
     // MARK: - New worktree session, and its branch's name
 
-    /// ⇧⌘N: a session in a worktree of its own, at once, no questions: a new
+    /// A session in a worktree of its own, at once, no questions: a new
     /// branch from the repository's default branch (fetched first, for a few
     /// seconds at most), named for now with a placeholder, and for the work
     /// once the session has a name (`nameBranchForWork`). The repository is
     /// the selected session's, as for any new branch (`branchSource`).
+    /// `wortel new --worktree`, and what ⇧⌘N's sheet does when Return is
+    /// pressed on it as it opens (`newWorktreeSessionFromSheet`).
     @discardableResult
     func newWorktreeSession(from directory: String? = nil, inFolder folder: String? = nil,
                             completion: WorktreeCompletion? = nil) -> Session? {
         guard let from = directory ?? branchSource() else { return nil }
         let fetch = Task { await fetchFromOrigin(in: from) }
-        // Taken by what's known without asking git (sessions live, preparing
-        // and archived); `resolveWorktree` would otherwise reuse a worktree
-        // already on the name, someone else's session in it.
+        return newSession(onBranch: placeholderBranch(), base: nil, from: from, inFolder: folder,
+                          after: fetch, completion: completion)
+    }
+
+    /// A placeholder branch name no session, archived one or worktree has.
+    /// Taken by what's known without asking git (sessions live, preparing
+    /// and archived); `resolveWorktree` would otherwise reuse a worktree
+    /// already on the name, someone else's session in it.
+    func placeholderBranch() -> String {
         let known = Set(sessions.compactMap { $0.worktreeBranch ?? $0.preparation?.branch }
             + archived.compactMap(\.branch)
             + worktreeListings.values.flatMap { $0.compactMap(\.branch) })
-        let branch = GitWorktree.generatedBranch { known.contains($0) }
-        return newSession(onBranch: branch, base: nil, from: from, inFolder: folder, after: fetch,
-                          completion: completion)
+        return GitWorktree.generatedBranch { known.contains($0) }
     }
 
     /// Rename a worktree's placeholder branch (`worktree/brave-river-1a2f`)
@@ -2778,10 +2784,14 @@ final class SessionManager {
     /// `wortel new --branch` and any other tool can read it too. Worktrees
     /// already made stay where they are.
     func setWorktreeLocation(_ location: String?, forRepository home: String) {
-        Task { [weak self] in
-            _ = await GitService.setWorktreeLocation(location, root: home)
-            self?.readListing(home)
-        }
+        Task { [weak self] in await self?.applyWorktreeLocation(location, forRepository: home) }
+    }
+
+    /// The same, finished when git's config says so: the worktree sheet
+    /// writes it before the worktree it's for is made there.
+    func applyWorktreeLocation(_ location: String?, forRepository home: String) async {
+        _ = await GitService.setWorktreeLocation(location, root: home)
+        readListing(home)
     }
     @ObservationIgnored private var listingWatchers: [String: DirectoryWatcher] = [:]
 

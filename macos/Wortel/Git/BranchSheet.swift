@@ -7,17 +7,45 @@ enum BranchChoice: Equatable {
     case pullRequest(PullRequestRef)
 }
 
-/// "New Branch From…": a name, and the ref it forks from. Or a pull request,
-/// by `#123` or its URL, typed into the same field.
+/// Where the repository's new worktrees go, as the sheet's Location row
+/// shows and changes it: its `wortel.worktreePath` (`template`), nil for
+/// Wortel's folder.
+struct WorktreeLocationChoice {
+    let repoHome: String
+    var template: String?
+    /// Whether "Wortel's Worktree Folder" can be offered: not when a global
+    /// or `includeIf` config names the place, which clearing the repository's
+    /// own key would leave in force (`GitService.worktreeLocationIsOnlyLocal`).
+    var canReset = true
+
+    /// The folder a worktree is made in for `template`: what the row names.
+    func folder(for template: String?) -> String {
+        (GitWorktree.newWorktreePath(forBranch: "x", repoRoot: repoHome, location: template) as NSString)
+            .deletingLastPathComponent
+    }
+}
+
+/// What the sheet was answered: the choice, and the repository's worktree
+/// location when it was changed there.
+struct BranchSheetAnswer {
+    let choice: BranchChoice
+    /// Set only when the Location row was changed: `.some(nil)` is back to
+    /// Wortel's folder.
+    let location: String??
+}
+
+/// New Worktree Session (⇧⌘N) and "New Branch From…": a name, the ref it
+/// forks from, and where the worktree goes. Or a pull request, by `#123` or
+/// its URL, typed into the same field.
 ///
-/// What's left of "New Session on Branch" now that ⇧⌘N makes a worktree
-/// session without asking and ⇧⌘O opens any branch: Open Branch's ⌥↩ on
-/// Create, for a branch that should start somewhere other than the default
-/// branch. It always arrives with the name typed there (`initialName`).
+/// ⇧⌘N arrives with a placeholder name selected, so Return makes the same
+/// session it used to make with no sheet at all, and typing replaces it.
+/// Open Branch's ⌥↩ on Create arrives with the name typed there
+/// (`initialName`), to pick where it starts from.
 ///
-/// Two inputs, a line saying what the button will do, and the two buttons. The
-/// "From" control opens the branch list right under itself; there is no menu in
-/// between and nothing else to navigate.
+/// Three inputs, a line saying what the button will do, and the two buttons.
+/// The "From" control opens the branch list right under itself; there is no
+/// menu in between and nothing else to navigate.
 ///
 /// The layout is the standard AppKit form: an `NSGridView` with trailing-aligned
 /// labels in the first column, controls in the second, and first-baseline row
@@ -29,9 +57,14 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     private let baseChooser: BranchChooser
     private let status = NSTextField(labelWithString: "")
     private var createButton: NSButton!
+    private let heading: String
+    /// The Location row's state; nil hides the row (no repository to ask).
+    private var location: WorktreeLocationChoice?
+    private let originalTemplate: String?
+    private let locationPopup = NSPopUpButton(frame: .zero, pullsDown: false)
 
     /// Where the answer goes. Called exactly once, with nil for Cancel.
-    private var finish: ((BranchChoice?) -> Void)?
+    private var finish: ((BranchSheetAnswer?) -> Void)?
 
     /// The name typed before the sheet came up (Open Branch's ⌥↩ on Create):
     /// the sheet is for picking where it starts from.
@@ -75,8 +108,12 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
         return catalog.hasLocal(branch) || catalog.remotes(carrying: branch).count == 1
     }
 
-    init(catalog: BranchCatalog, defaultBase: String?) {
+    init(catalog: BranchCatalog, defaultBase: String?, title: String,
+         location: WorktreeLocationChoice?) {
         self.catalog = catalog
+        heading = title
+        self.location = location
+        originalTemplate = location?.template
         baseChooser = BranchChooser(catalog: catalog, initial: defaultBase)
         super.init(nibName: nil, bundle: nil)
     }
@@ -93,7 +130,7 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     }
 
     override func loadView() {
-        let title = NSTextField(labelWithString: "New Branch From\u{2026}")
+        let title = NSTextField(labelWithString: heading)
         title.font = .preferredFont(forTextStyle: .headline)
 
         nameField.placeholderString = "Branch name, or a pull request"
@@ -112,11 +149,22 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
 
         let branchLabel = Self.label("Branch:")
         let fromLabel = Self.label("From:")
-        let grid = NSGridView(views: [
+        let locationLabel = Self.label("Location:")
+        var rows: [[NSView]] = [
             [branchLabel, nameField],
             [fromLabel, baseChooser],
-            [NSGridCell.emptyContentView, status],
-        ])
+        ]
+        if location != nil {
+            (locationPopup.cell as? NSPopUpButtonCell)?.lineBreakMode = .byTruncatingMiddle
+            locationPopup.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            locationPopup.target = self
+            locationPopup.action = #selector(locationPicked)
+            rebuildLocationMenu()
+            rows.append([locationLabel, locationPopup])
+        }
+        rows.append([NSGridCell.emptyContentView, status])
+        let grid = NSGridView(views: rows)
+        let statusRow = rows.count - 1
         grid.column(at: 0).xPlacement = .trailing
         grid.column(at: 1).xPlacement = .fill
         // **The label column is pinned, and it has to be.** Sized to content, a
@@ -127,15 +175,16 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
         // from “origin/main”." A form laid out by its own status text is a form
         // that moves while you use it.
         grid.column(at: 0).width = ceil(max(
-            branchLabel.intrinsicContentSize.width, fromLabel.intrinsicContentSize.width))
+            branchLabel.intrinsicContentSize.width, fromLabel.intrinsicContentSize.width,
+            location == nil ? 0 : locationLabel.intrinsicContentSize.width))
         grid.rowAlignment = .firstBaseline
         grid.columnSpacing = 8
         grid.rowSpacing = 10
         // Help text belongs against the thing it explains, and the row spacing
         // plus the gap between a control's frame and a label's baseline already
         // puts more air there than it looks like on paper.
-        grid.row(at: 2).topPadding = 0
-        grid.row(at: 2).rowAlignment = .none
+        grid.row(at: statusRow).topPadding = 0
+        grid.row(at: statusRow).rowAlignment = .none
 
         createButton = NSButton(title: "Create", target: self, action: #selector(create))
         createButton.keyEquivalent = "\r"
@@ -174,6 +223,59 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
         view = root
     }
 
+    // MARK: Location
+
+    /// The folder on top, then the ways to change it: Wortel's own folder
+    /// (when it isn't that already) and Choose…. Rebuilt after every pick, so
+    /// the top item is always where the next worktree goes.
+    private func rebuildLocationMenu() {
+        guard let location else { return }
+        let folder = location.folder(for: location.template)
+        let repo = (location.repoHome as NSString).lastPathComponent
+        let menu = NSMenu()
+        let current = NSMenuItem(title: (folder as NSString).abbreviatingWithTildeInPath, action: nil, keyEquivalent: "")
+        current.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+        menu.addItem(current)
+        menu.addItem(.separator())
+        if location.template != nil, location.canReset {
+            let wortel = NSMenuItem(title: "Wortel\u{2019}s Worktree Folder", action: nil, keyEquivalent: "")
+            wortel.tag = 1
+            menu.addItem(wortel)
+        }
+        let choose = NSMenuItem(title: "Choose\u{2026}", action: nil, keyEquivalent: "")
+        choose.tag = 2
+        menu.addItem(choose)
+        locationPopup.menu = menu
+        locationPopup.select(current)
+        locationPopup.toolTip = "Where new worktrees of \u{201c}\(repo)\u{201d} go, this one and the next. "
+            + "Each gets a folder of its own in it, named for its branch."
+    }
+
+    @objc private func locationPicked() {
+        guard var location, let tag = locationPopup.selectedItem?.tag else { return }
+        switch tag {
+        case 1:
+            location.template = nil
+        case 2:
+            let repo = (location.repoHome as NSString).lastPathComponent
+            if let chosen = chooseDirectory(
+                title: "Where new worktrees of \u{201c}\(repo)\u{201d} go. Each gets a folder of its own in it, named for its branch.",
+                startingAt: location.folder(for: location.template), prompt: "Use This Folder", canCreate: true) {
+                location.template = (chosen as NSString).abbreviatingWithTildeInPath
+            }
+        default:
+            break
+        }
+        self.location = location
+        rebuildLocationMenu()
+    }
+
+    /// The location to write back, if the row was changed.
+    private var changedLocation: String?? {
+        guard let location, location.template != originalTemplate else { return nil }
+        return .some(location.template)
+    }
+
     private static func label(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.textColor = .labelColor
@@ -210,6 +312,8 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
         // from, so the row greys rather than sitting there looking answerable.
         // A pull request has its own history too, so the same goes for it.
         baseChooser.isEnabled = !existsAlready && pullRequest == nil
+        // A worktree that exists is opened where it is.
+        locationPopup.isEnabled = pullRequest != nil || !(branch.map(catalog.withWorktree.contains) ?? false)
         status.stringValue = statusText()
         // Nothing to create until the field names something. Accepting the click
         // and then quietly doing nothing is the same answer delivered worse.
@@ -241,6 +345,14 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
             return "\u{201c}\(branch)\u{201d} is on \(remotes.joined(separator: " and ")). "
                 + "Check out the one you want first."
         }
+        // The placeholder ⇧⌘N fills in isn't worth reading out: say what
+        // becomes of it instead.
+        if GitWorktree.isGenerated(branch) {
+            guard let base = baseChooser.branch else {
+                return "Creates a branch, named for the work once the session has a name."
+            }
+            return "Creates a branch from \u{201c}\(base)\u{201d}, named for the work later."
+        }
         guard let base = baseChooser.branch else {
             return "Creates \u{201c}\(branch)\u{201d} in a new worktree."
         }
@@ -248,14 +360,16 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     }
 
     @objc private func create() {
-        if let pullRequest { return complete(.pullRequest(pullRequest)) }
+        if let pullRequest {
+            return complete(.init(choice: .pullRequest(pullRequest), location: changedLocation))
+        }
         guard let branch else { return }
-        complete(.branch(branch, base: base))
+        complete(.init(choice: .branch(branch, base: base), location: changedLocation))
     }
 
     @objc private func cancel() { complete(nil) }
 
-    private func complete(_ answer: BranchChoice?) {
+    private func complete(_ answer: BranchSheetAnswer?) {
         let finish = finish
         self.finish = nil
         // Answered *before* dismissing, and the order is load-bearing:
@@ -270,13 +384,14 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     /// Run the sheet on `window` and return what it was told, or nil on Cancel.
     static func present(
         over window: NSWindow, catalog: BranchCatalog, defaultBase: String?, name: String? = nil,
+        title: String = "New Branch From\u{2026}", location: WorktreeLocationChoice? = nil,
         whileOpen: @escaping (BranchSheet) -> Void = { _ in }
-    ) async -> BranchChoice? {
+    ) async -> BranchSheetAnswer? {
         // The window it belongs to comes forward first. A window-modal sheet on
         // a window that is behind another one is indistinguishable from a
         // lock-up: the blocked window is not the one you are looking at.
         window.makeKeyAndOrderFront(nil)
-        let sheet = BranchSheet(catalog: catalog, defaultBase: defaultBase)
+        let sheet = BranchSheet(catalog: catalog, defaultBase: defaultBase, title: title, location: location)
         sheet.initialName = name
         return await withCheckedContinuation { continuation in
             var resumed = false

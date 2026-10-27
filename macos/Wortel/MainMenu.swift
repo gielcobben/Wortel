@@ -523,6 +523,9 @@ enum MainMenu {
         // browser in front, so it goes on to the terminal.
         let inspector = viewMenu.addItem(withTitle: "Show Web Inspector", action: #selector(AppDelegate.showWebInspector(_:)), keyEquivalent: "i")
         inspector.keyEquivalentModifierMask = [.command, .option]
+        // A checkmark, not a setting: where a server from the running-jobs
+        // popover opens (`BrowserTabs.opensServersInDefaultBrowser`).
+        viewMenu.addItem(withTitle: "Open Servers in Default Browser", action: #selector(AppDelegate.toggleServersInDefaultBrowser(_:)), keyEquivalent: "")
 
         viewMenu.addItem(.separator())
         // What a preview window is showing. A submenu rather than three more

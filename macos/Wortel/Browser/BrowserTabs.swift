@@ -22,6 +22,17 @@ import WebKit
 final class BrowserTabs {
     static let shared = BrowserTabs()
 
+    /// Servers picked from the running-jobs popover open in the Mac's default
+    /// browser instead of a tab: View ▸ Open Servers in Default Browser, and
+    /// the same checkmark on a server's right-click menu. App-wide, because
+    /// which browser you test in is a habit, not a property of a session.
+    /// "+" and ⇧⌘L still make a tab; asking for one is asking for one.
+    static var opensServersInDefaultBrowser: Bool {
+        get { UserDefaults.standard.bool(forKey: opensServersKey) }
+        set { UserDefaults.standard.set(newValue, forKey: opensServersKey) }
+    }
+    private static let opensServersKey = "browser.opensServersInDefaultBrowser"
+
     /// Not observed: a page is made while a tab's view is being built, and
     /// writing an observed property there invalidates that same view.
     /// `revision` says a page appeared, a turn later.

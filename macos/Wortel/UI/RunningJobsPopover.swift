@@ -93,6 +93,7 @@ struct RunningJobsList: View {
         JobRow(job: job,
                isHighlighted: hovered == job.id,
                open: { open(job) },
+               openInTab: { openAsTab(job) },
                openInBrowser: { openInBrowser(job) },
                quit: { monitor.quit(job) },
                hover: { inside in
@@ -177,9 +178,20 @@ struct RunningJobsList: View {
         .frame(height: 22)
     }
 
-    /// Show the address as a tab and get out of the way: you clicked
-    /// through to it, so the popover has done its job.
+    /// Show the address as a tab, or in your browser if that's where servers
+    /// go (`BrowserTabs.opensServersInDefaultBrowser`), and get out of the
+    /// way: you clicked through to it, so the popover has done its job.
     private func open(_ job: RunningJob) {
+        guard let url = job.localURL else { return }
+        if BrowserTabs.opensServersInDefaultBrowser {
+            NSWorkspace.shared.open(url)
+        } else {
+            openInTab(url)
+        }
+        dismiss()
+    }
+
+    private func openAsTab(_ job: RunningJob) {
         guard let url = job.localURL else { return }
         openInTab(url)
         dismiss()
@@ -201,6 +213,7 @@ private struct JobRow: View {
     let job: RunningJob
     let isHighlighted: Bool
     let open: () -> Void
+    let openInTab: () -> Void
     let openInBrowser: () -> Void
     let quit: () -> Void
     let hover: (Bool) -> Void
@@ -246,7 +259,8 @@ private struct JobRow: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(spokenDescription)
             .accessibilityAddTraits(isOpenable ? .isButton : [])
-            .accessibilityHint(isOpenable ? "Opens in a tab" : "")
+            .accessibilityHint(isOpenable ? (BrowserTabs.opensServersInDefaultBrowser
+                                             ? "Opens in your browser" : "Opens in a tab") : "")
             .accessibilityAction { if isOpenable { open() } }
 
             // Under the pointer only, as a sidebar row's "…" and "×" are.
@@ -346,8 +360,15 @@ private struct JobRow: View {
         let menu = NSMenu()
         menu.autoenablesItems = false
         if isOpenable {
-            menu.addItem(ClosureMenuItem(title: "Open in Tab", handler: open))
+            // Both, whichever a click does: the menu is where you get the
+            // other one once.
+            menu.addItem(ClosureMenuItem(title: "Open in Tab", handler: openInTab))
             menu.addItem(ClosureMenuItem(title: "Open in Browser", handler: openInBrowser))
+            let always = ClosureMenuItem(title: "Always Open in Browser") {
+                BrowserTabs.opensServersInDefaultBrowser.toggle()
+            }
+            always.state = BrowserTabs.opensServersInDefaultBrowser ? .on : .off
+            menu.addItem(always)
         }
         if let address = job.localAddress {
             menu.addItem(ClosureMenuItem(title: "Copy Address", handler: {
@@ -387,7 +408,10 @@ private struct JobRow: View {
             lines.append("Listening on " + job.ports.map { ":\($0)" }.joined(separator: " "))
         }
         if let cwd = job.workingDirectory { lines.append(cwd) }
-        if let address = job.localAddress { lines.append("Click to open \(address) in a tab") }
+        if let address = job.localAddress {
+            lines.append("Click to open \(address) "
+                         + (BrowserTabs.opensServersInDefaultBrowser ? "in your browser" : "in a tab"))
+        }
         return lines.joined(separator: "\n")
     }
 }

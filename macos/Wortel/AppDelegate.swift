@@ -1098,6 +1098,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// View ▸ Open Servers in Default Browser: a server from the running-jobs
+    /// popover opens in your browser, not a tab.
+    @objc func toggleServersInDefaultBrowser(_ sender: Any?) {
+        BrowserTabs.opensServersInDefaultBrowser.toggle()
+    }
+
     /// ⇧⌘L: a new browser in the row you're in.
     @objc func newBrowserHere(_ sender: Any?) {
         focusMainWindow()
@@ -1456,6 +1462,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Show/Hide titles, nothing greyed out, ⌘F never falling through to the
     /// terminal. Found 2026-10-07 from a missing checkmark.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleServersInDefaultBrowser(_:)) {
+            menuItem.state = BrowserTabs.opensServersInDefaultBrowser ? .on : .off
+            return true
+        }
         if menuItem.action == #selector(toggleSessionSidebar(_:)) {
             menuItem.title = splitController.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"
             return true

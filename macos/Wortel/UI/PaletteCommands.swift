@@ -60,6 +60,7 @@ enum PaletteCommands {
         "checkForUpdates:": "arrow.down.circle",
         "restartToUpdate:": "arrow.clockwise.circle",
         "toggleAutomaticUpdates:": "arrow.triangle.2.circlepath",
+        "toggleServersInDefaultBrowser:": "arrow.up.forward.app",
         "newSession:": "plus.square",
         "newHomeSession:": "house",
         "forkSession:": "arrow.triangle.branch",

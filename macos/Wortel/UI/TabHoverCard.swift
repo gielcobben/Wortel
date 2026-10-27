@@ -41,7 +41,7 @@ final class TabHoverCard {
     private var panel: NSPanel?
     private let titleLabel = NSTextField(wrappingLabelWithString: "")
     private let detailLabel = NSTextField(wrappingLabelWithString: "")
-    private let previewBox = NSView()
+    private let previewBox = PreviewBox()
     private let previewText = NSTextField(labelWithString: "")
     private let previewImage = NSImageView()
     private weak var anchor: NSView?
@@ -226,7 +226,7 @@ final class TabHoverCard {
         panel.hidesOnDeactivate = true
         panel.animationBehavior = .none
 
-        let background = NSVisualEffectView()
+        let background = CardBackground()
         background.material = .popover
         background.state = .active
         background.wantsLayer = true
@@ -234,17 +234,12 @@ final class TabHoverCard {
         background.layer?.cornerCurve = .continuous
         background.layer?.masksToBounds = true
         background.layer?.borderWidth = 0.5
-        background.layer?.borderColor = NSColor.black.withAlphaComponent(0.12).cgColor
         panel.contentView = background
 
-        // The preview sits on the page's own colour, as a thumbnail of it.
-        previewBox.wantsLayer = true
         previewBox.layer?.cornerRadius = 6
         previewBox.layer?.cornerCurve = .continuous
         previewBox.layer?.masksToBounds = true
         previewBox.layer?.borderWidth = 0.5
-        previewBox.layer?.borderColor = NSColor.black.withAlphaComponent(0.08).cgColor
-        previewBox.layer?.backgroundColor = Chrome.content.cgColor
         previewText.font = .monospacedSystemFont(ofSize: 9, weight: .regular)
         previewText.textColor = .secondaryLabelColor
         previewText.lineBreakMode = .byClipping
@@ -270,6 +265,46 @@ final class TabHoverCard {
         }
         self.panel = panel
         return panel
+    }
+}
+
+/// The card's rim, in the appearance it's shown in. A layer's colours are
+/// resolved once when set, so set at build time they stayed whatever the app
+/// was then: a black rim lost in dark mode.
+private final class CardBackground: NSVisualEffectView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateRim()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateRim()
+    }
+
+    private func updateRim() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.borderColor = Chrome.hairlineStrong.cgColor
+        }
+    }
+}
+
+/// The preview sits on the page's own colour, as a thumbnail of it: white in
+/// light mode, the dark page in dark, re-resolved when the appearance changes.
+private final class PreviewBox: NSView {
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = Chrome.content.cgColor
+            layer?.borderColor = Chrome.hairline.cgColor
+        }
     }
 }
 

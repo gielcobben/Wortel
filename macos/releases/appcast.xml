@@ -3,6 +3,40 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.44.2</title>
+            <pubDate>Tue, 27 Oct 2026 11:19:14 -0400</pubDate>
+            <sparkle:version>2026.44.2</sparkle:version>
+            <sparkle:shortVersionString>2026.44.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Sessions named for what you typed, not for a colour</h1>
+<p class="date">Wortel 2026.44.2 &middot; 2026-10-27</p>
+<p><strong>No more sessions named after a colour.</strong> When Claude Code starts, it asks the terminal what colour its background is, and the answer travels to Claude down the same path as your typing. Wortel reads that path to name a session from your first prompt, and it took the answer for something you had typed. Pressing Return at the folder trust question was enough to send it off as your “prompt”, and the session came out as “Extract hex color values” or “Decode hex color code”. Wortel now tells the terminal’s answers apart from your keys, so the name comes from what you actually asked.</p>
+<p><strong>Esc is just Esc.</strong> After pressing Esc twice to clear Claude’s input, the first letter you typed next could go missing from the session’s name. It no longer does. A single Esc followed by an arrow or another key is no longer mistaken for Esc Esc either.</p>
+<p><strong>Change Directory waits for you, not for the terminal.</strong> A move waiting for the agent to go quiet now holds off while you type, paste, click or scroll in that session, and no longer mistakes the terminal’s answers to the agent for someone typing.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.44.2.zip" length="22694944" type="application/octet-stream" sparkle:edSignature="HcKM6RHh5XJ6AcA/sNsLg7/poA+eHXjvV5bpy8dkL7ruTwqWvQY3QmttSDmrmwoQ3DM0nfkdwPSXjKyGMdVLCA=="/>
+        </item>
+        <item>
             <title>2026.44.1</title>
             <pubDate>Tue, 27 Oct 2026 08:42:09 -0400</pubDate>
             <sparkle:version>2026.44.1</sparkle:version>
@@ -69,41 +103,6 @@
 <p><strong>It waits for the right moment.</strong> A move never cuts Claude off. It happens once the turn has ended, not while Claude waits on a permission or a question, and not while you’re typing into its box. Until then the session’s row says where it’s going. Claude can ask for the move itself, and Wortel tells it straight away what will happen, including any background task that will stop. Run the command again with another folder to change the destination, or with the folder you’re in to call it off.</p>
 <p>Claude Code is the agent that can move today. Other agents, and a program running in the foreground like an editor or a dev server, are refused with a reason rather than interrupted.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.43.3.zip" length="22667817" type="application/octet-stream" sparkle:edSignature="4K+JxBgfrLGaunvA6HW7EoDuo6FBMSyFEZjaCSgnBU8+ikRrtE5bZOhbb0kIDp3mBBpHmF4Y8nuOkIVjJTBDCA=="/>
-        </item>
-        <item>
-            <title>2026.43.2</title>
-            <pubDate>Wed, 21 Oct 2026 16:22:32 -0400</pubDate>
-            <sparkle:version>2026.43.2</sparkle:version>
-            <sparkle:shortVersionString>2026.43.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>The right colours after sunset, and a calmer Git panel</h1>
-<p class="date">Wortel 2026.43.2 &middot; 2026-10-21</p>
-<p><strong>Dark stays dark.</strong> When your Mac switched to dark mode in the evening, Claude Code could stay on its light colours, with pale diff blocks and a white prompt bar on a dark window. It asks the terminal for its background the moment the theme changes, and Wortel answered with the old one. The new colours are now in place before the question arrives.</p>
-<p><strong>The Git panel stays put.</strong> The panel shows the folder the session belongs to, and in a worktree session (New Worktree Session, Fork, Open Branch), that worktree’s changes. An agent working in another worktree of the same project no longer pulls it along, and the “changes in …” hint that pointed elsewhere is gone. When you <code>cd</code> into a different project, the panel follows you there, so a commit always lands in the project you’re in. To look at another worktree, pick it from the worktree chip and press Back to return.</p>
-<p><strong>Branch names in every repository.</strong> In a repository that keeps its branches in git’s newer reftable format, worktree rows said “.invalid” instead of the branch. Wortel now reads the branch from there too, still without running git.</p>
-<p>Also in this release: the header no longer has an “Open Session” button while you look at another worktree. Back takes you home, and Open Branch (⇧⌘O) opens any branch in a session of its own.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.43.2.zip" length="22497169" type="application/octet-stream" sparkle:edSignature="mgZ2std08KjImr9+XS9gp6u5y78sHrEjkccyWfUMA+aX1n4Yrs1OqXpU044iPY0SRT8X/TDpI0XqG4AkE8X0CQ=="/>
         </item>
     </channel>
 </rss>

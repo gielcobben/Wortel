@@ -1523,7 +1523,7 @@ final class SessionManager {
     /// menu because that is what an unannotated caller is.
     @discardableResult
     func newSession(cwd: String? = nil, inFolder folder: String? = nil,
-                    via origin: SessionOrigin = .menu) -> Session {
+                    via origin: SessionOrigin = .menu, startupInput: String? = nil) -> Session {
         // New sessions land next to what you're looking at: the explicit folder
         // (header context menu) or the selected session's folder, else top level.
         let dir = folder ?? selected?.folderPath
@@ -1536,7 +1536,11 @@ final class SessionManager {
             ?? existingDirectory(root(ofFolder: folder))
             ?? existingDirectory(root(ofFolder: selected?.folderPath))
             ?? existingDirectory(selected?.originCwd)
-        return makeSession(cwd: directory, inFolder: dir, via: origin)
+        // Through `prepare`, because selecting the row starts its shell, and
+        // that is before this returns.
+        return makeSession(cwd: directory, inFolder: dir, via: origin) { session in
+            session.startupInput = startupInput
+        }
     }
 
     /// A session in the home directory, deliberately outside every folder.
@@ -1704,23 +1708,26 @@ final class SessionManager {
     @discardableResult
     func newSession(onBranch branch: String, base: String? = nil, from: String?,
                     inFolder folder: String? = nil, after fetch: Task<Void, Never>? = nil,
-                    completion: WorktreeCompletion? = nil) -> Session? {
+                    startupInput: String? = nil, completion: WorktreeCompletion? = nil) -> Session? {
         let branch = GitWorktree.branchName(from: branch)
         guard !branch.isEmpty, let from else { return nil }
         return beginWorktreeSession(.branch(branch, base: base), branch: branch,
                                     leaf: GitWorktree.sessionLeaf(forBranch: branch),
-                                    from: from, inFolder: folder, after: fetch, completion: completion)
+                                    from: from, inFolder: folder, after: fetch,
+                                    startupInput: startupInput, completion: completion)
     }
 
     /// A session on pull request `pr`, in a worktree of its own on
     /// `worktree/pr-<n>`: the sheet given `#123` or a URL, or `wortel new --pr`.
     @discardableResult
     func newSession(onPullRequest pr: PullRequestRef, from: String?, inFolder folder: String? = nil,
-                    after fetch: Task<Void, Never>? = nil, completion: WorktreeCompletion? = nil) -> Session? {
+                    after fetch: Task<Void, Never>? = nil, startupInput: String? = nil,
+                    completion: WorktreeCompletion? = nil) -> Session? {
         guard let from else { return nil }
         return beginWorktreeSession(.pullRequest(pr), branch: pr.branch,
                                     leaf: GitWorktree.sessionLeaf(forBranch: pr.branch),
-                                    from: from, inFolder: folder, after: fetch, completion: completion)
+                                    from: from, inFolder: folder, after: fetch,
+                                    startupInput: startupInput, completion: completion)
     }
 
     /// Fork Session: `source` as it is right now, in a worktree of its own. The
@@ -1746,7 +1753,8 @@ final class SessionManager {
             agentCwd: source.runningCwd ?? source.cwd)
         let leaf = name ?? uniqueLeaf("\(source.leafName) (fork)", in: source.folderPath)
         let session = beginWorktreeSession(.fork(request), branch: nil, leaf: leaf, from: from,
-                                           inFolder: source.folderPath, after: nil, completion: completion)
+                                           inFolder: source.folderPath, after: nil, startupInput: nil,
+                                           completion: completion)
         session.nameSource = .user
         return session
     }
@@ -1761,13 +1769,15 @@ final class SessionManager {
     /// it's preparing on its own page, and becomes a terminal when git is done.
     private func beginWorktreeSession(
         _ request: WorktreePreparation.Request, branch: String?, leaf: String, from: String,
-        inFolder folder: String?, after fetch: Task<Void, Never>?, completion: WorktreeCompletion?
+        inFolder folder: String?, after fetch: Task<Void, Never>?, startupInput: String?,
+        completion: WorktreeCompletion?
     ) -> Session {
         let session = makeSession(cwd: nil, inFolder: folder ?? self.folder(forRepositoryAt: from),
                                   via: .worktree, reported: false) { session in
             session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
             session.worktreeBranch = branch
             session.preparation = WorktreePreparation(request: request, from: from, branch: branch ?? "")
+            session.startupInput = startupInput
         }
         if let completion { worktreeCompletions[session.id] = completion }
         prepareWorktree(for: session, after: fetch)
@@ -1898,8 +1908,12 @@ final class SessionManager {
             Telemetry.capture(.sessionCreated(via: .worktree))
         }
         // Its shell starts here when it's the one on screen; otherwise when
-        // it's next selected, as a restored session's does.
-        if session.id == selectedID { session.ensureSurfaceView(runtime: runtime) }
+        // it's next selected, as a restored session's does. Unless it was
+        // given a command (`wortel new -- …`): the caller is told it started,
+        // and a command waiting for a click is one a quit would lose.
+        if session.id == selectedID || session.startupInput != nil {
+            session.ensureSurfaceView(runtime: runtime)
+        }
         scheduleSave()
         refreshWorktreeListings()
         // Named while it was preparing (by you, or the CLI): the branch
@@ -2532,11 +2546,11 @@ final class SessionManager {
     /// pressed on it as it opens (`newWorktreeSessionFromSheet`).
     @discardableResult
     func newWorktreeSession(from directory: String? = nil, inFolder folder: String? = nil,
-                            completion: WorktreeCompletion? = nil) -> Session? {
+                            startupInput: String? = nil, completion: WorktreeCompletion? = nil) -> Session? {
         guard let from = directory ?? branchSource() else { return nil }
         let fetch = Task { await fetchFromOrigin(in: from) }
         return newSession(onBranch: placeholderBranch(), base: nil, from: from, inFolder: folder,
-                          after: fetch, completion: completion)
+                          after: fetch, startupInput: startupInput, completion: completion)
     }
 
     /// A placeholder branch name no session, archived one or worktree has.

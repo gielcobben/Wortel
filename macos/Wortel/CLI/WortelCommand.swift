@@ -31,6 +31,11 @@ enum WortelCommand: Codable, Equatable {
     /// Wortel names, as ⇧⌘N makes one. Its own case for the reason
     /// `newFromPullRequest` is.
     case newWorktree(cwd: String?, name: String?)
+    /// `new … -- <command>`: any of the three above, with `argv` typed into
+    /// the new session's shell as its first line. A case wrapping them rather
+    /// than a field on each, for the reason `newFromPullRequest` is its own:
+    /// an older app would drop the field and open a session that runs nothing.
+    indirect case newRunning(WortelCommand, argv: [String])
     /// Rename a session — by default the one the caller is running in.
     case rename(session: String?, name: String)
     /// Raise attention on a session: the dot, the badge, the notification.
@@ -63,7 +68,7 @@ enum WortelCommand: Codable, Equatable {
     var verb: String {
         switch self {
         case .open: return "open"
-        case .newSession, .newFromPullRequest, .newWorktree: return "new"
+        case .newSession, .newFromPullRequest, .newWorktree, .newRunning: return "new"
         case .rename: return "rename"
         case .notify: return "notify"
         case .mark: return "mark"
@@ -196,11 +201,12 @@ enum WortelCommandParser {
         usage: wortel <command> [arguments]
 
           open <path>              open a file in a preview window
-          new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>] [--worktree]
+          new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>] [--worktree] [-- <command>]
                                    start a session; --branch gives it a worktree,
                                    --from picks what a new branch forks from,
                                    --pr checks out a pull request in one,
-                                   --worktree makes one on a new branch
+                                   --worktree makes one on a new branch,
+                                   and a command after -- runs in its shell
           rename <name>            rename this session
           notify <title> [body]    raise attention on this session
           mark <colour>            colour this session in the sidebar: red, orange,
@@ -235,29 +241,18 @@ enum WortelCommandParser {
             return .open(path: absolute(path, from: currentDirectory))
 
         case "new":
-            let flags = try Flags(rest, allowed: ["--cwd", "--name", "--branch", "--from", "--pr"],
-                                  switches: ["--worktree"])
-            if flags.isOn("--worktree") {
-                guard flags["--branch"] == nil, flags["--from"] == nil, flags["--pr"] == nil else {
-                    throw ParseError.conflict("--worktree", "--branch, --from or --pr")
-                }
-                return .newWorktree(
-                    cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
-                    name: flags["--name"])
+            // Everything after `--` is the command, its own flags included:
+            // `-- claude --resume x` must not have `--resume` read as ours.
+            guard let separator = rest.firstIndex(of: "--") else {
+                return try parseNew(rest, currentDirectory: currentDirectory)
             }
-            if let pr = flags["--pr"] {
-                guard flags["--branch"] == nil, flags["--from"] == nil else {
-                    throw ParseError.conflict("--pr", "--branch or --from")
-                }
-                return .newFromPullRequest(
-                    cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
-                    name: flags["--name"], pr: pr)
-            }
-            return .newSession(
-                cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
-                name: flags["--name"],
-                branch: flags["--branch"],
-                base: flags["--from"])
+            let argv = Array(rest[(separator + 1)...])
+            guard !argv.isEmpty else { throw ParseError.missing("a command after --", verb) }
+            let new = try parseNew(Array(rest[..<separator]), currentDirectory: currentDirectory)
+            // Checked here too, not only by the app, so a command that can't
+            // be typed is a usage error before anything opens.
+            _ = try startupLine(argv)
+            return .newRunning(new, argv: argv)
 
         case "rename":
             guard let name = rest.first, !name.isEmpty else {
@@ -297,6 +292,100 @@ enum WortelCommandParser {
         }
     }
 
+    /// `new`'s flags: which of the three it is, and where.
+    private static func parseNew(_ rest: [String], currentDirectory: String?) throws -> WortelCommand {
+        let flags = try Flags(rest, allowed: ["--cwd", "--name", "--branch", "--from", "--pr"],
+                              switches: ["--worktree"])
+        if flags.isOn("--worktree") {
+            guard flags["--branch"] == nil, flags["--from"] == nil, flags["--pr"] == nil else {
+                throw ParseError.conflict("--worktree", "--branch, --from or --pr")
+            }
+            return .newWorktree(
+                cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
+                name: flags["--name"])
+        }
+        if let pr = flags["--pr"] {
+            guard flags["--branch"] == nil, flags["--from"] == nil else {
+                throw ParseError.conflict("--pr", "--branch or --from")
+            }
+            return .newFromPullRequest(
+                cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
+                name: flags["--name"], pr: pr)
+        }
+        return .newSession(
+            cwd: flags["--cwd"].map { absolute($0, from: currentDirectory) } ?? currentDirectory,
+            name: flags["--name"],
+            branch: flags["--branch"],
+            base: flags["--from"])
+    }
+
+    /// `argv` as one line a shell runs as those words: plain words as they
+    /// are, so it reads in history the way you'd have typed it, the rest
+    /// single-quoted.
+    ///
+    /// A quote or a backslash inside is closed out of the quotes and escaped
+    /// there (`'\''`, `'\\'`), the one spelling zsh, bash and fish all read
+    /// back the same: fish takes `\\` and `\'` as escapes even inside single
+    /// quotes, so a backslash left in them would be read wrong, and one at
+    /// the end of a word would leave the quote open.
+    ///
+    /// The words arrive already expanded by the caller's shell, so nothing
+    /// may be expanded twice: no `~` and no `%` count as plain, and no
+    /// leading `=` (zsh reads `=ls` as ls's path), though `--model=x` is. Nor
+    /// is an `=` in the first word, which a shell reads as an assignment
+    /// (`FOO=1 make` sets FOO; the caller asked for a program named that).
+    static func shellLine(_ argv: [String]) -> String {
+        argv.enumerated().map { index, word in
+            let plain = !word.isEmpty && !word.hasPrefix("=") && !(index == 0 && word.contains("="))
+                && word.unicodeScalars.allSatisfy(plainCharacters.contains)
+            guard !plain else { return word }
+            // One pass: the second of two replacements would rewrite the
+            // quotes the first one wrote.
+            let escaped = word.map { character -> String in
+                switch character {
+                case "'": return "'\\''"
+                case "\\": return "'\\\\'"
+                default: return String(character)
+                }
+            }.joined()
+            return "'" + escaped + "'"
+        }.joined(separator: " ")
+    }
+
+    private static let plainCharacters = CharacterSet.alphanumerics
+        .union(CharacterSet(charactersIn: "_./:@+=,-"))
+
+    /// `argv` as the line a new session's shell is given, newline included,
+    /// or why it can't be.
+    ///
+    /// The line is *typed*: the keeper writes it into the pty before the
+    /// shell has read a byte, while the terminal is still in canonical mode,
+    /// so two things that are fine in an argument are not fine as keys. A
+    /// control character is a key there (a tab completes, ^C interrupts, ^U
+    /// erases), quotes or no quotes; a newline is the one that reads back as
+    /// itself inside quotes. And the kernel holds at most `MAX_CANON` bytes of
+    /// an unfinished line: past that the whole line is thrown away, and the
+    /// session opens with nothing run and nothing said (measured: 1022 bytes
+    /// ran, 1027 vanished). Refused with a reason instead.
+    static func startupLine(_ argv: [String]) throws -> String {
+        // C0 and DEL only: `controlCharacters` also holds format characters
+        // like the joiner inside every family emoji, which type fine.
+        let isKey = { (scalar: Unicode.Scalar) in
+            (scalar.value < 0x20 && scalar != "\n") || scalar.value == 0x7F
+        }
+        if argv.contains(where: { $0.unicodeScalars.contains(where: isKey) }) {
+            throw ParseError.unrunnable(
+                "it has a tab or another control character in it, which a shell would take as a key")
+        }
+        let line = shellLine(argv) + "\n"
+        let limit = Int(MAX_CANON)
+        guard line.utf8.count <= limit else {
+            throw ParseError.unrunnable(
+                "it is \(line.utf8.count) bytes long, and at most \(limit) can be typed into a shell at once")
+        }
+        return line
+    }
+
     static func absolute(_ path: String, from directory: String?) -> String {
         let expanded = (path as NSString).expandingTildeInPath
         guard !expanded.hasPrefix("/"), let directory else { return expanded }
@@ -312,6 +401,8 @@ enum WortelCommandParser {
         case conflict(String, String)
         /// An argument after the ones a command takes.
         case extra(String, String)
+        /// A command `new` can't type into a shell, and why.
+        case unrunnable(String)
 
         var description: String {
             switch self {
@@ -330,6 +421,8 @@ enum WortelCommandParser {
                 return "\(option) can't be used with \(others)"
             case .extra(let token, let verb):
                 return "\(verb) takes one directory, not \"\(token)\" too (quote a path with spaces)"
+            case .unrunnable(let why):
+                return "new can't run that command: \(why). Put it in a script and run the script."
             }
         }
     }

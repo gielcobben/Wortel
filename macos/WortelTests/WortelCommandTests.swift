@@ -151,6 +151,110 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertThrowsError(try parse(["new", "--worktree", "--pr", "7"]))
     }
 
+    /// After `--` is the command, its flags included: `--resume` and `--help`
+    /// there are claude's, not ours. Any of the three `new`s can take one.
+    func testNewRunningACommand() throws {
+        XCTAssertEqual(try parse(["new", "--cwd", "/x", "--", "claude", "--resume", "abc"]),
+                       .newRunning(.newSession(cwd: "/x", name: nil, branch: nil, base: nil),
+                                   argv: ["claude", "--resume", "abc"]))
+        XCTAssertEqual(try parse(["new", "--", "claude", "--help"]),
+                       .newRunning(.newSession(cwd: "/Users/x/project", name: nil, branch: nil, base: nil),
+                                   argv: ["claude", "--help"]))
+        XCTAssertEqual(try parse(["new", "--worktree", "--", "claude", "fix the login"]),
+                       .newRunning(.newWorktree(cwd: "/Users/x/project", name: nil),
+                                   argv: ["claude", "fix the login"]))
+        XCTAssertEqual(try parse(["new", "--pr", "12", "--", "make", "test"]),
+                       .newRunning(.newFromPullRequest(cwd: "/Users/x/project", name: nil, pr: "12"),
+                                   argv: ["make", "test"]))
+        // Only the first `--` divides; a later one is the command's.
+        XCTAssertEqual(try parse(["new", "--", "git", "log", "--", "a"]),
+                       .newRunning(.newSession(cwd: "/Users/x/project", name: nil, branch: nil, base: nil),
+                                   argv: ["git", "log", "--", "a"]))
+    }
+
+    func testNewWithAnEmptyCommand() {
+        XCTAssertThrowsError(try parse(["new", "--cwd", "/x", "--"])) { error in
+            XCTAssertEqual(error as? WortelCommandParser.ParseError, .missing("a command after --", "new"))
+        }
+        // The flags before it are still checked.
+        XCTAssertThrowsError(try parse(["new", "--directory", "/x", "--", "ls"]))
+    }
+
+    /// The line the shell is given runs exactly the words the caller's shell
+    /// handed over: plain words as typed, everything else quoted, and nothing
+    /// a shell would expand a second time.
+    func testShellLine() {
+        XCTAssertEqual(WortelCommandParser.shellLine(["claude", "--resume", "0f3a-9b"]),
+                       "claude --resume 0f3a-9b")
+        XCTAssertEqual(WortelCommandParser.shellLine(["claude", "fix the login"]),
+                       "claude 'fix the login'")
+        XCTAssertEqual(WortelCommandParser.shellLine(["echo", "it's"]), "echo 'it'\\''s'")
+        XCTAssertEqual(WortelCommandParser.shellLine(["ls", "~", "$HOME", "*", "=ls", ""]),
+                       "ls '~' '$HOME' '*' '=ls' ''")
+        XCTAssertEqual(WortelCommandParser.shellLine(["codex", "--model=o3"]), "codex --model=o3")
+        // Closed out of the quotes and escaped there, which fish reads too.
+        XCTAssertEqual(WortelCommandParser.shellLine(["grep", "a\\b", "C:\\dir\\"]),
+                       "grep 'a'\\\\'b' 'C:'\\\\'dir'\\\\''")
+        // A first word with `=` is a program's name, not an assignment.
+        XCTAssertEqual(WortelCommandParser.shellLine(["FOO=1", "make", "X=2"]), "'FOO=1' make X=2")
+    }
+
+    /// Real shells as the oracle: each line, typed into zsh, bash, sh and
+    /// fish where it's installed, has to come back as exactly the words it
+    /// was made from.
+    func testShellLineRoundTripsThroughRealShells() throws {
+        let cases: [[String]] = [
+            ["claude", "--resume", "0f3a-9b"],
+            ["claude", "fix the login, don't break $HOME or `ls` * ? [a] {b,c} !x"],
+            ["echo", "it's", "\"double\"", "a\\b", "trailing\\", "\\'", "''", ""],
+            ["echo", "~", "~/x", "=ls", "%self", "#not a comment", "a;b", "a&&b", "a|b"],
+            ["echo", "two\nlines", "caf\u{e9}", "\u{1F468}\u{200D}\u{1F469}"],
+        ]
+        let shells = ["/bin/zsh", "/bin/bash", "/bin/sh", "/opt/homebrew/bin/fish", "/usr/local/bin/fish"]
+            .filter { FileManager.default.isExecutableFile(atPath: $0) }
+        for shell in shells {
+            for argv in cases {
+                // `printf '%s\0'` prints each word NUL-ended; the first word
+                // is replaced, as `echo` would collapse what we're checking.
+                let line = "printf '%s\\0' " + WortelCommandParser.shellLine(Array(argv.dropFirst()))
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: shell)
+                process.arguments = ["-c", line]
+                let output = Pipe()
+                process.standardOutput = output
+                try process.run()
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                let words = String(decoding: data, as: UTF8.self).split(separator: "\0", omittingEmptySubsequences: false)
+                    .dropLast().map(String.init)
+                XCTAssertEqual(words, Array(argv.dropFirst()), "\(shell): \(line)")
+            }
+        }
+    }
+
+    /// The line is typed into a shell still in canonical mode: a control
+    /// character would act as a key, and a line past MAX_CANON is thrown away
+    /// whole. Both are refused up front; a newline, an emoji and a line that
+    /// just fits are not.
+    func testCommandsThatCantBeTypedAreRefused() throws {
+        for argv in [["printf", "a\tb"], ["echo", "\u{3}"], ["echo", "\u{1b}[2J"], ["echo", "a\u{7f}"],
+                     ["echo", "a\rb"]] {
+            XCTAssertThrowsError(try parse(["new", "--"] + argv), "\(argv)") { error in
+                guard case .unrunnable? = error as? WortelCommandParser.ParseError else {
+                    return XCTFail("\(argv): \(error)")
+                }
+            }
+        }
+        XCTAssertEqual(try WortelCommandParser.startupLine(["sh", "-c", "echo one\necho two"]),
+                       "sh -c 'echo one\necho two'\n")
+        XCTAssertNoThrow(try WortelCommandParser.startupLine(["claude", "fix it \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"]))
+
+        let fits = String(repeating: "x", count: Int(MAX_CANON) - "echo \n".utf8.count)
+        XCTAssertEqual(try WortelCommandParser.startupLine(["echo", fits]).utf8.count, Int(MAX_CANON))
+        XCTAssertThrowsError(try WortelCommandParser.startupLine(["echo", fits + "x"]))
+        XCTAssertThrowsError(try parse(["new", "--", "echo", fits + "x"]))
+    }
+
     /// Fork means the caller's own session, like rename and mark: an agent
     /// forking itself is the case it's for.
     func testForkActsOnThisSession() throws {
@@ -268,6 +372,7 @@ final class WortelCommandTests: XCTestCase {
             .fork(session: session, name: "x", branch: nil),
             .newWorktree(cwd: "/a", name: nil),
             .newFromPullRequest(cwd: "/a", name: nil, pr: "12"),
+            .newRunning(.newWorktree(cwd: "/a", name: nil), argv: ["claude", "--resume", "x"]),
             .changeDirectory(session: session, path: "/Users/x/site"),
             .version,
         ]

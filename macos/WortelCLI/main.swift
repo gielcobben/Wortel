@@ -53,10 +53,13 @@ private func reportVersion() -> Never {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
+// Ours are the words before `--`; after it is a command's, so that
+// `wortel new -- claude --help` runs claude's help rather than printing ours.
+let options = arguments.prefix { $0 != "--" }
 
-if arguments.contains("--version") { reportVersion() }
+if options.contains("--version") { reportVersion() }
 
-if arguments.isEmpty || arguments.contains(where: { $0 == "-h" || $0 == "--help" }) {
+if arguments.isEmpty || options.contains(where: { $0 == "-h" || $0 == "--help" }) {
     print(WortelCommandParser.usage)
     // No arguments is a usage error, not a request for help — a script that
     // runs `wortel` with an empty variable should not look like it worked.

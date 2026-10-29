@@ -40,7 +40,7 @@ waits for you rather than yanking you out of what you were doing.
 
 Directories are refused rather than guessed at; use `wortel new --cwd` for those.
 
-### `wortel new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>] [--worktree]`
+### `wortel new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>] [--worktree] [-- <command>]`
 
 Starts a session. With no arguments it opens one in your current directory.
 
@@ -117,6 +117,37 @@ sidebar is pointing at. The new session's id goes to stdout:
 ```sh
 id=$(wortel new --cwd ~/Developer/lijn)
 ```
+
+Anything after `--` is a **command for the new session to run**, its own flags
+included. It is typed into the session's shell as its first line rather than
+run in place of the shell, so it goes in your history, the sidebar sees an
+agent start exactly as if you'd typed it (status, naming, resume after a
+relaunch), and when it exits you're at a prompt in that directory instead of
+looking at a closed terminal. It works with every form of `new`; a worktree
+session runs it once the worktree is ready.
+
+```sh
+wortel new --cwd ~/code/x -- claude --resume 7f3c9a1e
+wortel new --worktree --name "login redirect" -- claude "fix the login redirect"
+wortel new --pr 1482 -- make test
+```
+
+The words arrive as your shell split them and run as those words: one with a
+space or a quote in it is quoted for you, and nothing is expanded a second
+time. For a pipeline or a `&&`, hand it to a shell yourself:
+`-- sh -c 'make && make test'`.
+
+Two kinds of command are refused, with exit status 2, because typing them would
+go wrong: one longer than 1024 bytes (the most a terminal holds of a line
+before the shell starts reading, past which the whole line is thrown away), and
+one with a tab or another control character in it, which the shell would take
+as a key. A newline inside an argument is fine. For anything bigger, put it in
+a script and run that. If the command could not be typed for any other reason,
+`wortel new` exits 1 and says so, so a script can fall back to something else.
+
+`wortel` is on the `PATH` inside Wortel sessions only. A script started from
+somewhere else (a launcher, a hotkey app, a button) can call it by its full
+path, `/Applications/Wortel.app/Contents/Resources/bin/wortel`.
 
 ### `wortel rename <name>`
 

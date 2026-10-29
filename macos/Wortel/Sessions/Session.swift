@@ -239,6 +239,18 @@ final class Session: Identifiable {
         owedResume?.typedAt == nil ? owedResume?.input : nil
     }
 
+    /// A line for this session's first shell to run: `wortel new -- <command>`.
+    /// Typed in, not exec'd, so the shell sees it start like anything you type
+    /// (an agent is tracked, named and resumed) and is still there when it
+    /// exits. Gone once typed, and not persisted: only a worktree session can
+    /// be quit before its shell starts, and losing the line then is the cost.
+    @ObservationIgnored var startupInput: String?
+
+    /// The shell came up without the keeper, which then can't vouch for not
+    /// having typed `startupInput` already, so it wasn't typed (the rule
+    /// `initialInputDropped` keeps for a resume). The CLI says so.
+    @ObservationIgnored private(set) var startupInputDropped = false
+
     /// The last conversation this session was seen in, kept across the agent's
     /// exit. What a resume falls back on when nothing about the agent itself
     /// is left to read, instead of guessing by the newest file in the folder.
@@ -399,8 +411,10 @@ final class Session: Identifiable {
     func ensureSurfaceView(runtime: GhosttyRuntime) -> SurfaceView {
         if let surfaceView { return surfaceView }
         let view = SurfaceView(runtime: runtime, workingDirectory: cwd,
-                               sessionID: id, initialInput: pendingResumeInput,
+                               sessionID: id, initialInput: pendingResumeInput ?? startupInput,
                                environment: shellEnvironment)
+        if startupInput != nil, pendingResumeInput == nil { startupInputDropped = view.initialInputDropped }
+        startupInput = nil
         // Typed, not settled: still owed until the agent shows up running,
         // which it already is if its shell survived with it.
         if owedResume != nil, owedResume?.typedAt == nil, !view.initialInputDropped {

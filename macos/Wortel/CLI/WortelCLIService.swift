@@ -72,31 +72,16 @@ final class WortelCLIService {
         case .open(let path):
             reply(open(path))
 
-        case .newSession(let cwd, let name, let branch, let base):
-            newSession(cwd: cwd, name: name, branch: branch, base: base, reply: reply)
+        case .newSession, .newWorktree, .newFromPullRequest:
+            start(command, typing: nil, reply: reply)
 
-        case .newWorktree(let cwd, let name):
-            guard let cwd = cwd ?? manager.selected?.cwd else {
-                return reply(.failure("No session to take a repository from."))
+        case .newRunning(let new, let argv):
+            // Checked again here: the socket is also spoken to directly.
+            do {
+                start(new, typing: try WortelCommandParser.startupLine(argv), reply: reply)
+            } catch {
+                reply(.failure("\(error)"))
             }
-            _ = manager.newWorktreeSession(
-                from: cwd, inFolder: manager.folder(covering: cwd),
-                completion: { [weak self] result, warnings in
-                    self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
-                })
-
-        case .newFromPullRequest(let cwd, let name, let text):
-            guard let pr = PullRequestRef.parse(text) else {
-                return reply(.failure("\u{201c}\(text)\u{201d} isn't a pull request: give its number or its URL."))
-            }
-            guard let cwd = cwd ?? manager.selected?.cwd else {
-                return reply(.failure("No session to take a repository from."))
-            }
-            _ = manager.newSession(
-                onPullRequest: pr, from: cwd, inFolder: manager.folder(covering: cwd),
-                completion: { [weak self] result, warnings in
-                    self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
-                })
 
         case .rename(let session, let name):
             reply(withSession(session) { session in
@@ -188,8 +173,49 @@ final class WortelCLIService {
         return .success(value: path)
     }
 
+    /// One of the `new`s, with `input` for its first shell to run. A worktree
+    /// session is handed its line while it's still being made, before its
+    /// row is selected: its shell starts once git is done, and the line is
+    /// waiting for it.
+    private func start(_ command: WortelCommand, typing input: String?,
+                       reply: @escaping @Sendable (WortelResponse) -> Void) {
+        switch command {
+        case .newSession(let cwd, let name, let branch, let base):
+            newSession(cwd: cwd, name: name, branch: branch, base: base, typing: input, reply: reply)
+
+        case .newWorktree(let cwd, let name):
+            guard let cwd = cwd ?? manager.selected?.cwd else {
+                return reply(.failure("No session to take a repository from."))
+            }
+            _ = manager.newWorktreeSession(
+                from: cwd, inFolder: manager.folder(covering: cwd), startupInput: input,
+                completion: { [weak self] result, warnings in
+                    self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
+                })
+
+        case .newFromPullRequest(let cwd, let name, let text):
+            guard let pr = PullRequestRef.parse(text) else {
+                return reply(.failure("\u{201c}\(text)\u{201d} isn't a pull request: give its number or its URL."))
+            }
+            guard let cwd = cwd ?? manager.selected?.cwd else {
+                return reply(.failure("No session to take a repository from."))
+            }
+            _ = manager.newSession(
+                onPullRequest: pr, from: cwd, inFolder: manager.folder(covering: cwd),
+                startupInput: input,
+                completion: { [weak self] result, warnings in
+                    self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
+                })
+
+        // Listed rather than `default`, so a fourth kind of `new` is a
+        // compile error here instead of this refusal.
+        case .open, .rename, .notify, .mark, .fork, .changeDirectory, .version, .newRunning:
+            reply(.failure("Only a new session can be given a command to run."))
+        }
+    }
+
     private func newSession(
-        cwd: String?, name: String?, branch: String?, base: String?,
+        cwd: String?, name: String?, branch: String?, base: String?, typing input: String?,
         reply: @escaping @Sendable (WortelResponse) -> Void
     ) {
         if let cwd {
@@ -205,9 +231,10 @@ final class WortelCLIService {
             // project must not land its session in whichever folder the
             // sidebar happens to be showing.
             let session = manager.newSession(cwd: cwd, inFolder: cwd.flatMap(manager.folder(covering:)),
-                                             via: .cli)
+                                             via: .cli, startupInput: input)
             if let name { manager.rename(session, to: name) }
             orderFront()
+            if let refusal = commandDropped(session) { return reply(refusal) }
             return reply(.success("Started \u{201c}\(session.name)\u{201d}.",
                                   value: session.id.uuidString))
         }
@@ -221,6 +248,7 @@ final class WortelCLIService {
         }
         let created = manager.newSession(
             onBranch: branch, base: base, from: cwd, inFolder: manager.folder(covering: cwd),
+            startupInput: input,
             completion: { [weak self] result, warnings in
                 self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
             })
@@ -235,6 +263,7 @@ final class WortelCLIService {
         case .success(let session):
             if let name { manager.rename(session, to: name) }
             orderFront()
+            if let refusal = commandDropped(session) { return reply(refusal) }
             let notes = warnings.isEmpty ? "" : "\n" + warnings.joined(separator: "\n")
             reply(.success("Started \u{201c}\(session.name)\u{201d}.\(notes)", value: session.id.uuidString))
         case .failure(let failure):
@@ -242,6 +271,15 @@ final class WortelCLIService {
             // directory you want; a paraphrase would drop the path.
             reply(.failure(failure.message))
         }
+    }
+
+    /// A failure when the session opened but its command was not typed into
+    /// it. A failure and not a note: a script that asked for a command needs
+    /// the exit status to say it didn't run, so it can try something else.
+    private func commandDropped(_ session: Session) -> WortelResponse? {
+        guard session.startupInputDropped else { return nil }
+        return .failure("Started \u{201c}\(session.name)\u{201d}, but its shell came up without "
+            + "Wortel's keeper, so the command was not run in it.")
     }
 
     /// Run `body` on the session a command is about: the one it was run in.

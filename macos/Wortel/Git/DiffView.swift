@@ -26,9 +26,13 @@ struct DiffView: NSViewRepresentable {
     /// window keeps your place across a mode switch. Nil leaves the scroll alone,
     /// which is every other use of this view.
     var anchorLine: Int?
-    /// Reports the source line at the top of the view as it scrolls, so the mode
-    /// you switch to can open there.
-    var onTopLine: ((Int) -> Void)?
+    /// How far past the anchor line's row to scroll, in points: the rest of
+    /// the way back to exactly where a reader left a tab.
+    var anchorOffset: CGFloat = 0
+    /// Reports the source line at the top of the view as it scrolls, and how
+    /// far past the top of its row the view is, so the mode you switch to can
+    /// open there and a tab you come back to opens exactly there.
+    var onTopLine: ((Int, CGFloat) -> Void)?
 
     enum Gutter { case patch, file }
 
@@ -115,12 +119,18 @@ struct DiffView: NSViewRepresentable {
         // the model and nothing on screen moves, which reads as a dead menu item.
         let resized = context.coordinator.setStyle(fontSize: fontSize, gutter: gutter)
         context.coordinator.onTopLine = onTopLine
+        // A preview tab kept built behind the one in front is disabled, and
+        // it mustn't keep the keyboard: ⌘C would copy lines nobody can see.
+        if !context.environment.isEnabled, let table = scroll.documentView,
+           let window = table.window, window.firstResponder === table {
+            window.makeFirstResponder(nil)
+        }
         let result = context.coordinator.update(lines: lines, highlights: highlights)
         guard let table = scroll.documentView as? NSTableView else { return }
         defer {
             // Last, so it wins over the scroll-to-top a new file otherwise gets:
             // arriving in a mode with a place to be is not arriving at a new file.
-            context.coordinator.applyAnchor(anchorLine, in: table, scroll: scroll)
+            context.coordinator.applyAnchor(anchorLine, offset: anchorOffset, in: table, scroll: scroll)
         }
         // Always re-fit the column to the viewport (the panel may have resized).
         context.coordinator.applyColumnWidth()
@@ -192,13 +202,14 @@ struct DiffView: NSViewRepresentable {
         /// Report where the reader is, in source lines.
         @objc private func scrolled() {
             guard let onTopLine, let table, let scroll, !lines.isEmpty else { return }
-            let row = table.rows(in: scroll.documentVisibleRect).location
+            let visible = scroll.documentVisibleRect
+            let row = table.rows(in: visible).location
             guard row >= 0, row < lines.count else { return }
-            onTopLine(sourceLine(atRow: row))
+            onTopLine(sourceLine(atRow: row), visible.minY - table.rect(ofRow: row).minY)
         }
 
-        var onTopLine: ((Int) -> Void)?
-        private var appliedAnchor: Int?
+        var onTopLine: ((Int, CGFloat) -> Void)?
+        private var anchored = false
 
         /// A row's line in the file. Both sides carry it: for a whole file the
         /// two agree, and in a patch the new side is the one that still exists.
@@ -219,20 +230,28 @@ struct DiffView: NSViewRepresentable {
             return last
         }
 
-        /// Put `line` at the top, once per (anchor, content) pair — the content
-        /// arrives after the anchor does, so this is driven by both.
-        func applyAnchor(_ line: Int?, in table: NSTableView, scroll: NSScrollView) {
+        /// Put `line` at the top, once per view — the content arrives after the
+        /// anchor does, so this is driven by both.
+        func applyAnchor(_ line: Int?, offset: CGFloat, in table: NSTableView, scroll: NSScrollView) {
             // Not while the content is still empty: the anchor arrives with the
             // mode switch, the lines a beat later, and this is what makes the
             // first update that *has* rows the one that scrolls.
             guard let line, !lines.isEmpty else { return }
-            // Exactly once per anchor. Re-applying on later reloads would drag the
-            // reader back to where they arrived every time the highlighter lands.
-            guard line != appliedAnchor else { return }
-            appliedAnchor = line
+            // Exactly once per view, which is what arriving is. Re-applying on
+            // later reloads would drag the reader back to where they arrived
+            // every time the highlighter lands, and a preview tab kept built
+            // behind another is handed its own place again whenever its tab
+            // redraws: in a diff, where a deleted row's line maps back to the
+            // row after it, that moved a reader who was sitting still.
+            guard !anchored else { return }
+            anchored = true
             guard let row = row(forSourceLine: line), row < table.numberOfRows else { return }
+            // Within the row, and only the row the place was measured in: a
+            // line that maps to another row (a diff's deleted one), or rows
+            // made shorter by ⌘− since, would put the offset rows away.
+            let within = sourceLine(atRow: row) == line ? min(max(offset, 0), rowHeight - 1) : 0
             scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX,
-                                                  y: table.rect(ofRow: row).minY))
+                                                  y: table.rect(ofRow: row).minY + within))
             scroll.reflectScrolledClipView(scroll.contentView)
         }
 

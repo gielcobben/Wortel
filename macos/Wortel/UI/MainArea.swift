@@ -122,10 +122,28 @@ struct TabContent: View {
     let previewTabs: PreviewTabs
 
     var body: some View {
-        Group {
-            switch tab {
-            case .file(let path)?:
+        ZStack {
+            // The file tabs last in front in this row stay built behind the
+            // one in front, hidden and disabled. Rebuilding a preview each time
+            // its tab came forward put the reader back only nearly where they
+            // were: rendered Markdown is a lazy stack, whose blocks above the
+            // place have estimated heights until they're on screen, so each
+            // return landed a little off and a few switches added up. A view
+            // that never went away is still exactly where it was. One that was
+            // rebuilt (another session's row, an older tab) goes back to the
+            // place its document noted, see `PreviewTab`.
+            ForEach(builtFiles, id: \.self) { path in
+                let front = tab == .file(path)
                 PreviewTab(tabs: previewTabs, path: path)
+                    .opacity(front ? 1 : 0)
+                    .allowsHitTesting(front)
+                    .disabled(!front)
+                    .accessibilityHidden(!front)
+                    .zIndex(front ? 1 : 0)
+            }
+            switch tab {
+            case .file?:
+                EmptyView()
             case .browser(let id)?:
                 BrowserTab(page: BrowserTabs.shared.page(for: id))
             case .pane(.files)?:
@@ -138,5 +156,18 @@ struct TabContent: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: Chrome.content))
+        .onChange(of: tab, initial: true) { _, tab in
+            if let path = tab?.filePath { previewTabs.noteShown(path) }
+        }
+    }
+
+    /// The one in front, and those kept behind it (`PreviewTabs.keptBuilt`),
+    /// in the row's order. Never one that hasn't been looked at: a restored
+    /// row would otherwise start a document, and a file watcher, for every
+    /// file tab in it.
+    private var builtFiles: [String] {
+        let row = git.tabs(in: region).compactMap(\.filePath)
+        let kept = previewTabs.keptBuilt(of: row)
+        return row.filter { tab == .file($0) || kept.contains($0) }
     }
 }

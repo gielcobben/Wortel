@@ -18,11 +18,16 @@ struct MarkdownView: View {
     /// selection to tint — but "all of this" is what was asked for, and it reads
     /// as that.
     var isSelected = false
-    /// The source line to open at — how a mode switch keeps your place.
+    /// The source line to open at — how a mode switch, or coming back to a
+    /// tab, keeps your place.
     var anchorLine: Int?
-    /// Reports the source line of the block at the top of the view, so the mode
-    /// you switch to can open there.
-    var onTopLine: ((Int) -> Void)?
+    /// How far past the top of the anchor's block to land, in points: the rest
+    /// of the way back to exactly where a reader left a tab.
+    var anchorOffset: CGFloat = 0
+    /// Reports the source line of the block at the top of the view, and how far
+    /// past that block's top the view is scrolled, so the mode you switch to
+    /// can open there and a tab you come back to opens exactly there.
+    var onTopLine: ((Int, CGFloat) -> Void)?
     /// The file being rendered. A document's links are mostly relative to the
     /// directory it sits in, so without this there is nothing for `../CLAUDE.md`
     /// to be relative *to* and those links go nowhere (see `MarkdownLinkTarget`).
@@ -45,6 +50,25 @@ struct MarkdownView: View {
 
     private static let space = "markdown"
 
+    /// The anchor has been applied to a document with blocks in it. Once per
+    /// view, as `DiffView` does: a file rewritten under the reader changes the
+    /// block count too, and going back to the anchor then would drag them to
+    /// wherever they arrived.
+    @State private var anchored = false
+    /// Where a block should sit once `scrollTo` has brought it to the top: the
+    /// offset, which `ScrollViewProxy` has no way to say. Applied by the first
+    /// report that has the block at the top, so it measures from where the
+    /// block actually landed, and not from a pass before the scroll took.
+    @State private var landing: Landing?
+    @State private var scrollView = EnclosingScrollView()
+
+    private struct Landing: Equatable {
+        let id = UUID()
+        let block: Int
+        /// The block's top relative to the viewport's: minus the offset.
+        let top: CGFloat
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             scroller
@@ -56,7 +80,9 @@ struct MarkdownView: View {
                 .onAppear { scroll(to: anchorLine, with: proxy) }
                 // The document arrives after the view does, so the anchor has to
                 // be applied again once there is something to scroll.
-                .onChange(of: blocks.count) { _, _ in scroll(to: anchorLine, with: proxy) }
+                .onChange(of: blocks.count) { _, _ in
+                    if !anchored { scroll(to: anchorLine, with: proxy) }
+                }
         }
     }
 
@@ -103,14 +129,42 @@ struct MarkdownView: View {
     /// The block to land on for a source line: the last one that starts at or
     /// before it, since a line inside a paragraph belongs to that paragraph.
     private func scroll(to line: Int?, with proxy: ScrollViewProxy) {
-        guard let line, line > 1,
+        if !blocks.isEmpty { anchored = true }
+        let offset = anchorOffset
+        guard let line, line > 1 || offset != 0,
               let target = blocks.last(where: { $0.line <= line }) ?? blocks.first
         else { return }
         // A turn later: with a lazy stack the rows for that id may not exist yet
         // on the pass that builds the view.
         DispatchQueue.main.async {
             proxy.scrollTo(target.id, anchor: .top)
+            guard offset != 0 else { return }
+            let next = Landing(block: target.id, top: -offset)
+            landing = next
+            // A landing is for arriving. One still waiting a while later (the
+            // block never reached the top: the end of the document, where the
+            // scroll stops short and the offset means nothing anyway) would
+            // otherwise fire when the reader scrolls there themselves.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                if landing == next { landing = nil }
+            }
         }
+    }
+
+    /// Finish a landing: the block is on screen at `current`, so scroll the
+    /// rest of the way by hand. A SwiftUI scroll view is an `NSScrollView` on
+    /// the Mac; without one this stays at the block's top, which is where the
+    /// line alone already put it.
+    private func land(_ landing: Landing, from current: CGFloat) {
+        guard let scroll = scrollView.view?.enclosingScrollView,
+              let document = scroll.documentView else { return }
+        let clip = scroll.contentView
+        let delta = current - landing.top
+        guard abs(delta) >= 0.5 else { return }
+        var bounds = clip.bounds
+        bounds.origin.y += document.isFlipped ? delta : -delta
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scroll.reflectScrolledClipView(clip)
     }
 
     private var scroller: some View {
@@ -139,6 +193,7 @@ struct MarkdownView: View {
                         }
                 }
             }
+            .background(EnclosingScrollView.Marker(box: scrollView))
             .lineSpacing(lineSpacing)
             .padding(.horizontal, 24)
             .padding(.vertical, 20)
@@ -172,13 +227,18 @@ struct MarkdownView: View {
     /// The block at the top of the viewport: the last one that has scrolled past
     /// it, or the first one still below if none has.
     private func reportTopBlock(_ offsets: [Int: CGFloat]) {
+        if let landing, let current = offsets[landing.block], abs(current) < 1 {
+            self.landing = nil
+            land(landing, from: current)
+        }
         guard let onTopLine, !offsets.isEmpty else { return }
         let above = offsets.filter { $0.value <= 8 }.max { $0.value < $1.value }?.key
         let below = offsets.min { $0.value < $1.value }?.key
         // Ids are positions (see `testBlockOrderAndSequentialIDs`), so this is a
         // subscript rather than a search — it runs on every scroll frame.
-        guard let id = above ?? below, blocks.indices.contains(id) else { return }
-        onTopLine(blocks[id].line)
+        guard let id = above ?? below, blocks.indices.contains(id),
+              let top = offsets[id] else { return }
+        onTopLine(blocks[id].line, -top)
     }
 
     /// The reading measure, in characters, measured in the actual font rather
@@ -840,5 +900,28 @@ private extension View {
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(Color(nsColor: .separatorColor)))
+    }
+}
+
+/// The `NSScrollView` behind a SwiftUI `ScrollView`, found from a view placed
+/// inside its content: SwiftUI on macOS 14 can scroll to a view but not by a
+/// distance, and `MarkdownView` needs both to put a reader back to the point.
+/// A box rather than a binding, so finding it doesn't redraw anything.
+@MainActor
+final class EnclosingScrollView {
+    weak var view: NSView?
+
+    struct Marker: NSViewRepresentable {
+        let box: EnclosingScrollView
+
+        func makeNSView(context: Context) -> NSView {
+            let view = NSView()
+            box.view = view
+            return view
+        }
+
+        func updateNSView(_ view: NSView, context: Context) {
+            box.view = view
+        }
     }
 }

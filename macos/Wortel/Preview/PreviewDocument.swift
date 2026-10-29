@@ -50,7 +50,11 @@ final class PreviewDocument {
             // three modes share — the rendered document, the file and the diff
             // are the same file seen three ways. Without it, ⌘2 to copy the
             // paragraph you were reading means finding it again from the top.
+            // The line only: how far into its row or block the view was is a
+            // distance in the outgoing view, and means nothing in the next.
             anchorLine = visibleLine
+            anchorOffset = 0
+            visibleOffset = 0
             selectsAll = false
             loadCurrentMode()
         }
@@ -58,11 +62,20 @@ final class PreviewDocument {
 
     /// The source line at the top of whatever view is on screen, kept current by
     /// that view. Deliberately unobserved: it changes on every scroll frame, and
-    /// nothing draws from it — it's read once, when the mode changes.
+    /// nothing draws from it — it's read when the mode changes and when a tab
+    /// is shown again.
     @ObservationIgnored var visibleLine = 1
-    /// Where the incoming view should scroll to. Unobserved for the same reason
-    /// it doesn't need to be: switching mode rebuilds the view that reads it.
+    /// How far past the top of that line's row or block the view is scrolled,
+    /// in points. A line is as close as a mode switch can get, but coming back
+    /// to a tab is the same view again, and a paragraph's height short of
+    /// where you were reads as "not quite where I left it".
+    @ObservationIgnored var visibleOffset: CGFloat = 0
+    /// Where the incoming view should scroll to: after a mode switch, and when
+    /// a tab is shown again (`PreviewTab`). Unobserved for the same reason it
+    /// doesn't need to be: both rebuild the view that reads it.
     @ObservationIgnored var anchorLine: Int?
+    /// How far past the anchor line's top to land; see `visibleOffset`.
+    @ObservationIgnored var anchorOffset: CGFloat = 0
 
     /// Select All, for the one mode that can't do it itself. Source and Diff are
     /// a table: they select rows natively and copy them. A rendered document is a

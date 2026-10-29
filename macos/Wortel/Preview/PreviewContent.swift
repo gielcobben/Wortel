@@ -17,6 +17,8 @@ struct PreviewContent: View {
     /// window of its own, through the app's one opener.
     var onOpenFile: ((URL) -> Void)?
     @FocusState private var findFocused: Bool
+    /// False for a tab kept built behind the one in front (`TabContent`).
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Group {
@@ -43,6 +45,11 @@ struct PreviewContent: View {
         .onChange(of: document.mode) { _, _ in find.update(lines: searchableLines) }
         .onChange(of: document.sourceLines.count) { _, _ in find.update(lines: searchableLines) }
         .onChange(of: document.diffLines.count) { _, _ in find.update(lines: searchableLines) }
+        // Hidden behind another tab: the find field gives up the keyboard, or
+        // typing would go on into a field nobody can see.
+        .onChange(of: isEnabled) { _, enabled in
+            if !enabled { findFocused = false }
+        }
         .onChange(of: find.isPresented) { _, presented in
             if presented {
                 find.update(lines: searchableLines)
@@ -106,7 +113,8 @@ struct PreviewContent: View {
                      fontSize: settings.fontSize,
                      gutter: .file,
                      anchorLine: document.anchorLine,
-                     onTopLine: { document.visibleLine = $0 })
+                     anchorOffset: document.anchorOffset,
+                     onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 })
         }
     }
 
@@ -127,7 +135,8 @@ struct PreviewContent: View {
                      focusedLine: find.focusedLine,
                      fontSize: settings.fontSize,
                      anchorLine: document.anchorLine,
-                     onTopLine: { document.visibleLine = $0 })
+                     anchorOffset: document.anchorOffset,
+                     onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 })
         }
     }
 
@@ -147,7 +156,8 @@ struct PreviewContent: View {
                          scale: settings.fontSize / PreviewSettings.defaultFontSize,
                          isSelected: document.selectsAll,
                          anchorLine: document.anchorLine,
-                         onTopLine: { document.visibleLine = $0 },
+                         anchorOffset: document.anchorOffset,
+                         onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 },
                          // A document's links and images are relative to where
                          // the file *is*, and this is the only view that knows.
                          baseURL: document.url,

@@ -27,6 +27,13 @@ final class PreviewTabs {
     /// Where each file's diff comes from, recorded when it's opened and used
     /// when its document is made.
     private var sources: [String: (diff: PreviewDiffSource, hasChanges: Bool)] = [:]
+    /// Files by when their tab was last in front, newest first: which ones a
+    /// row keeps built behind the one in front (`keptBuilt(of:)`).
+    private var shown: [String] = []
+    /// How many tabs a row keeps built besides the one in front. Each costs
+    /// a layout on every resize and ⌘+, and a reload when its file changes,
+    /// so it's the few you go back and forth between, not every tab visited.
+    private static let keptBehind = 3
     /// Open a file a document links to (a link in rendered Markdown).
     var onOpenFile: ((URL) -> Void)?
     /// Turn a tab into a window.
@@ -66,10 +73,27 @@ final class PreviewTabs {
 
     func hasDocument(for path: String) -> Bool { documents[path] != nil }
 
+    /// A file's tab came to the front.
+    func noteShown(_ path: String) {
+        shown.removeAll { $0 == path }
+        shown.insert(path, at: 0)
+    }
+
+    /// Which of a row's files to keep built behind the one in front: the most
+    /// recently shown, and only text. A Quick Look preview kept built goes on
+    /// playing a video nobody can see.
+    func keptBuilt(of row: [String]) -> Set<String> {
+        let inRow = Set(row)
+        return Set(shown.lazy.filter {
+            inRow.contains($0) && self.documents[$0].map { !$0.document.isBinary } == true
+        }.prefix(Self.keptBehind))
+    }
+
     /// A file's tab closed: stop watching it.
     func forget(_ path: String) {
         documents[path] = nil
         sources[path] = nil
+        shown.removeAll { $0 == path }
     }
 
     func openInWindow(_ path: String) {
@@ -85,6 +109,14 @@ struct PreviewTab: View {
 
     var body: some View {
         let (document, find) = tabs.document(for: path)
+        // Back where you left it. The document outlives its view (a session
+        // switch, or a tab not kept built behind the others, rebuilds the view
+        // and keeps the document), and it has been noting its place all along,
+        // for the mode switch; a fresh view opens on the anchor, so the anchor
+        // is that place, to the point. A view that is still alive takes no
+        // notice: each applies its anchor once, on arriving.
+        let _ = document.anchorLine = document.visibleLine
+        let _ = document.anchorOffset = document.visibleOffset
         VStack(spacing: 0) {
             PreviewTabHeader(document: document, openInWindow: { tabs.openInWindow(path) })
             PreviewContent(document: document, find: find, settings: tabs.settings,

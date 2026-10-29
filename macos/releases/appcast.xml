@@ -3,6 +3,39 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.44.3</title>
+            <pubDate>Thu, 29 Oct 2026 11:22:25 -0400</pubDate>
+            <sparkle:version>2026.44.3</sparkle:version>
+            <sparkle:shortVersionString>2026.44.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>A new session that starts with a command</h1>
+<p class="date">Wortel 2026.44.3 &middot; 2026-10-29</p>
+<p><strong><code>wortel new</code> can run a command.</strong> Everything after <code>--</code> is typed into the new session’s shell as its first line, so <code>wortel new --cwd ~/code/x -- claude --resume &#x3C;id></code> opens a session in that folder with that conversation picked back up. It works with <code>--branch</code>, <code>--pr</code> and <code>--worktree</code> too, and starts as soon as the worktree is ready. Because the command is typed rather than run in place of the shell, the sidebar tracks an agent started this way like one you started yourself, and when it exits you’re at a prompt. The new session’s id still goes to stdout. A command that can’t be typed safely (longer than 1 KB, or with a tab or another control character in it) is refused with a reason rather than half run.</p>
+<p><strong>File tabs come back where you were reading.</strong> Switching away from a previewed file and back used to start it at the top again. It now opens exactly where you left it, and a file that changes while you’re reading no longer pulls you back to where you started.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.44.3.zip" length="22769628" type="application/octet-stream" sparkle:edSignature="/32tPrVW2vfSJX3f7/IXQFntPo+FrmtRNIsTw0jgSnfqTXdzUeBCtHILtTRAdJ87bWYwpHpcu+5dbXFAeiDXBw=="/>
+        </item>
+        <item>
             <title>2026.44.2</title>
             <pubDate>Tue, 27 Oct 2026 11:19:14 -0400</pubDate>
             <sparkle:version>2026.44.2</sparkle:version>
@@ -69,40 +102,6 @@
 <p><strong>Open servers in your browser.</strong> A server in the running-jobs list opened in a tab inside Wortel. Turn on Open Servers in Default Browser in the View menu, or Always Open in Browser on a server’s right-click menu, and a click sends it to Chrome, Safari or whichever browser is your default. The menu still offers both, for the times you want the other one.</p>
 <p><strong>Tab previews in dark mode.</strong> The preview card you get when you rest on a tab kept a white background after switching to dark mode, with the terminal’s grey text on it barely readable. It now follows the appearance, the box and its edges both.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.44.1.zip" length="22695200" type="application/octet-stream" sparkle:edSignature="5TQx0mzBsrQ/HgxNYfEYOWUPVe6tdL0FpdSq/5oEjt1QoKHFs1B1s5vrG1q8aLwbFX8O4ij7tFcXSTHs2rKgAA=="/>
-        </item>
-        <item>
-            <title>2026.43.3</title>
-            <pubDate>Fri, 23 Oct 2026 07:53:24 -0400</pubDate>
-            <sparkle:version>2026.43.3</sparkle:version>
-            <sparkle:shortVersionString>2026.43.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Move a session to another folder</h1>
-<p class="date">Wortel 2026.43.3 &middot; 2026-10-23</p>
-<p><strong>Move a session, agent and all.</strong> You ask Claude to start a new project next door, it makes the folder and keeps working there, and the session, its Git panel and its sidebar folder stay behind on the old project. Change Directory in the session menu, or <code>wortel cd &#x3C;folder></code> from inside the session, now moves it. The shell changes to the new folder, keeping its scrollback, and Claude picks up the same conversation there. The session is filed under that folder in the sidebar (a new folder if none covers it, the way Open Folder makes one), and the Git panel and Files follow.</p>
-<p><strong>It waits for the right moment.</strong> A move never cuts Claude off. It happens once the turn has ended, not while Claude waits on a permission or a question, and not while you’re typing into its box. Until then the session’s row says where it’s going. Claude can ask for the move itself, and Wortel tells it straight away what will happen, including any background task that will stop. Run the command again with another folder to change the destination, or with the folder you’re in to call it off.</p>
-<p>Claude Code is the agent that can move today. Other agents, and a program running in the foreground like an editor or a dev server, are refused with a reason rather than interrupted.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.43.3.zip" length="22667817" type="application/octet-stream" sparkle:edSignature="4K+JxBgfrLGaunvA6HW7EoDuo6FBMSyFEZjaCSgnBU8+ikRrtE5bZOhbb0kIDp3mBBpHmF4Y8nuOkIVjJTBDCA=="/>
         </item>
     </channel>
 </rss>

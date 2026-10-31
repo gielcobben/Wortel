@@ -1473,7 +1473,7 @@ final class SessionManager {
                     in \(session.name, privacy: .private)
                     """)
                 progressEnded(session, inferred: blocked ? .needsInput : .turnDone, source: "screen",
-                              corroborating: speaksForItself(session))
+                              corroborating: speaksForItself(session), guessed: true)
             case .startedWorking, nil:
                 // The start edge is not acted on here; the claim above reads the
                 // level, so it covers this sample and every one after it.
@@ -3333,8 +3333,11 @@ final class SessionManager {
     /// before it is announced: real work runs for many seconds, and a spinner
     /// that quietly appears and disappears costs nothing, where a badge on a
     /// session nobody touched costs trust.
+    ///
+    /// `guessed` says the quiet is the screen tier's own reading rather than
+    /// the program's word, so `announceTurnEnd` must check there was a turn.
     private func progressEnded(_ session: Session, inferred kind: AttentionKind = .turnDone,
-                               source: String, corroborating: Bool = false) {
+                               source: String, corroborating: Bool = false, guessed: Bool = false) {
         let required = corroborating
             ? Self.minBusyForCorroboratedQuiesce : Self.minBusyForQuiesceAttention
         let startedAt = busyStartedAt[session.id]
@@ -3360,10 +3363,8 @@ final class SessionManager {
             // turn-end. If it *did* prompt (a notification / action-required
             // title), that already raised a louder .needsInput which priority
             // keeps from being downgraded here.
-            self.announceTurnEnd(session, kind: kind, startedAt: startedAt, source: source)
-            // A finished turn is the best moment to (re)name the session from
-            // what's now on screen — even when it's the one you're watching.
-            self.considerAutoName(session)
+            self.announceTurnEnd(session, kind: kind, startedAt: startedAt, source: source,
+                                 guessed: guessed)
         }
         quiesceTimers[id] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiesceSettleDelay, execute: work)
@@ -3376,14 +3377,19 @@ final class SessionManager {
     /// terminal signals look the same however a turn ended, the end of its
     /// transcript is read first (`ClaudeTranscriptTail`): an API error is a
     /// failure, not "your move", and a question or a plan it is waiting on is
-    /// input it needs. Anything else, or a transcript that can't be found,
-    /// keeps the inferred kind.
+    /// input it needs. A compaction Claude ran on its own while idle was no
+    /// turn, and neither was a screen-tier guess with nothing written behind
+    /// it: those raise nothing. Anything else, or a transcript that can't be
+    /// found, keeps the inferred kind.
     private func announceTurnEnd(_ session: Session, kind: AttentionKind, startedAt: Date?,
-                                 source: String) {
+                                 source: String, guessed: Bool) {
         let raise = { [weak self, weak session] (kind: AttentionKind, body: String, tag: String) in
             guard let self, let session else { return }
             self.raiseAttention(session, kind: kind, title: session.name, body: body,
                                 source: "\(source)-quiesce\(tag)")
+            // A finished turn is the best moment to (re)name the session from
+            // what's now on screen — even when it's the one you're watching.
+            self.considerAutoName(session)
         }
         let inferredBody: String
         switch kind {
@@ -3391,7 +3397,7 @@ final class SessionManager {
         case .failed: inferredBody = "Stopped with an error"
         default: inferredBody = "Finished, your move"
         }
-        guard kind == .turnDone, session.runningAgent == "claude",
+        guard kind == .turnDone || guessed, session.runningAgent == "claude",
               let id = session.liveConversationID, let cwd = session.runningCwd ?? session.cwd,
               let startedAt
         else { return raise(kind, inferredBody, "") }
@@ -3402,16 +3408,25 @@ final class SessionManager {
         DispatchQueue.global(qos: .userInitiated).async {
             let verdict = AgentResumeStore.claudeTranscript(id: id, cwd: cwd)
                 .flatMap(ClaudeTranscriptTail.readTail(of:))
-                .flatMap { ClaudeTranscriptTail.verdict($0, since: since) }
+                .flatMap { ClaudeTranscriptTail.verdict($0, since: since, guessed: guessed) }
             DispatchQueue.main.async { [weak self, weak session] in
                 guard let self, let session else { return }
                 // Busy again while the file was read: the turn didn't end.
                 guard !session.isBusy, self.busyTimers[session.id] == nil else { return }
+                if verdict == .noTurn {
+                    AgentStatusLog.log.debug("""
+                        \(source, privacy: .public)-quiesce: no turn, nothing raised \
+                        id=\(session.id.uuidString, privacy: .public)
+                        """)
+                    return
+                }
+                // A guess that already read the screen as blocked keeps that.
+                guard kind == .turnDone else { return raise(kind, inferredBody, "") }
                 switch verdict {
                 case .apiError(let message): raise(.failed, message, "-apierror")
                 case .question: raise(.needsInput, "Asking you a question", "-question")
                 case .plan: raise(.needsInput, "Plan ready for review", "-plan")
-                case nil: raise(kind, inferredBody, "")
+                case .noTurn, nil: raise(kind, inferredBody, "")
                 }
             }
         }

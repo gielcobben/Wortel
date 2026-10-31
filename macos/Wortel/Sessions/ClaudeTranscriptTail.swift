@@ -22,6 +22,25 @@ import Foundation
 /// `tool_use` with no `user` entry after it (the `tool_result` arrives only
 /// once it's answered). Subagent traffic is marked `isSidechain` and is not the
 /// turn the user is looking at.
+///
+/// Claude also goes quiet after work nobody asked for. On 2.1.314 a long
+/// conversation is compacted while idle, 54 minutes after its last activity so
+/// the summary is written before the prompt cache expires, and that runs for
+/// half a minute or more with the same spinner and `9;4` edges as a turn. It
+/// adds no assistant entry. What it does add is a summary, a `user` entry with
+/// `isCompactSummary`, then the restored files, then a `system` entry,
+/// `informational`, saying so. Both are needed: the note can land more than a
+/// second after the summary, past the settle window, and the restored files
+/// can run past `tailBytes`, leaving only the note. The `compact_boundary`
+/// beside the summary is no help for the same reason.
+///
+/// The screen tier can be wrong the same way, and for reasons that have nothing
+/// to do with Claude: anything that repaints an idle session for a few seconds
+/// looks like a short turn to it, most of all after a relaunch, before the
+/// session has said anything to show it speaks for itself. Measured on
+/// 2026-10-30: three sessions idle for hours got "Finished, your move" in the
+/// same second. A real turn writes to the transcript, so a guess with nothing
+/// written behind it was no turn.
 enum ClaudeTranscriptTail {
     enum Verdict: Equatable {
         /// The turn ended on an API error; the associated text is Claude's
@@ -31,6 +50,10 @@ enum ClaudeTranscriptTail {
         case question
         /// Claude finished planning (`ExitPlanMode`) and is waiting for approval.
         case plan
+        /// No turn at all, and nothing new to read or answer: Claude compacted
+        /// the conversation on its own while idle, or the screen tier guessed
+        /// at a turn that left nothing in the transcript.
+        case noTurn
     }
 
     /// How much of the end of a transcript is worth reading: a turn's last
@@ -41,24 +64,42 @@ enum ClaudeTranscriptTail {
     /// Longest error text carried into a notification.
     static let messageLimit = 140
 
+    /// How the note an idle compaction leaves begins (2.1.314). Not its
+    /// sibling, "Compacted using a summary written while you were away": that
+    /// one is written inside a real turn, by the prompt that found a summary
+    /// ready. Should the wording change, the session gets its dot back, which
+    /// is the safe way round: a missed turn would cost more than a stray dot.
+    static let idleCompactionNote = "Compacted while idle"
+
     /// The verdict for the turn that started at `since`, or nil when the turn
     /// ended in an ordinary way (or the tail says nothing newer than `since`).
+    /// `guessed` says the quiet came from the screen tier rather than from
+    /// Claude itself, which makes a tail with nothing newer than `since` an
+    /// answer: `noTurn`.
     ///
     /// `data` may start mid-line, as a tail read does; a line that doesn't
     /// parse is skipped rather than ending the search.
-    static func verdict(_ data: Data, since: Date) -> Verdict? {
+    static func verdict(_ data: Data, since: Date, guessed: Bool = false) -> Verdict? {
         let lines = data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true)
         for line in lines.reversed() {
             guard let entry = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
-                  let type = entry["type"] as? String,
-                  type == "assistant" || type == "user"
+                  let type = entry["type"] as? String
             else { continue }
             if entry["isSidechain"] as? Bool == true { continue }
+            // An older note still dates a tail that is all restored files, so
+            // for a guess it is as good as finding nothing newer.
+            if type == "system", let noted = idleCompactionDate(entry), guessed || noted >= since {
+                return .noTurn
+            }
+            guard type == "assistant" || type == "user" else { continue }
             // Older than this turn: whatever it says belongs to a turn the
             // user has already seen end.
             if let stamp = entry["timestamp"] as? String, let date = parseDate(stamp), date < since {
-                return nil
+                return guessed ? .noTurn : nil
             }
+            // Written ahead of the note, which may not be on disk yet. Nothing
+            // came after it, so no prompt is waiting and no reply was made.
+            if entry["isCompactSummary"] as? Bool == true { return .noTurn }
             // A user entry after the last assistant one means nothing is
             // pending: it's the answer to a question, or a new prompt.
             guard type == "assistant" else { return nil }
@@ -79,6 +120,16 @@ enum ClaudeTranscriptTail {
         return nil
     }
 
+    /// When the note an idle compaction leaves was written, if `entry` is one.
+    /// An undated note can't be placed, so it doesn't count.
+    private static func idleCompactionDate(_ entry: [String: Any]) -> Date? {
+        guard entry["subtype"] as? String == "informational",
+              (entry["content"] as? String)?.hasPrefix(idleCompactionNote) == true,
+              let stamp = entry["timestamp"] as? String
+        else { return nil }
+        return parseDate(stamp)
+    }
+
     /// Whether the conversation is mid-turn: its last entry is a tool call
     /// with no answer yet (a Bash or Edit waiting on permission, or a tool
     /// still running), a tool's answer Claude hasn't replied to, or a prompt
@@ -97,8 +148,10 @@ enum ClaudeTranscriptTail {
                   type == "assistant" || type == "user"
             else { continue }
             // Subagent traffic, and what Claude adds around a prompt (a
-            // skill's body, a command's caveat), speak for no one.
-            if entry["isSidechain"] as? Bool == true || entry["isMeta"] as? Bool == true { continue }
+            // skill's body, a command's caveat) or in place of the conversation
+            // (a compaction's summary), speak for no one.
+            if entry["isSidechain"] as? Bool == true || entry["isMeta"] as? Bool == true
+                || entry["isCompactSummary"] as? Bool == true { continue }
             let content = (entry["message"] as? [String: Any])?["content"]
             let blocks = content as? [[String: Any]] ?? []
             if type == "assistant" {

@@ -109,6 +109,30 @@ never return to the prompt; the agent's own signals take over.
 
 ## Gotchas learned the hard way
 
+- Claude Code compacts a long conversation on its own while it sits idle (over
+  200k tokens, 54 minutes after its last activity, so the summary is written
+  before the 1h prompt cache expires; `"idleCompaction": false` turns it off).
+  It looks exactly like a turn for 20 to 70 seconds, so every waiting session
+  used to get a "Finished, your move" an hour after you left it, and again
+  after the next one. The terminal can't tell, the transcript can: an
+  `isCompactSummary` entry, or an `informational` system entry starting
+  "Compacted while idle", with no assistant entry after it
+  (`ClaudeTranscriptTail.Verdict.noTurn`). It takes both, because the note can
+  arrive after the settle window, and up to ~950 KB of restored files sit
+  between the two, past the tail read. Its sibling, "Compacted using a summary
+  written while you were away", is written inside a real turn and means nothing
+  here.
+- A screen-tier quiesce on a Claude session is checked against the transcript
+  too: a turn writes to it, so a guess with no entry since the busy began was
+  a repaint, and raises nothing. Seen on 2026-10-30: three sessions idle for
+  hours were claimed at 16:02:00 and dotted at 16:02:05. After a relaunch an
+  idle session hasn't spoken, so it isn't `speaksForItself`, and the guess
+  needed 2s of busy rather than the corroborated 10s. What repainted them is
+  unknown, and other agents still get these, having no transcript to ask. The
+  session recap
+  (`away_summary`, ~3 minutes after a turn while unfocused) raised nothing in
+  two live captures.
+
 - Claude Code's OSC 9;4 is gated on `TERM_PROGRAM=ghostty` — captures under
   `xterm-256color` show nothing. Its "auto" notification channel sends **no
   bell and no OSC 9/777** under Ghostty; the 9;4;0 edge is the only signal.

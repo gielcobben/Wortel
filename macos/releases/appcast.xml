@@ -3,6 +3,40 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.44.4</title>
+            <pubDate>Sat, 31 Oct 2026 00:00:55 -0400</pubDate>
+            <sparkle:version>2026.44.4</sparkle:version>
+            <sparkle:shortVersionString>2026.44.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>No dot for a turn that never happened</h1>
+<p class="date">Wortel 2026.44.4 &middot; 2026-10-30</p>
+<p><strong>Idle compaction no longer looks like a finished turn.</strong> Claude Code now compacts a long conversation by itself after it has sat idle for about 54 minutes, so the summary is written before its prompt cache expires. That runs for half a minute with the same spinner as a turn, so Wortel told you “Finished, your move” on a session where nothing had happened and nothing was waiting for you. Wortel now reads what Claude wrote down, sees a compaction, and leaves the session alone.</p>
+<p><strong>Idle sessions stay quiet after a relaunch.</strong> Right after a relaunch, anything that repainted an idle Claude session for a couple of seconds could pass for a short turn, and several sessions could light up in the same second. A real turn always writes to the conversation, so when Wortel is going by the screen alone it now checks there first, and raises no dot if nothing was written. A session is also no longer named from a turn that didn’t happen.</p>
+<p><strong>Change Directory no longer waits forever after a compaction.</strong> A move waiting for Claude to finish could take the compaction’s summary for a prompt still owed an answer, and never go ahead. It now looks past the summary.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.44.4.zip" length="22772889" type="application/octet-stream" sparkle:edSignature="le63iCYO2tX7IxdOq8ATWY1d46vaSqmlK7SsQPRTGT11djRBGbgtSY56E7dG+efMN7HiQ7NWpiX9TA2tywuICA=="/>
+        </item>
+        <item>
             <title>2026.44.3</title>
             <pubDate>Thu, 29 Oct 2026 11:22:25 -0400</pubDate>
             <sparkle:version>2026.44.3</sparkle:version>
@@ -68,40 +102,6 @@
 <p><strong>Esc is just Esc.</strong> After pressing Esc twice to clear Claude’s input, the first letter you typed next could go missing from the session’s name. It no longer does. A single Esc followed by an arrow or another key is no longer mistaken for Esc Esc either.</p>
 <p><strong>Change Directory waits for you, not for the terminal.</strong> A move waiting for the agent to go quiet now holds off while you type, paste, click or scroll in that session, and no longer mistakes the terminal’s answers to the agent for someone typing.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.44.2.zip" length="22694944" type="application/octet-stream" sparkle:edSignature="HcKM6RHh5XJ6AcA/sNsLg7/poA+eHXjvV5bpy8dkL7ruTwqWvQY3QmttSDmrmwoQ3DM0nfkdwPSXjKyGMdVLCA=="/>
-        </item>
-        <item>
-            <title>2026.44.1</title>
-            <pubDate>Tue, 27 Oct 2026 08:42:09 -0400</pubDate>
-            <sparkle:version>2026.44.1</sparkle:version>
-            <sparkle:shortVersionString>2026.44.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>A worktree sheet again, and servers in your own browser</h1>
-<p class="date">Wortel 2026.44.1 &middot; 2026-10-27</p>
-<p><strong>New Worktree Session has its sheet back.</strong> ⇧⌘N opens one small form: the branch, the branch it starts from, and the folder the worktree goes in. A name is already filled in and selected, so pressing Return makes the session straight away, as before, and that name is replaced with one that fits the work once the session has a name. Type your own to name the branch yourself. Location shows where this repository’s worktrees go and changes it for the next ones too, the same setting as Worktree Location… in the folder menu.</p>
-<p><strong>Open servers in your browser.</strong> A server in the running-jobs list opened in a tab inside Wortel. Turn on Open Servers in Default Browser in the View menu, or Always Open in Browser on a server’s right-click menu, and a click sends it to Chrome, Safari or whichever browser is your default. The menu still offers both, for the times you want the other one.</p>
-<p><strong>Tab previews in dark mode.</strong> The preview card you get when you rest on a tab kept a white background after switching to dark mode, with the terminal’s grey text on it barely readable. It now follows the appearance, the box and its edges both.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.44.1.zip" length="22695200" type="application/octet-stream" sparkle:edSignature="5TQx0mzBsrQ/HgxNYfEYOWUPVe6tdL0FpdSq/5oEjt1QoKHFs1B1s5vrG1q8aLwbFX8O4ij7tFcXSTHs2rKgAA=="/>
         </item>
     </channel>
 </rss>

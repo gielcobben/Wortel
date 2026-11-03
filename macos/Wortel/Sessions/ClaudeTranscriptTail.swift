@@ -168,6 +168,47 @@ enum ClaudeTranscriptTail {
         return false
     }
 
+    /// The start of Claude's last answer, for the notification body
+    /// (`AgentAnswer`): the first paragraph of prose in its final message,
+    /// the question it is waiting on (`AskUserQuestion`'s first), or the
+    /// plan it wants approved (`ExitPlanMode`). nil when the turn that started
+    /// at `since` ended in nothing worth quoting: an API error (`verdict` has
+    /// that), a tool call still waiting on permission or running, a prompt or
+    /// a tool's result with no reply after it, an answer that is only code,
+    /// or nothing newer than `since`.
+    ///
+    /// Claude writes each block of a message as its own entry, thinking, text
+    /// and tool call one after another, so an entry with only thinking in it
+    /// means the words are in the entry before.
+    static func lastAnswer(_ data: Data, since: Date) -> String? {
+        for entry in AgentAnswer.entries(data) {
+            guard let type = entry["type"] as? String, type == "assistant" || type == "user" else { continue }
+            if entry["isSidechain"] as? Bool == true || entry["isMeta"] as? Bool == true { continue }
+            guard type == "assistant" else { return nil }
+            if let date = AgentAnswer.date(entry["timestamp"]), date < since { return nil }
+            if entry["isApiErrorMessage"] as? Bool == true { return nil }
+            let blocks = (entry["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
+            if let call = blocks.last(where: { $0["type"] as? String == "tool_use" }) {
+                let input = call["input"] as? [String: Any]
+                switch call["name"] as? String {
+                case "AskUserQuestion":
+                    let first = (input?["questions"] as? [[String: Any]])?.first
+                    return (first?["question"] as? String).flatMap { AgentAnswer.summary(ofMarkdown: $0) }
+                case "ExitPlanMode":
+                    return (input?["plan"] as? String).flatMap { AgentAnswer.summary(ofMarkdown: $0) }
+                default:
+                    return nil
+                }
+            }
+            let text = blocks.filter { $0["type"] as? String == "text" }
+                .compactMap { $0["text"] as? String }
+                .joined(separator: "\n\n")
+            if text.isEmpty { continue }
+            return AgentAnswer.summary(ofMarkdown: text)
+        }
+        return nil
+    }
+
     /// How the user entries begin that are not owed a reply (measured on
     /// 2.1.305 transcripts): an interruption, a slash command and its output,
     /// and `!` bash mode's input and output.

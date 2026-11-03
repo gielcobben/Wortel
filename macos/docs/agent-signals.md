@@ -215,6 +215,35 @@ paste or scroll in its terminal (`SurfaceView.onUserInput`, the hook the screen
 sampler already uses), or select it as usual. Coming back and clicking
 another session leaves it as any background session's dot.
 
+## What the banner says
+
+A turn that went quiet (`announceTurnEnd`) is announced with the start of the
+agent's last answer, not a fixed "Finished, your move": with three agents
+going, the fixed text said a turn ended and not which one or how it went.
+`AgentAnswer` makes the first paragraph of prose of the final message into
+plain text: code blocks, tables, rules, JSON and HTML lines skipped, headings
+skipped unless nothing else is left, list markers dropped (each item made a
+sentence), emphasis, links, images and code spans unwrapped, whitespace
+collapsed, cut to 180 characters at a word with an ellipsis.
+
+Where it is read from, each found the way resume finds the conversation
+(`liveConversationID`), only the last 256 KB, off the main thread:
+
+- **Claude**: the transcript (`ClaudeTranscriptTail.lastAnswer`), in the same
+  read as the verdict. A pending `AskUserQuestion` gives its first question, an
+  `ExitPlanMode` the plan's first paragraph.
+- **Codex**: the rollout (`AgentConversation.Codex.file`, by the day its UUIDv7
+  id was made): `task_complete`'s `last_agent_message`, else the last assistant
+  `message`.
+- **Pi**: the session file (`AgentConversation.Pi.file`): the last assistant
+  `message`'s text.
+
+The fixed text stays for everything else: another agent, no conversation id,
+an answer that is only code, nothing written since the turn began, a tool call
+still waiting (Claude's "I'll run the tests" before a permission prompt is not
+an answer), an interrupted turn, and errors, whose words are the error's. The
+text is the agent's own, so it is quoted as written, dashes and all.
+
 ## The name on the banner
 
 A notification is posted with the session's name, and the session is very

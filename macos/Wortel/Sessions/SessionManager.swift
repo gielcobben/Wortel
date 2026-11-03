@@ -3382,6 +3382,11 @@ final class SessionManager {
     /// turn, and neither was a screen-tier guess with nothing written behind
     /// it: those raise nothing. Anything else, or a transcript that can't be
     /// found, keeps the inferred kind.
+    ///
+    /// The body is what the agent said: the start of its last answer, or the
+    /// question it is waiting on (`AgentAnswer`), read from Claude's
+    /// transcript, Codex's rollout or Pi's session file. The fixed text is
+    /// what's left when there is no file to read or nothing in it to quote.
     private func announceTurnEnd(_ session: Session, kind: AttentionKind, startedAt: Date?,
                                  source: String, guessed: Bool) {
         let raise = { [weak self, weak session] (kind: AttentionKind, body: String, tag: String) in
@@ -3398,18 +3403,38 @@ final class SessionManager {
         case .failed: inferredBody = "Stopped with an error"
         default: inferredBody = "Finished, your move"
         }
-        guard kind == .turnDone || guessed, session.runningAgent == "claude",
+        guard let agent = session.runningAgent, AgentConversation.exact.contains(agent),
               let id = session.liveConversationID, let cwd = session.runningCwd ?? session.cwd,
               let startedAt
         else { return raise(kind, inferredBody, "") }
         // Two seconds of slack: the prompt that opened the turn is stamped
-        // when Claude wrote it, which can be a moment before its busy edge
+        // when the agent wrote it, which can be a moment before its busy edge
         // reached us.
         let since = startedAt.addingTimeInterval(-2)
+        // Only these quiets are Claude's transcript's to judge; a louder kind
+        // came from a signal of the agent's own.
+        let judged = kind == .turnDone || guessed
         DispatchQueue.global(qos: .userInitiated).async {
-            let verdict = AgentResumeStore.claudeTranscript(id: id, cwd: cwd)
-                .flatMap(ClaudeTranscriptTail.readTail(of:))
-                .flatMap { ClaudeTranscriptTail.verdict($0, since: since, guessed: guessed) }
+            var verdict: ClaudeTranscriptTail.Verdict?
+            var answer: String?
+            switch agent {
+            case "claude":
+                if let tail = AgentResumeStore.claudeTranscript(id: id, cwd: cwd)
+                    .flatMap(ClaudeTranscriptTail.readTail(of:)) {
+                    if judged { verdict = ClaudeTranscriptTail.verdict(tail, since: since, guessed: guessed) }
+                    answer = ClaudeTranscriptTail.lastAnswer(tail, since: since)
+                }
+            case "codex":
+                answer = AgentConversation.Codex.file(id: id)
+                    .flatMap(ClaudeTranscriptTail.readTail(of:))
+                    .flatMap { AgentAnswer.codex($0, since: since) }
+            case "pi":
+                answer = AgentConversation.Pi.file(id: id, cwd: cwd)
+                    .flatMap(ClaudeTranscriptTail.readTail(of:))
+                    .flatMap { AgentAnswer.pi($0, since: since) }
+            default:
+                break
+            }
             DispatchQueue.main.async { [weak self, weak session] in
                 guard let self, let session else { return }
                 // Busy again while the file was read: the turn didn't end.
@@ -3421,13 +3446,16 @@ final class SessionManager {
                         """)
                     return
                 }
+                // An error's words are the error's, not the last answer's.
+                let body = kind == .failed ? inferredBody : answer ?? inferredBody
+                let tag = answer == nil || kind == .failed ? "" : "-answer"
                 // A guess that already read the screen as blocked keeps that.
-                guard kind == .turnDone else { return raise(kind, inferredBody, "") }
+                guard kind == .turnDone else { return raise(kind, body, tag) }
                 switch verdict {
                 case .apiError(let message): raise(.failed, message, "-apierror")
-                case .question: raise(.needsInput, "Asking you a question", "-question")
-                case .plan: raise(.needsInput, "Plan ready for review", "-plan")
-                case .noTurn, nil: raise(kind, inferredBody, "")
+                case .question: raise(.needsInput, answer ?? "Asking you a question", "-question")
+                case .plan: raise(.needsInput, answer ?? "Plan ready for review", "-plan")
+                case .noTurn, nil: raise(kind, body, tag)
                 }
             }
         }

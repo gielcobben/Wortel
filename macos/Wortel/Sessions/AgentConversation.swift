@@ -352,6 +352,17 @@ enum AgentConversation {
         static func latest(cwd: String) -> String? {
             conversations(cwd: cwd).max { $0.modified < $1.modified }?.id
         }
+
+        /// The file conversation `id` is written to in `cwd`'s folder, for
+        /// reading what was last said in it (`AgentAnswer.pi`).
+        static func file(id: String, cwd: String, root: URL = root) -> URL? {
+            let dir = root.appendingPathComponent(directoryName(cwd: cwd), isDirectory: true)
+            let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+            return files.first { url in
+                url.pathExtension == "jsonl"
+                    && parse(fileName: url.deletingPathExtension().lastPathComponent)?.id == id.lowercased()
+            }
+        }
     }
 
     // MARK: - Codex
@@ -468,6 +479,16 @@ enum AgentConversation {
             return files(in: dayDirectories(around: created, root: root)).contains { url in
                 url.deletingPathExtension().lastPathComponent.lowercased().hasSuffix(id.lowercased())
                     && (meta(of: url).map { AgentConversation.samePath($0.cwd, cwd) } ?? false)
+            }
+        }
+
+        /// The rollout conversation `id` is written to, found from the day its
+        /// id says it was made, for reading what was last said in it
+        /// (`AgentAnswer.codex`).
+        static func file(id: String, root: URL = root) -> URL? {
+            guard let created = uuidV7Date(id) else { return nil }
+            return files(in: dayDirectories(around: created, root: root)).first {
+                $0.deletingPathExtension().lastPathComponent.lowercased().hasSuffix(id.lowercased())
             }
         }
 

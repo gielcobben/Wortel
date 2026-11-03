@@ -195,6 +195,17 @@ after the replay comes back: libghostty writes answers from its IO thread a
 moment after parsing, so "the replay was written" is not "its answers are out".
 See `docs/terminal-modes.md`.
 
+**Attention** (`SessionManager`'s Attention section, `docs/agent-signals.md`)
+— a session that wants you gets a dot, the Dock badge and a notification,
+unless you're looking at it: Wortel frontmost, window on screen, session
+selected, **and the Mac touched in the last minute** (`userIsAway`, the
+window server's idle time, read when a signal arrives). An attention raised
+on the session on screen while you were away is cleared only by input in its
+terminal or selecting it, never by activation or the window uncovering
+(`raisedWhileAway`). A turn end's notification body is the start of the
+agent's last answer (`AgentAnswer`, from Claude's transcript, Codex's rollout
+or Pi's session file), with the old fixed text as the fallback.
+
 **Session naming** (`Session.NameSource`, `Wortel/Sessions/AgentTitle.swift`,
 `Wortel/Sessions/PromptCapture.swift`, `Wortel/Ghostty/PromptTap.swift`,
 `SessionNameGenerator`) — a row's name comes from the best source that has

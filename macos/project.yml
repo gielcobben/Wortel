@@ -493,6 +493,11 @@ targets:
       # API error or a pending question looks like any finished turn from the
       # terminal, and a misread is a wrong dot. Foundation only.
       - path: Wortel/Sessions/ClaudeTranscriptTail.swift
+      # The start of an agent's last answer, for its notification: Markdown
+      # made into one plain sentence or two. A heading, a code fence or a
+      # whole JSON blob on a banner is worse than the fixed text it replaced,
+      # and nothing about that throws. Foundation only.
+      - path: Wortel/Sessions/AgentAnswer.swift
       # A session's ten ports. A block handed out twice, or one that moves
       # between launches, is two dev servers fighting over a port with nothing
       # on screen saying why. Foundation and Darwin only.

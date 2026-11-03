@@ -244,6 +244,7 @@ final class PromptHistoryTests: XCTestCase {
         XCTAssertEqual(PromptHistory.insertion("single", bracketed: false), "single")
     }
 
+    @MainActor
     func testAge() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!

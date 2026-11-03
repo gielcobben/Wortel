@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// Everything the user has typed to an agent, as the agents themselves keep
 /// it, and how ⌘Y finds a prompt in it.
@@ -404,7 +403,10 @@ enum PromptHistory {
         return (project as NSString).lastPathComponent
     }
 
-    /// "now", "5m", "3h", "2d" for this week; a date after that.
+    /// "now", "5m", "3h", "2d" for this week; a date after that. On the
+    /// main actor, which draws the panel's rows, so its formatters need no
+    /// lock (`ageFormatters`).
+    @MainActor
     static func age(of date: Date, now: Date = Date(), calendar: Calendar = .current,
                     locale: Locale = .current) -> String {
         let seconds = now.timeIntervalSince(date)
@@ -415,26 +417,20 @@ enum PromptHistory {
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
         let template = sameYear ? "MMMd" : "MMMyyyy"
         let key = "\(locale.identifier)|\(calendar.identifier)|\(calendar.timeZone.identifier)|\(template)"
-        return ageFormatters.withLock { formatters in
-            // Made once per locale and template, not once per row per
-            // redraw: a `DateFormatter` is expensive to make and cheap to use.
-            let formatter = formatters[key] ?? {
-                let formatter = DateFormatter()
-                formatter.locale = locale
-                formatter.calendar = calendar
-                formatter.timeZone = calendar.timeZone
-                formatter.setLocalizedDateFormatFromTemplate(template)
-                formatters[key] = formatter
-                return formatter
-            }()
-            return formatter.string(from: date)
-        }
+        if let formatter = ageFormatters[key] { return formatter.string(from: date) }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate(template)
+        ageFormatters[key] = formatter
+        return formatter.string(from: date)
     }
 
-    /// `age`'s formatters, by locale, calendar, zone and template. Behind a
-    /// lock rather than on the main actor only because the tests call `age`
-    /// from theirs; the panel's rows call it from the main thread.
-    private static let ageFormatters = OSAllocatedUnfairLock(uncheckedState: [String: DateFormatter]())
+    /// `age`'s formatters, by locale, calendar, zone and template: made once
+    /// each, not once per row per redraw, since a `DateFormatter` is
+    /// expensive to make and cheap to use.
+    @MainActor private static var ageFormatters: [String: DateFormatter] = [:]
 
     // MARK: - Typing one
 

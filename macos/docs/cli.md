@@ -290,7 +290,11 @@ don't, because what they do to the agent inside depends on who is asking.
 **`read` reads the active screen, not the viewport.** The active area is what
 the program last drew; the viewport is wherever the person at the keyboard has
 scrolled. An agent asking what another session says means the first.
-`--lines N` reads from the top of the scrollback and keeps the last N lines.
+`--lines N` keeps the last N lines, read off the active screen when it holds
+more than N, and otherwise off the whole scrollback: libghostty's read takes
+the active screen, the viewport or everything (an exact row is clamped to the
+screen's height), so there's no reading "the last N" of the scrollback alone.
+N is capped at 10000, which bounds the answer, not that read.
 Trailing spaces and the empty rows under the last line are the grid, not the
 output, and are trimmed.
 
@@ -316,9 +320,12 @@ bracketed paste.
 **`wait` holds the connection, not the main thread.** The reply simply comes
 later, as `new --branch`'s does. While any wait is open, a quarter-second timer
 looks at each one: a few dictionary reads for `--idle` and `--exit`, and for
-`--for` a screen read only when the pty's output counter has moved since the
-last one, at most twice a second (`PtyHost.outputGeneration`). A wait on a quiet
-session costs a counter comparison. When the CLI goes away (^C), the server
+`--for` a read of the active screen only when the pty's output counter has moved
+since the last one, at most twice a second (`PtyHost.outputGeneration`). A wait
+on a quiet session costs a counter comparison. The scrollback is read once, when
+the wait starts, and again only when more than a screenful has gone by between
+two looks, at most every three seconds (below): it can be 10 MB, and the read
+holds the lock the terminal's IO thread needs. When the CLI goes away (^C), the server
 tells the app (`WortelCLIServer.Caller.hasHungUp`), so a wait with no timeout
 doesn't outlive the shell that asked.
 
@@ -328,8 +335,14 @@ doesn't outlive the shell that asked.
   and screen when the wait starts are the baseline, and the wait ends when there
   are more. "Already on the screen" was the wrong default for the job: after a
   `send`, the answer to the last question is usually still there and would end
-  the wait at once. `--from-start` is bb's name for the other reading. Counting
-  rather than diffing survives the screen scrolling, and a count that drops (a
+  the wait at once. `--from-start` is bb's name for the other reading. After the
+  start a look reads only the active screen and lines it up with the last look
+  (`NewTextWatch`): the text is new when the screen has more of it than the
+  rows of the previous screen still on it, so text scrolling up, out of the
+  top, or moved down a row by a line inserted above it, is not. When nothing of
+  the previous screen is left (a flood, a resize, a `clear`), text may have gone
+  by unseen, and the next look counts the whole terminal against the whole
+  count, as the first design did on every look. A count that drops there (a
   `clear`, scrollback trimmed at its limit) lowers the baseline, so text printed
   after that still counts.
 - `--idle` is the sidebar's own reading: not working, not settling, or asking

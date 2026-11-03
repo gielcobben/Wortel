@@ -304,6 +304,8 @@ wortel read website
 wortel read website --lines 200     # the last 200 lines, scrollback included
 ```
 
+`--lines` takes up to 10000.
+
 It's the screen as the program last drew it, not wherever someone has
 scrolled to. For a full-screen agent that includes its frame and input box.
 `--json` prints `{"id", "name", "text"}`.

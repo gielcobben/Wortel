@@ -175,7 +175,7 @@ enum ScreenText {
     /// How many times `needle` appears, not overlapping. What `wait --for`
     /// compares against where it started: a count that goes up is the text
     /// appearing again, wherever on the screen it lands.
-    static func occurrences(of needle: String, in haystack: String) -> Int {
+    static func occurrences<S: StringProtocol>(of needle: String, in haystack: S) -> Int {
         guard !needle.isEmpty else { return 0 }
         var count = 0
         var range = haystack.startIndex..<haystack.endIndex
@@ -184,5 +184,127 @@ enum ScreenText {
             range = found.upperBound..<haystack.endIndex
         }
         return count
+    }
+
+    /// `read --lines`: the last `count` lines with something on them, from
+    /// the active screen when it holds more than that, else from `whole`,
+    /// which reads the scrollback too. More than, not as many: the top row
+    /// of the active screen can be the tail of a line wrapped from above it.
+    static func lastLines(_ count: Int, active: String?, whole: () -> String?) -> String? {
+        let count = min(max(1, count), WortelCLI.maximumReadLines)
+        if let active {
+            let lines = tidy(active).split(separator: "\n", omittingEmptySubsequences: false)
+            if lines.count > count { return lines.suffix(count).joined(separator: "\n") }
+        }
+        return whole().map { tidy($0, lastLines: count) }
+    }
+}
+
+/// What `wait --for` keeps between two looks at a terminal, so that the look
+/// costs what's on screen and not what's in the scrollback.
+///
+/// The old rule was a count over everything, scrollback included, compared
+/// with the count when the wait began: right, and a read of up to the whole
+/// scrollback (10 MB by default) on the main thread twice a second while
+/// output flowed, under the lock the terminal's own IO thread needs. Now a
+/// look reads only the **active screen**, and lines it up with the previous
+/// look (`shift`) to know how many rows scrolled out of its top: text counts
+/// as new when the screen has more of it than the previous screen's rows
+/// that are still on it had. Rows that scrolled out went into the
+/// scrollback, unread, and don't count either way.
+///
+/// That only works while some of the previous screen is still on the new
+/// one. When none is (more than a screenful went by between two looks, or
+/// the screen was redrawn whole: a resize, a `clear`, a full-screen program)
+/// text may have scrolled past unseen, and the next look is at the whole
+/// terminal, counted as before against `total`, which is the whole count
+/// as of the last such read. Text appearing on the active screen ends the
+/// wait at once, so `total` never needs raising in between; it is lowered
+/// when a whole read finds fewer (a `clear`, scrollback trimmed at its limit)
+/// so text printed after that still counts. A needle of several lines can't
+/// be found a line at a time and always takes the whole read.
+struct NewTextWatch: Equatable {
+    let needle: String
+    /// The active screen at the last look, a line per row, trailing spaces
+    /// off and nothing else: a row's place is what lines two looks up.
+    private(set) var screen: [String]
+    /// How many times the needle was in the whole terminal at the last
+    /// whole read (0 with `--from-start`, which counts what's there).
+    private(set) var total: Int
+    /// Text may have gone by unseen since the last look: read it all.
+    private(set) var needsWholeRead: Bool
+
+    init(needle: String, screen: String, total: Int, needsWholeRead: Bool = false) {
+        self.needle = needle
+        self.screen = Self.rows(screen)
+        self.total = total
+        self.needsWholeRead = needsWholeRead
+    }
+
+    /// A look at the active screen. True when the needle has appeared on it
+    /// since the last look.
+    mutating func look(atScreen text: String) -> Bool {
+        let now = Self.rows(text)
+        defer { screen = now }
+        guard !needle.contains(where: \.isNewline) else {
+            needsWholeRead = true
+            return false
+        }
+        guard let shift = Self.shift(from: screen, to: now) else {
+            needsWholeRead = true
+            return false
+        }
+        // Counted over the rows still on screen rather than row by row: a
+        // program that inserts a line above the text moves it down a row
+        // without making it new.
+        let stillShown = screen[shift...].reduce(0) { $0 + ScreenText.occurrences(of: needle, in: $1) }
+        let shown = now.reduce(0) { $0 + ScreenText.occurrences(of: needle, in: $1) }
+        return shown > stillShown
+    }
+
+    /// A look at the whole terminal, `screen` being its active screen read
+    /// just *before* it: text printed between the two reads is then in the
+    /// whole count and still new to the next look at the screen, rather
+    /// than in neither.
+    mutating func look(atWhole whole: String, screen text: String) -> Bool {
+        screen = Self.rows(text)
+        needsWholeRead = false
+        let count = ScreenText.occurrences(of: needle, in: whole)
+        if count > total { return true }
+        total = count
+        return false
+    }
+
+    /// How many rows the screen scrolled up between two looks (0 when it
+    /// didn't), or nil when no part of `old` can be found on `new`.
+    ///
+    /// The shift is the one where the most rows agree, the smallest of
+    /// those, and only where most of the rows compared agree: a screen with
+    /// the input box redrawn and a spinner turning still lines up, two
+    /// screens with one separator line in common don't. A row that was blank
+    /// isn't compared (output filling the empty rows under a prompt is not
+    /// disagreement).
+    static func shift(from old: [String], to new: [String]) -> Int? {
+        if old == new { return 0 }
+        var best: (shift: Int, agreeing: Int)?
+        for shift in old.indices {
+            let overlap = min(old.count - shift, new.count)
+            var agreeing = 0, compared = 0
+            for row in 0..<overlap where !old[row + shift].isEmpty {
+                compared += 1
+                if old[row + shift] == new[row] { agreeing += 1 }
+            }
+            guard agreeing > 0, agreeing * 2 > compared else { continue }
+            if agreeing > (best?.agreeing ?? 0) { best = (shift, agreeing) }
+        }
+        return best?.shift
+    }
+
+    private static func rows(_ text: String) -> [String] {
+        text.split(separator: "\n", omittingEmptySubsequences: false).map { row in
+            var row = row
+            while let last = row.last, last.isWhitespace { row.removeLast() }
+            return String(row)
+        }
     }
 }

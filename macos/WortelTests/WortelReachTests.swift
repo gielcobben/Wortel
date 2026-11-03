@@ -49,9 +49,12 @@ final class WortelReachTests: XCTestCase {
 
     /// A count that isn't one is refused, not read as "the screen".
     func testReadRefusesALineCountThatIsntOne() {
-        assertError(["read", "x", "--lines", "abc"], .invalid("--lines", "abc", "a number of lines, 1 or more"))
-        assertError(["read", "x", "--lines", "0"], .invalid("--lines", "0", "a number of lines, 1 or more"))
+        let expected = "a number of lines, 1 to 10000"
+        assertError(["read", "x", "--lines", "abc"], .invalid("--lines", "abc", expected))
+        assertError(["read", "x", "--lines", "0"], .invalid("--lines", "0", expected))
+        assertError(["read", "x", "--lines", "10001"], .invalid("--lines", "10001", expected))
         assertError(["read", "x", "--lines"], .missing("a value", "--lines"))
+        XCTAssertEqual(try? parse(["read", "x", "--lines", "10000"]).command, .read(session: "x", lines: 10_000))
     }
 
     /// An unquoted name with a space is two words; reading the first would
@@ -249,11 +252,110 @@ final class WortelReachTests: XCTestCase {
         XCTAssertEqual(ScreenText.tidy(raw, lastLines: 10), "one\ntwo\nthree\nfour")
     }
 
+    /// `--lines` reads the scrollback only when the screen doesn't hold more
+    /// than that many lines; a read of all of it is what libghostty can't
+    /// bound any tighter.
+    func testLastLinesReadTheScrollbackOnlyWhenTheScreenIsShort() {
+        var wholeReads = 0
+        func whole() -> String? {
+            wholeReads += 1
+            return "old one\nold two\none\ntwo\nthree\nfour"
+        }
+        let screen = "one\ntwo\nthree   \nfour\n\n\n"
+        XCTAssertEqual(ScreenText.lastLines(2, active: screen, whole: whole), "three\nfour")
+        XCTAssertEqual(wholeReads, 0)
+        // As many as the screen has: its top row may be a wrapped line's
+        // tail, so the scrollback answers.
+        XCTAssertEqual(ScreenText.lastLines(4, active: screen, whole: whole), "one\ntwo\nthree\nfour")
+        XCTAssertEqual(wholeReads, 1)
+        XCTAssertEqual(ScreenText.lastLines(5, active: screen, whole: whole), "old two\none\ntwo\nthree\nfour")
+        XCTAssertEqual(ScreenText.lastLines(3, active: nil, whole: { nil }), nil, "a closed terminal")
+    }
+
     func testOccurrences() {
         XCTAssertEqual(ScreenText.occurrences(of: "DONE", in: "DONE\nnot done\nDONE!"), 2)
         XCTAssertEqual(ScreenText.occurrences(of: "aa", in: "aaaa"), 2, "not overlapping")
         XCTAssertEqual(ScreenText.occurrences(of: "x", in: ""), 0)
         XCTAssertEqual(ScreenText.occurrences(of: "", in: "anything"), 0)
+    }
+
+    // MARK: - What wait --for counts as new
+
+    private func rows(_ rows: String...) -> String { rows.joined(separator: "\n") }
+
+    func testTheShiftIsHowFarTheScreenScrolled() {
+        let screen = ["one", "two", "three", "four"]
+        XCTAssertEqual(NewTextWatch.shift(from: screen, to: screen), 0)
+        XCTAssertEqual(NewTextWatch.shift(from: screen, to: ["three", "four", "five", "six"]), 2)
+        XCTAssertEqual(NewTextWatch.shift(from: ["$ make", "", "", ""], to: ["$ make", "cc a.c", "cc b.c", ""]), 0,
+                       "output filling the empty rows under a prompt is not a scroll")
+        XCTAssertEqual(NewTextWatch.shift(from: ["one", "two", "spin ⠋", "> "], to: ["one", "two", "spin ⠙", "> "]), 0,
+                       "a spinner turning still lines up")
+        XCTAssertNil(NewTextWatch.shift(from: screen, to: ["five", "six", "seven", "eight"]))
+        XCTAssertNil(NewTextWatch.shift(from: ["a", "----", "b", "c"], to: ["----", "x", "y", "z"]),
+                     "one line in common, the rest disagreeing, is not the same screen")
+    }
+
+    /// Text already there that scrolls up, or out of the top, is not new;
+    /// the same text arriving at the bottom is.
+    func testTextScrollingIsNotNewButArrivingIs() {
+        var watch = NewTextWatch(needle: "DONE", screen: rows("a", "DONE", "b", "c"), total: 1)
+        XCTAssertFalse(watch.look(atScreen: rows("DONE", "b", "c", "d")))
+        XCTAssertFalse(watch.look(atScreen: rows("b", "c", "d", "e")), "scrolled out of the top")
+        XCTAssertTrue(watch.look(atScreen: rows("c", "d", "e", "DONE")))
+        XCTAssertFalse(watch.needsWholeRead)
+    }
+
+    /// The old one leaving as the new one arrives, in one look: counting the
+    /// whole screen would see one before and one after.
+    func testANewOneArrivingAsTheOldOneLeavesIsSeen() {
+        var watch = NewTextWatch(needle: "DONE", screen: rows("a", "DONE", "b", "c"), total: 1)
+        XCTAssertTrue(watch.look(atScreen: rows("b", "c", "x", "DONE")))
+    }
+
+    /// A line inserted above the text moves it down a row; a status line
+    /// with the text in it redrawn is the same text.
+    func testTextMovedOrRedrawnInPlaceIsNotNew() {
+        var watch = NewTextWatch(needle: "DONE", screen: rows("a", "b", "c", "DONE ⠋", ""), total: 1)
+        XCTAssertFalse(watch.look(atScreen: rows("a", "b", "c", "DONE ⠙", "")))
+        XCTAssertFalse(watch.look(atScreen: rows("a", "b", "c", "new", "DONE ⠹")))
+        XCTAssertFalse(watch.needsWholeRead)
+    }
+
+    /// More than a screenful between two looks: what went by is unseen, so
+    /// the next look is at everything, counted against the whole count.
+    func testAFloodIsCountedOverTheWholeTerminal() {
+        var watch = NewTextWatch(needle: "DONE", screen: rows("a", "b", "c"), total: 2)
+        XCTAssertFalse(watch.look(atScreen: rows("x", "y", "z")))
+        XCTAssertTrue(watch.needsWholeRead)
+        XCTAssertFalse(watch.look(atWhole: "DONE DONE a b c x y z", screen: rows("x", "y", "z")))
+        XCTAssertFalse(watch.needsWholeRead)
+        XCTAssertFalse(watch.look(atScreen: rows("p", "q", "r")))
+        XCTAssertTrue(watch.look(atWhole: "DONE DONE a b c DONE p q r", screen: rows("p", "q", "r")),
+                      "one that scrolled past between two looks")
+    }
+
+    /// A count that drops (a `clear`, scrollback trimmed at its limit)
+    /// lowers the bar, so text printed after that still counts.
+    func testACountThatDropsLowersTheBar() {
+        var watch = NewTextWatch(needle: "DONE", screen: "", total: 2, needsWholeRead: true)
+        XCTAssertFalse(watch.look(atWhole: "DONE", screen: "$"))
+        XCTAssertEqual(watch.total, 1)
+        XCTAssertTrue(watch.look(atWhole: "DONE\nDONE", screen: "DONE"))
+    }
+
+    /// `--from-start` beats nothing, so what's there already counts.
+    func testFromStartCountsWhatsThere() {
+        var watch = NewTextWatch(needle: "ready", screen: "ready in 80ms", total: 0, needsWholeRead: true)
+        XCTAssertTrue(watch.look(atWhole: "ready in 80ms", screen: "ready in 80ms"))
+    }
+
+    /// A needle of several lines can't be found a row at a time.
+    func testANeedleOfSeveralLinesReadsTheWholeTerminal() {
+        var watch = NewTextWatch(needle: "a\nb", screen: "x", total: 0)
+        XCTAssertFalse(watch.look(atScreen: rows("x", "a", "b")))
+        XCTAssertTrue(watch.needsWholeRead)
+        XCTAssertTrue(watch.look(atWhole: "x\na\nb", screen: rows("x", "a", "b")))
     }
 
     // MARK: - The table

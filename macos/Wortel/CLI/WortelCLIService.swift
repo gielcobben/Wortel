@@ -438,10 +438,18 @@ final class WortelCLIService {
         guard let view else { return reply(refusal ?? .failure("That session has closed.")) }
         let id = session.id.uuidString, name = session.name
         view.afterPendingOutput {
-            guard let raw = view.readText(includingScrollback: lines != nil) else {
-                return reply(.failure("That session has closed."))
+            // `--lines` reads the scrollback only when the screen doesn't
+            // hold that many: a read of all of it is the one libghostty can
+            // bound no tighter (`ScreenText.lastLines`).
+            let text: String?
+            if let lines {
+                text = ScreenText.lastLines(lines, active: view.readText(includingScrollback: false),
+                                            whole: { view.readText(includingScrollback: true) })
+            } else {
+                text = view.readText(includingScrollback: false).map { ScreenText.tidy($0) }
             }
-            let screen = WortelScreen(id: id, name: name, text: ScreenText.tidy(raw, lastLines: lines))
+            guard let text else { return reply(.failure("That session has closed.")) }
+            let screen = WortelScreen(id: id, name: name, text: text)
             guard let data = try? JSONEncoder().encode(screen) else {
                 return reply(.failure("Couldn't read \u{201c}\(name)\u{201d}."))
             }
@@ -498,13 +506,13 @@ final class WortelCLIService {
         let session: Session.ID
         let name: String
         let needle: String?
-        /// How many times the text was there when the wait began (0 with
-        /// `--from-start`). Lowered if the count falls, after a `clear` or
-        /// scrollback trimmed at its limit, so text printed after that still
-        /// counts as new.
-        var baseline: Int
+        /// What `--for` has seen so far (`NewTextWatch`): the active screen
+        /// at the last look, and the count to beat when the whole terminal
+        /// has to be read.
+        var watch: NewTextWatch?
         var seenOutput: UInt64?
         var lastScreenRead: Date
+        var lastWholeRead: Date = .distantPast
         let idle: Bool
         let exit: Bool
         let startedAt: Date
@@ -517,14 +525,14 @@ final class WortelCLIService {
         let caller: WortelCLIServer.Caller
         let reply: @Sendable (WortelResponse) -> Void
 
-        init(session: Session, needle: String?, baseline: Int, seenOutput: UInt64?, idle: Bool,
+        init(session: Session, needle: String?, watch: NewTextWatch?, seenOutput: UInt64?, idle: Bool,
              exit: Bool, timeout: Double, caller: WortelCLIServer.Caller,
              reply: @escaping @Sendable (WortelResponse) -> Void) {
             let now = Date()
             self.session = session.id
             self.name = session.name
             self.needle = needle
-            self.baseline = baseline
+            self.watch = watch
             self.seenOutput = seenOutput
             self.lastScreenRead = now
             self.idle = idle
@@ -546,6 +554,12 @@ final class WortelCLIService {
     /// timer exists only while a wait does.
     private static let waitTick: TimeInterval = 0.25
     private static let screenReadInterval: TimeInterval = 0.5
+    /// How often, at most, a `--for` reads the whole terminal, scrollback
+    /// included, which it does only once more than a screenful has gone by
+    /// between two looks (`NewTextWatch`). Text in a flood is found this
+    /// late at worst, and the flood costs one big read per interval rather
+    /// than two a second.
+    private static let wholeReadInterval: TimeInterval = 3
     /// On the exec backend, which has no output counter, the screen is read
     /// this often instead.
     private static let blindScreenReadInterval: TimeInterval = 1
@@ -578,16 +592,21 @@ final class WortelCLIService {
         view.afterPendingOutput { [weak self] in
             guard let self else { return reply(.failure("Wortel is shutting down.")) }
             let seen = view.outputGeneration
-            var baseline = 0
-            if let text, !fromStart {
-                baseline = view.readText(includingScrollback: true)
-                    .map { ScreenText.occurrences(of: text, in: $0) } ?? 0
+            // The whole terminal is read once here, for the count to beat;
+            // after that only when text may have scrolled past unseen. The
+            // screen first, so text printed between the two reads is new to
+            // the next look rather than to neither. `--from-start` beats 0,
+            // and its first look is at everything at once: what's there
+            // already counts.
+            let watch = text.map { text in
+                let screen = view.readText(includingScrollback: false) ?? ""
+                let total = fromStart ? 0
+                    : view.readText(includingScrollback: true).map { ScreenText.occurrences(of: text, in: $0) } ?? 0
+                return NewTextWatch(needle: text, screen: screen, total: total, needsWholeRead: fromStart)
             }
-            let waiter = Waiter(session: session, needle: text, baseline: baseline,
-                                seenOutput: fromStart ? nil : seen, idle: idle, exit: exit,
+            let waiter = Waiter(session: session, needle: text, watch: watch,
+                                seenOutput: seen, idle: idle, exit: exit,
                                 timeout: timeout, caller: caller, reply: reply)
-            // `--from-start` looks at once: what's there already counts.
-            if fromStart { waiter.lastScreenRead = .distantPast }
             self.waiters.append(waiter)
             self.checkWaits()
             if !self.waiters.isEmpty, self.waitTimer == nil {
@@ -624,13 +643,22 @@ final class WortelCLIService {
         }
         let view = session.surfaceView
         if waiter.exit, view?.shellHasExited ?? false { return .success(value: "exit") }
-        if let needle = waiter.needle, let view, screenIsDue(waiter, view: view, now: now) {
-            waiter.lastScreenRead = now
-            waiter.seenOutput = view.outputGeneration
-            if let text = view.readText(includingScrollback: true) {
-                let count = ScreenText.occurrences(of: needle, in: text)
-                if count > waiter.baseline { return .success(value: "text") }
-                waiter.baseline = min(waiter.baseline, count)
+        if var watch = waiter.watch, let view {
+            defer { waiter.watch = watch }
+            if screenIsDue(waiter, view: view, now: now) {
+                waiter.lastScreenRead = now
+                waiter.seenOutput = view.outputGeneration
+                if let screen = view.readText(includingScrollback: false), watch.look(atScreen: screen) {
+                    return .success(value: "text")
+                }
+            }
+            // Not gated on new output: a flood that has just stopped still
+            // owes its one read.
+            if watch.needsWholeRead, now.timeIntervalSince(waiter.lastWholeRead) >= Self.wholeReadInterval,
+               let screen = view.readText(includingScrollback: false),
+               let whole = view.readText(includingScrollback: true) {
+                waiter.lastWholeRead = now
+                if watch.look(atWhole: whole, screen: screen) { return .success(value: "text") }
             }
         }
         if waiter.idle, isIdle(session, for: waiter, now: now) { return .success(value: "idle") }

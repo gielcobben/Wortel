@@ -145,6 +145,13 @@ enum WortelCLI {
     /// file pasted whole, and JSON-escaped (a control character becomes six
     /// bytes) it still fits in `maximumRequestBytes`.
     static let maximumSendBytes = 256 * 1024
+    /// The most lines `wortel read --lines` gives. libghostty can bound a
+    /// read to the active screen or read the whole scrollback, nothing in
+    /// between (`ghostty_surface_read_text` clamps an exact row to the
+    /// screen's height), so more lines than the screen holds costs a read of
+    /// all of it whatever N is (`ScreenText.lastLines`). This bounds the
+    /// answer, not that read.
+    static let maximumReadLines = 10_000
     /// The exit status of a `wortel wait` that ran out of time: the one GNU
     /// `timeout` uses, so a script that already knows that one reads it right.
     static let waitTimedOutStatus: Int32 = 124
@@ -321,8 +328,8 @@ enum WortelCommandParser {
             let target = try words.target(for: verb)
             var lines: Int?
             if let text = words["--lines"] {
-                guard let count = Int(text), count > 0 else {
-                    throw ParseError.invalid("--lines", text, "a number of lines, 1 or more")
+                guard let count = Int(text), (1...WortelCLI.maximumReadLines).contains(count) else {
+                    throw ParseError.invalid("--lines", text, "a number of lines, 1 to \(WortelCLI.maximumReadLines)")
                 }
                 lines = count
             }

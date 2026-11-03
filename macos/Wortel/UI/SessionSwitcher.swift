@@ -242,16 +242,23 @@ final class PromptHistoryModel {
     /// Shown at most: a history is searched, not scrolled.
     static let shownLimit = 100
 
+    /// What the reading remembers between panels (each file's parse, by its
+    /// size and date). Owned here, on the main actor; a load works on a copy
+    /// off it and brings the copy back (`PromptHistoryStore`).
+    private static var store = PromptHistoryStore()
+
     init(from directory: String?) {
+        let store = Self.store
         Task.detached(priority: .userInitiated) { [weak self] in
-            let store = PromptHistoryStore.shared
-            let project = directory.map(store.project(of:))
+            var store = store
+            let project = directory.map { store.project(of: $0) }
             let index = PromptHistory.index(store.load())
-            await self?.loaded(index, project: project)
+            await self?.loaded(index, project: project, store: store)
         }
     }
 
-    private func loaded(_ index: [PromptHistory.Searchable], project: String?) {
+    private func loaded(_ index: [PromptHistory.Searchable], project: String?, store: PromptHistoryStore) {
+        Self.store = store
         self.index = index
         self.project = project
         projectName = PromptHistory.projectName(project)

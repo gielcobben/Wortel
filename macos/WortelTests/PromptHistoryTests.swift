@@ -338,7 +338,8 @@ final class PromptHistoryStoreTests: XCTestCase {
              "message": ["role": "assistant", "timestamp": 1_002_000, "content": []]],
         ], to: "pi/sessions/--somewhere-pi--/1970-01-01T00-16-40-000Z_p1.jsonl")
 
-        let entries = PromptHistoryStore().load(from: locations)
+        var store = PromptHistoryStore()
+        let entries = store.load(from: locations)
         XCTAssertEqual(entries.map(\.text), ["with a paste pasted\ntext", "claude prompt", "codex prompt", "pi prompt"])
         XCTAssertEqual(entries.map(\.agent), [.claude, .claude, .codex, .pi])
         XCTAssertEqual(entries[2].directory, "/somewhere/codex", "from the rollout")
@@ -359,7 +360,7 @@ final class PromptHistoryStoreTests: XCTestCase {
     }
 
     func testAFileIsReadAgainOnlyWhenItChanges() throws {
-        let store = PromptHistoryStore()
+        var store = PromptHistoryStore()
         try write([["display": "first", "timestamp": 1000, "project": "/p"]], to: "claude/history.jsonl")
         XCTAssertEqual(store.load(from: locations).map(\.text), ["first"])
         try write([["display": "first", "timestamp": 1000, "project": "/p"],
@@ -368,7 +369,8 @@ final class PromptHistoryStoreTests: XCTestCase {
     }
 
     func testMissingFilesAreNoHistory() {
-        XCTAssertEqual(PromptHistoryStore().load(from: locations).count, 0)
+        var store = PromptHistoryStore()
+        XCTAssertEqual(store.load(from: locations).count, 0)
     }
 }
 

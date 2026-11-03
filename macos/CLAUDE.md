@@ -384,7 +384,9 @@ didn't, the lines are joined, since an unbracketed newline is Return). Wortel
 stores nothing for it: the agents' own files are read when the panel opens,
 off the main thread, from their tail (4 MB a file; Pi's newest conversations
 within a 16 MB budget), cut at 5000 entries, and kept only in memory keyed by
-size and modification date. Ranking runs off the main thread too, the
+size and modification date. That memory is a value (`PromptHistoryStore`),
+not a locked shared object: the model keeps it on the main actor and a load
+reads with a copy and hands the copy back, so the main-thread rule holds. Ranking runs off the main thread too, the
 previous one cancelled per keystroke. No index on disk, ever: that would be
 Wortel keeping the user's prompts, which `docs/session-naming.md` promises it
 doesn't.

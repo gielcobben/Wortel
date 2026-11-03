@@ -19,8 +19,15 @@ import Foundation
 ///   why). What is kept, in memory, is each file's parse, keyed by its size
 ///   and modification date, so opening the panel a second time reads only
 ///   what changed.
-final class PromptHistoryStore: @unchecked Sendable {
-    static let shared = PromptHistoryStore()
+///
+/// **A value, not a shared object.** The memory above is plain stored
+/// properties and `load` mutates them, so nothing here is shared between
+/// threads and nothing is locked: the panel's model keeps the one copy that
+/// lasts on the main actor (`PromptHistoryModel.store`), hands a copy to the
+/// detached task that reads, and takes the updated copy back with the
+/// result. Two panels opened at once each read with their own copy and the
+/// later one's memory is kept, which costs at most a re-read.
+struct PromptHistoryStore: Sendable {
 
     static let tailBytes = 4 << 20
     static let piFileLimit = 300
@@ -59,13 +66,12 @@ final class PromptHistoryStore: @unchecked Sendable {
         }
     }
 
-    private struct Parsed {
+    private struct Parsed: Sendable {
         let size: UInt64
         let modified: Date
         let entries: [PromptHistory.Entry]
     }
 
-    private let lock = NSLock()
     private var parsed: [String: Parsed] = [:]
     /// Directory → project (`PromptHistory.Entry.project`). A directory's
     /// repository doesn't change while the app runs, and asking is a walk up
@@ -75,7 +81,7 @@ final class PromptHistoryStore: @unchecked Sendable {
     private var codexDirectories: [String: String?] = [:]
 
     /// Every prompt, newest first, each once, with its project. Blocking.
-    func load(from locations: Locations = .current()) -> [PromptHistory.Entry] {
+    mutating func load(from locations: Locations = .current()) -> [PromptHistory.Entry] {
         var lists: [[PromptHistory.Entry]] = []
         let claude = locations.claude
         lists.append(entries(of: claude.appendingPathComponent("history.jsonl"), maxBytes: Self.tailBytes) { line in
@@ -85,21 +91,17 @@ final class PromptHistoryStore: @unchecked Sendable {
         lists.append(piEntries(in: locations.piSessions))
         var merged = PromptHistory.merged(lists, limit: Self.entryLimit)
         for index in merged.indices {
-            merged[index].project = merged[index].directory.map(project(of:))
+            if let directory = merged[index].directory { merged[index].project = project(of: directory) }
         }
         return merged
     }
 
     /// The project `directory` belongs to, as `Entry.project` names it.
-    func project(of directory: String) -> String {
-        lock.lock()
-        if let known = projects[directory] { lock.unlock(); return known }
-        lock.unlock()
+    mutating func project(of directory: String) -> String {
+        if let known = projects[directory] { return known }
         let standard = (directory as NSString).standardizingPath
         let project = GitWorktree.repositoryHome(containing: standard) ?? standard
-        lock.lock()
         projects[directory] = project
-        lock.unlock()
         return project
     }
 
@@ -107,20 +109,15 @@ final class PromptHistoryStore: @unchecked Sendable {
 
     /// A JSONL file's entries, from the last `maxBytes` of it, reusing the
     /// last parse when the file hasn't changed.
-    private func entries(of url: URL, maxBytes: Int,
-                         parse: (Data) -> PromptHistory.Entry?) -> [PromptHistory.Entry] {
+    private mutating func entries(of url: URL, maxBytes: Int,
+                                  parse: (Data) -> PromptHistory.Entry?) -> [PromptHistory.Entry] {
         guard let stamp = Self.stamp(of: url) else { return [] }
-        lock.lock()
         if let cached = parsed[url.path], cached.size == stamp.size, cached.modified == stamp.modified {
-            lock.unlock()
             return cached.entries
         }
-        lock.unlock()
         guard let tail = AgentFiles.tail(of: url, maxBytes: maxBytes) else { return [] }
         let entries = PromptHistory.lines(in: tail.data, fromMiddle: tail.fromMiddle).compactMap(parse)
-        lock.lock()
         parsed[url.path] = Parsed(size: stamp.size, modified: stamp.modified, entries: entries)
-        lock.unlock()
         return entries
     }
 
@@ -152,26 +149,21 @@ final class PromptHistoryStore: @unchecked Sendable {
 
     // MARK: - Codex
 
-    private func codexEntries(in codex: URL) -> [PromptHistory.Entry] {
+    private mutating func codexEntries(in codex: URL) -> [PromptHistory.Entry] {
         var entries = self.entries(of: codex.appendingPathComponent("history.jsonl"), maxBytes: Self.tailBytes,
                                    parse: PromptHistory.codexEntry)
         var lookedUp = 0
         // Newest first, so the lookups are spent on what's shown first.
         for index in entries.indices.reversed() {
             guard let id = entries[index].conversation else { continue }
-            lock.lock()
-            let known = codexDirectories[id]
-            lock.unlock()
-            if let known {
+            if let known = codexDirectories[id] {
                 entries[index].directory = known
                 continue
             }
             guard lookedUp < Self.codexLookupLimit else { continue }
             lookedUp += 1
             let directory = Self.codexDirectory(of: id, around: entries[index].date, in: codex)
-            lock.lock()
             codexDirectories[id] = .some(directory)
-            lock.unlock()
             entries[index].directory = directory
         }
         return entries
@@ -201,7 +193,7 @@ final class PromptHistoryStore: @unchecked Sendable {
 
     // MARK: - Pi
 
-    private func piEntries(in sessions: URL) -> [PromptHistory.Entry] {
+    private mutating func piEntries(in sessions: URL) -> [PromptHistory.Entry] {
         let keys: [URLResourceKey] = [.contentModificationDateKey]
         guard let folders = try? FileManager.default.contentsOfDirectory(
             at: sessions, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }

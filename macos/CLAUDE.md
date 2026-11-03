@@ -620,15 +620,22 @@ quitting stays what it was. They are also why the inspector no longer shares its
 column with anything.
 
 **The `wortel` command** (`Wortel/CLI/`, `WortelCLI/`) — a Unix socket the CLI
-speaks JSON at: `open`, `new`, `rename`, `notify`, `mark`, `fork`, `cd`. `docs/wortel-command.md` is
-the user-facing guide, `docs/cli.md` the design record; the three
-decisions that shape the code are that **there is no installer** (the binary
+speaks JSON at: `open`, `new`, `rename`, `notify`, `mark`, `fork`, `cd`, and
+`list`, `read`, `send`, `wait`. `docs/wortel-command.md` is
+the user-facing guide, `docs/cli.md` the design record; the decisions that
+shape the code are that **there is no installer** (the binary
 ships in the bundle and `GhosttyRuntime` puts its directory on the `PATH` of
 every shell it spawns, so it exists inside a session and nowhere else), that
 **it never steals focus** (windows are ordered front, the app is never
 activated, so a hook firing behind your back can't take your keyboard), and that
 **a command means the session it was run in** (`$WORTEL_SESSION_ID`, not an
-argument). The point of having it at all is that Wortel then ships no per-agent
+argument), except the four that **reach other sessions** by id or name
+(`WortelReach.swift`): `read` the screen, `send` a paste and a Return through
+the same calls ⌘V and the key take, `wait` for new text, idle or exit with the
+connection held open (never the main thread). `send` has **no prompt and no
+label**, like a person typing; the trust boundary is the user's own sessions,
+since the binary only exists inside them. `list` and `wait --idle` read
+`SessionManager.activity(of:)`, the sidebar's own busy and attention state. The point of having it at all is that Wortel then ships no per-agent
 integrations: anything that can run a command can drive the app. The CLI target
 is named `WortelCLI` and not `wortel` — same-name targets collide in the
 intermediates directory on a case-insensitive filesystem, and the app ends up

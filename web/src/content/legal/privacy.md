@@ -84,7 +84,7 @@ about the thing it happened to:
 - the jump-to-next-waiting shortcut was used
 - the shortcut that shows and hides Wortel from any app was used
 - a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`,
-  `mark`, `fork`, `cd`, `version`)
+  `mark`, `fork`, `cd`, `list`, `read`, `send`, `wait`, `version`)
 - one last message when you turn reporting off, and then silence
 
 Each carries the app version, your macOS version to one decimal place, and

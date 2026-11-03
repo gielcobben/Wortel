@@ -149,10 +149,10 @@ a script and run that. If the command could not be typed for any other reason,
 somewhere else (a launcher, a hotkey app, a button) can call it by its full
 path, `/Applications/Wortel.app/Contents/Resources/bin/wortel`.
 
-### `wortel rename <name>`
+### `wortel rename [--session <s>] <name>`
 
-Renames **the session you're in**. A `/` in the name puts it in that folder in
-the sidebar.
+Renames **the session you're in**, or with `--session` another one (an id or a
+name, as below). A `/` in the name puts it in that folder in the sidebar.
 
 ```sh
 wortel rename "1482 login redirect"
@@ -161,10 +161,10 @@ wortel rename "Lijn/css rules"
 
 A rename this way counts as *yours*, so auto-naming will never overwrite it.
 
-### `wortel notify <title> [body]`
+### `wortel notify [--session <s>] <title> [body]`
 
-Raises attention on the session you're in: the sidebar dot, the Dock badge, and
-a notification.
+Raises attention on the session you're in (or the one `--session` names): the
+sidebar dot, the Dock badge, and a notification.
 
 ```sh
 npm test || wortel notify "Tests failed" "$(git branch --show-current)"
@@ -175,9 +175,9 @@ This is the same path an agent's own escape sequence takes, so a build finishing
 and Claude finishing look and sound identical — which is the point when you're
 in another room.
 
-### `wortel mark <colour>`
+### `wortel mark [--session <s>] <colour>`
 
-Colours the session you're in, as a bar at the edge of its row in the
+Colours the session you're in (or the one `--session` names), as a bar at the edge of its row in the
 sidebar: red, orange, yellow, green, blue, purple or grey. `wortel mark none`
 takes it off. The same colours are in the row's menu, under Colour.
 
@@ -240,9 +240,158 @@ else in the foreground (vim, a dev server) is refused too, rather than typed
 into. Run it again with another directory to change where it's going, or with
 the one you're in to call it off.
 
+## Reaching other sessions
+
+The commands above act on the session they're run in. These four act on any
+open session, which is what lets one agent start another, give it a prompt,
+wait for it to finish and read what it said. They go through the same doors
+you do: the screen, a paste and the Return key. Nothing asks for permission and
+nothing marks the text as sent by a program: to the session, `send` is someone
+typing.
+
+### `wortel list [--json]`
+
+The open sessions, in sidebar order:
+
+```
+$ wortel list
+  ID       NAME                  STATE     AGENT  BRANCH          DIRECTORY
+* 3F2A91C0 Wortel/website        working   claude -               ~/Developer/wortel
+  9B1E07D2 Wortel/tests (you)    idle      -      -               ~/Developer/wortel
+  C04D11A8 fix login redirect    needs-you codex  fix/1482        ~/.wortel/worktrees/wortel/fix-1482
+```
+
+`*` is the session selected in the sidebar, and `(you)` the one you ran the
+command in. The state is what the sidebar's dots say:
+
+| State | Means |
+|---|---|
+| `working` | a command or an agent's turn is running |
+| `needs-you` | it's asking for you: a permission, a question, a bell |
+| `finished` | its last turn or long command ended cleanly |
+| `failed` | its last turn or long command ended in an error |
+| `idle` | nothing running, nothing said since |
+| `preparing` | its worktree is still being made |
+
+`--json` prints the same as an array of objects with the fields `id`, `name`,
+`folder`, `directory`, `branch`, `worktree`, `agent`, `state`, `selected` and
+`caller`. A field with nothing to say is left out rather than `null`. The field
+names are a contract: new ones may be added, none will be renamed.
+
+### Naming a session
+
+Wherever a command takes `<session>` (and `--session` on `rename`, `notify`
+and `mark`) you can give:
+
+- its **id**, the whole one or the short one `list` prints (any start of four
+  characters or more);
+- its **name**, as the sidebar shows it (`website`) or with its folder
+  (`Wortel/website`), in any case;
+- the **start of a name**, when only one session's name starts that way.
+
+An exact name wins over a prefix, so a session called `Agent` is still
+reachable beside `agent one` and `agent two`. When a name could mean two
+sessions the command refuses and lists them, rather than picking one: a prompt
+typed into the wrong agent can't be taken back.
+
+### `wortel read <session> [--lines <n>] [--json]`
+
+Prints the text on a session's screen, as plain text: no colours, trailing
+spaces and the empty rows under the last line trimmed.
+
+```sh
+wortel read website
+wortel read website --lines 200     # the last 200 lines, scrollback included
+```
+
+It's the screen as the program last drew it, not wherever someone has
+scrolled to. For a full-screen agent that includes its frame and input box.
+`--json` prints `{"id", "name", "text"}`.
+
+A session restored at launch that hasn't been shown since has no terminal yet;
+`read` (like `send` and `wait`) starts it quietly, without selecting it, and
+reads it once what it printed while Wortel was away is back on its screen.
+
+### `wortel send <session> [text] [--enter] [--stdin]`
+
+Types `text` into the session as a paste: exactly what ⌘V would do with it on
+your clipboard. To an agent that asked for bracketed paste (they all do), a
+multi-line prompt arrives as one input in its box, not as one message per line.
+Nothing is added in front of it.
+
+```sh
+wortel send tests "run the unit tests and fix what fails" --enter
+wortel send tests --enter                 # just press Return
+git diff | wortel send review --stdin --enter
+wortel send tests -- --help               # text that starts with a dash
+```
+
+`--enter` presses Return after the paste, as its own keypress a moment later,
+the way you would. `--stdin` reads the text from standard input and drops one
+trailing newline, as `$(...)` does. The session is not selected and nothing
+takes focus, so you can keep typing where you are. Sending to the session you're
+in works too. Up to 256 KB at a time.
+
+### `wortel wait <session> [--for <text> [--from-start]] [--idle] [--exit] [--timeout <dur>]`
+
+Waits until something happens in a session, then exits 0:
+
+- `--for <text>`: the text appears. It's matched against the plain text, so
+  colours and bold can't split it, and it counts only when it's **new**: text
+  already on the screen or in the scrollback when the wait starts doesn't end
+  it. `--from-start` counts what's already there too.
+- `--idle`: the agent in it has finished its turn or is waiting on you (a
+  question, a permission), or a plain shell is back at its prompt. A wait that
+  starts right after a `send` waits for the agent to start first, so it can't
+  end before the work does. A session nobody has touched is idle at once.
+- `--exit`: the session closes, or its shell exits.
+
+With none of these, it waits for `--idle`. With several, the first to happen
+ends it, and its name (`text`, `idle` or `exit`) is printed.
+
+`--timeout` is how long to wait: `30s` unless given, as `90s`, `5m`, `1h` or a
+bare number of seconds, and `0` for no limit.
+
+| Exit status | Means |
+|---|---|
+| `0` | it happened |
+| `124` | the time ran out (the status `timeout(1)` uses) |
+| `1` | it couldn't wait: no such session, or it closed first |
+| `2` | you typed it wrong |
+
+`--for` is for output you know the shape of, like a dev server saying it's up:
+
+```sh
+wortel send server "npm run dev" --enter
+wortel wait server --for "ready in" --timeout 1m
+```
+
+Pick text the command or prompt itself doesn't contain: what you `send` is on
+the screen too, and would count.
+
+### One agent running another
+
+An agent (or a script) in one session starts a second agent in a worktree of
+its own with a task, waits for it to finish, reads what it said, and gives it
+the next step:
+
+```sh
+id=$(wortel new --worktree --name "flaky test" -- claude "Find out why LoginTests.testRedirect is flaky")
+wortel wait "$id" --idle --timeout 20m
+wortel read "$id" --lines 80
+
+wortel send "$id" "Fix it, and run the tests until they pass." --enter
+wortel wait "$id" --idle --timeout 20m && wortel read "$id" --lines 40
+```
+
+The first task goes on `new`'s command line rather than through `send`: the
+agent isn't there to paste into until it has started. The second agent is in
+the sidebar the whole time, so you can watch it work, answer it yourself, or
+take it over. Its id is the only thing the first one has to keep.
+
 ## Which session a command means
 
-`rename`, `notify`, `mark`, `fork` and `cd` act on the session they were run in. You never pass an id:
+`rename`, `notify`, `mark`, `fork` and `cd` act on the session they were run in, unless `rename`, `notify` or `mark` is given `--session`. You never pass an id:
 every Wortel shell carries `$WORTEL_SESSION_ID`, and the command reads it. Run
 from outside Wortel they say so instead of guessing:
 
@@ -255,9 +404,11 @@ several processes deep still means the right session.
 
 ## For scripting
 
-- **stdout** carries the one machine-readable value (a session id, a path).
+- **stdout** carries the one machine-readable value (a session id, a path),
+  or the answer itself for `list` and `read`.
 - **stderr** carries anything meant for a person.
-- **Exit codes:** `0` it happened, `1` the app said no, `2` you typed it wrong.
+- **Exit codes:** `0` it happened, `1` the app said no, `2` you typed it wrong,
+  and `124` for a `wait` that ran out of time.
 
 So `id=$(wortel new)` gives you an id and nothing else, and `wortel open x ||
 echo nope` does what you'd expect.
@@ -341,3 +492,6 @@ row.
 
 **`This Wortel doesn't understand that command.`** — the command and the app are
 from different versions. `wortel --version` prints both.
+
+**`"agent" could be "agent one" (3F2A91C0), "agent two" (3F2B0000).`** The
+name you gave starts more than one session's. Use more of it, or the id.

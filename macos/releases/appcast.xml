@@ -3,6 +3,43 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.45.1</title>
+            <pubDate>Tue, 03 Nov 2026 09:52:08 -0500</pubDate>
+            <sparkle:version>2026.45.1</sparkle:version>
+            <sparkle:shortVersionString>2026.45.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>One session can run the others</h1>
+<p class="date">Wortel 2026.45.1 &middot; 2026-11-03</p>
+<p><strong><code>wortel</code> reaches every session, not just its own.</strong> <code>wortel list</code> shows your sessions and what each is doing. <code>wortel read &#x3C;session></code> prints what’s on its screen, and <code>--lines 50</code> takes the last 50 lines. <code>wortel send &#x3C;session> "text" --enter</code> types into it the way a paste would, so a prompt of several lines arrives as one. <code>wortel wait &#x3C;session></code> waits until the agent in it has finished its turn, until some text appears (<code>--for READY</code>) or until it exits, and exits with 124 if the time runs out. A session can be named by its id or its name, and <code>wortel new</code> already prints the new session’s id, so one agent can start another, give it a task, wait for it and read the answer.</p>
+<p><strong>Your prompt history on ⌘Y.</strong> Everything you’ve typed to Claude Code, Codex and Pi, from any session and any project, with this project’s prompts first. Pick one and it goes into the session’s input without being sent. Wortel keeps none of it itself: it reads the history the agents already keep.</p>
+<p><strong>Select several sessions at once.</strong> ⌘-click adds a session, ⇧-click takes a range, and right-clicking the selection closes, pins, moves, marks or colours all of them. Esc goes back to one. And View ▸ Sort Unread First lifts the sessions that want you to the top of each section, without touching the order you dragged them into.</p>
+<p><strong>Notifications say what the agent answered.</strong> Instead of “Finished, your move”, a notification now starts with the agent’s answer, and a question shows the question.</p>
+<p><strong>Wortel notices when you’ve walked away.</strong> A session you had open in front used to count as seen, even if you’d left before the agent finished. After a minute with no keyboard or mouse, it now gets its dot and its notification like any other.</p>
+<p><strong>No stray characters after a relaunch.</strong> Reattaching a session replays what it printed while Wortel was closed, and the terminal used to answer the old questions in there again (where’s the cursor, what’s the background colour), which could land in an agent’s prompt as <code>^[[24;1R</code>. Those answers are now dropped.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.45.1.zip" length="23347607" type="application/octet-stream" sparkle:edSignature="lLX8DAZxIt8qV9lPNw8jwHDHeAweUt0Ki7yW2a8Gw8aV+zWl2Xm1DFbjYzSeCIjOKlXmZ9xIC8uNPYSBe0OoCQ=="/>
+        </item>
+        <item>
             <title>2026.44.4</title>
             <pubDate>Sat, 31 Oct 2026 00:00:55 -0400</pubDate>
             <sparkle:version>2026.44.4</sparkle:version>
@@ -68,40 +105,6 @@
 <p><strong><code>wortel new</code> can run a command.</strong> Everything after <code>--</code> is typed into the new session’s shell as its first line, so <code>wortel new --cwd ~/code/x -- claude --resume &#x3C;id></code> opens a session in that folder with that conversation picked back up. It works with <code>--branch</code>, <code>--pr</code> and <code>--worktree</code> too, and starts as soon as the worktree is ready. Because the command is typed rather than run in place of the shell, the sidebar tracks an agent started this way like one you started yourself, and when it exits you’re at a prompt. The new session’s id still goes to stdout. A command that can’t be typed safely (longer than 1 KB, or with a tab or another control character in it) is refused with a reason rather than half run.</p>
 <p><strong>File tabs come back where you were reading.</strong> Switching away from a previewed file and back used to start it at the top again. It now opens exactly where you left it, and a file that changes while you’re reading no longer pulls you back to where you started.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.44.3.zip" length="22769628" type="application/octet-stream" sparkle:edSignature="/32tPrVW2vfSJX3f7/IXQFntPo+FrmtRNIsTw0jgSnfqTXdzUeBCtHILtTRAdJ87bWYwpHpcu+5dbXFAeiDXBw=="/>
-        </item>
-        <item>
-            <title>2026.44.2</title>
-            <pubDate>Tue, 27 Oct 2026 11:19:14 -0400</pubDate>
-            <sparkle:version>2026.44.2</sparkle:version>
-            <sparkle:shortVersionString>2026.44.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Sessions named for what you typed, not for a colour</h1>
-<p class="date">Wortel 2026.44.2 &middot; 2026-10-27</p>
-<p><strong>No more sessions named after a colour.</strong> When Claude Code starts, it asks the terminal what colour its background is, and the answer travels to Claude down the same path as your typing. Wortel reads that path to name a session from your first prompt, and it took the answer for something you had typed. Pressing Return at the folder trust question was enough to send it off as your “prompt”, and the session came out as “Extract hex color values” or “Decode hex color code”. Wortel now tells the terminal’s answers apart from your keys, so the name comes from what you actually asked.</p>
-<p><strong>Esc is just Esc.</strong> After pressing Esc twice to clear Claude’s input, the first letter you typed next could go missing from the session’s name. It no longer does. A single Esc followed by an arrow or another key is no longer mistaken for Esc Esc either.</p>
-<p><strong>Change Directory waits for you, not for the terminal.</strong> A move waiting for the agent to go quiet now holds off while you type, paste, click or scroll in that session, and no longer mistakes the terminal’s answers to the agent for someone typing.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.44.2.zip" length="22694944" type="application/octet-stream" sparkle:edSignature="HcKM6RHh5XJ6AcA/sNsLg7/poA+eHXjvV5bpy8dkL7ruTwqWvQY3QmttSDmrmwoQ3DM0nfkdwPSXjKyGMdVLCA=="/>
         </item>
     </channel>
 </rss>

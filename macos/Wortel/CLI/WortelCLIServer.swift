@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The app's end of the `wortel` command: a Unix domain socket that turns one
 /// line of JSON into one call into the app.
@@ -12,7 +13,8 @@ import Foundation
 ///
 /// The reply is asynchronous — `handler` calls back rather than returning —
 /// because half of what the CLI asks for is: `new --branch` shells out to git
-/// before there's a session to name in the response.
+/// before there's a session to name in the response. Calling back never
+/// blocks: the encoding and the write happen on the server's queue.
 final class WortelCLIServer: @unchecked Sendable {
     /// Handle one command and call back with the answer. Called on the server's
     /// own queue; the app's implementation hops to the main actor.
@@ -35,8 +37,8 @@ final class WortelCLIServer: @unchecked Sendable {
         /// answer. Only `wortel wait` asks: its answer can be minutes off, and
         /// a wait nobody is waiting on any more would otherwise sit in the app
         /// until its timeout, or forever with none. Valid until the reply is
-        /// sent, which closes the descriptor it looks at; call it on the
-        /// thread that replies.
+        /// given, after which the server closes the descriptor it looks at
+        /// (on its own queue); don't ask once you've replied.
         let hasHungUp: @Sendable () -> Bool
     }
 
@@ -181,8 +183,20 @@ final class WortelCLIServer: @unchecked Sendable {
             return
         }
         let caller = Caller(pid: Self.peerPID(of: client), hasHungUp: { Self.hasHungUp(client) })
-        handler(command, caller) { response in
-            Self.reply(response, to: client)
+        let answered = OSAllocatedUnfairLock(initialState: false)
+        handler(command, caller) { [serveQueue] response in
+            // Once: the reply closes the descriptor, and a second one would
+            // close whatever the number had been handed to since.
+            guard answered.withLock({ done in defer { done = true }; return !done }) else { return }
+            // **Never written where it was given.** The app replies from the
+            // main thread, and a write blocks for as long as the peer doesn't
+            // read: a CLI suspended with ^Z, or piped into something stuck,
+            // with a `read --lines` answer of up to 16 MB in front of it.
+            // Written there, that froze the whole app, terminals included,
+            // for up to the send timeout per chunk. One reply per connection,
+            // so the connection's order is its own; the queue is concurrent
+            // so one stuck peer holds up no one else's answer.
+            serveQueue.async { Self.reply(response, to: client) }
         }
     }
 

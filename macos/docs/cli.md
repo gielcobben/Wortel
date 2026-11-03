@@ -366,7 +366,11 @@ doesn't outlive the shell that asked.
 - **A long answer.** `read --lines` can be a long stretch of scrollback, so a
   reply may be up to 16 MB, while a command stays capped at 2 MB (`send`'s text
   at 256 KB, which fits even JSON-escaped). Two limits, because the two
-  directions carry different things.
+  directions carry different things. The app answers from the main thread,
+  and a reply is never written there: a CLI suspended with ^Z stops reading,
+  and 16 MB written in place froze the app, terminals and all. The server
+  encodes and writes it on its own queue, one connection's stuck reader
+  holding up nobody else's.
 
 ## The build
 

@@ -155,6 +155,35 @@ final class WortelCLIServerTests: XCTestCase {
         XCTAssertEqual(try send(.read(session: "x", lines: 100_000)).value?.count, long.count)
     }
 
+    /// The app replies from the main thread, so replying must never wait on
+    /// the peer: a CLI suspended with ^Z doesn't read, and a reply bigger
+    /// than the socket's buffer written in place froze the whole app. Here
+    /// the peer sends its command and then never reads.
+    func testReplyingToAPeerThatDoesntReadReturnsAtOnce() throws {
+        let parked = Parked()
+        let server = WortelCLIServer(path: path, callerHandler: { _, from, reply in
+            parked.park(from, reply)
+        })
+        try server.start()
+        servers.append(server)
+
+        let socketFD = try WortelCLIClient.connect(to: path)
+        defer { close(socketFD) }
+        var request = try JSONEncoder().encode(WortelCommand.read(session: "x", lines: 100_000))
+        request.append(0x0A)
+        _ = request.withUnsafeBytes { write(socketFD, $0.baseAddress!, $0.count) }
+        _ = try XCTUnwrap(parked.waitForCaller())
+        let reply = try XCTUnwrap(parked.reply)
+
+        let started = Date()
+        reply(.success(value: String(repeating: "x", count: 8_000_000)))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5,
+                          "the reply was written on the caller's thread")
+        // A second answer is dropped, not written to (and closing) a
+        // descriptor that may belong to someone else by now.
+        reply(.success())
+    }
+
     /// A failure can carry its own exit status: a `wait` that timed out is not
     /// the same answer as one for a session that doesn't exist.
     func testAFailureCarriesItsStatus() throws {

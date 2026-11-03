@@ -387,7 +387,7 @@ enum WortelCommandParser {
             var timeout = defaultWaitTimeout
             if let given = words["--timeout"] {
                 guard let seconds = duration(given) else {
-                    throw ParseError.invalid("--timeout", given, "a duration like 30s, 5m or 0")
+                    throw ParseError.invalid("--timeout", given, "a duration like 30s, 5m or 0, up to 7 days")
                 }
                 timeout = seconds
             }
@@ -409,9 +409,15 @@ enum WortelCommandParser {
     /// look like a hang.
     static let defaultWaitTimeout: Double = 30
 
+    /// The longest `--timeout` taken: a week. Anything longer is a typo or
+    /// `1e19`, and 0 already says "no limit". Bounded because the number
+    /// ends up in a `timeval` and an `Int(...)`, which trap on a Double
+    /// past `Int.max` rather than failing.
+    static let maximumDuration: Double = 7 * 24 * 3600
+
     /// A duration as typed: `90s`, `5m`, `1h`, `500ms`, or a bare number of
-    /// seconds. 0 is valid and means "no limit" to `wait`. Nil for anything
-    /// else, negative numbers included.
+    /// seconds, up to `maximumDuration`. 0 is valid and means "no limit" to
+    /// `wait`. Nil for anything else, negative numbers included.
     static func duration(_ text: String) -> Double? {
         let text = text.trimmingCharacters(in: .whitespaces).lowercased()
         let units: [(suffix: String, seconds: Double)] = [("ms", 0.001), ("s", 1), ("m", 60), ("h", 3600)]
@@ -419,7 +425,17 @@ enum WortelCommandParser {
         let unit = units.first { text.hasSuffix($0.suffix) } ?? ("", 1)
         let number = text.dropLast(unit.suffix.count)
         guard !number.isEmpty, let value = Double(number), value >= 0, value.isFinite else { return nil }
-        return value * unit.seconds
+        // Checked after the unit, which can carry a finite number past it.
+        let seconds = value * unit.seconds
+        guard seconds <= maximumDuration else { return nil }
+        return seconds
+    }
+
+    /// Whether a timeout that came over the socket is one `duration` could
+    /// have produced. The app checks it too: the socket is also spoken to
+    /// directly, and a wait's timeout is printed with `Int(...)`.
+    static func isValidTimeout(_ seconds: Double) -> Bool {
+        seconds.isFinite && seconds >= 0 && seconds <= maximumDuration
     }
 
     /// The verbs that act on the caller's own session unless told otherwise,

@@ -352,7 +352,7 @@ With none of these, it waits for `--idle`. With several, the first to happen
 ends it, and its name (`text`, `idle` or `exit`) is printed.
 
 `--timeout` is how long to wait: `30s` unless given, as `90s`, `5m`, `1h` or a
-bare number of seconds, and `0` for no limit.
+bare number of seconds, up to 7 days, and `0` for no limit.
 
 | Exit status | Means |
 |---|---|

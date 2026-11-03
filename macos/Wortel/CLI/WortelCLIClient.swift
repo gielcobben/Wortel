@@ -19,6 +19,10 @@ enum WortelCLIClient {
         // command line that never returns is worse than one that says so.
         // 0 is no bound at all (what the socket options take it to mean), for
         // a `wortel wait --timeout 0`, whose answer comes when it comes.
+        // Bounded before it's converted, which traps on a Double past
+        // `Int.max`; the parser has already refused anything near that.
+        let bound = WortelCommandParser.maximumDuration + WortelCLI.answerTimeout
+        let timeout = timeout.isFinite ? min(max(timeout, 0), bound) : 0
         var deadline = timeval(
             tv_sec: Int(timeout), tv_usec: Int32((timeout - timeout.rounded(.down)) * 1e6))
         setsockopt(socketFD, SOL_SOCKET, SO_RCVTIMEO, &deadline, socklen_t(MemoryLayout<timeval>.size))

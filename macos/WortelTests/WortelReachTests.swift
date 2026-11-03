@@ -153,9 +153,15 @@ final class WortelReachTests: XCTestCase {
         XCTAssertEqual(try timeout("500ms"), 0.5)
         XCTAssertEqual(try timeout("45"), 45)
         XCTAssertEqual(try timeout("0"), 0)
-        assertError(["wait", "x", "--timeout", "soon"], .invalid("--timeout", "soon", "a duration like 30s, 5m or 0"))
-        assertError(["wait", "x", "--timeout", "-5s"], .invalid("--timeout", "-5s", "a duration like 30s, 5m or 0"))
-        assertError(["wait", "x", "--timeout", "m"], .invalid("--timeout", "m", "a duration like 30s, 5m or 0"))
+        XCTAssertEqual(try timeout("168h"), 7 * 24 * 3600)
+        let expected = "a duration like 30s, 5m or 0, up to 7 days"
+        for typo in ["soon", "-5s", "m", "nan", "inf", "169h", "1e19", "1e306h", "99999999999999999999m"] {
+            assertError(["wait", "x", "--timeout", typo], .invalid("--timeout", typo, expected))
+        }
+        XCTAssertFalse(WortelCommandParser.isValidTimeout(.infinity))
+        XCTAssertFalse(WortelCommandParser.isValidTimeout(1e19))
+        XCTAssertFalse(WortelCommandParser.isValidTimeout(-1))
+        XCTAssertTrue(WortelCommandParser.isValidTimeout(0))
     }
 
     func testWaitMistakes() {

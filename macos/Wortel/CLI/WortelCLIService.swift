@@ -161,6 +161,11 @@ final class WortelCLIService {
             send(text, to: query, pressingReturn: enter, caller: caller, reply: reply)
 
         case .wait(let query, let text, let fromStart, let idle, let exit, let timeout):
+            // Checked again here, as for `.newRunning`: the socket is also
+            // spoken to directly, and the timeout is printed with `Int(...)`.
+            guard WortelCommandParser.isValidTimeout(timeout) else {
+                return reply(.failure("That timeout isn't one: give a duration up to 7 days, or 0 for none."))
+            }
             wait(for: query, text: text, fromStart: fromStart, idle: idle, exit: exit,
                  timeout: timeout, caller: caller, reply: reply)
 

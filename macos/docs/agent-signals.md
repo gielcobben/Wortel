@@ -213,7 +213,9 @@ remembered (`raisedWhileAway`), and `appDidBecomeActive` and
 `windowVisibilityChanged` leave it alone; it clears when you type, click,
 paste or scroll in its terminal (`SurfaceView.onUserInput`, the hook the screen
 sampler already uses), or select it as usual. Coming back and clicking
-another session leaves it as any background session's dot.
+another session leaves it as any background session's dot. A `wortel send`
+into it doesn't clear it either (`onScriptedInput`): text typed by another
+agent while you're gone is not you coming back.
 
 ## What the banner says
 

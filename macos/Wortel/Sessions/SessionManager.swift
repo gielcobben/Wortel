@@ -5196,6 +5196,12 @@ final class SessionManager {
                 self.agentScreenTrackers[session.id]?.rebaseline(now: Date())
                 self.noteUserInput(session)
             }
+            // A script's `wortel send` repaints too, but it is not you back
+            // at the keyboard: an attention raised while you were away stays.
+            view.onScriptedInput = { [weak self, weak session] in
+                guard let self, let session else { return }
+                self.agentScreenTrackers[session.id]?.rebaseline(now: Date())
+            }
             view.onCommandFinished = { [weak self, weak session] exitCode, durationNs in
                 guard let self, let session else { return }
                 // While an agent is running here, this is not the shell coming

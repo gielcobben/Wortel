@@ -200,9 +200,9 @@ See `docs/terminal-modes.md`.
 unless you're looking at it: Wortel frontmost, window on screen, session
 selected, **and the Mac touched in the last minute** (`userIsAway`, the
 window server's idle time, read when a signal arrives). An attention raised
-on the session on screen while you were away is cleared only by input in its
-terminal or selecting it, never by activation or the window uncovering
-(`raisedWhileAway`). A turn end's notification body is the start of the
+on the session on screen while you were away is cleared only by your input in
+its terminal or selecting it, never by activation, the window uncovering or
+a `wortel send` (`raisedWhileAway`, `sendText(scripted:)`). A turn end's notification body is the start of the
 agent's last answer (`AgentAnswer`, from Claude's transcript, Codex's rollout
 or Pi's session file), with the old fixed text as the fallback.
 

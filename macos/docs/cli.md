@@ -307,7 +307,11 @@ keyboard protocol expects the key's own encoding. It comes 200 ms after the
 paste, as a person's would, because Codex reads keys arriving in a burst as a
 paste, and a Return inside one as a newline. Both reach the pty by the same
 road typing does, so `PromptTap` (session naming) and a move's `DraftTap` see
-them as typing.
+them as typing. What they are not is *you*: `SurfaceView.sendText(scripted:)`
+keeps them out of `lastUserInputAt` and away from an attention raised while you
+were away (`raisedWhileAway`), which only your own input or selecting the
+session answers. An agent driving a session from elsewhere is not someone back
+at the keyboard.
 
 **A session not shown since launch is warmed, not refused.** Surfaces are
 lazy, so `read`, `send` and `wait` on a restored session create its terminal

@@ -470,7 +470,9 @@ final class WortelCLIService {
     /// Return as a separate key. Nothing is added in front, nothing selects
     /// the session or takes focus, and the input taps (`PromptTap`, a move's
     /// `DraftTap`) see it as they see typing, because it reaches the pty by
-    /// the same road.
+    /// the same road. It is not the user's input, though (`scripted`): it
+    /// doesn't answer an attention raised while they were away, or count as
+    /// them having touched the session.
     private func send(_ text: String, to query: String, pressingReturn enter: Bool,
                       reply: @escaping @Sendable (WortelResponse) -> Void) {
         let session: Session
@@ -486,11 +488,11 @@ final class WortelCLIService {
             guard !view.shellHasExited else {
                 return reply(.failure("\u{201c}\(name)\u{201d} has no shell any more: it exited."))
             }
-            if !text.isEmpty { view.sendText(text) }
+            if !text.isEmpty { view.sendText(text, scripted: true) }
             guard enter else { return reply(.success()) }
             DispatchQueue.main.asyncAfter(deadline: .now() + (text.isEmpty ? 0 : Self.returnAfterPaste)) {
                 MainActor.assumeIsolated {
-                    view.pressReturn()
+                    view.pressReturn(scripted: true)
                     reply(.success())
                 }
             }
@@ -704,7 +706,8 @@ final class WortelCLIService {
             return activity.asksForAction || (waiter.sawBusy && activity.outcome != nil)
                 || now.timeIntervalSince(quietSince) >= Self.quietAfterTurn
         }
-        let lastTouched = [session.surfaceView?.lastUserInputAt, session.surfaceView?.shellStartedAt,
+        let view = session.surfaceView
+        let lastTouched = [view?.lastUserInputAt, view?.lastScriptedInputAt, view?.shellStartedAt,
                            activity.lastStarted].compactMap { $0 }.max() ?? .distantPast
         return now.timeIntervalSince(lastTouched) >= Self.quietAfterInput
     }

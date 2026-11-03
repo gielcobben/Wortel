@@ -48,11 +48,29 @@ final class SurfaceView: NSView {
     /// replies to its queries. A move waiting on the agent goes ahead only
     /// once this has been quiet a while.
     private(set) var lastUserInputAt: Date?
+    /// Text or a Return a script sent (`wortel send`, `scripted: true`): it
+    /// reaches the pty by the same road as the user's, so the input taps
+    /// (`PromptTap`, a move's `DraftTap`) see it as they see typing, but it
+    /// is **not the user**. It doesn't answer an attention raised while they
+    /// were away, and it doesn't move `lastUserInputAt`: an agent driving a
+    /// session from elsewhere is not someone back at the keyboard. The
+    /// screen it changes is still not the program's doing, which is all
+    /// this hook is for (the activity sampler re-baselines on it).
+    var onScriptedInput: (() -> Void)?
+    /// When a script last sent something here, for `wortel wait --idle`,
+    /// whose quiet after a `send` means "not started yet".
+    private(set) var lastScriptedInputAt: Date?
 
     /// Every input path reports here, so the time and the hook can't drift apart.
     private func noteUserInput() {
         lastUserInputAt = Date()
         onUserInput?()
+    }
+
+    private func noteInput(scripted: Bool) {
+        guard scripted else { return noteUserInput() }
+        lastScriptedInputAt = Date()
+        onScriptedInput?()
     }
 
     private(set) var pwd: String?
@@ -583,11 +601,12 @@ final class SurfaceView: NSView {
 
     /// Write text straight to the surface, as a paste would. Not for keyDown —
     /// that path routes through `keyTextAccumulator` (see `insertText`).
-    func sendText(_ string: String) {
+    /// `scripted` for text no person typed (`onScriptedInput`).
+    func sendText(_ string: String, scripted: Bool = false) {
         guard let surface else { return }
         let len = string.utf8CString.count
         guard len > 1 else { return }
-        noteUserInput()
+        noteInput(scripted: scripted)
         string.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(len - 1))
         }
@@ -601,9 +620,9 @@ final class SurfaceView: NSView {
     /// key or as part of a paste. For `wortel send --enter`, so what reaches
     /// the program is what a person's Return would have been.
     @discardableResult
-    func pressReturn() -> Bool {
+    func pressReturn(scripted: Bool) -> Bool {
         guard let surface else { return false }
-        noteUserInput()
+        noteInput(scripted: scripted)
         var key = ghostty_input_key_s()
         key.keycode = 0x24 // kVK_Return
         key.mods = GHOSTTY_MODS_NONE

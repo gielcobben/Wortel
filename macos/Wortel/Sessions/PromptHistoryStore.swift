@@ -116,7 +116,7 @@ final class PromptHistoryStore: @unchecked Sendable {
             return cached.entries
         }
         lock.unlock()
-        guard let tail = Self.tail(of: url, maxBytes: maxBytes) else { return [] }
+        guard let tail = AgentFiles.tail(of: url, maxBytes: maxBytes) else { return [] }
         let entries = PromptHistory.lines(in: tail.data, fromMiddle: tail.fromMiddle).compactMap(parse)
         lock.lock()
         parsed[url.path] = Parsed(size: stamp.size, modified: stamp.modified, entries: entries)
@@ -130,17 +130,6 @@ final class PromptHistoryStore: @unchecked Sendable {
               let modified = attributes[.modificationDate] as? Date
         else { return nil }
         return (size, modified)
-    }
-
-    /// The last `maxBytes` of a file, and whether that started mid-file.
-    static func tail(of url: URL, maxBytes: Int) -> (data: Data, fromMiddle: Bool)? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        guard let size = try? handle.seekToEnd() else { return nil }
-        let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
-        guard (try? handle.seek(toOffset: start)) != nil,
-              let data = try? handle.readToEnd() else { return nil }
-        return (data, start > 0)
     }
 
     /// A file's first line, if it ends within `maxBytes`.

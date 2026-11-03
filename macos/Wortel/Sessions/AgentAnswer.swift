@@ -234,7 +234,7 @@ enum AgentAnswer {
             } else {
                 continue
             }
-            if let date = date(entry["timestamp"]), date < since { return nil }
+            if let date = AgentFiles.date(entry["timestamp"]), date < since { return nil }
             return text.flatMap { summary(ofMarkdown: $0) }
         }
         return nil
@@ -258,7 +258,7 @@ enum AgentAnswer {
                   let role = message["role"] as? String
             else { continue }
             guard role == "assistant" else { return nil }
-            if let date = date(entry["timestamp"]), date < since { return nil }
+            if let date = AgentFiles.date(entry["timestamp"]), date < since { return nil }
             if message["stopReason"] as? String == "error" { return nil }
             let blocks = message["content"] as? [[String: Any]] ?? []
             if blocks.contains(where: { $0["type"] as? String == "toolCall" }) { return nil }
@@ -281,15 +281,5 @@ enum AgentAnswer {
             .reversed()
             .lazy
             .compactMap { try? JSONSerialization.jsonObject(with: Data($0)) as? [String: Any] }
-    }
-
-    /// An ISO 8601 timestamp, with or without fractional seconds.
-    static func date(_ value: Any?) -> Date? {
-        guard let text = value as? String else { return nil }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: text) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: text)
     }
 }

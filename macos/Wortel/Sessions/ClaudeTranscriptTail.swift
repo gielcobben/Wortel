@@ -94,7 +94,7 @@ enum ClaudeTranscriptTail {
             guard type == "assistant" || type == "user" else { continue }
             // Older than this turn: whatever it says belongs to a turn the
             // user has already seen end.
-            if let stamp = entry["timestamp"] as? String, let date = parseDate(stamp), date < since {
+            if let stamp = entry["timestamp"] as? String, let date = AgentFiles.date(stamp), date < since {
                 return guessed ? .noTurn : nil
             }
             // Written ahead of the note, which may not be on disk yet. Nothing
@@ -127,7 +127,7 @@ enum ClaudeTranscriptTail {
               (entry["content"] as? String)?.hasPrefix(idleCompactionNote) == true,
               let stamp = entry["timestamp"] as? String
         else { return nil }
-        return parseDate(stamp)
+        return AgentFiles.date(stamp)
     }
 
     /// Whether the conversation is mid-turn: its last entry is a tool call
@@ -185,7 +185,7 @@ enum ClaudeTranscriptTail {
             guard let type = entry["type"] as? String, type == "assistant" || type == "user" else { continue }
             if entry["isSidechain"] as? Bool == true || entry["isMeta"] as? Bool == true { continue }
             guard type == "assistant" else { return nil }
-            if let date = AgentAnswer.date(entry["timestamp"]), date < since { return nil }
+            if let date = AgentFiles.date(entry["timestamp"]), date < since { return nil }
             if entry["isApiErrorMessage"] as? Bool == true { return nil }
             let blocks = (entry["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
             if let call = blocks.last(where: { $0["type"] as? String == "tool_use" }) {
@@ -239,19 +239,6 @@ enum ClaudeTranscriptTail {
     /// The last `tailBytes` of the transcript at `url`, or nil when it can't be
     /// read. Blocking file IO: call off the main thread.
     static func readTail(of url: URL) -> Data? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        guard let end = try? handle.seekToEnd() else { return nil }
-        let start = end > UInt64(tailBytes) ? end - UInt64(tailBytes) : 0
-        try? handle.seek(toOffset: start)
-        return try? handle.readToEnd()
-    }
-
-    private static func parseDate(_ text: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: text) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: text)
+        AgentFiles.tail(of: url, maxBytes: tailBytes)?.data
     }
 }

@@ -349,12 +349,12 @@ final class PromptHistoryStoreTests: XCTestCase {
     func testOnlyTheTailIsRead() throws {
         let url = root.appendingPathComponent("big.jsonl")
         try (String(repeating: "x", count: 1000) + "\nlast line\n").write(to: url, atomically: true, encoding: .utf8)
-        let tail = try XCTUnwrap(PromptHistoryStore.tail(of: url, maxBytes: 20))
+        let tail = try XCTUnwrap(AgentFiles.tail(of: url, maxBytes: 20))
         XCTAssertEqual(tail.data.count, 20)
         XCTAssertTrue(tail.fromMiddle)
         XCTAssertEqual(PromptHistory.lines(in: tail.data, fromMiddle: true).map { String(decoding: $0, as: UTF8.self) },
                        ["last line"])
-        let whole = try XCTUnwrap(PromptHistoryStore.tail(of: url, maxBytes: 1 << 20))
+        let whole = try XCTUnwrap(AgentFiles.tail(of: url, maxBytes: 1 << 20))
         XCTAssertFalse(whole.fromMiddle)
     }
 

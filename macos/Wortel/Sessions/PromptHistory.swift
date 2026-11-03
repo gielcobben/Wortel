@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Everything the user has typed to an agent, as the agents themselves keep
 /// it, and how ⌘Y finds a prompt in it.
@@ -157,20 +158,12 @@ enum PromptHistory {
         let date: Date
         if let millis = (message["timestamp"] as? NSNumber)?.doubleValue {
             date = Date(timeIntervalSince1970: millis / 1000)
-        } else if let stamp = object["timestamp"] as? String, let parsed = isoDate(stamp) {
+        } else if let stamp = object["timestamp"] as? String, let parsed = AgentFiles.date(stamp) {
             date = parsed
         } else {
             return nil
         }
         return Entry(text: text, agent: .pi, directory: directory, date: date)
-    }
-
-    private static func isoDate(_ string: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: string) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: string)
     }
 
     // MARK: - What counts
@@ -419,14 +412,29 @@ enum PromptHistory {
         if seconds < 3600 { return "\(Int(seconds / 60))m" }
         if seconds < 86_400 { return "\(Int(seconds / 3600))h" }
         if seconds < 7 * 86_400 { return "\(Int(seconds / 86_400))d" }
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-        formatter.setLocalizedDateFormatFromTemplate(sameYear ? "MMMd" : "MMMyyyy")
-        return formatter.string(from: date)
+        let template = sameYear ? "MMMd" : "MMMyyyy"
+        let key = "\(locale.identifier)|\(calendar.identifier)|\(calendar.timeZone.identifier)|\(template)"
+        return ageFormatters.withLock { formatters in
+            // Made once per locale and template, not once per row per
+            // redraw: a `DateFormatter` is expensive to make and cheap to use.
+            let formatter = formatters[key] ?? {
+                let formatter = DateFormatter()
+                formatter.locale = locale
+                formatter.calendar = calendar
+                formatter.timeZone = calendar.timeZone
+                formatter.setLocalizedDateFormatFromTemplate(template)
+                formatters[key] = formatter
+                return formatter
+            }()
+            return formatter.string(from: date)
+        }
     }
+
+    /// `age`'s formatters, by locale, calendar, zone and template. Behind a
+    /// lock rather than on the main actor only because the tests call `age`
+    /// from theirs; the panel's rows call it from the main thread.
+    private static let ageFormatters = OSAllocatedUnfairLock(uncheckedState: [String: DateFormatter]())
 
     // MARK: - Typing one
 

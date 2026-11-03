@@ -419,4 +419,11 @@ final class WortelCommandTests: XCTestCase {
         }
         XCTAssertTrue(WortelCommandParser.usage.contains(WortelCommandParser.sessionVariable))
     }
+
+    /// The app gives up on a `send` well before the CLI gives up on the app,
+    /// Return included: an app that typed after the CLI had reported a
+    /// failure made a retrying script send its prompt twice.
+    func testTheAppGivesUpOnASendBeforeTheCLIDoes() {
+        XCTAssertLessThanOrEqual(WortelCLI.sendPatience + 2, WortelCLI.answerTimeout)
+    }
 }

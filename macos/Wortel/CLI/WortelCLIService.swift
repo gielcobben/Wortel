@@ -158,7 +158,7 @@ final class WortelCLIService {
             read(query, lines: lines, reply: reply)
 
         case .send(let query, let text, let enter):
-            send(text, to: query, pressingReturn: enter, reply: reply)
+            send(text, to: query, pressingReturn: enter, caller: caller, reply: reply)
 
         case .wait(let query, let text, let fromStart, let idle, let exit, let timeout):
             wait(for: query, text: text, fromStart: fromStart, idle: idle, exit: exit,
@@ -474,6 +474,7 @@ final class WortelCLIService {
     /// doesn't answer an attention raised while they were away, or count as
     /// them having touched the session.
     private func send(_ text: String, to query: String, pressingReturn enter: Bool,
+                      caller: WortelCLIServer.Caller,
                       reply: @escaping @Sendable (WortelResponse) -> Void) {
         let session: Session
         switch lookUp(query) {
@@ -483,7 +484,15 @@ final class WortelCLIService {
         let (view, refusal) = terminal(of: session)
         guard let view else { return reply(refusal ?? .failure("That session has closed.")) }
         let name = session.name
-        view.whenPasteReachesProgram {
+        // Within the CLI's own deadline, or not at all (`sendPatience`).
+        view.whenPasteReachesProgram(within: WortelCLI.sendPatience) { ready in
+            guard ready else {
+                return reply(.failure("\u{201c}\(name)\u{201d} wasn't ready for input within "
+                    + "\(Int(WortelCLI.sendPatience))s (its terminal is still being restored), so nothing was typed."))
+            }
+            // A CLI that gave up anyway (killed, ^C) must not have its text
+            // typed behind its back either.
+            guard !caller.hasHungUp() else { return reply(.failure("Nobody is waiting any more.")) }
             guard view.surface != nil else { return reply(.failure("That session has closed.")) }
             guard !view.shellHasExited else {
                 return reply(.failure("\u{201c}\(name)\u{201d} has no shell any more: it exited."))

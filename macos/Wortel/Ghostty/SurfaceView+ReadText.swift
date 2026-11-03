@@ -74,20 +74,46 @@ extension SurfaceView {
         }
     }
 
-    /// Run `body` once a paste would reach the program: after the pending
-    /// output, and after a reattach has stopped holding back the terminal's
-    /// answers to its replay (`PtyHost.holdsReplayAnswers`). A paste takes the
-    /// same road as those answers, so sent in between it would be dropped
-    /// with them. The wait is microseconds when the replay's marker comes
-    /// back, and at most a couple of seconds when it doesn't.
-    func whenPasteReachesProgram(_ body: @escaping @MainActor () -> Void) {
-        afterPendingOutput { self.afterReplayAnswersSettle(body) }
+    /// Run `body(true)` once a paste would reach the program: after the
+    /// pending output, and after a reattach has stopped holding back the
+    /// terminal's answers to its replay (`PtyHost.holdsReplayAnswers`). A
+    /// paste takes the same road as those answers, so sent in between it
+    /// would be dropped with them. The wait is microseconds when the replay's
+    /// marker comes back, a couple of seconds when it doesn't, and up to
+    /// `ReplayAnswers.writingPatience` more while a big replay is still being
+    /// written.
+    ///
+    /// Or `body(false)` once `patience` has run out, and then never
+    /// `body(true)`: the caller (`wortel send`) has a deadline of its own to
+    /// answer within, and typing after it has given up is how a retried
+    /// prompt gets sent twice. Called exactly once.
+    func whenPasteReachesProgram(within patience: TimeInterval,
+                                 _ body: @escaping @MainActor (_ ready: Bool) -> Void) {
+        let once = Once(body)
+        let deadline = Date().addingTimeInterval(patience)
+        DispatchQueue.main.asyncAfter(deadline: .now() + patience) {
+            MainActor.assumeIsolated { once.call(false) }
+        }
+        afterPendingOutput { self.afterReplayAnswersSettle(until: deadline, once) }
     }
 
-    private func afterReplayAnswersSettle(_ body: @escaping @MainActor () -> Void) {
-        guard let pty = ptyHost, pty.holdsReplayAnswers else { return body() }
+    private func afterReplayAnswersSettle(until deadline: Date, _ once: Once) {
+        guard let pty = ptyHost, pty.holdsReplayAnswers else { return once.call(true) }
+        guard Date() < deadline else { return once.call(false) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-            MainActor.assumeIsolated { self.afterReplayAnswersSettle(body) }
+            MainActor.assumeIsolated { self.afterReplayAnswersSettle(until: deadline, once) }
+        }
+    }
+
+    /// The first answer of the two that race, the deadline's or the ready one.
+    @MainActor
+    private final class Once {
+        private var body: (@MainActor (Bool) -> Void)?
+        init(_ body: @escaping @MainActor (Bool) -> Void) { self.body = body }
+        func call(_ ready: Bool) {
+            let body = self.body
+            self.body = nil
+            body?(ready)
         }
     }
 }

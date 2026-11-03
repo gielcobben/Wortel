@@ -95,8 +95,8 @@ private struct StandardInputError: Error, CustomStringConvertible {
 /// condition holds, so the socket waits as long as the wait does, plus room
 /// for the app to say it timed out; with no timeout, without a bound.
 private func answerDeadline(for command: WortelCommand) -> TimeInterval {
-    guard case .wait(_, _, _, _, _, let timeout) = command else { return 10 }
-    return timeout > 0 ? timeout + 10 : 0
+    guard case .wait(_, _, _, _, _, let timeout) = command else { return WortelCLI.answerTimeout }
+    return timeout > 0 ? timeout + WortelCLI.answerTimeout : 0
 }
 
 /// What goes to stdout for a reply that carries data rather than a bare value.

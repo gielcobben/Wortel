@@ -152,6 +152,20 @@ enum WortelCLI {
     /// all of it whatever N is (`ScreenText.lastLines`). This bounds the
     /// answer, not that read.
     static let maximumReadLines = 10_000
+    /// How long the CLI waits for the app's answer to anything but a `wait`
+    /// (whose bound is its own `--timeout`). The app can be busy in ways the
+    /// CLI can't see, and a command line that never returns is worse than one
+    /// that says so.
+    static let answerTimeout: TimeInterval = 10
+    /// How long the app holds a `send` for its terminal to take a paste (a
+    /// session just warmed, its keeper replay still being written and its
+    /// old queries answered; `SurfaceView.whenPasteReachesProgram`). Past
+    /// it, the app says so and types **nothing**. It has to end well inside
+    /// `answerTimeout`, `send --enter`'s Return included: an app that typed
+    /// after the CLI had already reported a failure made a script that
+    /// retries send its prompt twice. Derived from it rather than a second
+    /// number, so the two can't drift apart.
+    static let sendPatience: TimeInterval = answerTimeout / 2
     /// The exit status of a `wortel wait` that ran out of time: the one GNU
     /// `timeout` uses, so a script that already knows that one reads it right.
     static let waitTimedOutStatus: Int32 = 124

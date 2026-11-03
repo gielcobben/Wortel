@@ -9,7 +9,7 @@ enum WortelCLIClient {
     /// Send `command` and wait for the app's answer.
     static func send(
         _ command: WortelCommand, to path: String = WortelCLI.socketPath,
-        timeout: TimeInterval = 10
+        timeout: TimeInterval = WortelCLI.answerTimeout
     ) throws -> WortelResponse {
         let socketFD = try connect(to: path)
         defer { close(socketFD) }

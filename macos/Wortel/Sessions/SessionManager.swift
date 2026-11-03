@@ -203,6 +203,17 @@ final class SessionManager {
     /// again saying the same thing; only the edge into this state is an event
     /// (see `titleChanged`).
     @ObservationIgnored private var titleShowsActionRequired: Set<Session.ID> = []
+    /// How the last stretch of work in each session ended, by the same signals
+    /// that raise its dot, kept until it starts working again. `attention`
+    /// can't answer that: it is never raised for the session you're looking
+    /// at and is cleared the moment you look, and `wortel list` and
+    /// `wortel wait --idle` ask about every session, watched or not. The
+    /// loudest wins within one quiet stretch, as it does for the dot.
+    @ObservationIgnored private var turnOutcomes: [Session.ID: AttentionKind] = [:]
+    /// When each session last reported starting work (a command, a progress
+    /// report, a working title), before the debounce: a `wait --idle` that
+    /// began before this has seen a turn happen, however short.
+    @ObservationIgnored private var lastBusyReports: [Session.ID: Date] = [:]
     /// How long a session must stay actively-viewed before its "unread" mark
     /// clears. Long enough that a quick click-through to triage doesn't count as
     /// catching up, short enough that actually landing on it clears promptly.
@@ -2538,6 +2549,8 @@ final class SessionManager {
         busyStartedAt.removeValue(forKey: session.id)
         progressErrored.remove(session.id)
         lastBusyInterval.removeValue(forKey: session.id)
+        turnOutcomes.removeValue(forKey: session.id)
+        lastBusyReports.removeValue(forKey: session.id)
         titleShowsWorking.remove(session.id)
         titleShowsActionRequired.remove(session.id)
         agentScreenTrackers.removeValue(forKey: session.id)
@@ -3307,6 +3320,7 @@ final class SessionManager {
     /// Also cancels a pending quiesce-attention: the program resumed working,
     /// so its earlier "stopped" was a blip, not a prompt for the user.
     private func markBusy(_ session: Session) {
+        lastBusyReports[session.id] = Date()
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
         guard busyTimers[session.id] == nil, !session.isBusy else { return }
         let id = session.id
@@ -3321,6 +3335,8 @@ final class SessionManager {
                 self.busyStartedAt[id] = now
             }
             session.isBusy = true
+            // A new stretch of work: how the last one ended is history.
+            self.turnOutcomes[id] = nil
             self.noteConversation(session)
         }
         busyTimers[id] = work
@@ -4292,6 +4308,45 @@ final class SessionManager {
         onNeedsAttention?(session, content.kind, content.title ?? session.name, content.body, false)
     }
 
+    // MARK: - What a session is doing (`wortel list`, `wortel wait`)
+
+    /// One reading of a session's activity, from the tracking the sidebar's
+    /// spinner and dots already run on. Nothing new is detected for it: the
+    /// CLI reports what the app believes, so `wortel list` and the sidebar
+    /// can never disagree.
+    struct ActivityReading {
+        /// Working, or about to show as working (a start inside the debounce).
+        var busy: Bool
+        /// Just stopped, inside the settle window that decides whether the
+        /// stop was a pause between tools or the end of the turn.
+        var settling: Bool
+        /// Its title says it's blocked on you (Codex's "Action Required").
+        var asksForAction: Bool
+        /// How its last stretch of work ended, if it said.
+        var outcome: AttentionKind?
+        /// When it last reported starting work.
+        var lastStarted: Date?
+    }
+
+    func activity(of session: Session) -> ActivityReading {
+        let id = session.id
+        return ActivityReading(
+            busy: session.isBusy || busyTimers[id] != nil,
+            settling: quiesceTimers[id] != nil,
+            asksForAction: titleShowsActionRequired.contains(id),
+            outcome: turnOutcomes[id],
+            lastStarted: lastBusyReports[id])
+    }
+
+    /// The session's terminal, created now if it hasn't been yet (a session
+    /// restored at launch and not shown since), as the warm-up would: no
+    /// selection, no focus. nil while its worktree is still being made, when
+    /// there is no folder for a shell to start in.
+    func warmSurface(of session: Session) -> SurfaceView? {
+        guard sessions.contains(where: { $0 === session }), session.preparation == nil else { return nil }
+        return session.ensureSurfaceView(runtime: runtime)
+    }
+
     /// A session by id — what the CLI has, since a shell knows its session as
     /// `$WORTEL_SESSION_ID` and nothing else. A side terminal's shell carries
     /// its tab's id there (it keys that terminal's own agent marker), so a
@@ -4335,6 +4390,11 @@ final class SessionManager {
             attention \(source, privacy: .public) kind=\(String(describing: kind), privacy: .public) \
             id=\(session.id.uuidString, privacy: .public) name=\(session.name, privacy: .private)
             """)
+        // Before the viewing gate: whether anyone is looking doesn't change
+        // how the turn ended, which is what `activity(of:)` reports.
+        if turnOutcomes[session.id].map({ kind.priority >= $0.priority }) ?? true {
+            turnOutcomes[session.id] = kind
+        }
         guard !isActivelyViewing(session) else { return }
         let current = session.attention
         if let current, current.priority > kind.priority { return }

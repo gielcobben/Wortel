@@ -80,6 +80,14 @@ final class WortelCLIServerTests: XCTestCase {
             .notify(session: UUID().uuidString, title: "Done", body: nil),
             .fork(session: UUID().uuidString, name: nil, branch: "fix/y"),
             .changeDirectory(session: UUID().uuidString, path: "/Users/x/site"),
+            .list(caller: UUID().uuidString),
+            .list(caller: nil),
+            .read(session: "agent two", lines: nil),
+            .read(session: "3f2a91c0", lines: 200),
+            .send(session: "agent two", text: "line one\nline two", enter: true),
+            .send(session: "x", text: "", enter: false),
+            .wait(session: "x", text: "DONE", fromStart: true, idle: false, exit: true, timeout: 0),
+            .wait(session: "x", text: nil, fromStart: false, idle: true, exit: false, timeout: 30),
             .version,
         ]
         for command in commands {
@@ -93,8 +101,8 @@ final class WortelCLIServerTests: XCTestCase {
     /// client here is this test process, so that's the pid to expect.
     func testTheHandlerIsToldTheCallersPid() throws {
         let caller = CallerBox()
-        let server = WortelCLIServer(path: path, callerHandler: { _, pid, reply in
-            caller.value = pid
+        let server = WortelCLIServer(path: path, callerHandler: { _, from, reply in
+            caller.value = from.pid
             reply(.success())
         })
         try server.start()
@@ -109,6 +117,73 @@ final class WortelCLIServerTests: XCTestCase {
         var value: pid_t? {
             get { lock.withLock { stored } }
             set { lock.withLock { stored = newValue } }
+        }
+    }
+
+    /// `wortel wait` can be answered minutes later, so the app has to be able
+    /// to tell that nobody is waiting any more: a wait for a CLI that was ^C'd
+    /// would otherwise sit in the app until its timeout, or forever with none.
+    func testTheHandlerCanTellTheCallerHungUp() throws {
+        let parked = Parked()
+        let server = WortelCLIServer(path: path, callerHandler: { _, from, reply in
+            parked.park(from, reply)
+        })
+        try server.start()
+        servers.append(server)
+
+        let socketFD = try WortelCLIClient.connect(to: path)
+        var request = try JSONEncoder().encode(WortelCommand.version)
+        request.append(0x0A)
+        _ = request.withUnsafeBytes { write(socketFD, $0.baseAddress!, $0.count) }
+        let caller = try XCTUnwrap(parked.waitForCaller())
+        XCTAssertFalse(caller.hasHungUp(), "a caller still waiting for its answer has not hung up")
+
+        close(socketFD)
+        let deadline = Date().addingTimeInterval(2)
+        while !caller.hasHungUp(), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+        XCTAssertTrue(caller.hasHungUp())
+        // And answering it anyway is harmless: no SIGPIPE, which would end
+        // the app (and this test process with it).
+        parked.reply?(.success())
+    }
+
+    /// `read --lines` can answer with a long stretch of scrollback, far past
+    /// what a command may be. The reply limit is its own.
+    func testALongReplyArrivesWhole() throws {
+        let long = String(repeating: "x", count: 1_000_000)
+        try startServer { _, reply in reply(.success(value: long)) }
+        XCTAssertEqual(try send(.read(session: "x", lines: 100_000)).value?.count, long.count)
+    }
+
+    /// A failure can carry its own exit status: a `wait` that timed out is not
+    /// the same answer as one for a session that doesn't exist.
+    func testAFailureCarriesItsStatus() throws {
+        try startServer { _, reply in reply(.failure("Timed out.", status: WortelCLI.waitTimedOutStatus)) }
+        let response = try send(.wait(session: "x", text: nil, fromStart: false, idle: true, exit: false,
+                                      timeout: 1))
+        XCTAssertFalse(response.ok)
+        XCTAssertEqual(response.status, 124)
+    }
+
+    private final class Parked: @unchecked Sendable {
+        private let lock = NSLock()
+        private var caller: WortelCLIServer.Caller?
+        private(set) var reply: (@Sendable (WortelResponse) -> Void)?
+
+        func park(_ caller: WortelCLIServer.Caller, _ reply: @escaping @Sendable (WortelResponse) -> Void) {
+            lock.withLock {
+                self.caller = caller
+                self.reply = reply
+            }
+        }
+
+        func waitForCaller() -> WortelCLIServer.Caller? {
+            let deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                if let caller = lock.withLock({ caller }) { return caller }
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            return nil
         }
     }
 

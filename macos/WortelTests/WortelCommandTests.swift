@@ -399,11 +399,17 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertEqual(WortelCommand.mark(session: nil, colour: "red").verb, "mark")
         XCTAssertEqual(WortelCommand.fork(session: nil, name: nil, branch: nil).verb, "fork")
         XCTAssertEqual(WortelCommand.changeDirectory(session: nil, path: "/a").verb, "cd")
+        XCTAssertEqual(WortelCommand.list(caller: nil).verb, "list")
+        XCTAssertEqual(WortelCommand.read(session: "a", lines: nil).verb, "read")
+        XCTAssertEqual(WortelCommand.send(session: "a", text: "", enter: true).verb, "send")
+        XCTAssertEqual(WortelCommand.wait(session: "a", text: nil, fromStart: false, idle: true, exit: false,
+                                          timeout: 30).verb, "wait")
         XCTAssertEqual(WortelCommand.version.verb, "--version")
     }
 
     func testUsageListsEveryCommand() {
-        for verb in ["open", "new", "rename", "notify", "mark", "fork", "cd <dir>", "--version"] {
+        for verb in ["open", "new", "rename", "notify", "mark", "fork", "cd <dir>", "list", "read <session>",
+                     "send <session>", "wait <session>", "--version"] {
             XCTAssertTrue(WortelCommandParser.usage.contains(verb), "usage omits \(verb)")
         }
         // The colours are listed by hand there (the CLI can't see the app's

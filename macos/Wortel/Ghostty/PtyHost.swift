@@ -109,6 +109,13 @@ final class PtyHost: @unchecked Sendable {
     /// the rest of the time, which costs `writeFromTerminal` one lock take.
     private let replayAnswers = OSAllocatedUnfairLock<ReplayAnswers?>(initialState: nil)
 
+    /// How many reads of the program's output have reached `onOutput`. Only
+    /// ever compared with an earlier value of itself: a `wortel wait --for`
+    /// reads the screen again when this has moved and not otherwise, so a
+    /// wait on a quiet session costs a counter read, not a screen read.
+    private let outputReads = OSAllocatedUnfairLock(initialState: UInt64(0))
+    var outputGeneration: UInt64 { outputReads.withLock { $0 } }
+
     /// The pty master. Reading it gives what the program wrote; writing it is
     /// what the user typed. -1 once the descriptor has been closed.
     var master: Int32 { shared.withLock { $0.master } }
@@ -319,6 +326,7 @@ final class PtyHost: @unchecked Sendable {
                         guard let base = raw.baseAddress else { return }
                         self.onOutput?(base, count)
                     }
+                    self.outputReads.withLock { $0 &+= 1 }
                     // A short read means the pty had nothing more; going round
                     // again would just return EAGAIN.
                     if count < buffer.count { return }
@@ -499,6 +507,17 @@ final class PtyHost: @unchecked Sendable {
         }
         guard let pass, !pass.isEmpty else { return }
         write(bytes + pass.lowerBound, count: pass.count)
+    }
+
+    /// Whether what the terminal sends the program is still being held back
+    /// for a replay. A `wortel send` waits this out: its paste reaches the pty
+    /// by the terminal's road, and would be dropped with the old answers.
+    var holdsReplayAnswers: Bool {
+        let now = DispatchTime.now().uptimeNanoseconds
+        return replayAnswers.withLock { gate in
+            guard let answers = gate, !answers.isOpen else { return false }
+            return now < answers.deadline
+        }
     }
 
     /// Start holding back the terminal's answers: the replay is about to be

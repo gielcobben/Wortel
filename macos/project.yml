@@ -296,6 +296,8 @@ targets:
       # dropped.
       - path: Wortel/CLI/WortelCommand.swift
       - path: Wortel/CLI/WortelCLIClient.swift
+      # What `list` and `read` answer with, and how a person sees it.
+      - path: Wortel/CLI/WortelReach.swift
       # Where the sockets are, which the two ends have to agree on.
       - path: Wortel/DataDirectory.swift
     settings:
@@ -585,6 +587,11 @@ targets:
       # a command-line tool rots: an argument silently ignored, a relative path
       # resolved against the wrong directory, an error a script can't detect.
       - path: Wortel/CLI/WortelCommand.swift
+      # Naming another session and reading its screen: which session a name
+      # means, and what counts as text appearing. Pure, and both fail by
+      # doing the wrong thing quietly: a prompt typed into the wrong agent, a
+      # wait that never ends or ends at once.
+      - path: Wortel/CLI/WortelReach.swift
       # Both ends of the socket, so the round trip can be tested for real —
       # over an actual socket, with an actual client. Everything that can go
       # wrong in a transport is invisible from either side alone: a reply that

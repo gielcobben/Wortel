@@ -167,6 +167,21 @@ final class SurfaceView: NSView {
     /// Whether `finishProcess` has run for the current surface.
     private var processFinished = false
 
+    /// When this view got the shell it has: made, or restarted after a lost
+    /// keeper. A `wortel wait --idle` doesn't believe the quiet of a terminal
+    /// younger than a few seconds, whose first line (`wortel new -- claude`)
+    /// may not have started yet.
+    private(set) var shellStartedAt = Date()
+
+    /// The shell this terminal was running has ended: the keeper's pty hung
+    /// up (`finishProcess`), or the exec backend saw its child exit. What
+    /// `wortel wait --exit` waits for on a session that stays open after its
+    /// shell, and true once there is no surface at all.
+    var shellHasExited: Bool {
+        guard let surface else { return true }
+        return processFinished || ghostty_surface_process_exited(surface)
+    }
+
     /// The pid of this session's shell, as reported by whoever spawned it.
     ///
     /// The root of everything the session is running: every dev server, build
@@ -303,6 +318,7 @@ final class SurfaceView: NSView {
         initialInputDropped = false
         shellPID = nil
         processFinished = false
+        shellStartedAt = Date()
         // Whatever the old program told its terminal is not true of a new
         // shell, and a relaunch would otherwise replay it into one.
         TerminalModeRecorder.shared.forget(session: sessionID)
@@ -575,6 +591,34 @@ final class SurfaceView: NSView {
         string.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(len - 1))
         }
+    }
+
+    /// Press Return, as the key: a press and a release through libghostty's
+    /// key encoder, the same call `keyDown` ends in. Not a "\r" written to
+    /// the pty, which is what Return *usually* encodes to: a program that
+    /// turned on the kitty keyboard protocol, as agents do, is sent something
+    /// else for the key, and reads a bare carriage return as a different
+    /// key or as part of a paste. For `wortel send --enter`, so what reaches
+    /// the program is what a person's Return would have been.
+    @discardableResult
+    func pressReturn() -> Bool {
+        guard let surface else { return false }
+        noteUserInput()
+        var key = ghostty_input_key_s()
+        key.keycode = 0x24 // kVK_Return
+        key.mods = GHOSTTY_MODS_NONE
+        key.consumed_mods = GHOSTTY_MODS_NONE
+        // Unshifted, Return types a carriage return. The text stays nil, as
+        // `keyAction` leaves it for every control character: ghostty encodes
+        // those itself.
+        key.unshifted_codepoint = 0x0D
+        key.text = nil
+        key.composing = false
+        key.action = GHOSTTY_ACTION_PRESS
+        let handled = ghostty_surface_key(surface, key)
+        key.action = GHOSTTY_ACTION_RELEASE
+        _ = ghostty_surface_key(surface, key)
+        return handled
     }
 
     /// Type a command line into the shell and run it, as if it had been typed

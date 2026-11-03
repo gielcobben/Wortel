@@ -66,25 +66,78 @@ if arguments.isEmpty || options.contains(where: { $0 == "-h" || $0 == "--help" }
     exit(arguments.isEmpty ? 2 : 0)
 }
 
-let command: WortelCommand
+let invocation: WortelCommandParser.Invocation
 do {
-    command = try WortelCommandParser.parse(
+    invocation = try WortelCommandParser.parseInvocation(
         arguments,
         environment: ProcessInfo.processInfo.environment,
-        currentDirectory: FileManager.default.currentDirectoryPath)
+        currentDirectory: FileManager.default.currentDirectoryPath,
+        standardInput: {
+            // All of it, then decoded once: a multi-byte character split
+            // across two reads must not turn into two replacement characters.
+            let data = FileHandle.standardInput.readDataToEndOfFile()
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw StandardInputError()
+            }
+            return text
+        })
 } catch {
     // Exit 2 for "you typed it wrong", 1 for "the app said no" — the shell's
     // usual split, and it lets a script tell a bad invocation from a refusal.
     fail("\(error)\n\n\(WortelCommandParser.usage)", code: 2)
 }
 
+private struct StandardInputError: Error, CustomStringConvertible {
+    var description: String { "--stdin needs text, and standard input wasn't UTF-8" }
+}
+
+/// How long to wait for the app's answer. A `wait` is answered when its
+/// condition holds, so the socket waits as long as the wait does, plus room
+/// for the app to say it timed out; with no timeout, without a bound.
+private func answerDeadline(for command: WortelCommand) -> TimeInterval {
+    guard case .wait(_, _, _, _, _, let timeout) = command else { return 10 }
+    return timeout > 0 ? timeout + 10 : 0
+}
+
+/// What goes to stdout for a reply that carries data rather than a bare value.
+/// The app describes; how it reads is decided here, where `--json` is known.
+private func output(of value: String, for invocation: WortelCommandParser.Invocation) -> String? {
+    let data = Data(value.utf8)
+    switch invocation.command {
+    case .list:
+        guard let sessions = try? JSONDecoder().decode([WortelSessionInfo].self, from: data) else { return nil }
+        return invocation.json ? json(sessions) : WortelSessionInfo.table(sessions)
+    case .read:
+        guard let screen = try? JSONDecoder().decode(WortelScreen.self, from: data) else { return nil }
+        return invocation.json ? json(screen) : screen.text
+    default:
+        return value
+    }
+}
+
+/// Stable for a script to read: keys sorted, so the same state always prints
+/// the same bytes.
+private func json<T: Encodable>(_ value: T) -> String? {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) }
+}
+
 do {
-    let response = try WortelCLIClient.send(command)
+    let response = try WortelCLIClient.send(invocation.command,
+                                            timeout: answerDeadline(for: invocation.command))
     if let message = response.message, !message.isEmpty {
         FileHandle.standardError.write(Data("\(message)\n".utf8))
     }
-    guard response.ok else { exit(1) }
-    if let value = response.value, !value.isEmpty { print(value) }
+    guard response.ok else { exit(response.status ?? 1) }
+    if let value = response.value {
+        guard let text = output(of: value, for: invocation) else {
+            fail("\(WortelCLI.SocketError.badResponse)", code: 1)
+        }
+        // A screen with nothing on it is an empty answer, not a missing one:
+        // print nothing rather than a blank line.
+        if !text.isEmpty { print(text) }
+    }
 } catch {
     fail("\(error)", code: 1)
 }

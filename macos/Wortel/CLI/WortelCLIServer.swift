@@ -19,13 +19,26 @@ final class WortelCLIServer: @unchecked Sendable {
     typealias Handler = @Sendable (
         WortelCommand, @escaping @Sendable (WortelResponse) -> Void
     ) -> Void
-    /// The same, told which process sent the command (nil if the kernel
-    /// wouldn't say). `wortel cd` needs it: an agent asking to be moved has
-    /// to be waited for, and the session can't tell that from the command,
-    /// only from who ran it.
+    /// The same, told who sent the command (`Caller`). `wortel cd` needs the
+    /// pid: an agent asking to be moved has to be waited for, and the session
+    /// can't tell that from the command, only from who ran it.
     typealias CallerHandler = @Sendable (
-        WortelCommand, pid_t?, @escaping @Sendable (WortelResponse) -> Void
+        WortelCommand, Caller, @escaping @Sendable (WortelResponse) -> Void
     ) -> Void
+
+    /// The other end of one connection, as far as the handler needs to know it.
+    struct Caller: Sendable {
+        /// The process that sent the command, from the kernel; nil if it
+        /// wouldn't say.
+        let pid: pid_t?
+        /// Whether the CLI has gone away (a ^C, a killed script) before its
+        /// answer. Only `wortel wait` asks: its answer can be minutes off, and
+        /// a wait nobody is waiting on any more would otherwise sit in the app
+        /// until its timeout, or forever with none. Valid until the reply is
+        /// sent, which closes the descriptor it looks at; call it on the
+        /// thread that replies.
+        let hasHungUp: @Sendable () -> Bool
+    }
 
     private let path: String
     private let handler: CallerHandler
@@ -146,6 +159,12 @@ final class WortelCLIServer: @unchecked Sendable {
         var timeout = Self.connectionTimeout
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        // **No SIGPIPE.** A reply written to a CLI that has gone raises it,
+        // and its default ends the process, which here is the app. A reply
+        // used to follow its command within milliseconds; `wortel wait`
+        // answers minutes later, to a caller that may have been ^C'd.
+        var on: Int32 = 1
+        setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         serveQueue.async { [weak self] in self?.serve(client) }
     }
 
@@ -161,7 +180,8 @@ final class WortelCLIServer: @unchecked Sendable {
             Self.reply(.failure("This Wortel doesn't understand that command."), to: client)
             return
         }
-        handler(command, Self.peerPID(of: client)) { response in
+        let caller = Caller(pid: Self.peerPID(of: client), hasHungUp: { Self.hasHungUp(client) })
+        handler(command, caller) { response in
             Self.reply(response, to: client)
         }
     }
@@ -173,6 +193,16 @@ final class WortelCLIServer: @unchecked Sendable {
         var length = socklen_t(MemoryLayout<pid_t>.size)
         guard getsockopt(client, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0, pid > 0 else { return nil }
         return pid
+    }
+
+    /// Whether the peer has closed its end. The CLI sends one line and then
+    /// only reads, so anything readable now is the end of the stream.
+    private static func hasHungUp(_ client: Int32) -> Bool {
+        var descriptor = pollfd(fd: client, events: Int16(POLLIN), revents: 0)
+        guard poll(&descriptor, 1, 0) > 0 else { return false }
+        if descriptor.revents & Int16(POLLHUP | POLLERR | POLLNVAL) != 0 { return true }
+        var byte: UInt8 = 0
+        return recv(client, &byte, 1, MSG_PEEK | MSG_DONTWAIT) == 0
     }
 
     /// Read up to the first newline. Returns nil if the peer goes away, sends
@@ -188,7 +218,7 @@ final class WortelCLIServer: @unchecked Sendable {
                 return line
             }
             line.append(contentsOf: buffer[0..<count])
-            guard line.count <= WortelCLI.maximumLineBytes else { return nil }
+            guard line.count <= WortelCLI.maximumRequestBytes else { return nil }
         }
     }
 

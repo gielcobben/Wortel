@@ -13,6 +13,9 @@ wortel new --branch fix/1482             # a session, in its own worktree off tr
 wortel rename "1482 login redirect"      # this session
 wortel notify "Tests failed"             # this session wants you
 wortel cd ../new-site                    # this session, agent and all, somewhere else
+wortel send tests "fix it" --enter       # another session, as if typed there
+wortel wait tests --idle                 # until its agent's turn is over
+wortel read tests --lines 80             # what it said
 ```
 
 ## The job it exists for
@@ -144,14 +147,21 @@ don't match".
 ### Two streams
 
 Anything a person reads goes to **stderr**. The one machine-readable value goes
-to **stdout**. That is what makes
+to **stdout** (for `list` and `read`, the answer itself). That is what makes
 
 ```sh
 id=$(wortel new --cwd ~/Developer/wortel)
 ```
 
 give you an id rather than an id and a sentence. Exit codes split the same way:
-`2` means you typed it wrong, `1` means the app said no, `0` means it happened.
+`2` means you typed it wrong, `1` means the app said no, `0` means it happened,
+and `124` is a `wait` that ran out of time (the reply carries it as `status`,
+since only the app knows which kind of "no" it is).
+
+`list` and `read` answer with JSON in `value` whatever the caller asked for,
+and the CLI decides how it reads: a table or the text by default, the JSON
+re-encoded with sorted keys under `--json`. `--json` never crosses the wire;
+the app has one answer and the presentation is the CLI's business.
 
 ### `--version` answers two questions
 
@@ -203,6 +213,9 @@ notification. To the person across the room, `make && wortel notify "Build done"
 and an agent emitting the escape sequence itself are the same event, so they
 should look the same.
 
+That rule has one deliberate exception, the next section: four verbs whose
+whole point is another session.
+
 **`new --branch` forks from trunk, not from where you are.** The other two rules
 say identity comes from where the command ran; this is the one place that would
 be wrong. The repository still comes from the caller's directory — a script in
@@ -233,6 +246,107 @@ ancestors is the agent. "The main terminal while an agent's marker is live"
 looked equivalent and isn't: ^Z keeps the marker, and so does a `!` command
 run from inside Claude.
 
+## Reaching other sessions: `list`, `read`, `send`, `wait`
+
+bb lets an agent list, read, type into and wait on any terminal, which is what
+lets one agent run and watch others. Wortel has the same reach, built from the
+doors a person uses rather than from a protocol each agent would have to speak:
+the screen (`read`), a paste and the Return key (`send`), and the attention
+tracking the sidebar's dots already run on (`list`, `wait`). That keeps the
+first argument of this document intact: nothing here knows which agent is on
+the other end.
+
+**No prompt, no label.** `send` doesn't ask you first, and nothing marks the
+text as typed by a program. Both were considered and turned down:
+
+- *A prompt* ("tests wants to type into website: Allow?") would break the job
+  this exists for. An agent that runs another one sends dozens of prompts
+  while you're away, and a dialog per send means nothing happens until you
+  come back, which is the problem it was meant to solve. It would also teach
+  you to click Allow without reading, which is worse than no prompt.
+- *A label* (a prefix like `[from tests]`, a colour, a line in the sidebar)
+  changes what the receiving agent reads. A prompt with a header in front of it
+  is a different prompt, and an agent told that its input came from another
+  program reasonably treats it differently. The point is that the second agent
+  can't tell, and doesn't need to.
+
+**The trust boundary is your own sessions.** The binary is on the `PATH` only
+inside Wortel's shells, and the socket is a file only your user can open
+(`0600`), so everything that can `send` is already something you started in a
+terminal of yours, with your keyboard's authority over every other terminal
+of yours. And it shows: the text is on the receiving screen and in its
+agent's transcript, and the session is in the sidebar for you to watch.
+
+**Naming another session.** `<session>` is an id or a name (exact, then exact
+ignoring case, then a unique prefix of a name or of the id), and a tier that
+matches two sessions is an error listing both, never a pick (`WortelSessionAddress`).
+A prompt typed into the wrong agent can't be undone, so convenience stops at
+the first sign of doubt. The short id `list` prints is the first block of the
+UUID, accepted as a prefix from four characters, the way git takes a short
+hash. `rename`, `notify` and `mark` accept `--session` too, because labelling a
+session from elsewhere is as harmless as labelling your own; `fork` and `cd`
+don't, because what they do to the agent inside depends on who is asking.
+
+**`read` reads the active screen, not the viewport.** The active area is what
+the program last drew; the viewport is wherever the person at the keyboard has
+scrolled. An agent asking what another session says means the first.
+`--lines N` reads from the top of the scrollback and keeps the last N lines.
+Trailing spaces and the empty rows under the last line are the grid, not the
+output, and are trimmed.
+
+**`send` is a paste, then a key.** The text goes through
+`ghostty_surface_text`, which is what ⌘V does: bracketed when the program
+turned that on, so a multi-line prompt lands in an agent's input as one input
+rather than one submission per line. `--enter` is a Return keypress through
+libghostty's key encoder, not a `\r` written to the pty: a program on the kitty
+keyboard protocol expects the key's own encoding. It comes 200 ms after the
+paste, as a person's would, because Codex reads keys arriving in a burst as a
+paste, and a Return inside one as a newline. Both reach the pty by the same
+road typing does, so `PromptTap` (session naming) and a move's `DraftTap` see
+them as typing.
+
+**A session not shown since launch is warmed, not refused.** Surfaces are
+lazy, so `read`, `send` and `wait` on a restored session create its terminal
+the way the warm-up does: no selection, no focus. They then wait for the pty
+queue to drain (`SurfaceView.afterPendingOutput`), because the keeper's replay
+and the saved modes arrive there first. Read before that, the screen is blank;
+paste before that, and the terminal doesn't yet know the program asked for
+bracketed paste.
+
+**`wait` holds the connection, not the main thread.** The reply simply comes
+later, as `new --branch`'s does. While any wait is open, a quarter-second timer
+looks at each one: a few dictionary reads for `--idle` and `--exit`, and for
+`--for` a screen read only when the pty's output counter has moved since the
+last one, at most twice a second (`PtyHost.outputGeneration`). A wait on a quiet
+session costs a counter comparison. When the CLI goes away (^C), the server
+tells the app (`WortelCLIServer.Caller.hasHungUp`), so a wait with no timeout
+doesn't outlive the shell that asked.
+
+**What `wait` counts.**
+
+- `--for` counts only text that is **new**: the occurrences in the scrollback
+  and screen when the wait starts are the baseline, and the wait ends when there
+  are more. "Already on the screen" was the wrong default for the job: after a
+  `send`, the answer to the last question is usually still there and would end
+  the wait at once. `--from-start` is bb's name for the other reading. Counting
+  rather than diffing survives the screen scrolling, and a count that drops (a
+  `clear`, scrollback trimmed at its limit) lowers the baseline, so text printed
+  after that still counts.
+- `--idle` is the sidebar's own reading: not working, not settling, or asking
+  for action. The trap is a wait that starts right after a `send`, before the
+  agent has shown it started: quiet then means "not yet". So quiet is believed
+  only after a turn has been seen (a start reported after the wait began, or
+  the session seen working), and otherwise only once nothing has been typed
+  into the session, and its shell hasn't started, for five seconds. Once a turn
+  has been seen, it's over when the turn ended with a signal of its own (the one
+  that raises the dot), or after a second of quiet, longer than the gap between
+  two tools.
+- Because the dot is never raised for the session you're looking at, and is
+  cleared when you look, `SessionManager` keeps how each session's last stretch
+  of work ended (`turnOutcomes`) apart from the dot, set before the viewing gate
+  and cleared when work starts again. That is also what `list`'s state column
+  reads, so the CLI and the sidebar can't disagree.
+
 ## Failure modes worth knowing
 
 - **Nothing listening** — "Wortel isn't running", for both a missing socket and a
@@ -245,6 +359,14 @@ run from inside Claude.
   asynchronous and one slow command must not hold up the next. Accept and serve
   are on separate queues; `WortelCLIServerTests` pins that with a command parked
   in the handler while a second one is answered.
+- **An answer nobody is waiting for.** A `wait` can be answered minutes after a
+  ^C ended the CLI, and writing to a socket whose peer has gone raises SIGPIPE,
+  whose default ends the process: here, the app. Every accepted connection is
+  `SO_NOSIGPIPE`.
+- **A long answer.** `read --lines` can be a long stretch of scrollback, so a
+  reply may be up to 16 MB, while a command stays capped at 2 MB (`send`'s text
+  at 256 KB, which fits even JSON-escaped). Two limits, because the two
+  directions carry different things.
 
 ## The build
 

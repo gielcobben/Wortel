@@ -104,6 +104,11 @@ final class PtyHost: @unchecked Sendable {
         set { secondTap.withLock { $0 = newValue } }
     }
 
+    /// While a reattach's replay is going through the terminal, what the
+    /// terminal answers is held back from the program (`ReplayAnswers`). nil
+    /// the rest of the time, which costs `writeFromTerminal` one lock take.
+    private let replayAnswers = OSAllocatedUnfairLock<ReplayAnswers?>(initialState: nil)
+
     /// The pty master. Reading it gives what the program wrote; writing it is
     /// what the user typed. -1 once the descriptor has been closed.
     var master: Int32 { shared.withLock { $0.master } }
@@ -471,6 +476,47 @@ final class PtyHost: @unchecked Sendable {
             } else {
                 return
             }
+        }
+    }
+
+    /// What the terminal sends the program: the user's keys, and its answers
+    /// to the program's queries. The terminal's `receive_buffer` comes here,
+    /// Wortel's own writes (a resume, the light/dark catch-up) go to `write`.
+    ///
+    /// The difference is the replay. While one is muted (`muteReplayAnswers`)
+    /// these bytes stop here, before the taps as well as the pty: an old
+    /// answer is neither the program's business nor a line the user typed.
+    func writeFromTerminal(_ bytes: UnsafePointer<UInt8>, count: Int) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        let (pass, dropped) = replayAnswers.withLock { gate -> (Range<Int>?, Int?) in
+            guard var answers = gate else { return (0..<count, nil) }
+            let pass = answers.admit(UnsafeBufferPointer(start: bytes, count: count), now: now)
+            gate = answers.isOpen ? nil : answers
+            return (pass, answers.isOpen ? answers.dropped : nil)
+        }
+        if let dropped, dropped > 0 {
+            NSLog("wortel: dropped %d replies the terminal made to the replay", dropped)
+        }
+        guard let pass, !pass.isEmpty else { return }
+        write(bytes + pass.lowerBound, count: pass.count)
+    }
+
+    /// Start holding back the terminal's answers: the replay is about to be
+    /// written. Called on `queue`, just before it is.
+    func muteReplayAnswers() {
+        let now = DispatchTime.now().uptimeNanoseconds
+        replayAnswers.withLock { $0 = ReplayAnswers(now: now) }
+    }
+
+    /// The replay is written, and the marker after it if one could be
+    /// (`ReplayAnswers.endsCleanly`). The window now closes when the marker's
+    /// answer comes back, or shortly without one.
+    func replayWritten(markerSent: Bool) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        replayAnswers.withLock { gate in
+            guard var answers = gate else { return }
+            answers.replayWritten(markerSent: markerSent, now: now)
+            gate = answers
         }
     }
 

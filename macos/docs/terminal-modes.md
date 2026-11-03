@@ -99,6 +99,53 @@ surface's conditional theme is `.light` (ghostty's default), so on a *light* Mac
 ghostty's own `set_color_scheme` sees no change and reports nothing: without
 this the light case would never resync at all.
 
+## The terminal's answers to the replay
+
+The replay goes through libghostty's parser like any output, so every query in
+it is answered: a cursor position report for `ESC[6n`, device attributes for
+`ESC[c`, the colours for OSC 10/11, XTVERSION, the kitty keyboard flags. With a
+host-managed pty those answers go straight into the program
+(`receive_buffer` → `PtyHost`). They are old: the program asked while nobody
+was attached, got no answer (the keeper answers nothing), and moved on. One
+arriving now is read as typed input, which is how `^[[24;1R` or an OSC 11 reply
+could land in an agent's prompt after a relaunch. bb handles the same thing by
+dropping the terminal's writes while it replays.
+
+So, for a resumed session with a replay, `PtyHost.writeFromTerminal` drops what
+the terminal sends from just before the prelude until the replay's answers are
+known to be out (`ReplayAnswers`). Wortel's own writes (the theme report above,
+a resume typed again) go to `PtyHost.write` and are never held, and neither
+does anything dropped reach the prompt taps (`PromptTap`, `DraftTap`).
+
+- **Closed by a marker, not a timer.** libghostty doesn't answer from inside
+  `ghostty_surface_write_buffer`: the parser queues the answer for the surface's
+  IO thread, which writes it a moment later (Ghostty 1.2's
+  `StreamHandler.messageWriter`). So after the replay we parse one query of our
+  own, a DECRQM for a mode no terminal has (`ESC[?64738$p`, answered
+  `ESC[?64738;0$y`). The queue is in order, so its answer coming back means
+  everything the replay produced has gone by; it is dropped too, and anything
+  after it is live. A 2s deadline covers a marker that never comes back.
+- **Not after a replay cut mid-sequence.** The replay and the first live read
+  are one stream; a program drawing as the keeper handed over can leave a
+  sequence half in each. The marker's `ESC` would cut it short and its tail
+  would print as text, so `ReplayAnswers.endsCleanly` checks the replay's last
+  escape (and UTF-8 character) first. If it isn't clean, no marker: the window
+  closes 250ms after the replay was written instead.
+- **Keys can't be told apart**, since they take the same queue as answers, so a
+  key pressed while the replay is being parsed is dropped with them. That is
+  the few milliseconds a surface takes to be built, before it was on screen.
+- **Three reports go through**, because they describe the terminal *now* and
+  the program wants them unasked: focus (`ESC[I`/`ESC[O`, which the prelude's
+  `?1004h` itself produces), the `?2048` size report, and the `?2031` light/dark
+  report.
+- **Not covered: answers that go via the main thread.** An OSC 52 clipboard
+  read, a title report (`CSI 21 t`) and the `?996n` theme query are answered by
+  the app after a hop through the surface's mailbox, and can come back after
+  the marker. The theme answer is harmless (it is the report above). The other
+  two are rare in agents; a late one still goes through.
+- **A fresh shell is never muted**: its few replayed bytes were written a
+  moment ago, and whatever it asked it is still waiting on.
+
 ## The scanner
 
 `CSIScanner` finds `ESC [ … <final>` in a byte stream that arrives in arbitrary

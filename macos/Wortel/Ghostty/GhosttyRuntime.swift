@@ -350,10 +350,12 @@ final class GhosttyRuntime {
         cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
         // The terminal has bytes for the program: the user typed, or it is
         // answering a query (cursor position, device attributes) on its behalf.
+        // Not `write`: during the replay below, those answers are old and are
+        // held back (`ReplayAnswers`).
         cfg.receive_buffer = { userdata, bytes, length in
             guard let userdata, let bytes else { return }
             Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
-                .write(bytes, count: length)
+                .writeFromTerminal(bytes, count: length)
         }
         // The grid changed shape. Nobody sends SIGWINCH for us any more — and
         // this is also what corrects the 80x24 the pty was opened at, since the
@@ -423,7 +425,16 @@ final class GhosttyRuntime {
             return marker.agent
         } : nil
         let prelude = resumed ? TerminalModeRecorder.shared.modes(for: session).assuming(agent: agent).prelude : []
+        // Whatever the replay asked the terminal was asked long ago, while
+        // nobody was attached, and the program is no longer waiting for an
+        // answer: one now would arrive as typed input. So the terminal's
+        // answers are held back until a marker query written after the replay
+        // comes back answered (`ReplayAnswers`). Only for a session that
+        // survived: a fresh shell's few bytes were written a moment ago, and
+        // whatever it asked it is still waiting on.
+        let muteAnswers = resumed && !replay.isEmpty
         pty.enqueue {
+            if muteAnswers { pty.muteReplayAnswers() }
             if !prelude.isEmpty {
                 prelude.withUnsafeBufferPointer { raw in
                     guard let base = raw.baseAddress else { return }
@@ -439,6 +450,18 @@ final class GhosttyRuntime {
                     guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
                     ghostty_surface_write_buffer(surface, base, UInt(raw.count))
                 }
+            }
+            if muteAnswers {
+                // Not after a replay cut off mid-sequence: the marker would
+                // cut it short, and the live rest of it would print as text.
+                let marked = ReplayAnswers.endsCleanly(replay)
+                if marked {
+                    ReplayAnswers.sentinel.withUnsafeBufferPointer { raw in
+                        guard let base = raw.baseAddress else { return }
+                        ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+                    }
+                }
+                pty.replayWritten(markerSent: marked)
             }
 
             // And then, if the program asked to hear about it, what the

@@ -188,7 +188,12 @@ Enter. So the app watches the output it already handles, records the sticky
 modes, persists them per session, and re-declares them into the new surface
 *before* the keeper's replay. **The watching cannot live in the keeper**: while
 a session is attached the app reads the pty itself, which is exactly when a
-program declares its modes. See `docs/terminal-modes.md`.
+program declares its modes. The replay's own queries get answered by the new
+surface, long after the program stopped waiting, so those answers are dropped
+(`ReplayAnswers`, `PtyHost.writeFromTerminal`) until a marker query parsed
+after the replay comes back: libghostty writes answers from its IO thread a
+moment after parsing, so "the replay was written" is not "its answers are out".
+See `docs/terminal-modes.md`.
 
 **Session naming** (`Session.NameSource`, `Wortel/Sessions/AgentTitle.swift`,
 `Wortel/Sessions/PromptCapture.swift`, `Wortel/Ghostty/PromptTap.swift`,

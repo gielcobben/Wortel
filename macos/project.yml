@@ -323,6 +323,7 @@ targets:
       - path: Wortel/Keeper/ReplayBuffer.swift
       - path: Wortel/Keeper/FileDescriptorChannel.swift
       - path: Wortel/Ghostty/PtyHost.swift
+      - path: Wortel/Ghostty/ReplayAnswers.swift
       - path: Wortel/CLI/WortelCommand.swift
       - path: Wortel/CLI/WortelCLIClient.swift
       - path: Wortel/DataDirectory.swift
@@ -548,6 +549,11 @@ targets:
       - path: Wortel/Keeper/ReplayBuffer.swift
       - path: Wortel/Keeper/FileDescriptorChannel.swift
       - path: Wortel/Ghostty/PtyHost.swift
+      # What the terminal answers while a replay goes through it, and the
+      # marker that ends that. Pure, and wrong in both directions without a
+      # sound: an answer let through is typed into an agent's prompt, a window
+      # that never closes swallows every key.
+      - path: Wortel/Ghostty/ReplayAnswers.swift
       # How a shell is started when we own the pty rather than libghostty
       # (process survival). Pure description-in, description-out, and every
       # failure is silent: a shell that starts without the integration looks

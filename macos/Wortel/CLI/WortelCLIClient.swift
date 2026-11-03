@@ -17,6 +17,8 @@ enum WortelCLIClient {
         // A bound on the whole exchange, because the app can be busy in ways the
         // CLI can't see (a modal sheet, a git command on a cold monorepo) and a
         // command line that never returns is worse than one that says so.
+        // 0 is no bound at all (what the socket options take it to mean), for
+        // a `wortel wait --timeout 0`, whose answer comes when it comes.
         var deadline = timeval(
             tv_sec: Int(timeout), tv_usec: Int32((timeout - timeout.rounded(.down)) * 1e6))
         setsockopt(socketFD, SOL_SOCKET, SO_RCVTIMEO, &deadline, socklen_t(MemoryLayout<timeval>.size))
@@ -82,7 +84,7 @@ enum WortelCLIClient {
 
     private static func readLine(from socketFD: Int32) -> Data? {
         var line = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
             let count = read(socketFD, &buffer, buffer.count)
             guard count > 0 else { return line.isEmpty ? nil : line }
@@ -91,7 +93,7 @@ enum WortelCLIClient {
                 return line
             }
             line.append(contentsOf: buffer[0..<count])
-            guard line.count <= WortelCLI.maximumLineBytes else { return nil }
+            guard line.count <= WortelCLI.maximumResponseBytes else { return nil }
         }
     }
 }

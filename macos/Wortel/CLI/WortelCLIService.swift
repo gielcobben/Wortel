@@ -16,6 +16,13 @@ import AppKit
 /// session argument: the shell already knows which one it is
 /// (`$WORTEL_SESSION_ID`), so the identity comes from where you ran the command
 /// rather than from something you have to look up and could get wrong.
+///
+/// **Except the four that reach other sessions** (`list`, `read`, `send`,
+/// `wait`), whose whole point is another session: one agent starting a second,
+/// handing it a prompt, waiting for it and reading the answer. They go through
+/// the same doors a person does, the screen, a paste and the Return key, and
+/// they leave no mark: see `docs/cli.md` for why there is no prompt and no
+/// label.
 @MainActor
 final class WortelCLIService {
     private let manager: SessionManager
@@ -55,11 +62,14 @@ final class WortelCLIService {
     func stop() {
         server?.stop()
         server = nil
+        waitTimer?.invalidate()
+        waitTimer = nil
+        waiters = []
     }
 
     // MARK: - Commands
 
-    private func handle(_ command: WortelCommand, caller: pid_t?,
+    private func handle(_ command: WortelCommand, caller: WortelCLIServer.Caller,
                         reply: @escaping @Sendable (WortelResponse) -> Void) {
         // Which verbs anyone actually uses. The whole argument for having a
         // socket instead of per-agent integrations is that people wire it into
@@ -131,7 +141,7 @@ final class WortelCLIService {
                 // The id a side terminal's shell carries is its tab's, so a
                 // different id from the session's means one of those asked.
                 let fromSide = session.flatMap(UUID.init(uuidString:)).map { $0 != target.id } ?? false
-                return manager.changeDirectory(target, to: path, callerPID: caller,
+                return manager.changeDirectory(target, to: path, callerPID: caller.pid,
                                                fromSideTerminal: fromSide, via: .cli)
             })
 
@@ -140,6 +150,19 @@ final class WortelCLIService {
                 manager.notify(session, title: title, body: body ?? "")
                 return .success()
             })
+
+        case .list(let callerID):
+            reply(list(caller: callerID))
+
+        case .read(let query, let lines):
+            read(query, lines: lines, reply: reply)
+
+        case .send(let query, let text, let enter):
+            send(text, to: query, pressingReturn: enter, reply: reply)
+
+        case .wait(let query, let text, let fromStart, let idle, let exit, let timeout):
+            wait(for: query, text: text, fromStart: fromStart, idle: idle, exit: exit,
+                 timeout: timeout, caller: caller, reply: reply)
 
         case .version:
             // Marketing version, because that's the one on the website and in
@@ -209,7 +232,8 @@ final class WortelCLIService {
 
         // Listed rather than `default`, so a fourth kind of `new` is a
         // compile error here instead of this refusal.
-        case .open, .rename, .notify, .mark, .fork, .changeDirectory, .version, .newRunning:
+        case .open, .rename, .notify, .mark, .fork, .changeDirectory, .version, .newRunning,
+             .list, .read, .send, .wait:
             reply(.failure("Only a new session can be given a command to run."))
         }
     }
@@ -289,16 +313,389 @@ final class WortelCLIService {
     /// — where "this session" names nothing. An id that no longer resolves means
     /// the session was closed while something in it was still running, which is
     /// the ordinary end of a background job whose shell outlived its row.
+    ///
+    /// A name instead of an id is `--session` on `rename`, `notify` or `mark`,
+    /// and is looked up the way `read` and `send` look one up.
     private func withSession(
         _ id: String?, _ body: (Session) -> WortelResponse
     ) -> WortelResponse {
-        guard let id, let uuid = UUID(uuidString: id) else {
+        guard let id else {
             return .failure(
                 "Not running inside a Wortel session (no $\(WortelCommandParser.sessionVariable)).")
+        }
+        guard let uuid = UUID(uuidString: id) else {
+            switch lookUp(id) {
+            case .found(let session): return body(session)
+            case .refused(let refusal): return refusal
+            }
         }
         guard let session = manager.session(id: uuid) else {
             return .failure("That session has closed.")
         }
         return body(session)
+    }
+
+    // MARK: - Reaching other sessions
+
+    private enum Lookup {
+        case found(Session)
+        case refused(WortelResponse)
+    }
+
+    /// The session a `<session>` names (`WortelSessionAddress`), or the
+    /// sentence that says why there isn't exactly one. An id is the session's
+    /// or one of its terminals', as `$WORTEL_SESSION_ID` is.
+    private func lookUp(_ query: String) -> Lookup {
+        if let uuid = UUID(uuidString: query) {
+            guard let session = manager.session(id: uuid) else {
+                return .refused(.failure("There's no open session with the id \(query)."))
+            }
+            return .found(session)
+        }
+        let candidates = manager.sessions.map {
+            WortelSessionAddress.Candidate(id: $0.id, name: $0.name, leaf: $0.leafName)
+        }
+        switch WortelSessionAddress.resolve(query, among: candidates) {
+        case .found(let id):
+            guard let session = manager.session(id: id) else { return .refused(.failure("That session has closed.")) }
+            return .found(session)
+        case .none:
+            return .refused(.failure(
+                "There's no session called \u{201c}\(query)\u{201d}. `wortel list` shows the open ones."))
+        case .ambiguous(let matches):
+            let names = matches.map { "\u{201c}\($0.name)\u{201d} (\($0.id.uuidString.prefix(8)))" }
+            return .refused(.failure(
+                "\u{201c}\(query)\u{201d} could be \(names.joined(separator: ", ")). "
+                    + "Use more of the name, or the id."))
+        }
+    }
+
+    /// `wortel list`: every open session in sidebar order, pinned first.
+    private func list(caller: String?) -> WortelResponse {
+        let you = caller.flatMap(UUID.init(uuidString:)).flatMap(manager.session(id:))
+        let selected = manager.selected
+        let sessions = manager.sidebarGroups.flatMap(\.sessions).map { session in
+            WortelSessionInfo(
+                id: session.id.uuidString, name: session.name, folder: session.folderPath,
+                directory: session.cwd ?? session.originCwd,
+                branch: session.worktreeBranch ?? session.linkedCheckout.flatMap { Self.branch(atGitDir: $0.gitDir) },
+                worktree: session.linkedCheckout?.root,
+                agent: session.runningAgent, state: state(of: session),
+                selected: session === selected, caller: session === you)
+        }
+        guard let data = try? JSONEncoder().encode(sessions) else {
+            return .failure("Couldn't describe the sessions.")
+        }
+        return .success(value: String(decoding: data, as: UTF8.self))
+    }
+
+    /// The branch a linked worktree has checked out, from its HEAD file: a
+    /// read of a few bytes rather than a git process per row. nil on a
+    /// detached HEAD, which has no branch to name.
+    private static func branch(atGitDir gitDir: String) -> String? {
+        guard !gitDir.isEmpty,
+              let head = try? String(contentsOfFile: gitDir + "/HEAD", encoding: .utf8) else { return nil }
+        let prefix = "ref: refs/heads/"
+        let line = head.trimmingCharacters(in: .whitespacesAndNewlines)
+        return line.hasPrefix(prefix) ? String(line.dropFirst(prefix.count)) : nil
+    }
+
+    /// The state column, from what the sidebar already believes. Asking for
+    /// action beats working: a title saying "Action Required" is the agent
+    /// blocked, whatever its spinner last said.
+    private func state(of session: Session) -> WortelSessionInfo.State {
+        if session.preparation != nil { return .preparing }
+        let activity = manager.activity(of: session)
+        if activity.asksForAction { return .needsYou }
+        if activity.busy || activity.settling { return .working }
+        switch activity.outcome {
+        case .needsInput?: return .needsYou
+        case .failed?: return .failed
+        case .turnDone?, .finished?: return .finished
+        case nil: return .idle
+        }
+    }
+
+    /// The session's terminal for `read`, `send` and `wait`, warmed if it
+    /// hasn't been shown since launch, or the refusal.
+    private func terminal(of session: Session) -> (SurfaceView?, WortelResponse?) {
+        guard let view = manager.warmSurface(of: session) else {
+            return (nil, .failure("\u{201c}\(session.name)\u{201d} has no terminal yet: its worktree is still being made."))
+        }
+        return (view, nil)
+    }
+
+    /// `wortel read`. A terminal warmed for the purpose is read once its
+    /// replay has landed, so a session restored at launch and never shown
+    /// reads as what it says rather than as blank.
+    private func read(_ query: String, lines: Int?, reply: @escaping @Sendable (WortelResponse) -> Void) {
+        let session: Session
+        switch lookUp(query) {
+        case .found(let found): session = found
+        case .refused(let refusal): return reply(refusal)
+        }
+        let (view, refusal) = terminal(of: session)
+        guard let view else { return reply(refusal ?? .failure("That session has closed.")) }
+        let id = session.id.uuidString, name = session.name
+        view.afterPendingOutput {
+            guard let raw = view.readText(includingScrollback: lines != nil) else {
+                return reply(.failure("That session has closed."))
+            }
+            let screen = WortelScreen(id: id, name: name, text: ScreenText.tidy(raw, lastLines: lines))
+            guard let data = try? JSONEncoder().encode(screen) else {
+                return reply(.failure("Couldn't read \u{201c}\(name)\u{201d}."))
+            }
+            reply(.success(value: String(decoding: data, as: UTF8.self)))
+        }
+    }
+
+    /// How long after a paste `send --enter` presses Return. A person's Return
+    /// comes a beat after the paste, and some agents rely on that: Codex reads
+    /// keys that arrive in a burst as one paste, and a Return inside the
+    /// burst as a newline in the prompt rather than sending it. Long enough to
+    /// be its own keypress, short enough not to be noticed.
+    private static let returnAfterPaste: TimeInterval = 0.2
+
+    /// `wortel send`: the text in as a paste, exactly as ⌘V would put it
+    /// (`ghostty_surface_text`, bracketed when the program asked for that, so
+    /// a multi-line prompt arrives in an agent's input as one input), then
+    /// Return as a separate key. Nothing is added in front, nothing selects
+    /// the session or takes focus, and the input taps (`PromptTap`, a move's
+    /// `DraftTap`) see it as they see typing, because it reaches the pty by
+    /// the same road.
+    private func send(_ text: String, to query: String, pressingReturn enter: Bool,
+                      reply: @escaping @Sendable (WortelResponse) -> Void) {
+        let session: Session
+        switch lookUp(query) {
+        case .found(let found): session = found
+        case .refused(let refusal): return reply(refusal)
+        }
+        let (view, refusal) = terminal(of: session)
+        guard let view else { return reply(refusal ?? .failure("That session has closed.")) }
+        let name = session.name
+        view.afterPendingOutput {
+            guard view.surface != nil else { return reply(.failure("That session has closed.")) }
+            guard !view.shellHasExited else {
+                return reply(.failure("\u{201c}\(name)\u{201d} has no shell any more: it exited."))
+            }
+            if !text.isEmpty { view.sendText(text) }
+            guard enter else { return reply(.success()) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + (text.isEmpty ? 0 : Self.returnAfterPaste)) {
+                MainActor.assumeIsolated {
+                    view.pressReturn()
+                    reply(.success())
+                }
+            }
+        }
+    }
+
+    // MARK: - Waiting
+
+    /// One `wortel wait` in progress: its connection is held open until a
+    /// condition holds, the time runs out, or the CLI goes away.
+    @MainActor
+    private final class Waiter {
+        let session: Session.ID
+        let name: String
+        let needle: String?
+        /// How many times the text was there when the wait began (0 with
+        /// `--from-start`). Lowered if the count falls, after a `clear` or
+        /// scrollback trimmed at its limit, so text printed after that still
+        /// counts as new.
+        var baseline: Int
+        var seenOutput: UInt64?
+        var lastScreenRead: Date
+        let idle: Bool
+        let exit: Bool
+        let startedAt: Date
+        let timeout: Double
+        let deadline: Date?
+        /// When the session was first seen quiet in the current quiet stretch.
+        var quietSince: Date?
+        /// The session was seen working at some point during the wait.
+        var sawBusy = false
+        let caller: WortelCLIServer.Caller
+        let reply: @Sendable (WortelResponse) -> Void
+
+        init(session: Session, needle: String?, baseline: Int, seenOutput: UInt64?, idle: Bool,
+             exit: Bool, timeout: Double, caller: WortelCLIServer.Caller,
+             reply: @escaping @Sendable (WortelResponse) -> Void) {
+            let now = Date()
+            self.session = session.id
+            self.name = session.name
+            self.needle = needle
+            self.baseline = baseline
+            self.seenOutput = seenOutput
+            self.lastScreenRead = now
+            self.idle = idle
+            self.exit = exit
+            self.startedAt = now
+            self.timeout = timeout
+            self.deadline = timeout > 0 ? now.addingTimeInterval(timeout) : nil
+            self.caller = caller
+            self.reply = reply
+        }
+    }
+
+    private var waiters: [Waiter] = []
+    private var waitTimer: Timer?
+
+    /// How often the waits are looked at. Each look is a few dictionary reads
+    /// per wait; the screen is read only for a `--for` whose terminal has had
+    /// output since the last look, and at most every `screenReadInterval`. The
+    /// timer exists only while a wait does.
+    private static let waitTick: TimeInterval = 0.25
+    private static let screenReadInterval: TimeInterval = 0.5
+    /// On the exec backend, which has no output counter, the screen is read
+    /// this often instead.
+    private static let blindScreenReadInterval: TimeInterval = 1
+    /// A turn seen to start counts as over once the session has been quiet
+    /// this long, unless it said how it ended: a gap between two tools in one
+    /// turn is shorter.
+    private static let quietAfterTurn: TimeInterval = 1
+    /// With no turn seen, how long after the last thing typed into the session
+    /// (a `send`), or after its shell started (a `new -- claude …` whose line
+    /// is still on its way), its quiet is believed. An agent shows it has
+    /// started within a second or so; until then, quiet means "not yet", not
+    /// "done".
+    private static let quietAfterInput: TimeInterval = 5
+
+    /// `wortel wait`. The answer comes when a condition holds; until then the
+    /// connection stays open and nothing on the main thread blocks: the
+    /// waits are looked at on a timer, between everything else.
+    private func wait(for query: String, text: String?, fromStart: Bool, idle: Bool, exit: Bool,
+                      timeout: Double, caller: WortelCLIServer.Caller,
+                      reply: @escaping @Sendable (WortelResponse) -> Void) {
+        let session: Session
+        switch lookUp(query) {
+        case .found(let found): session = found
+        case .refused(let refusal): return reply(refusal)
+        }
+        let (view, refusal) = terminal(of: session)
+        guard let view else { return reply(refusal ?? .failure("That session has closed.")) }
+        // After the replay, so a session warmed for this has its screen to
+        // count against, and text it had already printed isn't taken as new.
+        view.afterPendingOutput { [weak self] in
+            guard let self else { return reply(.failure("Wortel is shutting down.")) }
+            let seen = view.outputGeneration
+            var baseline = 0
+            if let text, !fromStart {
+                baseline = view.readText(includingScrollback: true)
+                    .map { ScreenText.occurrences(of: text, in: $0) } ?? 0
+            }
+            let waiter = Waiter(session: session, needle: text, baseline: baseline,
+                                seenOutput: fromStart ? nil : seen, idle: idle, exit: exit,
+                                timeout: timeout, caller: caller, reply: reply)
+            // `--from-start` looks at once: what's there already counts.
+            if fromStart { waiter.lastScreenRead = .distantPast }
+            self.waiters.append(waiter)
+            self.checkWaits()
+            if !self.waiters.isEmpty, self.waitTimer == nil {
+                let timer = Timer(timeInterval: Self.waitTick, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.checkWaits() }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                self.waitTimer = timer
+            }
+        }
+    }
+
+    private func checkWaits() {
+        let now = Date()
+        for waiter in waiters {
+            guard let answer = verdict(for: waiter, now: now) else { continue }
+            waiters.removeAll { $0 === waiter }
+            waiter.reply(answer)
+        }
+        if waiters.isEmpty {
+            waitTimer?.invalidate()
+            waitTimer = nil
+        }
+    }
+
+    /// The answer for a wait, or nil while it should keep waiting.
+    private func verdict(for waiter: Waiter, now: Date) -> WortelResponse? {
+        // Answered anyway, though nobody will read it: the reply is what
+        // closes the connection.
+        if waiter.caller.hasHungUp() { return .failure("Nobody is waiting any more.") }
+        guard let session = manager.session(id: waiter.session), session.id == waiter.session else {
+            return waiter.exit ? .success(value: "exit")
+                : .failure("\u{201c}\(waiter.name)\u{201d} closed before it \(goal(of: waiter)).")
+        }
+        let view = session.surfaceView
+        if waiter.exit, view?.shellHasExited ?? false { return .success(value: "exit") }
+        if let needle = waiter.needle, let view, screenIsDue(waiter, view: view, now: now) {
+            waiter.lastScreenRead = now
+            waiter.seenOutput = view.outputGeneration
+            if let text = view.readText(includingScrollback: true) {
+                let count = ScreenText.occurrences(of: needle, in: text)
+                if count > waiter.baseline { return .success(value: "text") }
+                waiter.baseline = min(waiter.baseline, count)
+            }
+        }
+        if waiter.idle, isIdle(session, for: waiter, now: now) { return .success(value: "idle") }
+        if let deadline = waiter.deadline, now >= deadline {
+            return .failure(
+                "Timed out after \(Self.display(waiter.timeout)) waiting for \u{201c}\(waiter.name)\u{201d} to \(goal(of: waiter, future: true)).",
+                status: WortelCLI.waitTimedOutStatus)
+        }
+        return nil
+    }
+
+    /// Whether a `--for` should read the screen now: new output since the
+    /// last read, and not more often than `screenReadInterval`.
+    private func screenIsDue(_ waiter: Waiter, view: SurfaceView, now: Date) -> Bool {
+        let since = now.timeIntervalSince(waiter.lastScreenRead)
+        guard let generation = view.outputGeneration else { return since >= Self.blindScreenReadInterval }
+        return generation != waiter.seenOutput && since >= Self.screenReadInterval
+    }
+
+    /// `--idle`: the agent's turn is over, or it's asking for you, or the
+    /// shell is back at its prompt.
+    ///
+    /// The hard part is a wait that starts right after a `send`, before the
+    /// agent has shown it started: it is quiet then, and that quiet means
+    /// "not yet". So quiet counts only once a turn has been seen (a start
+    /// reported after the wait began, or the session seen working during
+    /// it), and otherwise only once nothing has been typed into the session
+    /// for `quietAfterInput`. A session nobody has touched lately is idle at
+    /// once.
+    private func isIdle(_ session: Session, for waiter: Waiter, now: Date) -> Bool {
+        let activity = manager.activity(of: session)
+        if activity.busy { waiter.sawBusy = true }
+        guard activity.asksForAction || (!activity.busy && !activity.settling) else {
+            waiter.quietSince = nil
+            return false
+        }
+        let quietSince = waiter.quietSince ?? now
+        waiter.quietSince = quietSince
+        let turnSeen = waiter.sawBusy || (activity.lastStarted.map { $0 > waiter.startedAt } ?? false)
+        if turnSeen {
+            // How it ended was said (the dot's own signal), or the quiet has
+            // outlasted a pause between tools.
+            return activity.asksForAction || (waiter.sawBusy && activity.outcome != nil)
+                || now.timeIntervalSince(quietSince) >= Self.quietAfterTurn
+        }
+        let lastTouched = [session.surfaceView?.lastUserInputAt, session.surfaceView?.shellStartedAt,
+                           activity.lastStarted].compactMap { $0 }.max() ?? .distantPast
+        return now.timeIntervalSince(lastTouched) >= Self.quietAfterInput
+    }
+
+    /// What a wait was for, for its messages: "show \u{201c}DONE\u{201d} or go idle".
+    private func goal(of waiter: Waiter, future: Bool = false) -> String {
+        var parts: [String] = []
+        if let needle = waiter.needle {
+            parts.append(future ? "show \u{201c}\(needle)\u{201d}" : "showed \u{201c}\(needle)\u{201d}")
+        }
+        if waiter.idle { parts.append(future ? "go idle" : "went idle") }
+        if waiter.exit { parts.append(future ? "exit" : "exited") }
+        return parts.joined(separator: " or ")
+    }
+
+    /// A timeout as it was most likely typed: `30s`, `5m`, `1.5s`.
+    private static func display(_ seconds: Double) -> String {
+        if seconds >= 60, seconds.truncatingRemainder(dividingBy: 60) == 0 { return "\(Int(seconds / 60))m" }
+        if seconds.rounded() == seconds { return "\(Int(seconds))s" }
+        return String(format: "%.1fs", seconds)
     }
 }

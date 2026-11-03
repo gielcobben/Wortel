@@ -104,6 +104,13 @@ final class PtyHost: @unchecked Sendable {
         set { secondTap.withLock { $0 = newValue } }
     }
 
+    /// How many reads of the program's output have reached `onOutput`. Only
+    /// ever compared with an earlier value of itself: a `wortel wait --for`
+    /// reads the screen again when this has moved and not otherwise, so a
+    /// wait on a quiet session costs a counter read, not a screen read.
+    private let outputReads = OSAllocatedUnfairLock(initialState: UInt64(0))
+    var outputGeneration: UInt64 { outputReads.withLock { $0 } }
+
     /// The pty master. Reading it gives what the program wrote; writing it is
     /// what the user typed. -1 once the descriptor has been closed.
     var master: Int32 { shared.withLock { $0.master } }
@@ -314,6 +321,7 @@ final class PtyHost: @unchecked Sendable {
                         guard let base = raw.baseAddress else { return }
                         self.onOutput?(base, count)
                     }
+                    self.outputReads.withLock { $0 &+= 1 }
                     // A short read means the pty had nothing more; going round
                     // again would just return EAGAIN.
                     if count < buffer.count { return }

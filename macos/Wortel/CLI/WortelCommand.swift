@@ -54,6 +54,23 @@ enum WortelCommand: Codable, Equatable {
     /// its turn and continues the same conversation there. `path` is
     /// absolute by the time it's sent; the app checks it exists.
     case changeDirectory(session: String?, path: String)
+    /// Every open session, described (`WortelSessionInfo`, as JSON in the
+    /// reply's `value`). `caller` is the asking shell's `$WORTEL_SESSION_ID`,
+    /// so the list can say which row is "you".
+    case list(caller: String?)
+    /// The text on a session's screen. `session` is an id or a name
+    /// (`WortelSessionAddress`); `lines` asks for the last that many lines,
+    /// scrollback included, instead of the screen.
+    case read(session: String, lines: Int?)
+    /// Text into a session's terminal as a paste, then Return if `enter`.
+    /// Unmarked, like a person typing: see `docs/cli.md`.
+    case send(session: String, text: String, enter: Bool)
+    /// Hold the connection open until the session shows `text` (new since
+    /// the wait began, unless `fromStart`), goes idle, or exits, whichever
+    /// of the asked-for conditions comes first. `timeout` is in seconds, 0
+    /// for none.
+    case wait(session: String, text: String?, fromStart: Bool, idle: Bool, exit: Bool,
+              timeout: Double)
     /// Which Wortel is actually listening.
     ///
     /// Asked over the socket rather than read off disk because the two are
@@ -74,6 +91,10 @@ enum WortelCommand: Codable, Equatable {
         case .mark: return "mark"
         case .fork: return "fork"
         case .changeDirectory: return "cd"
+        case .list: return "list"
+        case .read: return "read"
+        case .send: return "send"
+        case .wait: return "wait"
         case .version: return "--version"
         }
     }
@@ -109,13 +130,24 @@ enum WortelCLI {
         return nil
     }
 
-    /// The maximum line either end will read before giving up.
+    /// The longest command the app will read, and the longest reply the CLI
+    /// will, before giving up.
     ///
-    /// A guard, not a budget: the far end is a local socket carrying one JSON
-    /// object, and anything approaching this is a confused peer rather than a
-    /// long path. Without it, a peer that never sends a newline makes the reader
-    /// grow a buffer until something else breaks.
-    static let maximumLineBytes = 64 * 1024
+    /// Guards, not budgets: without them, a peer that never sends a newline
+    /// makes the reader grow a buffer until something else breaks. They are
+    /// two numbers because the two directions carry different things now. A
+    /// command is a path or a name, except `send`'s text, which is capped
+    /// below what fits here even escaped. A reply is a sentence, except
+    /// `read --lines`, which can be a long stretch of scrollback.
+    static let maximumRequestBytes = 2 * 1024 * 1024
+    static let maximumResponseBytes = 16 * 1024 * 1024
+    /// The most `wortel send` takes. A prompt is a few kilobytes; this is a
+    /// file pasted whole, and JSON-escaped (a control character becomes six
+    /// bytes) it still fits in `maximumRequestBytes`.
+    static let maximumSendBytes = 256 * 1024
+    /// The exit status of a `wortel wait` that ran out of time: the one GNU
+    /// `timeout` uses, so a script that already knows that one reads it right.
+    static let waitTimedOutStatus: Int32 = 124
 
     /// Fill a `sockaddr_un` for `path`.
     ///
@@ -176,9 +208,14 @@ struct WortelResponse: Codable, Equatable {
     var message: String?
     /// Machine-readable, for the caller's script: a session id, a path.
     var value: String?
+    /// The exit status for a failure, when it isn't the usual 1: a `wait`
+    /// that timed out (`WortelCLI.waitTimedOutStatus`) has to be told apart
+    /// from one that couldn't start. Absent in every other reply, and an older
+    /// CLI that doesn't know the field ignores it and exits 1.
+    var status: Int32?
 
-    static func failure(_ message: String) -> WortelResponse {
-        WortelResponse(ok: false, message: message, value: nil)
+    static func failure(_ message: String, status: Int32? = nil) -> WortelResponse {
+        WortelResponse(ok: false, message: message, value: nil, status: status)
     }
 
     static func success(_ message: String? = nil, value: String? = nil) -> WortelResponse {
@@ -207,9 +244,12 @@ enum WortelCommandParser {
                                    --pr checks out a pull request in one,
                                    --worktree makes one on a new branch,
                                    and a command after -- runs in its shell
-          rename <name>            rename this session
-          notify <title> [body]    raise attention on this session
-          mark <colour>            colour this session in the sidebar: red, orange,
+          rename [--session <s>] <name>
+                                   rename this session
+          notify [--session <s>] <title> [body]
+                                   raise attention on this session
+          mark [--session <s>] <colour>
+                                   colour this session in the sidebar: red, orange,
                                    yellow, green, blue, purple, grey, or none
           fork [--name <name>] [--branch <branch>]
                                    this session as it is, in a worktree of its own,
@@ -218,20 +258,164 @@ enum WortelCommandParser {
                                    directory; an agent moves when its turn ends,
                                    and continues the same conversation there
 
+          list [--json]            the open sessions: id, name, state, agent,
+                                   branch and directory
+          read <session> [--lines <n>] [--json]
+                                   the text on a session's screen; --lines gives
+                                   the last n lines, scrollback included
+          send <session> [text] [--enter] [--stdin]
+                                   type text into a session as a paste; --enter
+                                   presses Return after it, --stdin reads the text
+                                   from standard input
+          wait <session> [--for <text> [--from-start]] [--idle] [--exit] [--timeout <dur>]
+                                   wait until the text appears, the session is
+                                   idle (the default), or it exits; --timeout is
+                                   30s unless given (90s, 5m, 0 for none). Exits 0
+                                   when met, \(WortelCLI.waitTimedOutStatus) on timeout, 1 on error
+
           --version                this command's version, and the running app's
           --help                   this
 
-        Commands act on the session they are run in, via $\(sessionVariable).
+        Commands act on the session they are run in, via $\(sessionVariable), unless
+        given one. <session> is an id (the short one `list` prints will do) or a
+        name: exact, or the start of one if only one session's name starts that way.
         """
+
+    /// A parsed command line: the command for the app, and how the CLI should
+    /// print what comes back. `json` never goes over the wire; it is a
+    /// question of presentation, and the app answers the same either way.
+    struct Invocation: Equatable {
+        var command: WortelCommand
+        var json = false
+    }
 
     /// Parse `arguments` (without the program name). `environment` supplies the
     /// caller's session and directory.
     static func parse(
-        _ arguments: [String], environment: [String: String] = [:], currentDirectory: String? = nil
+        _ arguments: [String], environment: [String: String] = [:], currentDirectory: String? = nil,
+        standardInput: (() throws -> String)? = nil
     ) throws -> WortelCommand {
+        try parseInvocation(arguments, environment: environment, currentDirectory: currentDirectory,
+                            standardInput: standardInput).command
+    }
+
+    /// The same, with the printing options. `standardInput` is how
+    /// `send --stdin` gets its text: handed in rather than read here, so the
+    /// parser stays something a test can call.
+    static func parseInvocation(
+        _ arguments: [String], environment: [String: String] = [:], currentDirectory: String? = nil,
+        standardInput: (() throws -> String)? = nil
+    ) throws -> Invocation {
         guard let verb = arguments.first else { throw ParseError.noCommand }
         let rest = Array(arguments.dropFirst())
         let session = environment[sessionVariable]
+
+        switch verb {
+        case "list":
+            let words = try Words(rest, valued: [], switches: ["--json"])
+            if let extra = words.positionals.first { throw ParseError.unexpected(extra, verb) }
+            return Invocation(command: .list(caller: session), json: words.isOn("--json"))
+
+        case "read":
+            let words = try Words(rest, valued: ["--lines"], switches: ["--json"])
+            let target = try words.target(for: verb)
+            var lines: Int?
+            if let text = words["--lines"] {
+                guard let count = Int(text), count > 0 else {
+                    throw ParseError.invalid("--lines", text, "a number of lines, 1 or more")
+                }
+                lines = count
+            }
+            return Invocation(command: .read(session: target, lines: lines), json: words.isOn("--json"))
+
+        case "send":
+            let words = try Words(rest, valued: [], switches: ["--enter", "--stdin"])
+            guard let target = words.positionals.first else { throw ParseError.missing("a session", verb) }
+            guard words.positionals.count <= 2 else {
+                throw ParseError.unexpected(words.positionals[2], verb)
+            }
+            let given = words.positionals.count == 2 ? words.positionals[1] : nil
+            let enter = words.isOn("--enter")
+            var text = given ?? ""
+            if words.isOn("--stdin") {
+                guard given == nil else { throw ParseError.conflict("--stdin", "text on the command line") }
+                guard let standardInput else { throw ParseError.missing("text to read", "--stdin") }
+                // One trailing newline off, as `$(…)` takes it: `echo hi |`
+                // means "hi", and a newline inside a paste is a line break in
+                // the agent's input box rather than nothing.
+                // ("\r\n" is one Character to Swift, so one removal either way.)
+                text = try standardInput()
+                if let last = text.last, last == "\n" || last == "\r\n" { text.removeLast() }
+            } else if given == nil, !enter {
+                throw ParseError.missing("text, --stdin or --enter", verb)
+            }
+            guard text.utf8.count <= WortelCLI.maximumSendBytes else {
+                throw ParseError.invalid("the text", "\(text.utf8.count) bytes",
+                                         "at most \(WortelCLI.maximumSendBytes / 1024) KB")
+            }
+            return Invocation(command: .send(session: target, text: text, enter: enter))
+
+        case "wait":
+            let words = try Words(rest, valued: ["--for", "--timeout"],
+                                  switches: ["--from-start", "--idle", "--exit"])
+            let target = try words.target(for: verb)
+            let text = words["--for"]
+            if let text, text.isEmpty { throw ParseError.invalid("--for", "\"\"", "some text to wait for") }
+            let fromStart = words.isOn("--from-start")
+            if fromStart, text == nil { throw ParseError.missing("--for", "--from-start") }
+            var timeout = defaultWaitTimeout
+            if let given = words["--timeout"] {
+                guard let seconds = duration(given) else {
+                    throw ParseError.invalid("--timeout", given, "a duration like 30s, 5m or 0")
+                }
+                timeout = seconds
+            }
+            // Nothing asked for means idle: the question nearly every wait is,
+            // after a prompt has been sent.
+            let exit = words.isOn("--exit")
+            let idle = words.isOn("--idle") || (text == nil && !exit)
+            return Invocation(command: .wait(session: target, text: text, fromStart: fromStart,
+                                             idle: idle, exit: exit, timeout: timeout))
+
+        default:
+            return Invocation(command: try parseActingOnCaller(verb, rest, session: session,
+                                                               currentDirectory: currentDirectory))
+        }
+    }
+
+    /// How long `wait` waits when not told. Long enough for a short agent turn,
+    /// short enough that a wait for something that will never happen doesn't
+    /// look like a hang.
+    static let defaultWaitTimeout: Double = 30
+
+    /// A duration as typed: `90s`, `5m`, `1h`, `500ms`, or a bare number of
+    /// seconds. 0 is valid and means "no limit" to `wait`. Nil for anything
+    /// else, negative numbers included.
+    static func duration(_ text: String) -> Double? {
+        let text = text.trimmingCharacters(in: .whitespaces).lowercased()
+        let units: [(suffix: String, seconds: Double)] = [("ms", 0.001), ("s", 1), ("m", 60), ("h", 3600)]
+        // `ms` before `s` and `m`: both are suffixes of it.
+        let unit = units.first { text.hasSuffix($0.suffix) } ?? ("", 1)
+        let number = text.dropLast(unit.suffix.count)
+        guard !number.isEmpty, let value = Double(number), value >= 0, value.isFinite else { return nil }
+        return value * unit.seconds
+    }
+
+    /// The verbs that act on the caller's own session unless told otherwise,
+    /// and `open` and `new`, which act on no session.
+    private static func parseActingOnCaller(
+        _ verb: String, _ rest: [String], session callerSession: String?, currentDirectory: String?
+    ) throws -> WortelCommand {
+        // `--session` on the three that only label a session: naming one from
+        // elsewhere is as safe as naming your own. Not on `fork` and `cd`,
+        // which act on the agent inside and decide how by who is asking.
+        var rest = rest
+        var session = callerSession
+        if ["rename", "notify", "mark"].contains(verb), let flag = rest.firstIndex(of: "--session") {
+            guard flag + 1 < rest.count else { throw ParseError.missing("a value", "--session") }
+            session = rest[flag + 1]
+            rest.removeSubrange(flag...(flag + 1))
+        }
 
         switch verb {
         case "open":
@@ -403,6 +587,11 @@ enum WortelCommandParser {
         case extra(String, String)
         /// A command `new` can't type into a shell, and why.
         case unrunnable(String)
+        /// A word after the ones a command takes (`extra` says "directory").
+        case unexpected(String, String)
+        /// An option given a value it can't use: the option, the value, and
+        /// what it wanted instead.
+        case invalid(String, String, String)
 
         var description: String {
             switch self {
@@ -423,7 +612,57 @@ enum WortelCommandParser {
                 return "\(verb) takes one directory, not \"\(token)\" too (quote a path with spaces)"
             case .unrunnable(let why):
                 return "new can't run that command: \(why). Put it in a script and run the script."
+            case .unexpected(let token, let verb):
+                return "\(verb) doesn't take \"\(token)\" (quote text with spaces, or put it after --)"
+            case .invalid(let option, let value, let wanted):
+                return "\(option) can't be \(value): it takes \(wanted)"
             }
+        }
+    }
+
+    /// Positional words and `--options` in any order, for the verbs that take
+    /// both. Everything after `--` is positional, so text that starts with a
+    /// dash can still be sent: `wortel send x -- --help`.
+    ///
+    /// Unknown options are refused for the reason `Flags` refuses them. A lone
+    /// `-` is a word, not an option.
+    private struct Words {
+        private(set) var positionals: [String] = []
+        private var values: [String: String] = [:]
+        private var on: Set<String> = []
+
+        init(_ arguments: [String], valued: Set<String>, switches: Set<String>) throws {
+            var index = 0
+            var literal = false
+            while index < arguments.count {
+                let word = arguments[index]
+                index += 1
+                if literal || !word.hasPrefix("-") || word == "-" {
+                    positionals.append(word)
+                } else if word == "--" {
+                    literal = true
+                } else if switches.contains(word) {
+                    on.insert(word)
+                } else if valued.contains(word) {
+                    guard index < arguments.count else { throw ParseError.missing("a value", word) }
+                    values[word] = arguments[index]
+                    index += 1
+                } else {
+                    throw ParseError.unknown(word)
+                }
+            }
+        }
+
+        subscript(option: String) -> String? { values[option] }
+        func isOn(_ option: String) -> Bool { on.contains(option) }
+
+        /// The one session a verb is about, and nothing after it.
+        func target(for verb: String) throws -> String {
+            guard let target = positionals.first, !target.isEmpty else {
+                throw ParseError.missing("a session (an id or a name; `wortel list` shows them)", verb)
+            }
+            if positionals.count > 1 { throw ParseError.unexpected(positionals[1], verb) }
+            return target
         }
     }
 

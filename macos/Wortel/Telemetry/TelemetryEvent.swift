@@ -334,5 +334,9 @@ enum CommandVerb: String {
     case mark
     case fork
     case cd
+    case list
+    case read
+    case send
+    case wait
     case version
 }

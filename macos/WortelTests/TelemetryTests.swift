@@ -183,6 +183,11 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CommandVerb(.mark(session: nil, colour: "red")).rawValue, "mark")
         XCTAssertEqual(CommandVerb(.fork(session: nil, name: nil, branch: nil)).rawValue, "fork")
         XCTAssertEqual(CommandVerb(.changeDirectory(session: nil, path: "/x")).rawValue, "cd")
+        XCTAssertEqual(CommandVerb(.list(caller: nil)).rawValue, "list")
+        XCTAssertEqual(CommandVerb(.read(session: "x", lines: nil)).rawValue, "read")
+        XCTAssertEqual(CommandVerb(.send(session: "x", text: "secret prompt", enter: true)).rawValue, "send")
+        XCTAssertEqual(CommandVerb(.wait(session: "x", text: "DONE", fromStart: false, idle: true, exit: false,
+                                         timeout: 30)).rawValue, "wait")
         XCTAssertEqual(CommandVerb(.version).rawValue, "version")
 
         XCTAssertEqual(TabOpenedKind(.terminal(UUID()))?.rawValue, "terminal")
@@ -258,7 +263,8 @@ final class TelemetryTests: XCTestCase {
         for cause in causes {
             events.append(.agentAttention(kind: cause))
         }
-        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .fork, .cd, .version]
+        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .fork, .cd, .list, .read, .send,
+                                    .wait, .version]
         for verb in verbs {
             events.append(.commandRun(verb: verb))
         }

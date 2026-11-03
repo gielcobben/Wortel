@@ -81,6 +81,10 @@ extension CommandVerb {
         case .mark: self = .mark
         case .fork: self = .fork
         case .changeDirectory: self = .cd
+        case .list: self = .list
+        case .read: self = .read
+        case .send: self = .send
+        case .wait: self = .wait
         case .version: self = .version
         }
     }

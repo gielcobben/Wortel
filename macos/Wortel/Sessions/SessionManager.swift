@@ -4238,15 +4238,20 @@ final class SessionManager {
     }
 
     /// Attention answered: drop the sidebar dot, re-count the Dock badge, and
-    /// let the app layer retract the session's notification.
-    private func clearAttention(_ session: Session) {
+    /// let the app layer retract the session's notification. The one funnel,
+    /// so no way of answering leaves part of an attention behind. A batch
+    /// passes `refreshingBadge: false` and counts once for the lot; returns
+    /// whether there was a dot to clear.
+    @discardableResult
+    private func clearAttention(_ session: Session, refreshingBadge: Bool = true) -> Bool {
         raisedWhileAway.remove(session.id)
-        guard session.attention != nil else { return }
+        guard session.attention != nil else { return false }
         session.attention = nil
         attentionContent[session.id] = nil
         attentionSince[session.id] = nil
-        refreshDockBadge()
+        if refreshingBadge { refreshDockBadge() }
         onAttentionCleared?(session)
+        return true
     }
 
     /// The clear for the session the window has just been put in front of
@@ -4459,13 +4464,9 @@ final class SessionManager {
     func markRead(_ batch: [Session]) {
         var cleared = false
         for session in batch {
-            if session.attention != nil {
-                session.attention = nil
-                attentionContent[session.id] = nil
-                attentionSince[session.id] = nil
-                onAttentionCleared?(session)
-                cleared = true
-            }
+            // Through the funnel the single answers take, so nothing of the
+            // attention (an away mark, the banner) outlives its dot.
+            if clearAttention(session, refreshingBadge: false) { cleared = true }
             if session.unread != nil { session.unread = nil }
             if session.markedUnread { session.markedUnread = false }
             cancelCaughtUp(session.id)

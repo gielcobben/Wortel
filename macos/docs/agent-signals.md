@@ -189,6 +189,32 @@ never return to the prompt; the agent's own signals take over.
   the same two guarantees.
 
 
+## Away from the Mac
+
+A session never raises attention while you are looking at it
+(`isActivelyViewing`). That used to mean "Wortel is frontmost, the window is
+on screen, the session is selected", so walking away from an agent mid-turn
+cost you its turn end: no dot, no banner, because the window was taken for
+your eyes.
+
+Now nobody touching the Mac for a minute (`SessionManager.awayAfter`; any key,
+click, scroll or pointer move, in any app) counts as not looking. The idle time
+comes from `CGEventSource.secondsSinceLastEventType(.combinedSessionState, …)`
+for any input type, which needs no permission, and it is read only when a
+signal arrives: no timer. The selected session then raises its dot and banner
+exactly like one in the background. Using another app was already "away".
+
+What clears it differs on purpose. A background session's attention is
+answered by Wortel coming forward with it selected, or by selecting it. An
+attention raised while its session was *already on screen* can't be answered
+by being on screen: a display waking from sleep uncovers the window, and
+re-activation can happen without anyone reading anything. So such a session is
+remembered (`raisedWhileAway`), and `appDidBecomeActive` and
+`windowVisibilityChanged` leave it alone; it clears when you type, click,
+paste or scroll in its terminal (`SurfaceView.onUserInput`, the hook the screen
+sampler already uses), or select it as usual. Coming back and clicking
+another session leaves it as any background session's dot.
+
 ## The name on the banner
 
 A notification is posted with the session's name, and the session is very

@@ -2465,6 +2465,7 @@ final class SessionManager {
         autoNameState.removeValue(forKey: session.id)
         attentionSince.removeValue(forKey: session.id)
         attentionContent.removeValue(forKey: session.id)
+        raisedWhileAway.remove(session.id)
         recentSessionIDs.removeAll { $0 == session.id }
         pinnedIDs.removeAll { $0 == session.id }
         endPromptCapture(session)
@@ -3986,21 +3987,77 @@ final class SessionManager {
     // MARK: - Attention
 
     /// The user can already see this session (Wortel is frontmost, the window
-    /// is on screen, and the session is selected), so it never needs to shout
-    /// for attention.
+    /// is on screen, the session is selected, and someone is at the Mac), so
+    /// it never needs to shout for attention.
     private func isActivelyViewing(_ session: Session) -> Bool {
+        isOnScreen(session) && !Self.userIsAway()
+    }
+
+    /// The session is what Wortel's window shows, whether or not anyone is
+    /// looking at it.
+    private func isOnScreen(_ session: Session) -> Bool {
         appIsActive && windowIsVisible && session.id == selectedID
+    }
+
+    /// How long the Mac has to go without a key, a click, a scroll or the
+    /// pointer moving before whoever was in front of it counts as gone.
+    ///
+    /// Without it, the session on screen was "seen" for as long as Wortel was
+    /// frontmost: start an agent, go for coffee, and the turn it finished
+    /// while you were away raised nothing at all, no dot and no banner,
+    /// because Wortel took the screen for your eyes. A minute is long enough
+    /// that reading an answer without touching anything still counts as
+    /// watching, and short enough to cover getting up.
+    static let awayAfter: TimeInterval = 60
+
+    /// Whether nobody has touched the Mac for `awayAfter`: any input, in any
+    /// app, from the window server's own count (`.combinedSessionState`).
+    /// Read when a signal arrives, never polled, and it needs no permission:
+    /// it is how long since an event, not what the event was.
+    static func userIsAway() -> Bool {
+        // `kCGAnyInputEventType`, which Swift has no case for.
+        let anyInput = CGEventType(rawValue: ~0) ?? .null
+        return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+            >= awayAfter
+    }
+
+    /// Sessions whose attention was raised while they were on screen and
+    /// nobody was there (`userIsAway`). Such an attention is not answered by
+    /// the window being on screen, since it already was: not by Wortel
+    /// becoming active or the window coming back from a sleeping display, only
+    /// by the user doing something in that session's terminal
+    /// (`noteUserInput`). Selecting it still counts, as for any session.
+    @ObservationIgnored private var raisedWhileAway: Set<Session.ID> = []
+
+    /// Someone typed, clicked, pasted or scrolled in this session's terminal.
+    /// That is the user back and in front of it, which is what an attention
+    /// raised while they were away waits for. Called for every key, so it is
+    /// a set lookup and nothing more until there is something to clear.
+    private func noteUserInput(_ session: Session) {
+        guard raisedWhileAway.contains(session.id), isOnScreen(session) else { return }
+        clearAttention(session)
+        scheduleCaughtUp(session)
     }
 
     /// Attention answered: drop the sidebar dot, re-count the Dock badge, and
     /// let the app layer retract the session's notification.
     private func clearAttention(_ session: Session) {
+        raisedWhileAway.remove(session.id)
         guard session.attention != nil else { return }
         session.attention = nil
         attentionContent[session.id] = nil
         attentionSince[session.id] = nil
         refreshDockBadge()
         onAttentionCleared?(session)
+    }
+
+    /// The clear for the session the window has just been put in front of
+    /// someone (Wortel activated, the window uncovered): its attention is
+    /// answered, unless it was raised while that someone was away from the
+    /// window it was already on, in which case it waits for them to touch it.
+    private func clearAttentionOnShow(_ session: Session) {
+        guard !raisedWhileAway.contains(session.id) else { return }
+        clearAttention(session)
     }
 
     /// What each session's standing notification says, kept so a rename can
@@ -4109,6 +4166,9 @@ final class SessionManager {
         // text silently instead of spamming dings.
         let alert = current.map { kind.priority > $0.priority } ?? true
         if current == nil { attentionSince[session.id] = Date() }
+        // Past the gate while on screen means nobody is there to see it, so
+        // being on screen can't answer it either (`raisedWhileAway`).
+        if isOnScreen(session) { raisedWhileAway.insert(session.id) }
         session.attention = kind // observed → sidebar dot
         // The quieter tier: mark it unread too, at the highest kind seen, so the
         // trail survives past the loud dot until you've actually engaged.
@@ -4185,7 +4245,9 @@ final class SessionManager {
     }
 
     /// Wortel became frontmost: the user is now looking at the selected
-    /// session, so clear its attention and start its caught-up clock.
+    /// session, so clear its attention and start its caught-up clock. Not an
+    /// attention raised while they were away from it on screen: that waits
+    /// for them to touch the session (`raisedWhileAway`).
     func appDidBecomeActive() {
         appIsActive = true
         checkFolders()
@@ -4196,7 +4258,7 @@ final class SessionManager {
         // days ago.
         rebaselineAgentScreens()
         if let selected {
-            clearAttention(selected)
+            clearAttentionOnShow(selected)
             scheduleCaughtUp(selected)
         }
     }
@@ -4209,12 +4271,14 @@ final class SessionManager {
 
     /// The main window's on-screen visibility changed (occlusion state /
     /// miniaturization). Becoming visible while frontmost means the user can
-    /// now see the selected session — clear its attention, same as activate.
+    /// now see the selected session — clear its attention, same as activate,
+    /// with the same exception: a display waking from sleep uncovers the
+    /// window too, and is not someone reading it.
     func windowVisibilityChanged(_ visible: Bool) {
         windowIsVisible = visible
         rebaselineAgentScreens() // uncovering the window repaints, same as focus
         if visible, appIsActive, let selected {
-            clearAttention(selected)
+            clearAttentionOnShow(selected)
             scheduleCaughtUp(selected)
         } else {
             cancelCaughtUp(selectedID)
@@ -4771,6 +4835,7 @@ final class SessionManager {
             view.onUserInput = { [weak self, weak session] in
                 guard let self, let session else { return }
                 self.agentScreenTrackers[session.id]?.rebaseline(now: Date())
+                self.noteUserInput(session)
             }
             view.onCommandFinished = { [weak self, weak session] exitCode, durationNs in
                 guard let self, let session else { return }

@@ -365,7 +365,10 @@ doesn't outlive the shell that asked.
 - Because the dot is never raised for the session you're looking at, and is
   cleared when you look, `SessionManager` keeps how each session's last stretch
   of work ended (`turnOutcomes`) apart from the dot, set before the viewing gate
-  and cleared when work starts again. That is also what `list`'s state column
+  and cleared the moment work is reported starting again, before the busy
+  debounce: a turn shorter than the debounce never shows as busy, and its
+  predecessor's outcome would otherwise answer for it. That is also what
+  `list`'s state column
   reads, so the CLI and the sidebar can't disagree.
 
 ## Failure modes worth knowing

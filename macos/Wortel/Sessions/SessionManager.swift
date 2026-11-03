@@ -3324,6 +3324,13 @@ final class SessionManager {
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
         guard busyTimers[session.id] == nil, !session.isBusy else { return }
         let id = session.id
+        // A new stretch of work: how the last one ended is history. At the
+        // edge, not when the debounce shows it: a turn shorter than the
+        // debounce never shows, and its predecessor's outcome then read as
+        // its own (`wait --idle` back at once, `list` saying finished).
+        // Only at the edge, too, so a signal raised mid-turn (a bell while
+        // still busy) isn't wiped by the next progress report.
+        turnOutcomes[id] = nil
         let work = DispatchWorkItem { [weak self, weak session] in
             guard let self, let session else { return }
             self.busyTimers[id] = nil
@@ -3335,8 +3342,6 @@ final class SessionManager {
                 self.busyStartedAt[id] = now
             }
             session.isBusy = true
-            // A new stretch of work: how the last one ended is history.
-            self.turnOutcomes[id] = nil
             self.noteConversation(session)
         }
         busyTimers[id] = work

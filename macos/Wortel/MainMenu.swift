@@ -297,6 +297,13 @@ enum MainMenu {
         sessionMenu.addItem(.separator())
         // ⌘P, as VS Code, Cursor and Zed open a file by name: here, a session.
         sessionMenu.addItem(withTitle: "Go to Session\u{2026}", action: #selector(AppDelegate.showSessionSwitcher(_:)), keyEquivalent: "p")
+        // ⌘Y, Safari's and Chrome's History: everything you've typed to an
+        // agent, read from the agents' own history files, the pick typed into
+        // this session unsent. Not ⌃R, which is the shell's own history
+        // search (and an agent's), nor ⇧⌘R (Force Reload Page) or ⌥⌘R
+        // (Rename Session). Free of a wortel.conf keybind.
+        let promptHistory = sessionMenu.addItem(withTitle: "Prompt History\u{2026}", action: #selector(AppDelegate.showPromptHistory(_:)), keyEquivalent: "y")
+        promptHistory.keyEquivalentModifierMask = [.command]
         // ⌥⌘↑ / ⌥⌘↓ walk the sidebar: up and down, because it's a vertical
         // list, as Arc walks the tabs in its sidebar with the same keys. (It
         // was ⇧⌘[ / ⇧⌘], which every other Mac app means as previous/next

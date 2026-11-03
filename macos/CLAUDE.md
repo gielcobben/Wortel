@@ -374,6 +374,21 @@ reused. A worktree row is marked as preparing *before* it's selected
 (`makeSession(prepare:)`): selecting starts the shell, and one started with no
 directory came up in the keeper's, `/`.
 
+**Prompt history** (⌘Y, `PromptHistory`, `PromptHistoryStore`,
+`PromptHistoryModel` in `SessionSwitcher.swift`) is ⌘P's panel in a fourth
+mode: everything typed to Claude Code, Codex or Pi, the session's project
+first (its repository home, so every worktree of it counts), and Return types
+the pick into the session's own terminal **unsent**, as a paste
+(`SurfaceView.sendText`, bracketed when the program asked for `?2004`; when it
+didn't, the lines are joined, since an unbracketed newline is Return). Wortel
+stores nothing for it: the agents' own files are read when the panel opens,
+off the main thread, from their tail (4 MB a file; Pi's newest conversations
+within a 16 MB budget), cut at 5000 entries, and kept only in memory keyed by
+size and modification date. Ranking runs off the main thread too, the
+previous one cancelled per keystroke. No index on disk, ever: that would be
+Wortel keeping the user's prompts, which `docs/session-naming.md` promises it
+doesn't.
+
 **Fork Session** (⌥⇧⌘N, `wortel fork`, `WorktreeFork`) is the session as it
 is, in a worktree of its own: a new branch at the source's HEAD (not trunk),
 its staged changes staged, its unstaged ones unstaged, its untracked files

@@ -1380,7 +1380,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private lazy var sessionSwitcher = SessionSwitcher(manager: manager)
+    private lazy var sessionSwitcher = SessionSwitcher(manager: manager) { [weak self] text in
+        self?.insertPrompt(text)
+    }
 
     /// ⌘P: go to a session by name, folder, branch or directory.
     @objc func showSessionSwitcher(_ sender: Any?) {
@@ -1391,6 +1393,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         focusMainWindow()
         guard let window else { return }
         sessionSwitcher.toggle(over: window)
+    }
+
+    /// ⌘Y: the prompts typed to agents, from the agents' own history files.
+    /// From any other mode of the panel it switches to this one; from this
+    /// one it puts the panel away, as ⌘P does.
+    @objc func showPromptHistory(_ sender: Any?) {
+        if sessionSwitcher.isShown {
+            let wasPrompts = sessionSwitcher.isShowingPrompts
+            sessionSwitcher.close()
+            if wasPrompts { return }
+        }
+        focusMainWindow()
+        guard let window else { return }
+        sessionSwitcher.showPrompts(over: window, from: manager.branchSource())
+    }
+
+    /// A prompt picked from the history, typed into the selected session's
+    /// own terminal and **not sent**: the same paste ⌘V makes
+    /// (`SurfaceView.sendText`, which libghostty brackets when the program
+    /// asked for `?2004`, so a multi-line prompt stays one input). Its
+    /// terminal comes to the front of the main area if a tab was over it,
+    /// and gets the keyboard, so Return (or an edit first) is yours.
+    private func insertPrompt(_ text: String) {
+        guard let session = manager.selected, let surface = session.surfaceView else { return }
+        gitPanel.selectMain(.session)
+        let bracketed = TerminalModeRecorder.shared.modes(for: session.id).bracketedPaste
+        surface.sendText(PromptHistory.insertion(text, bracketed: bracketed))
+        if gitPanel.activeMainTab == nil { window?.makeFirstResponder(surface) }
     }
 
     /// ⇧⌘P: the palette with only the menus' commands.

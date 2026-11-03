@@ -72,7 +72,10 @@ the summary never leaves the machine.
 The scoping is the privacy story. The tap exists from agent launch until a
 prompt is accepted, the agent exits, 16 KB has passed, or fifteen minutes
 have, and the manager detaches it the moment any of those happen. Nothing is
-kept but the one line. Three more rules: a title from the prompt is held for
+kept but the one line. Prompt history (⌘Y) doesn't change that: it reads the
+history each agent already keeps of what was typed to it (Claude Code's and
+Codex's `history.jsonl`, Pi's conversations), only while the panel is open,
+and writes nothing of its own (`PromptHistory`). Three more rules: a title from the prompt is held for
 eight seconds so an agent that titles itself wins outright rather than the
 row renaming twice; an agent that was already running before this launch (a
 keeper reattach) is not listened to, since its next line is a follow-up; and a

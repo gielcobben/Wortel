@@ -104,6 +104,11 @@ struct TerminalModes: Equatable {
     /// input at all.
     var wantsColorSchemeReports: Bool { privateModes[2031] == true }
 
+    /// Whether the program has bracketed paste on, so a pasted newline is
+    /// text and not Return. False when nobody recorded it (the exec backend
+    /// records nothing), which is the safe way to be wrong for a paste.
+    var bracketedPaste: Bool { privateModes[2004] == true }
+
     /// What an agent is known to switch on at startup, and keeps on while it
     /// runs: Claude Code writes `?2004h?2031h?1004h` before anything else.
     static let agentStartupModes: [String: [Int]] = ["claude": [1004, 2004, 2031]]

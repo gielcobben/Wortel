@@ -66,6 +66,7 @@ enum PaletteCommands {
         "forkSession:": "arrow.triangle.branch",
         "newWorktreeSession:": "plus.square.dashed",
         "openBranch:": "arrow.triangle.branch",
+        "showPromptHistory:": "clock.arrow.circlepath",
         "newFolder:": "folder.badge.plus",
         "openFolder:": "folder",
         "renameSession:": "pencil",

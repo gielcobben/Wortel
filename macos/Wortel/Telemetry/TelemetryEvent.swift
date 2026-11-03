@@ -297,12 +297,16 @@ enum PaletteMode: String, CaseIterable {
     case commands
     /// ⇧⌘O, Open Branch.
     case branches
+    /// ⌘Y, the prompts typed to agents.
+    case prompts
 }
 
-/// How the palette closed: a session picked, a command run, or neither.
+/// How the palette closed: a session picked, a command run, a prompt typed
+/// in, or none of them.
 enum PaletteResult: String, CaseIterable {
     case session
     case command
+    case prompt
     case dismissed
 }
 

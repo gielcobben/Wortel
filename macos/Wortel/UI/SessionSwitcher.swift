@@ -5,7 +5,8 @@ import SwiftUI
 /// branch or its directory, or run any command in the menus. VS Code's,
 /// Cursor's and Zed's quick open with cmdk's commands mixed in; ⌘K, the
 /// ChatGPT app's, is "clear screen" in a terminal. ⇧⌘P: commands only, as
-/// VS Code's command palette.
+/// VS Code's command palette. ⌘Y: the prompts typed to agents
+/// (`PromptHistory`), and the one picked typed into the session.
 ///
 /// A card over the top of the window, as Spotlight and Xcode's Open Quickly
 /// are: a field, the matches under it (SessionSwitcherMatch), arrows and
@@ -18,6 +19,8 @@ import SwiftUI
 @MainActor
 final class SessionSwitcher {
     private let manager: SessionManager
+    /// Types a prompt from the history into the selected session's terminal.
+    private let insert: (String) -> Void
     private var panel: SwitcherPanel?
     /// Which palette is open, until it closes and is counted
     /// (`Telemetry` palette_used): nil once reported.
@@ -26,11 +29,16 @@ final class SessionSwitcher {
     /// its height changes.
     private var top: CGFloat = 0
 
-    init(manager: SessionManager) {
+    init(manager: SessionManager, insert: @escaping (String) -> Void) {
         self.manager = manager
+        self.insert = insert
     }
 
     var isShown: Bool { panel?.isVisible ?? false }
+
+    /// Whether what's shown is the prompt history, which ⌘Y puts away
+    /// rather than reopens.
+    private(set) var isShowingPrompts = false
 
     func toggle(over window: NSWindow, commandsOnly: Bool = false) {
         if isShown { close() } else { show(over: window, commandsOnly: commandsOnly) }
@@ -43,11 +51,19 @@ final class SessionSwitcher {
         manager.loadBranches(into: { [weak model] in model?.inputs = $0 }, from: directory)
     }
 
+    /// ⌘Y: the prompts typed to agents, this project's (the one `directory`
+    /// is in) first. The history is read off the main thread as it opens.
+    func showPrompts(over window: NSWindow, from directory: String?) {
+        show(over: window, prompts: PromptHistoryModel(from: directory))
+    }
+
     /// `commandsOnly`: ⇧⌘P, the menus' commands and no sessions.
-    func show(over window: NSWindow, commandsOnly: Bool = false, branches: OpenBranchModel? = nil) {
+    func show(over window: NSWindow, commandsOnly: Bool = false, branches: OpenBranchModel? = nil,
+              prompts: PromptHistoryModel? = nil) {
         close()
         // Read now, while the window is key: validated for it, not the panel.
-        let commands = PaletteCommands.all()
+        // Not at all for a mode that lists no commands.
+        let commands = branches == nil && prompts == nil ? PaletteCommands.all() : []
         let panel = SwitcherPanel(
             contentRect: NSRect(x: 0, y: 0, width: SwitcherView.width, height: SwitcherView.fieldHeight),
             // Borderless and nothing else: with `.fullSizeContentView` the
@@ -72,9 +88,10 @@ final class SessionSwitcher {
         background.maskImage = Self.roundedMask(radius: SwitcherView.cornerRadius)
         let host = NSHostingView(rootView: SwitcherView(
             manager: manager,
-            commands: branches == nil ? commands : [],
+            commands: commands,
             commandsOnly: commandsOnly,
             branches: branches,
+            prompts: prompts,
             open: { [weak self] action, alternate in
                 self?.report(.session)
                 self?.close()
@@ -90,6 +107,13 @@ final class SessionSwitcher {
                 self?.report(.session)
                 self?.close()
                 self?.manager.selectedID = id
+            },
+            insertPrompt: { [weak self] text in
+                self?.report(.prompt)
+                self?.close()
+                // After the close, which gives the window the keyboard back:
+                // the terminal is then the window's to focus.
+                self?.insert(text)
             },
             run: { [weak self] command in
                 self?.report(.command)
@@ -122,7 +146,8 @@ final class SessionSwitcher {
         // change again: the window stayed at the field's height, the card cut
         // off inside it.
         self.panel = panel
-        openMode = branches != nil ? .branches : commandsOnly ? .commands : .sessions
+        openMode = branches != nil ? .branches : prompts != nil ? .prompts : commandsOnly ? .commands : .sessions
+        isShowingPrompts = prompts != nil
         window.addChildWindow(panel, ordered: .above)
 
         // In with a quick fade, as Spotlight comes in.
@@ -160,6 +185,7 @@ final class SessionSwitcher {
         report(.dismissed)
         guard let panel else { return }
         self.panel = nil
+        isShowingPrompts = false
         panel.onResign = nil
         let parent = panel.parent
         parent?.removeChildWindow(panel)
@@ -194,6 +220,73 @@ final class OpenBranchModel {
     }
 }
 
+/// What ⌘Y lists: the history once read, and the matches for what's typed,
+/// both worked out off the main thread so typing in the field, and the
+/// terminal under the panel, never wait on a history file.
+@Observable
+@MainActor
+final class PromptHistoryModel {
+    private(set) var isLoading = true
+    /// Read, and nothing in it.
+    private(set) var isEmpty = false
+    private(set) var matches: [PromptHistory.Match] = []
+    /// The session's project, as its section is titled.
+    private(set) var projectName: String?
+
+    @ObservationIgnored private var index: [PromptHistory.Searchable] = []
+    @ObservationIgnored private var project: String?
+    @ObservationIgnored private var query = ""
+    @ObservationIgnored private var ranking: Task<Void, Never>?
+    @ObservationIgnored private var generation = 0
+
+    /// Shown at most: a history is searched, not scrolled.
+    static let shownLimit = 100
+
+    init(from directory: String?) {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let store = PromptHistoryStore.shared
+            let project = directory.map(store.project(of:))
+            let index = PromptHistory.index(store.load())
+            await self?.loaded(index, project: project)
+        }
+    }
+
+    private func loaded(_ index: [PromptHistory.Searchable], project: String?) {
+        self.index = index
+        self.project = project
+        projectName = PromptHistory.projectName(project)
+        isEmpty = index.isEmpty
+        isLoading = false
+        rank()
+    }
+
+    func search(_ query: String) {
+        self.query = query
+        guard !isLoading else { return }
+        rank()
+    }
+
+    /// Off the main thread, the previous one cancelled: only the answer to
+    /// the newest keystroke is ever shown.
+    private func rank() {
+        ranking?.cancel()
+        generation += 1
+        let (generation, index, project, query) = (generation, index, project, query)
+        let limit = Self.shownLimit
+        ranking = Task.detached(priority: .userInitiated) { [weak self] in
+            let matches = PromptHistory.rank(query, in: index, project: project, limit: limit,
+                                             isCancelled: { Task.isCancelled })
+            guard !Task.isCancelled else { return }
+            await self?.show(matches, for: generation)
+        }
+    }
+
+    private func show(_ matches: [PromptHistory.Match], for generation: Int) {
+        guard generation == self.generation else { return }
+        self.matches = matches
+    }
+}
+
 /// A borderless panel that can take the keyboard, and goes away when it
 /// loses it.
 private final class SwitcherPanel: NSPanel {
@@ -222,9 +315,12 @@ private struct SwitcherView: View {
     let commandsOnly: Bool
     /// Open Branch: its rows instead of sessions and commands.
     let branches: OpenBranchModel?
+    /// The prompt history: its rows instead of sessions and commands.
+    let prompts: PromptHistoryModel?
     /// A row of Open Branch chosen, and whether with ⌥.
     let open: (OpenTarget.Action, Bool) -> Void
     let pick: (UUID) -> Void
+    let insertPrompt: (String) -> Void
     let run: (PaletteCommand) -> Void
     let cancel: () -> Void
     let resize: (CGFloat) -> Void
@@ -240,11 +336,13 @@ private struct SwitcherView: View {
         case session(SessionSwitcherMatch.Candidate)
         case command(PaletteCommand)
         case target(OpenTarget.Choice)
+        case prompt(PromptHistory.Match)
         var id: String {
             switch self {
             case .session(let c): return c.id.uuidString
             case .command(let c): return c.id.uuidString
             case .target(let c): return c.id
+            case .prompt(let m): return "prompt-\(m.id)"
             }
         }
     }
@@ -254,8 +352,12 @@ private struct SwitcherView: View {
         return OpenTarget.choices(for: query, in: branches.inputs).map(Row.target)
     }
 
+    private var promptRows: [Row] {
+        prompts?.matches.map(Row.prompt) ?? []
+    }
+
     private var sessionRows: [Row] {
-        guard !commandsOnly, branches == nil else { return [] }
+        guard !commandsOnly, branches == nil, prompts == nil else { return [] }
         let candidates = manager.sessions.map { session in
             SessionSwitcherMatch.Candidate(
                 id: session.id, name: session.leafName, folder: session.folderPath,
@@ -278,17 +380,19 @@ private struct SwitcherView: View {
     }
 
     var body: some View {
-        let targets = targetRows
+        let targets = targetRows + promptRows
         let sessions = sessionRows
         let commands = commandRows
         let rows = targets + sessions + commands
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: branches != nil ? "arrow.triangle.branch" : commandsOnly ? "command" : "magnifyingglass")
+                Image(systemName: branches != nil ? "arrow.triangle.branch" : prompts != nil ? "clock.arrow.circlepath"
+                        : commandsOnly ? "command" : "magnifyingglass")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.secondary)
                 PaletteField(text: $query,
                              placeholder: branches != nil ? "Go to a branch, a worktree or a pull request"
+                                : prompts != nil ? "Find a prompt you typed to an agent"
                                 : commandsOnly ? "Run a command" : "Go to a session or run a command",
                              submit: { activate(rows) },
                              cancel: cancel,
@@ -327,11 +431,14 @@ private struct SwitcherView: View {
                         }
                     }
                 }
-                SwitcherFooter()
+                SwitcherFooter(action: prompts != nil ? "to type it in" : "to open")
                     .frame(height: Self.footerHeight)
-            } else if !query.isEmpty || branches != nil {
+            } else if !query.isEmpty || branches != nil || (prompts.map { $0.isLoading || $0.isEmpty } ?? false) {
                 Divider().opacity(0.6)
-                Text(query.isEmpty ? "No worktrees yet. Type a branch, or a pull request\u{2019}s number."
+                Text(prompts?.isLoading == true ? "Reading your agents\u{2019} history\u{2026}"
+                     : prompts?.isEmpty == true
+                        ? "No prompts yet. What you type to Claude Code, Codex or Pi turns up here."
+                     : query.isEmpty ? "No worktrees yet. Type a branch, or a pull request\u{2019}s number."
                      : branches?.inputs.hasRepository == false
                         ? "Not in a repository: nothing here has branches."
                         : "Nothing matches \u{201c}\(query)\u{201d}")
@@ -349,9 +456,10 @@ private struct SwitcherView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resize($0) }
         .frame(maxHeight: .infinity, alignment: .top)
         .ignoresSafeArea()
-        .onChange(of: query) { _, _ in
+        .onChange(of: query) { _, query in
             highlighted = 0
             highlightedID = nil
+            prompts?.search(query)
         }
     }
 
@@ -381,6 +489,8 @@ private struct SwitcherView: View {
                     CommandRow(command: command, isHighlighted: position == highlighted)
                 case .target(let choice):
                     TargetRow(choice: choice, isHighlighted: position == highlighted)
+                case .prompt(let match):
+                    PromptRow(match: match, isHighlighted: position == highlighted)
                 }
             }
             .id(row.id)
@@ -389,15 +499,27 @@ private struct SwitcherView: View {
         }
     }
 
-    /// Open Branch's rows in their groups, each with where it starts.
+    /// Open Branch's rows in their groups, each with where it starts; the
+    /// prompt history's in two, this project's and the rest (untitled when
+    /// nothing is from here: then it's just the one list).
     private func targetGroups(_ rows: [Row]) -> [(title: String?, rows: [Row], offset: Int)] {
         var groups: [(title: String?, rows: [Row], offset: Int)] = []
-        var last: OpenTarget.Group?
+        var started = false
+        var last: String?
+        let anyHere = rows.contains { if case .prompt(let m) = $0 { return m.isHere } else { return false } }
         for (index, row) in rows.enumerated() {
-            guard case .target(let choice) = row else { continue }
-            if choice.group != last {
-                groups.append((choice.group.title, [], index))
-                last = choice.group
+            let title: String?
+            switch row {
+            case .target(let choice): title = choice.group.title
+            case .prompt(let match):
+                guard anyHere, let project = prompts?.projectName else { title = nil; break }
+                title = match.isHere ? project : "Other projects"
+            default: continue
+            }
+            if !started || title != last {
+                groups.append((title, [], index))
+                started = true
+                last = title
             }
             groups[groups.count - 1].rows.append(row)
         }
@@ -422,6 +544,7 @@ private struct SwitcherView: View {
         case .command(let command): run(command)
         case .target(let choice):
             open(choice.action, NSApp.currentEvent?.modifierFlags.contains(.option) == true)
+        case .prompt(let match): insertPrompt(match.entry.text)
         }
     }
 
@@ -595,12 +718,66 @@ private struct TargetRow: View {
     }
 }
 
+/// One prompt from the history: its first line, then the agent, the
+/// project and how many more lines it has, and when it was sent.
+private struct PromptRow: View {
+    let match: PromptHistory.Match
+    let isHighlighted: Bool
+
+    var body: some View {
+        let summary = PromptHistory.summary(match.entry.text)
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHighlighted ? Color.white.opacity(0.22) : Color.primary.opacity(0.07))
+                Image(systemName: "text.bubble")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            }
+            .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(summary.line)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                    .lineLimit(1)
+                Text(detail(more: summary.more))
+                    .font(.system(size: 11))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 8)
+            Text(PromptHistory.age(of: match.entry.date))
+                .font(.system(size: 11))
+                .monospacedDigit()
+                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary))
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 44)
+        .contentShape(Rectangle())
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(isHighlighted ? Color.accentColor : .clear))
+        .help(String(match.entry.text.prefix(1000)))
+    }
+
+    /// "Claude · wortel · 12 more lines".
+    private func detail(more: Int) -> String {
+        var parts = [match.entry.agent.title]
+        if let project = PromptHistory.projectName(match.entry.project ?? match.entry.directory) { parts.append(project) }
+        if more > 0 { parts.append(more == 1 ? "1 more line" : "\(more) more lines") }
+        return parts.joined(separator: " \u{00b7} ")
+    }
+}
+
 /// The keys, quietly, along the bottom.
 private struct SwitcherFooter: View {
+    /// What Return does.
+    var action = "to open"
+
     var body: some View {
         HStack(spacing: 16) {
             key("↑↓", "to move")
-            key("↩", "to open")
+            key("↩", action)
             key("esc", "to close")
             Spacer()
         }

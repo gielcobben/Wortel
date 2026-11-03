@@ -40,6 +40,7 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | Next waiting session | ⌥⇧⌘↓ (also ⌥⌘]) | Slack (⌥⇧↓, the next unread) |
 | Go to a session, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |
 | Run a command (the palette, commands only) | ⇧⌘P | VS Code (command palette) |
+| Find a prompt you typed to an agent, and type it in again | ⌘Y | Safari, Chrome (History) |
 | Rename session | ⌥⌘R | Codex |
 | Mark session as unread (come back to it) | ⇧⌘U | ChatGPT |
 | Pin / unpin session (a Pinned section at the top) | ⌥⌘P | ChatGPT |
@@ -50,6 +51,11 @@ In the sidebar, ⌘-click adds or removes a session and ⇧-click selects a rang
 as in the Finder; right-click the selection to pin, move, mark, colour or close
 them all. Esc goes back to one. View ▸ Sort Unread First puts the sessions
 that want you at the top of each section.
+
+⌘Y searches what you've typed to Claude Code, Codex and Pi, in any session
+and any project (this one's first), and puts the one you pick in the
+session's input without sending it. ⌃R stays the shell's own history
+search, and the agent's.
 
 ## The layout
 

@@ -79,10 +79,17 @@ struct WortelSessionInfo: Codable, Equatable {
             row.indices.map { column in
                 // The last column isn't padded: trailing spaces on every line
                 // are noise in a terminal and a trap in a script.
-                column == row.count - 1 ? row[column]
-                    : row[column].padding(toLength: widths[column], withPad: " ", startingAt: 0)
+                column == row.count - 1 ? row[column] : pad(row[column], to: widths[column])
             }.joined(separator: " ")
         }.joined(separator: "\n")
+    }
+
+    /// `cell` and spaces up to `width` Characters, never cut. Not
+    /// `padding(toLength:)`, which counts UTF-16 units and *truncates*: an
+    /// emoji or a decomposed "é" is two of them, so "🚀 deploy" lost its last
+    /// letter in a column measured in Characters.
+    static func pad(_ cell: String, to width: Int) -> String {
+        cell + String(repeating: " ", count: max(0, width - cell.count))
     }
 
     private static func abbreviate(_ path: String, home: String) -> String {

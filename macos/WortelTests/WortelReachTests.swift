@@ -376,6 +376,24 @@ final class WortelReachTests: XCTestCase {
             """)
     }
 
+    /// Widths are counted in Characters, and so is the padding: an emoji or
+    /// a decomposed accent (two UTF-16 units each) is neither cut nor
+    /// padded short.
+    func testTheTableNeverCutsANameWithAnEmojiOrAnAccent() {
+        let nfd = "cafe\u{301}" // "café", decomposed
+        let rows = [
+            WortelSessionInfo(id: one.uuidString, name: "🚀 deploy", folder: nil, directory: nil, branch: nil,
+                              worktree: nil, agent: nil, state: .idle, selected: false, caller: false),
+            WortelSessionInfo(id: two.uuidString, name: nfd, folder: nil, directory: nil, branch: nil,
+                              worktree: nil, agent: nil, state: .idle, selected: false, caller: false),
+        ]
+        let lines = WortelSessionInfo.table(rows).components(separatedBy: "\n")
+        XCTAssertTrue(lines[1].contains("🚀 deploy idle"), lines[1])
+        XCTAssertTrue(lines[2].contains(nfd + "     idle"), lines[2])
+        XCTAssertEqual(WortelSessionInfo.pad("🚀", to: 3), "🚀  ")
+        XCTAssertEqual(WortelSessionInfo.pad("longer", to: 3), "longer", "never cut")
+    }
+
     /// The JSON is the scripting contract: these names, these values.
     func testTheJSONFieldNames() throws {
         let info = WortelSessionInfo(id: "A", name: "n", folder: nil, directory: nil, branch: nil, worktree: nil,

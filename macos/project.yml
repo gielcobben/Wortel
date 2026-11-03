@@ -518,6 +518,12 @@ targets:
       # Pure, and the failure mode is naming a session after an escape
       # sequence or a "y" typed at a trust dialog. Foundation only.
       - path: Wortel/Sessions/PromptCapture.swift
+      # ⌘Y's prompt history: three agents' files nobody documents, read from
+      # the middle, and a ranking whose first row is the feature. A parser
+      # that drifts shows nothing rather than failing, and a store that reads
+      # past its bounds is a hitch in the terminal beside it. Foundation only.
+      - path: Wortel/Sessions/PromptHistory.swift
+      - path: Wortel/Sessions/PromptHistoryStore.swift
       # Why a session is asking for attention, and the rollup rule a collapsed
       # folder shows on behalf of what it hides. Pure, and the rollup is a
       # max-not-latest rule whose failure mode is silence: a blocked agent

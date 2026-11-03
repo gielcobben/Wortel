@@ -39,6 +39,17 @@ enum SessionColourMenu {
         }
     }
 
+    /// For the sidebar selection's menu: each item colours all of them, and
+    /// the check is on a colour only when they all share it.
+    static func item(for sessions: [Session], manager: SessionManager) -> NSMenuItem {
+        let colours = Set(sessions.map(\.colour))
+        return build { colour in
+            let item = ClosureMenuItem(title: colour?.title ?? "None") { manager.setColour(sessions, colour) }
+            item.state = colours == [colour] ? .on : .off
+            return item
+        }
+    }
+
     /// For the Session menu: each item carries its colour's raw value (none
     /// for None) and acts on whichever session is selected when it's chosen.
     /// The check is set in `AppDelegate.validateMenuItem`.

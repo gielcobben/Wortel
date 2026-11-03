@@ -67,7 +67,14 @@ struct SidebarPane: View {
             },
             folding: SidebarFolding(folders: manager.collapsedFolders,
                                     pinned: manager.pinnedCollapsed,
-                                    loose: manager.looseCollapsed))
+                                    loose: manager.looseCollapsed),
+            // Only read while the sort is on, so a dot coming and going costs
+            // the sidebar nothing the rest of the time.
+            sortKeys: manager.sortUnreadFirst
+                ? Dictionary(uniqueKeysWithValues: manager.sessions.compactMap { session in
+                    manager.sidebarSortKey(for: session).map { (session.id, $0) }
+                })
+                : nil)
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 2) {
                     // AppKit, as the ⓘ and the update icon are, so all three
@@ -428,14 +435,20 @@ struct SidebarRowContent: View {
     }
 
     /// Select the row when it's right-clicked, so the detail pane follows it —
-    /// matching a left-click.
+    /// matching a left-click. Inside a selection of several it's kept, and the
+    /// menu is about all of them; outside, it collapses onto this row. The
+    /// Finder's rule, and the git panel's changes list's.
     private func rightClickSelect() {
+        guard !manager.isInMultipleSelection(session) else { return }
         if manager.selectedID != session.id { manager.selectedID = session.id }
     }
 
     /// Build the native right-click menu, freshly each time it opens.
     private func makeContextMenu() -> NSMenu {
-        SessionActions.menu(for: session, manager: manager)
+        if manager.isInMultipleSelection(session) {
+            return SessionActions.menu(for: manager.sidebarSelectedSessions, manager: manager)
+        }
+        return SessionActions.menu(for: session, manager: manager)
     }
 }
 
@@ -583,6 +596,55 @@ enum SessionActions {
         _ = item("Close Session", "xmark.square", key: "w", [.command, .shift]) {
             manager.requestClose(session)
         }
+        return menu
+    }
+
+    /// What can be done to several sessions at once: the right-click menu of
+    /// the sidebar's selection. Each item acts on every one of them, as one
+    /// change (`SessionManager`'s batch twins), and offers only what changes
+    /// something: Pin while any is unpinned, Unpin while any is pinned. No
+    /// shortcuts are shown: those act on the session on screen alone.
+    static func menu(for sessions: [Session], manager: SessionManager) -> NSMenu {
+        guard sessions.count > 1 else {
+            return sessions.first.map { menu(for: $0, manager: manager) } ?? NSMenu()
+        }
+        let menu = NSMenu()
+        func item(_ title: String, _ glyph: String, _ handler: @escaping () -> Void) {
+            let item = ClosureMenuItem(title: title, handler: handler)
+            item.setGlyph(glyph)
+            menu.addItem(item)
+        }
+        let ids = sessions.map(\.id)
+        let folders = Set(sessions.map(\.folderPath))
+        let targets = (folders.contains { $0 != nil } ? [String?.none] : [])
+            + manager.folderNames.filter { folders != [Optional($0)] }.map(Optional.some)
+        if !targets.isEmpty {
+            let submenu = NSMenu(title: "Move To")
+            for folder in targets {
+                submenu.addItem(ClosureMenuItem(title: folder ?? "Top Level") {
+                    manager.moveSessions(ids, toFolder: folder)
+                })
+            }
+            let move = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
+            move.setGlyph("folder")
+            move.submenu = submenu
+            menu.addItem(move)
+        }
+        let unpinned = sessions.filter { !manager.isPinned($0) }
+        if !unpinned.isEmpty { item("Pin", "pin") { manager.setPinned(unpinned, true) } }
+        if unpinned.count < sessions.count {
+            item("Unpin", "pin.slash") { manager.setPinned(sessions.filter(manager.isPinned), false) }
+        }
+        if sessions.contains(where: { $0.attention != nil || $0.unread != nil }) {
+            item("Mark as Read", "circle") { manager.markRead(sessions) }
+        }
+        if sessions.contains(where: { !$0.markedUnread }) {
+            item("Mark as Unread", "circle.dashed") { manager.markUnread(sessions) }
+        }
+        menu.addItem(SessionColourMenu.item(for: sessions, manager: manager))
+        menu.addItem(.separator())
+        // Worktree sessions archive, as closing one does (`SessionManager.end`).
+        item("Close \(sessions.count) Sessions", "xmark.square") { manager.requestClose(sessions) }
         return menu
     }
 

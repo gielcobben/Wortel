@@ -472,6 +472,12 @@ enum MainMenu {
         focusPrevious.keyEquivalentModifierMask = [.command]
 
         viewMenu.addItem(.separator())
+        // A checkmark, not a setting (Wortel has no settings window): in each
+        // sidebar section, the sessions that want you are drawn first. Only
+        // how they're drawn; the order you dragged is kept (SidebarSort).
+        viewMenu.addItem(withTitle: "Sort Unread First", action: #selector(AppDelegate.toggleSortUnreadFirst(_:)), keyEquivalent: "")
+
+        viewMenu.addItem(.separator())
         // The three panes by number, as git apps number theirs (GitHub Desktop,
         // Tower and Fork: ⌘1 Changes, ⌘2 History), with ⌃ added because ⌘1…⌘9
         // are the sessions here. Each opens its pane, brings it forward, or

@@ -46,6 +46,11 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 
 ⌘R still renames while no browser is showing, as it always did.
 
+In the sidebar, ⌘-click adds or removes a session and ⇧-click selects a range,
+as in the Finder; right-click the selection to pin, move, mark, colour or close
+them all. Esc goes back to one. View ▸ Sort Unread First puts the sessions
+that want you at the top of each section.
+
 ## The layout
 
 | Action | Shortcut | Same as |

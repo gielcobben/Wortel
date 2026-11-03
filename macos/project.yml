@@ -479,6 +479,15 @@ targets:
       # pointing at a row that is no longer selected — none of them throw, and
       # the first time you find out is when a file you never highlighted is gone.
       - path: Wortel/Git/ChangeSelection.swift
+      # The sidebar's twin of it, with the lead owned elsewhere (the session on
+      # screen), and the bulk Close it decides. Same silent failure: a range a
+      # row too wide closes a session you never highlighted.
+      - path: Wortel/Sessions/SessionSelection.swift
+      # Sort Unread First: a drawn order over the stored one, and the rules that
+      # hold the selected row and a pending click's row still. Every way it's
+      # wrong is a row sliding out from under the pointer, which no build or
+      # crash will ever report.
+      - path: Wortel/Sessions/SidebarSort.swift
       # The agent marker format is a contract between two languages — the shell
       # integration writes it, Swift parses it — so nothing catches a drift on
       # either side at compile time. Same for the agent→resume-command table: a

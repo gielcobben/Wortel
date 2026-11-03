@@ -16,12 +16,24 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     /// hover has to stay visibly lighter than the selection it isn't.
     static let pillAlpha: CGFloat = 0.08
     private static let hoverAlpha: CGFloat = 0.04
+    /// The rest of a selection of several: the lead's grey at three quarters.
+    /// The git panel's grey selection draws its other rows at 0.6 of the
+    /// lead, but here that would land on the hover (0.04), and a row you
+    /// ⌘-click must visibly change from how it looked under the pointer the
+    /// moment before. So: plainly more than a hover, plainly less than the
+    /// session on screen, and the same grey, because it is the same selection.
+    private static let alsoSelectedAlpha: CGFloat = 0.06
 
     var showsPill = false {
         didSet {
             guard showsPill != oldValue else { return }
             needsDisplay = true
         }
+    }
+    /// Selected along with the session on screen (⌘-click, ⇧-click): the
+    /// lighter pill. See `alsoSelectedAlpha`.
+    var showsAlsoSelected = false {
+        didSet { if showsAlsoSelected != oldValue { needsDisplay = true } }
     }
     /// Its name is being edited: the pill, with a thin accent edge, and the
     /// field transparent on it (SidebarRowContent). Not a white text box
@@ -76,6 +88,9 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
             // the loudest thing in the window: it drowned out the attention dots,
             // which are the colour in this list that actually means something.
             NSColor.labelColor.withAlphaComponent(Self.pillAlpha).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
+        } else if showsAlsoSelected {
+            NSColor.labelColor.withAlphaComponent(Self.alsoSelectedAlpha).setFill()
             NSBezierPath(roundedRect: rect, xRadius: Self.pillRadius, yRadius: Self.pillRadius).fill()
         } else if showsDropHighlight {
             NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
@@ -560,8 +575,14 @@ struct SidebarFolding: Equatable {
 
 struct SidebarOutlineView: NSViewRepresentable {
     let manager: SessionManager
+    /// The sections in their stored (manual) order. The coordinator decides
+    /// the order they're drawn in (`sortKeys`).
     let snapshot: [SidebarSnapshotGroup]
     let folding: SidebarFolding
+    /// Where each unread session sorts while View ▸ Sort Unread First is on;
+    /// nil while it's off. An input of its own so a dot coming or going
+    /// reaches the outline.
+    let sortKeys: [UUID: SidebarSort.Key]?
 
     func makeCoordinator() -> Coordinator { Coordinator(manager: manager) }
 
@@ -570,6 +591,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         outline.onDragEnd = { [weak coordinator = context.coordinator] in
             coordinator?.clearDropHighlight()
             coordinator?.hideInsertion()
+            coordinator?.thawSoon()
         }
         outline.onHeaderPressed = { [weak coordinator = context.coordinator, weak outline] item in
             guard let outline else { return }
@@ -623,6 +645,7 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         context.coordinator.outline = outline
         context.coordinator.observeSelection()
+        context.coordinator.observeHover()
 
         let scroll = NSScrollView()
         scroll.documentView = outline
@@ -642,12 +665,12 @@ struct SidebarOutlineView: NSViewRepresentable {
                     userInfo: ["scrolled": scroll.documentVisibleRect.minY > 0.5])
             }
         }
-        context.coordinator.apply(snapshot)
+        context.coordinator.apply(snapshot, sortKeys: sortKeys)
         return scroll
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
-        context.coordinator.apply(snapshot)
+        context.coordinator.apply(snapshot, sortKeys: sortKeys)
     }
 
     // MARK: - Coordinator
@@ -710,12 +733,112 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// press wasn't a drag. See `headerPressed`.
         private var pressedFolder: FolderItem?
 
-        init(manager: SessionManager) { self.manager = manager }
+        init(manager: SessionManager) {
+            self.manager = manager
+            super.init()
+            // A hover left set as the app went to the back (the row never hears
+            // the pointer leave while inactive) must not hold the order.
+            resignObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.thawSoon() }
+            }
+        }
 
         // MARK: Snapshot → outline
 
-        func apply(_ new: [SidebarSnapshotGroup]) {
+        /// The sections in their stored order, as SwiftUI last handed them over.
+        private var manualSnapshot: [SidebarSnapshotGroup] = []
+        /// Sort Unread First's keys, nil while it's off.
+        private var sortKeys: [UUID: SidebarSort.Key]?
+        /// What each section was last drawn as under the sort, keyed by
+        /// `drawnKey`: what holds the selected row still, and the whole
+        /// section while a click may be coming. Emptied while the sort is off,
+        /// so turning it on sorts afresh rather than holding a row in a place
+        /// it never had.
+        private var drawnBefore: [String: SidebarSort.Drawn] = [:]
+        /// The order was held (`isFrozen`) and may be behind: draw again once
+        /// the pointer has gone.
+        private var pendingThaw = false
+        private var resignObserver: NSObjectProtocol?
+
+        func apply(_ manual: [SidebarSnapshotGroup], sortKeys: [UUID: SidebarSort.Key]?) {
+            manualSnapshot = manual
+            self.sortKeys = sortKeys
+            render()
+        }
+
+        /// A click may be on its way: the pointer is over a session row, or a
+        /// button is down (a press, a drag). Rows must not move then, or the
+        /// click lands on whatever slid under it. Only the sort waits; a row
+        /// opening, closing or being dropped is drawn at once.
+        private var isFrozen: Bool {
+            (NSApp.isActive && manager.hoveredRowID != nil) || NSEvent.pressedMouseButtons != 0
+        }
+
+        private static func drawnKey(_ group: SidebarSnapshotGroup) -> String {
+            group.isPinned ? "\u{1}pinned" : group.folder.map { "folder/" + $0 } ?? "\u{1}loose"
+        }
+
+        /// The sections in the order they're drawn: as stored, or sorted.
+        private func drawnGroups() -> [SidebarSnapshotGroup] {
+            guard let keys = sortKeys else {
+                drawnBefore = [:]
+                return manualSnapshot
+            }
+            let frozen = isFrozen
+            if frozen { pendingThaw = true }
+            var next: [String: SidebarSort.Drawn] = [:]
+            let groups = manualSnapshot.map { group in
+                let key = Self.drawnKey(group)
+                let drawn = SidebarSort.draw(manual: group.sessionIDs, keys: keys, previous: drawnBefore[key],
+                                             holding: manager.selectedID, frozen: frozen)
+                next[key] = drawn
+                return SidebarSnapshotGroup(folder: group.folder, sessionIDs: drawn.drawn,
+                                            tallIDs: group.tallIDs, isPinned: group.isPinned)
+            }
+            drawnBefore = next
+            return groups
+        }
+
+        /// Draw again after something that isn't SwiftUI's update (the
+        /// selection moving, the pointer leaving). Skipped if the stored
+        /// snapshot is behind the session list: SwiftUI's own update is then
+        /// on its way, and drawing ids that have gone would misplace rows.
+        private func redraw() {
+            let live = Set(manager.sessions.map(\.id))
+            guard manualSnapshot.allSatisfy({ $0.sessionIDs.allSatisfy(live.contains) }) else { return }
+            render()
+        }
+
+        /// Once the pointer has been off the rows for a moment, catch up on
+        /// whatever the sort held back. A moment, so crossing from one row to
+        /// the next (out of one, into the other) doesn't count as leaving.
+        func thawSoon() {
+            guard pendingThaw else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self, self.pendingThaw, !self.isFrozen else { return }
+                self.pendingThaw = false
+                self.redraw()
+            }
+        }
+
+        func observeHover() {
+            withObservationTracking {
+                _ = manager.hoveredRowID
+            } onChange: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if self.manager.hoveredRowID == nil { self.thawSoon() }
+                    self.observeHover()
+                }
+            }
+        }
+
+        private func render() {
             guard let outline else { return }
+            let new = drawnGroups()
+            defer { publishRows() }
             // Only rows growing or shrinking a line (a session starting or
             // stopping waiting): ease the heights instead of reloading, so the
             // row opens and closes rather than the list jumping.
@@ -733,6 +856,14 @@ struct SidebarOutlineView: NSViewRepresentable {
                 syncExpansion()
                 return
             }
+            // The same sessions in each section, drawn in another order: the
+            // sort moved them. Slide the rows, as the outline moves any row,
+            // rather than reloading the lot.
+            if new != snapshot, Self.sameMembers(new, snapshot) {
+                reorder(to: new)
+                syncExpansion()
+                return
+            }
             if new != snapshot {
                 snapshot = new
                 rebuildItems()
@@ -741,6 +872,90 @@ struct SidebarOutlineView: NSViewRepresentable {
                 isSyncing = false
             }
             syncExpansion()
+        }
+
+        /// The same sections holding the same sessions, in any order.
+        private static func sameMembers(_ a: [SidebarSnapshotGroup], _ b: [SidebarSnapshotGroup]) -> Bool {
+            a.count == b.count && zip(a, b).allSatisfy {
+                $0.folder == $1.folder && $0.isPinned == $1.isPinned
+                    && $0.sessionIDs.count == $1.sessionIDs.count && Set($0.sessionIDs) == Set($1.sessionIDs)
+            }
+        }
+
+        /// Move rows within their sections to the drawn order `new`, with the
+        /// outline's own row-move animation, quick: the rows keep their views
+        /// (and so their pills, dots and hover) and slide to their places.
+        ///
+        /// Each step brings the row that belongs at `i` up from below, so a
+        /// move is always upward, where `moveItem`'s target index means the
+        /// same before and after the removal.
+        private func reorder(to new: [SidebarSnapshotGroup]) {
+            guard let outline else { return }
+            let old = snapshot
+            let changedTall = Set(new.flatMap(\.tallIDs)).symmetricDifference(old.flatMap(\.tallIDs))
+            snapshot = new
+            rebuildItems(resetLoose: false)
+            var folded: [Any] = []
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Motion.tabs
+                context.timingFunction = Motion.curve
+                outline.beginUpdates()
+                for (before, after) in zip(old, new) where before.sessionIDs != after.sessionIDs {
+                    let parent: Any?
+                    let offset: Int
+                    if after.isPinned {
+                        guard outline.isItemExpanded(pinnedItem) else { folded.append(pinnedItem); continue }
+                        parent = pinnedItem
+                        offset = 0
+                    } else if let name = after.folder, let folder = folderCache[name] {
+                        guard outline.isItemExpanded(folder) else { folded.append(folder); continue }
+                        parent = folder
+                        offset = 0
+                    } else {
+                        // Folded Sessions: its rows aren't in the outline.
+                        guard looseShown else { continue }
+                        parent = nil
+                        offset = rootOffset
+                    }
+                    var working = before.sessionIDs
+                    for (i, id) in after.sessionIDs.enumerated() {
+                        guard let j = working.firstIndex(of: id), j != i else { continue }
+                        outline.moveItem(at: offset + j, inParent: parent, to: offset + i, inParent: parent)
+                        working.insert(working.remove(at: j), at: i)
+                    }
+                }
+                outline.endUpdates()
+                if !changedTall.isEmpty {
+                    let rows = IndexSet(changedTall.compactMap { id in
+                        sessionCache[id].map { outline.row(forItem: $0) }.flatMap { $0 >= 0 ? $0 : nil }
+                    })
+                    outline.noteHeightOfRows(withIndexesChanged: rows)
+                }
+            }
+            // A folded section has no rows to slide: just let it re-read its
+            // children for when it opens.
+            isSyncing = true
+            for item in folded { outline.reloadItem(item, reloadChildren: true) }
+            isSyncing = false
+        }
+
+        /// Tell the manager which sessions are drawn, top to bottom: the rows a
+        /// ⇧-click's range runs over, and the selection pruned to them.
+        private func publishRows() {
+            guard let outline else { return }
+            var ids: [UUID] = []
+            ids.reserveCapacity(outline.numberOfRows)
+            for row in 0..<outline.numberOfRows {
+                if let session = outline.item(atRow: row) as? SessionItem { ids.append(session.id) }
+            }
+            manager.sidebarRowOrder = ids
+            // A turn later: this runs inside SwiftUI's update, and the
+            // selection is observed state.
+            guard manager.sidebarSelection.isMultiple else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.manager.pruneSidebarSelection(toDrawn: self.manager.sidebarRowOrder)
+            }
         }
 
         /// The same groups holding the same sessions in the same order: only
@@ -753,7 +968,7 @@ struct SidebarOutlineView: NSViewRepresentable {
             }
         }
 
-        private func rebuildItems() {
+        private func rebuildItems(resetLoose: Bool = true) {
             let byID = Dictionary(uniqueKeysWithValues: manager.sessions.map { ($0.id, $0) })
             pinnedItems = []
             looseItems = []
@@ -781,7 +996,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                     looseItems = items
                 }
             }
-            looseShown = !manager.looseCollapsed
+            if resetLoose { looseShown = !manager.looseCollapsed }
             let liveIDs = Set(snapshot.flatMap(\.sessionIDs))
             sessionCache = sessionCache.filter { liveIDs.contains($0.key) }
             let liveFolders = Set(snapshot.compactMap(\.folder))
@@ -896,6 +1111,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
             let rowView = SidebarPillRowView()
             rowView.showsPill = showsPill(item)
+            rowView.showsAlsoSelected = showsAlsoSelected(item)
             rowView.showsEditing = showsEditing(item)
             rowView.sectionGap = sectionGap(item)
             if item is PinnedItem || item is LooseHeaderItem { rowView.setFoldable() }
@@ -929,6 +1145,13 @@ struct SidebarOutlineView: NSViewRepresentable {
             return manager.selectedID == session.id && manager.editingID != session.id
         }
 
+        /// In a selection of several, and not the lead (which has the pill).
+        private func showsAlsoSelected(_ item: Any) -> Bool {
+            guard let session = item as? SessionItem, manager.sidebarSelection.isMultiple else { return false }
+            return manager.sidebarSelection.ids.contains(session.id) && manager.selectedID != session.id
+                && manager.editingID != session.id
+        }
+
         private func showsEditing(_ item: Any) -> Bool {
             guard let session = item as? SessionItem else { return false }
             return manager.editingID == session.id
@@ -941,10 +1164,14 @@ struct SidebarOutlineView: NSViewRepresentable {
             withObservationTracking {
                 _ = manager.selectedID
                 _ = manager.editingID
+                _ = manager.sidebarSelection
             } onChange: { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.refreshSelection()
+                    // Under the sort, which row holds still follows the
+                    // selection: the one you left may move now.
+                    if self.sortKeys != nil { self.redraw() }
                     self.observeSelection() // re-arm; tracking is one-shot
                 }
             }
@@ -957,6 +1184,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                         as? SidebarPillRowView,
                       let item = outline.item(atRow: row) else { continue }
                 rowView.showsPill = showsPill(item)
+                rowView.showsAlsoSelected = showsAlsoSelected(item)
                 rowView.showsEditing = showsEditing(item)
             }
         }
@@ -975,7 +1203,16 @@ struct SidebarOutlineView: NSViewRepresentable {
             // mouse-up) would undo it.
             guard row >= 0 else { return }
             guard let session = sender.item(atRow: row) as? SessionItem else { return }
-            manager.selectedID = session.id
+            // ⌘ toggles the row in or out of the selection, ⇧ takes the range
+            // from the anchor over the rows as drawn; neither moves the
+            // terminal (see `SessionSelection`). A plain click is one row.
+            manager.clickSidebarRow(session.id, Self.click(NSApp.currentEvent?.modifierFlags ?? []))
+        }
+
+        private static func click(_ modifiers: NSEvent.ModifierFlags) -> SessionManager.SidebarClick {
+            if modifiers.contains(.command) { return .toggle }
+            if modifiers.contains(.shift) { return .extend }
+            return .plain
         }
 
         /// Whole-header press toggles the section, on mouse-down so it matches
@@ -1007,6 +1244,8 @@ struct SidebarOutlineView: NSViewRepresentable {
             // their context menu.
             guard row >= 0, let session = sender.item(atRow: row) as? SessionItem
             else { return }
+            // Two quick ⌘- or ⇧-clicks are two selection clicks, not a rename.
+            guard Self.click(NSApp.currentEvent?.modifierFlags ?? []) == .plain else { return }
             manager.selectedID = session.id
             manager.editingID = session.id
         }
@@ -1025,6 +1264,7 @@ struct SidebarOutlineView: NSViewRepresentable {
             } else {
                 outline.removeItems(at: rows, inParent: nil, withAnimation: animated ? .slideUp : [])
             }
+            publishRows()
         }
 
         private func toggle(_ folder: FolderItem, in outline: NSOutlineView) {
@@ -1038,6 +1278,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// Persist user-driven expand/collapse (chevron or header click). The
         /// `isSyncing` guard keeps programmatic sync from echoing back.
         func outlineViewItemDidExpand(_ notification: Notification) {
+            publishRows()
             guard !isSyncing else { return }
             if notification.userInfo?["NSObject"] is PinnedItem { manager.setPinnedCollapsed(false); return }
             guard let folder = notification.userInfo?["NSObject"] as? FolderItem else { return }
@@ -1045,6 +1286,8 @@ struct SidebarOutlineView: NSViewRepresentable {
         }
 
         func outlineViewItemDidCollapse(_ notification: Notification) {
+            // Rows folded out of sight leave the selection.
+            publishRows()
             guard !isSyncing else { return }
             if notification.userInfo?["NSObject"] is PinnedItem { manager.setPinnedCollapsed(true); return }
             guard let folder = notification.userInfo?["NSObject"] as? FolderItem else { return }
@@ -1071,7 +1314,11 @@ struct SidebarOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
             let pb = NSPasteboardItem()
             if let session = item as? SessionItem {
-                pb.setString(session.id.uuidString, forType: Self.sessionDragType)
+                // A row in the selection drags the whole selection, in the
+                // order drawn; any other row drags itself.
+                let ids = manager.isInMultipleSelection(session.session)
+                    ? manager.sidebarSelectedSessions.map(\.id) : [session.id]
+                pb.setString(ids.map(\.uuidString).joined(separator: "\n"), forType: Self.sessionDragType)
                 return pb
             }
             if let folder = item as? FolderItem {
@@ -1165,32 +1412,35 @@ struct SidebarOutlineView: NSViewRepresentable {
                 manager.moveFolder(folder, toFolderIndex: max(0, index - rootOffset - loose))
                 return true
             }
-            if let idString = pb.string(forType: Self.sessionDragType),
-               let id = UUID(uuidString: idString),
-               let session = manager.sessions.first(where: { $0.id == id }) {
-                // Into Pinned: pinned there, folder kept.
+            if let ids = pb.string(forType: Self.sessionDragType)?
+                .split(separator: "\n").compactMap({ UUID(uuidString: String($0)) }) {
+                let byID = Dictionary(uniqueKeysWithValues: manager.sessions.map { ($0.id, $0) })
+                let moving = ids.compactMap { byID[$0] }
+                guard !moving.isEmpty else { return false }
+                let movingIDs = Set(moving.map(\.id))
+                // Where it lands is named by the row drawn just below the drop
+                // line (not a dragged one), or nil for the end of the section.
+                // An index would mean something else in the stored order than
+                // on screen once Sort Unread First is on; the row below is the
+                // same row in both. Dropping still writes the stored order.
+                func below(_ index: Int, in items: [SessionItem]) -> Session.ID? {
+                    guard index != NSOutlineViewDropOnItemIndex, index >= 0 else { return nil }
+                    return items.dropFirst(index).first { !movingIDs.contains($0.id) }?.id
+                }
+                // Into Pinned: pinned there, folders kept.
                 if item is PinnedItem {
-                    manager.setPinned(session, true, at: index == NSOutlineViewDropOnItemIndex ? .max : index)
+                    manager.setPinned(moving, true, before: below(index, in: pinnedItems))
                     return true
                 }
-                // Anywhere else: out of Pinned first, then where it was dropped.
-                let rootIndex = index - rootOffset
-                let wasPinned = manager.isPinned(session)
-                if wasPinned { manager.setPinned(session, false) }
-                // Back into its own group from Pinned: the drop index is as the
-                // group was drawn, without it, but unpinning puts it first in
-                // the group, and `moveSession` then discounts a place above
-                // the drop it never had. One more, so it lands on the line.
-                let home = wasPinned ? 1 : 0
+                // Anywhere else: out of Pinned, and where it was dropped.
                 if let folder = item as? FolderItem {
-                    let at = index == NSOutlineViewDropOnItemIndex ? Int.max
-                        : index + (folder.name == session.folderPath ? home : 0)
-                    manager.moveSession(id: id, toFolder: folder.name, at: at)
+                    manager.moveSessions(moving.map(\.id), toFolder: folder.name,
+                                         before: below(index, in: childrenByFolder[folder.name] ?? []), unpin: true)
                 } else if item == nil {
                     // Into a folded Sessions (its header): at the end, as a
                     // drop on a folder header lands.
-                    let at = looseShown ? max(0, rootIndex) + (session.folderPath == nil ? home : 0) : .max
-                    manager.moveSession(id: id, toFolder: nil, at: at)
+                    let before = looseShown ? below(index - rootOffset, in: shownLoose) : nil
+                    manager.moveSessions(moving.map(\.id), toFolder: nil, before: before, unpin: true)
                 } else {
                     return false
                 }

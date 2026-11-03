@@ -161,6 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
         }
+        manager.confirmCloseSessions = { [weak self] batch, running, completion in
+            self?.confirmClose(batch, running: running, completion: completion)
+        }
         manager.onArchiveProblem = { [weak self] title, detail in
             guard let window = self?.window else { return }
             let alert = NSAlert()
@@ -568,6 +571,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.commandHoldChanged(event)
             return event
         }
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.sidebarSelectionKey(event) else { return event }
+            return nil
+        }
+    }
+
+    /// The sidebar's selection of several rows ends at Esc, or as soon as you
+    /// type in the window. Here rather than in the sidebar because the sidebar
+    /// never holds the keyboard: the terminal does, and Esc would otherwise go
+    /// to it.
+    ///
+    /// Esc is taken only while there *is* a selection of several, so it costs
+    /// the terminal nothing the rest of the time. And typing ends the
+    /// selection too (passed on, not taken), which is what keeps that one
+    /// case honest: once you're back at work in the terminal there's no
+    /// selection left for an Esc meant for vim, or for an agent's interrupt,
+    /// to be swallowed by. Returns whether to take the event.
+    private func sidebarSelectionKey(_ event: NSEvent) -> Bool {
+        guard manager.sidebarSelection.isMultiple, event.window === window,
+              window?.attachedSheet == nil, manager.editingID == nil else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        // ⌘ shortcuts (Pin, the palette…) are commands, not typing.
+        guard !modifiers.contains(.command) else { return false }
+        manager.collapseSidebarSelection()
+        return event.keyCode == 53 && modifiers.isEmpty
     }
 
     private func commandHoldChanged(_ event: NSEvent) {
@@ -792,6 +820,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             + scanned.orphans.filter { $0.lastSessionID == session.id }
         alert.informativeText = RunningJobs.closeSummary(for: running)
             ?? "A process is still running in this session. Closing it will terminate the process."
+        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            completion(response == .alertFirstButtonReturn)
+        }
+    }
+
+    /// Closing the sidebar's selection: one sheet for the lot, worded as the
+    /// single one is, naming what is still running across all of them.
+    private func confirmClose(_ batch: [Session], running: [Session], completion: @escaping (Bool) -> Void) {
+        guard let window else {
+            completion(true)
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Close \(batch.count) Sessions?"
+        let scanned = processes.scanNow()
+        let ids = Set(running.map(\.id))
+        let jobs = running.flatMap { scanned.jobs(for: $0.id) }
+            + scanned.orphans.filter { $0.lastSessionID.map(ids.contains) ?? false }
+        alert.informativeText = RunningJobs.closeSummary(for: jobs)
+            ?? (running.count == 1
+                ? "A process is still running in \u{201c}\(running[0].name)\u{201d}. Closing it will terminate the process."
+                : "Processes are still running in \(running.count) of these sessions. Closing them will terminate the processes.")
         alert.addButton(withTitle: "Close")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { response in
@@ -1102,6 +1155,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// popover opens in your browser, not a tab.
     @objc func toggleServersInDefaultBrowser(_ sender: Any?) {
         BrowserTabs.opensServersInDefaultBrowser.toggle()
+    }
+
+    /// View ▸ Sort Unread First: sessions that want you drawn first in each
+    /// sidebar section. The menu is the switch; there is no settings window.
+    @objc func toggleSortUnreadFirst(_ sender: Any?) {
+        manager.sortUnreadFirst.toggle()
     }
 
     /// ⇧⌘L: a new browser in the row you're in.
@@ -1464,6 +1523,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleServersInDefaultBrowser(_:)) {
             menuItem.state = BrowserTabs.opensServersInDefaultBrowser ? .on : .off
+            return true
+        }
+        if menuItem.action == #selector(toggleSortUnreadFirst(_:)) {
+            menuItem.state = manager.sortUnreadFirst ? .on : .off
             return true
         }
         if menuItem.action == #selector(toggleSessionSidebar(_:)) {

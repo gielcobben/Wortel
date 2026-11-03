@@ -17,6 +17,13 @@ final class SessionManager {
     /// and programmatic selection (menu shortcuts) go through one path.
     var selectedID: Session.ID? {
         didSet {
+            // The lead moved from somewhere that isn't a ⌘-click inside the
+            // selection (a plain click, ⌘2, a notification): one row again.
+            if selectedID != oldValue, !(selectedID.map(sidebarSelection.ids.contains) ?? false) {
+                var collapsed = sidebarSelection
+                collapsed.collapse(to: selectedID)
+                if collapsed != sidebarSelection { sidebarSelection = collapsed }
+            }
             guard selectedID != oldValue, let session = selected else { return }
             // The selected row is always drawn: ⌘-number, a notification or
             // Next Waiting Session can pick a session inside a folded section.
@@ -64,6 +71,27 @@ final class SessionManager {
     /// The sidebar row under the pointer: its name makes room for the row's
     /// "…" and × only then (SidebarRowContent), rather than always.
     var hoveredRowID: Session.ID?
+
+    /// The sidebar rows selected beyond `selectedID` (⌘-click, ⇧-click), which
+    /// a right-click inside acts on all of. UI state only: never saved,
+    /// collapsed whenever the lead moves from outside it, pruned as its
+    /// sessions close. See `SessionSelection` for the rules.
+    private(set) var sidebarSelection = SessionSelection()
+
+    /// The sessions as the sidebar draws them, top to bottom, folded sections
+    /// left out: what a ⇧-click's range runs over and the order a bulk action
+    /// applies in. Written by the outline after each change, never read for
+    /// drawing, so not observed.
+    @ObservationIgnored var sidebarRowOrder: [Session.ID] = []
+
+    /// View ▸ Sort Unread First: within each section, sessions that want you
+    /// are drawn first (`SidebarSort`). Only how the rows are drawn: the
+    /// order you dragged is never touched, so turning it off restores it
+    /// exactly. View state, beside the folds; off by default.
+    var sortUnreadFirst = false {
+        didSet { UserDefaults.standard.set(sortUnreadFirst, forKey: Self.sortUnreadFirstKey) }
+    }
+    @ObservationIgnored private static let sortUnreadFirstKey = "WortelSortUnreadFirst"
 
     /// Called when the last session closes (the window should close).
     @ObservationIgnored var onAllClosed: (() -> Void)?
@@ -323,6 +351,25 @@ final class SessionManager {
         normalizeOrder()
         scheduleSave()
     }
+
+    /// Pin or unpin several at once: the sidebar's selection, or a drag of it.
+    /// One change to the pins and one save, not one per session. Pinned ones
+    /// keep the order given (the order they're drawn in) and go just before
+    /// `before` among the pinned, or at the end.
+    func setPinned(_ batch: [Session], _ pinned: Bool, before: Session.ID? = nil) {
+        let moving = Set(batch.map(\.id))
+        var ids = pinnedIDs.filter { !moving.contains($0) }
+        if pinned {
+            let at = before.flatMap { ids.firstIndex(of: $0) } ?? ids.count
+            ids.insert(contentsOf: batch.map(\.id), at: at)
+        }
+        guard ids != pinnedIDs else { return }
+        pinnedIDs = ids
+        batch.forEach(reveal)
+        normalizeOrder()
+        scheduleSave()
+    }
+
     init(runtime: GhosttyRuntime) {
         self.runtime = runtime
         collapsedFolders = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedFoldersKey) ?? [])
@@ -334,6 +381,7 @@ final class SessionManager {
             as? [String: String] ?? [:]
         pinnedIDs = (UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? [])
             .compactMap(UUID.init(uuidString:))
+        sortUnreadFirst = UserDefaults.standard.bool(forKey: Self.sortUnreadFirstKey)
         // Delivered on the main queue by the keeper's process source.
         GhosttyRuntime.onKeeperLost = { [weak self] pid in
             MainActor.assumeIsolated { self?.keeperDidExit(pid: pid) }
@@ -565,6 +613,39 @@ final class SessionManager {
         normalizeOrder()
         // Show the result of the drop, even into a collapsed folder, or a
         // folded Sessions.
+        if let folder { collapsedFolders.remove(folder) } else { setLooseCollapsed(false) }
+        scheduleSave()
+    }
+
+    /// Move several sessions into `folder` (nil: the top level) together, in
+    /// the order given, just before `before` (a session in that group) or at
+    /// its end: a drag of the sidebar's selection, and its bulk Move To. One
+    /// change to `sessions` and one save. `unpin` takes them out of Pinned on
+    /// the way, as a drop anywhere outside Pinned does.
+    ///
+    /// Placed by a neighbour rather than an index on purpose: with Sort Unread
+    /// First on, the rows are drawn in an order that isn't the stored one, and
+    /// "above the row you dropped on" is the one thing both orders agree on.
+    func moveSessions(_ ids: [Session.ID], toFolder folder: String?, before: Session.ID? = nil,
+                      unpin: Bool = false) {
+        let moving = ids.compactMap { id in sessions.first { $0.id == id } }
+        guard !moving.isEmpty else { return }
+        let movingIDs = Set(moving.map(\.id))
+        if unpin, pinnedIDs.contains(where: movingIDs.contains) {
+            pinnedIDs.removeAll(where: movingIDs.contains)
+        }
+        for session in moving where session.folderPath != folder {
+            session.name = folder.map { "\($0)/\(session.leafName)" } ?? session.leafName
+        }
+        var rest = sessions.filter { !movingIDs.contains($0.id) }
+        // Only the position among the group's own members matters:
+        // `normalizeOrder` gathers each group together after.
+        let index = before.flatMap { id in rest.firstIndex { $0.id == id } }
+            ?? rest.lastIndex { $0.folderPath == folder && !isPinned($0) }.map { $0 + 1 }
+            ?? rest.count
+        rest.insert(contentsOf: moving, at: index)
+        sessions = rest
+        normalizeOrder()
         if let folder { collapsedFolders.remove(folder) } else { setLooseCollapsed(false) }
         scheduleSave()
     }
@@ -2466,6 +2547,12 @@ final class SessionManager {
         attentionSince.removeValue(forKey: session.id)
         attentionContent.removeValue(forKey: session.id)
         raisedWhileAway.remove(session.id)
+        unreadSince.removeValue(forKey: session.id)
+        if sidebarSelection.ids.contains(session.id) || sidebarSelection.anchor == session.id {
+            var pruned = sidebarSelection
+            pruned.prune(to: Set(sessions.lazy.map(\.id).filter { $0 != session.id }), lead: selectedID)
+            sidebarSelection = pruned
+        }
         recentSessionIDs.removeAll { $0 == session.id }
         pinnedIDs.removeAll { $0 == session.id }
         endPromptCapture(session)
@@ -2534,6 +2621,66 @@ final class SessionManager {
         } else {
             close(session)
         }
+    }
+
+    /// Presents one confirmation for closing several sessions, some of which
+    /// (`running`) still have something running. The batch twin of
+    /// `confirmClose`, set by the app layer. When nil, closes without asking.
+    @ObservationIgnored var confirmCloseSessions: (([Session], _ running: [Session], @escaping (Bool) -> Void) -> Void)?
+
+    /// Close the sidebar's selection: one question for the lot when any of
+    /// them has something running, as `requestClose` asks for one.
+    func requestClose(_ batch: [Session]) {
+        guard batch.count > 1 else {
+            if let session = batch.first { requestClose(session) }
+            return
+        }
+        let running = batch.filter { $0.needsConfirmClose || hasBackgroundWork?($0) == true }
+        guard !running.isEmpty, let confirmCloseSessions else {
+            end(batch)
+            return
+        }
+        confirmCloseSessions(batch, running) { [weak self] proceed in
+            // `end` skips any that went while the sheet was up.
+            guard proceed else { return }
+            self?.end(batch)
+        }
+    }
+
+    /// Several sessions ending as one: each as `end` would end it (a worktree
+    /// session archived), but the selection moves once, and the archive and
+    /// the session list are each written once.
+    ///
+    /// The selection moves *first*. Closing the selected session picks the row
+    /// above it, which in a batch is often the next to go: it would start that
+    /// session's shell and mark it read only to close it a moment later.
+    func end(_ batch: [Session]) {
+        let closing = batch.filter { session in sessions.contains { $0.id == session.id } }
+        guard closing.count > 1 else {
+            if let session = closing.first { end(session) }
+            return
+        }
+        let closingIDs = Set(closing.map(\.id))
+        if let current = selectedID, closingIDs.contains(current),
+           let index = sessions.firstIndex(where: { $0.id == current }),
+           let survivor = sessions[..<index].last(where: { !closingIDs.contains($0.id) })
+            ?? sessions[index...].first(where: { !closingIDs.contains($0.id) }) {
+            selectedID = survivor.id
+        }
+        let items = closing.compactMap(archivedEntry(for:))
+        if !items.isEmpty {
+            let ids = Set(items.map(\.id))
+            archived.removeAll { ids.contains($0.id) }
+            archived.insert(contentsOf: items, at: 0)
+            ArchiveStore.save(archived)
+        }
+        closing.forEach(close)
+        guard !items.isEmpty else { return }
+        // Both files together, as `archive` writes them.
+        saveNow()
+        let usage = WorktreeUsage(manager: self)
+        items.forEach { settleArchived($0, usage: usage) }
+        refreshWorktreeListings()
     }
 
     // MARK: - New worktree session, and its branch's name
@@ -2656,18 +2803,10 @@ final class SessionManager {
     /// the row has moved, never before: a `git status` on a monorepo can
     /// take seconds, and ⌘W must not.
     func archive(_ session: Session) {
-        guard session.preparation == nil, let home = worktreeHome(of: session) else {
+        guard let item = archivedEntry(for: session) else {
             close(session)
             return
         }
-        noteConversation(session)
-        var entry = persistedEntry(for: session, now: Date(), vouching: false, table: { ProcessTable.snapshot() })
-        // The branch of the worktree it's archived in, which is what Restore
-        // checks out again if the folder goes: the shell may be standing in
-        // another worktree, or none.
-        if let branch = GitWorktree.checkedOutBranch(at: home.root) { entry.worktreeBranch = branch }
-        let item = ArchivedSession(session: entry, archivedAt: Date(), checkout: home.root,
-                                   repoHome: home.repoHome, isOwned: home.isOwned)
         archived.removeAll { $0.id == item.id }
         archived.insert(item, at: 0)
         ArchiveStore.save(archived)
@@ -2682,6 +2821,21 @@ final class SessionManager {
         let usage = WorktreeUsage(manager: self)
         settleArchived(item, usage: usage)
         refreshWorktreeListings()
+    }
+
+    /// The record archiving `session` would keep, nil for a session that
+    /// isn't archived when it ends (no worktree, or one still being made).
+    /// Taken while the session is live: it reads the shell's processes.
+    private func archivedEntry(for session: Session) -> ArchivedSession? {
+        guard session.preparation == nil, let home = worktreeHome(of: session) else { return nil }
+        noteConversation(session)
+        var entry = persistedEntry(for: session, now: Date(), vouching: false, table: { ProcessTable.snapshot() })
+        // The branch of the worktree it's archived in, which is what Restore
+        // checks out again if the folder goes: the shell may be standing in
+        // another worktree, or none.
+        if let branch = GitWorktree.checkedOutBranch(at: home.root) { entry.worktreeBranch = branch }
+        return ArchivedSession(session: entry, archivedAt: Date(), checkout: home.root,
+                               repoHome: home.repoHome, isOwned: home.isOwned)
     }
 
     /// Inspect an archived worktree, and remove it when there's nothing to
@@ -4200,6 +4354,7 @@ final class SessionManager {
         session.attention = kind // observed → sidebar dot
         // The quieter tier: mark it unread too, at the highest kind seen, so the
         // trail survives past the loud dot until you've actually engaged.
+        if session.unread == nil { unreadSince[session.id] = Date() }
         if session.unread.map({ kind.priority > $0.priority }) ?? true {
             session.unread = kind
         }
@@ -4223,9 +4378,57 @@ final class SessionManager {
     /// holds while you're in the session (its caught-up clock is stopped) and
     /// clears the usual way, once you've spent time in it after coming back.
     func markUnread(_ session: Session) {
-        if session.unread == nil { session.unread = .finished }
+        if session.unread == nil {
+            session.unread = .finished
+            unreadSince[session.id] = Date()
+        }
         session.markedUnread = true
         cancelCaughtUp(session.id)
+    }
+
+    /// The sidebar selection's Mark as Unread. Nothing here is saved, so one
+    /// pass is already one change.
+    func markUnread(_ batch: [Session]) {
+        batch.forEach(markUnread)
+    }
+
+    /// The sidebar selection's Mark as Read: the dot, the ring and a mark made
+    /// by hand all go, as if each had been visited, without visiting them (no
+    /// shell started, the terminal stays where it is). The Dock badge and the
+    /// menu bar's list are counted once for the lot.
+    func markRead(_ batch: [Session]) {
+        var cleared = false
+        for session in batch {
+            if session.attention != nil {
+                session.attention = nil
+                attentionContent[session.id] = nil
+                attentionSince[session.id] = nil
+                onAttentionCleared?(session)
+                cleared = true
+            }
+            if session.unread != nil { session.unread = nil }
+            if session.markedUnread { session.markedUnread = false }
+            cancelCaughtUp(session.id)
+        }
+        if cleared { refreshDockBadge() }
+    }
+
+    /// When each session started wanting you, for Sort Unread First's "most
+    /// recent first": set as its unread mark appears, by a signal or by hand.
+    /// A live dot sorts by its episode's start (`attentionSince`) instead.
+    @ObservationIgnored private var unreadSince: [UUID: Date] = [:]
+
+    /// Where a session sorts under Sort Unread First, nil for one that's read.
+    /// A live dot ranks by its kind's loudness; a session only marked unread
+    /// (the hollow ring, or ⇧⌘U) after every live dot, as the quieter signal
+    /// it is drawn as.
+    func sidebarSortKey(for session: Session) -> SidebarSort.Key? {
+        if let kind = session.attention {
+            return .init(rank: kind.priority,
+                         since: attentionSince[session.id] ?? unreadSince[session.id] ?? .distantPast)
+        }
+        guard session.unread != nil else { return nil }
+        return .init(rank: 0, since: unreadSince[session.id] ?? .distantPast)
     }
 
     /// Give a session a colour, or take it away (nil). By hand only: the menu
@@ -4234,6 +4437,74 @@ final class SessionManager {
         guard session.colour != colour else { return }
         session.colour = colour
         scheduleSave()
+    }
+
+    /// The same for the sidebar's selection, saved once.
+    func setColour(_ batch: [Session], _ colour: SessionColour?) {
+        let changing = batch.filter { $0.colour != colour }
+        guard !changing.isEmpty else { return }
+        changing.forEach { $0.colour = colour }
+        scheduleSave()
+    }
+
+    // MARK: - Sidebar selection
+
+    /// How a row was clicked: alone, ⌘ (toggle it), or ⇧ (a range to it).
+    enum SidebarClick { case plain, toggle, extend }
+
+    /// A click on a session's row, with the rules in `SessionSelection`. A
+    /// plain click shows the row (and collapses the selection, through
+    /// `selectedID`); a modifier click changes the selection and leaves the
+    /// terminal where it is, unless it took the lead itself out.
+    func clickSidebarRow(_ id: Session.ID, _ click: SidebarClick) {
+        var selection = sidebarSelection
+        var lead = selectedID
+        switch click {
+        case .plain:
+            selection.collapse(to: id)
+            lead = id
+        case .toggle:
+            lead = selection.toggle(id, lead: lead, in: sidebarRowOrder)
+        case .extend:
+            selection.extend(to: id, lead: lead, in: sidebarRowOrder)
+        }
+        if selection != sidebarSelection { sidebarSelection = selection }
+        if lead != selectedID { selectedID = lead }
+    }
+
+    /// Esc, or typing in the terminal: back to the session on screen alone.
+    func collapseSidebarSelection() {
+        guard sidebarSelection.isMultiple else { return }
+        var collapsed = sidebarSelection
+        collapsed.collapse(to: selectedID)
+        sidebarSelection = collapsed
+    }
+
+    /// Whether `session` is part of a selection of more than one: its
+    /// right-click acts on all of them.
+    func isInMultipleSelection(_ session: Session) -> Bool {
+        sidebarSelection.isMultiple && sidebarSelection.ids.contains(session.id)
+    }
+
+    /// The selected sessions, as drawn.
+    var sidebarSelectedSessions: [Session] {
+        let members = sidebarSelection.members(lead: selectedID)
+        let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        // Drawn order, then anything selected that isn't drawn (it can't be,
+        // `prune` sees to that, but never drop a member silently).
+        var ids = sidebarRowOrder.filter(members.contains)
+        ids += members.subtracting(ids).sorted { $0.uuidString < $1.uuidString }
+        return ids.compactMap { byID[$0] }
+    }
+
+    /// The rows drawn changed (a section folded): what's no longer drawn
+    /// leaves the selection.
+    func pruneSidebarSelection(toDrawn drawn: [Session.ID]) {
+        sidebarRowOrder = drawn
+        guard sidebarSelection.isMultiple else { return }
+        var pruned = sidebarSelection
+        pruned.prune(to: Set(drawn), lead: selectedID)
+        if pruned != sidebarSelection { sidebarSelection = pruned }
     }
 
     private func scheduleCaughtUp(_ session: Session) {

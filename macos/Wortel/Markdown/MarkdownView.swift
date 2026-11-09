@@ -114,6 +114,10 @@ struct MarkdownView: View {
         case .file(let url):
             onOpenFile?(url)
             return true
+        case .package(let url):
+            // Shown, not opened: opening an app is running it.
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            return true
         case .folder(let url), .web(let url):
             // A folder is the one destination this app has no view for, and
             // Finder is what "open this folder" means everywhere else on the

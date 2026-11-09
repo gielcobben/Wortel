@@ -41,7 +41,7 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     var showsEditing = false {
         didSet { if showsEditing != oldValue { needsDisplay = true } }
     }
-    /// A dragged session is hovering this folder header (drop-on / append).
+    /// A dragged session is hovering this folder header (drop-on: first in it).
     var showsDropHighlight = false {
         didSet { if showsDropHighlight != oldValue { needsDisplay = true } }
     }
@@ -1373,7 +1373,7 @@ struct SidebarOutlineView: NSViewRepresentable {
             if pb.string(forType: Self.sessionDragType) != nil {
                 let drop = sessionDropTarget(at: point)
                 if let folder = drop.onFolder {
-                    // Drop *onto* a folder header → append + highlight the row.
+                    // Drop *onto* a folder header → first in it + highlight the row.
                     hideInsertion()
                     setDropHighlight(folder)
                     outline.setDropItem(folder, dropChildIndex: NSOutlineViewDropOnItemIndex)
@@ -1427,6 +1427,10 @@ struct SidebarOutlineView: NSViewRepresentable {
                     guard index != NSOutlineViewDropOnItemIndex, index >= 0 else { return nil }
                     return items.dropFirst(index).first { !movingIDs.contains($0.id) }?.id
                 }
+                // Onto a section's header: first in it, where the eye already is.
+                func top(of items: [SessionItem]) -> Session.ID? {
+                    items.first { !movingIDs.contains($0.id) }?.id
+                }
                 // Into Pinned: pinned there, folders kept.
                 if item is PinnedItem {
                     manager.setPinned(moving, true, before: below(index, in: pinnedItems))
@@ -1434,12 +1438,15 @@ struct SidebarOutlineView: NSViewRepresentable {
                 }
                 // Anywhere else: out of Pinned, and where it was dropped.
                 if let folder = item as? FolderItem {
+                    let children = childrenByFolder[folder.name] ?? []
+                    let before = index == NSOutlineViewDropOnItemIndex
+                        ? top(of: children) : below(index, in: children)
                     manager.moveSessions(moving.map(\.id), toFolder: folder.name,
-                                         before: below(index, in: childrenByFolder[folder.name] ?? []), unpin: true)
+                                         before: before, unpin: true)
                 } else if item == nil {
-                    // Into a folded Sessions (its header): at the end, as a
+                    // Into a folded Sessions (its header): at the top, as a
                     // drop on a folder header lands.
-                    let before = looseShown ? below(index - rootOffset, in: shownLoose) : nil
+                    let before = looseShown ? below(index - rootOffset, in: shownLoose) : top(of: looseItems)
                     manager.moveSessions(moving.map(\.id), toFolder: nil, before: before, unpin: true)
                 } else {
                     return false

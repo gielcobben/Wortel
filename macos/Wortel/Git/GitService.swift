@@ -51,6 +51,10 @@ enum GitService {
         env["PATH"] = toolPath(env["PATH"])
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_OPTIONAL_LOCKS"] = "0"
+        // A path handed to git is that path. Without this every one is a
+        // glob: `app/[id]/page.tsx` also names `app/i/page.tsx`, and a
+        // discard of the first would delete the second.
+        env["GIT_LITERAL_PATHSPECS"] = "1"
         return env
     }()
 

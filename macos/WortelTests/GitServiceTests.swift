@@ -619,6 +619,31 @@ final class GitServiceTests: XCTestCase {
                        "a staged edit goes back to HEAD, index and worktree both")
     }
 
+    /// A path is a path. `app/[id]/x.txt` is a character class to git unless
+    /// told otherwise, and would take `app/i/x.txt` with it.
+    func testDiscardingABracketedPathLeavesItsGlobMatchesAlone() async {
+        repo = GitFixture.newRepo("literal-pathspec")
+        GitFixture.sh("mkdir -p 'app/[id]' app/i && printf 'one\\n' > 'app/[id]/t.txt' && printf 'one\\n' > app/i/t.txt", in: repo)
+        GitFixture.sh("git add -A && git commit -q -m first", in: repo)
+        // Tracked edits in both, untracked files in both.
+        GitFixture.sh("printf 'edit\\n' >> 'app/[id]/t.txt' && printf 'edit\\n' >> app/i/t.txt", in: repo)
+        GitFixture.sh("printf 'new\\n' > 'app/[id]/u.txt' && printf 'new\\n' > app/i/u.txt", in: repo)
+
+        let status = await GitService.status(root: repo.path)
+        let bracketed = status.changes.filter { $0.path.hasPrefix("app/[id]/") }
+        XCTAssertEqual(bracketed.count, 2)
+
+        let result = await GitService.discard(root: repo.path, changes: bracketed)
+        XCTAssertTrue(result.ok, result.stderr)
+
+        XCTAssertEqual(GitFixture.sh("cat app/i/t.txt", in: repo), "one\nedit",
+                       "the edit in the file that only matched as a glob is still there")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: repo.appendingPathComponent("app/i/u.txt").path),
+                      "the untracked file that only matched as a glob was not deleted")
+        XCTAssertEqual(GitFixture.sh("cat 'app/[id]/t.txt'", in: repo), "one")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: repo.appendingPathComponent("app/[id]/u.txt").path))
+    }
+
     /// One `.gitignore` write for the whole selection. A write per entry would
     /// race itself: each one reads the file, appends its line and writes the
     /// whole thing back, so the last one to land is the only entry that survives.

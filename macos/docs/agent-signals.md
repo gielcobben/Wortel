@@ -128,7 +128,8 @@ never return to the prompt; the agent's own signals take over.
   hours were claimed at 16:02:00 and dotted at 16:02:05. After a relaunch an
   idle session hasn't spoken, so it isn't `speaksForItself`, and the guess
   needed 2s of busy rather than the corroborated 10s. What repainted them is
-  unknown, and other agents still get these, having no transcript to ask. The
+  unknown. Codex is checked the same way against its rollout (below); Pi and
+  the agents with no conversation file still get these. The
   session recap
   (`away_summary`, ~3 minutes after a turn while unfocused) raised nothing in
   two live captures.
@@ -165,6 +166,42 @@ never return to the prompt; the agent's own signals take over.
   `raiseAttention` drops any signal that says exactly what the standing
   attention already says (same kind, title and body), whichever channel it
   came in on, so a bell every few seconds is one banner too.
+- **Codex's title spins for things that aren't turns.** At every launch and
+  resume Codex 0.142 shows "Starting MCP servers (0/3)" with `esc to
+  interrupt` and animates the braille title spinner, exactly as through a
+  turn (measured in a pty: 1.3s with three local servers). One slow server
+  takes it past the 2s gate, and then it ends in "Finished, your move" with
+  no turn at all, on every session a relaunch types `codex resume` into
+  (not seen live; it follows from the code). And the
+  screen tier's repaint guesses hit Codex as they hit Claude: reported as a
+  banner on every Codex session at once (2026-11-09, screenshots of nearly
+  every row dotted), after Claude's had been fixed. One cause is Codex's
+  own: **auto-recap** (`tui.auto_recap`, on by default; `tui/src/app/recap.rs`)
+  writes a "↳ Recap:" under a conversation with 3+ finished turns once its
+  terminal has been unfocused for 30 minutes, and every background session in
+  Wortel is unfocused, so they recap in a wave. It runs on an `ephemeral`
+  thread: no rollout line, and no Codex OSC 9 (that is only sent for the
+  main thread's turns). It isn't the only cause; dots also came with nothing
+  visible changed, and an idle Codex 0.142 drew nothing on its own in ten
+  minutes in a pty (only cursor-shape refreshes, no text). So the fix
+  doesn't depend on the trigger:
+  every Codex quiet that ends in a turn end is checked against the rollout,
+  title and screen alike (`AgentConversation.Codex.tookTurn`): a turn writes
+  `task_started` and its user message at once and a `response_item` per
+  step, and with none of those since the busy began nothing is raised. Only
+  turn lines count: a rollout also takes bookkeeping that belongs to no turn
+  (`thread_settings_applied`, seen three months after a conversation's last
+  turn; the list follows Codex's own `rollout/src/policy.rs`). Any other
+  rollout of the folder written to since the busy began is asked too, since
+  a `/new` or `/resume` inside Codex leaves the session's known id behind,
+  but never one another session is in: two Codex sessions in one repo would
+  otherwise answer for each other. Only rollouts modified since then are
+  opened, so a wave of quiet sessions costs a listing each. A Codex with no
+  conversation and nothing written has taken no turn (the rollout is
+  written at the first prompt), so that raises nothing either; a known
+  conversation whose rollout can't be read raises as before. What a
+  wrong "no turn" costs is the guess only: unfocused, Codex still sends its
+  own OSC 9 for a real turn end.
 - **A failed `KERN_PROCARGS2` read is not an absent agent.** `AgentLiveness`
   finds most agents only by their arguments, because the cheap `p_comm` pass
   misses them: pi, gemini and amp are `node`, aider is `python3`, and Claude

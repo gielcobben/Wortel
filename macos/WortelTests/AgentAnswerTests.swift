@@ -240,6 +240,62 @@ final class AgentAnswerTests: XCTestCase {
         ]))
     }
 
+    // MARK: - Codex: was there a turn at all
+
+    private func codexTookTurn(_ lines: [String]) -> Bool {
+        AgentConversation.Codex.tookTurn(Data(lines.joined(separator: "\n").utf8), since: since)
+    }
+
+    /// A title spinner or a moving screen on a session idle since its last
+    /// answer: the rollout's newest line is that answer, before the busy
+    /// began. Seen as "Finished, your move" on every Codex session at once.
+    func testAnIdleCodexTookNoTurn() {
+        XCTAssertFalse(codexTookTurn([
+            codex("event_msg", ["type": "task_started"], at: "2026-10-14T09:59:00.000Z"),
+            codex("response_item", ["type": "message", "role": "assistant",
+                                    "content": [["type": "output_text", "text": "Done."]]],
+                  at: "2026-10-14T09:59:30.000Z"),
+            codex("event_msg", ["type": "task_complete", "last_agent_message": "Done."],
+                  at: "2026-10-14T09:59:30.100Z"),
+        ]))
+    }
+
+    /// Lines that belong to no turn are written to a rollout too (a real one
+    /// got `thread_settings_applied` months after its last turn), and a resume
+    /// starting its MCP servers spins the title meanwhile.
+    func testCodexBookkeepingAfterTheBusyBeganIsNoTurn() {
+        XCTAssertFalse(codexTookTurn([
+            codex("event_msg", ["type": "task_complete", "last_agent_message": "Done."],
+                  at: "2026-10-14T09:59:30.000Z"),
+            codex("event_msg", ["type": "thread_settings_applied"]),
+            codex("session_meta", ["id": "x", "cwd": "/tmp"]),
+        ]))
+    }
+
+    func testACodexTurnIsSeenFromItsStart() {
+        XCTAssertTrue(codexTookTurn([
+            codex("event_msg", ["type": "task_complete", "last_agent_message": "Old."],
+                  at: "2026-10-14T09:59:30.000Z"),
+            codex("event_msg", ["type": "task_started"], at: "2026-10-14T12:00:01.000Z"),
+        ]))
+    }
+
+    /// A turn still waiting on an approval has written its steps, and an
+    /// interrupted one its abort: both happened.
+    func testACodexTurnMidwayOrAbortedIsATurn() {
+        XCTAssertTrue(codexTookTurn([
+            codex("response_item", ["type": "function_call", "name": "shell"]),
+        ]))
+        XCTAssertTrue(codexTookTurn([
+            codex("event_msg", ["type": "turn_aborted", "reason": "interrupted"]),
+        ]))
+    }
+
+    func testAnEmptyCodexTailTookNoTurn() {
+        XCTAssertFalse(codexTookTurn([]))
+        XCTAssertFalse(codexTookTurn(["{\"cut mid-line"]))
+    }
+
     // MARK: - Pi
 
     private func pi(_ role: String, _ content: [[String: Any]], stop: String? = nil,

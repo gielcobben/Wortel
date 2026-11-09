@@ -130,6 +130,80 @@ final class AgentConversationTests: XCTestCase {
         XCTAssertNil(AgentConversation.Codex.uuidV7Date("39027937-053d-49f7-ae3b-1eb98a87a811"))
     }
 
+    /// A rollout made at `made` (its id dates it, as Codex's do), holding
+    /// one turn line stamped `turnAt`.
+    @discardableResult
+    private func makeCodexRollout(made: Date, cwd: String, turnAt: Date) throws -> String {
+        let millis = UInt64(made.timeIntervalSince1970 * 1000)
+        let hex = String(format: "%012llx", millis)
+        let id = "\(hex.prefix(8))-\(hex.dropFirst(8))-7000-8000-000000000000"
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: made)
+        let dir = root.appendingPathComponent(String(format: "%04d/%02d/%02d", c.year!, c.month!, c.day!))
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let stamp = ISO8601DateFormatter().string(from: turnAt)
+        let lines = [
+            #"{"timestamp":"\#(stamp)","type":"session_meta","payload":{"id":"\#(id)","cwd":"\#(cwd)"}}"#,
+            #"{"timestamp":"\#(stamp)","type":"event_msg","payload":{"type":"task_started"}}"#,
+        ]
+        let name = DateFormatter()
+        name.locale = Locale(identifier: "en_US_POSIX")
+        name.timeZone = .current
+        name.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
+        try Data(lines.joined(separator: "\n").utf8)
+            .write(to: dir.appendingPathComponent("rollout-\(name.string(from: made))-\(id).jsonl"))
+        return id
+    }
+
+    private func reading(_ id: String?, cwd: String? = nil, others: Set<String> = [],
+                         since: Date) -> String {
+        switch AgentConversation.Codex.turnReading(conversation: id, cwd: cwd ?? self.cwd, since: since,
+                                                   others: others, root: root) {
+        case .turn: return "turn"
+        case .noTurn: return "noTurn"
+        case .unknown: return "unknown"
+        }
+    }
+
+    /// The id a session knows can be one Codex has left (`/new`, `/resume`
+    /// inside it): a turn written since in another conversation of the folder
+    /// is still its turn, unless another session owns that conversation.
+    func testACodexTurnIsLookedForInTheFoldersOtherRolloutsToo() throws {
+        let now = Date()
+        let since = now.addingTimeInterval(-60)
+        let old = try makeCodexRollout(made: now.addingTimeInterval(-3600), cwd: cwd,
+                                       turnAt: now.addingTimeInterval(-3600))
+        XCTAssertEqual(reading(old, since: since), "noTurn")
+        try makeCodexRollout(made: now.addingTimeInterval(-10), cwd: "/elsewhere", turnAt: now)
+        XCTAssertEqual(reading(old, since: since), "noTurn", "another folder's turn is not this session's")
+        let moved = try makeCodexRollout(made: now.addingTimeInterval(-5), cwd: cwd, turnAt: now)
+        XCTAssertEqual(reading(old, since: since), "turn")
+        XCTAssertEqual(reading(old, others: [moved.uppercased()], since: since), "noTurn",
+                       "a conversation another session is in answers only for that session")
+    }
+
+    /// A conversation made weeks ago and resumed is appended to in the day
+    /// folder it was made in, which is where a session with no known id finds it.
+    func testAnOldResumedConversationIsFound() throws {
+        let now = Date()
+        try makeCodexRollout(made: now.addingTimeInterval(-40 * 86_400), cwd: cwd, turnAt: now)
+        XCTAssertEqual(reading(nil, since: now.addingTimeInterval(-60)), "turn")
+    }
+
+    /// A session that knows its conversation but can't read it gets no verdict,
+    /// whatever else the folder holds; one with no conversation and nothing
+    /// written has taken no turn (Codex writes the rollout at the first prompt).
+    func testCodexWithoutAReadableRollout() throws {
+        let now = Date()
+        let since = now.addingTimeInterval(-60)
+        try makeCodexRollout(made: now.addingTimeInterval(-3600), cwd: cwd,
+                             turnAt: now.addingTimeInterval(-3600))
+        XCTAssertEqual(reading("39027937-053d-49f7-ae3b-1eb98a87a811", since: since), "unknown",
+                       "a v4 id has no day folder to be found in")
+        XCTAssertEqual(reading(a, since: since), "unknown")
+        XCTAssertEqual(reading(nil, since: since), "noTurn")
+        XCTAssertEqual(reading(nil, cwd: "/nowhere", since: since), "noTurn")
+    }
+
     // MARK: - Resume commands
 
     func testExactResumeCommands() {

@@ -3555,8 +3555,9 @@ final class SessionManager {
     /// failure, not "your move", and a question or a plan it is waiting on is
     /// input it needs. A compaction Claude ran on its own while idle was no
     /// turn, and neither was a screen-tier guess with nothing written behind
-    /// it: those raise nothing. Anything else, or a transcript that can't be
-    /// found, keeps the inferred kind.
+    /// it: those raise nothing. Codex's quiets all need a turn in a rollout
+    /// behind them, its own title spinner included. Anything else, or a
+    /// transcript that can't be found, keeps the inferred kind.
     ///
     /// The body is what the agent said: the start of its last answer, or the
     /// question it is waiting on (`AgentAnswer`), read from Claude's
@@ -3578,32 +3579,44 @@ final class SessionManager {
         case .failed: inferredBody = "Stopped with an error"
         default: inferredBody = "Finished, your move"
         }
+        // Only these quiets are the conversation file's to judge; a louder
+        // kind came from a signal of the agent's own.
+        let judged = kind == .turnDone || guessed
+        // Codex is checked with no conversation known, too (see below).
         guard let agent = session.runningAgent, AgentConversation.exact.contains(agent),
-              let id = session.liveConversationID, let cwd = session.runningCwd ?? session.cwd,
-              let startedAt
+              let cwd = session.runningCwd ?? session.cwd, let startedAt,
+              session.liveConversationID != nil || agent == "codex" && judged
         else { return raise(kind, inferredBody, "") }
+        let id = session.liveConversationID
+        // Other sessions' conversations, which are never this one's evidence.
+        let others = Set(sessions.compactMap { $0 === session ? nil : $0.liveConversationID })
         // Two seconds of slack: the prompt that opened the turn is stamped
         // when the agent wrote it, which can be a moment before its busy edge
         // reached us.
         let since = startedAt.addingTimeInterval(-2)
-        // Only these quiets are Claude's transcript's to judge; a louder kind
-        // came from a signal of the agent's own.
-        let judged = kind == .turnDone || guessed
         DispatchQueue.global(qos: .userInitiated).async {
             var verdict: ClaudeTranscriptTail.Verdict?
             var answer: String?
-            switch agent {
-            case "claude":
+            switch (agent, id) {
+            case ("claude", let id?):
                 if let tail = AgentResumeStore.claudeTranscript(id: id, cwd: cwd)
                     .flatMap(ClaudeTranscriptTail.readTail(of:)) {
                     if judged { verdict = ClaudeTranscriptTail.verdict(tail, since: since, guessed: guessed) }
                     answer = ClaudeTranscriptTail.lastAnswer(tail, since: since)
                 }
-            case "codex":
-                answer = AgentConversation.Codex.file(id: id)
-                    .flatMap(ClaudeTranscriptTail.readTail(of:))
-                    .flatMap { AgentAnswer.codex($0, since: since) }
-            case "pi":
+            case ("codex", _):
+                // Unlike Claude's, every quiet is checked, not only a guess:
+                // Codex's title spinner also turns for things that aren't
+                // turns (`AgentConversation.Codex.turnReading`). What a wrong
+                // "no turn" costs is the guess only: unfocused, Codex sends
+                // its own OSC 9 at a real turn end.
+                switch AgentConversation.Codex.turnReading(conversation: id, cwd: cwd, since: since,
+                                                           others: others) {
+                case .turn(let tail): answer = AgentAnswer.codex(tail, since: since)
+                case .noTurn: if judged { verdict = .noTurn }
+                case .unknown: break
+                }
+            case ("pi", let id?):
                 answer = AgentConversation.Pi.file(id: id, cwd: cwd)
                     .flatMap(ClaudeTranscriptTail.readTail(of:))
                     .flatMap { AgentAnswer.pi($0, since: since) }
@@ -3614,13 +3627,7 @@ final class SessionManager {
                 guard let self, let session else { return }
                 // Busy again while the file was read: the turn didn't end.
                 guard !session.isBusy, self.busyTimers[session.id] == nil else { return }
-                if verdict == .noTurn {
-                    AgentStatusLog.log.debug("""
-                        \(source, privacy: .public)-quiesce: no turn, nothing raised \
-                        id=\(session.id.uuidString, privacy: .public)
-                        """)
-                    return
-                }
+                if verdict == .noTurn { return self.logNoTurn(session, source: source) }
                 // An error's words are the error's, not the last answer's.
                 let body = kind == .failed ? inferredBody : answer ?? inferredBody
                 let tag = answer == nil || kind == .failed ? "" : "-answer"
@@ -3634,6 +3641,16 @@ final class SessionManager {
                 }
             }
         }
+    }
+
+    /// A quiet that turned out to be no turn: nothing is raised, and the log
+    /// says so, since a dot that didn't appear is otherwise invisible.
+    private func logNoTurn(_ session: Session, source: String) {
+        AgentStatusLog.log.debug("""
+            \(source, privacy: .public)-quiesce: no turn, nothing raised \
+            (\(session.runningAgent ?? "?", privacy: .public)) \
+            id=\(session.id.uuidString, privacy: .public)
+            """)
     }
 
     // MARK: - Changing directory (`wortel cd`, Change Directory)

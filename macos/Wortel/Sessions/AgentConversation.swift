@@ -492,6 +492,120 @@ enum AgentConversation {
             }
         }
 
+        /// Whether a turn wrote to the rollout at or after `since`, from its
+        /// tail (newest last; it may start mid-line).
+        ///
+        /// What Codex draws can't say this. Its title spins the same braille
+        /// spinner while it starts its MCP servers (measured, 0.142: "Starting
+        /// MCP servers (0/3)", a second or more, at every launch and resume)
+        /// as it does through a turn, and the screen tier takes anything that
+        /// repaints an idle session for a few seconds for a short turn. Neither
+        /// is a turn, and neither writes one: a turn opens with `task_started`
+        /// and the user's message, and every step of it is a `response_item`.
+        ///
+        /// Only those count. A rollout also takes lines that belong to no turn
+        /// (`thread_settings_applied`, measured three months after its
+        /// conversation's last turn), so "anything newer than `since`" would
+        /// be wrong the same way the title is.
+        static func tookTurn(_ data: Data, since: Date) -> Bool {
+            for entry in AgentAnswer.entries(data) {
+                guard let date = AgentFiles.date(entry["timestamp"]) else { continue }
+                // Appended in order, so everything further back is older too.
+                if date < since { return false }
+                if isTurnEntry(entry) { return true }
+            }
+            return false
+        }
+
+        /// What the rollouts say about a quiet that began at `since`.
+        enum TurnReading: Equatable {
+            /// A turn wrote this tail, which is where its answer is.
+            case turn(Data)
+            /// Nothing a turn writes, anywhere this session could have written.
+            case noTurn
+            /// The session's own rollout couldn't be read: no verdict.
+            case unknown
+        }
+
+        /// Whether a turn wrote to conversation `id`'s rollout at or after
+        /// `since`, or to another rollout of `cwd` written since then. A
+        /// `/new` or `/resume` inside Codex moves the session to another
+        /// conversation without a word to the shell, so the id it knows can be
+        /// one it has left, or none (`codex` started, then an old conversation
+        /// picked). Conversations in `others` belong to other sessions and are
+        /// never this one's evidence: two Codex sessions in one folder would
+        /// otherwise answer for each other.
+        ///
+        /// A known `id` whose rollout can't be read is `.unknown`, whatever
+        /// the folder holds, so that session keeps the old behaviour. With no
+        /// id and nothing written, `.noTurn`: Codex writes its rollout at the
+        /// first prompt, so a session that has none has taken no turn.
+        ///
+        /// Only rollouts modified since `since` are opened, so the fallback
+        /// costs a listing and nothing else on the quiet sessions it exists
+        /// to silence. Blocking file IO: call off the main thread.
+        static func turnReading(conversation id: String?, cwd: String, since: Date,
+                                others: Set<String> = [], root: URL = root) -> TurnReading {
+            if let id {
+                guard let tail = file(id: id, root: root).flatMap(ClaudeTranscriptTail.readTail(of:))
+                else { return .unknown }
+                if tookTurn(tail, since: since) { return .turn(tail) }
+            }
+            let skip = Set((Array(others) + [id].compactMap { $0 }).map { $0.lowercased() })
+            for url in rollouts(modifiedSince: since, root: root) {
+                guard let parsed = parse(fileName: url.deletingPathExtension().lastPathComponent),
+                      !skip.contains(parsed.id),
+                      meta(of: url).map({ AgentConversation.samePath($0.cwd, cwd) }) == true,
+                      let tail = ClaudeTranscriptTail.readTail(of: url)
+                else { continue }
+                if tookTurn(tail, since: since) { return .turn(tail) }
+            }
+            return .noTurn
+        }
+
+        /// Every rollout written to at or after `since`, newest first, from
+        /// the whole tree: a resumed conversation is appended to in the day
+        /// folder it was made in, however old.
+        static func rollouts(modifiedSince since: Date, root: URL = root) -> [URL] {
+            let key = URLResourceKey.contentModificationDateKey
+            guard let walk = FileManager.default.enumerator(
+                at: root, includingPropertiesForKeys: [key], options: [.skipsHiddenFiles])
+            else { return [] }
+            var found: [(URL, Date)] = []
+            for case let url as URL in walk where url.pathExtension == "jsonl" {
+                guard let modified = (try? url.resourceValues(forKeys: [key]))?.contentModificationDate,
+                      modified >= since else { continue }
+                found.append((url, modified))
+            }
+            return found.sorted { $0.1 > $1.1 }.map(\.0)
+        }
+
+        /// A line only a turn writes. Codex persists `task_started`,
+        /// `task_complete` and `turn_aborted` for every turn, a review's
+        /// included (`rollout/src/policy.rs`); the `turn_` spellings are
+        /// accepted aliases, listed so a rename doesn't silence every Codex
+        /// turn end. What it also persists and is *not* here is bookkeeping:
+        /// `thread_settings_applied`, `thread_goal_updated`,
+        /// `thread_rolled_back`, `token_count`, `session_meta`.
+        private static func isTurnEntry(_ entry: [String: Any]) -> Bool {
+            switch entry["type"] as? String {
+            case "response_item", "turn_context", "compacted":
+                return true
+            case "event_msg":
+                let kind = (entry["payload"] as? [String: Any])?["type"] as? String
+                return kind.map(turnEvents.contains) ?? false
+            default:
+                return false
+            }
+        }
+
+        private static let turnEvents: Set<String> = [
+            "task_started", "task_complete", "turn_started", "turn_complete", "turn_aborted",
+            "user_message", "agent_message", "agent_reasoning",
+            "entered_review_mode", "exited_review_mode", "context_compacted",
+            "patch_apply_end", "mcp_tool_call_end", "web_search_end", "image_generation_end",
+        ]
+
         static func uuidV7Date(_ id: String) -> Date? {
             let hex = id.replacingOccurrences(of: "-", with: "")
             guard hex.count == 32, Array(hex)[12] == "7",

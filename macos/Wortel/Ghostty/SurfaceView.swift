@@ -305,11 +305,14 @@ final class SurfaceView: NSView {
         // The pty's queue writes into this surface — the replay right after
         // it was created, then every read — so it is freed only once that
         // queue has nothing left to write. See `PtyHost.enqueue`.
-        // `self` is held until then: the surface's userdata points at it.
+        // `self` is held until then: the surface's userdata points at it. So
+        // is `pty`: the surface's `receive_userdata` is an unretained pointer
+        // to it, and libghostty's IO thread may still write an answer through
+        // that pointer until the surface is gone.
         guard let pty else { return ghostty_surface_free(surface) }
         pty.enqueue {
             DispatchQueue.main.async {
-                withExtendedLifetime(self) { ghostty_surface_free(surface) }
+                withExtendedLifetime((self, pty)) { ghostty_surface_free(surface) }
             }
         }
     }
@@ -345,7 +348,12 @@ final class SurfaceView: NSView {
             // Freed only once the old pty's queue has nothing left to write
             // into it, as in `close`.
             if let pty {
-                pty.enqueue { DispatchQueue.main.async { ghostty_surface_free(old) } }
+                // `pty` is kept until the old surface is freed, as in `close`.
+                pty.enqueue {
+                    DispatchQueue.main.async {
+                        withExtendedLifetime(pty) { ghostty_surface_free(old) }
+                    }
+                }
             } else {
                 ghostty_surface_free(old)
             }

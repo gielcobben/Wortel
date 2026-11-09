@@ -18,6 +18,9 @@ enum DiffParser {
         var id = 0
         var oldNo = 0
         var newNo = 0
+        // Lines of the current hunk still to come on each side, from its header.
+        var oldLeft = 0
+        var newLeft = 0
         var isBinary = false
         var truncated = false
         // The file the following hunks belong to. Updated at each file header so
@@ -40,35 +43,45 @@ enum DiffParser {
                 truncated = true
                 break
             }
-            if rawLine.hasPrefix("Binary files") || rawLine.hasPrefix("GIT binary patch") {
-                isBinary = true
-                continue
-            }
-            // File boundaries: keep the path (for syntax highlighting) but not
-            // the header rows themselves. `diff --git` seeds the path — its
-            // b-side is the resulting path for modify/add/delete/rename, so it
-            // also covers deletions where `+++` is /dev/null. `+++ b/…` then
-            // refines it to the authoritative post-image path.
-            if rawLine.hasPrefix("diff --git") {
-                currentPath = gitHeaderBPath(rawLine) ?? currentPath
-                continue
-            }
-            if rawLine.hasPrefix("+++ ") {
-                if let p = fileMarkerPath(rawLine) { currentPath = p }
-                continue
-            }
-            // File-level headers carry no content worth showing in the pane.
-            if isHeaderLine(rawLine) { continue }
-
-            if rawLine.hasPrefix("@@") {
-                if let (o, n) = parseHunkHeader(rawLine) {
-                    oldNo = o
-                    newNo = n
+            // A hunk header's counts are what tell a line of content from a
+            // header: a deleted line "-- x" arrives as "--- x" and an added
+            // "++ x" as "+++ x", so while either count is unspent every line
+            // is content, whatever it starts with.
+            let inHunk = oldLeft > 0 || newLeft > 0
+            if inHunk && rawLine.hasPrefix("\\") { continue }
+            if !inHunk {
+                if rawLine.hasPrefix("Binary files") || rawLine.hasPrefix("GIT binary patch") {
+                    isBinary = true
+                    continue
                 }
-                id += 1
-                lines.append(DiffLine(id: id, kind: .hunkHeader, text: rawLine,
-                                      oldLine: nil, newLine: nil, path: currentPath))
-                continue
+                // File boundaries: keep the path (for syntax highlighting) but not
+                // the header rows themselves. `diff --git` seeds the path — its
+                // b-side is the resulting path for modify/add/delete/rename, so it
+                // also covers deletions where `+++` is /dev/null. `+++ b/…` then
+                // refines it to the authoritative post-image path.
+                if rawLine.hasPrefix("diff --git") {
+                    currentPath = gitHeaderBPath(rawLine) ?? currentPath
+                    continue
+                }
+                if rawLine.hasPrefix("+++ ") {
+                    if let p = fileMarkerPath(rawLine) { currentPath = p }
+                    continue
+                }
+                // File-level headers carry no content worth showing in the pane.
+                if isHeaderLine(rawLine) { continue }
+
+                if rawLine.hasPrefix("@@") {
+                    if let (o, n, oc, nc) = parseHunkHeader(rawLine) {
+                        oldNo = o
+                        newNo = n
+                        oldLeft = oc
+                        newLeft = nc
+                    }
+                    id += 1
+                    lines.append(DiffLine(id: id, kind: .hunkHeader, text: rawLine,
+                                          oldLine: nil, newLine: nil, path: currentPath))
+                    continue
+                }
             }
 
             // Content line: first column is the +/-/space marker.
@@ -80,16 +93,20 @@ enum DiffParser {
             if rawLine.hasPrefix("+") {
                 kind = .addition
                 new = newNo; newNo += 1
+                newLeft = max(0, newLeft - 1)
                 body = String(rawLine.dropFirst())
             } else if rawLine.hasPrefix("-") {
                 kind = .deletion
                 old = oldNo; oldNo += 1
+                oldLeft = max(0, oldLeft - 1)
                 body = String(rawLine.dropFirst())
             } else {
                 // Context (leading space) or the final empty split element.
                 kind = .context
                 old = oldNo; oldNo += 1
                 new = newNo; newNo += 1
+                oldLeft = max(0, oldLeft - 1)
+                newLeft = max(0, newLeft - 1)
                 body = rawLine.isEmpty ? "" : String(rawLine.dropFirst())
             }
             id += 1
@@ -143,8 +160,8 @@ enum DiffParser {
         return rest.isEmpty ? nil : String(rest)
     }
 
-    /// "@@ -a,b +c,d @@ ctx" → (a, c). Counts default to the token's number.
-    private static func parseHunkHeader(_ line: String) -> (Int, Int)? {
+    /// "@@ -a,b +c,d @@ ctx" → (a, c, b, d). An omitted count means 1.
+    private static func parseHunkHeader(_ line: String) -> (oldStart: Int, newStart: Int, oldCount: Int, newCount: Int)? {
         let fields = line.split(separator: " ")
         guard fields.count >= 3 else { return nil }
         func leadingInt(_ token: Substring) -> Int? {
@@ -152,7 +169,12 @@ enum DiffParser {
             let digits = token.dropFirst().prefix { $0.isNumber }
             return Int(digits)
         }
+        func count(_ token: Substring) -> Int {
+            // Digits after the first ","; no comma means a count of 1.
+            guard let comma = token.firstIndex(of: ",") else { return 1 }
+            return Int(token[token.index(after: comma)...].prefix { $0.isNumber }) ?? 1
+        }
         guard let a = leadingInt(fields[1]), let c = leadingInt(fields[2]) else { return nil }
-        return (a, c)
+        return (a, c, count(fields[1]), count(fields[2]))
     }
 }

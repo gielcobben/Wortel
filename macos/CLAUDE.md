@@ -55,6 +55,9 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   accepts posts with no error, but nothing is ever displayed. `--notarize` adds
   hardened runtime + notarization + a `.dmg` for distributing to other Macs
   (needs a `notarytool` keychain profile — see the script footer).
+  `--publish` refuses uncommitted changes and runs `WortelTests` and the
+  `updates/` tests before it builds (`--allow-dirty`, `--no-tests` to
+  override); it uploads with the wrangler pinned in `updates/`.
 - There is no linter config. For the app itself, "verify" still means building
   and running it — the UI has no test coverage.
 - The one test target is `WortelTests`, covering the git panel's logic and the

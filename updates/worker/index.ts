@@ -91,10 +91,25 @@ export default {
       return new Response(null, { status: 200, headers });
     }
 
-    const object = await env.BUCKET.get(key, {
-      range: request.headers,
-      onlyIf: request.headers,
-    });
+    let object: R2Object | R2ObjectBody | null;
+    try {
+      object = await env.BUCKET.get(key, {
+        range: request.headers,
+        onlyIf: request.headers,
+      });
+    } catch (error) {
+      // R2 throws on a range it cannot satisfy (past the end of the object,
+      // or malformed). Uncaught, that is a 500 on the hostname every
+      // installed copy checks unattended. Only a request that asked for a
+      // range is answered this way; anything else is a real failure.
+      if (!request.headers.has('range')) throw error;
+      const head = await env.BUCKET.head(key);
+      if (!head) return new Response('Not Found', { status: 404 });
+      return new Response(null, {
+        status: 416,
+        headers: { 'content-range': `bytes */${head.size}`, 'accept-ranges': 'bytes' },
+      });
+    }
 
     if (!object) return new Response('Not Found', { status: 404 });
 
@@ -105,11 +120,13 @@ export default {
     headers.set('accept-ranges', 'bytes');
 
     // R2 hands back an object with no body in two cases: a conditional request
-    // whose precondition failed (304), and a HEAD. Losing this check would
+    // whose precondition failed (304, or 412 for If-Match and
+    // If-Unmodified-Since), and a HEAD. Losing this check would
     // send `null` as a 200 and hand Sparkle a zero-byte archive.
     const body = (object as R2ObjectBody).body;
     if (!body) {
-      return new Response(null, { status: 304, headers });
+      const status = preconditionFailedStatus(request.headers);
+      return new Response(null, { status, headers });
     }
 
     const ranged = !!object.range && request.headers.has('range');
@@ -178,6 +195,17 @@ async function visitorId(ip: string, ua: string, day: string, salt: string): Pro
 }
 
 // ---- serving details ------------------------------------------------------
+
+/// R2 gave back an object and no body: a precondition in the request failed.
+/// Which status that is depends on which precondition it was. Only the two
+/// "has it changed?" headers mean Not Modified; a failed If-Match or
+/// If-Unmodified-Since is a client being told its copy is NOT the current
+/// one, and answering 304 there says the opposite.
+export function preconditionFailedStatus(request: Headers): 304 | 412 {
+  const notModified = request.has('if-none-match') || request.has('if-modified-since');
+  const mustMatch = request.has('if-match') || request.has('if-unmodified-since');
+  return mustMatch && !notModified ? 412 : 304;
+}
 
 /// The Content-Range line for a 206.
 ///

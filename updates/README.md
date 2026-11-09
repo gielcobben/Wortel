@@ -22,6 +22,10 @@ Whatever `macos/scripts/release.sh --publish` puts in the bucket:
 This Worker only ever reads. Publishing is `release.sh`'s job and goes straight
 to R2.
 
+Conditional and range requests are answered by the book: a failed `If-Match` or
+`If-Unmodified-Since` is a 412, a failed `If-None-Match` or `If-Modified-Since`
+is a 304, and a range the file cannot satisfy is a 416.
+
 ## What it counts
 
 Nothing counted the downloads before this existed, which is why there is no

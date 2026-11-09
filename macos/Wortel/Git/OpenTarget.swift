@@ -37,8 +37,10 @@ enum OpenTarget {
         let group: Group
         /// The name to show: the session's, or the branch.
         let title: String
-        /// The branch, when the title isn't it.
-        let branch: String?
+        /// What sits beside the title: an archived session's branch, or the
+        /// repository a worktree is of (two can have a worktree on the same
+        /// branch name).
+        let detail: String?
         /// What pressing Return does, in words.
         let status: String
 
@@ -59,6 +61,9 @@ enum OpenTarget {
         struct Worktree: Equatable {
             let path: String
             let branch: String?
+            /// The repository, as a path with `~` for home: two called `app`
+            /// in different places are still two.
+            var repository: String? = nil
         }
         var archived: [Place] = []
         var notOpen: [Worktree] = []
@@ -66,7 +71,8 @@ enum OpenTarget {
 
     /// Only for something typed: with nothing typed ⌘P is the recent
     /// sessions, and every worktree ever put away under them would bury them.
-    /// Every word typed has to be in the name, the branch or the path.
+    /// Every word typed has to be in the name, the branch, the repository or
+    /// the path.
     static func choices(for query: String, in inputs: Inputs) -> [Choice] {
         let words = query.lowercased().split(whereSeparator: \.isWhitespace)
         guard !words.isEmpty else { return [] }
@@ -77,13 +83,13 @@ enum OpenTarget {
         var result: [Choice] = []
         for place in inputs.archived where matches(place.name, place.branch) {
             result.append(Choice(action: .restore(place.id), group: .archived, title: place.name,
-                                 branch: place.branch, status: "Restores the session, agent and all."))
+                                 detail: place.branch, status: "Restores the session, agent and all."))
         }
         for worktree in inputs.notOpen {
             let name = worktree.branch ?? (worktree.path as NSString).lastPathComponent
-            guard matches(name, worktree.path) else { continue }
+            guard matches(name, worktree.repository, worktree.path) else { continue }
             result.append(Choice(action: .openWorktree(path: worktree.path), group: .notOpen, title: name,
-                                 branch: nil, status: "Opens a session in its worktree."))
+                                 detail: worktree.repository, status: "Opens a session in its worktree."))
         }
         return result
     }

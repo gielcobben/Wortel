@@ -99,8 +99,8 @@ wortel new --worktree --name "try a queue"
 Worktrees go in `~/.wortel/worktrees/<repo>/<branch>` unless the repository
 names its own place in git config, `wortel.worktreePath`: a folder, or a
 template with `{repo}` and `{branch}`, relative to the repository or not. The
-folder menu's Worktree Location… sets it; git's `includeIf` sets it for every
-repository under a folder:
+New Worktree sheet's Location field sets it; git's `includeIf` sets it for
+every repository under a folder:
 
 ```ini
 # ~/.gitconfig

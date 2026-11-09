@@ -130,10 +130,16 @@ final class SessionManager {
 
     /// The sessions as the sidebar draws them, top to bottom, folded sections
     /// left out: what a ⇧-click's range runs over and the order a bulk action
-    /// applies in, and what ⌘1…⌘9 count. Written by the outline after each
-    /// change. Not observed: the ⌘-number hints read it, but only as ⌘ goes
-    /// down, which redraws them anyway.
+    /// applies in. Written by the outline after each change, never read for
+    /// drawing, so not observed.
     @ObservationIgnored var sidebarRowOrder: [Session.ID] = []
+
+    /// ⌘1…⌘9's sessions: the first nine rows as the sidebar draws them
+    /// (Pinned first, Sort Unread First applied, folded sections left out),
+    /// so the number on a row is the one that selects it. Observed, unlike
+    /// `sidebarRowOrder`, so the numbers shown while ⌘ is held follow a
+    /// re-sort. nil until the sidebar has drawn, when it's the stored order.
+    private(set) var shortcutIDs: [Session.ID]?
 
     /// View ▸ Sort Unread First: within each section, sessions that want you
     /// are drawn first (`SidebarSort`). Only how the rows are drawn: the
@@ -392,25 +398,9 @@ final class SessionManager {
 
     func isPinned(_ session: Session) -> Bool { pinnedIDs.contains(session.id) }
 
-    /// Pin (at `position` among the pinned, clamped) or unpin a session.
-    func setPinned(_ session: Session, _ pinned: Bool, at position: Int = .max) {
-        var ids = pinnedIDs
-        let current = ids.firstIndex(of: session.id)
-        if let current { ids.remove(at: current) }
-        if pinned {
-            // A drop index counts the row's own old place, as moveSession's do.
-            var target = position
-            if let current, current < target, target != .max { target -= 1 }
-            ids.insert(session.id, at: max(0, min(target, ids.count)))
-        }
-        guard ids != pinnedIDs else { return }
-        pinnedIDs = ids
-        // Pinning shows what you pinned, as a drop into a folder opens it.
-        // Pinning shows it in Pinned, unpinning back where it came from, as a
-        // drop into a folder opens it.
-        reveal(session)
-        normalizeOrder()
-        scheduleSave()
+    /// Pin (last among the pinned) or unpin one session.
+    func setPinned(_ session: Session, _ pinned: Bool) {
+        setPinned([session], pinned)
     }
 
     /// Pin or unpin several at once: the sidebar's selection, or a drag of it.
@@ -426,6 +416,8 @@ final class SessionManager {
         }
         guard ids != pinnedIDs else { return }
         pinnedIDs = ids
+        // Pinning shows it in Pinned, unpinning back where it came from, as a
+        // drop into a folder opens it.
         batch.forEach(reveal)
         normalizeOrder()
         scheduleSave()
@@ -642,39 +634,6 @@ final class SessionManager {
         collapsedFolders.remove(folder)
         folderRoots.removeValue(forKey: folder)
         normalizeOrder()
-        scheduleSave()
-    }
-
-    /// Move a session into `folder` (nil = top level) at `position` within that
-    /// group (clamped; pass .max to append). Serves drag-and-drop and the
-    /// filing of new sessions. Crossing folders re-prefixes the name — the name *is*
-    /// the folder membership.
-    func moveSession(id: Session.ID, toFolder folder: String?, at position: Int) {
-        guard let fromIdx = sessions.firstIndex(where: { $0.id == id }) else { return }
-        let session = sessions[fromIdx]
-        var target = position
-        if session.folderPath == folder {
-            // Drop indices are as rendered mid-drag, i.e. they still count the
-            // row's own old position — compensate after it's removed.
-            let group = sessions.filter { $0.folderPath == folder && !isPinned($0) }
-            if let current = group.firstIndex(where: { $0.id == id }), current < target {
-                target -= 1
-            }
-        } else {
-            session.name = folder.map { "\($0)/\(session.leafName)" } ?? session.leafName
-        }
-        sessions.remove(at: fromIdx)
-        // As the folder is shown: its pinned sessions are up in Pinned.
-        let members = sessions.indices.filter { sessions[$0].folderPath == folder && !isPinned(sessions[$0]) }
-        let clamped = max(0, min(target, members.count))
-        let flatIdx = clamped < members.count
-            ? members[clamped]
-            : (members.last.map { $0 + 1 } ?? sessions.count)
-        sessions.insert(session, at: flatIdx)
-        normalizeOrder()
-        // Show the result of the drop, even into a collapsed folder, or a
-        // folded Sessions.
-        if let folder { collapsedFolders.remove(folder) } else { setLooseCollapsed(false) }
         scheduleSave()
     }
 
@@ -2907,7 +2866,7 @@ final class SessionManager {
             inputs.notOpen += listing.filter {
                 !$0.isPrimary && !$0.isBare && !$0.isPrunable && !taken.contains(GitWorktree.realPath($0.path))
                     && !($0.branch.map(preparing.contains) ?? false)
-            }.map { .init(path: $0.path, branch: $0.branch) }
+            }.map { .init(path: $0.path, branch: $0.branch, repository: (home as NSString).abbreviatingWithTildeInPath) }
         }
         return inputs
     }
@@ -3040,26 +2999,24 @@ final class SessionManager {
     }
 
     func select(index: Int) {
-        let order = shortcutOrder
+        // Closed since the sidebar last drew: left out, so the rest move up
+        // as their rows already have.
+        let live = Set(sessions.map(\.id))
+        let order = (shortcutIDs ?? sessions.prefix(9).map(\.id)).filter(live.contains)
         guard order.indices.contains(index) else { return }
         selectedID = order[index]
     }
 
-    /// ⌘1…⌘9's sessions, in order: the rows as the sidebar draws them
-    /// (Pinned first, Sort Unread First applied, folded sections left out),
-    /// so the number on a row is the one that selects it. The stored order
-    /// only before the sidebar has drawn.
-    private var shortcutOrder: [Session.ID] {
-        guard !sidebarRowOrder.isEmpty else { return sessions.map(\.id) }
-        let live = Set(sessions.map(\.id))
-        return sidebarRowOrder.filter(live.contains)
-    }
-
     /// The ⌘-number shown on `id`'s row while ⌘ is held, if it has one.
     func shortcutNumber(for id: Session.ID) -> Int? {
-        guard showsShortcutHints,
-              let index = shortcutOrder.prefix(9).firstIndex(of: id) else { return nil }
+        guard showsShortcutHints, let index = shortcutIDs?.firstIndex(of: id) else { return nil }
         return index + 1
+    }
+
+    /// The outline drew its rows: the first nine are ⌘1…⌘9's from now on.
+    func noteDrawnRows(_ drawn: [Session.ID]) {
+        let first = Array(drawn.prefix(9))
+        if first != shortcutIDs { shortcutIDs = first }
     }
 
     /// Select a session by id (e.g. from tapping its attention notification).

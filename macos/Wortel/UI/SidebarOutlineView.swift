@@ -949,11 +949,12 @@ struct SidebarOutlineView: NSViewRepresentable {
                 if let session = outline.item(atRow: row) as? SessionItem { ids.append(session.id) }
             }
             manager.sidebarRowOrder = ids
-            // A turn later: this runs inside SwiftUI's update, and the
-            // selection is observed state.
-            guard manager.sidebarSelection.isMultiple else { return }
+            // A turn later: this runs inside SwiftUI's update, and the ⌘
+            // numbers and the selection are observed state.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                self.manager.noteDrawnRows(self.manager.sidebarRowOrder)
+                guard self.manager.sidebarSelection.isMultiple else { return }
                 self.manager.pruneSidebarSelection(toDrawn: self.manager.sidebarRowOrder)
             }
         }
@@ -1427,26 +1428,33 @@ struct SidebarOutlineView: NSViewRepresentable {
                     guard index != NSOutlineViewDropOnItemIndex, index >= 0 else { return nil }
                     return items.dropFirst(index).first { !movingIDs.contains($0.id) }?.id
                 }
-                // Onto a section's header: first in it, where the eye already is.
-                func top(of items: [SessionItem]) -> Session.ID? {
-                    items.first { !movingIDs.contains($0.id) }?.id
+                // Onto a section's header: first in it, where the eye already
+                // is. First as stored, not as drawn: with Sort Unread First on,
+                // the top row drawn can be anywhere in the stored order.
+                func top(pinned: Bool, folder: String? = nil) -> Session.ID? {
+                    manager.sidebarGroups
+                        .first { $0.isPinned == pinned && (pinned || $0.folder == folder) }?
+                        .sessions.first { !movingIDs.contains($0.id) }?.id
                 }
                 // Into Pinned: pinned there, folders kept.
                 if item is PinnedItem {
-                    manager.setPinned(moving, true, before: below(index, in: pinnedItems))
+                    let before = index == NSOutlineViewDropOnItemIndex || overSectionHeader
+                        ? top(pinned: true) : below(index, in: pinnedItems)
+                    manager.setPinned(moving, true, before: before)
                     return true
                 }
                 // Anywhere else: out of Pinned, and where it was dropped.
                 if let folder = item as? FolderItem {
                     let children = childrenByFolder[folder.name] ?? []
                     let before = index == NSOutlineViewDropOnItemIndex
-                        ? top(of: children) : below(index, in: children)
+                        ? top(pinned: false, folder: folder.name) : below(index, in: children)
                     manager.moveSessions(moving.map(\.id), toFolder: folder.name,
                                          before: before, unpin: true)
                 } else if item == nil {
-                    // Into a folded Sessions (its header): at the top, as a
-                    // drop on a folder header lands.
-                    let before = looseShown ? below(index - rootOffset, in: shownLoose) : top(of: looseItems)
+                    // Onto the Sessions header, folded or open: at the top,
+                    // as a drop on a folder header lands.
+                    let before = looseShown && !overSectionHeader
+                        ? below(index - rootOffset, in: shownLoose) : top(pinned: false)
                     manager.moveSessions(moving.map(\.id), toFolder: nil, before: before, unpin: true)
                 } else {
                     return false
@@ -1476,7 +1484,13 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         /// Where a dragged session should land. `onFolder` non-nil = drop onto
         /// that folder header (append); otherwise insert at (`parent`, `index`).
+        /// Whether the drag is over the open Pinned or Sessions header, where a
+        /// drop goes first as stored, as on a folder's. Their drop index is the
+        /// same as above their first row, which goes by the row drawn below it.
+        private var overSectionHeader = false
+
         private func sessionDropTarget(at point: NSPoint) -> (parent: Any?, index: Int, onFolder: FolderItem?) {
+            overSectionHeader = false
             guard let outline, outline.numberOfRows > 0 else { return (nil, 0, nil) }
             let hovered = outline.row(at: point)
             // Below the last row → append after the last row's context.
@@ -1486,15 +1500,20 @@ struct SidebarOutlineView: NSViewRepresentable {
             let rect = outline.rect(ofRow: row)
             let topHalf = hovered >= 0 && point.y < rect.midY
 
-            // Onto the Pinned header: pinned, at the end of the pinned. Folded,
-            // onto the header itself: there are no rows to put a line between.
+            // Onto a section's header: first in it, as onto a folder's. Pinned
+            // folded, onto the header itself: there are no rows to put a line
+            // between.
             if item is PinnedItem {
+                overSectionHeader = true
                 return outline.isItemExpanded(pinnedItem)
-                    ? (pinnedItem, pinnedItems.count, nil)
+                    ? (pinnedItem, 0, nil)
                     : (pinnedItem, NSOutlineViewDropOnItemIndex, nil)
             }
-            // Onto the Sessions header: out of any folder, at the end.
-            if item is LooseHeaderItem { return (nil, topLevelEnd, nil) }
+            // Onto the Sessions header: out of any folder, first.
+            if item is LooseHeaderItem {
+                overSectionHeader = true
+                return (nil, rootOffset, nil)
+            }
             if let folder = item as? FolderItem {
                 // The top edge of the very first section is the "move to top
                 // level" zone — the top-level band renders above the folders but
@@ -1503,7 +1522,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                 if folder === folderItems.first, point.y < rect.minY + rect.height * 0.34 {
                     return (nil, topLevelEnd, nil)
                 }
-                return (nil, 0, folder) // onto the header → append into the folder
+                return (nil, 0, folder) // onto the header → first in the folder
             }
             if let session = item as? SessionItem,
                let i = pinnedItems.firstIndex(where: { $0 === session }) {

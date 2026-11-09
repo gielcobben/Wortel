@@ -494,8 +494,8 @@ extension GitWorktree {
     }
 
     /// The git config key a repository names its worktree location in:
-    /// `git config wortel.worktreePath <template>`, set by the folder menu's
-    /// Worktree Location…, or for every repository under a folder with git's
+    /// `git config wortel.worktreePath <template>`, set by the New Worktree
+    /// sheet's Location field, or for every repository under a folder with git's
     /// own `includeIf` (which is how a team's machines can share one rule
     /// with nothing of Wortel's to set up). Unset means Wortel's folder.
     static let locationKey = "wortel.worktreePath"

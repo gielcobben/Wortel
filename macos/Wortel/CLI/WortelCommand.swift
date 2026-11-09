@@ -587,11 +587,9 @@ enum WortelCommandParser {
         case missing(String, String)
         /// Two options that can't be given together.
         case conflict(String, String)
-        /// An argument after the ones a command takes.
-        case extra(String, String)
         /// A command `new` can't type into a shell, and why.
         case unrunnable(String)
-        /// A word after the ones a command takes (`extra` says "directory").
+        /// A word after the ones a command takes.
         case unexpected(String, String)
         /// An option given a value it can't use: the option, the value, and
         /// what it wanted instead.
@@ -612,8 +610,6 @@ enum WortelCommandParser {
                 return "\(verb) needs \(what)"
             case .conflict(let option, let others):
                 return "\(option) can't be used with \(others)"
-            case .extra(let token, let verb):
-                return "\(verb) takes one directory, not \"\(token)\" too (quote a path with spaces)"
             case .unrunnable(let why):
                 return "new can't run that command: \(why). Put it in a script and run the script."
             case .unexpected(let token, let verb):

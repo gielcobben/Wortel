@@ -94,52 +94,15 @@ final class AgentCommandLineTests: XCTestCase {
         XCTAssertEqual(AgentResumeStore.physicalPath("/no/such/place"), "/no/such/place")
     }
 
-    // MARK: - Moving (`wortel cd`)
-
-    /// After the `cd`, a relative path names somewhere else or nothing, so
-    /// every one the resume carries is made absolute where the agent started.
-    func testRelativePathsBecomeAbsolute() {
-        XCTAssertEqual(
-            AgentCommandLine.absolutized(agent: "claude", argv: "claude --add-dir ../shared --model opus",
-                                         from: "/Users/x/app"),
-            "claude --add-dir /Users/x/shared --model opus")
-        XCTAssertEqual(
-            AgentCommandLine.absolutized(agent: "claude", argv: "claude --settings=./s.json --plugin-dir p",
-                                         from: "/Users/x/app"),
-            "claude --settings=/Users/x/app/s.json --plugin-dir /Users/x/app/p")
-        XCTAssertEqual(
-            AgentCommandLine.absolutized(agent: "claude", argv: "claude --add-dir /abs --add-dir ~/home",
-                                         from: "/Users/x/app"),
-            "claude --add-dir /abs --add-dir ~/home", "already absolute, or the shell's to expand")
-    }
-
-    /// The launcher too: a relative path to the agent, and an assignment
-    /// whose value is a relative path. Other assignments are left alone.
-    func testARelativeLauncherBecomesAbsolute() {
-        XCTAssertEqual(
-            AgentCommandLine.absolutized(agent: "claude", argv: "CLAUDE_CONFIG_DIR=./cfg DEBUG=1 ./bin/claude",
-                                         from: "/Users/x/app"),
-            "CLAUDE_CONFIG_DIR=/Users/x/app/cfg DEBUG=1 /Users/x/app/bin/claude")
-    }
-
-    /// Only what's carried can change: a prompt that looks like a path, or a
-    /// flag that isn't a path, stays as typed (and isn't carried anyway).
-    func testOtherWordsAreLeftAlone() {
-        XCTAssertEqual(
-            AgentCommandLine.absolutized(agent: "claude", argv: "claude --model opus fix ./src", from: "/a"),
-            "claude --model opus fix ./src")
-    }
-
-    /// The resume, then the carried flags; and a flag left out on request,
-    /// with its value.
+    /// The resume, then the carried flags; Codex's go between its `resume`
+    /// and the conversation.
     func testTheResumeCommand() {
         XCTAssertEqual(
             AgentCommandLine.command(agent: "claude", argv: "claude --model opus",
                                      resume: ["--resume", "/Users/x/.claude/projects/-a/\(id).jsonl"]),
             "claude --resume /Users/x/.claude/projects/-a/\(id).jsonl --model opus")
         XCTAssertEqual(
-            AgentCommandLine.command(agent: "codex", argv: "codex -C /a -m o3", resume: ["resume", id],
-                                     excluding: ["--cd", "-C"]),
+            AgentCommandLine.command(agent: "codex", argv: "codex -m o3", resume: ["resume", id]),
             "codex resume -m o3 \(id)")
     }
 }

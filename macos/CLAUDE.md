@@ -249,7 +249,9 @@ each); outside, it collapses onto that row. Dragging a selected row drags the
 selection. **View ▸ Sort Unread First** draws each section with the sessions
 that want you first (louder kinds, then a hollow ring, then most recent). It is
 a view over the stored order, computed in the outline's coordinator and never
-written back, so ⌘1-9, saving and `normalizeOrder` never see it. The selected
+written back, so saving and `normalizeOrder` never see it. ⌘1-9 do: they
+count the rows as drawn (`shortcutIDs`, from the outline's `publishRows`), so
+the number shown while ⌘ is held is the one that selects it. The selected
 row sorts by the key it had when it was last drawn until selection leaves it
 (it was read the moment you selected it), and nothing re-sorts while the
 pointer is on a row or a button is down; rows slide with `moveItem`, not a
@@ -366,7 +368,7 @@ Ownership is a **marker** in the worktree's git folder and
 `~/.wortel/worktrees` and `worktree/` still count, for what was made before.
 Never lock a worktree, ours or anyone's. A repository may put its worktrees
 elsewhere with `git config wortel.worktreePath` (a folder or a `{repo}`/
-`{branch}` template; the folder menu's Worktree Location…, or `includeIf` for a
+`{branch}` template; the New Worktree sheet's Location field, or `includeIf` for a
 whole tree of repositories); one inside the repository goes in `info/exclude`.
 A generated branch is renamed for the session's name while unpushed
 (`GitWorktree.mayRename`); the folder never moves, since agents key history by

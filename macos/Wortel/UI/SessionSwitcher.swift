@@ -672,7 +672,7 @@ private struct TargetRow: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
                     .lineLimit(1)
-                Text([choice.branch, choice.status].compactMap { $0 }.joined(separator: " \u{00b7} "))
+                Text([choice.detail, choice.status].compactMap { $0 }.joined(separator: " \u{00b7} "))
                     .font(.system(size: 11))
                     .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
                     .lineLimit(1)

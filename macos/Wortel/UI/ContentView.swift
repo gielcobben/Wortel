@@ -36,8 +36,8 @@ func chooseDirectory(title: String, startingAt current: String? = nil,
     panel.canChooseFiles = false
     panel.allowsMultipleSelection = false
     panel.canCreateDirectories = canCreate
-    // Start where the folder already points, so "Set Directory…" opens on the
-    // thing it is about to change rather than on wherever the panel was last.
+    // Start where the setting already points, so the sheet's Location opens
+    // on the thing it is about to change rather than wherever the panel was last.
     if let current { panel.directoryURL = URL(fileURLWithPath: current) }
     guard panel.runModal() == .OK, let url = panel.url else { return nil }
     return url.path

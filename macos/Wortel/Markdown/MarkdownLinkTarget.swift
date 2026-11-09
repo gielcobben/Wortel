@@ -91,7 +91,10 @@ enum MarkdownLinkTarget: Equatable {
         guard FileManager.default.fileExists(atPath: resolved.path,
                                              isDirectory: &isDirectory) else { return .none }
         guard isDirectory.boolValue else { return .file(resolved) }
-        return isPackage(resolved) ? .package(resolved) : .folder(resolved)
+        // Judged by what the link points at, not its own name: a symlink
+        // called `docs` to an app is an app, and opening it runs it. The
+        // URL handed back stays the one the link names.
+        return isPackage(resolved.resolvingSymlinksInPath()) ? .package(resolved) : .folder(resolved)
     }
 
     /// Extensions that make a directory a program or a plug-in. Checked by

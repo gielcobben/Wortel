@@ -91,14 +91,6 @@ private struct StandardInputError: Error, CustomStringConvertible {
     var description: String { "--stdin needs text, and standard input wasn't UTF-8" }
 }
 
-/// How long to wait for the app's answer. A `wait` is answered when its
-/// condition holds, so the socket waits as long as the wait does, plus room
-/// for the app to say it timed out; with no timeout, without a bound.
-private func answerDeadline(for command: WortelCommand) -> TimeInterval {
-    guard case .wait(_, _, _, _, _, let timeout) = command else { return WortelCLI.answerTimeout }
-    return timeout > 0 ? timeout + WortelCLI.answerTimeout : 0
-}
-
 /// What goes to stdout for a reply that carries data rather than a bare value.
 /// The app describes; how it reads is decided here, where `--json` is known.
 private func output(of value: String, for invocation: WortelCommandParser.Invocation) -> String? {
@@ -125,7 +117,7 @@ private func json<T: Encodable>(_ value: T) -> String? {
 
 do {
     let response = try WortelCLIClient.send(invocation.command,
-                                            timeout: answerDeadline(for: invocation.command))
+                                            timeout: WortelCLI.answerDeadline(for: invocation.command))
     if let message = response.message, !message.isEmpty {
         FileHandle.standardError.write(Data("\(message)\n".utf8))
     }

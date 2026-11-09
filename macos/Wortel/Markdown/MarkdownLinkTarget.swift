@@ -23,6 +23,9 @@ enum MarkdownLinkTarget: Equatable {
     /// A directory. The one target no preview window can show, so it is the one
     /// that goes to Finder.
     case folder(URL)
+    /// A folder Finder treats as one thing (an app, a bundle, a workflow).
+    /// Shown in Finder, never opened: opening one runs it.
+    case package(URL)
     /// A `#heading` in this same document: the fragment, slugified.
     case heading(String)
     /// Nothing to do. A link to a file that isn't there, or a scheme this app
@@ -87,7 +90,21 @@ enum MarkdownLinkTarget: Equatable {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: resolved.path,
                                              isDirectory: &isDirectory) else { return .none }
-        return isDirectory.boolValue ? .folder(resolved) : .file(resolved)
+        guard isDirectory.boolValue else { return .file(resolved) }
+        return isPackage(resolved) ? .package(resolved) : .folder(resolved)
+    }
+
+    /// Extensions that make a directory a program or a plug-in. Checked by
+    /// name as well as by the system's own answer, so a bundle the system
+    /// has not registered yet is still never opened.
+    static let packageExtensions: Set<String> = [
+        "app", "appex", "bundle", "framework", "kext", "plugin", "prefpane",
+        "qlgenerator", "saver", "service", "workflow", "action", "xpc",
+    ]
+
+    static func isPackage(_ url: URL) -> Bool {
+        if packageExtensions.contains(url.pathExtension.lowercased()) { return true }
+        return (try? url.resourceValues(forKeys: [.isPackageKey]).isPackage) ?? false
     }
 }
 

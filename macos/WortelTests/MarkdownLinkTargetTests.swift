@@ -47,6 +47,23 @@ final class MarkdownLinkTargetTests: XCTestCase {
                        .folder(root.appendingPathComponent("macos").standardizedFileURL))
     }
 
+    /// An app is a folder to the file system and a program to Finder: a link
+    /// to one must never be something a click can run.
+    func testAnApplicationBundleIsAPackageNotAFolder() throws {
+        let app = root.appendingPathComponent("Tool.app/Contents/MacOS")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        XCTAssertEqual(target("Tool.app"),
+                       .package(root.appendingPathComponent("Tool.app").standardizedFileURL))
+    }
+
+    func testOtherBundleKindsArePackagesToo() throws {
+        for name in ["Pane.prefPane", "Flow.workflow", "Thing.bundle"] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(name),
+                                                    withIntermediateDirectories: true)
+            guard case .package = target(name) else { return XCTFail("\(name) should be a package") }
+        }
+    }
+
     /// A link to a file that isn't there is *nothing*, not an error to show the
     /// reader. This is the whole point of the type.
     func testMissingFileIsNothing() {

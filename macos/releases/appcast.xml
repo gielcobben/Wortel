@@ -3,6 +3,38 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.46.1</title>
+            <pubDate>Mon, 09 Nov 2026 09:02:34 -0500</pubDate>
+            <sparkle:version>2026.46.1</sparkle:version>
+            <sparkle:shortVersionString>2026.46.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>No dot for a Codex turn that never happened</h1>
+<p class="date">Wortel 2026.46.1 &middot; 2026-11-09</p>
+<p><strong>Idle Codex sessions stay quiet.</strong> After a while, every Codex session in the sidebar could get a dot and a notification at the same moment, though none of them had done anything. Codex writes a short recap under a conversation once it has been in the background for half an hour, and to Wortel that looked like a short turn. Codex also spins its title while it starts up, which looked the same. Claude Code sessions were fixed for this in 2026.44.4. Codex sessions now get the same check: a real turn is always written to the conversation Codex keeps on disk, so when nothing was written, Wortel raises no dot.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.46.1.zip" length="23366762" type="application/octet-stream" sparkle:edSignature="im/091iLcOQvhc8k18ERFEI8GNl5YU84YyBjvWwbJO6Y9drCFySqpwED02IQJ4ZCySiu7RqXUclHLVKxnSmMDg=="/>
+        </item>
+        <item>
             <title>2026.45.1</title>
             <pubDate>Tue, 03 Nov 2026 09:52:08 -0500</pubDate>
             <sparkle:version>2026.45.1</sparkle:version>
@@ -72,39 +104,6 @@
 <p><strong>Idle sessions stay quiet after a relaunch.</strong> Right after a relaunch, anything that repainted an idle Claude session for a couple of seconds could pass for a short turn, and several sessions could light up in the same second. A real turn always writes to the conversation, so when Wortel is going by the screen alone it now checks there first, and raises no dot if nothing was written. A session is also no longer named from a turn that didn’t happen.</p>
 <p><strong>Change Directory no longer waits forever after a compaction.</strong> A move waiting for Claude to finish could take the compaction’s summary for a prompt still owed an answer, and never go ahead. It now looks past the summary.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.44.4.zip" length="22772889" type="application/octet-stream" sparkle:edSignature="le63iCYO2tX7IxdOq8ATWY1d46vaSqmlK7SsQPRTGT11djRBGbgtSY56E7dG+efMN7HiQ7NWpiX9TA2tywuICA=="/>
-        </item>
-        <item>
-            <title>2026.44.3</title>
-            <pubDate>Thu, 29 Oct 2026 11:22:25 -0400</pubDate>
-            <sparkle:version>2026.44.3</sparkle:version>
-            <sparkle:shortVersionString>2026.44.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>A new session that starts with a command</h1>
-<p class="date">Wortel 2026.44.3 &middot; 2026-10-29</p>
-<p><strong><code>wortel new</code> can run a command.</strong> Everything after <code>--</code> is typed into the new session’s shell as its first line, so <code>wortel new --cwd ~/code/x -- claude --resume &#x3C;id></code> opens a session in that folder with that conversation picked back up. It works with <code>--branch</code>, <code>--pr</code> and <code>--worktree</code> too, and starts as soon as the worktree is ready. Because the command is typed rather than run in place of the shell, the sidebar tracks an agent started this way like one you started yourself, and when it exits you’re at a prompt. The new session’s id still goes to stdout. A command that can’t be typed safely (longer than 1 KB, or with a tab or another control character in it) is refused with a reason rather than half run.</p>
-<p><strong>File tabs come back where you were reading.</strong> Switching away from a previewed file and back used to start it at the top again. It now opens exactly where you left it, and a file that changes while you’re reading no longer pulls you back to where you started.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.44.3.zip" length="22769628" type="application/octet-stream" sparkle:edSignature="/32tPrVW2vfSJX3f7/IXQFntPo+FrmtRNIsTw0jgSnfqTXdzUeBCtHILtTRAdJ87bWYwpHpcu+5dbXFAeiDXBw=="/>
         </item>
     </channel>
 </rss>

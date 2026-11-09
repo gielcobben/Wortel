@@ -84,21 +84,26 @@ enum BrowserAddress {
 /// What a browser tab does with a navigation to something that isn't a page
 /// (`mailto:`, `vscode://`): a scheme like that is a registered application,
 /// and a page that could open one unasked could open any of them on load.
+///
+/// Always a question, clicked or not: a script calling `.click()` on a link
+/// is a "link activated" to WebKit just as a real click is, so a click can't
+/// be trusted to mean the user. And judged by the frame it came *from*: a
+/// link in an embedded frame can target the page itself (`target="_top"`).
 enum BrowserExternalLink: Equatable {
     /// A page: let the web view load it.
     case load
-    /// A link the user clicked in the page itself: hand it to its app.
-    case open
-    /// The page tried by itself (a redirect, a script): ask first.
+    /// Another app's link from the page itself: ask first.
     case ask
-    /// A frame inside the page: never.
+    /// Another app's link from a frame inside the page: never.
     case refuse
 
     static let pageSchemes: Set<String> = ["http", "https", "about", "data", "blob", "file"]
 
-    static func decide(scheme: String?, clicked: Bool, inMainFrame: Bool) -> BrowserExternalLink {
+    /// `fromMainFrame`: the navigation started in the page itself (or in the
+    /// app, which has no frame). `toMainFrame`: it would replace the page, or
+    /// open a new window (no target frame).
+    static func decide(scheme: String?, fromMainFrame: Bool, toMainFrame: Bool) -> BrowserExternalLink {
         guard let scheme = scheme?.lowercased(), !pageSchemes.contains(scheme) else { return .load }
-        guard inMainFrame else { return .refuse }
-        return clicked ? .open : .ask
+        return fromMainFrame && toMainFrame ? .ask : .refuse
     }
 }

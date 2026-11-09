@@ -82,31 +82,40 @@ final class BrowserAddressTests: XCTestCase {
 }
 
 final class BrowserExternalLinkTests: XCTestCase {
+    /// A page must never be held up by the app question, wherever it comes from.
     func testPagesAlwaysLoad() {
         for scheme in ["http", "https", "about", "file", nil] as [String?] {
-            for clicked in [true, false] {
-                for main in [true, false] {
-                    XCTAssertEqual(BrowserExternalLink.decide(scheme: scheme, clicked: clicked, inMainFrame: main), .load)
+            for from in [true, false] {
+                for to in [true, false] {
+                    XCTAssertEqual(BrowserExternalLink.decide(scheme: scheme, fromMainFrame: from, toMainFrame: to), .load)
                 }
             }
         }
     }
 
-    func testAClickedLinkInThePageOpensItsApp() {
-        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", clicked: true, inMainFrame: true), .open)
+    /// A page opening another app always asks, so a script-made click can't skip the question.
+    func testThePageOpeningAnAppAsksFirst() {
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", fromMainFrame: true, toMainFrame: true), .ask)
     }
 
-    func testThePageDoingItByItselfAsksFirst() {
-        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", clicked: false, inMainFrame: true), .ask)
+    /// An embedded frame with `target="_top"` must not pass for the page itself.
+    func testAFrameTargetingThePageIsRefused() {
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", fromMainFrame: false, toMainFrame: true), .refuse)
     }
 
-    func testAFrameInsideThePageNeverOpensAnApp() {
-        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", clicked: true, inMainFrame: false), .refuse)
-        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", clicked: false, inMainFrame: false), .refuse)
+    /// The page can't hand another app's link to a frame inside it either.
+    func testThePageTargetingAFrameIsRefused() {
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", fromMainFrame: true, toMainFrame: false), .refuse)
     }
 
+    /// A frame inside the page never opens an app, even within itself.
+    func testAFrameInsideItselfIsRefused() {
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", fromMainFrame: false, toMainFrame: false), .refuse)
+    }
+
+    /// Upper-casing a scheme must not slip past the check.
     func testTheSchemeIsCaseInsensitive() {
-        XCTAssertEqual(BrowserExternalLink.decide(scheme: "MAILTO", clicked: true, inMainFrame: true), .open)
-        XCTAssertEqual(BrowserExternalLink.decide(scheme: "HTTPS", clicked: false, inMainFrame: false), .load)
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "MAILTO", fromMainFrame: true, toMainFrame: true), .ask)
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "HTTPS", fromMainFrame: false, toMainFrame: false), .load)
     }
 }

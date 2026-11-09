@@ -73,6 +73,37 @@ enum MainMenu {
 
     private static var keyMonitor: Any?
 
+    /// The Window menu item macOS adds for a 🌐 shortcut, if `event` is one:
+    /// Fill (🌐⌃F), Center (🌐⌃C), Return to Previous Size (🌐⌃R).
+    /// `NSMenu.performKeyEquivalent` fills the Window menu with them but
+    /// doesn't match them, and a view that takes its own keys (the terminal)
+    /// then gets a plain ⌃C. Measured with a CGEvent-backed 🌐⌃C: the menu
+    /// lookup returns false, and the item found here, sent its action,
+    /// centres the window.
+    ///
+    /// Only for a key that isn't a function key itself. Arrows, F-keys and
+    /// Home/End carry `.function` whether or not 🌐 is held, so for them the
+    /// flag can't tell 🌐⌃← from ⌃←, and ⌃← belongs to the shell.
+    static func globeWindowItem(for event: NSEvent) -> NSMenuItem? {
+        let relevant: NSEvent.ModifierFlags = [.command, .control, .option, .shift, .function]
+        let flags = event.modifierFlags.intersection(relevant)
+        guard flags.contains(.function), !event.isFunctionKey,
+              let key = event.charactersIgnoringModifiers?.lowercased(),
+              let menu = NSApp.windowsMenu else { return nil }
+        func find(in menu: NSMenu) -> NSMenuItem? {
+            for item in menu.items {
+                if let submenu = item.submenu, let found = find(in: submenu) { return found }
+                guard item.action != nil, item.keyEquivalent.lowercased() == key,
+                      item.keyEquivalentModifierMask.intersection(relevant) == flags else { continue }
+                // Validated only once it's the one: not the whole menu per key.
+                menu.update()
+                return item.isEnabled ? item : nil
+            }
+            return nil
+        }
+        return find(in: menu)
+    }
+
     /// Keep Select All's shortcut right for wherever the keyboard is, just
     /// before each keypress is matched against the menu.
     static func installKeyMonitor() {
@@ -81,6 +112,18 @@ enum MainMenu {
             if event.modifierFlags.contains(.command) {
                 syncSelectAll()
                 syncReload()
+            }
+            // macOS's own Window items (Center is 🌐⌃C), here rather than in
+            // each view that takes keys, so it works wherever the focus is.
+            // The menu's own lookup goes first: it's what fills the Window
+            // menu with them, and anything of ours on a 🌐 chord is its anyway.
+            if event.modifierFlags.contains(.function), !event.isFunctionKey,
+               NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
+                return nil
+            }
+            if let item = globeWindowItem(for: event), let action = item.action {
+                NSApp.sendAction(action, to: item.target, from: item)
+                return nil
             }
             return event
         }
@@ -642,4 +685,14 @@ final class MenuFiller: NSObject, NSMenuDelegate {
     private let fill: (NSMenu) -> Void
     init(_ fill: @escaping (NSMenu) -> Void) { self.fill = fill }
     func menuNeedsUpdate(_ menu: NSMenu) { fill(menu) }
+}
+
+private extension NSEvent {
+    /// An arrow, F-key, Home/End and the like: keys that carry `.function`
+    /// on their own, 🌐 held or not. Anything else that does, has 🌐 held.
+    var isFunctionKey: Bool {
+        guard let scalars = charactersIgnoringModifiers?.unicodeScalars, scalars.count == 1,
+              let scalar = scalars.first else { return true }
+        return (0xF700...0xF8FF).contains(scalar.value)
+    }
 }

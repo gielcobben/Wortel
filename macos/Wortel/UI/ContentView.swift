@@ -367,7 +367,7 @@ struct SidebarRowContent: View {
             isSelected: manager.selectedID == session.id,
             isEditing: manager.editingID == session.id,
             isInWorktree: session.isInWorktree,
-            isHovered: manager.hoveredRowID == session.id,
+            isHovered: session.isSidebarRowHovered,
             waiting: session.attention.map { kind in
                 let note = manager.attentionNote(for: session)
                 return SessionRow.Waiting(kind: kind, message: note.message, since: note.since)
@@ -388,7 +388,7 @@ struct SidebarRowContent: View {
             // there is one, and otherwise only the pill's own edge. Room for
             // what's actually there, so a name isn't cut short for a dot or
             // buttons that aren't.
-            .padding(.trailing, manager.hoveredRowID == session.id ? 52 : (showsStatus ? 34 : 12))
+            .padding(.trailing, session.isSidebarRowHovered ? 52 : (showsStatus ? 34 : 12))
             // Fill the row height and center vertically — otherwise the short
             // name+path content sits at the top of the (taller) row, leaving
             // dead space below each session that reads as loose spacing.

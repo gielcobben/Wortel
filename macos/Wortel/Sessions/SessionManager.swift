@@ -2408,6 +2408,12 @@ final class SessionManager {
 
     func close(_ session: Session) {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
+        // Closed while git was still making its worktree: whoever is waiting
+        // on it (the CLI) is told now. Removed before it's called, so
+        // `finishWorktreeSession` finding nothing later is the normal case.
+        if let completion = worktreeCompletions.removeValue(forKey: session.id) {
+            completion(.failure(Failure(message: "The session was closed before its worktree was ready.")), [])
+        }
         // On the record because its shell and agent end with it, and after
         // 2026-10-10 two sessions were gone and nothing could say how.
         KeeperLog.log.notice("""

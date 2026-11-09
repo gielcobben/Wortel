@@ -155,6 +155,32 @@ enum WortelCLI {
     /// retries send its prompt twice. Derived from it rather than a second
     /// number, so the two can't drift apart.
     static let sendPatience: TimeInterval = answerTimeout / 2
+
+    /// How long the CLI waits for a `new` that makes a worktree first: two
+    /// network git commands at their own limit (300 s each, a pull request's
+    /// `ls-remote` and `fetch`) and room for the checkout. Past
+    /// `answerTimeout` the CLI used to report failure while the app went on
+    /// to make the worktree, and a script that retried made two.
+    static let worktreeAnswerTimeout: TimeInterval = 660
+
+    /// How long to wait for the app's answer to `command`. A `wait` is
+    /// answered when its condition holds, so the socket waits as long as the
+    /// wait does, plus room for the app to say it timed out; with no timeout,
+    /// without a bound.
+    static func answerDeadline(for command: WortelCommand) -> TimeInterval {
+        switch command {
+        case .wait(_, _, _, _, _, let timeout):
+            return timeout > 0 ? timeout + answerTimeout : 0
+        case .newSession(_, _, let branch, _):
+            return branch == nil ? answerTimeout : worktreeAnswerTimeout
+        case .newWorktree, .newFromPullRequest:
+            return worktreeAnswerTimeout
+        case .newRunning(let inner, _):
+            return answerDeadline(for: inner)
+        default:
+            return answerTimeout
+        }
+    }
     /// The exit status of a `wortel wait` that ran out of time: the one GNU
     /// `timeout` uses, so a script that already knows that one reads it right.
     static let waitTimedOutStatus: Int32 = 124

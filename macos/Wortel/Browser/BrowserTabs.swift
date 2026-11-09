@@ -367,17 +367,42 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         }
     }
 
-    /// What isn't a page goes where the Mac sends it: `mailto:`, `vscode://`
-    /// and the like to their apps.
+    /// What isn't a page is another app's link (`mailto:`, `vscode://`). One the
+    /// user clicked in the page goes to its app, one the page followed by itself
+    /// asks first, and one from a frame inside the page goes nowhere.
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-        if let url = action.request.url, let scheme = url.scheme?.lowercased(),
-           !["http", "https", "about", "data", "blob", "file"].contains(scheme) {
-            NSWorkspace.shared.open(url)
+        let url = action.request.url
+        // A new-window navigation has no target frame; it belongs to the page.
+        let inMainFrame = action.targetFrame?.isMainFrame ?? true
+        switch BrowserExternalLink.decide(scheme: url?.scheme,
+                                          clicked: action.navigationType == .linkActivated,
+                                          inMainFrame: inMainFrame) {
+        case .load:
+            decisionHandler(.allow)
+        case .open:
+            if let url { NSWorkspace.shared.open(url) }
             decisionHandler(.cancel)
-            return
+        case .ask:
+            decisionHandler(.cancel)
+            if let url { askToOpen(url, over: webView.window) }
+        case .refuse:
+            decisionHandler(.cancel)
         }
-        decisionHandler(.allow)
+    }
+
+    /// A page that wants another app says which, and waits for a yes.
+    private func askToOpen(_ url: URL, over window: NSWindow?) {
+        guard let window, let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return }
+        let name = FileManager.default.displayName(atPath: app.path)
+        let alert = NSAlert()
+        alert.messageText = "Open \u{201c}\(name)\u{201d}?"
+        alert.informativeText = "This page wants to open a link in \(name)."
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { NSWorkspace.shared.open(url) }
+        }
     }
 
     /// A response the tab can't show (a download) goes to your browser.

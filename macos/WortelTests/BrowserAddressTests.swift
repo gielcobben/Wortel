@@ -80,3 +80,33 @@ final class BrowserAddressTests: XCTestCase {
         XCTAssertEqual(BrowserAddress.short(URL(string: "https://wortel.sh")!), "wortel.sh")
     }
 }
+
+final class BrowserExternalLinkTests: XCTestCase {
+    func testPagesAlwaysLoad() {
+        for scheme in ["http", "https", "about", "file", nil] as [String?] {
+            for clicked in [true, false] {
+                for main in [true, false] {
+                    XCTAssertEqual(BrowserExternalLink.decide(scheme: scheme, clicked: clicked, inMainFrame: main), .load)
+                }
+            }
+        }
+    }
+
+    func testAClickedLinkInThePageOpensItsApp() {
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", clicked: true, inMainFrame: true), .open)
+    }
+
+    func testThePageDoingItByItselfAsksFirst() {
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", clicked: false, inMainFrame: true), .ask)
+    }
+
+    func testAFrameInsideThePageNeverOpensAnApp() {
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", clicked: true, inMainFrame: false), .refuse)
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "vscode", clicked: false, inMainFrame: false), .refuse)
+    }
+
+    func testTheSchemeIsCaseInsensitive() {
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "MAILTO", clicked: true, inMainFrame: true), .open)
+        XCTAssertEqual(BrowserExternalLink.decide(scheme: "HTTPS", clicked: false, inMainFrame: false), .load)
+    }
+}

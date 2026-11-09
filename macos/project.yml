@@ -379,19 +379,13 @@ targets:
       # three ways it could hurt: a nested repository, a file overwritten, a
       # dependency folder cloned whole.
       - path: Wortel/Git/WorktreeInclude.swift
-      # Fork Session's git half: everything uncommitted, read without touching
-      # the source and put back byte for byte. Pinned against git on both
-      # sides, because a fork that quietly drops a staged hunk or turns a
-      # binary into text looks like it worked.
-      - path: Wortel/Git/WorktreeFork.swift
       # What a pull request typed into the branch field is: `#123`, a bare
       # number only when no branch has it, a GitHub or GitLab URL, and which
       # remote a URL means. A misread opens the wrong code, or a branch
       # nobody asked for.
       - path: Wortel/Git/PullRequestRef.swift
-      # Open Branch's one field: what's listed for what's typed, and what
-      # Return does. A wrong row checks out the wrong branch, or makes a
-      # second session where one already was.
+      # What ⌘P lists besides the open sessions (archived ones, worktrees
+      # nobody's in), and what Return does there.
       - path: Wortel/Git/OpenTarget.swift
       # What the git panel calls a checkout: the session in it, else its
       # branch, else its folder. A wrong pick doesn't throw, it names the
@@ -520,10 +514,6 @@ targets:
       # launcher and the flags that set how it runs. A slip here drops a
       # permission mode or turns a flag's value into a prompt. Foundation only.
       - path: Wortel/Sessions/AgentCommandLine.swift
-      # Moving a session to another directory: whether it can, when, what's
-      # typed and what the caller is told. A wrong row in that table quits an
-      # agent mid-question, or types `cd` into vim. Foundation only.
-      - path: Wortel/Sessions/SessionMove.swift
       # The auto-naming gate. Pure, and every one of its failure modes is
       # timing-shaped and invisible: too eager and the sidebar relabels itself
       # while you read it, too shy and a session keeps a name that stopped being

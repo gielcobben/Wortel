@@ -44,13 +44,6 @@ final class SessionSwitcher {
         if isShown { close() } else { show(over: window, commandsOnly: commandsOnly) }
     }
 
-    /// ⇧⌘O: Open Branch (`OpenTarget`) for the repository at `directory`.
-    func showBranches(over window: NSWindow, from directory: String?) {
-        let model = OpenBranchModel(inputs: manager.openBranchInputs(from: directory), from: directory)
-        show(over: window, branches: model)
-        manager.loadBranches(into: { [weak model] in model?.inputs = $0 }, from: directory)
-    }
-
     /// ⌘Y: the prompts typed to agents, this project's (the one `directory`
     /// is in) first. The history is read off the main thread as it opens.
     func showPrompts(over window: NSWindow, from directory: String?) {
@@ -58,12 +51,14 @@ final class SessionSwitcher {
     }
 
     /// `commandsOnly`: ⇧⌘P, the menus' commands and no sessions.
-    func show(over window: NSWindow, commandsOnly: Bool = false, branches: OpenBranchModel? = nil,
-              prompts: PromptHistoryModel? = nil) {
+    func show(over window: NSWindow, commandsOnly: Bool = false, prompts: PromptHistoryModel? = nil) {
         close()
         // Read now, while the window is key: validated for it, not the panel.
         // Not at all for a mode that lists no commands.
-        let commands = branches == nil && prompts == nil ? PaletteCommands.all() : []
+        let commands = prompts == nil ? PaletteCommands.all() : []
+        // What's put away, found by typing (`OpenTarget`): read now, from
+        // what the manager already knows, no git.
+        let targets = commandsOnly || prompts != nil ? OpenTarget.Inputs() : manager.switcherTargets()
         let panel = SwitcherPanel(
             contentRect: NSRect(x: 0, y: 0, width: SwitcherView.width, height: SwitcherView.fieldHeight),
             // Borderless and nothing else: with `.fullSizeContentView` the
@@ -90,18 +85,12 @@ final class SessionSwitcher {
             manager: manager,
             commands: commands,
             commandsOnly: commandsOnly,
-            branches: branches,
+            targets: targets,
             prompts: prompts,
-            open: { [weak self] action, alternate in
+            open: { [weak self] action in
                 self?.report(.session)
                 self?.close()
-                guard let self else { return }
-                // ⌥↩ on Create: the same branch, from a base you pick.
-                if alternate, case .create(let branch) = action {
-                    newSessionOnBranch(self.manager, name: branch, from: branches?.from)
-                } else {
-                    self.manager.perform(action, from: branches?.from)
-                }
+                self?.manager.perform(action)
             },
             pick: { [weak self] id in
                 self?.report(.session)
@@ -146,7 +135,7 @@ final class SessionSwitcher {
         // change again: the window stayed at the field's height, the card cut
         // off inside it.
         self.panel = panel
-        openMode = branches != nil ? .branches : prompts != nil ? .prompts : commandsOnly ? .commands : .sessions
+        openMode = prompts != nil ? .prompts : commandsOnly ? .commands : .sessions
         isShowingPrompts = prompts != nil
         window.addChildWindow(panel, ordered: .above)
 
@@ -205,18 +194,6 @@ final class SessionSwitcher {
         image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
         image.resizingMode = .stretch
         return image
-    }
-}
-
-/// What Open Branch lists, filled in as the branches arrive.
-@Observable
-@MainActor
-final class OpenBranchModel {
-    var inputs: OpenTarget.Inputs
-    let from: String?
-    init(inputs: OpenTarget.Inputs, from: String?) {
-        self.inputs = inputs
-        self.from = from
     }
 }
 
@@ -320,12 +297,13 @@ private struct SwitcherView: View {
     let manager: SessionManager
     let commands: [PaletteCommand]
     let commandsOnly: Bool
-    /// Open Branch: its rows instead of sessions and commands.
-    let branches: OpenBranchModel?
+    /// Archived sessions and worktrees nobody's in, listed under the
+    /// sessions once something is typed.
+    let targets: OpenTarget.Inputs
     /// The prompt history: its rows instead of sessions and commands.
     let prompts: PromptHistoryModel?
-    /// A row of Open Branch chosen, and whether with ⌥.
-    let open: (OpenTarget.Action, Bool) -> Void
+    /// An archived session or a free worktree chosen.
+    let open: (OpenTarget.Action) -> Void
     let pick: (UUID) -> Void
     let insertPrompt: (String) -> Void
     let run: (PaletteCommand) -> Void
@@ -334,9 +312,9 @@ private struct SwitcherView: View {
 
     @State private var query = ""
     @State private var highlighted = 0
-    /// The highlighted row by id, so rows arriving above it (Open Branch's
-    /// branches, then the remote ones after the fetch, seconds later) leave
-    /// it on the row you chose: Return does what it said when you looked.
+    /// The highlighted row by id, so rows arriving above it (the prompt
+    /// history, read after the panel opens) leave it on the row you chose:
+    /// Return does what it said when you looked.
     @State private var highlightedID: String?
 
     enum Row: Identifiable {
@@ -355,8 +333,8 @@ private struct SwitcherView: View {
     }
 
     private var targetRows: [Row] {
-        guard let branches else { return [] }
-        return OpenTarget.choices(for: query, in: branches.inputs).map(Row.target)
+        guard !commandsOnly, prompts == nil else { return [] }
+        return OpenTarget.choices(for: query, in: targets).map(Row.target)
     }
 
     private var promptRows: [Row] {
@@ -364,7 +342,7 @@ private struct SwitcherView: View {
     }
 
     private var sessionRows: [Row] {
-        guard !commandsOnly, branches == nil, prompts == nil else { return [] }
+        guard !commandsOnly, prompts == nil else { return [] }
         let candidates = manager.sessions.map { session in
             SessionSwitcherMatch.Candidate(
                 id: session.id, name: session.leafName, folder: session.folderPath,
@@ -375,7 +353,7 @@ private struct SwitcherView: View {
     }
 
     /// Commands ranked by the same rules as sessions: the title as the name,
-    /// its menus as the folder ("session move" finds Session › Move To).
+    /// its menus as the folder ("tab move" finds Tab › Move Tab).
     private var commandRows: [Row] {
         let byID = Dictionary(uniqueKeysWithValues: commands.map { ($0.id, $0) })
         let candidates = commands.map {
@@ -387,19 +365,19 @@ private struct SwitcherView: View {
     }
 
     var body: some View {
-        let targets = targetRows + promptRows
+        let prompts = promptRows
         let sessions = sessionRows
+        let targets = targetRows
         let commands = commandRows
-        let rows = targets + sessions + commands
+        let rows = prompts + sessions + targets + commands
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: branches != nil ? "arrow.triangle.branch" : prompts != nil ? "clock.arrow.circlepath"
+                Image(systemName: self.prompts != nil ? "clock.arrow.circlepath"
                         : commandsOnly ? "command" : "magnifyingglass")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.secondary)
                 PaletteField(text: $query,
-                             placeholder: branches != nil ? "Go to a branch, a worktree or a pull request"
-                                : prompts != nil ? "Find a prompt you typed to an agent"
+                             placeholder: self.prompts != nil ? "Find a prompt you typed to an agent"
                                 : commandsOnly ? "Run a command" : "Go to a session or run a command",
                              submit: { activate(rows) },
                              cancel: cancel,
@@ -414,20 +392,24 @@ private struct SwitcherView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 0) {
-                            ForEach(targetGroups(targets), id: \.offset) { group in
+                            ForEach(groups(prompts, from: 0), id: \.offset) { group in
                                 section(group.title, rows: group.rows, offset: group.offset)
                             }
                             section(sessions.isEmpty ? nil : (query.isEmpty ? "Recent" : "Sessions"),
-                                    rows: sessions, offset: targets.count)
+                                    rows: sessions, offset: prompts.count)
+                            ForEach(groups(targets, from: prompts.count + sessions.count), id: \.offset) { group in
+                                section(group.title, rows: group.rows, offset: group.offset)
+                            }
                             section(commands.isEmpty || commandsOnly ? nil : "Commands",
-                                    rows: commands, offset: targets.count + sessions.count)
+                                    rows: commands, offset: prompts.count + sessions.count + targets.count)
                         }
                         .padding(Self.listPadding)
                     }
                     .scrollIndicators(.never)
                     .frame(height: listHeight(sessions: sessions.count, commands: commands.count,
-                                              targetHeaders: targetGroups(targets).filter { $0.title != nil }.count,
-                                              targets: targets.count))
+                                              groupHeaders: (groups(prompts, from: 0) + groups(targets, from: 0))
+                                                  .filter { $0.title != nil }.count,
+                                              grouped: prompts.count + targets.count))
                     .onChange(of: highlighted) { _, index in
                         highlightedID = rows[safe: index]?.id
                         withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(rows[safe: index]?.id) }
@@ -438,16 +420,13 @@ private struct SwitcherView: View {
                         }
                     }
                 }
-                SwitcherFooter(action: prompts != nil ? "to type it in" : "to open")
+                SwitcherFooter(action: self.prompts != nil ? "to type it in" : "to open")
                     .frame(height: Self.footerHeight)
-            } else if !query.isEmpty || branches != nil || (prompts.map { $0.isLoading || $0.isEmpty } ?? false) {
+            } else if !query.isEmpty || (self.prompts.map { $0.isLoading || $0.isEmpty } ?? false) {
                 Divider().opacity(0.6)
-                Text(prompts?.isLoading == true ? "Reading your agents\u{2019} history\u{2026}"
-                     : prompts?.isEmpty == true
+                Text(self.prompts?.isLoading == true ? "Reading your agents\u{2019} history\u{2026}"
+                     : self.prompts?.isEmpty == true
                         ? "No prompts yet. What you type to Claude Code, Codex or Pi turns up here."
-                     : query.isEmpty ? "No worktrees yet. Type a branch, or a pull request\u{2019}s number."
-                     : branches?.inputs.hasRepository == false
-                        ? "Not in a repository: nothing here has branches."
                         : "Nothing matches \u{201c}\(query)\u{201d}")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
@@ -466,7 +445,7 @@ private struct SwitcherView: View {
         .onChange(of: query) { _, query in
             highlighted = 0
             highlightedID = nil
-            prompts?.search(query)
+            self.prompts?.search(query)
         }
     }
 
@@ -506,10 +485,11 @@ private struct SwitcherView: View {
         }
     }
 
-    /// Open Branch's rows in their groups, each with where it starts; the
-    /// prompt history's in two, this project's and the rest (untitled when
-    /// nothing is from here: then it's just the one list).
-    private func targetGroups(_ rows: [Row]) -> [(title: String?, rows: [Row], offset: Int)] {
+    /// Rows in their titled groups, each with where it starts in the one
+    /// list (`offset` past `start`): what's put away, as Archived and Not
+    /// open; the prompt history in two, this project's and the rest
+    /// (untitled when nothing is from here: then it's just the one list).
+    private func groups(_ rows: [Row], from start: Int) -> [(title: String?, rows: [Row], offset: Int)] {
         var groups: [(title: String?, rows: [Row], offset: Int)] = []
         var started = false
         var last: String?
@@ -524,7 +504,7 @@ private struct SwitcherView: View {
             default: continue
             }
             if !started || title != last {
-                groups.append((title, [], index))
+                groups.append((title, [], start + index))
                 started = true
                 last = title
             }
@@ -534,9 +514,9 @@ private struct SwitcherView: View {
     }
 
     /// Room for up to eight rows, and the section titles among them.
-    private func listHeight(sessions: Int, commands: Int, targetHeaders: Int = 0, targets: Int = 0) -> CGFloat {
-        let headers = (sessions > 0 ? 1 : 0) + (commands > 0 && !commandsOnly ? 1 : 0) + targetHeaders
-        let rows = min(sessions + commands + targets, Self.visibleRows)
+    private func listHeight(sessions: Int, commands: Int, groupHeaders: Int = 0, grouped: Int = 0) -> CGFloat {
+        let headers = (sessions > 0 ? 1 : 0) + (commands > 0 && !commandsOnly ? 1 : 0) + groupHeaders
+        let rows = min(sessions + commands + grouped, Self.visibleRows)
         return CGFloat(rows) * Self.rowHeight + CGFloat(headers) * (Self.headerHeight + 2) + Self.listPadding * 2
     }
 
@@ -549,8 +529,7 @@ private struct SwitcherView: View {
         switch row {
         case .session(let candidate): pick(candidate.id)
         case .command(let command): run(command)
-        case .target(let choice):
-            open(choice.action, NSApp.currentEvent?.modifierFlags.contains(.option) == true)
+        case .target(let choice): open(choice.action)
         case .prompt(let match): insertPrompt(match.entry.text)
         }
     }
@@ -672,7 +651,8 @@ private struct SwitcherRow: View {
     }
 }
 
-/// One row of Open Branch: what it is, and what Return does.
+/// An archived session or a free worktree in ⌘P: what it is, and what
+/// Return does.
 private struct TargetRow: View {
     let choice: OpenTarget.Choice
     let isHighlighted: Bool
@@ -699,12 +679,6 @@ private struct TargetRow: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 8)
-            if case .create = choice.action, isHighlighted {
-                Text("\u{2325}\u{21a9} from\u{2026}")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .help("Option-Return: pick the branch it starts from")
-            }
         }
         .padding(.horizontal, 10)
         .frame(height: 44)
@@ -715,12 +689,8 @@ private struct TargetRow: View {
 
     private var glyph: String {
         switch choice.action {
-        case .goTo: return "terminal"
         case .restore: return "archivebox"
-        case .openWorktree, .checkOut: return "arrow.triangle.branch"
-        case .mainCheckout: return "folder"
-        case .pullRequest: return "arrow.triangle.pull"
-        case .create: return "plus"
+        case .openWorktree: return "arrow.triangle.branch"
         }
     }
 }

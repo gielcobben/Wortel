@@ -13,7 +13,7 @@ struct WorktreeUsage: Sendable {
         let name: String
         let paths: [String]
         let shellPIDs: [pid_t]
-        /// Closed and waiting to be restored from Open Branch: no shell, but
+        /// Closed and waiting to be restored from ⌘P: no shell, but
         /// restoring it starts one in its worktree, on its branch.
         var isArchived = false
     }

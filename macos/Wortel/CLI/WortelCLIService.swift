@@ -113,38 +113,6 @@ final class WortelCLIService {
                                 value: colour?.rawValue ?? SessionColour.none)
             })
 
-        case .fork(let session, let name, let branch):
-            // The answer comes once the worktree is ready, as for
-            // `new --branch`; only a refusal on the spot is replied here.
-            var started = false
-            let refusal = withSession(session) { source in
-                started = manager.fork(source, name: name, branch: branch, completion: { [weak self] result, warnings in
-                    switch result {
-                    case .success(let forked):
-                        self?.orderFront()
-                        let notes = warnings.isEmpty ? "" : "\n" + warnings.joined(separator: "\n")
-                        reply(.success("Forked into \u{201c}\(forked.name)\u{201d}.\(notes)",
-                                       value: forked.id.uuidString))
-                    case .failure(let failure):
-                        reply(.failure(failure.message))
-                    }
-                }) != nil
-                return .failure("\u{201c}\(source.name)\u{201d} can't be forked until its worktree is ready.")
-            }
-            if !started { reply(refusal) }
-
-        case .changeDirectory(let session, let path):
-            // Answered at once even when the move waits for an agent's turn to
-            // end: that agent is the one waiting on this reply, and its turn
-            // can't end until it has it.
-            reply(withSession(session) { target in
-                // The id a side terminal's shell carries is its tab's, so a
-                // different id from the session's means one of those asked.
-                let fromSide = session.flatMap(UUID.init(uuidString:)).map { $0 != target.id } ?? false
-                return manager.changeDirectory(target, to: path, callerPID: caller.pid,
-                                               fromSideTerminal: fromSide, via: .cli)
-            })
-
         case .notify(let session, let title, let body):
             reply(withSession(session) { session in
                 manager.notify(session, title: title, body: body ?? "")
@@ -237,7 +205,7 @@ final class WortelCLIService {
 
         // Listed rather than `default`, so a fourth kind of `new` is a
         // compile error here instead of this refusal.
-        case .open, .rename, .notify, .mark, .fork, .changeDirectory, .version, .newRunning,
+        case .open, .rename, .notify, .mark, .version, .newRunning,
              .list, .read, .send, .wait:
             reply(.failure("Only a new session can be given a command to run."))
         }
@@ -473,8 +441,8 @@ final class WortelCLIService {
     /// (`ghostty_surface_text`, bracketed when the program asked for that, so
     /// a multi-line prompt arrives in an agent's input as one input), then
     /// Return as a separate key. Nothing is added in front, nothing selects
-    /// the session or takes focus, and the input taps (`PromptTap`, a move's
-    /// `DraftTap`) see it as they see typing, because it reaches the pty by
+    /// the session or takes focus, and the input tap (`PromptTap`) sees it
+    /// as it sees typing, because it reaches the pty by
     /// the same road. It is not the user's input, though (`scripted`): it
     /// doesn't answer an attention raised while they were away, or count as
     /// them having touched the session.

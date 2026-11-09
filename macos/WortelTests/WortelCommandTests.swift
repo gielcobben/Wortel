@@ -255,46 +255,6 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertThrowsError(try parse(["new", "--", "echo", fits + "x"]))
     }
 
-    /// Fork means the caller's own session, like rename and mark: an agent
-    /// forking itself is the case it's for.
-    func testForkActsOnThisSession() throws {
-        XCTAssertEqual(try parse(["fork"]), .fork(session: session, name: nil, branch: nil))
-        XCTAssertEqual(try parse(["fork", "--name", "try two", "--branch", "fix/2"]),
-                       .fork(session: session, name: "try two", branch: "fix/2"))
-        XCTAssertThrowsError(try parse(["fork", "--from", "main"]))
-    }
-
-    /// `cd` moves the caller's own session: an agent moving itself is the case
-    /// it's for. The directory is resolved against the caller's, which for an
-    /// agent is where its shell tool stands.
-    func testCdMovesThisSessionToAnAbsoluteDirectory() throws {
-        XCTAssertEqual(try parse(["cd", "../site"]),
-                       .changeDirectory(session: session, path: "/Users/x/site"))
-        XCTAssertEqual(try parse(["cd", "."]), .changeDirectory(session: session, path: "/Users/x/project"))
-        XCTAssertEqual(try parse(["cd", "/srv/app"]), .changeDirectory(session: session, path: "/srv/app"))
-        let home = NSHomeDirectory()
-        XCTAssertEqual(try parse(["cd", "~/Developer/site"]),
-                       .changeDirectory(session: session, path: home + "/Developer/site"))
-    }
-
-    /// No directory is an error, not "home" as a shell's bare `cd` would
-    /// take it: moving an agent somewhere nobody named is no default.
-    func testCdNeedsADirectory() {
-        XCTAssertThrowsError(try parse(["cd"])) { error in
-            XCTAssertEqual(error as? WortelCommandParser.ParseError, .missing("a directory", "cd"))
-        }
-        XCTAssertThrowsError(try parse(["cd", ""]))
-    }
-
-    /// A second word is nearly always an unquoted path with a space in it.
-    /// Moving to its first half would be a surprise; saying so isn't.
-    func testCdRefusesASecondWord() {
-        XCTAssertThrowsError(try parse(["cd", "My", "Site"])) { error in
-            XCTAssertEqual(error as? WortelCommandParser.ParseError, .extra("Site", "cd"))
-            XCTAssertTrue("\(error)".contains("quote"))
-        }
-    }
-
     /// What the app accepts, and the other spelling of grey with it.
     func testColourNames() {
         XCTAssertEqual(SessionColour.named("yellow"), .yellow)
@@ -369,11 +329,9 @@ final class WortelCommandTests: XCTestCase {
             .rename(session: session, name: "build"),
             .notify(session: nil, title: "Done", body: nil),
             .mark(session: session, colour: "yellow"),
-            .fork(session: session, name: "x", branch: nil),
             .newWorktree(cwd: "/a", name: nil),
             .newFromPullRequest(cwd: "/a", name: nil, pr: "12"),
             .newRunning(.newWorktree(cwd: "/a", name: nil), argv: ["claude", "--resume", "x"]),
-            .changeDirectory(session: session, path: "/Users/x/site"),
             .version,
         ]
         for command in commands {
@@ -397,8 +355,6 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertEqual(WortelCommand.rename(session: nil, name: "a").verb, "rename")
         XCTAssertEqual(WortelCommand.notify(session: nil, title: "a", body: nil).verb, "notify")
         XCTAssertEqual(WortelCommand.mark(session: nil, colour: "red").verb, "mark")
-        XCTAssertEqual(WortelCommand.fork(session: nil, name: nil, branch: nil).verb, "fork")
-        XCTAssertEqual(WortelCommand.changeDirectory(session: nil, path: "/a").verb, "cd")
         XCTAssertEqual(WortelCommand.list(caller: nil).verb, "list")
         XCTAssertEqual(WortelCommand.read(session: "a", lines: nil).verb, "read")
         XCTAssertEqual(WortelCommand.send(session: "a", text: "", enter: true).verb, "send")
@@ -408,7 +364,7 @@ final class WortelCommandTests: XCTestCase {
     }
 
     func testUsageListsEveryCommand() {
-        for verb in ["open", "new", "rename", "notify", "mark", "fork", "cd <dir>", "list", "read <session>",
+        for verb in ["open", "new", "rename", "notify", "mark", "list", "read <session>",
                      "send <session>", "wait <session>", "--version"] {
             XCTAssertTrue(WortelCommandParser.usage.contains(verb), "usage omits \(verb)")
         }

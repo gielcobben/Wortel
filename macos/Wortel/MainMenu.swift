@@ -109,30 +109,6 @@ enum MainMenu {
         return item
     }
 
-    /// Fills the Session menu's "Move To" for the selected session each time
-    /// it opens (and when the palette reads the menus). Set by AppDelegate.
-    static var fillMoveTo: (NSMenu) -> Void = { _ in }
-    private static let moveToFiller = MenuFiller { MainMenu.fillMoveTo($0) }
-    /// Whether the selected session has anywhere to move to. Set by
-    /// AppDelegate; read as the Session menu opens.
-    static var canMoveTo: () -> Bool = { false }
-    private static weak var moveToItem: NSMenuItem?
-    /// A row with a submenu has no action to validate, so its enabled state is
-    /// set by hand, just before the menu opens (AppKit leaves a row without an
-    /// action as it finds it). An empty "Move To" is a dead end; greyed out,
-    /// it says there's nowhere to go, as the Finder's does.
-    private static let sessionMenuUpdater = MenuFiller { _ in
-        MainMenu.moveToItem?.isEnabled = MainMenu.canMoveTo()
-        MainMenu.changeDirectoryItem?.isEnabled = MainMenu.canChangeDirectory()
-    }
-
-    /// The same pair for "Change Directory", which moves the session itself
-    /// to another directory on disk (`wortel cd`). Set by AppDelegate.
-    static var fillChangeDirectory: (NSMenu) -> Void = { _ in }
-    private static let changeDirectoryFiller = MenuFiller { MainMenu.fillChangeDirectory($0) }
-    static var canChangeDirectory: () -> Bool = { false }
-    private static weak var changeDirectoryItem: NSMenuItem?
-
     private static func arrow(_ key: Int) -> String {
         String(UnicodeScalar(UInt16(key))!)
     }
@@ -240,14 +216,14 @@ enum MainMenu {
         let sessionItem = NSMenuItem()
         main.addItem(sessionItem)
         let sessionMenu = NSMenu(title: "Session")
-        sessionMenu.delegate = sessionMenuUpdater
         sessionItem.submenu = sessionMenu
 
         // -- Start a session ---------------------------------------------------
-        // Two rows, and they're a deliberate pair: the same command with the two
-        // answers to "where". ⌘N keeps you where you are, ⌥⌘N gets you out. They
-        // sit together so the second reads as the exception to the first rather
-        // than as a second, unexplained "New Session".
+        // Here (⌘N, in the folder you're in), out of every folder (⌥⌘N, at
+        // home), here on a branch of its own (⇧⌘N), or somewhere else (⌘O).
+        // Fork, Open Branch and New Folder were cut: seven ways to start
+        // something was more than anyone could keep apart. Archived sessions
+        // are found with ⌘P.
         sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "n")
         // ⌘N inherits the directory you're in, which is right until the moment
         // you want out of it. This is the way out, and it's a command rather
@@ -258,39 +234,14 @@ enum MainMenu {
         // ⌘N's isolated sibling: the same repository, in a worktree and on a
         // branch of its own. A sheet with a placeholder name selected, so
         // Return is as quick as the no-dialog version was, and From and
-        // Location are there when they aren't the defaults. Took ⇧⌘N from
-        // New Folder, which is made once in a long while and asks for a name
-        // anyway.
+        // Location are there when they aren't the defaults.
         let newWorktree = sessionMenu.addItem(withTitle: "New Worktree Session\u{2026}", action: #selector(AppDelegate.newWorktreeSession(_:)), keyEquivalent: "n")
         newWorktree.keyEquivalentModifierMask = [.command, .shift]
-        // The selected session as it is, in a worktree of its own: its
-        // uncommitted changes carried over, its agent's conversation forked.
-        // No dialog, so no ellipsis. ⌥⇧⌘N because it's ⌘N's sibling and free
-        // of a wortel.conf keybind.
-        let fork = sessionMenu.addItem(withTitle: "Fork Session", action: #selector(AppDelegate.forkSession(_:)), keyEquivalent: "n")
-        fork.keyEquivalentModifierMask = [.command, .option, .shift]
-        // Any branch of the selected session's repository, whatever state
-        // it's in: its session, its archived one, its worktree, a new
-        // worktree on it, or the branch made (`OpenTarget`). ⇧⌘O, ⌘O's
-        // sibling: open a folder, open a branch. Replaces "New Session on
-        // Branch…", whose sheet is still ⌥↩ on Create, to pick a base.
-        let openBranch = sessionMenu.addItem(withTitle: "Open Branch\u{2026}", action: #selector(AppDelegate.openBranch(_:)), keyEquivalent: "o")
-        openBranch.keyEquivalentModifierMask = [.command, .shift]
-
-        // -- Folders -----------------------------------------------------------
-        // The two folder verbs, adjacent because that's how they read: make an
-        // empty one to file sessions into, or open a directory that already
-        // exists. New before Open, which is the order every Mac File menu uses.
-        sessionMenu.addItem(.separator())
-        // **"Folder", not "Section".** This item was the last place in the app
-        // that called a folder a section — the sidebar's + menu, both header
-        // context menus and every type and method say folder — and one letter
-        // from "New Session" is a bad place to keep a synonym. Ellipsis because
-        // it asks for a name.
-        sessionMenu.addItem(withTitle: "New Folder\u{2026}", action: #selector(AppDelegate.newFolder(_:)), keyEquivalent: "")
         // ⌘O is every Mac app's "open", and a directory is the only thing
         // Wortel opens. Files are opened by the tree and by ⌘-clicking a path,
-        // which are both already in front of the file you mean.
+        // which are both already in front of the file you mean. It files the
+        // session in a folder for its repository, made if there's none: that
+        // is how folders are made.
         sessionMenu.addItem(withTitle: "Open Folder\u{2026}", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
 
         // -- Move between sessions ---------------------------------------------
@@ -367,16 +318,6 @@ enum MainMenu {
         // A colour of your own, for a session to come back to; checked in
         // AppDelegate.validateMenuItem.
         sessionMenu.addItem(SessionColourMenu.item(action: #selector(AppDelegate.setSessionColour(_:))))
-        let moveTo = sessionMenu.addItem(withTitle: "Move To", action: nil, keyEquivalent: "")
-        let moveToMenu = NSMenu(title: "Move To")
-        moveToMenu.delegate = moveToFiller
-        moveTo.submenu = moveToMenu
-        moveToItem = moveTo
-        let changeDirectory = sessionMenu.addItem(withTitle: "Change Directory", action: nil, keyEquivalent: "")
-        let changeDirectoryMenu = NSMenu(title: "Change Directory")
-        changeDirectoryMenu.delegate = changeDirectoryFiller
-        changeDirectory.submenu = changeDirectoryMenu
-        changeDirectoryItem = changeDirectory
         // Every worktree Wortel made, including those of sessions long
         // archived. A session's own goes when you close it, if there's
         // nothing in it worth keeping (`SessionManager.archive`).

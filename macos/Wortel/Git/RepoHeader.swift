@@ -63,7 +63,7 @@ struct RepoHeader: View {
             // Nor is a way to go and work there ("Open Session" was): the
             // panes stay on the session's own folder, so looking elsewhere
             // is a glance, and Back is the only way out it needs. The
-            // sidebar and Open Branch (⇧⌘O) are where you go to work.
+            // sidebar and ⌘P are where you go to work.
             Spacer(minLength: 4)
 
             if isAway {

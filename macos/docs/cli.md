@@ -12,7 +12,6 @@ wortel open src/PreviewWindow.swift      # a preview window for a file
 wortel new --branch fix/1482             # a session, in its own worktree off trunk
 wortel rename "1482 login redirect"      # this session
 wortel notify "Tests failed"             # this session wants you
-wortel cd ../new-site                    # this session, agent and all, somewhere else
 wortel send tests "fix it" --enter       # another session, as if typed there
 wortel wait tests --idle                 # until its agent's turn is over
 wortel read tests --lines 80             # what it said
@@ -229,23 +228,6 @@ repository, so naming one takes the caller's location back out of the answer.
 purpose. The sidebar's dialog resolves the same default into a visible field, so
 both ends of the app answer this the same way.
 
-**`cd` answers before it acts, and asks who's asking.** `wortel cd <dir>`
-moves the session it was run in, agent and all (`SessionMove`, Change
-Directory in the menu). An agent holds the terminal, so moving it means
-quitting it and typing its resume after the `cd`, and the agent that runs
-`wortel cd` is mid-turn by definition: waiting for the move to finish would
-deadlock it (its turn can't end while its tool waits on us), and quitting it
-then would leave the conversation on a tool call nobody answered. So the reply
-comes at once, says nothing has happened yet, and the move waits for a turn
-that ends after it was asked: no busy signal, no title asking for action, a
-transcript whose last word is Claude's (a permission prompt ends Claude's
-progress exactly like a finished turn), and nobody typing. *Who* asked comes
-from the kernel, not the command: the server reads the peer's pid
-(`LOCAL_PEERPID`), and a caller with the agent's process group among its
-ancestors is the agent. "The main terminal while an agent's marker is live"
-looked equivalent and isn't: ^Z keeps the marker, and so does a `!` command
-run from inside Claude.
-
 ## Reaching other sessions: `list`, `read`, `send`, `wait`
 
 bb lets an agent list, read, type into and wait on any terminal, which is what
@@ -284,8 +266,7 @@ A prompt typed into the wrong agent can't be undone, so convenience stops at
 the first sign of doubt. The short id `list` prints is the first block of the
 UUID, accepted as a prefix from four characters, the way git takes a short
 hash. `rename`, `notify` and `mark` accept `--session` too, because labelling a
-session from elsewhere is as harmless as labelling your own; `fork` and `cd`
-don't, because what they do to the agent inside depends on who is asking.
+session from elsewhere is as harmless as labelling your own.
 
 **`read` reads the active screen, not the viewport.** The active area is what
 the program last drew; the viewport is wherever the person at the keyboard has

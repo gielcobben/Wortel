@@ -210,8 +210,7 @@ final class PromptCaptureTests: XCTestCase {
         return builder.hasDraft
     }
 
-    /// Something typed and not sent is a draft; quitting the agent would
-    /// throw it away, so a move waits.
+    /// Something typed and not sent is a draft, until it's sent or cleared.
     func testATypedLineIsADraftUntilSentOrCleared() {
         XCTAssertFalse(draft(""))
         XCTAssertTrue(draft("half a thought"))

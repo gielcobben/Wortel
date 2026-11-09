@@ -99,11 +99,6 @@ title beats the prompt title, and a user rename is final. Nothing
 periodically renames an agent session: its name changes only when a new
 conversation starts.
 
-**A fork is named "<name> (fork)", as the user's.** Fork Session sets it with
-the `user` source on purpose: the forked agent continues the same
-conversation, so it pushes the same title the original does, and letting that
-title rename the fork would give two identical rows.
-
 **A worktree session is named for its task and shows its branch underneath.**
 The branch is where the work lives, not what the work is. The session starts
 out called after the branch (a placeholder, so the agent may replace it), and

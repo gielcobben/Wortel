@@ -10,7 +10,7 @@ import AppKit
 struct PaletteCommand: Identifiable {
     let id = UUID()
     let title: String
-    /// The menus it sits in: ["View"], ["Session", "Move To"].
+    /// The menus it sits in: ["View"], ["Tab", "Move Tab"].
     let path: [String]
     /// "⇧⌘T".
     let shortcut: String?
@@ -63,11 +63,8 @@ enum PaletteCommands {
         "toggleServersInDefaultBrowser:": "arrow.up.forward.app",
         "newSession:": "plus.square",
         "newHomeSession:": "house",
-        "forkSession:": "arrow.triangle.branch",
         "newWorktreeSession:": "plus.square.dashed",
-        "openBranch:": "arrow.triangle.branch",
         "showPromptHistory:": "clock.arrow.circlepath",
-        "newFolder:": "folder.badge.plus",
         "openFolder:": "folder",
         "renameSession:": "pencil",
         "closeSession:": "xmark",
@@ -110,7 +107,7 @@ enum PaletteCommands {
     ]
 
     @MainActor private static func collect(_ menu: NSMenu, path: [String]) -> [PaletteCommand] {
-        // Menus filled as they open (Session › Move To) are filled now.
+        // Menus filled as they open are filled now.
         menu.delegate?.menuNeedsUpdate?(menu)
         menu.update()
         var commands: [PaletteCommand] = []

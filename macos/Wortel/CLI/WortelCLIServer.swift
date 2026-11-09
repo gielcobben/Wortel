@@ -21,9 +21,8 @@ final class WortelCLIServer: @unchecked Sendable {
     typealias Handler = @Sendable (
         WortelCommand, @escaping @Sendable (WortelResponse) -> Void
     ) -> Void
-    /// The same, told who sent the command (`Caller`). `wortel cd` needs the
-    /// pid: an agent asking to be moved has to be waited for, and the session
-    /// can't tell that from the command, only from who ran it.
+    /// The same, told who sent the command (`Caller`): `send` and `wait`
+    /// need to know which session is asking, and only the kernel can say.
     typealias CallerHandler = @Sendable (
         WortelCommand, Caller, @escaping @Sendable (WortelResponse) -> Void
     ) -> Void

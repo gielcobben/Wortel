@@ -109,7 +109,7 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     // pill's right edge — and a cell can't be clicked outside its own bounds.
 
     private let closeButton = SidebarCloseButton()
-    /// "…": the session's menu (Rename, Move To, Mark as Unread…), the one
+    /// "…": the session's menu (Rename, Pin, Mark as Unread…), the one
     /// right-click opens, for when you don't think to right-click. Beside the
     /// ×, on hover, as the ChatGPT app's rows have theirs.
     private let moreButton = SidebarCloseButton(symbol: "ellipsis", label: "More", pointSize: 10)

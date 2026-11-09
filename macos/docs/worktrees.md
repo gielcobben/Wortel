@@ -17,34 +17,28 @@ removes worktrees under them.
 | You want to | You do | What happens |
 |---|---|---|
 | Work isolated, beside your checkout | ⇧⌘N New Worktree Session, then Return | A worktree on a new branch from a fresh default branch; the sheet's From and Location rows change either |
-| Get to a branch, worktree or pull request | ⇧⌘O Open Branch | Goes to its session, restores the archived one, opens the worktree, checks the branch out, or creates it |
-| Try something from where you are | ⌥⇧⌘N Fork Session | The session as it is, changes and conversation, in a worktree of its own |
+| Work on an existing branch or pull request | ⇧⌘N, its name or `#123` in the name field | Checks it out in a worktree of its own; `wortel new --branch` and `--pr` do the same |
 | Stop | ⇧⌘W, the row's ×, or `exit` | Archived: the worktree and branch stay, the conversation is remembered. Trashed instead when nothing in it is worth keeping |
-| Continue | ⇧⌘O, pick it under Archived | The shell starts in the worktree and the agent resumes |
-| Find a worktree another tool made | ⇧⌘O, under Not open | Opening it makes a session there; Wortel never deletes it |
+| Continue | ⌘P, type its name, pick it under Archived | The shell starts in the worktree and the agent resumes |
+| Find a worktree another tool made | ⌘P, under Not open | Opening it makes a session there; Wortel never deletes it |
 | Delete an archived one | Clean Up Worktrees… | Its worktree to the Trash, the archived session with it |
 
 ## Decisions
 
-- **One verb to get somewhere.** Open Branch is worktrunk's `switch`, lazygit's
-  single field and VS Code's "it's checked out over there, open that": you say
-  what, Wortel works out how. Each row says what Return will do before you
-  press it, and a branch with a place is listed at that place only, so it can
-  never make a second worktree for one that has one (`OpenTarget`).
+- **Four ways in.** ⌘N here, ⌥⌘N at home, ⇧⌘N here on a branch of its own,
+  ⌘O somewhere else. Open Branch (⇧⌘O, one field for every branch, worktree and pull
+  request), Fork Session and Change Directory (`wortel cd`) were built and
+  cut: seven ways to start something was more than anyone kept apart. What
+  only Open Branch did, finding an archived session or a worktree nobody's
+  in, is ⌘P's now, once you type (`OpenTarget`).
 - **Closing archives.** Conductor, Emdash and Supacode archive; Claude Code
   removes a clean worktree on exit. Both: archive always, then remove if
   there's nothing to keep (`WorktreeCloseDecision`): Wortel's own, clean, every
   commit elsewhere or already in trunk by content. The decision runs after the
   row has moved, because a monorepo's `git status` takes seconds and ⌘W can't.
 - **The sidebar shows open sessions only.** A per-folder Archived fold was
-  built and dropped: it was clutter under every folder, and Open Branch
-  already lists everything with a place.
-- **A worktree is just a directory to move to.** Change Directory (`wortel
-  cd`) lists the repository's free worktrees beside the sidebar folders, and
-  moving there is an ordinary move: the agent's conversation goes along, the
-  row gets the branch line, ⌘W then archives it with that worktree. Making a
-  new worktree is Fork's job, which also brings the uncommitted changes; a
-  worktree a session moves out of stays on disk, shown as "Not open".
+  built and dropped: it was clutter under every folder, and ⌘P finds
+  everything put away.
 - **Archived sessions live in their own file** (`archived-sessions.json`): an
   older build reads `sessions.json` and would start them as live shells.
 - **Show everything git knows; delete only what you made.** Hiding foreign

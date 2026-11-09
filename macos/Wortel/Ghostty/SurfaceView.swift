@@ -45,12 +45,12 @@ final class SurfaceView: NSView {
     var onUserInput: (() -> Void)?
     /// When the user last sent something here, by those same events rather
     /// than the bytes the program gets, which also carry the terminal's
-    /// replies to its queries. A move waiting on the agent goes ahead only
-    /// once this has been quiet a while.
+    /// replies to its queries. `wortel wait --idle` counts it as the session
+    /// being touched.
     private(set) var lastUserInputAt: Date?
     /// Text or a Return a script sent (`wortel send`, `scripted: true`): it
     /// reaches the pty by the same road as the user's, so the input taps
-    /// (`PromptTap`, a move's `DraftTap`) see it as they see typing, but it
+    /// (`PromptTap`) see it as they see typing, but it
     /// is **not the user**. It doesn't answer an attention raised while they
     /// were away, and it doesn't move `lastUserInputAt`: an agent driving a
     /// session from elsewhere is not someone back at the keyboard. The

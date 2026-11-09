@@ -348,10 +348,9 @@ final class SessionManager {
         }.map(\.attention))
     }
 
-    /// Folders the user created explicitly (the "+ → New Folder" menu). Unlike
-    /// folders that emerge from a "giel/…" name, these persist as sections even
-    /// when empty, so you can make a folder first and drag sessions in after —
-    /// Apple Mail style. Ordered; persisted to UserDefaults.
+    /// Folders made on purpose (⌘O, or a worktree of a repository with no
+    /// folder yet). Unlike folders that emerge from a "giel/…" name, these
+    /// persist as sections even when empty. Ordered; persisted to UserDefaults.
     private(set) var declaredFolders: [String] = [] {
         didSet { UserDefaults.standard.set(declaredFolders, forKey: Self.declaredFoldersKey) }
     }
@@ -468,7 +467,7 @@ final class SessionManager {
         }
         // A folder whose sessions are all pinned stays, empty, to come back to.
         // One whose sessions are all archived doesn't: they're found with
-        // Open Branch, and restoring one brings its folder back.
+        // ⌘P, and restoring one brings its folder back.
         let pinnedFolders = Set(pinned.compactMap(\.folderPath))
 
         var groups: [SidebarGroup] = []
@@ -499,7 +498,7 @@ final class SessionManager {
     }
 
     /// Every folder shown in the sidebar (populated or empty) in render order.
-    /// Drives the "Move To" menu and name-collision checks.
+    /// Drives name-collision checks and where ⌘O files a session.
     var folderNames: [String] { sidebarGroups.compactMap(\.folder) }
 
     // MARK: - Folder directories
@@ -572,8 +571,8 @@ final class SessionManager {
         }
     }
 
-    /// Create a new, empty folder (the "+ → New Folder" menu). Name is made
-    /// unique; the folder is left expanded and its name returned.
+    /// Create a new, empty folder (for ⌘O, which then points it at its
+    /// directory). Name is made unique; the folder is left expanded and its name returned.
     @discardableResult
     func addFolder(named requested: String? = nil) -> String {
         let base = requested?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -646,8 +645,8 @@ final class SessionManager {
     }
 
     /// Move a session into `folder` (nil = top level) at `position` within that
-    /// group (clamped; pass .max to append). Serves both drag-and-drop and the
-    /// "Move To" menu. Crossing folders re-prefixes the name — the name *is*
+    /// group (clamped; pass .max to append). Serves drag-and-drop and the
+    /// filing of new sessions. Crossing folders re-prefixes the name — the name *is*
     /// the folder membership.
     func moveSession(id: Session.ID, toFolder folder: String?, at position: Int) {
         guard let fromIdx = sessions.firstIndex(where: { $0.id == id }) else { return }
@@ -680,7 +679,7 @@ final class SessionManager {
 
     /// Move several sessions into `folder` (nil: the top level) together, in
     /// the order given, just before `before` (a session in that group) or at
-    /// its end: a drag of the sidebar's selection, and its bulk Move To. One
+    /// its end: a drag of the sidebar's selection. One
     /// change to `sessions` and one save. `unpin` takes them out of Pinned on
     /// the way, as a drop anywhere outside Pinned does.
     ///
@@ -766,18 +765,6 @@ final class SessionManager {
         // still needs the watcher, or nothing would ever record a running agent and
         // the *next* launch would have nothing to resume.
         startAgentActivityWatch()
-        // No fork survives a relaunch (a preparing row isn't saved), so any
-        // staging folder left is from one that was cut short. Moved aside at
-        // once and deleted off the main thread: a fork can't be pressed
-        // before this, and must not find a half-deleted folder.
-        let staging = WorktreeFork.stagingRoot
-        if FileManager.default.fileExists(atPath: staging.path) {
-            let aside = staging.deletingLastPathComponent()
-                .appendingPathComponent("staging-\(UUID().uuidString)", isDirectory: true)
-            if (try? FileManager.default.moveItem(at: staging, to: aside)) != nil {
-                DispatchQueue.global(qos: .utility).async { try? FileManager.default.removeItem(at: aside) }
-            }
-        }
         var persisted = store.load()
         archived = ArchiveStore.load()
         // In both files: archived, then the app ended before sessions.json
@@ -1030,9 +1017,6 @@ final class SessionManager {
                 clearBusy(session)
             }
         }
-        // An agent quitting is what a waiting move waits for; don't make it
-        // wait for the next tick too.
-        if !pendingMoves.isEmpty { advancePendingMoves() }
         // Markers appearing/vanishing is exactly when the screen sampler has
         // work to start or stop doing.
         updateAgentScreenSampling()
@@ -1478,8 +1462,7 @@ final class SessionManager {
     /// speaking one, and the assertion must not be fooled along with it); and a
     /// settle window already ticking towards a notification.
     private var wantsActivityAssertion: Bool {
-        if !pendingMoves.isEmpty { return true }
-        return sessions.contains {
+        sessions.contains {
             guard $0.runningAgent != nil else { return false }
             return !speaksForItself($0)
                 || screenInferredBusy.contains($0.id)
@@ -1696,10 +1679,10 @@ final class SessionManager {
         makeSession(cwd: NSHomeDirectory(), inFolder: nil, via: origin)
     }
 
-    /// The shared tail of the two above, taking a directory and a folder that
-    /// have both already been decided. Split out so "which folder" can't quietly
-    /// pick up `newSession`'s inherit-from-the-selection rule on the one path
-    /// that exists to escape it.
+    /// The shared tail of every way a session is made, taking a directory and
+    /// a folder that have both already been decided, so "which folder" can't
+    /// quietly pick up `newSession`'s inherit-from-the-selection rule on a path
+    /// that decided otherwise.
     private func makeSession(
         cwd directory: String?, inFolder dir: String?, via origin: SessionOrigin,
         reported: Bool = true, prepare: ((Session) -> Void)? = nil
@@ -1872,35 +1855,6 @@ final class SessionManager {
                                     startupInput: startupInput, completion: completion)
     }
 
-    /// Fork Session: `source` as it is right now, in a worktree of its own. The
-    /// new worktree starts at the source's commit with its staged, unstaged
-    /// and untracked changes (`WorktreeFork`), and the agent running there, if
-    /// it can, continues a copy of its conversation (`forkWords`). Outside a
-    /// repository there's nothing to isolate: the same folder, agent forked.
-    ///
-    /// Named "<name> (fork)" by the user's authority, not the agent's: the
-    /// fork's agent pushes the same conversation title the source's does, and
-    /// letting it rename the row would give two identical ones.
-    @discardableResult
-    func fork(_ source: Session, name: String? = nil, branch: String? = nil,
-              completion: WorktreeCompletion? = nil) -> Session? {
-        guard source.preparation == nil, let from = source.cwd ?? source.originCwd else { return nil }
-        noteConversation(source)
-        let agent = source.runningAgent.flatMap { AgentConversation.exact.contains($0) ? $0 : nil }
-        let request = ForkSource(
-            name: source.leafName, branch: branch.map(GitWorktree.branchName(from:)),
-            agent: agent, argv: agent == nil ? nil : source.runningArgv,
-            model: agent == nil ? nil : source.runningModel,
-            conversationID: agent == nil ? nil : source.liveConversationID,
-            agentCwd: source.runningCwd ?? source.cwd)
-        let leaf = name ?? uniqueLeaf("\(source.leafName) (fork)", in: source.folderPath)
-        let session = beginWorktreeSession(.fork(request), branch: nil, leaf: leaf, from: from,
-                                           inFolder: source.folderPath, after: nil, startupInput: nil,
-                                           completion: completion)
-        session.nameSource = .user
-        return session
-    }
-
     /// What a caller waiting on a worktree session hears once it's ready: the
     /// session, or why there isn't one, and the warnings from the way there.
     /// The CLI is that caller; the sheet isn't, it has the page.
@@ -1990,24 +1944,6 @@ final class SessionManager {
             }
             if let branch = resolved.branch { session.preparation?.branch = branch }
             var warnings = resolved.notes
-            if resolved.created, case .fork(let source) = preparation.request, let snapshot = source.snapshot {
-                session.preparation?.stage = .applying
-                switch await WorktreeFork.apply(snapshot, to: resolved.path) {
-                case .success(let notes):
-                    warnings += notes
-                case .failure(let refusal):
-                    guard self.sessions.contains(where: { $0 === session }) else { return }
-                    // The worktree is there either way. A caller waiting on
-                    // this gets it with the note; the page offers it as is.
-                    if self.worktreeCompletions[session.id] != nil {
-                        warnings.append(refusal.message)
-                    } else {
-                        session.preparation?.resolved = resolved
-                        session.preparation?.failure = refusal.message
-                        return
-                    }
-                }
-            }
             if resolved.created {
                 session.preparation?.stage = .copying
                 let report = await WorktreeInclude.copy(from: resolved.sourceRoot, to: resolved.path)
@@ -2028,27 +1964,12 @@ final class SessionManager {
     /// Give a waiting row its worktree: the terminal starts there.
     private func attachWorktree(_ session: Session, _ resolved: ResolvedWorktree, warnings: [String] = []) {
         guard sessions.contains(where: { $0 === session }) else { return }
-        let request = session.preparation?.request
         session.cwd = resolved.path
         session.originCwd = resolved.path
         session.worktreeBranch = resolved.branch
         noteCheckout(session)
         session.preparation = nil
-        if case .fork(let source)? = request {
-            source.snapshot?.discard()
-            // Typed into the new shell the way a resume is, and owed the same
-            // way: until the agent shows up running here.
-            if let agent = source.agent {
-                let command = Self.forkCommand(source, agent: agent)
-                session.owedResume = OwedResume(
-                    agent: AgentMarker(agent: agent, model: source.model, cwd: resolved.path,
-                                       argv: source.argv, shellPID: nil, startedAt: nil),
-                    conversationID: nil, input: command + "\n")
-            }
-            Telemetry.capture(.sessionCreated(via: .fork))
-        } else {
-            Telemetry.capture(.sessionCreated(via: .worktree))
-        }
+        Telemetry.capture(.sessionCreated(via: .worktree))
         // Its shell starts here when it's the one on screen; otherwise when
         // it's next selected, as a restored session's does. Unless it was
         // given a command (`wortel new -- …`): the caller is told it started,
@@ -2062,23 +1983,6 @@ final class SessionManager {
         // couldn't be renamed then, there was none yet.
         nameBranchForWork(session)
         finishWorktreeSession(session, .success(session), warnings: warnings)
-    }
-
-    /// The line that starts a fork's agent: how the source's was started, its
-    /// flags, and its own words for "a copy of this conversation" when the
-    /// conversation is known (otherwise a fresh one, same flags). Claude gets
-    /// the transcript's path, which it can resume from any folder.
-    private static func forkCommand(_ source: ForkSource, agent: String) -> String {
-        var words: [String] = []
-        if let id = source.conversationID {
-            let transcript = agent == "claude"
-                ? source.agentCwd.flatMap { AgentResumeStore.claudeTranscript(id: id, cwd: $0)?.path }
-                : nil
-            words = AgentConversation.forkWords(agent: agent, id: id, transcript: transcript) ?? []
-        }
-        // Codex's `--cd` would send the fork back to the folder it came from.
-        let excluded: Set<String> = agent == "codex" ? ["--cd", "-C"] : []
-        return AgentCommandLine.command(agent: agent, argv: source.argv, resume: words, excluding: excluded)
     }
 
     /// Tell a waiting caller how it went. A caller that asked from outside
@@ -2121,8 +2025,6 @@ final class SessionManager {
         switch request {
         case .branch(let branch, let base):
             return await resolveWorktree(onBranch: branch, base: base, from: cwd)
-        case .fork(let source):
-            return await resolveFork(source, from: cwd, for: session)
         case .pullRequest(let pr):
             return await resolvePullRequest(pr, from: cwd)
         }
@@ -2212,41 +2114,6 @@ final class SessionManager {
         return .success(ResolvedWorktree(path: path, branch: branch, sourceRoot: root, created: true, notes: notes))
     }
 
-    /// A fork's worktree: the source's uncommitted work read first (once, so
-    /// Try Again forks the same moment), then a new branch in Wortel's
-    /// namespace at the source's commit.
-    private func resolveFork(_ source: ForkSource, from cwd: String, for session: Session) async
-        -> Result<ResolvedWorktree, Failure> {
-        guard let root = await GitService.repoRoot(for: cwd) else {
-            return .success(ResolvedWorktree(path: cwd, branch: nil, sourceRoot: cwd, created: false))
-        }
-        if source.snapshot == nil {
-            session.preparation?.stage = .reading
-            switch await WorktreeFork.snapshot(of: root, named: source.name) {
-            case .failure(let refusal): return .failure(Failure(message: refusal.message))
-            case .success(let snapshot): source.snapshot = snapshot
-            }
-        }
-        session.preparation?.stage = .checkingOut
-        let existing = await GitService.worktrees(root: root)
-        // The repository, not this checkout: see `resolveWorktree(onBranch:)`.
-        let repoRoot = existing.first(where: \.isPrimary)?.path ?? root
-        let current = await GitService.run(["symbolic-ref", "--short", "-q", "HEAD"], in: root)
-        let taken = Set(await GitService.localBranches(root: root).map(\.name))
-        let branch = source.branch ?? WorktreeFork.branchName(
-            forking: current.ok ? current.stdout.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
-            taken: taken)
-        if taken.contains(branch) {
-            return .failure(Failure(message: "A branch named \u{201c}\(branch)\u{201d} already exists."))
-        }
-        let path = await Self.newWorktreePath(forBranch: branch, repoRoot: repoRoot)
-        if let error = await GitService.addWorktree(
-            root: root, at: path, branch: branch, source: .newBranch(from: source.snapshot?.head)) {
-            return .failure(Failure(message: GitMessage.readable(error, while: .worktree(branch: branch))))
-        }
-        return .success(ResolvedWorktree(path: path, branch: branch, sourceRoot: root, created: true))
-    }
-
     /// Where a worktree Wortel is about to create goes (`GitWorktree.newWorktreePath`):
     /// never a folder Claude already keeps a conversation history for, since
     /// a new session there would be offered the old one.
@@ -2326,8 +2193,7 @@ final class SessionManager {
             // refusing regardless would break a case that works and, worse,
             // answer it with advice ("check out the one you want first") aimed
             // at a problem that person does not have.
-            // A remote named with the branch (Open Branch's row said which)
-            // settles it.
+            // A remote named with the branch settles it.
             let named = base.flatMap { base in
                 onRemotes.first { base == "\($0)/\(branch)" }.map { _ in base }
             }
@@ -2590,9 +2456,6 @@ final class SessionManager {
             """)
         let wasSelected = session.id == selectedID
         let hadAttention = session.needsAttention
-        // A fork closed before it was opened: its snapshot's untracked files
-        // are waiting in a staging folder nobody will come back for.
-        if case .fork(let source)? = session.preparation?.request { source.snapshot?.discard() }
         busyTimers.removeValue(forKey: session.id)?.cancel()
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
         unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
@@ -2621,7 +2484,6 @@ final class SessionManager {
         forwardHistory.removeAll { $0 == session.id }
         pinnedIDs.removeAll { $0 == session.id }
         endPromptCapture(session)
-        cancelMove(session)
         // The killed shell never reaches its prompt to clear its own agent
         // marker; drop it so a closed session isn't resumed on next launch.
         AgentResumeStore.remove(sessionID: session.id)
@@ -2633,7 +2495,7 @@ final class SessionManager {
         sessions.remove(at: index)
         onSessionClosed?(session)
         // Closing the last session in a folder removes that section — including
-        // explicitly-created ("New Folder") ones, which otherwise linger empty.
+        // ones made on purpose, which otherwise linger empty.
         // Its directory goes with it, as it does when the folder is ungrouped:
         // left behind, it was handed to the next folder given the same name,
         // and quietly decided where that one's sessions started.
@@ -2837,7 +2699,7 @@ final class SessionManager {
 
     // MARK: - Archive
 
-    /// Worktree sessions you closed, newest first: what Open Branch lists as
+    /// Worktree sessions you closed, newest first: what ⌘P lists as
     /// Archived, and what Restore brings back. Not in `sessions`, so nothing
     /// that walks the live list (⌘1-9, attention, the warm-up, saving)
     /// ever sees one.
@@ -2859,7 +2721,7 @@ final class SessionManager {
 
     /// Archive a worktree session: the shell and its agent end, the worktree
     /// and branch stay, and the session (name, tabs, colour, the agent's
-    /// conversation) waits to be continued from Open Branch.
+    /// conversation) waits to be continued from ⌘P.
     ///
     /// **Then, if there's nothing to keep, the worktree goes.** Wortel's own,
     /// clean, with nothing on its branch that isn't elsewhere or in trunk
@@ -3004,25 +2866,16 @@ final class SessionManager {
     // MARK: - Worktree listings
 
     /// `git worktree list` for each repository a folder stands for, by the
-    /// repository's home: what Open Branch's "Not open" rows and the git
-    /// panel's worktree list come from. Read when something says it changed,
+    /// repository's home: what ⌘P's "Not open" rows and the git panel's
+    /// worktree list come from. Read when something says it changed,
     /// never on a timer and never per row.
     private(set) var worktreeListings: [String: [GitWorktree]] = [:]
     @ObservationIgnored private var listingsInFlight: Set<String> = []
-    /// Each repository's own worktree location (`GitWorktree.locationKey`),
-    /// read with its listing; absent for Wortel's folder.
-    private(set) var worktreeLocations: [String: String] = [:]
-
     /// Point a repository's new worktrees somewhere of its choosing, or back
-    /// at Wortel's folder (nil). Written to its local git config, where
-    /// `wortel new --branch` and any other tool can read it too. Worktrees
-    /// already made stay where they are.
-    func setWorktreeLocation(_ location: String?, forRepository home: String) {
-        Task { [weak self] in await self?.applyWorktreeLocation(location, forRepository: home) }
-    }
-
-    /// The same, finished when git's config says so: the worktree sheet
-    /// writes it before the worktree it's for is made there.
+    /// at Wortel's folder (nil), finished when git's config says so: the
+    /// worktree sheet writes it before the worktree it's for is made there.
+    /// Written to its local git config, where `wortel new --branch` and any
+    /// other tool can read it too. Worktrees already made stay where they are.
     func applyWorktreeLocation(_ location: String?, forRepository home: String) async {
         _ = await GitService.setWorktreeLocation(location, root: home)
         readListing(home)
@@ -3038,61 +2891,24 @@ final class SessionManager {
         return directory.flatMap(GitWorktree.repositoryHome(containing:))
     }
 
-    // MARK: - Open Branch
+    // MARK: - Put away, found with ⌘P
 
-    /// What ⇧⌘O starts with for the repository at `directory`: everything
-    /// with a place, from what's already known (no git). The branches come
-    /// after, through `loadBranches`.
-    func openBranchInputs(from directory: String?) -> OpenTarget.Inputs {
+    /// What ⌘P lists besides the open sessions (`OpenTarget`), from what's
+    /// already known, no git: every archived session, and the worktrees of
+    /// every repository in the sidebar that no session is in.
+    func switcherTargets() -> OpenTarget.Inputs {
         var inputs = OpenTarget.Inputs()
-        let home = directory.flatMap(GitWorktree.repositoryHome(containing:))
-        // Archived sessions of every other repository, by their full name:
-        // the sidebar doesn't list archived ones, so this is how one whose
-        // folder has gone from it is found.
-        inputs.archivedElsewhere = archived.filter { home == nil || $0.repoHome != home }.map {
-            .init(id: $0.id, name: $0.session.name, branch: $0.branch)
-        }
-        guard let home else {
-            // No repository: the sessions in worktrees anywhere, to go to.
-            inputs.open = sessions.filter { $0.homeCheckout != nil }.map {
-                .init(id: $0.id, name: $0.leafName, branch: $0.worktreeBranch)
-            }
-            return inputs
-        }
-        inputs.hasRepository = true
-        // Each by the branch of the worktree it lives in (a shell standing in
-        // another one doesn't move it there), and a preparing one by the
-        // branch it's being made on: it has that place already, and offering
-        // the branch again would make a second session in its worktree.
-        inputs.open = sessions.compactMap { session in
-            if let preparation = session.preparation {
-                guard GitWorktree.repositoryHome(containing: preparation.from) == home else { return nil }
-                return .init(id: session.id, name: session.leafName, branch: preparation.branch)
-            }
-            guard let checkout = session.homeCheckout ?? session.linkedCheckout, checkout.repoHome == home
-            else { return nil }
-            let branch = GitWorktree.checkedOutBranch(at: checkout.root) ?? session.worktreeBranch
-            return .init(id: session.id, name: session.leafName, branch: branch)
-        }
-        inputs.archived = archived.filter { $0.repoHome == home }.map {
-            .init(id: $0.id, name: $0.leafName, branch: $0.branch)
-        }
-        if let listing = worktreeListings[home] { apply(listing, to: &inputs, home: home) }
-        return inputs
-    }
-
-    /// The worktree list's part of the inputs: the main checkout, and the
-    /// worktrees nothing is in.
-    private func apply(_ listing: [GitWorktree], to inputs: inout OpenTarget.Inputs, home: String) {
-        if let main = listing.first(where: { $0.isPrimary && !$0.isBare }) {
-            inputs.main = .init(path: main.path, branch: main.branch)
-        }
+        inputs.archived = archived.map { .init(id: $0.id, name: $0.session.name, branch: $0.branch) }
         let taken = takenWorktrees()
         let preparing = preparingBranches()
-        inputs.notOpen = listing.filter {
-            !$0.isPrimary && !$0.isBare && !$0.isPrunable && !taken.contains(GitWorktree.realPath($0.path))
-                && !($0.branch.map(preparing.contains) ?? false)
-        }.map { .init(path: $0.path, branch: $0.branch) }
+        for home in worktreeListings.keys.sorted() {
+            guard let listing = worktreeListings[home] else { continue }
+            inputs.notOpen += listing.filter {
+                !$0.isPrimary && !$0.isBare && !$0.isPrunable && !taken.contains(GitWorktree.realPath($0.path))
+                    && !($0.branch.map(preparing.contains) ?? false)
+            }.map { .init(path: $0.path, branch: $0.branch) }
+        }
+        return inputs
     }
 
     /// The branches worktrees are being made on right now: git lists such a
@@ -3112,62 +2928,11 @@ final class SessionManager {
         return taken
     }
 
-    /// The branches, read once the panel is up (local first, they're what
-    /// you mostly want), then the remote ones again after a fetch, which is
-    /// the one part that waits on the network.
-    func loadBranches(into inputs: @escaping (OpenTarget.Inputs) -> Void, from directory: String?) {
-        guard let directory, let home = GitWorktree.repositoryHome(containing: directory) else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            let fetch = Task { await self.fetchFromOrigin(in: directory) }
-            var current = self.openBranchInputs(from: directory)
-            self.apply(await GitService.worktrees(root: directory), to: &current, home: home)
-            current.local = await GitService.localBranches(root: directory).map(\.name)
-            inputs(current)
-            current.remote = Self.remotes(await GitService.remoteBranches(root: directory))
-            inputs(current)
-            await fetch.value
-            current.remote = Self.remotes(await GitService.remoteBranches(root: directory))
-            inputs(current)
-        }
-    }
-
-    private static func remotes(_ branches: [GitBranch]) -> [(remote: String, branch: String)] {
-        branches.compactMap { branch in
-            guard let slash = branch.name.firstIndex(of: "/") else { return nil }
-            let name = String(branch.name[branch.name.index(after: slash)...])
-            return name == "HEAD" ? nil : (String(branch.name[..<slash]), name)
-        }
-    }
-
-    /// Do what Open Branch's row says, for the repository at `directory`.
-    func perform(_ action: OpenTarget.Action, from directory: String?) {
+    /// Do what ⌘P's row says.
+    func perform(_ action: OpenTarget.Action) {
         switch action {
-        case .goTo(let id):
-            selectedID = id
-        case .restore(let id):
-            restore(archived: id)
-        case .openWorktree(let path):
-            openWorktree(at: path)
-        case .mainCheckout(let path):
-            let root = GitWorktree.realPath(path)
-            if let there = sessions.first(where: {
-                $0.homeCheckout == nil && $0.cwd.map { FolderRoot.root(root, contains: GitWorktree.realPath($0)) } == true
-            }) {
-                selectedID = there.id
-            } else {
-                openFolder(path)
-            }
-        case .checkOut(let branch, let remote):
-            // From the remote the row named: with the branch on two remotes,
-            // git won't guess. A local branch made there tracks it.
-            newSession(onBranch: branch, base: remote.map { "\($0)/\(branch)" }, from: directory)
-        case .pullRequest(let text):
-            guard let pr = PullRequestRef.parse(text) else { return }
-            newSession(onPullRequest: pr, from: directory, after: Task { await fetchFromOrigin(in: directory) })
-        case .create(let branch):
-            newSession(onBranch: branch, base: nil, from: directory,
-                       after: Task { await fetchFromOrigin(in: directory) })
+        case .restore(let id): restore(archived: id)
+        case .openWorktree(let path): openWorktree(at: path)
         }
     }
 
@@ -3214,11 +2979,9 @@ final class SessionManager {
         }
         Task { [weak self] in
             let listing = await GitService.worktrees(root: home)
-            let location = await GitService.worktreeLocation(root: home)
             guard let self else { return }
             self.listingsInFlight.remove(home)
             if self.worktreeListings[home] != listing { self.worktreeListings[home] = listing }
-            if self.worktreeLocations[home] != location { self.worktreeLocations[home] = location }
             if self.listingsOwed.remove(home) != nil { self.readListing(home) }
         }
     }
@@ -3411,12 +3174,6 @@ final class SessionManager {
         if session.isBusy {
             session.isBusy = false
             noteConversation(session)
-            // A turn (or a stretch of one) ended after a move was asked for:
-            // what a move the agent asked for has to see before it can go.
-            if var move = pendingMoves[session.id], !move.sawTurnEnd {
-                move.sawTurnEnd = true
-                pendingMoves[session.id] = move
-            }
         }
     }
 
@@ -3705,530 +3462,11 @@ final class SessionManager {
             """)
     }
 
-    // MARK: - Changing directory (`wortel cd`, Change Directory)
-
-    /// Moves accepted and not yet done, by session. In memory only: a quit
-    /// drops them, since a relaunch has no turn to wait for.
-    @ObservationIgnored private var pendingMoves: [Session.ID: PendingMove] = [:]
-    /// What the user types while a move waits on the agent (`DraftTap`).
-    @ObservationIgnored private var moveDraftTaps: [Session.ID: DraftTap] = [:]
-    /// Ticks while any move is pending; nothing runs otherwise.
-    @ObservationIgnored private var moveTimer: Timer?
-    /// A move that failed after its caller was answered, for the session on
-    /// screen, which `raiseAttention` won't interrupt. The app shows it.
-    @ObservationIgnored var onMoveFailed: ((Session, String) -> Void)?
-
-    /// How long a quit agent has to give the shell its prompt back, and how
-    /// long the shell has to report the new directory once the `cd` is typed.
-    private static let moveStopPatience: TimeInterval = 8
-    private static let moveCdPatience: TimeInterval = 5
-    /// How long since the user last touched the session (a key, a paste, a
-    /// click, a scroll) before a waiting move goes ahead.
-    private static let moveTypingQuiet: TimeInterval = 3
-
-    /// Move `session` to `rawPath`: now, at its next prompt, or once its agent
-    /// is idle (`SessionMove.decide`). The answer comes at once in every case:
-    /// the agent that asked is waiting on it, and its turn can't end until it
-    /// has it. `callerPID` is who asked, when the CLI did.
-    func changeDirectory(_ session: Session, to rawPath: String, callerPID: pid_t? = nil,
-                         fromSideTerminal: Bool = false, via: MoveOrigin) -> WortelResponse {
-        let path = FolderRoot.normalize(rawPath) ?? rawPath
-        // A session not shown since launch has no surface yet, so no signals
-        // and nothing to type into. Attaching it is what the warm-up does.
-        if sessions.contains(where: { $0 === session }), session.preparation == nil {
-            _ = session.ensureSurfaceView(runtime: runtime)
-        }
-        let previous = pendingMoves[session.id]
-        if let previous {
-            switch previous.stage {
-            case .waiting, .atPrompt: break
-            case .stopping, .typed:
-                return .failure("This session is already moving to \(SessionMove.display(previous.path)).")
-            }
-        }
-        var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
-        let here = session.cwd ?? session.originCwd
-        if let previous, let here, AgentConversation.samePath(here, path) {
-            cancelMove(session)
-            return .success("Staying in \(SessionMove.display(path)); the move to \(SessionMove.display(previous.path)) is cancelled.")
-        }
-        guard SessionMove.lines(path: path, resume: nil) != nil else {
-            return .failure("Wortel can't type that directory into a shell: \(SessionMove.display(path))")
-        }
-
-        // Where the shell, the agent and the session's own record of where it
-        // lives each stand. All three already there is nothing to do; only the
-        // record behind (the shell was `cd`'d there by hand) is a re-file.
-        let shellHere = session.cwd.map { AgentConversation.samePath($0, path) } ?? false
-        let agentHere = session.runningAgent == nil
-            || (session.runningCwd.map { AgentConversation.samePath($0, path) } ?? shellHere)
-        let recordHere = session.originCwd.map { AgentConversation.samePath($0, path) } ?? shellHere
-        if exists, shellHere, agentHere, !recordHere, previous == nil, session.preparation == nil {
-            refile(session, to: path)
-            Telemetry.capture(.sessionMoved(via: via, carriedAgent: false))
-            return .success("Moved to \(SessionMove.display(path)).", value: path)
-        }
-
-        let table = ProcessTable.snapshot()
-        noteConversation(session, table: table)
-        let facts = moveFacts(session, table: table, callerPID: callerPID)
-        var situation = facts.situation
-        situation.directoryExists = exists
-        situation.sameDirectory = shellHere && agentHere && recordHere
-        situation.preparing = session.preparation != nil
-        situation.hasPty = session.surfaceView?.ptyHost != nil
-        let decision = SessionMove.decide(situation, to: path)
-        if case .refuse(let message) = decision { return .failure(message) }
-
-        let agent = session.runningAgent.map {
-            AgentMarker(agent: $0, model: session.runningModel, cwd: session.runningCwd ?? session.cwd,
-                        argv: session.runningArgv, shellPID: session.runningShellPID,
-                        startedAt: session.runningStartedAt)
-        }
-        let stage: PendingMove.Stage
-        var needsTurnEnd = false
-        switch decision {
-        case .now: stage = .waiting
-        case .atPrompt: stage = .atPrompt
-        case .whenIdle(let turnEnd): stage = .waiting; needsTurnEnd = turnEnd
-        case .refuse: return .failure("")
-        }
-        pendingMoves[session.id] = PendingMove(
-            path: path, requestedAt: Date(), needsTurnEnd: needsTurnEnd,
-            agent: decision == .now ? nil : agent,
-            agentGroup: facts.agentGroup,
-            conversationID: decision == .now ? nil : session.liveConversationID,
-            via: via, stage: stage)
-        session.movingTo = path
-        let message = SessionMove.acceptedMessage(
-            decision, agent: session.runningAgent, path: path,
-            instead: previous?.path, fromSideTerminal: fromSideTerminal,
-            stopping: facts.backgroundJobs, terminalStaysIn: fromSideTerminal ? callerDirectory(callerPID) : nil)
-        if case .whenIdle = decision, let pty = session.surfaceView?.ptyHost, moveDraftTaps[session.id] == nil {
-            let tap = DraftTap()
-            moveDraftTaps[session.id] = tap
-            pty.draftTap = tap
-        }
-        if decision == .now {
-            typeMove(session)
-        } else {
-            startMoveTimer()
-        }
-        return .success(message, value: path)
-    }
-
-    /// Drop a waiting move. Nothing has been touched yet, so nothing to undo.
-    func cancelMove(_ session: Session) {
-        guard pendingMoves.removeValue(forKey: session.id) != nil else { return }
-        finishMoveBookkeeping(session)
-    }
-
-    /// Where `session` will move, while a move waits.
-    func pendingMovePath(of session: Session) -> String? { pendingMoves[session.id]?.path }
-
-    /// A place Change Directory offers.
-    struct DirectoryTarget: Equatable {
-        let title: String
-        let path: String
-    }
-
-    /// Where Change Directory offers to take `session`: the other checkouts
-    /// of its repository that no session is in (a worktree is just a
-    /// directory), then the sidebar folders' directories. From what's cached
-    /// only, no git and no disk, because the menu asks while it opens.
-    func changeDirectoryTargets(for session: Session) -> (worktrees: [DirectoryTarget], folders: [DirectoryTarget]) {
-        guard let here = (session.cwd ?? session.originCwd).flatMap(FolderRoot.normalize) else { return ([], []) }
-        func isHere(_ path: String) -> Bool { FolderRoot.normalize(path) == here }
-        var worktrees: [DirectoryTarget] = []
-        let listing = worktreeListings.values.first { list in
-            list.contains { FolderRoot.root($0.path, contains: here) }
-        }
-        let taken = takenWorktrees()
-        for worktree in listing ?? []
-        where !worktree.isPrunable && !worktree.isBare && !isHere(worktree.path)
-            && (worktree.isPrimary || !taken.contains(worktree.path)) {
-            worktrees.append(DirectoryTarget(
-                title: CheckoutPlace.title(path: worktree.path, sessionName: nil,
-                                           branch: worktree.branch, isPrimary: worktree.isPrimary),
-                path: worktree.path))
-        }
-        let offered = Set(worktrees.map(\.path))
-        var folders: [DirectoryTarget] = []
-        for name in folderNames {
-            guard let root = root(ofFolder: name), !isHere(root), !offered.contains(root),
-                  !folders.contains(where: { $0.path == root }) else { continue }
-            folders.append(DirectoryTarget(title: name, path: root))
-        }
-        return (worktrees, folders)
-    }
-
-    /// What the process table says about the session, for `SessionMove`.
-    private func moveFacts(_ session: Session, table: [ProcessEntry], callerPID: pid_t?)
-        -> (situation: SessionMove.Situation, backgroundJobs: [String], agentGroup: pid_t?) {
-        var situation = SessionMove.Situation()
-        situation.agent = session.runningAgent
-        situation.conversationID = session.liveConversationID
-        var parentOf: [pid_t: pid_t] = [:]
-        for entry in table { parentOf[entry.pid] = entry.ppid }
-        let byPID = Dictionary(table.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
-        // The shell: the one the marker names, else the one under the keeper's
-        // `login`.
-        let shellPID = session.runningShellPID ?? session.shellPID.map { ProcessTable.shell(of: $0, in: table) }
-        guard let shellPID, let shell = byPID[shellPID] else {
-            situation.shellInForeground = false
-            situation.agentFound = false
-            return (situation, [], nil)
-        }
-        let foreground = shell.foregroundGroup
-        situation.shellInForeground = foreground == shell.pgid
-        if let callerPID, let caller = byPID[callerPID] {
-            situation.callerInForeground = caller.pgid == foreground
-        }
-        var backgroundJobs: [String] = []
-        var agentGroup: pid_t?
-        if let agent = session.runningAgent {
-            if let entry = Self.agentProcess(agent, shell: shellPID, foreground: foreground,
-                                             table: table, parentOf: parentOf) {
-                situation.agentFound = true
-                agentGroup = entry.pgid
-                situation.agentIsShell = entry.pid == shellPID || entry.pgid == shell.pgid
-                situation.agentStopped = table.contains { $0.pgid == entry.pgid && $0.isStopped }
-                situation.agentInForeground = entry.pgid == foreground
-                // Asked by the agent: something in the agent's own process
-                // group is among the caller's ancestors.
-                if let callerPID {
-                    if byPID[callerPID]?.pgid == entry.pgid { situation.callerIsAgent = true }
-                    var current = callerPID
-                    for _ in 0..<64 {
-                        guard let parent = parentOf[current], parent > 1 else { break }
-                        if byPID[parent]?.pgid == entry.pgid { situation.callerIsAgent = true; break }
-                        current = parent
-                    }
-                }
-                // Its background tasks: groups of their own started by it,
-                // which go when it does (Claude's `run_in_background`).
-                // Not the one running this very `wortel cd`.
-                let callerGroup = callerPID.flatMap { byPID[$0]?.pgid }
-                let groupMembers = Set(table.filter { $0.pgid == entry.pgid }.map(\.pid))
-                for leader in table where groupMembers.contains(leader.ppid) && leader.pgid == leader.pid
-                    && leader.pgid != entry.pgid && leader.pgid != callerGroup && !leader.isExiting {
-                    let job = table.first { $0.ppid == leader.pid } ?? leader
-                    if let label = RunningJobs.label(forArguments: ProcessTable.arguments(of: job.pid)),
-                       !backgroundJobs.contains(label) {
-                        backgroundJobs.append(label)
-                    }
-                }
-            } else {
-                situation.agentFound = false
-            }
-        }
-        if !situation.shellInForeground, !situation.agentInForeground,
-           let leader = byPID[foreground] ?? table.first(where: { $0.pgid == foreground }) {
-            situation.foregroundName = RunningJobs.label(forArguments: ProcessTable.arguments(of: leader.pid))
-                ?? leader.name
-        }
-        return (situation, Array(backgroundJobs.prefix(3)), agentGroup)
-    }
-
-    /// The session's agent process, for a move to signal. The terminal's
-    /// foreground job first: its leader, or one of its group, whose name or
-    /// arguments name the agent. Else a job of the shell's own that does
-    /// (one suspended with ^Z isn't in the foreground). Never the first
-    /// descendant that mentions it, as `AgentLiveness.locate` takes: its
-    /// arguments pass matches `claude-501` in a path, which made the `wortel
-    /// cd` the agent ran look like the agent, and the move would have quit
-    /// that instead.
-    private static func agentProcess(_ agent: String, shell: pid_t, foreground: pid_t,
-                                     table: [ProcessEntry], parentOf: [pid_t: pid_t]) -> ProcessEntry? {
-        let short = String(agent.prefix(ProcessTable.maxCommandNameLength - 1))
-        func names(_ entry: ProcessEntry) -> Bool {
-            entry.name == agent || entry.name == short
-                || (ProcessTable.argumentsIfReadable(of: entry.pid)?.dropFirst()
-                    .prefix(2).contains { AgentLiveness.argumentNames(agent, $0) } ?? false)
-        }
-        if foreground > 1 {
-            let group = table.filter {
-                $0.pgid == foreground && ProcessTable.isDescendant($0.pid, of: shell, parentOf: parentOf)
-            }
-            if let leader = group.first(where: { $0.pid == foreground }), names(leader) { return leader }
-            if let member = group.first(where: names) { return member }
-        }
-        return table.first { $0.ppid == shell && $0.pgid == $0.pid && names($0) }
-    }
-
-    /// The directory of the shell a command came from: a side terminal's,
-    /// which a move leaves where it is.
-    private func callerDirectory(_ pid: pid_t?) -> String? {
-        pid.flatMap { ProcessTable.workingDirectory(of: $0) }
-    }
-
-    private func startMoveTimer() {
-        guard moveTimer == nil else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.advancePendingMoves() }
-        }
-        timer.tolerance = 0.1
-        moveTimer = timer
-        // A move mostly waits while you're in another app; App Nap would make
-        // it wait a lot longer.
-        updateAgentActivityAssertion()
-    }
-
-    /// One look at every waiting move.
-    private func advancePendingMoves() {
-        let now = Date()
-        for (id, move) in pendingMoves {
-            guard let session = sessions.first(where: { $0.id == id }) else {
-                pendingMoves.removeValue(forKey: id)
-                moveDraftTaps.removeValue(forKey: id)
-                continue
-            }
-            switch move.stage {
-            case .atPrompt:
-                // The `wortel` that asked has exited once the shell has the
-                // terminal back.
-                if shellHasTerminal(session) { typeMove(session) }
-            case .waiting:
-                if move.agent != nil, session.runningAgent == nil {
-                    // Quit already (by you, or it ended): nothing to wait for.
-                    typeMove(session)
-                } else if let agent = move.agent, session.runningStartedAt != agent.startedAt {
-                    // Another run of an agent: not the one the move was for.
-                    failMove(session, "The move to \(SessionMove.display(move.path)) was cancelled: \(agent.agent) was restarted.")
-                } else {
-                    checkIdleForMove(session, move, now: now)
-                }
-            case .stopping(let since):
-                if session.runningAgent == nil {
-                    typeMove(session)
-                } else if now.timeIntervalSince(since) > Self.moveStopPatience {
-                    failMove(session, "Couldn't move to \(SessionMove.display(move.path)): \(move.agent?.agent ?? "the agent") didn't quit.")
-                }
-            case .typed(let at):
-                if now.timeIntervalSince(at) > Self.moveCdPatience {
-                    failMove(session, "Couldn't move to \(SessionMove.display(move.path)): the shell didn't change directory.")
-                }
-            }
-        }
-        if pendingMoves.isEmpty { stopMoveTimer() }
-    }
-
-    /// Whether nothing but the shell has the session's terminal.
-    private func shellHasTerminal(_ session: Session) -> Bool {
-        let table = ProcessTable.snapshot()
-        guard let root = session.runningShellPID ?? session.shellPID.map({ ProcessTable.shell(of: $0, in: table) }),
-              let shell = table.first(where: { $0.pid == root }) else { return false }
-        return shell.foregroundGroup == shell.pgid
-    }
-
-    /// Count a sample towards quitting the agent, or start counting again.
-    ///
-    /// Truly idle, not just quiet: no busy signal or one about to start, no
-    /// title asking for action, no question waiting, nothing you're typing,
-    /// and for Claude a transcript whose last word is Claude's (a Bash or Edit
-    /// waiting on permission ends Claude's progress exactly as a finished turn
-    /// does). Two samples in a row, half a second apart.
-    private func checkIdleForMove(_ session: Session, _ move: PendingMove, now: Date) {
-        let id = session.id
-        let tap = moveDraftTaps[id]
-        let quietSince = session.surfaceView?.lastUserInputAt
-            .map { now.timeIntervalSince($0) >= Self.moveTypingQuiet } ?? true
-        let idle = !session.isBusy && busyTimers[id] == nil && quiesceTimers[id] == nil
-            && !titleShowsActionRequired.contains(id)
-            && session.attention != .needsInput
-            && (!move.needsTurnEnd || move.sawTurnEnd)
-            && !(tap?.hasDraft ?? false) && quietSince
-        guard idle else {
-            pendingMoves[id]?.idleSamples = 0
-            return
-        }
-        guard let agent = move.agent?.agent else { return }
-        guard agent == "claude" else {
-            // Only Claude is movable (`AgentConversation.movable`); anything
-            // else has no way to say a permission is pending.
-            return failMove(session, "Wortel can't tell when \(agent) is idle.")
-        }
-        let unreadable = "Couldn't move to \(SessionMove.display(move.path)): Wortel can't read claude's conversation to tell when it's idle."
-        guard let conversation = move.conversationID else { return failMove(session, unreadable) }
-        let cwd = move.agent?.cwd ?? session.cwd ?? move.path
-        DispatchQueue.global(qos: .userInitiated).async {
-            let transcript = AgentResumeStore.claudeTranscript(id: conversation, cwd: cwd)
-            let open = transcript.flatMap(ClaudeTranscriptTail.readTail(of:)).map(ClaudeTranscriptTail.turnIsOpen) ?? true
-            DispatchQueue.main.async { [weak self, weak session] in
-                guard let self, let session, var current = self.pendingMoves[id],
-                      current.stage == .waiting, current.requestedAt == move.requestedAt else { return }
-                guard transcript != nil else { return self.failMove(session, unreadable) }
-                guard !open, !session.isBusy, self.busyTimers[id] == nil else {
-                    current.idleSamples = 0
-                    self.pendingMoves[id] = current
-                    return
-                }
-                current.idleSamples += 1
-                self.pendingMoves[id] = current
-                if current.idleSamples >= 2 { self.stopAgentForMove(session) }
-            }
-        }
-    }
-
-    /// Ask the agent to quit: SIGTERM to its process group, as a terminal
-    /// would end a job. Claude exits 143 in under a second and resets the
-    /// terminal on the way (2026-10-20); its background tasks, groups of their
-    /// own, go with it, which the caller was told. Never SIGKILL: that leaves
-    /// the keyboard and paste modes set and can cut the transcript mid-line.
-    private func stopAgentForMove(_ session: Session) {
-        guard var move = pendingMoves[session.id], let agent = move.agent?.agent else { return }
-        let table = ProcessTable.snapshot()
-        var parentOf: [pid_t: pid_t] = [:]
-        for entry in table { parentOf[entry.pid] = entry.ppid }
-        guard let shellPID = session.runningShellPID ?? session.shellPID.map({ ProcessTable.shell(of: $0, in: table) }),
-              let shell = table.first(where: { $0.pid == shellPID }) else { return }
-        guard let entry = Self.agentProcess(agent, shell: shellPID, foreground: shell.foregroundGroup,
-                                            table: table, parentOf: parentOf) else {
-            // Gone between the samples: the shell is getting its prompt back.
-            return
-        }
-        // The group it was in when the move was asked for, and never the
-        // shell's own: a signal to that would end the session. Anything else
-        // means the agent isn't the one this move was for.
-        guard entry.pgid == move.agentGroup, entry.pgid != shell.pgid, entry.pgid > 1 else {
-            return failMove(session, "The move to \(SessionMove.display(move.path)) was cancelled: \(agent) isn't the one it was asked for any more.")
-        }
-        KeeperLog.log.notice("""
-            session \(session.id.uuidString, privacy: .public) moving: quitting \(agent, privacy: .public) \
-            (group \(entry.pgid, privacy: .public))
-            """)
-        kill(-entry.pgid, SIGTERM)
-        move.stage = .stopping(since: Date())
-        pendingMoves[session.id] = move
-    }
-
-    /// Type the move into the shell: the `cd`, then the agent's resume.
-    private func typeMove(_ session: Session) {
-        guard var move = pendingMoves[session.id] else { return }
-        guard let view = session.surfaceView else {
-            return failMove(session, "Couldn't move to \(SessionMove.display(move.path)): the session has no terminal.")
-        }
-        var resume: String?
-        var owed: OwedResume?
-        if let marker = move.agent, let id = move.conversationID {
-            let from = marker.cwd ?? session.cwd ?? move.path
-            let argv = AgentCommandLine.absolutized(agent: marker.agent, argv: marker.argv, from: from)
-            let transcript = marker.agent == "claude"
-                ? AgentResumeStore.claudeTranscript(id: id, cwd: from)?.path : nil
-            if let words = AgentConversation.moveWords(agent: marker.agent, id: id, transcript: transcript) {
-                let excluded: Set<String> = marker.agent == "codex" ? ["--cd", "-C"] : []
-                let line = AgentCommandLine.command(agent: marker.agent, argv: argv, resume: words, excluding: excluded)
-                resume = line
-                owed = OwedResume(
-                    agent: AgentMarker(agent: marker.agent, model: marker.model, cwd: move.path,
-                                       argv: argv, shellPID: nil, startedAt: nil),
-                    conversationID: id, input: line + "\n", typedAt: nil)
-            }
-        }
-        guard let lines = SessionMove.lines(path: move.path, resume: resume) else {
-            return failMove(session, "Wortel can't type that directory into a shell: \(SessionMove.display(move.path))")
-        }
-        // The draft tap goes before typing, so what's typed here isn't
-        // mistaken for the user's.
-        if moveDraftTaps.removeValue(forKey: session.id) != nil { view.ptyHost?.draftTap = nil }
-        let now = Date()
-        for line in lines { view.typeCommand(line) }
-        if var owed {
-            // Owed from now: a relaunch or a lost keeper before the agent is
-            // up types it again, there. The old marker is gone by now, so
-            // nothing confirms it against the agent that just quit.
-            owed.typedAt = now
-            session.owedResume = owed
-            session.lastConversationID = owed.conversationID
-        }
-        move.stage = .typed(at: now)
-        pendingMoves[session.id] = move
-        startMoveTimer()
-        scheduleSave()
-        // A `cd` to where the shell already is reports nothing new; it has
-        // arrived as far as it ever will.
-        if let cwd = session.cwd, AgentConversation.samePath(cwd, move.path) {
-            noteMoveArrived(session, pwd: cwd)
-        }
-    }
-
-    /// The shell reported a directory. If it's where a typed move was going,
-    /// the session now belongs there.
-    private func noteMoveArrived(_ session: Session, pwd: String) {
-        guard let move = pendingMoves[session.id], case .typed = move.stage,
-              AgentConversation.samePath(pwd, move.path) else { return }
-        pendingMoves.removeValue(forKey: session.id)
-        refile(session, to: move.path)
-        Telemetry.capture(.sessionMoved(via: move.via, carriedAgent: move.agent != nil))
-        finishMoveBookkeeping(session)
-    }
-
-    /// File a session that now lives in `path`: its birth directory, its
-    /// checkout, its sidebar folder and (when it's still the placeholder) its
-    /// name. The old folder is kept, as Move To keeps it; a worktree it left
-    /// stays on disk.
-    private func refile(_ session: Session, to path: String) {
-        session.originCwd = path
-        session.gitCheckout = nil
-        session.folderIsGone = false
-        noteCheckout(session)
-        let target = folder(forDirectory: path)
-        if session.nameSource == .placeholder {
-            let base: String
-            if let linked = session.linkedCheckout,
-               let branch = GitWorktree.checkedOutBranch(at: linked.root) {
-                base = GitWorktree.sessionLeaf(forBranch: branch)
-            } else {
-                base = Self.defaultTitle(forCwd: path)
-            }
-            // Unique among the target folder's other sessions, not counting
-            // this one, which may already be there.
-            let taken = Set(sessions.filter { $0.folderPath == target && $0 !== session }.map(\.leafName))
-            var leaf = base
-            var n = 2
-            while taken.contains(leaf) { leaf = "\(base) \(n)"; n += 1 }
-            session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
-        }
-        if target != session.folderPath {
-            moveSession(id: session.id, toFolder: target, at: .max)
-        }
-        rememberProjectRoots()
-        refreshWorktreeListings()
-        scheduleSave()
-    }
-
-    /// A move that can't go on. The caller was answered long ago, so the
-    /// session says it: the red dot and a notification, or, for the session
-    /// you're looking at (which a notification won't interrupt), the app.
-    private func failMove(_ session: Session, _ message: String) {
-        pendingMoves.removeValue(forKey: session.id)
-        finishMoveBookkeeping(session)
-        KeeperLog.log.notice("session \(session.id.uuidString, privacy: .public) move failed")
-        if isActivelyViewing(session) {
-            onMoveFailed?(session, message)
-        } else {
-            raiseAttention(session, kind: .failed, title: session.name, body: message, source: "move")
-        }
-    }
-
-    private func finishMoveBookkeeping(_ session: Session) {
-        session.movingTo = nil
-        if moveDraftTaps.removeValue(forKey: session.id) != nil { session.surfaceView?.ptyHost?.draftTap = nil }
-        if pendingMoves.isEmpty { stopMoveTimer() }
-    }
-
-    private func stopMoveTimer() {
-        moveTimer?.invalidate()
-        moveTimer = nil
-        updateAgentActivityAssertion()
-    }
-
     /// The folder a session in `path` belongs in, made if there's none: a
     /// worktree's goes with its repository (`folder(forWorktreeAt:)`, else a
     /// new folder for the repository), anything else in the deepest folder
     /// covering it, else a new folder named for the directory. nil for `/`,
-    /// which is no project. ⌘O's rule (`openFolder`), and a move's.
+    /// which is no project. ⌘O's rule (`openFolder`).
     private func folder(forDirectory path: String) -> String? {
         let path = FolderRoot.normalize(path) ?? path
         if let linked = GitWorktree.linked(containing: path),
@@ -4966,7 +4204,7 @@ final class SessionManager {
     /// The branch checked out where `session` is now: at launch for the ones
     /// that don't know, and whenever a shell lands in another worktree (one an
     /// agent made with `git worktree add`, or `cd`'d into), which is how most
-    /// sessions that aren't Fork's end up in one. The old answer stays on the
+    /// sessions not made by Wortel end up in one. The old answer stays on the
     /// row until the new one is in, so it doesn't flicker; a checkout with no
     /// branch (detached) clears it, and the row shows the checkout's folder.
     private func resolveWorktreeBranch(_ session: Session) {
@@ -5233,7 +4471,6 @@ final class SessionManager {
                 }
                 // The shell moved somewhere: a folder it reports is one it's in.
                 if session.folderIsGone { session.folderIsGone = !FileManager.default.fileExists(atPath: pwd) }
-                self.noteMoveArrived(session, pwd: pwd)
                 self.scheduleSave()
             }
             view.onBell = { [weak self, weak session] in
@@ -5308,9 +4545,6 @@ final class SessionManager {
                 // harmless, and priority keeps a "needs input" from being
                 // downgraded to a plain "finished".
                 self.clearBusy(session)
-                // The `wortel cd` typed at this prompt has just exited: the
-                // shell is back, and the move it asked for can be typed.
-                if case .atPrompt? = self.pendingMoves[session.id]?.stage { self.typeMove(session) }
                 // A command likely touched files — nudge the git panel to
                 // re-read status/diff (it debounces and no-ops when hidden).
                 self.onCommandFinished?(session)

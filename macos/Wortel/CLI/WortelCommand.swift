@@ -45,15 +45,6 @@ enum WortelCommand: Codable, Equatable {
     /// app's (`SessionColour`), and this file is also compiled into the CLI
     /// and the keeper, which have no business knowing them.
     case mark(session: String?, colour: String)
-    /// Fork a session (by default the caller's) into a worktree of its own:
-    /// its uncommitted changes carried over, its agent's conversation forked.
-    /// `branch` names the new branch instead of letting one be made.
-    case fork(session: String?, name: String?, branch: String?)
-    /// Move a session (by default the caller's) to another directory: its
-    /// shell `cd`s there, and an agent running in it is quit at the end of
-    /// its turn and continues the same conversation there. `path` is
-    /// absolute by the time it's sent; the app checks it exists.
-    case changeDirectory(session: String?, path: String)
     /// Every open session, described (`WortelSessionInfo`, as JSON in the
     /// reply's `value`). `caller` is the asking shell's `$WORTEL_SESSION_ID`,
     /// so the list can say which row is "you".
@@ -89,8 +80,6 @@ enum WortelCommand: Codable, Equatable {
         case .rename: return "rename"
         case .notify: return "notify"
         case .mark: return "mark"
-        case .fork: return "fork"
-        case .changeDirectory: return "cd"
         case .list: return "list"
         case .read: return "read"
         case .send: return "send"
@@ -272,12 +261,6 @@ enum WortelCommandParser {
           mark [--session <s>] <colour>
                                    colour this session in the sidebar: red, orange,
                                    yellow, green, blue, purple, grey, or none
-          fork [--name <name>] [--branch <branch>]
-                                   this session as it is, in a worktree of its own,
-                                   its agent's conversation forked
-          cd <dir>                 move this session, and its agent, to another
-                                   directory; an agent moves when its turn ends,
-                                   and continues the same conversation there
 
           list [--json]            the open sessions: id, name, state, agent,
                                    branch and directory
@@ -444,8 +427,7 @@ enum WortelCommandParser {
         _ verb: String, _ rest: [String], session callerSession: String?, currentDirectory: String?
     ) throws -> WortelCommand {
         // `--session` on the three that only label a session: naming one from
-        // elsewhere is as safe as naming your own. Not on `fork` and `cd`,
-        // which act on the agent inside and decide how by who is asking.
+        // elsewhere is as safe as naming your own.
         var rest = rest
         var session = callerSession
         if ["rename", "notify", "mark"].contains(verb), let flag = rest.firstIndex(of: "--session") {
@@ -492,21 +474,6 @@ enum WortelCommandParser {
                 throw ParseError.missing("a colour, or none", verb)
             }
             return .mark(session: session, colour: colour)
-
-        case "fork":
-            let flags = try Flags(rest, allowed: ["--name", "--branch"])
-            return .fork(session: session, name: flags["--name"], branch: flags["--branch"])
-
-        case "cd":
-            guard let path = rest.first, !path.isEmpty else {
-                throw ParseError.missing("a directory", verb)
-            }
-            // A second word is nearly always the rest of an unquoted path with
-            // a space in it; moving to its first half would be a surprise.
-            guard rest.count == 1 else { throw ParseError.extra(rest[1], verb) }
-            // Against the caller's directory, which for an agent is where its
-            // own shell tool stands: `cd ../site && wortel cd .` means the site.
-            return .changeDirectory(session: session, path: absolute(path, from: currentDirectory))
 
         default:
             throw ParseError.unknown(verb)

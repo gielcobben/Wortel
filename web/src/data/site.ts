@@ -255,7 +255,9 @@ export const DOCS_SECTIONS: Section[] = [
           mono: 'last',
           rows: [
             ['New session', '⌘N'],
-            ['New folder / open folder', '⇧⌘N / ⌘O'],
+            ['New worktree session / open folder', '⇧⌘N / ⌘O'],
+            ['Go to a session, or bring back an archived one', '⌘P'],
+            ['Back / forward through the sessions you were on', '⌃⌘[ / ⌃⌘]'],
             ['Rename session', '⌥⌘R'],
             ['Close tab / close session', '⌘W / ⇧⌘W'],
             ['Previous / next session', '⌥⌘↑ / ⌥⌘↓'],

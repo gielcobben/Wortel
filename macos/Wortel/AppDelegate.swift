@@ -334,7 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             manager.map { WorktreeUsage(manager: $0, countingArchived: true) }
         }
         // The git panel's worktree list is the manager's: one cached `git
-        // worktree list` per repository, which Open Branch already keeps
+        // worktree list` per repository, which ⌘P already keeps
         // (`worktreeListings`), rather than a read of its own on every
         // session switch.
         gitPanel.worktreeListing = { [weak manager] home in manager?.worktreeListings[home] }
@@ -371,32 +371,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   let region = self.splitController.region(at: event.locationInWindow) else { return event }
             if self.gitPanel.lastRegion != region { self.gitPanel.lastRegion = region }
             return event
-        }
-        MainMenu.canMoveTo = { [weak self] in
-            guard let self, let session = self.manager.selected else { return false }
-            return SessionActions.canMove(session, manager: self.manager)
-        }
-        MainMenu.fillMoveTo = { [weak self] menu in
-            guard let self, let session = self.manager.selected else { return menu.removeAllItems() }
-            SessionActions.fillMoveTo(menu, for: session, manager: self.manager)
-        }
-        MainMenu.canChangeDirectory = { [weak self] in
-            guard let session = self?.manager.selected else { return false }
-            return SessionActions.canChangeDirectory(session)
-        }
-        MainMenu.fillChangeDirectory = { [weak self] menu in
-            guard let self, let session = self.manager.selected else { return menu.removeAllItems() }
-            SessionActions.fillChangeDirectory(menu, for: session, manager: self.manager)
-        }
-        // A move that failed after it was accepted, in the session you're
-        // looking at: no notification would interrupt it, so say it here.
-        manager.onMoveFailed = { [weak self] session, message in
-            guard let window = self?.window else { return }
-            let alert = NSAlert()
-            alert.messageText = "\u{201c}\(session.leafName)\u{201d} didn't move"
-            alert.informativeText = message
-            alert.addButton(withTitle: "OK")
-            alert.beginSheetModal(for: window)
         }
         gitPanel.onAreaFocused = { [weak self] region in
             // A turn later: an area the command brought forward has its frame then.
@@ -998,28 +972,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.newHomeSession()
     }
 
-    @objc func openBranch(_ sender: Any?) {
-        openBranch(from: manager.branchSource())
-    }
-
-    /// Open Branch for the repository at `directory` (a folder's menu passes
-    /// its own).
-    func openBranch(from directory: String?) {
-        if sessionSwitcher.isShown { return sessionSwitcher.close() }
-        focusMainWindow()
-        guard let window else { return }
-        sessionSwitcher.showBranches(over: window, from: directory)
-    }
-
     @objc func newWorktreeSession(_ sender: Any?) {
         focusMainWindow()
         newWorktreeSessionFromSheet(manager)
-    }
-
-    @objc func forkSession(_ sender: Any?) {
-        focusMainWindow()
-        guard let source = manager.selected else { return }
-        manager.fork(source)
     }
 
     /// Bring the window forward *before* the panel, not after: the open panel is
@@ -1029,13 +984,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func openFolder(_ sender: Any?) {
         focusMainWindow()
         openFolderSession(manager)
-    }
-
-    @objc func newFolder(_ sender: Any?) {
-        focusMainWindow()
-        if let name = promptFolderName(title: "New Folder", confirm: "Create") {
-            manager.addFolder(named: name)
-        }
     }
 
     /// ⌘W closes **what you are looking at**. With a preview window key that is
@@ -1579,10 +1527,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(renameSession(_:))
             || menuItem.action == #selector(closeWholeSession(_:)) {
             return manager.selected != nil
-        }
-        // A session still waiting for its worktree has nothing to fork yet.
-        if menuItem.action == #selector(forkSession(_:)) {
-            return manager.selected.map { $0.preparation == nil } ?? false
         }
         if menuItem.action == #selector(goBackSession(_:)) { return manager.canGoBack }
         if menuItem.action == #selector(goForwardSession(_:)) { return manager.canGoForward }

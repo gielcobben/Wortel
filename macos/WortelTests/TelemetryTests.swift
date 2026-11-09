@@ -41,7 +41,7 @@ final class TelemetryTests: XCTestCase {
         let documented: Set<String> = [
             "sessions", "agents_resumed", "uptime", "via", "automatic",
             "pane", "mode", "kind", "verb", "jobs", "orphans", "orphan",
-            "where", "area", "result", "message", "carried_agent",
+            "where", "area", "result", "message",
         ]
         for event in Self.everyEvent {
             for key in event.properties.keys {
@@ -181,8 +181,6 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CommandVerb(.rename(session: nil, name: "x")).rawValue, "rename")
         XCTAssertEqual(CommandVerb(.notify(session: nil, title: "t", body: nil)).rawValue, "notify")
         XCTAssertEqual(CommandVerb(.mark(session: nil, colour: "red")).rawValue, "mark")
-        XCTAssertEqual(CommandVerb(.fork(session: nil, name: nil, branch: nil)).rawValue, "fork")
-        XCTAssertEqual(CommandVerb(.changeDirectory(session: nil, path: "/x")).rawValue, "cd")
         XCTAssertEqual(CommandVerb(.list(caller: nil)).rawValue, "list")
         XCTAssertEqual(CommandVerb(.read(session: "x", lines: nil)).rawValue, "read")
         XCTAssertEqual(CommandVerb(.send(session: "x", text: "secret prompt", enter: true)).rawValue, "send")
@@ -263,16 +261,12 @@ final class TelemetryTests: XCTestCase {
         for cause in causes {
             events.append(.agentAttention(kind: cause))
         }
-        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .fork, .cd, .list, .read, .send,
+        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .list, .read, .send,
                                     .wait, .version]
         for verb in verbs {
             events.append(.commandRun(verb: verb))
         }
 
-        for via in [MoveOrigin.cli, .menu] {
-            events.append(.sessionMoved(via: via, carriedAgent: true))
-            events.append(.sessionMoved(via: via, carriedAgent: false))
-        }
         events.append(.agentJumpUsed)
         events.append(.globalHotkeyUsed)
         events.append(.reportingDisabled)

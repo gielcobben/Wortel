@@ -176,8 +176,6 @@ final class Session: Identifiable {
     /// relaunch.
     /// Set again once, by a session whose worktree was still being made
     /// when it was created (`preparation`): it was born before its folder.
-    /// And by a move (`wortel cd`, Change Directory), which is the user
-    /// saying where the session belongs now.
     var originCwd: String?
     /// A background session wants your eyes *now*, and *why*: it's blocked on
     /// you, something failed, or a long command finished while unselected. `nil`
@@ -311,12 +309,7 @@ final class Session: Identifiable {
     /// Whether the sidebar row is two lines tall: a worktree session named for
     /// its task, with its branch under the name. Waiting on you doesn't add one:
     /// the dot says it, and what the session said is on the row's tooltip.
-    var hasSecondLine: Bool { showsBranchLine || folderIsGone || movingTo != nil }
-
-    /// Where a move that is waiting (on the agent's turn, or the prompt) will
-    /// take this session, for the row's second line and the menu's Cancel.
-    /// The move itself is the manager's (`SessionManager.pendingMoves`).
-    var movingTo: String?
+    var hasSecondLine: Bool { showsBranchLine || folderIsGone }
 
     /// The folder this session stands in has been deleted (a removed worktree,
     /// a demo repo, a branch's folder cleaned up by an agent). Said on the row

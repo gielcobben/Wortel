@@ -49,11 +49,6 @@ enum TelemetryEvent: Equatable {
     /// keep is visible in the ratio and nowhere else.
     case sessionRenamed(automatic: Bool)
 
-    /// A session moved to another directory, from where, and whether an
-    /// agent's conversation was carried with it. Says whether moving a
-    /// session is something agents ask for or people do from the menu.
-    case sessionMoved(via: MoveOrigin, carriedAgent: Bool)
-
     /// The inspector was opened on a pane. Changes, History and Files are three
     /// separate bets and this is how they are told apart.
     case inspectorShown(pane: InspectorPaneKind, via: PanelOrigin)
@@ -121,7 +116,6 @@ enum TelemetryEvent: Equatable {
         case .appQuit: return "app_quit"
         case .sessionCreated: return "session_created"
         case .sessionRenamed: return "session_renamed"
-        case .sessionMoved: return "session_moved"
         case .inspectorShown: return "inspector_shown"
         case .previewOpened: return "preview_opened"
         case .tabOpened: return "tab_opened"
@@ -149,8 +143,6 @@ enum TelemetryEvent: Equatable {
             return ["via": via.rawValue]
         case let .sessionRenamed(automatic):
             return ["automatic": automatic ? "true" : "false"]
-        case let .sessionMoved(via, carriedAgent):
-            return ["via": via.rawValue, "carried_agent": carriedAgent ? "true" : "false"]
         case let .inspectorShown(pane, via):
             return ["pane": pane.rawValue, "via": via.rawValue]
         case let .previewOpened(mode, place):
@@ -232,16 +224,6 @@ enum SessionOrigin: String {
     /// current directory is the right default, so it has to be countable
     /// separately from the ⌘N it sits next to.
     case home
-    /// Fork Session: a session as it is, in a worktree of its own, its agent's
-    /// conversation forked.
-    case fork
-}
-
-/// What moved a session to another directory: `wortel cd`, or Change
-/// Directory in the session menu.
-enum MoveOrigin: String {
-    case cli
-    case menu
 }
 
 /// What opened the inspector. The toolbar and the shortcut are different
@@ -295,8 +277,6 @@ enum TabArea: String, CaseIterable {
 enum PaletteMode: String, CaseIterable {
     case sessions
     case commands
-    /// ⇧⌘O, Open Branch.
-    case branches
     /// ⌘Y, the prompts typed to agents.
     case prompts
 }
@@ -336,8 +316,6 @@ enum CommandVerb: String {
     case rename
     case notify
     case mark
-    case fork
-    case cd
     case list
     case read
     case send

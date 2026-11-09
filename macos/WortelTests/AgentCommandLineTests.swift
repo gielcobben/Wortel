@@ -130,12 +130,12 @@ final class AgentCommandLineTests: XCTestCase {
             "claude --model opus fix ./src")
     }
 
-    /// The resume typed for a move: the transcript's path, the carried flags,
-    /// and never Codex's `--cd`, which would send it back.
-    func testTheMoveResume() {
-        let words = AgentConversation.moveWords(agent: "claude", id: id, transcript: "/Users/x/.claude/projects/-a/\(id).jsonl")!
+    /// The resume, then the carried flags; and a flag left out on request,
+    /// with its value.
+    func testTheResumeCommand() {
         XCTAssertEqual(
-            AgentCommandLine.command(agent: "claude", argv: "claude --model opus", resume: words),
+            AgentCommandLine.command(agent: "claude", argv: "claude --model opus",
+                                     resume: ["--resume", "/Users/x/.claude/projects/-a/\(id).jsonl"]),
             "claude --resume /Users/x/.claude/projects/-a/\(id).jsonl --model opus")
         XCTAssertEqual(
             AgentCommandLine.command(agent: "codex", argv: "codex -C /a -m o3", resume: ["resume", id],

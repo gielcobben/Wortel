@@ -78,8 +78,6 @@ final class WortelCLIServerTests: XCTestCase {
             .newSession(cwd: nil, name: nil, branch: nil, base: nil),
             .rename(session: UUID().uuidString, name: "build"),
             .notify(session: UUID().uuidString, title: "Done", body: nil),
-            .fork(session: UUID().uuidString, name: nil, branch: "fix/y"),
-            .changeDirectory(session: UUID().uuidString, path: "/Users/x/site"),
             .list(caller: UUID().uuidString),
             .list(caller: nil),
             .read(session: "agent two", lines: nil),
@@ -96,9 +94,8 @@ final class WortelCLIServerTests: XCTestCase {
         }
     }
 
-    /// The handler is told who sent the command, by the kernel: `wortel cd`
-    /// has to know whether the agent it would quit is the one asking. The
-    /// client here is this test process, so that's the pid to expect.
+    /// The handler is told who sent the command, by the kernel. The client
+    /// here is this test process, so that's the pid to expect.
     func testTheHandlerIsToldTheCallersPid() throws {
         let caller = CallerBox()
         let server = WortelCLIServer(path: path, callerHandler: { _, from, reply in

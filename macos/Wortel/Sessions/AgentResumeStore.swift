@@ -509,7 +509,7 @@ enum AgentResumeStore {
     }
 
     /// Whether conversation `id` can be resumed from `cwd`: its transcript is
-    /// in `cwd`'s folder, or (a session moved by `wortel cd`) in another one.
+    /// in `cwd`'s folder, or (a conversation resumed elsewhere) in another one.
     static func claudeTranscriptExists(id: String, cwd: String) -> Bool {
         claudeTranscript(id: id, cwd: cwd) != nil
     }
@@ -518,7 +518,7 @@ enum AgentResumeStore {
     /// is where it nearly always is, else any project's.
     ///
     /// The second look is for a conversation that moved. Resumed from another
-    /// directory (`wortel cd`), Claude carries on in the same transcript and
+    /// directory, Claude carries on in the same transcript and
     /// leaves it where it was: on 2026-10-20 (Claude Code 2.1.305), an
     /// interactive `--resume` from B kept appending to A's file. So a session
     /// whose agent now runs in B still has its conversation under A, and every
@@ -544,7 +544,7 @@ enum AgentResumeStore {
     /// Claude's words for resuming `id` from `cwd`: by id while its transcript
     /// is in `cwd`'s own folder, else by the transcript's path. A resume by id
     /// from another folder works on Claude Code 2.1.305 but found nothing on
-    /// 2.1.299 (`forkWords`), and the path works on both.
+    /// 2.1.299, and the path works on both.
     static func claudeResumeWords(id: String, cwd: String?) -> [String]? {
         guard let words = AgentConversation.resumeWords(agent: "claude", id: id) else { return nil }
         guard let cwd, let transcript = claudeTranscript(id: id, cwd: cwd),

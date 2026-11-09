@@ -323,7 +323,7 @@ final class SessionStore {
     }
 }
 
-/// A worktree session you closed, waiting in Open Branch's Archived rows to be
+/// A worktree session you closed, waiting in ⌘P's Archived rows to be
 /// continued: the session exactly as it would have been saved, its agent and
 /// conversation included, and the worktree it lives in.
 ///

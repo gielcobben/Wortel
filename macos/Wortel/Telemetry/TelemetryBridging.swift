@@ -79,8 +79,6 @@ extension CommandVerb {
         case .rename: self = .rename
         case .notify: self = .notify
         case .mark: self = .mark
-        case .fork: self = .fork
-        case .changeDirectory: self = .cd
         case .list: self = .list
         case .read: self = .read
         case .send: self = .send

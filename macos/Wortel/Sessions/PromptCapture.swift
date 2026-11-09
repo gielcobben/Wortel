@@ -54,8 +54,7 @@ struct TypedLineBuilder {
     init() {}
 
     /// Whether something has been typed that hasn't been sent: the line so
-    /// far isn't empty. What a move (`wortel cd`) waits on, since quitting the
-    /// agent would throw that draft away.
+    /// far isn't empty. The tests read it to pin what clears a line.
     var hasDraft: Bool { !line.isEmpty }
 
     /// Feed one write to the pty; returns every line completed by it, in order.

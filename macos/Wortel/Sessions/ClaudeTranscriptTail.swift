@@ -130,44 +130,6 @@ enum ClaudeTranscriptTail {
         return AgentFiles.date(stamp)
     }
 
-    /// Whether the conversation is mid-turn: its last entry is a tool call
-    /// with no answer yet (a Bash or Edit waiting on permission, or a tool
-    /// still running), a tool's answer Claude hasn't replied to, or a prompt
-    /// it hasn't answered. False once Claude has had the last word, or the
-    /// user interrupted it.
-    ///
-    /// This is what tells a finished turn from a permission prompt, which the
-    /// terminal can't: Claude ends its `9;4` progress at both. `verdict` only
-    /// needs the two tools that are questions; anything that quits Claude on
-    /// the strength of "the turn ended" (`wortel cd`) needs every one.
-    static func turnIsOpen(_ data: Data) -> Bool {
-        let lines = data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true)
-        for line in lines.reversed() {
-            guard let entry = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
-                  let type = entry["type"] as? String,
-                  type == "assistant" || type == "user"
-            else { continue }
-            // Subagent traffic, and what Claude adds around a prompt (a
-            // skill's body, a command's caveat) or in place of the conversation
-            // (a compaction's summary), speak for no one.
-            if entry["isSidechain"] as? Bool == true || entry["isMeta"] as? Bool == true
-                || entry["isCompactSummary"] as? Bool == true { continue }
-            let content = (entry["message"] as? [String: Any])?["content"]
-            let blocks = content as? [[String: Any]] ?? []
-            if type == "assistant" {
-                return blocks.contains { $0["type"] as? String == "tool_use" }
-            }
-            // A user entry: a tool's result or a prompt Claude owes an answer
-            // to. Not the marker it writes when interrupted, nor what a slash
-            // command or a `!` shell command records, which Claude answers
-            // with nothing.
-            let text = (content as? String)
-                ?? blocks.compactMap { $0["text"] as? String }.joined(separator: " ")
-            return !answeredByNothing.contains { text.hasPrefix($0) }
-        }
-        return false
-    }
-
     /// The start of Claude's last answer, for the notification body
     /// (`AgentAnswer`): the first paragraph of prose in its final message,
     /// the question it is waiting on (`AskUserQuestion`'s first), or the
@@ -208,14 +170,6 @@ enum ClaudeTranscriptTail {
         }
         return nil
     }
-
-    /// How the user entries begin that are not owed a reply (measured on
-    /// 2.1.305 transcripts): an interruption, a slash command and its output,
-    /// and `!` bash mode's input and output.
-    static let answeredByNothing = [
-        "[Request interrupted", "<command-name>", "<local-command-", "<bash-input>",
-        "<bash-stdout>", "<bash-stderr>",
-    ]
 
     /// The message of an API error entry, cut to something a notification can
     /// carry. Some carry the prefix ("API Error: Your computer went to sleep

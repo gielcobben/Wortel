@@ -320,25 +320,4 @@ final class AgentConversationTests: XCTestCase {
         XCTAssertNil(AgentConversation.lostWithKeeper(
             running: nil, liveConversationID: nil, ended: nil, keeperLostAt: lost))
     }
-
-    // MARK: - Moving (`wortel cd`)
-
-    /// Only what was seen to carry a conversation to another folder end to
-    /// end (2026-10-20): Claude. Pi asks to fork instead; Codex wasn't tried.
-    func testOnlyClaudeIsMovable() {
-        XCTAssertEqual(AgentConversation.movable, ["claude"])
-    }
-
-    func testMoveWords() {
-        let id = "80297191-7afb-4301-8566-909b3e04fdfc"
-        XCTAssertEqual(AgentConversation.moveWords(agent: "claude", id: id, transcript: "/a/b/\(id).jsonl"),
-                       ["--resume", "/a/b/\(id).jsonl"])
-        XCTAssertEqual(AgentConversation.moveWords(agent: "claude", id: id), ["--resume", id],
-                       "no transcript known: by id")
-        XCTAssertEqual(AgentConversation.moveWords(agent: "claude", id: id, transcript: "/a b/\(id).jsonl"),
-                       ["--resume", id], "a path the shell would have to read: by id")
-        XCTAssertNil(AgentConversation.moveWords(agent: "claude", id: "$(rm -rf x)"))
-        XCTAssertNil(AgentConversation.moveWords(agent: "pi", id: id))
-        XCTAssertNil(AgentConversation.moveWords(agent: "codex", id: id))
-    }
 }

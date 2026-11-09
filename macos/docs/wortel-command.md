@@ -190,56 +190,6 @@ A colour is a note to yourself, and only you take it off: opening the session
 leaves it. Use it for a session you're nearly done with but want to keep, like
 a review waiting on CI.
 
-### `wortel fork [--name <name>] [--branch <branch>]`
-
-Forks the session you're in: a new session in a worktree of its own, starting
-at the same commit with the same uncommitted changes (staged stays staged,
-untracked files come along), and the agent running there continuing a copy of
-its conversation. The session you forked is not touched. Exactly what Fork
-Session in the Session menu does (⌥⇧⌘N).
-
-```sh
-wortel fork --name "try it with a queue"
-```
-
-It's how an agent tries a second approach without losing the first: fork, and
-the original carries on where it was. The new session's id goes to stdout once
-its worktree is ready. Claude Code, Codex and Pi have their conversation
-forked; any other agent's session forks its files and opens a shell. Outside a
-repository there is nothing to isolate, so the fork opens in the same folder.
-
-### `wortel cd <dir>`
-
-Moves the session you're in to another directory, agent and all. The shell
-`cd`s there, the session is filed under that directory's sidebar folder (a new
-folder if none covers it, as ⌘O makes one), and the git panel and Files follow.
-Exactly what Change Directory in the session menu does.
-
-```sh
-wortel cd ../new-site
-```
-
-It's for the conversation that wandered: you asked the agent to start a new
-project next door, it made the folder and kept working there through its own
-`cd`s, and the session, its git panel and its sidebar folder all stayed on the
-old project. Run by the agent itself, the move waits for the end of its turn:
-
-1. The agent finishes its reply. A turn waiting on a permission or a question
-   isn't finished, and neither is one you're typing into.
-2. Wortel quits it (SIGTERM, as a terminal ends a job).
-3. `cd <dir>` and the agent's resume are typed into the shell, and the same
-   conversation carries on in the new directory, waiting for you.
-
-The command answers straight away and says what will happen ("Not moved yet.
-When this turn ends, claude quits and continues this conversation in
-~/Developer/new-site, then waits for you."), including any background task the
-agent started that stops when it quits. In a plain shell the `cd` is typed as
-soon as `wortel` exits. Claude Code's conversation is the one carried today;
-any other agent is refused with a reason (quit it first, then move). Something
-else in the foreground (vim, a dev server) is refused too, rather than typed
-into. Run it again with another directory to change where it's going, or with
-the one you're in to call it off.
-
 ## Reaching other sessions
 
 The commands above act on the session they're run in. These four act on any
@@ -393,7 +343,7 @@ take it over. Its id is the only thing the first one has to keep.
 
 ## Which session a command means
 
-`rename`, `notify`, `mark`, `fork` and `cd` act on the session they were run in, unless `rename`, `notify` or `mark` is given `--session`. You never pass an id:
+`rename`, `notify` and `mark` act on the session they were run in, unless given `--session`. You never pass an id:
 every Wortel shell carries `$WORTEL_SESSION_ID`, and the command reads it. Run
 from outside Wortel they say so instead of guessing:
 

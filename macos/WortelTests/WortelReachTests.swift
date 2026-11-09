@@ -186,13 +186,6 @@ final class WortelReachTests: XCTestCase {
         assertError(["mark", "red", "--session"], .missing("a value", "--session"))
     }
 
-    /// `fork` and `cd` act on the agent inside, by who's asking; naming
-    /// another session there is refused rather than half-supported.
-    func testForkAndCdStayWithTheCaller() {
-        assertError(["fork", "--session", "x"], .unknown("--session"))
-        XCTAssertThrowsError(try parse(["cd", "--session", "x", "/tmp"]))
-    }
-
     // MARK: - Which session a name means
 
     private let one = UUID(uuidString: "3F2A91C0-0000-4000-8000-000000000001")!

@@ -95,14 +95,6 @@ final class PtyHost: @unchecked Sendable {
         get { tap.withLock { $0 } }
         set { tap.withLock { $0 = newValue } }
     }
-    /// A second listener, for a move waiting on the agent (`DraftTap`). Its
-    /// own slot because a session can be waiting for an agent's first prompt
-    /// and on a move at once, and neither may unhook the other.
-    private let secondTap = OSAllocatedUnfairLock<(any PtyInputListener)?>(initialState: nil)
-    var draftTap: (any PtyInputListener)? {
-        get { secondTap.withLock { $0 } }
-        set { secondTap.withLock { $0 = newValue } }
-    }
 
     /// While a reattach's replay is going through the terminal, what the
     /// terminal answers is held back from the program (`ReplayAnswers`). nil
@@ -469,7 +461,6 @@ final class PtyHost: @unchecked Sendable {
     /// keystroke path to fix a race no one has hit.
     func write(_ bytes: UnsafePointer<UInt8>, count: Int) {
         if let tap = tap.withLock({ $0 }) { tap.feed(bytes, count: count) }
-        if let tap = secondTap.withLock({ $0 }) { tap.feed(bytes, count: count) }
         let master = shared.withLock { $0.master }
         guard master >= 0 else { return }
         var offset = 0

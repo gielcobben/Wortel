@@ -31,9 +31,7 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | New session | ⌘N | Codex, Claude, cmux |
 | New session at home | ⌥⌘N | |
 | New worktree session | ⇧⌘N | |
-| Fork session | ⌥⇧⌘N | |
 | Open folder | ⌘O | Codex, cmux, every Mac app |
-| Open branch (a branch, worktree or pull request) | ⇧⌘O | |
 | Close session | ⇧⌘W | iTerm, Ghostty, Warp, VS Code (close window) |
 | Next / previous session | ⌥⌘↓ / ⌥⌘↑ | Arc (its sidebar's tabs) |
 | Back / forward through the sessions you've been on | ⌃⌘[ / ⌃⌘] | Safari, Chrome (⌘[ / ⌘], with ⌃ added because those are the areas here) |

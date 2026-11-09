@@ -291,7 +291,7 @@ reloads History.
 
 **The panes show the session's own folder**: where it was started
 (`GitPanelModel.homeFolder`, its `originCwd`), so a worktree session's
-worktree (New Worktree Session, Fork and Open Branch all start one there),
+worktree (New Worktree Session starts one there),
 else its repository. Not where an agent is working: an agent `cd`'d or
 writing into another worktree of the same repository is that worktree's
 business, usually removed when it's done, and following it (or pointing at
@@ -338,21 +338,22 @@ into. Anything that didn't copy is held on the preparing page
 replacing the page would hide it.
 
 **Worktrees: the session is the unit** (`docs/worktrees.md`). You manage
-sessions; a worktree is where one lives. Three ways in: ⇧⌘N New Worktree
+sessions; a worktree is where one lives. One way in: ⇧⌘N New Worktree
 Session (`BranchSheet`: a placeholder name selected so Return is instant, From,
-and Location, which writes the repository's `wortel.worktreePath`; `wortel new
---worktree` skips it), ⇧⌘O Open Branch (`OpenTarget`, ⌘P's panel in a third mode:
-go to the session, restore the archived one, open the worktree, check the
-branch out, or create it, and a branch with a place is listed only there), and
-⌥⇧⌘N Fork. One way out: closing (⇧⌘W, ×, `exit`) a session that lives in a
+and Location, which writes the repository's `wortel.worktreePath`; an existing
+branch or a `#123` in the name field checks that out; `wortel new --worktree`
+skips it). **Starting a session has four ways and only four** (⌘N, ⌥⌘N at
+home, ⇧⌘N, ⌘O): Open Branch, Fork Session, Change Directory (`wortel cd`) and
+New Folder were all cut on 2026-11-09 for being more ways in than anyone kept
+apart. Don't add a fifth without that argument. One way out: closing (⇧⌘W, ×, `exit`) a session that lives in a
 worktree **archives** it (`SessionManager.archive`), then, after the row has
 moved, inspects the worktree and Trashes it only when there's nothing to keep
 (`WorktreeCloseDecision`). Archived sessions are in `archived-sessions.json`,
 never `sessions.json`, which an older build would start them from; restoring
 one goes through the same `restoredSession` launch uses, agent resume and all.
-The sidebar shows open sessions only: **Open Branch** is where archived ones
-are found, with the worktrees of the repository no session is in, whoever made
-them ("Not open"), from one cached `git worktree list` per repository
+The sidebar shows open sessions only: **⌘P** is where archived ones are
+found once you type (`OpenTarget`, listed under the matching sessions), with
+the worktrees no session is in, whoever made them ("Not open"), from one cached `git worktree list` per repository
 (`worktreeListings`, refreshed by a vnode watch on `.git/worktrees` and after
 creates and archives; never per row or on a timer). An Archived fold per
 folder was tried and dropped as clutter.
@@ -391,44 +392,10 @@ previous one cancelled per keystroke. No index on disk, ever: that would be
 Wortel keeping the user's prompts, which `docs/session-naming.md` promises it
 doesn't.
 
-**Fork Session** (⌥⇧⌘N, `wortel fork`, `WorktreeFork`) is the session as it
-is, in a worktree of its own: a new branch at the source's HEAD (not trunk),
-its staged changes staged, its unstaged ones unstaged, its untracked files
-there, and the agent's conversation forked (`AgentConversation.forkWords`). The
-source is only read: two binary diffs under `GIT_OPTIONAL_LOCKS=0` and a clone
-of the untracked files into `~/.wortel/staging`, never `git stash`, which would
-rewrite the index under an agent running git there and drops untracked files.
-The snapshot is taken once, at the press, and kept on `ForkSource` so Try Again
-forks the same moment. Patches go through `runData`, because `run` decodes
-UTF-8 and would corrupt a Latin-1 file. If `git apply` refuses, the changed
-files' bytes are copied instead, with a note. Claude is resumed by its
-transcript's *path* (`--resume <path> --fork-session`): by id it looked only in
-the new worktree's project folder and found nothing (2.1.299; a plain resume by
-id from another folder works on 2.1.305, the path on both). Codex's carried `--cd` is
-dropped so the fork doesn't work in the source folder. The fork is named
-"<name> (fork)" with the user's authority, or the forked agent's identical
-title would make two identical rows.
-
-**Moving a session** (`wortel cd <dir>`, Change Directory ▸; `SessionMove`,
-`SessionManager.changeDirectory`) puts a live session somewhere else on disk,
-its agent's conversation with it. The shell is never restarted (that would lose
-its scrollback); the move is *typed* into it, `cd <dir>` and then the agent's
-resume as two lines (one line with `&&` leaves bash and fish unable to see the
-agent start, so it would run untracked). An agent is quit first, by SIGTERM to
-its process group, and only once it is idle for real: Claude ends its `9;4`
-progress at a permission prompt exactly as at a finished turn, so its
-transcript decides (`ClaudeTranscriptTail.turnIsOpen`), with a draft in the
-box (`DraftTap`) or input in the last few seconds (`SurfaceView.lastUserInputAt`)
-holding it off too. An agent that asked for
-its own move waits for a turn that ends after it asked; who asked comes from
-the socket's peer pid. Once the shell reports the new directory the session is
-re-filed: `originCwd`, the checkout, the sidebar folder (made as ⌘O makes one;
-the old one is kept), the placeholder name. Claude keeps a moved conversation's
-transcript under the *old* folder's project directory and appends there, so
+Claude keeps a conversation resumed from another folder in the *old*
+folder's project directory and appends there, so
 `AgentResumeStore.claudeTranscript(id:cwd:)` looks in every project folder when
-the session's own has nothing. Only agents seen to carry over end to end are
-`AgentConversation.movable` (Claude; Pi asks to fork instead), the rest are
-refused with a reason.
+the session's own has nothing.
 
 **Removing a worktree never loses work without you choosing it.** Closing a
 session archives it (above); Clean Up Worktrees… goes through `WorktreeCleanupSheet`, which inspects first
@@ -674,7 +641,7 @@ quitting stays what it was. They are also why the inspector no longer shares its
 column with anything.
 
 **The `wortel` command** (`Wortel/CLI/`, `WortelCLI/`) — a Unix socket the CLI
-speaks JSON at: `open`, `new`, `rename`, `notify`, `mark`, `fork`, `cd`, and
+speaks JSON at: `open`, `new`, `rename`, `notify`, `mark`, and
 `list`, `read`, `send`, `wait`. `docs/wortel-command.md` is
 the user-facing guide, `docs/cli.md` the design record; the decisions that
 shape the code are that **there is no installer** (the binary

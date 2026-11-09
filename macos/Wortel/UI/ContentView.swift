@@ -19,9 +19,8 @@ func promptFolderName(title: String, confirm: String, initial: String = "") -> S
     return field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
 }
 
-/// Pick a directory. The whole of ⌘O, of a folder's "Set Directory…" and of
-/// Change Directory's Choose…, and the only part of Wortel that ever opens a
-/// file panel.
+/// Pick a directory. The whole of ⌘O and of the worktree sheet's Location,
+/// and the only part of Wortel that ever opens a file panel.
 ///
 /// Directories only, and no "New Folder" button unless asked (`canCreate`):
 /// mostly this points at a project that already exists. Modal rather than a sheet for the same reason the name
@@ -296,9 +295,9 @@ struct NewSessionButton: NSViewRepresentable {
         let button = HoverFillButton()
         button.target = context.coordinator
         button.action = #selector(Coordinator.showMenu(_:))
-        button.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Session or Folder")?
+        button.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Session")?
             .withSymbolConfiguration(SidebarBarButton.glyph)
-        button.toolTip = "New Session or Folder"
+        button.toolTip = "New Session"
         return button
     }
 
@@ -327,22 +326,9 @@ struct NewSessionButton: NSViewRepresentable {
             // the thing it's the exception to.
             add("New Session at Home", "house") { manager.newHomeSession() }
             add("New Worktree Session\u{2026}", "plus.square.dashed") { newWorktreeSessionFromSheet(manager) }
-            // Its own branch and its own files: what makes running two agents
-            // in one repository safe. Fork carries the selected session itself.
-            if let selected = manager.selected, selected.preparation == nil {
-                add("Fork Session", "arrow.triangle.branch") { manager.fork(selected) }
-            }
-            add("Open Branch\u{2026}", "arrow.branch") {
-                (NSApp.delegate as? AppDelegate)?.openBranch(from: manager.branchSource())
-            }
             menu.addItem(.separator())
-            add("New Folder\u{2026}", "folder.badge.plus") {
-                if let name = promptFolderName(title: "New Folder", confirm: "Create") {
-                    manager.addFolder(named: name)
-                }
-            }
             // The way to reach a project no session is standing in without
-            // typing `cd`, and how a folder usually gets its directory.
+            // typing `cd`, and how a folder gets made, with its directory.
             add("Open Folder\u{2026}", "folder") { openFolderSession(manager) }
             // Lit while open, then opening upward from the button, as a menu
             // at the bottom of a window does.
@@ -545,40 +531,20 @@ enum SessionActions {
             return item
         }
 
-        // ⌥⌘R, as in the Session menu: plain ⌘R is a browser's Reload.
-        _ = item("Rename", "pencil", key: "r", [.command, .option]) { manager.editingID = session.id }
-        if let moveTo = moveToMenu(for: session, manager: manager) {
-            let move = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
-            move.setGlyph("folder")
-            move.submenu = moveTo
-            menu.addItem(move)
-        }
-        if canChangeDirectory(session) {
-            let change = NSMenuItem(title: "Change Directory", action: nil, keyEquivalent: "")
-            change.setGlyph("arrow.turn.down.right")
-            let submenu = NSMenu(title: "Change Directory")
-            fillChangeDirectory(submenu, for: session, manager: manager)
-            change.submenu = submenu
-            menu.addItem(change)
-        }
+        // Shortest title first, so the group reads as a tidy wedge rather
+        // than a ragged edge. "Unpin" is still the shortest.
         let pinned = manager.isPinned(session)
         _ = item(pinned ? "Unpin" : "Pin", pinned ? "pin.slash" : "pin", key: "p", [.command, .option]) {
             manager.setPinned(session, !pinned)
         }
+        // ⌥⌘R, as in the Session menu: plain ⌘R is a browser's Reload.
+        _ = item("Rename", "pencil", key: "r", [.command, .option]) { manager.editingID = session.id }
+        menu.addItem(SessionColourMenu.item(for: session, manager: manager))
         _ = item("Mark as Unread", "circle.dashed", key: "u", [.command, .shift]) {
             manager.markUnread(session)
         }
-        menu.addItem(SessionColourMenu.item(for: session, manager: manager))
 
         menu.addItem(.separator())
-        // This session as it is, in a worktree of its own: its changes, its
-        // agent's conversation. Short titles, because the longest one sets
-        // the menu's width and inside a session's own menu these need no more.
-        if session.preparation == nil {
-            _ = item("Fork", "arrow.triangle.branch", key: "n", [.command, .option, .shift]) {
-                manager.fork(session)
-            }
-        }
         if let cwd = session.cwd {
             _ = item("Show in Finder", "folder.badge.gearshape") {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
@@ -591,7 +557,7 @@ enum SessionActions {
 
         menu.addItem(.separator())
         // In a worktree, closing archives (`SessionManager.end`): the
-        // session waits to be restored from Open Branch, and its worktree goes
+        // session waits to be restored from ⌘P, and its worktree goes
         // to the Trash only when nothing in it is worth keeping.
         _ = item("Close Session", "xmark.square", key: "w", [.command, .shift]) {
             manager.requestClose(session)
@@ -614,22 +580,6 @@ enum SessionActions {
             item.setGlyph(glyph)
             menu.addItem(item)
         }
-        let ids = sessions.map(\.id)
-        let folders = Set(sessions.map(\.folderPath))
-        let targets = (folders.contains { $0 != nil } ? [String?.none] : [])
-            + manager.folderNames.filter { folders != [Optional($0)] }.map(Optional.some)
-        if !targets.isEmpty {
-            let submenu = NSMenu(title: "Move To")
-            for folder in targets {
-                submenu.addItem(ClosureMenuItem(title: folder ?? "Top Level") {
-                    manager.moveSessions(ids, toFolder: folder)
-                })
-            }
-            let move = NSMenuItem(title: "Move To", action: nil, keyEquivalent: "")
-            move.setGlyph("folder")
-            move.submenu = submenu
-            menu.addItem(move)
-        }
         let unpinned = sessions.filter { !manager.isPinned($0) }
         if !unpinned.isEmpty { item("Pin", "pin") { manager.setPinned(unpinned, true) } }
         if unpinned.count < sessions.count {
@@ -648,94 +598,6 @@ enum SessionActions {
         return menu
     }
 
-    /// "Move To": top level plus every other folder, the no-drag way to
-    /// refile. Nil when there's nowhere to move to.
-    /// Whether "Move To" has anywhere to go: out of the folder it's in, or into
-    /// another. Cheap on purpose: the Session menu asks it as it updates, which
-    /// AppKit also does while it looks for a key equivalent, so on keypresses.
-    static func canMove(_ session: Session, manager: SessionManager) -> Bool {
-        session.folderPath != nil || manager.folderNames.contains { $0 != session.folderPath }
-    }
-
-    static func moveToMenu(for session: Session, manager: SessionManager) -> NSMenu? {
-        guard canMove(session, manager: manager) else { return nil }
-        let submenu = NSMenu(title: "Move To")
-        fillMoveTo(submenu, for: session, manager: manager)
-        return submenu
-    }
-
-    /// Whether a session can be offered Change Directory at all: not while
-    /// its worktree is still being made. Cheap, for the same reason `canMove`
-    /// is.
-    static func canChangeDirectory(_ session: Session) -> Bool {
-        session.preparation == nil
-    }
-
-    /// "Change Directory": this repository's free worktrees, the sidebar
-    /// folders' directories, and Choose… (with New Folder, since a fresh
-    /// directory is the usual reason). While a move waits, its Cancel instead.
-    static func fillChangeDirectory(_ submenu: NSMenu, for session: Session, manager: SessionManager) {
-        submenu.removeAllItems()
-        if let pending = manager.pendingMovePath(of: session) {
-            let name = (pending as NSString).lastPathComponent
-            submenu.addItem(ClosureMenuItem(title: "Cancel Move to \u{201c}\(name)\u{201d}") {
-                manager.cancelMove(session)
-            })
-            return
-        }
-        let targets = manager.changeDirectoryTargets(for: session)
-        for target in targets.worktrees {
-            let item = ClosureMenuItem(title: target.title) { changeDirectory(session, to: target.path, manager: manager) }
-            item.setGlyph("arrow.triangle.branch")
-            item.toolTip = (target.path as NSString).abbreviatingWithTildeInPath
-            submenu.addItem(item)
-        }
-        if !targets.worktrees.isEmpty, !targets.folders.isEmpty { submenu.addItem(.separator()) }
-        for target in targets.folders {
-            let item = ClosureMenuItem(title: target.title) { changeDirectory(session, to: target.path, manager: manager) }
-            item.setGlyph("folder")
-            item.toolTip = (target.path as NSString).abbreviatingWithTildeInPath
-            submenu.addItem(item)
-        }
-        if !targets.worktrees.isEmpty || !targets.folders.isEmpty { submenu.addItem(.separator()) }
-        submenu.addItem(ClosureMenuItem(title: "Choose\u{2026}") {
-            // Beside where it is now, where a new project usually goes.
-            let start = (session.cwd ?? session.originCwd).map { ($0 as NSString).deletingLastPathComponent }
-            guard let path = chooseDirectory(title: "Move \u{201c}\(session.leafName)\u{201d} to another directory",
-                                             startingAt: start, prompt: "Move", canCreate: true) else { return }
-            changeDirectory(session, to: path, manager: manager)
-        })
-    }
-
-    /// Ask for the move, and say why when it can't: the menu has no caller to
-    /// print a refusal to. An accepted move speaks for itself on the row.
-    static func changeDirectory(_ session: Session, to path: String, manager: SessionManager) {
-        let answer = manager.changeDirectory(session, to: path, via: .menu)
-        guard !answer.ok else { return }
-        let alert = NSAlert()
-        alert.messageText = "Can't move \u{201c}\(session.leafName)\u{201d}"
-        alert.informativeText = answer.message ?? ""
-        alert.addButton(withTitle: "OK")
-        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
-            alert.beginSheetModal(for: window)
-        } else {
-            alert.runModal()
-        }
-    }
-
-    static func fillMoveTo(_ submenu: NSMenu, for session: Session, manager: SessionManager) {
-        submenu.removeAllItems()
-        if session.folderPath != nil {
-            submenu.addItem(ClosureMenuItem(title: "Top Level") {
-                manager.moveSession(id: session.id, toFolder: nil, at: .max)
-            })
-        }
-        for folder in manager.folderNames where folder != session.folderPath {
-            submenu.addItem(ClosureMenuItem(title: folder) {
-                manager.moveSession(id: session.id, toFolder: folder, at: .max)
-            })
-        }
-    }
 }
 
 /// ⌘O: pick a directory and open a session in it. One funnel for the menu bar,
@@ -900,7 +762,7 @@ struct SidebarHeaderContent: View {
 }
 
 /// What can be done to a folder: its header's right-click menu and its hover
-/// "…". Named and drawn as the session menus are (SessionActions), so "Fork…"
+/// "…". Named and drawn as the session menus are (SessionActions), so "Rename…"
 /// is one thing wherever it appears.
 @MainActor
 enum FolderActions {
@@ -917,50 +779,9 @@ enum FolderActions {
         item("New Worktree Session\u{2026}", "plus.square.dashed") {
             newWorktreeSessionFromSheet(manager, inFolder: folder)
         }
-        item("Open Branch\u{2026}", "arrow.branch") {
-            (NSApp.delegate as? AppDelegate)?.openBranch(from: manager.branchSource(inFolder: folder))
-        }
         item("Rename\u{2026}", "pencil") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
                 manager.renameFolder(folder, to: name)
-            }
-        }
-        menu.addItem(.separator())
-        // What makes the first item above mean this folder: where its new
-        // sessions start. A link to a directory, never the directory itself,
-        // so none of these words may sound like touching what's on disk.
-        item("Choose Directory\u{2026}", "folder") {
-            guard let path = chooseDirectory(
-                title: "Set the directory for \u{201c}\(folder)\u{201d}",
-                startingAt: manager.root(ofFolder: folder)) else { return }
-            manager.setRoot(path, ofFolder: folder)
-        }
-        // Only offered when there is one, and it turns the folder back into a
-        // plain label rather than deleting anything: "Forget", as macOS forgets
-        // a network, not "Clear", which reads as emptying it.
-        if manager.root(ofFolder: folder) != nil {
-            item("Forget Directory", "folder.badge.minus") { manager.setRoot(nil, ofFolder: folder) }
-        }
-        // Where this repository's new worktrees go: Wortel's folder unless
-        // the repository says otherwise (`GitWorktree.locationKey`, in its
-        // git config, where a team's setup or `includeIf` may already have
-        // put it).
-        if let home = manager.repositoryHome(ofFolder: folder) {
-            let current = manager.worktreeLocations[home]
-            item("Worktree Location\u{2026}", "arrow.triangle.branch") {
-                let start = current.map {
-                    (GitWorktree.location(template: $0, repoRoot: home, branch: "x") as NSString)
-                        .deletingLastPathComponent
-                } ?? (home as NSString).deletingLastPathComponent
-                guard let chosen = chooseDirectory(
-                    title: "Where new worktrees of \u{201c}\((home as NSString).lastPathComponent)\u{201d} go. Each gets a folder of its own in it, named for its branch.",
-                    startingAt: start, prompt: "Use This Folder", canCreate: true) else { return }
-                manager.setWorktreeLocation((chosen as NSString).abbreviatingWithTildeInPath, forRepository: home)
-            }
-            if current != nil {
-                item("Use Wortel\u{2019}s Worktree Folder", "arrow.uturn.backward") {
-                    manager.setWorktreeLocation(nil, forRepository: home)
-                }
             }
         }
         menu.addItem(.separator())
@@ -1037,18 +858,7 @@ struct SessionRow: View {
                     // slides to show the rest, as the ChatGPT app's do.
                     MarqueeName(text: session.leafName, active: isHovered)
                 }
-                if let moving = session.movingTo, !isEditing {
-                    // A move waiting on the agent's turn (or the prompt), in
-                    // the second line's place: where it's going, and when.
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.turn.down.right")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                        TruncatingLabel(text: SessionMove.pendingLine(to: moving), font: .systemFont(ofSize: 11),
-                                        color: .tertiaryLabelColor)
-                    }
-                    .help("Moving to \(SessionMove.display(moving)). Cancel it from the session menu, under Change Directory.")
-                } else if session.folderIsGone, !isEditing {
+                if session.folderIsGone, !isEditing {
                     // Under the name, where a worktree's branch would be: the
                     // row's folder was deleted. Close it with its ×.
                     HStack(spacing: 3) {

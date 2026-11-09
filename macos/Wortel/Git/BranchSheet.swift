@@ -40,8 +40,6 @@ struct BranchSheetAnswer {
 ///
 /// ⇧⌘N arrives with a placeholder name selected, so Return makes the same
 /// session it used to make with no sheet at all, and typing replaces it.
-/// Open Branch's ⌥↩ on Create arrives with the name typed there
-/// (`initialName`), to pick where it starts from.
 ///
 /// Three inputs, a line saying what the button will do, and the two buttons.
 /// The "From" control opens the branch list right under itself; there is no
@@ -66,8 +64,7 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
     /// Where the answer goes. Called exactly once, with nil for Cancel.
     private var finish: ((BranchSheetAnswer?) -> Void)?
 
-    /// The name typed before the sheet came up (Open Branch's ⌥↩ on Create):
-    /// the sheet is for picking where it starts from.
+    /// A name to start from instead of the placeholder.
     var initialName: String?
 
     /// Wide enough for a real branch name (`feature/the-thing-i-am-doing`) and

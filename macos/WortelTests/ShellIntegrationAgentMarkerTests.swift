@@ -40,8 +40,7 @@ final class ShellIntegrationAgentMarkerTests: XCTestCase {
         ("bunx @mariozechner/pi-coding-agent", "pi", "", nil, nil),
         ("uvx --from aider-chat aider", "aider", "", nil, nil),
         ("devx pi", "pi", "", nil, nil),
-        // What a move types after its `cd` (`SessionMove.lines`): the resume
-        // by transcript path, run where the shell now is.
+        // A resume by transcript path, run where the shell now is.
         ("claude --resume /Users/x/.claude/projects/-Users-x-a/5131fb0c-345b-4a6c-9d49-49084d92b570.jsonl --model opus",
          "claude", "opus", nil, nil),
         // Somewhere else: nothing here to resume.

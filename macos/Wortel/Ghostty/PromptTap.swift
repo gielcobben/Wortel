@@ -44,25 +44,3 @@ final class PromptTap: PtyInputListener, @unchecked Sendable {
         DispatchQueue.main.async { for line in lines { deliver(line) } }
     }
 }
-
-/// A listener on a pty's input while a move waits on its session's agent
-/// (`wortel cd`): it says whether the user has a draft in the agent's input,
-/// and nothing else. Quitting the agent would throw a draft away. When the
-/// user last touched the session is the view's to say
-/// (`SurfaceView.lastUserInputAt`): this stream also carries the terminal's
-/// replies, and an agent asking for the colour every few seconds would
-/// otherwise look like someone typing forever.
-///
-/// Holds the line being typed only to know whether it's empty; the text is
-/// never read out, kept or sent anywhere, and the tap is detached as soon as
-/// the move happens or is cancelled.
-final class DraftTap: PtyInputListener, @unchecked Sendable {
-    private let builder = OSAllocatedUnfairLock(uncheckedState: TypedLineBuilder())
-
-    /// Called from the pty write path, on whichever thread libghostty uses.
-    func feed(_ bytes: UnsafePointer<UInt8>, count: Int) {
-        builder.withLock { _ = $0.feed(UnsafeBufferPointer(start: bytes, count: count)) }
-    }
-
-    var hasDraft: Bool { builder.withLock { $0.hasDraft } }
-}

@@ -106,8 +106,8 @@ enum AgentCommandLine {
     /// agent's own words for "this conversation"), then the carried flags.
     /// Codex takes its options after its `resume` and `fork` subcommands, so
     /// they go between it and the conversation. `excluding` drops flags that
-    /// would be wrong where it's typed: a fork must not carry Codex's `--cd`
-    /// back to the folder it forked from.
+    /// would be wrong where it's typed (Codex's `--cd`, which names the
+    /// folder it ran in).
     static func command(agent: String, argv: String?, resume: [String],
                         excluding: Set<String> = []) -> String {
         let launcher = launcher(agent: agent, argv: argv) ?? [agent]
@@ -147,7 +147,7 @@ enum AgentCommandLine {
     /// (`./bin/claude`), an assignment's value (`CLAUDE_CONFIG_DIR=./cfg`) and
     /// the values of the flags that name a file or a folder (`pathFlags`).
     ///
-    /// For a resume typed somewhere else (`wortel cd`). Carried as it was, a
+    /// For a resume typed somewhere else. Carried as it was, a
     /// relative `--add-dir ../shared` would name a different folder after the
     /// `cd`, or none, and the agent would start without what it had. Only
     /// what's already carried can change, so only plain words are touched.

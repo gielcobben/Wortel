@@ -176,4 +176,63 @@ final class DiffParserTests: XCTestCase {
         let result = DiffParser.parse("@@ -1 +1 @@\n+only\n")
         XCTAssertEqual(result.lines.count, 2)
     }
+
+    func testADeletedLineThatLooksLikeAHeaderIsContent() {
+        let patch = """
+        diff --git a/f.txt b/f.txt
+        --- a/f.txt
+        +++ b/f.txt
+        @@ -1,3 +1,2 @@
+         keep
+        --- a comment
+         tail
+        """
+        let result = DiffParser.parse(patch)
+        XCTAssertEqual(result.lines.map(\.kind), [.hunkHeader, .context, .deletion, .context])
+        XCTAssertEqual(result.lines[2].text, "-- a comment")
+        XCTAssertEqual(result.lines[2].oldLine, 2)
+        XCTAssertEqual(result.lines[3].oldLine, 3)
+        XCTAssertEqual(result.lines[3].newLine, 2)
+    }
+
+    func testAnAddedLineThatLooksLikeAHeaderIsContent() {
+        let patch = """
+        diff --git a/f.txt b/f.txt
+        --- a/f.txt
+        +++ b/f.txt
+        @@ -1,2 +1,3 @@
+         keep
+        +++ b/not-a-path
+         tail
+        """
+        let result = DiffParser.parse(patch)
+        XCTAssertEqual(result.lines.map(\.kind), [.hunkHeader, .context, .addition, .context])
+        XCTAssertEqual(result.lines[2].text, "++ b/not-a-path")
+        XCTAssertEqual(result.lines.map(\.path), Array(repeating: "f.txt", count: 4))
+    }
+
+    func testHeadersAfterAHunkAreStillHeaders() {
+        let patch = """
+        diff --git a/f.txt b/f.txt
+        --- a/f.txt
+        +++ b/f.txt
+        @@ -1,2 +1,2 @@
+         keep
+        -old
+        +new
+        diff --git a/g.txt b/g.txt
+        --- a/g.txt
+        +++ b/g.txt
+        @@ -1 +1 @@
+        -before
+        +after
+        """
+        let result = DiffParser.parse(patch)
+        XCTAssertEqual(result.lines.map(\.kind),
+                       [.hunkHeader, .context, .deletion, .addition,
+                        .hunkHeader, .deletion, .addition])
+        XCTAssertFalse(result.lines.contains { $0.text.hasPrefix("-- ") || $0.text.hasPrefix("++ ") })
+        XCTAssertEqual(result.lines.prefix(4).map(\.path), Array(repeating: "f.txt", count: 4))
+        XCTAssertEqual(result.lines.suffix(3).map(\.path), Array(repeating: "g.txt", count: 3))
+    }
 }

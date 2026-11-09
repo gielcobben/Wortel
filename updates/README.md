@@ -62,6 +62,7 @@ slow, broken or blocked cannot delay a download or fail an update check.
 ```sh
 npm install
 npm test           # the pure logic: classification and Content-Range
+npm run typecheck  # tsc; ../scripts/check.sh runs every app
 ```
 
 Those are the two things that fail silently, so they are the two things with

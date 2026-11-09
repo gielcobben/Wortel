@@ -15,6 +15,7 @@
 //                    is rendered at its real width, far wider than a phone, and
 //                    panned so this pane is the part on screen. The rest falls
 //                    off both edges. It is never scaled.
+/** @type {Record<string, { sidebar: boolean, pane: 'history' | 'changes' | null, beat: number, focus: 'sidebar' | 'terminal' | 'inspector', agents?: boolean }>} */
 export const VIEWS = {
   'what-is-wortel': { sidebar: true,  pane: 'history', beat: 0, focus: 'sidebar' },
   'ghostty-engine': { sidebar: false, pane: null,      beat: 1, focus: 'terminal' },

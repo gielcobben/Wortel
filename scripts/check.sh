@@ -1,0 +1,50 @@
+#!/bin/bash
+# Does everything still work? The three apps' own checks, in one go:
+#
+#   ./scripts/check.sh            all three
+#   ./scripts/check.sh macos      one of: macos, updates, web
+#
+# Nothing here deploys, signs or publishes. XCODEBUILD_FLAGS is passed to
+# xcodebuild as given, for a machine that needs e.g.
+#   XCODEBUILD_FLAGS="-clonedSourcePackagesDirPath /tmp/wortel-sp"
+set -euo pipefail
+cd "$(dirname "$0")/.."
+ROOT=$(pwd)
+only="${1:-all}"
+
+run() { [ "$only" = all ] || [ "$only" = "$1" ]; }
+
+if run macos; then
+  echo "==> macos: tests"
+  (
+    cd "$ROOT/macos"
+    command -v xcodegen >/dev/null || { echo "✗ xcodegen not found (brew install xcodegen)" >&2; exit 1; }
+    xcodegen generate --quiet
+    # shellcheck disable=SC2086
+    xcodebuild -project Wortel.xcodeproj -scheme WortelTests ${XCODEBUILD_FLAGS:-} test -quiet
+  )
+fi
+
+if run updates; then
+  echo "==> updates: typecheck + tests"
+  (
+    cd "$ROOT/updates"
+    [ -d node_modules ] || npm ci --silent
+    npm run --silent typecheck
+    npm test --silent
+  )
+fi
+
+if run web; then
+  echo "==> web: typecheck + build"
+  (
+    cd "$ROOT/web"
+    [ -d node_modules ] || npm ci --silent
+    npm run --silent check
+    npm run --silent build
+    # No em-dash in anything that ships (web/README.md's rule).
+    if grep -rl '—' dist/ ; then echo "✗ em-dash in the built site (files above)" >&2; exit 1; fi
+  )
+fi
+
+echo "==> ok"

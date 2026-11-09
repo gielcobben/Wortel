@@ -10,6 +10,7 @@ static (`output: 'static'`); no server runtime, no SSR.
 ```sh
 npm install
 npm run dev        # http://localhost:4321
+npm run check      # typecheck the pages and the worker; ../scripts/check.sh runs every app
 ```
 
 ## Build & deploy

@@ -130,8 +130,9 @@ final class SessionManager {
 
     /// The sessions as the sidebar draws them, top to bottom, folded sections
     /// left out: what a ⇧-click's range runs over and the order a bulk action
-    /// applies in. Written by the outline after each change, never read for
-    /// drawing, so not observed.
+    /// applies in, and what ⌘1…⌘9 count. Written by the outline after each
+    /// change. Not observed: the ⌘-number hints read it, but only as ⌘ goes
+    /// down, which redraws them anyway.
     @ObservationIgnored var sidebarRowOrder: [Session.ID] = []
 
     /// View ▸ Sort Unread First: within each section, sessions that want you
@@ -3039,8 +3040,26 @@ final class SessionManager {
     }
 
     func select(index: Int) {
-        guard sessions.indices.contains(index) else { return }
-        selectedID = sessions[index].id
+        let order = shortcutOrder
+        guard order.indices.contains(index) else { return }
+        selectedID = order[index]
+    }
+
+    /// ⌘1…⌘9's sessions, in order: the rows as the sidebar draws them
+    /// (Pinned first, Sort Unread First applied, folded sections left out),
+    /// so the number on a row is the one that selects it. The stored order
+    /// only before the sidebar has drawn.
+    private var shortcutOrder: [Session.ID] {
+        guard !sidebarRowOrder.isEmpty else { return sessions.map(\.id) }
+        let live = Set(sessions.map(\.id))
+        return sidebarRowOrder.filter(live.contains)
+    }
+
+    /// The ⌘-number shown on `id`'s row while ⌘ is held, if it has one.
+    func shortcutNumber(for id: Session.ID) -> Int? {
+        guard showsShortcutHints,
+              let index = shortcutOrder.prefix(9).firstIndex(of: id) else { return nil }
+        return index + 1
     }
 
     /// Select a session by id (e.g. from tapping its attention notification).

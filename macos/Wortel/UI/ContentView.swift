@@ -352,10 +352,12 @@ struct SidebarRowContent: View {
     let session: Session
 
     /// Whether the row's trailing status indicator shows anything: the
-    /// same conditions SessionStatusIndicator draws under.
+    /// same conditions SessionStatusIndicator draws under, its ⌘-number
+    /// included, or that draws over the end of the name.
     private var showsStatus: Bool {
         let selected = manager.selectedID == session.id
-        return session.attention != nil || session.isBusy
+        return manager.shortcutNumber(for: session.id) != nil
+            || session.attention != nil || session.isBusy
             || (session.unread != nil && (!selected || session.markedUnread))
     }
 
@@ -1089,10 +1091,7 @@ struct SessionStatusIndicator: View {
 
     /// This row's ⌘1…⌘9, while ⌘ is held: its place in the drawn order.
     private var shortcutHint: String? {
-        guard manager.showsShortcutHints,
-              let index = manager.sessions.firstIndex(where: { $0.id == session.id }), index < 9
-        else { return nil }
-        return "\u{2318}\(index + 1)"
+        manager.shortcutNumber(for: session.id).map { "\u{2318}\($0)" }
     }
 
     var body: some View {

@@ -304,6 +304,13 @@ enum MainMenu {
         // (Rename Session). Free of a wortel.conf keybind.
         let promptHistory = sessionMenu.addItem(withTitle: "Prompt History\u{2026}", action: #selector(AppDelegate.showPromptHistory(_:)), keyEquivalent: "y")
         promptHistory.keyEquivalentModifierMask = [.command]
+        // Back and Forward through the sessions you've been on, as a browser
+        // goes through pages. ⌘[ / ⌘] are the areas (and a page's own Back
+        // and Forward), and ⌃⌘←/→ move a tab, so these take ⌃⌘[ / ⌃⌘].
+        let back = sessionMenu.addItem(withTitle: "Back", action: #selector(AppDelegate.goBackSession(_:)), keyEquivalent: "[")
+        back.keyEquivalentModifierMask = [.control, .command]
+        let forward = sessionMenu.addItem(withTitle: "Forward", action: #selector(AppDelegate.goForwardSession(_:)), keyEquivalent: "]")
+        forward.keyEquivalentModifierMask = [.control, .command]
         // ⌥⌘↑ / ⌥⌘↓ walk the sidebar: up and down, because it's a vertical
         // list, as Arc walks the tabs in its sidebar with the same keys. (It
         // was ⇧⌘[ / ⇧⌘], which every other Mac app means as previous/next

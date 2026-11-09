@@ -1473,6 +1473,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.selectPrevious()
     }
 
+    /// ⌃⌘[ / ⌃⌘] and the sidebar row's arrows: back and forth through the
+    /// sessions you've been on (SessionManager's Back and Forward).
+    @objc func goBackSession(_ sender: Any?) {
+        focusMainWindow()
+        manager.goBack()
+    }
+
+    @objc func goForwardSession(_ sender: Any?) {
+        focusMainWindow()
+        manager.goForward()
+    }
+
     @objc func selectNextAttentionSession(_ sender: Any?) {
         focusMainWindow()
         manager.selectNextAttention()
@@ -1572,6 +1584,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(forkSession(_:)) {
             return manager.selected.map { $0.preparation == nil } ?? false
         }
+        if menuItem.action == #selector(goBackSession(_:)) { return manager.canGoBack }
+        if menuItem.action == #selector(goForwardSession(_:)) { return manager.canGoForward }
         if menuItem.action == #selector(selectPreviousSession(_:))
             || menuItem.action == #selector(selectNextSession(_:)) {
             return manager.sessions.count > 1

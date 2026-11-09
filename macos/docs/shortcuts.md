@@ -36,6 +36,7 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | Open branch (a branch, worktree or pull request) | ⇧⌘O | |
 | Close session | ⇧⌘W | iTerm, Ghostty, Warp, VS Code (close window) |
 | Next / previous session | ⌥⌘↓ / ⌥⌘↑ | Arc (its sidebar's tabs) |
+| Back / forward through the sessions you've been on | ⌃⌘[ / ⌃⌘] | Safari, Chrome (⌘[ / ⌘], with ⌃ added because those are the areas here) |
 | Session 1 to 9 | ⌘1 to ⌘9 | Codex, cmux |
 | Next waiting session | ⌥⇧⌘↓ (also ⌥⌘]) | Slack (⌥⇧↓, the next unread) |
 | Go to a session, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |

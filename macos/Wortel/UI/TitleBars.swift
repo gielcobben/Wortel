@@ -241,6 +241,8 @@ final class SidebarBar: ChromeBarView {
     /// Posted by the sidebar's list as it scrolls, with the window as its
     /// object and whether any of the list is under the row.
     static let scrolledNotification = Notification.Name("WortelSidebarScrolled")
+    /// Back and Forward, at the row's far end.
+    let history = HistoryButtons()
 
     override init() {
         super.init()
@@ -260,9 +262,17 @@ final class SidebarBar: ChromeBarView {
         let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar (⌘B)")
         toggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
         addSubview(toggle)
+        // Back and Forward at the row's far end, against the main area they
+        // change, as a browser keeps its arrows by the page.
+        history.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(history)
         NSLayoutConstraint.activate([
             toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
+            history.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            history.centerYAnchor.constraint(equalTo: centerYAnchor),
+            // 78 + 28 + 2 + 60 + 8 = 176, inside the sidebar's 180pt minimum.
+            history.leadingAnchor.constraint(greaterThanOrEqualTo: toggle.trailingAnchor, constant: 2),
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -288,6 +298,9 @@ final class MainBar: ChromeBarView {
     let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column (⌥⌘B)")
     private let sideDivider = ToolbarDivider()
     private let sidebarToggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar (⌘B)")
+    /// Back and Forward, which live on the sidebar's row: here only while
+    /// the sidebar is collapsed and this row carries its toggle.
+    let history = HistoryButtons()
     private var leading: NSLayoutConstraint!
 
     /// While the row shows the title rather than tabs: the row, as a place to
@@ -317,7 +330,7 @@ final class MainBar: ChromeBarView {
 
         let trailing = NSStackView(views: [more, running, sideDivider, sideToggle])
         trailing.spacing = 4
-        let row = NSStackView(views: [sidebarToggle, title, strip, trailing])
+        let row = NSStackView(views: [sidebarToggle, history, title, strip, trailing])
         row.spacing = 8
         row.alignment = .centerY
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -341,6 +354,7 @@ final class MainBar: ChromeBarView {
 
     func setSidebarCollapsed(_ collapsed: Bool) {
         sidebarToggle.isHidden = !collapsed
+        history.isHidden = !collapsed
         leading.constant = collapsed ? Chrome.trafficLightInset : (strip.isHidden ? 16 : 8)
     }
 
@@ -369,6 +383,8 @@ final class SideColumnBar: ChromeBarView {
     /// Shown when this row is the leftmost with the sidebar collapsed: the
     /// way back to the sidebar, where the main area's row would carry it.
     let sidebarToggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar (⌘B)")
+    /// Back and Forward, beside the sidebar toggle and for the same reason.
+    let history = HistoryButtons()
     private var stripLeading: NSLayoutConstraint!
 
     override init() {
@@ -376,16 +392,21 @@ final class SideColumnBar: ChromeBarView {
         toggle.isSelected = true
         sidebarToggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
         sidebarToggle.isHidden = true
+        history.isHidden = true
         sidebarToggle.translatesAutoresizingMaskIntoConstraints = false
+        history.translatesAutoresizingMaskIntoConstraints = false
         strip.translatesAutoresizingMaskIntoConstraints = false
         strip.trailingAccessory = add
         addSubview(sidebarToggle)
+        addSubview(history)
         addSubview(strip)
         addSubview(toggle)
         stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         NSLayoutConstraint.activate([
             sidebarToggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
             sidebarToggle.centerYAnchor.constraint(equalTo: centerYAnchor),
+            history.leadingAnchor.constraint(equalTo: sidebarToggle.trailingAnchor, constant: 8),
+            history.centerYAnchor.constraint(equalTo: centerYAnchor),
             stripLeading,
             // The full row, like the buttons' centre: a tab centred on a strip
             // that stopped short of the hairline sat half a point low.
@@ -400,8 +421,45 @@ final class SideColumnBar: ChromeBarView {
 
     func setSidebarCollapsed(_ collapsed: Bool) {
         sidebarToggle.isHidden = !collapsed
-        stripLeading.constant = collapsed ? Chrome.trafficLightInset + 34 : 8
+        history.isHidden = !collapsed
+        // Past the toggle (28 + 8) and the arrows (28 + 4 + 28 + 8).
+        stripLeading.constant = collapsed ? Chrome.trafficLightInset + 36 + 68 : 8
     }
+}
+
+// MARK: - Back and Forward
+
+/// The two arrows that step through the sessions you've been on. A view of
+/// its own because up to three rows carry a pair, whichever one is leftmost
+/// with the sidebar collapsed; TitleBarController keeps them all enabled
+/// alike.
+@MainActor
+final class HistoryButtons: NSStackView {
+    let back = HoverFillButton.glyph("chevron.left", "Back (⌃⌘[)")
+    let forward = HoverFillButton.glyph("chevron.right", "Forward (⌃⌘])")
+
+    init() {
+        super.init(frame: .zero)
+        orientation = .horizontal
+        spacing = 4
+        back.action = #selector(AppDelegate.goBackSession(_:))
+        forward.action = #selector(AppDelegate.goForwardSession(_:))
+        addArrangedSubview(back)
+        addArrangedSubview(forward)
+        update(canGoBack: false, canGoForward: false)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    /// Disabled arrows are drawn faint by hand: a set `contentTintColor` is
+    /// used as is, enabled or not.
+    func update(canGoBack: Bool, canGoForward: Bool) {
+        for (button, enabled) in [(back, canGoBack), (forward, canGoForward)] {
+            button.isEnabled = enabled
+            button.contentTintColor = enabled ? .secondaryLabelColor : .tertiaryLabelColor
+        }
+    }
+
+    override var mouseDownCanMoveWindow: Bool { false }
 }
 
 // MARK: - A badge on a glyph
@@ -602,6 +660,20 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     func start() {
         observeColumn()
         observeProcesses()
+        observeHistory()
+    }
+
+    // MARK: Back and Forward
+
+    private func observeHistory() {
+        withObservationTracking {
+            let back = manager.canGoBack, forward = manager.canGoForward
+            for history in [sidebarBar.history, mainBar.history, sideBar.history] {
+                history.update(canGoBack: back, canGoForward: forward)
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeHistory() }
+        }
     }
 
     // MARK: Side column

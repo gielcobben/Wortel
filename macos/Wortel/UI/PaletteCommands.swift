@@ -79,6 +79,8 @@ enum PaletteCommands {
         "decreaseFontSize:": "textformat.size.smaller",
         "resetFontSize:": "textformat.size",
         "toggleSessionSidebar:": "sidebar.left",
+        "goBackSession:": "chevron.left",
+        "goForwardSession:": "chevron.right",
         "toggleSourceControl:": "arrow.triangle.branch",
         // As the panes' own tabs show them.
         "showChanges:": InspectorPane.changes.symbol,

@@ -80,3 +80,25 @@ enum BrowserAddress {
         }
     }
 }
+
+/// What a browser tab does with a navigation to something that isn't a page
+/// (`mailto:`, `vscode://`): a scheme like that is a registered application,
+/// and a page that could open one unasked could open any of them on load.
+enum BrowserExternalLink: Equatable {
+    /// A page: let the web view load it.
+    case load
+    /// A link the user clicked in the page itself: hand it to its app.
+    case open
+    /// The page tried by itself (a redirect, a script): ask first.
+    case ask
+    /// A frame inside the page: never.
+    case refuse
+
+    static let pageSchemes: Set<String> = ["http", "https", "about", "data", "blob", "file"]
+
+    static func decide(scheme: String?, clicked: Bool, inMainFrame: Bool) -> BrowserExternalLink {
+        guard let scheme = scheme?.lowercased(), !pageSchemes.contains(scheme) else { return .load }
+        guard inMainFrame else { return .refuse }
+        return clicked ? .open : .ask
+    }
+}

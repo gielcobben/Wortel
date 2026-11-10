@@ -151,3 +151,15 @@ is a few thousand class B operations a month and no egress cost, and it buys
 the only download numbers that exist. If download volume ever makes that matter,
 the lever is the Cache API around the R2 read, counting either way so a cache
 hit is still a download.
+
+## The visitor salt
+
+The unique-visitor id sent to PostHog is a hash of address, user agent, day and
+a salt. The salt is a Worker secret named `HASH_SALT`, and it is deliberately
+not in `wrangler.jsonc` or anywhere else in the repository: with it public, the
+hash could be recomputed from a list of addresses.
+
+Set or rotate it from `updates/` with `npx wrangler secret put HASH_SALT` and
+paste a new random value (for example the output of `openssl rand -hex 32`).
+Rotating only resets who looks unique, for one day. Without the secret the
+Worker serves downloads normally and counts nothing.

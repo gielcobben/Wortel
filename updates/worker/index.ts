@@ -39,8 +39,9 @@ import { classify, isCrawler, cacheControl } from './classify.ts';
 interface Env {
   BUCKET: R2Bucket;
   POSTHOG_KEY: string;
-  // Not a secret in the cryptographic sense, but it is what stops the daily
-  // visitor hash from being reproducible by anyone holding an address list.
+  // A Worker secret. What stops the daily visitor hash being recomputed by
+  // anyone holding an address list, so it is not in wrangler.jsonc or anywhere
+  // in the repository.
   HASH_SALT: string;
 }
 
@@ -158,6 +159,11 @@ async function count(request: Request, env: Env, key: string): Promise<void> {
 
     const what = classify(key, ua);
     if (!what) return;
+
+    // The salt is a secret (`wrangler secret put HASH_SALT`), not a var. A
+    // deploy without it must not fall back to an unsalted hash, which is an
+    // address anyone can recompute: it counts nothing instead.
+    if (!env.HASH_SALT) return;
 
     const day = new Date().toISOString().slice(0, 10);
     const ip = request.headers.get('CF-Connecting-IP') ?? '';

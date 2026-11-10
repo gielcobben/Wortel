@@ -63,16 +63,15 @@ final class SessionManager {
     /// sessions. Unlike `recentSessionIDs` a visit isn't moved to the front
     /// when repeated, so Back retraces the path you took. Observed, so the
     /// titlebar's arrows enable as it changes. Not persisted: it's a trail
-    /// through this run, and a relaunch starts a new one.
-    private(set) var backHistory: [Session.ID] = []
-    private(set) var forwardHistory: [Session.ID] = []
+    /// through this run, and a relaunch starts a new one. The rules are
+    /// `SessionHistory`'s.
+    private(set) var history = SessionHistory<Session.ID>()
     /// Set while Back or Forward is moving the selection, so the move isn't
     /// recorded as a fresh visit (which would clear Forward).
     @ObservationIgnored private var navigatingHistory = false
-    private static let historyLimit = 100
 
-    var canGoBack: Bool { backHistory.contains(where: isOpen) }
-    var canGoForward: Bool { forwardHistory.contains(where: isOpen) }
+    var canGoBack: Bool { history.canStep(.back, from: selectedID, isOpen: isOpen) }
+    var canGoForward: Bool { history.canStep(.forward, from: selectedID, isOpen: isOpen) }
 
     private func isOpen(_ id: Session.ID) -> Bool {
         sessions.contains { $0.id == id }
@@ -81,28 +80,26 @@ final class SessionManager {
     /// A selection you made: what you left goes on Back, and Forward is
     /// gone, as following a link after going back is in a browser.
     private func noteVisit(from previous: Session.ID?) {
-        guard !navigatingHistory, let previous, isOpen(previous) else { return }
-        if backHistory.last != previous { backHistory.append(previous) }
-        if backHistory.count > Self.historyLimit {
-            backHistory.removeFirst(backHistory.count - Self.historyLimit)
-        }
-        if !forwardHistory.isEmpty { forwardHistory.removeAll() }
+        guard !navigatingHistory else { return }
+        history.visit(from: previous, isOpen: isOpen)
     }
 
-    func goBack() { stepHistory(from: &backHistory, to: &forwardHistory) }
-    func goForward() { stepHistory(from: &forwardHistory, to: &backHistory) }
+    func goBack() { stepHistory(.back) }
+    func goForward() { stepHistory(.forward) }
 
     /// Pops to the nearest session still open (closed and archived ones are
     /// stepped over and dropped) and leaves the current one on the other side.
-    private func stepHistory(from source: inout [Session.ID], to other: inout [Session.ID]) {
-        while let id = source.popLast() {
-            guard isOpen(id), id != selectedID else { continue }
-            if let current = selectedID { other.append(current) }
-            navigatingHistory = true
-            selectedID = id
-            navigatingHistory = false
-            return
-        }
+    private func stepHistory(_ direction: SessionHistory<Session.ID>.Direction) {
+        // A copy, written back before the selection moves: `selectedID`'s
+        // didSet runs a long chain, and nothing in it may find this
+        // half-stepped.
+        var stepped = history
+        let target = stepped.step(direction, from: selectedID, isOpen: isOpen)
+        if stepped != history { history = stepped }
+        guard let target else { return }
+        navigatingHistory = true
+        selectedID = target
+        navigatingHistory = false
     }
 
     /// The most recent "switched into a waiting session" event; the detail view
@@ -2440,8 +2437,7 @@ final class SessionManager {
             sidebarSelection = pruned
         }
         recentSessionIDs.removeAll { $0 == session.id }
-        backHistory.removeAll { $0 == session.id }
-        forwardHistory.removeAll { $0 == session.id }
+        history.forget(session.id)
         pinnedIDs.removeAll { $0 == session.id }
         endPromptCapture(session)
         // The killed shell never reaches its prompt to clear its own agent

@@ -26,8 +26,10 @@ packages:
   TreeSitterSwift:
     # Not the core org: the parser is generated from JS, and only this branch
     # commits the generated parser.c so SPM can build it.
+    # Pinned to a commit on the `with-generated-files` branch, taken 2026-11-09
+    # (matches macos/Package.resolved). For a newer one, look on that branch.
     url: https://github.com/alex-pinkus/tree-sitter-swift
-    branch: with-generated-files
+    revision: 31d17fe7e818a2048c808b5c6fdc2dc792f4f5b5
   TreeSitterTypeScript:
     # One package, two products: TreeSitterTypeScript + TreeSitterTSX.
     url: https://github.com/tree-sitter/tree-sitter-typescript
@@ -62,8 +64,10 @@ packages:
     exactVersion: 0.7.2
   TreeSitterZig:
     # No version tags upstream — track the branch that ships Swift bindings.
+    # Pinned to a commit on the `main` branch, taken 2026-11-09 (matches
+    # macos/Package.resolved). For a newer one, look on that branch.
     url: https://github.com/maxxnino/tree-sitter-zig
-    branch: main
+    revision: a80a6e9be81b33b182ce6305ae4ea28e29211bd5
   TreeSitterGo:
     url: https://github.com/tree-sitter/tree-sitter-go
     from: "0.25.0"

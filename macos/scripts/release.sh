@@ -214,10 +214,16 @@ echo "==> Signing identity: $IDENTITY"
 echo "==> Regenerating project + building Release"
 command -v xcodegen >/dev/null || { echo "✗ xcodegen not found (brew install xcodegen). Building without it would build a stale project." >&2; exit 1; }
 xcodegen generate
+# The versions every package resolves to are the tracked ones
+# (macos/Package.resolved), not whatever is newest today. The project is
+# generated and ignored, so its own copy is put back each time.
+RESOLVED_DIR="Wortel.xcodeproj/project.xcworkspace/xcshareddata/swiftpm"
+mkdir -p "$RESOLVED_DIR"
+cp "$ROOT/Package.resolved" "$RESOLVED_DIR/Package.resolved"
 # The suite is 85 seconds and a publish is permanent.
 if [ "$PUBLISH" = 1 ] && [ "$RUN_TESTS" = 1 ]; then
   echo "==> Running tests"
-  if ! xcodebuild -project Wortel.xcodeproj -scheme WortelTests test > build/xcodebuild-test.log 2>&1; then
+  if ! xcodebuild -project Wortel.xcodeproj -scheme WortelTests -onlyUsePackageVersionsFromResolvedFile test > build/xcodebuild-test.log 2>&1; then
     echo "✗ Tests failed. Last lines (full log: build/xcodebuild-test.log):" >&2
     tail -40 build/xcodebuild-test.log >&2
     echo "  To publish anyway: --no-tests" >&2
@@ -239,6 +245,7 @@ fi
 # Build a universal binary so it runs on both Apple Silicon and Intel Macs.
 # (A single-arch build shows "app is damaged" on the other architecture.)
 if ! xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Release \
+      -onlyUsePackageVersionsFromResolvedFile \
       ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
       ${VERSION_ARGS[@]+"${VERSION_ARGS[@]}"} \
       clean build > build/xcodebuild.log 2>&1; then

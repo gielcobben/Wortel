@@ -1139,7 +1139,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                 }
             }
             // A row view that goes away under the pointer never hears
-            // mouseExited; see tableView(_:didRemove:forRow:).
+            // mouseExited; see outlineView(_:didRemove:forRow:).
             rowView.onRemoved = { if target.isSidebarRowHovered { target.isSidebarRowHovered = false } }
             rowView.setStatusContent(
                 AnyView(SessionStatusIndicator(manager: manager, session: target)))
@@ -1149,7 +1149,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// Row views are made fresh for every item and never reused, so a flag
         /// can't carry over to another session. But one removed while hovered
         /// (reload, close, archive) gets no mouseExited, so settle its flag here.
-        func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
+        func outlineView(_ outlineView: NSOutlineView, didRemove rowView: NSTableRowView, forRow row: Int) {
             (rowView as? SidebarPillRowView)?.onRemoved()
         }
 

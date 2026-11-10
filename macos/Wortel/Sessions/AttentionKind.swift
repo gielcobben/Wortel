@@ -101,3 +101,41 @@ extension AttentionKind {
         kinds.compactMap { $0 }.max { $0.priority < $1.priority }
     }
 }
+
+/// What a signal from a session comes to, given what is already showing and
+/// whether anyone is there.
+///
+/// Pure, because each way it is wrong is quiet: an agent that finished and
+/// told nobody, or a sound per tool call.
+enum AttentionRaise: Equatable {
+    /// Nothing changes: someone is looking, something louder is showing, or
+    /// exactly this is showing already.
+    case ignore
+    /// Show it. `alert`: make a sound (a fresh episode, or louder than what
+    /// was showing). `startsEpisode`: nothing was showing, so "waiting since"
+    /// starts now. `whileAway`: it is on screen and nobody is there, so being
+    /// on screen later must not count as having seen it.
+    case raise(alert: Bool, startsEpisode: Bool, whileAway: Bool)
+
+    /// What is showing for the session now, as the banner has it.
+    struct Standing: Equatable {
+        var kind: AttentionKind
+        var title: String
+        var body: String
+    }
+
+    static func decide(
+        kind: AttentionKind, title: String, body: String,
+        current: AttentionKind?, standing: Standing?,
+        activelyViewing: Bool, onScreen: Bool
+    ) -> AttentionRaise {
+        guard !activelyViewing else { return .ignore }
+        if let current, current.priority > kind.priority { return .ignore }
+        if let standing, standing.kind == kind, standing.title == title, standing.body == body {
+            return .ignore
+        }
+        return .raise(alert: current.map { kind.priority > $0.priority } ?? true,
+                      startsEpisode: current == nil,
+                      whileAway: onScreen)
+    }
+}

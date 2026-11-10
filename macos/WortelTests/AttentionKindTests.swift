@@ -45,4 +45,69 @@ final class AttentionKindTests: XCTestCase {
             XCTAssertLessThan(lower.priority, higher.priority)
         }
     }
+
+    // MARK: - AttentionRaise
+
+    private func decide(
+        _ kind: AttentionKind, title: String = "t", body: String = "b",
+        current: AttentionKind? = nil, standing: AttentionRaise.Standing? = nil,
+        viewing: Bool = false, onScreen: Bool = false
+    ) -> AttentionRaise {
+        AttentionRaise.decide(kind: kind, title: title, body: body, current: current,
+                              standing: standing, activelyViewing: viewing, onScreen: onScreen)
+    }
+
+    /// Someone is looking at the session, so nothing is raised, whatever else is true.
+    func testActivelyViewingIgnores() {
+        XCTAssertEqual(decide(.needsInput, viewing: true, onScreen: true), .ignore)
+        XCTAssertEqual(decide(.finished, current: .finished, viewing: true), .ignore)
+    }
+
+    /// A first signal for a session nobody is looking at is a fresh episode with a sound.
+    func testFreshEpisodeAlerts() {
+        XCTAssertEqual(decide(.turnDone),
+                       .raise(alert: true, startsEpisode: true, whileAway: false))
+    }
+
+    /// On screen but the user is away from the Mac: remembered as raised while away.
+    func testOnScreenButAwayIsRaisedWhileAway() {
+        XCTAssertEqual(decide(.turnDone, onScreen: true),
+                       .raise(alert: true, startsEpisode: true, whileAway: true))
+    }
+
+    /// A quieter signal never replaces a louder one that is showing.
+    func testQuieterKindIsIgnored() {
+        XCTAssertEqual(decide(.turnDone, current: .needsInput), .ignore)
+    }
+
+    /// The same kind with new text updates the banner silently, no sound.
+    func testSameKindNewTextIsSilent() {
+        let standing = AttentionRaise.Standing(kind: .turnDone, title: "t", body: "old")
+        XCTAssertEqual(decide(.turnDone, body: "new", current: .turnDone, standing: standing),
+                       .raise(alert: false, startsEpisode: false, whileAway: false))
+    }
+
+    /// A louder kind than what is showing escalates: a sound, but not a new episode.
+    func testLouderKindAlertsWithoutNewEpisode() {
+        XCTAssertEqual(decide(.needsInput, current: .turnDone),
+                       .raise(alert: true, startsEpisode: false, whileAway: false))
+    }
+
+    /// Exactly what is already showing is silent and changes nothing.
+    func testIdenticalToStandingIsIgnored() {
+        let standing = AttentionRaise.Standing(kind: .failed, title: "t", body: "b")
+        XCTAssertEqual(decide(.failed, current: .failed, standing: standing), .ignore)
+    }
+
+    /// Identical content is ignored even when no kind is showing, pinning the order of checks.
+    func testIdenticalToStandingIgnoredWithoutCurrent() {
+        let standing = AttentionRaise.Standing(kind: .failed, title: "t", body: "b")
+        XCTAssertEqual(decide(.failed, current: nil, standing: standing), .ignore)
+    }
+
+    /// Equal priority is not an escalation, so a re-emitted kind with a new body is silent.
+    func testEqualPriorityIsNotAnEscalation() {
+        XCTAssertEqual(decide(.failed, body: "other", current: .failed),
+                       .raise(alert: false, startsEpisode: false, whileAway: false))
+    }
 }

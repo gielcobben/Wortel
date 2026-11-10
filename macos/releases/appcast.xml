@@ -3,6 +3,38 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.46.4</title>
+            <pubDate>Tue, 10 Nov 2026 13:42:04 -0500</pubDate>
+            <sparkle:version>2026.46.4</sparkle:version>
+            <sparkle:shortVersionString>2026.46.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>⌘-click a link while an agent has the mouse</h1>
+<p class="date">Wortel 2026.46.4 &middot; 2026-11-10</p>
+<p><strong>⌘-click a link while an agent has the mouse.</strong> Codex, and other agents that fill the whole terminal, take the mouse over so they can do their own scrolling and selection. While they had it, ⌘-click on a URL went to the agent and did nothing, unless the agent had made that URL a link itself. URLs in a command, an approval prompt or your own message were stuck. Now holding ⌘ gives the mouse back to Wortel: ⌘-click opens the link, ⌘ over a URL underlines it, and ⌘-drag selects text you can copy with ⌘C, including in Codex’s approval prompt, where a plain drag selects nothing. A plain click or drag still goes to the agent, as before.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.46.4.zip" length="23195146" type="application/octet-stream" sparkle:edSignature="qUHgIjDnh2lOE6YhJHRU5V9RUQvJwB5JBCKweaPmKh1Mjs3DGgN5SXpj1Um5vrvUqZn3MiZcfQvKOp8jtvAdBA=="/>
+        </item>
+        <item>
             <title>2026.46.3</title>
             <pubDate>Tue, 10 Nov 2026 12:08:42 -0500</pubDate>
             <sparkle:version>2026.46.3</sparkle:version>
@@ -79,38 +111,6 @@
 </ul>
 <p><strong>Smaller things.</strong> The tab in front lets the window’s colour through, like the selected session does. Line numbers on added and removed lines are easier to read. A long branch name no longer stretches the git panel’s menu. And a session’s menu reads Pin, Rename, Mark as Unread, Colour, then Copy Path and Show in Finder.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.46.2.zip" length="23162969" type="application/octet-stream" sparkle:edSignature="eSBaW9u4F/klbvOnDCPqG6Xl0UXxFmQhEfWmMQPRE5CyGwIfeoBlF/8XDP6myPmsz0NZyFsntQTftw6VQFN6Bw=="/>
-        </item>
-        <item>
-            <title>2026.46.1</title>
-            <pubDate>Mon, 09 Nov 2026 09:02:34 -0500</pubDate>
-            <sparkle:version>2026.46.1</sparkle:version>
-            <sparkle:shortVersionString>2026.46.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>No dot for a Codex turn that never happened</h1>
-<p class="date">Wortel 2026.46.1 &middot; 2026-11-09</p>
-<p><strong>Idle Codex sessions stay quiet.</strong> After a while, every Codex session in the sidebar could get a dot and a notification at the same moment, though none of them had done anything. Codex writes a short recap under a conversation once it has been in the background for half an hour, and to Wortel that looked like a short turn. Codex also spins its title while it starts up, which looked the same. Claude Code sessions were fixed for this in 2026.44.4. Codex sessions now get the same check: a real turn is always written to the conversation Codex keeps on disk, so when nothing was written, Wortel raises no dot.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.46.1.zip" length="23366762" type="application/octet-stream" sparkle:edSignature="im/091iLcOQvhc8k18ERFEI8GNl5YU84YyBjvWwbJO6Y9drCFySqpwED02IQJ4ZCySiu7RqXUclHLVKxnSmMDg=="/>
         </item>
     </channel>
 </rss>

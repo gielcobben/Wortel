@@ -367,6 +367,26 @@ enum WorktreeCleanup {
             try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
         }
     ) async -> String? {
+        await removeReporting(path: path, knownRepos: knownRepos, usedBy: usedBy, deleteBranch: deleteBranch,
+                              discard: discard).error
+    }
+
+    /// How a removal went: why it didn't (or didn't entirely), and whether
+    /// the branch was deleted. The branch is the caller's only way back to
+    /// a session that lived there, so "removed" alone isn't enough to know.
+    struct Removal: Sendable, Equatable {
+        var error: String?
+        var branchDeleted = false
+    }
+
+    /// `remove`, also saying whether the branch was actually deleted.
+    static func removeReporting(
+        path: String, knownRepos: [String] = [], usedBy: [String] = [],
+        deleteBranch: Bool,
+        discard: @escaping @Sendable (URL) throws -> Void = {
+            try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
+        }
+    ) async -> Removal {
         await removals.run {
             await removeNow(path: path, knownRepos: knownRepos, usedBy: usedBy, deleteBranch: deleteBranch,
                             discard: discard)
@@ -378,19 +398,19 @@ enum WorktreeCleanup {
     private static func removeNow(
         path: String, knownRepos: [String], usedBy: [String], deleteBranch: Bool,
         discard: (URL) throws -> Void
-    ) async -> String? {
+    ) async -> Removal {
         let report = await inspect(path: path, knownRepos: knownRepos, usedBy: usedBy)
         if report.verdict == .blocked {
-            return "Kept: " + report.blockers.joined(separator: " ")
+            return Removal(error: "Kept: " + report.blockers.joined(separator: " "))
         }
         guard let primary = report.repoRoot else {
-            return "Kept: Wortel couldn't find the repository it belongs to."
+            return Removal(error: "Kept: Wortel couldn't find the repository it belongs to.")
         }
         if !report.isMissing {
             do {
                 try discard(URL(fileURLWithPath: path))
             } catch {
-                return "Couldn't move the folder to the Trash: \(error.localizedDescription)"
+                return Removal(error: "Couldn't move the folder to the Trash: \(error.localizedDescription)")
             }
         }
         // The folder is gone now, so this only drops git's registration of it,
@@ -399,8 +419,9 @@ enum WorktreeCleanup {
         let unregistered = await GitService.run(["worktree", "remove", path], in: primary)
         if !unregistered.ok {
             let message = unregistered.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            return "The folder is in the Trash, but git still lists it: \(message)"
+            return Removal(error: "The folder is in the Trash, but git still lists it: \(message)")
         }
+        var branchDeleted = false
         if deleteBranch, report.ownsBranch, let branch = report.branch,
            report.branchIsDeletable,
            await GitService.run(["rev-parse", "--verify", "--quiet", "refs/heads/\(branch)"], in: primary).ok {
@@ -426,12 +447,13 @@ enum WorktreeCleanup {
             if !result.ok {
                 let deleted = result
                 let message = deleted.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-                return "The worktree is removed, but its branch isn't: \(message)"
+                return Removal(error: "The worktree is removed, but its branch isn't: \(message)")
             }
+            branchDeleted = true
         }
         removeEmptyRepoFolder(containing: path)
         forgetBroughtHere(path)
-        return nil
+        return Removal(error: nil, branchDeleted: branchDeleted)
     }
 
     // MARK: - Helpers

@@ -190,6 +190,54 @@ final class WorktreeCleanupTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: path))
     }
 
+    // MARK: - What a removal reports about the branch
+
+    /// The branch is a session's only way back once its folder has gone, so
+    /// the caller must hear whether it really went, not what was asked for.
+    func testRemovalSaysTheBranchWentWhenItDid() async {
+        let path = addWorktree("gone")
+        let removal = await WorktreeCleanup.removeReporting(path: path, deleteBranch: true, discard: delete)
+        XCTAssertNil(removal.error)
+        XCTAssertTrue(removal.branchDeleted)
+        XCTAssertFalse(branches().contains("worktree/gone"))
+    }
+
+    /// Asked to delete the branch, but its commits exist nowhere else: the
+    /// folder goes, the branch stays, and the removal says so.
+    func testRemovalSaysTheBranchStayedWhenItWasKept() async {
+        let path = addWorktree("kept")
+        let dir = URL(fileURLWithPath: path)
+        GitFixture.commit("one", in: dir)
+        GitFixture.commit("two", in: dir)
+
+        let removal = await WorktreeCleanup.removeReporting(path: path, deleteBranch: true, discard: delete)
+        XCTAssertNil(removal.error)
+        XCTAssertFalse(removal.branchDeleted)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertTrue(branches().contains("worktree/kept"), "its commits exist nowhere else")
+    }
+
+    func testRemovalSaysTheBranchStayedWhenNotAsked() async {
+        let path = addWorktree("asked")
+        let removal = await WorktreeCleanup.removeReporting(path: path, deleteBranch: false, discard: delete)
+        XCTAssertNil(removal.error)
+        XCTAssertFalse(removal.branchDeleted)
+        XCTAssertTrue(branches().contains("worktree/asked"))
+    }
+
+    func testABlockedRemovalDeletesNothing() async {
+        let path = addWorktree("blocked")
+        let before = await WorktreeCleanup.inspect(path: path)
+        XCTAssertEqual(before.verdict, .safe)
+        GitFixture.sh("echo late > late.txt", in: URL(fileURLWithPath: path))
+
+        let removal = await WorktreeCleanup.removeReporting(path: path, deleteBranch: true, discard: delete)
+        XCTAssertNotNil(removal.error)
+        XCTAssertFalse(removal.branchDeleted)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        XCTAssertTrue(branches().contains("worktree/blocked"))
+    }
+
     func testSomethingUsingItBlocksRemoval() async {
         let path = addWorktree("busy")
         let report = await WorktreeCleanup.inspect(path: path, usedBy: ["node"])

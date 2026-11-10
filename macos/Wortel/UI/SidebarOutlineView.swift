@@ -118,6 +118,8 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     private var makeMoreMenu: (() -> NSMenu)?
     /// The pointer came onto the row or left it.
     var onHoverChanged: (Bool) -> Void = { _ in }
+    /// The row view left the outline (hover may not have been reported off).
+    var onRemoved: () -> Void = {}
     /// Whether this row is a folder header with a "+".
     private var addable = false
     /// Pinned and Sessions: no "+" or "…", but a press folds them.
@@ -1129,15 +1131,26 @@ struct SidebarOutlineView: NSViewRepresentable {
             rowView.setMoreMenu { SessionActions.menu(for: target, manager: manager) }
             let id = target.id
             rowView.onHoverChanged = { hovered in
+                if target.isSidebarRowHovered != hovered { target.isSidebarRowHovered = hovered }
                 if hovered {
                     if manager.hoveredRowID != id { manager.hoveredRowID = id }
                 } else if manager.hoveredRowID == id {
                     manager.hoveredRowID = nil
                 }
             }
+            // A row view that goes away under the pointer never hears
+            // mouseExited; see outlineView(_:didRemove:forRow:).
+            rowView.onRemoved = { if target.isSidebarRowHovered { target.isSidebarRowHovered = false } }
             rowView.setStatusContent(
                 AnyView(SessionStatusIndicator(manager: manager, session: target)))
             return rowView
+        }
+
+        /// Row views are made fresh for every item and never reused, so a flag
+        /// can't carry over to another session. But one removed while hovered
+        /// (reload, close, archive) gets no mouseExited, so settle its flag here.
+        func outlineView(_ outlineView: NSOutlineView, didRemove rowView: NSTableRowView, forRow row: Int) {
+            (rowView as? SidebarPillRowView)?.onRemoved()
         }
 
         private func showsPill(_ item: Any) -> Bool {

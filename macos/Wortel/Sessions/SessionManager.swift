@@ -3712,22 +3712,22 @@ final class SessionManager {
         if turnOutcomes[session.id].map({ kind.priority >= $0.priority }) ?? true {
             turnOutcomes[session.id] = kind
         }
-        guard !isActivelyViewing(session) else { return }
-        let current = session.attention
-        if let current, current.priority > kind.priority { return }
-        if let standing = attentionContent[session.id], standing.kind == kind,
-           (standing.title ?? session.name) == title, standing.body == body {
-            return // already showing exactly this
-        }
         // Play a sound only when the state actually escalates — a fresh episode
         // or a jump to a louder kind. A program that re-emits the same kind
         // (some agents fire a notification per tool call) updates the banner
         // text silently instead of spamming dings.
-        let alert = current.map { kind.priority > $0.priority } ?? true
-        if current == nil { attentionSince[session.id] = Date() }
+        let current = session.attention
+        let standing = attentionContent[session.id].map {
+            AttentionRaise.Standing(kind: $0.kind, title: $0.title ?? session.name, body: $0.body)
+        }
+        guard case .raise(let alert, let startsEpisode, let whileAway) = AttentionRaise.decide(
+            kind: kind, title: title, body: body, current: current, standing: standing,
+            activelyViewing: isActivelyViewing(session), onScreen: isOnScreen(session))
+        else { return }
+        if startsEpisode { attentionSince[session.id] = Date() }
         // Past the gate while on screen means nobody is there to see it, so
         // being on screen can't answer it either (`raisedWhileAway`).
-        if isOnScreen(session) { raisedWhileAway.insert(session.id) }
+        if whileAway { raisedWhileAway.insert(session.id) }
         session.attention = kind // observed → sidebar dot
         // The quieter tier: mark it unread too, at the highest kind seen, so the
         // trail survives past the loud dot until you've actually engaged.

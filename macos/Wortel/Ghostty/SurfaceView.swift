@@ -702,17 +702,54 @@ final class SurfaceView: NSView {
             userInfo: nil))
     }
 
+    /// The modifiers a pointer event carries into libghostty, with one
+    /// addition: ⌘ held while the program has the mouse also counts as Shift.
+    ///
+    /// A fullscreen agent (Codex, Claude Code in its alternate screen) turns on
+    /// mouse reporting and does its own selection from the reports. While it
+    /// has the mouse, libghostty does not look for a link under the pointer at
+    /// all unless Shift is held, Shift being the "terminal, not the program"
+    /// override (`Surface.cursorPosCallback`). So ⌘-click on a URL did nothing:
+    /// the click went to the program, which only follows the links it printed
+    /// itself as OSC 8, and not the ones in an approval prompt or a command.
+    /// Reported 2026-11-10 by a Codex user who could neither click nor copy a
+    /// URL; ⇧⌘-click worked, which nobody knows to try. Treating ⌘ as Shift
+    /// here makes ⌘-click open a link everywhere, and ⌘-drag a terminal
+    /// selection, which is what both mean when the program isn't listening.
+    /// A program never sees ⌘ in a mouse report anyway (no encoding has it).
+    private func pointerMods(_ event: NSEvent) -> ghostty_input_mods_e {
+        let mods = GhosttyInput.mods(event.modifierFlags)
+        guard event.modifierFlags.contains(.command),
+              !event.modifierFlags.contains(.shift),
+              let surface, ghostty_surface_mouse_captured(surface)
+        else { return mods }
+        return ghostty_input_mods_e(mods.rawValue | GHOSTTY_MODS_SHIFT.rawValue)
+    }
+
     override func mouseDown(with event: NSEvent) {
         guard let surface else { return }
         noteUserInput()
-        let mods = GhosttyInput.mods(event.modifierFlags)
+        let mods = pointerMods(event)
+        if mods.rawValue != GhosttyInput.mods(event.modifierFlags).rawValue {
+            // libghostty looks for a link under the pointer when it moves,
+            // not when a button goes down, and the ⌘ press that came before
+            // this click reached it without the added Shift. Without this, a
+            // ⌘-click on a URL the pointer was already resting on did nothing.
+            // It takes two calls because the embedded runtime drops a
+            // position within a pixel of the last one (macOS sends phantom
+            // moves), so the first steps 1pt aside and the second comes back.
+            let pos = convert(event.locationInWindow, from: nil)
+            let y = frame.height - pos.y
+            ghostty_surface_mouse_pos(surface, pos.x + (pos.x >= 1 ? -1 : 1), y, mods)
+            ghostty_surface_mouse_pos(surface, pos.x, y, mods)
+        }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
     }
 
     override func mouseUp(with event: NSEvent) {
         prevPressureStage = 0
         guard let surface else { return }
-        let mods = GhosttyInput.mods(event.modifierFlags)
+        let mods = pointerMods(event)
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
         ghostty_surface_mouse_pressure(surface, 0, 0)
     }
@@ -753,7 +790,7 @@ final class SurfaceView: NSView {
         guard let surface else { return }
         let pos = convert(event.locationInWindow, from: nil)
         // Ghostty expects top-left origin.
-        ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, GhosttyInput.mods(event.modifierFlags))
+        ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, pointerMods(event))
     }
 
     override func mouseDragged(with event: NSEvent) { mouseMoved(with: event) }

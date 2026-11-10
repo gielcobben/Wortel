@@ -44,6 +44,13 @@ enum Chrome {
     /// The tab in front: the page's own colour in light mode, lifted in dark,
     /// where "the same colour as the page" disappears into it.
     static let raised = dynamic(light: 0xFFFFFF, dark: 0x2E2E2E)
+    /// The tab in front of a titlebar row, which sits on the window's
+    /// vibrancy rather than on a page: in dark mode the sidebar's selected
+    /// pill (label colour at 8%), so the wallpaper tints it the way it tints
+    /// the rest of the band. An opaque grey there read as a hole in the glass.
+    static let raisedOnBand = NSColor(name: nil) { appearance in
+        isDark(appearance) ? .white.withAlphaComponent(0.08) : .white
+    }
     static let hairline = NSColor(name: nil) { appearance in
         isDark(appearance) ? .white.withAlphaComponent(0.08) : .black.withAlphaComponent(0.07)
     }

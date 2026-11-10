@@ -507,7 +507,11 @@ private final class SideTabView: NSControl, TabTitleProviding {
         guard let layer else { return }
         effectiveAppearance.performAsCurrentDrawingAppearance {
             if isActive {
-                layer.backgroundColor = Chrome.raised.cgColor
+                // The strip's row is on the page; the main area's and the
+                // column's are on the titlebar band, which is the window's
+                // vibrancy.
+                let fill = stripRegion() == .bottom ? Chrome.raised : Chrome.raisedOnBand
+                layer.backgroundColor = fill.cgColor
                 layer.borderWidth = 0.5
                 layer.borderColor = Chrome.hairlineStrong.cgColor
                 layer.shadowColor = NSColor.black.cgColor

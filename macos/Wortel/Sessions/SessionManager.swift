@@ -658,19 +658,10 @@ final class SessionManager {
     /// that vanished, append newly-appeared ones (by first appearance), and
     /// dedupe — preserving the user's arrangement for everything already tracked.
     private func syncFolderOrder() {
-        var present: [String] = []
-        var seen = Set<String>()
-        for session in sessions {
-            if let f = session.folderPath, seen.insert(f).inserted { present.append(f) }
-        }
-        for f in declaredFolders where seen.insert(f).inserted { present.append(f) }
         // A folder whose sessions are all archived is still there: its fold is.
-        for f in archived.compactMap(\.folderPath) where seen.insert(f).inserted { present.append(f) }
-
-        var order: [String] = []
-        var added = Set<String>()
-        for f in folderOrder where seen.contains(f) && added.insert(f).inserted { order.append(f) }
-        for f in present where added.insert(f).inserted { order.append(f) }
+        let order = SidebarLayout.syncedFolderOrder(
+            folderOrder, rows: sessions.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
+            declaredFolders: declaredFolders, archivedFolders: archived.compactMap(\.folderPath))
         if order != folderOrder { folderOrder = order }
     }
 

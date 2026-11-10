@@ -33,11 +33,9 @@
     // Write-only PostHog project token. Public by design: it can send events
     // and read nothing. The key that can read data is a personal API key and
     // is not here.
-    "POSTHOG_KEY": "phc_s9AQUzSKYsbdi8aoCWkaedPK2Cbjr9KEmYJqjgWa89oa",
-    // Salts the daily visitor hash. Changing it is harmless (it resets who
-    // looks unique, for one day) but pointless; it exists so the hash cannot
-    // be reproduced from an address list alone.
-    "HASH_SALT": "nO6TsFOIz2vukdgkGCRmWuYij378eqhh"
+    "POSTHOG_KEY": "phc_s9AQUzSKYsbdi8aoCWkaedPK2Cbjr9KEmYJqjgWa89oa"
+    // HASH_SALT is not here: it is a secret, set once with
+    // `wrangler secret put HASH_SALT`. See README.md.
   },
   // The hostname every installed copy of Wortel checks, because SUFeedURL is
   // baked into Info.plist and cannot be changed retroactively. It was a custom

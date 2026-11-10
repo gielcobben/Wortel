@@ -483,9 +483,9 @@ targets:
       # screen), and the bulk Close it decides. Same silent failure: a range a
       # row too wide closes a session you never highlighted.
       - path: Wortel/Sessions/SessionSelection.swift
-      # Back and Forward through the sessions you've been on. Pure, and wrong
-      # in ways nothing reports: an arrow that is lit and does nothing, or a
-      # step onto a session that was just closed.
+      # Back and Forward through the places you've been (a session and its
+      # tab). Pure, and wrong in ways nothing reports: an arrow that is lit
+      # and does nothing, or a step onto a session that was just closed.
       - path: Wortel/Sessions/SessionHistory.swift
       # One row over, and the row to land on after a close, over the rows as
       # drawn. Off by one here is the wrong session selected, silently.

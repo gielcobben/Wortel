@@ -267,7 +267,7 @@ export const DOCS_SECTIONS: Section[] = [
             ['Find a prompt you typed to an agent', '⌘Y'],
             ['Pin or unpin session', '⌥⌘P'],
             ['Mark session as unread', '⇧⌘U'],
-            ['Back / forward through the sessions you were on', '⌃⌘[ / ⌃⌘]'],
+            ['Back / forward through the sessions and tabs you were on', '⌃⌘[ / ⌃⌘]'],
             ['Rename session', '⌥⌘R'],
             ['Close tab / close session', '⌘W / ⇧⌘W'],
             ['Previous / next session', '⌥⌘↑ / ⌥⌘↓'],

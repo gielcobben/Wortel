@@ -429,7 +429,8 @@ final class SideColumnBar: ChromeBarView {
 
 // MARK: - Back and Forward
 
-/// The two arrows that step through the sessions you've been on. A view of
+/// The two arrows that step through the places you've been: a session and
+/// the tab you had in front in it. A view of
 /// its own because up to three rows carry a pair, whichever one is leftmost
 /// with the sidebar collapsed; TitleBarController keeps them all enabled
 /// alike.

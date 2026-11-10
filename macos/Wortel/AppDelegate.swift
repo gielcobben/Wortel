@@ -329,6 +329,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Panel visibility and the chosen pane are session state, so a toggle has
         // to reach sessions.json.
         gitPanel.onStateChanged = { [weak manager] in manager?.sessionStateChanged() }
+        // Every tab brought forward is a stop on Back and Forward's trail.
+        gitPanel.onTabBroughtForward = { [weak manager] tab, session in
+            manager?.noteTabBroughtForward(tab, in: session)
+        }
         // Bring Here: an archived session's worktree is in use too, waiting
         // for it to come back.
         gitPanel.worktreeUsage = { [weak manager] in
@@ -1423,15 +1427,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// ⌃⌘[ / ⌃⌘] and the sidebar row's arrows: back and forth through the
-    /// sessions you've been on (SessionManager's Back and Forward).
+    /// places you've been, a session and the tab you had in front in it
+    /// (SessionManager's Back and Forward).
     @objc func goBackSession(_ sender: Any?) {
         focusMainWindow()
-        manager.goBack()
+        manager.goBack(bringForward: bringForwardOnStep)
     }
 
     @objc func goForwardSession(_ sender: Any?) {
         focusMainWindow()
-        manager.goForward()
+        manager.goForward(bringForward: bringForwardOnStep)
+    }
+
+    /// A step's tab, brought forward in whichever row it is in now. The
+    /// selection has just moved, and the panel would follow it from
+    /// ContentView's `onChange`, but only later; pointing it at the session
+    /// here first (the same call, so doing it twice changes nothing) is what
+    /// makes the tab come forward in the right session.
+    private func bringForwardOnStep(_ session: Session, _ tab: SideTab) {
+        if gitPanel.session !== session {
+            gitPanel.focus(session: session)
+            fileTree.focus(session: session)
+        }
+        guard let region = session.workspace.region(of: tab) else { return }
+        gitPanel.bringForward(tab, in: region)
     }
 
     @objc func selectNextAttentionSession(_ sender: Any?) {

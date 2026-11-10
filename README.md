@@ -245,7 +245,7 @@ the design is enforced, and pull requests adding them are unlikely to land.
 | `⌘W` / `⇧⌘W` | Close the tab you are in / close the session |
 | `⌘1`…`⌘9` | Select session by position |
 | `⌥⌘↑` / `⌥⌘↓` | Previous / next session |
-| `⌃⌘[` / `⌃⌘]` | Back / forward through the sessions you were on |
+| `⌃⌘[` / `⌃⌘]` | Back / forward through the sessions and tabs you were on |
 | `⌘P` | Go to a session, or bring back an archived one |
 | `⌘Y` | Find a prompt you typed to an agent |
 | `⌥⌘]` | Jump to the next session waiting on you |

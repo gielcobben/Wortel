@@ -96,6 +96,10 @@ final class GitPanelModel {
     /// A tab closed, for whoever holds something for it (a previewed file's
     /// document). Set by AppDelegate.
     @ObservationIgnored var onTabClosed: ((SideTab) -> Void)?
+    /// A tab came to the front of a session's row, by any of the ways one
+    /// does (all of them end in `settle`): a stop on Back and Forward's trail.
+    /// Set by AppDelegate.
+    @ObservationIgnored var onTabBroughtForward: ((SideTab, Session) -> Void)?
     /// Ask whether to close a side terminal that is still running something;
     /// calls back only if the answer is yes. Set by AppDelegate.
     @ObservationIgnored var confirmCloseTerminal: ((_ count: Int, _ proceed: @escaping () -> Void) -> Void)?
@@ -544,8 +548,9 @@ final class GitPanelModel {
     @ObservationIgnored private(set) var animatesVisibilityChange = false
 
     /// The session the panel is pointed at. Weak — the manager owns sessions, and
-    /// a closed one must not be kept alive by the panel.
-    @ObservationIgnored private weak var session: Session?
+    /// a closed one must not be kept alive by the panel. Readable so Back and
+    /// Forward can tell whether the panel is on the session they step into yet.
+    @ObservationIgnored private(set) weak var session: Session?
     /// Set by AppDelegate to persist a visibility or pane change: both are
     /// session state, so they belong in sessions.json rather than in this model.
     @ObservationIgnored var onStateChanged: (() -> Void)?
@@ -720,6 +725,10 @@ final class GitPanelModel {
     /// After a tab was brought to the front: show its pane, give a terminal the
     /// keyboard, and bring the model and the file up to date. A row that opened
     /// slides open; one that emptied snaps shut, as ChatGPT's do.
+    ///
+    /// Every way a tab comes to the front ends here, and that is what makes
+    /// it a stop on Back and Forward's trail (`onTabBroughtForward`). A new
+    /// one has to as well, or Back will skip what it showed.
     private func settle(_ tab: SideTab, in session: Session) {
         let region = session.workspace.region(of: tab)
         // `pane` is the column's; a pane picked in another row only counts
@@ -740,6 +749,7 @@ final class GitPanelModel {
         case nil:
             break
         }
+        onTabBroughtForward?(tab, session)
     }
 
     /// Bring a tab forward wherever it is, or put it at the end of the

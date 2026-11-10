@@ -28,7 +28,16 @@ final class SessionManager {
             // The selected row is always drawn: ⌘-number, a notification or
             // Next Waiting Session can pick a session inside a folded section.
             reveal(session)
-            noteVisit(from: oldValue)
+            // Where you were in the session you left, read before anything
+            // else moves; a session that just closed is gone from `sessions`
+            // and is nowhere to go back to.
+            noteVisit(from: sessions.first { $0.id == oldValue }.map(currentPlace(of:)))
+            // The tab you land on, held from now: the first tab brought forward
+            // here is a stop away from it, and by the time the panel reports
+            // that one the rows already show the new tab.
+            if currentTabs[session.id] == nil {
+                currentTabs[session.id] = session.workspace.front(of: .main) ?? .session
+            }
             // Most recent first, for ⌘P's list.
             recentSessionIDs.removeAll { $0 == session.id }
             recentSessionIDs.insert(session.id, at: 0)
@@ -58,48 +67,95 @@ final class SessionManager {
 
     // MARK: Back and Forward
 
-    /// The sessions you were on before this one, oldest first, and the ones
-    /// Back has stepped away from, nearest last: a browser's history over
-    /// sessions. Unlike `recentSessionIDs` a visit isn't moved to the front
-    /// when repeated, so Back retraces the path you took. Observed, so the
-    /// titlebar's arrows enable as it changes. Not persisted: it's a trail
-    /// through this run, and a relaunch starts a new one. The rules are
-    /// `SessionHistory`'s.
-    private(set) var history = SessionHistory<Session.ID>()
-    /// Set while Back or Forward is moving the selection, so the move isn't
-    /// recorded as a fresh visit (which would clear Forward).
+    /// The places you were on before this one (a session and the tab you had
+    /// in front in it), oldest first, and the ones Back has stepped away from,
+    /// nearest last: a browser's history over sessions and their tabs, as
+    /// Xcode and VS Code keep one over files. Unlike `recentSessionIDs` a
+    /// visit isn't moved to the front when repeated, so Back retraces the path
+    /// you took. Observed, so the titlebar's arrows enable as it changes. Not
+    /// persisted: it's a trail through this run, and a relaunch starts a new
+    /// one. The rules are `SessionHistory`'s.
+    private(set) var history = SessionHistory<WorkspacePlace>()
+    /// Set while Back or Forward is moving the selection or a tab, so the
+    /// move isn't recorded as a fresh visit (which would clear Forward).
     @ObservationIgnored private var navigatingHistory = false
+    /// The tab last brought forward in each session: the "tab" half of where
+    /// you are. Not observed, and it needn't be for the arrows to stay right:
+    /// it changes for the selected session only alongside a write to
+    /// `history` (a visit, or the step that moved it) or to `selectedID`, and
+    /// both are observed. A tab closing is seen through `isOpen`, which reads
+    /// the session's (observed) rows. Not pruned when a tab closes; a closed
+    /// tab is never open, and the next bring-forward replaces it.
+    @ObservationIgnored private var currentTabs: [Session.ID: SideTab] = [:]
 
-    var canGoBack: Bool { history.canStep(.back, from: selectedID, isOpen: isOpen) }
-    var canGoForward: Bool { history.canStep(.forward, from: selectedID, isOpen: isOpen) }
+    var canGoBack: Bool { history.canStep(.back, from: currentPlace, isOpen: isOpen) }
+    var canGoForward: Bool { history.canStep(.forward, from: currentPlace, isOpen: isOpen) }
 
-    private func isOpen(_ id: Session.ID) -> Bool {
-        sessions.contains { $0.id == id }
+    /// Where you are: the selected session and its current tab.
+    private var currentPlace: WorkspacePlace? {
+        selected.map(currentPlace(of:))
+    }
+
+    /// A session and the tab last brought forward in it, or, before any has
+    /// been, what its main area shows.
+    private func currentPlace(of session: Session) -> WorkspacePlace {
+        WorkspacePlace(session: session.id,
+                       tab: currentTabs[session.id] ?? session.workspace.front(of: .main) ?? .session)
+    }
+
+    /// A place you could go back to: its session is open and its tab is in
+    /// one of the session's rows.
+    private func isOpen(_ place: WorkspacePlace) -> Bool {
+        guard let session = sessions.first(where: { $0.id == place.session }) else { return false }
+        return session.workspace.region(of: place.tab) != nil
     }
 
     /// A selection you made: what you left goes on Back, and Forward is
     /// gone, as following a link after going back is in a browser.
-    private func noteVisit(from previous: Session.ID?) {
+    private func noteVisit(from previous: WorkspacePlace?) {
         guard !navigatingHistory else { return }
         history.visit(from: previous, isOpen: isOpen)
     }
 
-    func goBack() { stepHistory(.back) }
-    func goForward() { stepHistory(.forward) }
+    /// A tab came to the front of `session` (a click, ⌃Tab, a pane command,
+    /// `wortel open`): a stop on the trail, unless it is the tab you were
+    /// already on. GitPanelModel reports every one from `settle`, after the
+    /// session's rows have changed, which is why the tab you were on is the
+    /// one kept here rather than read off the rows.
+    func noteTabBroughtForward(_ tab: SideTab, in session: Session) {
+        let previous = currentPlace(of: session)
+        if !navigatingHistory, previous.tab != tab, session.id == selectedID {
+            history.visit(from: previous, isOpen: isOpen)
+        }
+        currentTabs[session.id] = tab
+    }
 
-    /// Pops to the nearest session still open (closed and archived ones are
-    /// stepped over and dropped) and leaves the current one on the other side.
-    private func stepHistory(_ direction: SessionHistory<Session.ID>.Direction) {
+    /// Step back, or forward, to the nearest place still open. `bringForward`
+    /// puts the place's tab in front of its session once the session is
+    /// selected; it is the panel's to do, and the manager doesn't own it.
+    func goBack(bringForward: (Session, SideTab) -> Void) { stepHistory(.back, bringForward: bringForward) }
+    func goForward(bringForward: (Session, SideTab) -> Void) { stepHistory(.forward, bringForward: bringForward) }
+
+    /// Pops to the nearest place still open (closed sessions and tabs are
+    /// stepped over and dropped), leaves the current one on the other side,
+    /// selects its session if it isn't already, and brings its tab forward in
+    /// whichever row it is in now. The rest of the layout stays as it is.
+    private func stepHistory(_ direction: SessionHistory<WorkspacePlace>.Direction,
+                             bringForward: (Session, SideTab) -> Void) {
         // A copy, written back before the selection moves: `selectedID`'s
         // didSet runs a long chain, and nothing in it may find this
         // half-stepped.
         var stepped = history
-        let target = stepped.step(direction, from: selectedID, isOpen: isOpen)
+        let target = stepped.step(direction, from: currentPlace, isOpen: isOpen)
         if stepped != history { history = stepped }
-        guard let target else { return }
+        guard let target, let session = sessions.first(where: { $0.id == target.session }) else { return }
+        // Neither the selection moving nor the tab coming forward is a visit:
+        // either would clear Forward.
         navigatingHistory = true
-        selectedID = target
-        navigatingHistory = false
+        defer { navigatingHistory = false }
+        if selectedID != target.session { selectedID = target.session }
+        currentTabs[target.session] = target.tab
+        bringForward(session, target.tab)
     }
 
     /// The most recent "switched into a waiting session" event; the detail view
@@ -2416,7 +2472,8 @@ final class SessionManager {
             sidebarSelection = pruned
         }
         recentSessionIDs.removeAll { $0 == session.id }
-        history.forget(session.id)
+        history.forget(where: { $0.session == session.id })
+        currentTabs[session.id] = nil
         pinnedIDs.removeAll { $0 == session.id }
         endPromptCapture(session)
         // The killed shell never reaches its prompt to clear its own agent

@@ -670,13 +670,8 @@ final class SessionManager {
     /// drop convention — it may count the folder's own current position).
     func moveFolder(_ folder: String, toFolderIndex index: Int) {
         syncFolderOrder()
-        guard let from = folderOrder.firstIndex(of: folder) else { return }
-        var target = index
-        if from < target { target -= 1 } // the drop index counted its old slot
-        var order = folderOrder
-        order.remove(at: from)
-        order.insert(folder, at: max(0, min(target, order.count)))
-        guard order != folderOrder else { return }
+        guard let order = SidebarLayout.movingFolder(folder, to: index, in: folderOrder),
+              order != folderOrder else { return }
         folderOrder = order
         normalizeOrder()
         scheduleSave()

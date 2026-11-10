@@ -264,11 +264,11 @@ struct RepoHeader: View {
         // By name: publishing is what freezes it (a placeholder is renamed for
         // the work only while it has no upstream), so `worktree/brave-river-1a2f`
         // going out under that name should be something you see you chose.
-        // Cut in the middle past 24 characters, as the chips above cut it: a
+        // Cut in the middle past 16 characters, as the chips above cut it: a
         // long branch name stretched the whole menu to its width. The start
         // and the end are what tell two branches apart.
         if repo.status.upstream == nil {
-            return repo.status.branch.map { "Publish \(Self.middleTruncated($0, to: 24))" } ?? "Publish Branch"
+            return repo.status.branch.map { "Publish \(Self.middleTruncated($0, to: 16))" } ?? "Publish Branch"
         }
         let ahead = repo.status.ahead
         return ahead > 0 ? "Push \(ahead) Commit\(ahead == 1 ? "" : "s")" : "Push"

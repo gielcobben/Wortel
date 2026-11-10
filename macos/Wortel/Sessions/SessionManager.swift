@@ -668,8 +668,8 @@ final class SessionManager {
     }
 
     /// Re-flatten `sessions` to match the rendered order (groups contiguous, in
-    /// the folder order). Keeps flat-index consumers — the Session menu, ⌘-number
-    /// select — agreeing with what the sidebar shows.
+    /// the folder order). Keeps flat-index consumers — the Session menu —
+    /// agreeing with what the sidebar shows.
     private func normalizeOrder() {
         syncFolderOrder()
         sessions = sidebarGroups.flatMap(\.sessions)

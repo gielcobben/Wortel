@@ -251,8 +251,9 @@ that want you first (louder kinds, then a hollow ring, then most recent). It is
 a view over the stored order, computed in the outline's coordinator and never
 written back, so saving and `normalizeOrder` never see it. ⌘1-9 do: they
 count the rows as drawn (`shortcutIDs`, from the outline's `publishRows`), so
-the number shown while ⌘ is held is the one that selects it. The selected
-row sorts by the key it had when it was last drawn until selection leaves it
+the number shown while ⌘ is held is the one that selects it. ⌥⌘↑/↓ and the
+row picked after a close follow the drawn rows too (`sidebarRowOrder`,
+`SidebarStep`). The selected row sorts by the key it had when it was last drawn until selection leaves it
 (it was read the moment you selected it), and nothing re-sorts while the
 pointer is on a row or a button is down; rows slide with `moveItem`, not a
 reload. A drop is placed *before the row drawn below it* (`moveSessions(before:)`),

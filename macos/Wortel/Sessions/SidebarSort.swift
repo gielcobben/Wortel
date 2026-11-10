@@ -6,8 +6,9 @@ import Foundation
 /// (what you dragged) stays in `SessionManager.sessions` and the pins; this
 /// takes it and returns a permutation for the outline to draw. Turning the
 /// sort off is then just drawing the manual order again, exactly, and nothing
-/// that walks the stored list (⌘1-9, saving, `normalizeOrder`) ever sees a
-/// sorted one.
+/// that walks the stored list (saving, `normalizeOrder`) ever sees a sorted
+/// one. The keys that mean a row on screen (⌘1-9, ⌥⌘↑/↓) read the drawn
+/// order instead.
 ///
 /// Within a section, sessions that want you come first: louder kinds before
 /// quieter (`AttentionKind.priority`), a hollow unread ring after every live

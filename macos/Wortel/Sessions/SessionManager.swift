@@ -636,9 +636,9 @@ final class SessionManager {
         var rest = sessions.filter { !movingIDs.contains($0.id) }
         // Only the position among the group's own members matters:
         // `normalizeOrder` gathers each group together after.
-        let index = before.flatMap { id in rest.firstIndex { $0.id == id } }
-            ?? rest.lastIndex { $0.folderPath == folder && !isPinned($0) }.map { $0 + 1 }
-            ?? rest.count
+        let index = SidebarLayout.insertionIndex(
+            in: rest.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
+            folder: folder, before: before, pinned: Set(pinnedIDs))
         rest.insert(contentsOf: moving, at: index)
         sessions = rest
         normalizeOrder()

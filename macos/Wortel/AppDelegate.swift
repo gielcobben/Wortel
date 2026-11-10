@@ -172,11 +172,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             alert.informativeText = detail
             alert.beginSheetModal(for: window)
         }
-        // A fresh scan, not the last snapshot: closing silently stops what the
-        // session runs, and a server started in the last ten seconds is exactly
-        // the one a stale snapshot would miss.
+        // A scan from the last second, not the background snapshot: closing
+        // silently stops what the session runs, and a server started in the
+        // last ten seconds is exactly the one a stale snapshot would miss. The
+        // sheet and the stop share this scan rather than taking their own.
         manager.hasBackgroundWork = { [weak self] session in
-            !(self?.processes.scanNow().workToStop(for: session.id).isEmpty ?? true)
+            !(self?.processes.recentScan().workToStop(for: session.id).isEmpty ?? true)
         }
         manager.stopSessionWork = { [weak self] session in
             self?.processes.stopWork(of: session.id)
@@ -783,13 +784,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Close “\(session.name)”?"
-        // Name what dies. The scan is milliseconds, so it runs inline rather
-        // than letting the sheet appear and then change its mind; if it finds
+        // Name what dies. The scan is milliseconds, and shared with the check
+        // that led here, so it runs inline rather than letting the sheet appear and then change its mind; if it finds
         // nothing nameable (no shell pid on the fallback path, a torn process
         // table) the original wording still stands.
         // The agent too, which closing ends as well, plus anything the session
         // started that has already left its shell.
-        let scanned = processes.scanNow()
+        let scanned = processes.recentScan()
         let running = scanned.jobs(for: session.id)
             + scanned.orphans.filter { $0.lastSessionID == session.id }
         alert.informativeText = RunningJobs.closeSummary(for: running)
@@ -811,7 +812,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Close \(batch.count) Sessions?"
-        let scanned = processes.scanNow()
+        let scanned = processes.recentScan()
         let ids = Set(running.map(\.id))
         let jobs = running.flatMap { scanned.jobs(for: $0.id) }
             + scanned.orphans.filter { $0.lastSessionID.map(ids.contains) ?? false }

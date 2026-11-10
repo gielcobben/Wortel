@@ -120,7 +120,24 @@ final class ProcessMonitor {
                                  owners: owners, sessionTags: sessionTags).run()
         adopt(result.owners)
         snapshot = result.snapshot
+        scannedAt = Date()
         return result.snapshot
+    }
+
+    /// When `scanNow` last ran, for `recentScan`.
+    private var scannedAt: Date?
+
+    /// `scanNow`, unless one ran within the last second: then that one.
+    ///
+    /// One close asks three questions in a row (is anything running, what to
+    /// name in the sheet, what to stop) and a batch asks the first of them
+    /// once a session; each used to scan the whole process table on the main
+    /// thread. A second is far inside the ten the background sample can be
+    /// stale by, which is the staleness these callers exist to avoid, and a
+    /// sheet left open longer than that scans again when it is answered.
+    func recentScan() -> RunningJobsSnapshot {
+        if let scannedAt, Date().timeIntervalSince(scannedAt) < 1 { return snapshot }
+        return scanNow()
     }
 
     /// Stop everything a session started, because the session is closing.
@@ -131,10 +148,11 @@ final class ProcessMonitor {
     /// to say so. The close sheet already promised "Closing stops …"; this is
     /// what makes that true.
     ///
-    /// Scanned fresh rather than read from the last snapshot, which can be ten
-    /// seconds old and so miss the server started just before ⌘W.
+    /// Scanned within the last second rather than read from the background
+    /// snapshot, which can be ten seconds old and so miss the server started
+    /// just before ⌘W.
     func stopWork(of sessionID: UUID) {
-        let doomed = scanNow().workToStop(for: sessionID)
+        let doomed = recentScan().workToStop(for: sessionID)
         for job in doomed { terminate(job) }
     }
 

@@ -1120,9 +1120,13 @@ final class SessionManager {
     /// for an agent that is merely hard to see.
     private func sweepDeadAgentMarkers() {
         var removedAny = false
+        // One read for every session asked about, as `AgentLiveness` asks of
+        // a caller like this one.
+        let table = GhosttyRuntime.recentProcessTable()
         for session in sessions where session.runningAgent != nil {
             guard let agent = session.runningAgent else { continue }
-            guard !AgentLiveness.isRunning(agent: agent, shellPID: session.runningShellPID) else {
+            guard !AgentLiveness.isRunning(agent: agent, shellPID: session.runningShellPID,
+                                           table: table) else {
                 goneSweeps[session.id] = nil // seen alive; any earlier miss was noise
                 continue
             }
@@ -1150,7 +1154,7 @@ final class SessionManager {
             // every agent its resume. (A session with a terminal on screen
             // hears about its shell itself; see `shellEnded`.)
             if session.surfaceView == nil, session.owedResume == nil,
-               let shell = session.runningShellPID, AgentLiveness.shellIsGone(shellPID: shell),
+               let shell = session.runningShellPID, AgentLiveness.shellIsGone(shellPID: shell, table: table),
                let owed = owedResume(forLostShellOf: session, lostAt: Date()) {
                 session.owedResume = owed
             }

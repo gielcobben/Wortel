@@ -139,3 +139,57 @@ enum AttentionRaise: Equatable {
                       whileAway: onScreen)
     }
 }
+
+/// What each session has had in front of someone, and for how long: whether a
+/// turn's end was already read before anything announced it.
+///
+/// It is not the same question as `AttentionRaise`'s "is anyone looking right
+/// now". The screen tier decides a turn is over once the screen has held
+/// still for a few seconds, and your own scrolling restarts that wait (so it
+/// never reads as the agent working). Reading a long answer to its end and
+/// ⌘-tabbing away therefore ended the turn, as far as Wortel knew, a few
+/// seconds *after* you left, and you got a banner quoting the answer you had
+/// just read. What settles it is when the conversation was last written: if
+/// that was on screen, with you there, for `dwell` before you left, you saw
+/// how the turn ended.
+///
+/// Pure, so its arithmetic is pinned by tests: off one way it hides a turn
+/// that finished behind your back, off the other it is the banner it exists
+/// to stop.
+struct SeenLedger: Equatable {
+    /// How long something has to be in front of you to count as read: the
+    /// same second the quieter unread ring takes to clear.
+    static let dwell: TimeInterval = 1
+
+    /// The session on screen now, with someone there, and since when.
+    private(set) var showing: UUID?
+    private var showingSince: Date?
+    /// Per session: everything written at or before this was on screen for
+    /// `dwell` while someone was there.
+    private var seenThrough: [UUID: Date] = [:]
+
+    /// What is on screen changed: `id`, or nothing (Wortel in the background,
+    /// the window covered). `present` says whether anyone was at the Mac as
+    /// the last stretch ended; a window left on screen for an empty room
+    /// showed nobody anything.
+    mutating func show(_ id: UUID?, at now: Date, present: Bool) {
+        guard id != showing else { return }
+        if let old = showing, let since = showingSince, present,
+           now.timeIntervalSince(since) >= Self.dwell {
+            let through = now.addingTimeInterval(-Self.dwell)
+            seenThrough[old] = max(seenThrough[old] ?? through, through)
+        }
+        showing = id
+        showingSince = id == nil ? nil : now
+    }
+
+    /// Whether what `id`'s conversation looked like once it was written at
+    /// `written` has been in front of someone for `dwell`, now or before.
+    func saw(_ id: UUID, writtenAt written: Date, now: Date) -> Bool {
+        if id == showing, let since = showingSince,
+           now.timeIntervalSince(max(since, written)) >= Self.dwell {
+            return true
+        }
+        return seenThrough[id].map { written <= $0 } ?? false
+    }
+}

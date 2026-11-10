@@ -325,4 +325,50 @@ final class AgentAnswerTests: XCTestCase {
             pi("toolResult", [["type": "text", "text": "out"]]),
         ]))
     }
+
+    /// When the turn last wrote is its `task_complete`, not the bookkeeping
+    /// after it: that is the moment the answer on screen was final, which is
+    /// what decides whether someone already read it.
+    func testACodexTurnLastWroteAtItsCompletion() {
+        let lines = [
+            codex("event_msg", ["type": "task_started"], at: "2026-10-14T12:01:00.000Z"),
+            codex("response_item", ["type": "message", "role": "assistant",
+                                    "content": [["type": "output_text", "text": "Done."]]],
+                  at: "2026-10-14T12:01:20.000Z"),
+            codex("event_msg", ["type": "task_complete", "last_agent_message": "Done."],
+                  at: "2026-10-14T12:01:20.500Z"),
+            codex("event_msg", ["type": "token_count"], at: "2026-10-14T12:01:21.000Z"),
+            codex("event_msg", ["type": "thread_settings_applied"], at: "2026-10-14T12:03:00.000Z"),
+        ]
+        XCTAssertEqual(
+            AgentConversation.Codex.lastTurnWrite(Data(lines.joined(separator: "\n").utf8), since: since),
+            ISO8601DateFormatter.withFractions.date(from: "2026-10-14T12:01:20.500Z"))
+    }
+
+    /// Claude's conversation moved last at its newest answer or tool result;
+    /// a sidechain's or a meta entry's later line is not the conversation.
+    func testClaudesLastWriteSkipsSidechainsAndMeta() {
+        let lines = [
+            line(["type": "user", "timestamp": "2026-10-14T12:01:00.000Z",
+                  "message": ["role": "user", "content": "Go."]]),
+            line(["type": "assistant", "timestamp": "2026-10-14T12:01:30.000Z",
+                  "message": ["role": "assistant", "content": [["type": "text", "text": "Done."]]]]),
+            line(["type": "assistant", "isSidechain": true, "timestamp": "2026-10-14T12:02:00.000Z",
+                  "message": ["role": "assistant", "content": [["type": "text", "text": "Sub."]]]]),
+            line(["type": "user", "isMeta": true, "timestamp": "2026-10-14T12:02:10.000Z",
+                  "message": ["role": "user", "content": "meta"]]),
+            line(["type": "ai-title", "timestamp": "2026-10-14T12:02:20.000Z"]),
+        ]
+        XCTAssertEqual(
+            ClaudeTranscriptTail.lastWrite(Data(lines.joined(separator: "\n").utf8)),
+            ISO8601DateFormatter.withFractions.date(from: "2026-10-14T12:01:30.000Z"))
+    }
+}
+
+private extension ISO8601DateFormatter {
+    static let withFractions: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 }

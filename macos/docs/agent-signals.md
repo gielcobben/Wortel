@@ -134,6 +134,17 @@ never return to the prompt; the agent's own signals take over.
   (`away_summary`, ~3 minutes after a turn while unfocused) raised nothing in
   two live captures.
 
+- A turn you read to the end was announced after you left (reported from a
+  Codex user, 2026-11-10). When Codex's title spinner stops, the screen tier
+  re-claims the still-moving screen at once, as a continuation of the same
+  turn, and only calls it over after 3s of stillness. Every scroll re-baselines
+  that tracker (so reading never counts as the agent working), and so does
+  ⌘-tabbing away: reading a long answer kept the turn "running" until you
+  left, and the banner quoting it arrived 3 to 4 seconds later. The fix is
+  not in the tracker but in what a turn end is checked against: when the
+  conversation file was last written (Codex's `task_complete`, Claude's last
+  answer or tool result), and whether the session was on screen, with you
+  there, for a second after that (`SeenLedger`). If so, nothing is raised.
 - Claude Code's OSC 9;4 is gated on `TERM_PROGRAM=ghostty` — captures under
   `xterm-256color` show nothing. Its "auto" notification channel sends **no
   bell and no OSC 9/777** under Ghostty; the 9;4;0 edge is the only signal.

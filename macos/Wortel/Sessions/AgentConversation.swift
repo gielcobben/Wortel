@@ -452,19 +452,28 @@ enum AgentConversation {
         /// conversation's last turn), so "anything newer than `since`" would
         /// be wrong the same way the title is.
         static func tookTurn(_ data: Data, since: Date) -> Bool {
+            lastTurnWrite(data, since: since) != nil
+        }
+
+        /// When a turn last wrote to the rollout, if it did at or after
+        /// `since`: its `task_complete`, once the turn is over. What the
+        /// screen showed at the end of the turn was on it from then on, which
+        /// is what decides whether someone already read it (`SeenLedger`).
+        static func lastTurnWrite(_ data: Data, since: Date) -> Date? {
             for entry in AgentAnswer.entries(data) {
                 guard let date = AgentFiles.date(entry["timestamp"]) else { continue }
                 // Appended in order, so everything further back is older too.
-                if date < since { return false }
-                if isTurnEntry(entry) { return true }
+                if date < since { return nil }
+                if isTurnEntry(entry) { return date }
             }
-            return false
+            return nil
         }
 
         /// What the rollouts say about a quiet that began at `since`.
         enum TurnReading: Equatable {
-            /// A turn wrote this tail, which is where its answer is.
-            case turn(Data)
+            /// A turn wrote this tail, which is where its answer is, last at
+            /// `lastWrite`.
+            case turn(Data, lastWrite: Date)
             /// Nothing a turn writes, anywhere this session could have written.
             case noTurn
             /// The session's own rollout couldn't be read: no verdict.
@@ -493,7 +502,7 @@ enum AgentConversation {
             if let id {
                 guard let tail = file(id: id, root: root).flatMap(ClaudeTranscriptTail.readTail(of:))
                 else { return .unknown }
-                if tookTurn(tail, since: since) { return .turn(tail) }
+                if let last = lastTurnWrite(tail, since: since) { return .turn(tail, lastWrite: last) }
             }
             let skip = Set((Array(others) + [id].compactMap { $0 }).map { $0.lowercased() })
             for url in rollouts(modifiedSince: since, root: root) {
@@ -502,7 +511,7 @@ enum AgentConversation {
                       meta(of: url).map({ AgentConversation.samePath($0.cwd, cwd) }) == true,
                       let tail = ClaudeTranscriptTail.readTail(of: url)
                 else { continue }
-                if tookTurn(tail, since: since) { return .turn(tail) }
+                if let last = lastTurnWrite(tail, since: since) { return .turn(tail, lastWrite: last) }
             }
             return .noTurn
         }

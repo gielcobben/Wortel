@@ -17,6 +17,7 @@ final class SessionManager {
     /// and programmatic selection (menu shortcuts) go through one path.
     var selectedID: Session.ID? {
         didSet {
+            noteShowing()
             // The lead moved from somewhere that isn't a ⌘-click inside the
             // selection (a plain click, ⌘2, a notification): one row again.
             if selectedID != oldValue, !(selectedID.map(sidebarSelection.ids.contains) ?? false) {
@@ -261,6 +262,18 @@ final class SessionManager {
     /// fully occluded). An active app with a minimized window is *not*
     /// "actively viewing" anything. Set by the app layer on occlusion changes.
     @ObservationIgnored var windowIsVisible = true
+
+    /// Which session has been in front of someone, and when: whether a turn
+    /// that ended was already read before anything announced it. Fed by every
+    /// change to what's on screen (`noteShowing`).
+    @ObservationIgnored private var seen = SeenLedger()
+
+    /// What's on screen just changed (selection, Wortel coming forward or
+    /// going back, the window covered or shown): tell the ledger.
+    private func noteShowing() {
+        seen.show(appIsActive && windowIsVisible ? selectedID : nil, at: Date(),
+                  present: !Self.userIsAway())
+    }
 
 
     /// Busy is shown only after a command has been running this long, so
@@ -3392,10 +3405,10 @@ final class SessionManager {
     /// what's left when there is no file to read or nothing in it to quote.
     private func announceTurnEnd(_ session: Session, kind: AttentionKind, startedAt: Date?,
                                  source: String, guessed: Bool) {
-        let raise = { [weak self, weak session] (kind: AttentionKind, body: String, tag: String) in
+        let raise = { [weak self, weak session] (kind: AttentionKind, body: String, tag: String, seen: Bool) in
             guard let self, let session else { return }
             self.raiseAttention(session, kind: kind, title: session.name, body: body,
-                                source: "\(source)-quiesce\(tag)")
+                                source: "\(source)-quiesce\(tag)", seen: seen)
             // A finished turn is the best moment to (re)name the session from
             // what's now on screen — even when it's the one you're watching.
             self.considerAutoName(session)
@@ -3413,7 +3426,7 @@ final class SessionManager {
         guard let agent = session.runningAgent, AgentConversation.exact.contains(agent),
               let cwd = session.runningCwd ?? session.cwd, let startedAt,
               session.liveConversationID != nil || agent == "codex" && judged
-        else { return raise(kind, inferredBody, "") }
+        else { return raise(kind, inferredBody, "", false) }
         let id = session.liveConversationID
         // Other sessions' conversations, which are never this one's evidence.
         let others = Set(sessions.compactMap { $0 === session ? nil : $0.liveConversationID })
@@ -3424,12 +3437,15 @@ final class SessionManager {
         DispatchQueue.global(qos: .userInitiated).async {
             var verdict: ClaudeTranscriptTail.Verdict?
             var answer: String?
+            // When the conversation last moved: whether that was already read.
+            var lastWrite: Date?
             switch (agent, id) {
             case ("claude", let id?):
                 if let tail = AgentResumeStore.claudeTranscript(id: id, cwd: cwd)
                     .flatMap(ClaudeTranscriptTail.readTail(of:)) {
                     if judged { verdict = ClaudeTranscriptTail.verdict(tail, since: since, guessed: guessed) }
                     answer = ClaudeTranscriptTail.lastAnswer(tail, since: since)
+                    lastWrite = ClaudeTranscriptTail.lastWrite(tail)
                 }
             case ("codex", _):
                 // Unlike Claude's, every quiet is checked, not only a guess:
@@ -3439,7 +3455,9 @@ final class SessionManager {
                 // its own OSC 9 at a real turn end.
                 switch AgentConversation.Codex.turnReading(conversation: id, cwd: cwd, since: since,
                                                            others: others) {
-                case .turn(let tail): answer = AgentAnswer.codex(tail, since: since)
+                case .turn(let tail, let last):
+                    answer = AgentAnswer.codex(tail, since: since)
+                    lastWrite = last
                 case .noTurn: if judged { verdict = .noTurn }
                 case .unknown: break
                 }
@@ -3455,16 +3473,21 @@ final class SessionManager {
                 // Busy again while the file was read: the turn didn't end.
                 guard !session.isBusy, self.busyTimers[session.id] == nil else { return }
                 if verdict == .noTurn { return self.logNoTurn(session, source: source) }
+                // You read how it ended before this got here: the screen tier
+                // waits for a still screen, your scrolling restarts that wait,
+                // and so a turn you read to the end was "over" a few seconds
+                // after you went to another app. Not news by then.
+                let seen = lastWrite.map { self.seen.saw(session.id, writtenAt: $0, now: Date()) } ?? false
                 // An error's words are the error's, not the last answer's.
                 let body = kind == .failed ? inferredBody : answer ?? inferredBody
                 let tag = answer == nil || kind == .failed ? "" : "-answer"
                 // A guess that already read the screen as blocked keeps that.
-                guard kind == .turnDone else { return raise(kind, body, tag) }
+                guard kind == .turnDone else { return raise(kind, body, tag, seen) }
                 switch verdict {
-                case .apiError(let message): raise(.failed, message, "-apierror")
-                case .question: raise(.needsInput, answer ?? "Asking you a question", "-question")
-                case .plan: raise(.needsInput, answer ?? "Plan ready for review", "-plan")
-                case .noTurn, nil: raise(kind, body, tag)
+                case .apiError(let message): raise(.failed, message, "-apierror", seen)
+                case .question: raise(.needsInput, answer ?? "Asking you a question", "-question", seen)
+                case .plan: raise(.needsInput, answer ?? "Plan ready for review", "-plan", seen)
+                case .noTurn, nil: raise(kind, body, tag, seen)
                 }
             }
         }
@@ -3715,15 +3738,18 @@ final class SessionManager {
     /// agent re-emitting its prompt, would otherwise be a banner each time).
     /// New words for the same kind still go out, silently, so the banner
     /// keeps up with what the agent is asking.
+    ///
+    /// `seen`: what it is about was already in front of the user
+    /// (`SeenLedger`), so it is answered as if they were looking now.
     private func raiseAttention(_ session: Session, kind: AttentionKind, title: String, body: String,
-                                source: String) {
+                                source: String, seen: Bool = false) {
         // Logged before the gates, and always: when a dot shows up on a session
         // the user hasn't touched in days, the only question worth answering is
         // which signal raised it — and that used to be unanswerable, because
         // every trace line named the signal without naming the session.
         AgentStatusLog.log.debug("""
             attention \(source, privacy: .public) kind=\(String(describing: kind), privacy: .public) \
-            id=\(session.id.uuidString, privacy: .public) name=\(session.name, privacy: .private)
+            \(seen ? "already seen " : "", privacy: .public)id=\(session.id.uuidString, privacy: .public) name=\(session.name, privacy: .private)
             """)
         // Before the viewing gate: whether anyone is looking doesn't change
         // how the turn ended, which is what `activity(of:)` reports.
@@ -3740,7 +3766,7 @@ final class SessionManager {
         }
         guard case .raise(let alert, let startsEpisode, let whileAway) = AttentionRaise.decide(
             kind: kind, title: title, body: body, current: current, standing: standing,
-            activelyViewing: isActivelyViewing(session), onScreen: isOnScreen(session))
+            activelyViewing: seen || isActivelyViewing(session), onScreen: isOnScreen(session))
         else { return }
         if startsEpisode { attentionSince[session.id] = Date() }
         // Past the gate while on screen means nobody is there to see it, so
@@ -3940,6 +3966,7 @@ final class SessionManager {
     /// for them to touch the session (`raisedWhileAway`).
     func appDidBecomeActive() {
         appIsActive = true
+        noteShowing()
         checkFolders()
         // Focus moving in or out makes every agent TUI redraw (they ask for
         // focus reports, and they answer them) — one frame of change on screens
@@ -3955,6 +3982,7 @@ final class SessionManager {
 
     func appDidResignActive() {
         appIsActive = false
+        noteShowing()
         rebaselineAgentScreens()
         cancelCaughtUp(selectedID)
     }
@@ -3966,6 +3994,7 @@ final class SessionManager {
     /// window too, and is not someone reading it.
     func windowVisibilityChanged(_ visible: Bool) {
         windowIsVisible = visible
+        noteShowing()
         rebaselineAgentScreens() // uncovering the window repaints, same as focus
         if visible, appIsActive, let selected {
             clearAttentionOnShow(selected)

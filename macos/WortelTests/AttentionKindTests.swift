@@ -111,3 +111,97 @@ final class AttentionKindTests: XCTestCase {
                        .raise(alert: false, startsEpisode: false, whileAway: false))
     }
 }
+
+/// Whether a turn's end was already read before anything announced it.
+///
+/// Reported 2026-11-10 from a Codex user: read the answer to the end in
+/// Wortel, ⌘-tab away, and a banner with that same answer arrives anyway. The
+/// screen tier only calls a turn over once the screen holds still, and the
+/// scrolling that reading takes kept restarting that wait until she left.
+final class SeenLedgerTests: XCTestCase {
+    private let a = UUID()
+    private let b = UUID()
+    private let t0 = Date(timeIntervalSince1970: 1_000_000)
+    private func at(_ seconds: TimeInterval) -> Date { t0.addingTimeInterval(seconds) }
+
+    /// The report: the turn ended while she was on it, she read for a while
+    /// and left; the announcement that comes after is about something seen.
+    func testATurnThatEndedWhileYouReadWasSeen() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        ledger.show(nil, at: at(60), present: true) // ⌘-tab away
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(64)))
+    }
+
+    /// A turn that finished after you left was not on screen with you.
+    func testATurnThatEndedAfterYouLeftWasNot() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        ledger.show(nil, at: at(60), present: true)
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(61), now: at(65)))
+    }
+
+    /// Ending a moment before you left is a glimpse, not a read.
+    func testLessThanTheDwellIsNotARead() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        ledger.show(nil, at: at(60), present: true)
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(59.5), now: at(65)))
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(59), now: at(65)))
+    }
+
+    /// Clicking through a session on the way to another isn't reading it,
+    /// even when what it shows is old.
+    func testFlickingPastIsNotARead() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(10), present: true)
+        ledger.show(b, at: at(10.3), present: true)
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(0), now: at(20)))
+    }
+
+    /// Only the session on screen is read; the one beside it in the sidebar
+    /// finishing meanwhile was not.
+    func testOnlyTheSessionOnScreenIsRead() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        ledger.show(nil, at: at(60), present: true)
+        XCTAssertFalse(ledger.saw(b, writtenAt: at(30), now: at(64)))
+    }
+
+    /// A window left on screen for an empty room showed nobody anything.
+    func testAStretchThatEndedWithNobodyThereCountsForNothing() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        ledger.show(nil, at: at(600), present: false)
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(700)))
+    }
+
+    /// Still on it: it counts once it has been there for the dwell.
+    func testTheSessionOnScreenNow() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(31)))
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(30.5)))
+    }
+
+    /// An earlier read still counts after a later glimpse: coming back for a
+    /// moment doesn't unread what you read before.
+    func testAnEarlierReadSurvivesALaterGlimpse() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        ledger.show(b, at: at(60), present: true)
+        ledger.show(a, at: at(70), present: true)
+        ledger.show(nil, at: at(70.2), present: true)
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(80)))
+    }
+
+    /// Showing the same session again (a redundant activate) doesn't restart
+    /// the stretch.
+    func testShowingTheSameSessionAgainKeepsTheStretch() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        ledger.show(a, at: at(59.9), present: true)
+        ledger.show(nil, at: at(60), present: true)
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(64)))
+    }
+}

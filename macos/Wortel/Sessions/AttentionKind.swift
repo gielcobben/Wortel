@@ -185,11 +185,20 @@ struct SeenLedger: Equatable {
 
     /// Whether what `id`'s conversation looked like once it was written at
     /// `written` has been in front of someone for `dwell`, now or before.
-    func saw(_ id: UUID, writtenAt written: Date, now: Date) -> Bool {
-        if id == showing, let since = showingSince,
+    /// `present`: whether anyone is at the Mac now, which the stretch still
+    /// on screen needs to count: a window in front of an empty room is the
+    /// turn that finished while you were getting coffee, and that one is news.
+    func saw(_ id: UUID, writtenAt written: Date, now: Date, present: Bool) -> Bool {
+        if id == showing, present, let since = showingSince,
            now.timeIntervalSince(max(since, written)) >= Self.dwell {
             return true
         }
         return seenThrough[id].map { written <= $0 } ?? false
+    }
+
+    /// A closed session's history goes with it.
+    mutating func forget(_ id: UUID) {
+        seenThrough[id] = nil
+        if showing == id { showing = nil; showingSince = nil }
     }
 }

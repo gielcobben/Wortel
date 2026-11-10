@@ -342,7 +342,7 @@ final class AgentAnswerTests: XCTestCase {
         ]
         XCTAssertEqual(
             AgentConversation.Codex.lastTurnWrite(Data(lines.joined(separator: "\n").utf8), since: since),
-            ISO8601DateFormatter.withFractions.date(from: "2026-10-14T12:01:20.500Z"))
+            AgentFiles.date("2026-10-14T12:01:20.500Z"))
     }
 
     /// Claude's conversation moved last at its newest answer or tool result;
@@ -360,15 +360,16 @@ final class AgentAnswerTests: XCTestCase {
             line(["type": "ai-title", "timestamp": "2026-10-14T12:02:20.000Z"]),
         ]
         XCTAssertEqual(
-            ClaudeTranscriptTail.lastWrite(Data(lines.joined(separator: "\n").utf8)),
-            ISO8601DateFormatter.withFractions.date(from: "2026-10-14T12:01:30.000Z"))
+            ClaudeTranscriptTail.lastWrite(Data(lines.joined(separator: "\n").utf8), since: since),
+            AgentFiles.date("2026-10-14T12:01:30.000Z"))
+    }
+
+    /// Nothing from this turn is no date, not the last turn's: that one was
+    /// likely read long ago, and would pass this turn off as seen.
+    func testClaudesLastWriteBeforeTheTurnIsNone() {
+        let old = line(["type": "assistant", "timestamp": "2026-10-14T11:00:00.000Z",
+                        "message": ["role": "assistant", "content": [["type": "text", "text": "Old."]]]])
+        XCTAssertNil(ClaudeTranscriptTail.lastWrite(Data(old.utf8), since: since))
     }
 }
 
-private extension ISO8601DateFormatter {
-    static let withFractions: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-}

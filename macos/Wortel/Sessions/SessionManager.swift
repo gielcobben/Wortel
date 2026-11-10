@@ -129,6 +129,7 @@ final class SessionManager {
             history.visit(from: previous, isOpen: isOpen)
         }
         currentTabs[session.id] = tab
+        noteShowing()
     }
 
     /// Step back, or forward, to the nearest place still open. `bringForward`
@@ -270,8 +271,15 @@ final class SessionManager {
 
     /// What's on screen just changed (selection, Wortel coming forward or
     /// going back, the window covered or shown): tell the ledger.
+    ///
+    /// Asks AppKit whether Wortel is frontmost rather than `appIsActive`, which
+    /// starts out true: launched in the background (a login item), the
+    /// restored session would otherwise count as read for as long as Wortel
+    /// was never brought forward. Only the session's terminal counts, not a
+    /// file or a page in front of it.
     private func noteShowing() {
-        let id = appIsActive && windowIsVisible ? selectedID : nil
+        let onScreen = NSApp?.isActive == true && windowIsVisible
+        let id = onScreen && selected?.workspace.showsSessionTerminal == true ? selectedID : nil
         guard id != seen.showing else { return }
         let present = !Self.userIsAway()
         AgentStatusLog.log.debug("""
@@ -345,7 +353,7 @@ final class SessionManager {
     /// How long a session must stay actively-viewed before its "unread" mark
     /// clears. Long enough that a quick click-through to triage doesn't count as
     /// catching up, short enough that actually landing on it clears promptly.
-    private static let unreadDwellDelay: TimeInterval = 1.0
+    private static let unreadDwellDelay = SeenLedger.dwell
     /// Pending "you've now caught up → drop the unread mark" work items, keyed
     /// by session; cancelled the moment you navigate away.
     @ObservationIgnored private var unreadDwellTimers: [Session.ID: DispatchWorkItem] = [:]
@@ -2484,6 +2492,7 @@ final class SessionManager {
         attentionContent.removeValue(forKey: session.id)
         raisedWhileAway.remove(session.id)
         unreadSince.removeValue(forKey: session.id)
+        seen.forget(session.id)
         if sidebarSelection.ids.contains(session.id) || sidebarSelection.anchor == session.id {
             var pruned = sidebarSelection
             pruned.prune(to: Set(sessions.lazy.map(\.id).filter { $0 != session.id }), lead: selectedID)
@@ -3450,7 +3459,7 @@ final class SessionManager {
                     .flatMap(ClaudeTranscriptTail.readTail(of:)) {
                     if judged { verdict = ClaudeTranscriptTail.verdict(tail, since: since, guessed: guessed) }
                     answer = ClaudeTranscriptTail.lastAnswer(tail, since: since)
-                    lastWrite = ClaudeTranscriptTail.lastWrite(tail)
+                    lastWrite = ClaudeTranscriptTail.lastWrite(tail, since: since)
                 }
             case ("codex", _):
                 // Unlike Claude's, every quiet is checked, not only a guess:
@@ -3482,7 +3491,12 @@ final class SessionManager {
                 // waits for a still screen, your scrolling restarts that wait,
                 // and so a turn you read to the end was "over" a few seconds
                 // after you went to another app. Not news by then.
-                let seen = lastWrite.map { self.seen.saw(session.id, writtenAt: $0, now: Date()) } ?? false
+                // Only for "finished": a failure or a question that came
+                // after the last write (an API retried for minutes, then gave
+                // up) was never on screen to be read.
+                let seen = lastWrite.map {
+                    self.seen.saw(session.id, writtenAt: $0, now: Date(), present: !Self.userIsAway())
+                } ?? false
                 AgentStatusLog.log.debug("""
                     \(source, privacy: .public)-quiesce: last written \(lastWrite?.description ?? "unknown", privacy: .public), \
                     seen=\(seen, privacy: .public) id=\(session.id.uuidString, privacy: .public)
@@ -3491,11 +3505,11 @@ final class SessionManager {
                 let body = kind == .failed ? inferredBody : answer ?? inferredBody
                 let tag = answer == nil || kind == .failed ? "" : "-answer"
                 // A guess that already read the screen as blocked keeps that.
-                guard kind == .turnDone else { return raise(kind, body, tag, seen) }
+                guard kind == .turnDone else { return raise(kind, body, tag, false) }
                 switch verdict {
-                case .apiError(let message): raise(.failed, message, "-apierror", seen)
-                case .question: raise(.needsInput, answer ?? "Asking you a question", "-question", seen)
-                case .plan: raise(.needsInput, answer ?? "Plan ready for review", "-plan", seen)
+                case .apiError(let message): raise(.failed, message, "-apierror", false)
+                case .question: raise(.needsInput, answer ?? "Asking you a question", "-question", false)
+                case .plan: raise(.needsInput, answer ?? "Plan ready for review", "-plan", false)
                 case .noTurn, nil: raise(kind, body, tag, seen)
                 }
             }

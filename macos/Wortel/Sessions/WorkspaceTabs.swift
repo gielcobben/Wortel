@@ -136,6 +136,19 @@ struct WorkspaceTabs: Equatable, Sendable {
         show(tab)
     }
 
+    /// Whether the session's own terminal is the tab in front of its row, and
+    /// that row is up: what's on screen when the session is. A file or a page
+    /// in front of it means the terminal, and what the agent wrote there,
+    /// isn't (`SeenLedger`).
+    var showsSessionTerminal: Bool {
+        switch region(of: .session) {
+        case .main?: return front(of: .main) == .session
+        case .side?: return sideVisible && front(of: .side) == .session
+        case .bottom?: return bottomVisible && front(of: .bottom) == .session
+        case nil: return false
+        }
+    }
+
     /// The tab in front of `region`'s row; the session's terminal for the
     /// main row when nothing else is.
     func front(of region: TabRegion) -> SideTab? {

@@ -130,17 +130,20 @@ enum ClaudeTranscriptTail {
         return AgentFiles.date(stamp)
     }
 
-    /// When the conversation last moved: the newest prompt, answer or tool
-    /// result in the main thread (no sidechain, no meta entry), whatever its
-    /// age. What the screen showed at the end of a turn was on it from then
-    /// on (`SeenLedger`). Bookkeeping Claude appends later (titles, summaries)
-    /// is not the conversation and is skipped, or a turn read in full would
-    /// look newer than the read.
-    static func lastWrite(_ data: Data) -> Date? {
+    /// When the conversation last moved, if it did at or after `since`: the
+    /// newest prompt, answer or tool result in the main thread (no sidechain,
+    /// no meta entry). What the screen showed at the end of a turn was on it
+    /// from then on (`SeenLedger`). Bookkeeping Claude appends later (titles,
+    /// summaries) is not the conversation and is skipped, or a turn read in
+    /// full would look newer than the read. Older than `since` is nil, not
+    /// that date: it is some earlier turn's, likely read long ago, and would
+    /// pass this one off as seen.
+    static func lastWrite(_ data: Data, since: Date) -> Date? {
         for entry in AgentAnswer.entries(data) {
             guard let type = entry["type"] as? String, type == "assistant" || type == "user" else { continue }
             if entry["isSidechain"] as? Bool == true || entry["isMeta"] as? Bool == true { continue }
-            if let date = AgentFiles.date(entry["timestamp"]) { return date }
+            guard let date = AgentFiles.date(entry["timestamp"]) else { continue }
+            return date < since ? nil : date
         }
         return nil
     }

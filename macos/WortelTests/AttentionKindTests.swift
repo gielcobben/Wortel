@@ -130,7 +130,7 @@ final class SeenLedgerTests: XCTestCase {
         var ledger = SeenLedger()
         ledger.show(a, at: at(0), present: true)
         ledger.show(nil, at: at(60), present: true) // ⌘-tab away
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(64)))
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(64), present: true))
     }
 
     /// A turn that finished after you left was not on screen with you.
@@ -138,7 +138,7 @@ final class SeenLedgerTests: XCTestCase {
         var ledger = SeenLedger()
         ledger.show(a, at: at(0), present: true)
         ledger.show(nil, at: at(60), present: true)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(61), now: at(65)))
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(61), now: at(65), present: true))
     }
 
     /// Ending a moment before you left is a glimpse, not a read.
@@ -146,8 +146,8 @@ final class SeenLedgerTests: XCTestCase {
         var ledger = SeenLedger()
         ledger.show(a, at: at(0), present: true)
         ledger.show(nil, at: at(60), present: true)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(59.5), now: at(65)))
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(59), now: at(65)))
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(59.5), now: at(65), present: true))
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(59), now: at(65), present: true))
     }
 
     /// Clicking through a session on the way to another isn't reading it,
@@ -156,7 +156,7 @@ final class SeenLedgerTests: XCTestCase {
         var ledger = SeenLedger()
         ledger.show(a, at: at(10), present: true)
         ledger.show(b, at: at(10.3), present: true)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(0), now: at(20)))
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(0), now: at(20), present: true))
     }
 
     /// Only the session on screen is read; the one beside it in the sidebar
@@ -165,7 +165,7 @@ final class SeenLedgerTests: XCTestCase {
         var ledger = SeenLedger()
         ledger.show(a, at: at(0), present: true)
         ledger.show(nil, at: at(60), present: true)
-        XCTAssertFalse(ledger.saw(b, writtenAt: at(30), now: at(64)))
+        XCTAssertFalse(ledger.saw(b, writtenAt: at(30), now: at(64), present: true))
     }
 
     /// A window left on screen for an empty room showed nobody anything.
@@ -173,15 +173,32 @@ final class SeenLedgerTests: XCTestCase {
         var ledger = SeenLedger()
         ledger.show(a, at: at(0), present: true)
         ledger.show(nil, at: at(600), present: false)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(700)))
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(700), present: true))
     }
 
     /// Still on it: it counts once it has been there for the dwell.
     func testTheSessionOnScreenNow() {
         var ledger = SeenLedger()
         ledger.show(a, at: at(0), present: true)
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(31)))
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(30.5)))
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(31), present: true))
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(30.5), present: true))
+    }
+
+    /// Wortel in front of an empty room is not a read: the turn that ends
+    /// while you're getting coffee is news when you get back.
+    func testTheSessionOnScreenWithNobodyThereIsNotRead() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(300), now: at(305), present: false))
+    }
+
+    /// A closed session's reads go with it.
+    func testForgettingASession() {
+        var ledger = SeenLedger()
+        ledger.show(a, at: at(0), present: true)
+        ledger.show(nil, at: at(60), present: true)
+        ledger.forget(a)
+        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(64), present: true))
     }
 
     /// An earlier read still counts after a later glimpse: coming back for a
@@ -192,7 +209,7 @@ final class SeenLedgerTests: XCTestCase {
         ledger.show(b, at: at(60), present: true)
         ledger.show(a, at: at(70), present: true)
         ledger.show(nil, at: at(70.2), present: true)
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(80)))
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(80), present: true))
     }
 
     /// Showing the same session again (a redundant activate) doesn't restart
@@ -202,6 +219,6 @@ final class SeenLedgerTests: XCTestCase {
         ledger.show(a, at: at(0), present: true)
         ledger.show(a, at: at(59.9), present: true)
         ledger.show(nil, at: at(60), present: true)
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(64)))
+        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(64), present: true))
     }
 }

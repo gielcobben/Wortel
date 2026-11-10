@@ -409,4 +409,28 @@ final class WorkspaceTabsTests: XCTestCase {
         tabs.close(fileA)
         XCTAssertNil(tabs.activeMain)
     }
+
+    // MARK: - Is the session's terminal on screen
+
+    /// What `SeenLedger` counts as the session being read: its terminal in
+    /// front, not a file or page in front of it.
+    func testTheTerminalIsShownUntilSomethingIsInFrontOfIt() {
+        var tabs = WorkspaceTabs()
+        XCTAssertTrue(tabs.showsSessionTerminal)
+        tabs.place(files, in: .main, at: .max)
+        tabs.bringForward(files)
+        XCTAssertFalse(tabs.showsSessionTerminal)
+        tabs.bringForward(.session)
+        XCTAssertTrue(tabs.showsSessionTerminal)
+    }
+
+    /// Swapped into the column, the terminal is on screen only while the
+    /// column is up and it is the column's front tab.
+    func testATerminalInTheColumnNeedsTheColumnUp() {
+        var tabs = WorkspaceTabs(main: [changes], activeMain: changes,
+                                 side: [.session], activeSide: .session, sideVisible: true)
+        XCTAssertTrue(tabs.showsSessionTerminal)
+        tabs.sideVisible = false
+        XCTAssertFalse(tabs.showsSessionTerminal)
+    }
 }

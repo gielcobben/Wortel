@@ -240,11 +240,14 @@ the design is enforced, and pull requests adding them are unlikely to land.
 | Keys | Action |
 | --- | --- |
 | `⌘N` | New session (`⌥⌘N` at home) |
-| `⇧⌘N` / `⌘O` | New folder / open folder |
+| `⇧⌘N` / `⌘O` | New worktree session / open folder |
 | `⌥⌘R` | Rename session |
 | `⌘W` / `⇧⌘W` | Close the tab you are in / close the session |
 | `⌘1`…`⌘9` | Select session by position |
-| `⇧⌘[` / `⇧⌘]` | Previous / next session (also `⌥⌘↑` / `⌥⌘↓`) |
+| `⌥⌘↑` / `⌥⌘↓` | Previous / next session |
+| `⌃⌘[` / `⌃⌘]` | Back / forward through the sessions you were on |
+| `⌘P` | Go to a session, or bring back an archived one |
+| `⌘Y` | Find a prompt you typed to an agent |
 | `⌥⌘]` | Jump to the next session waiting on you |
 | `⌘B` / `⌥⌘B` / `⌘J` | Show or hide the sidebar, the side column, the bottom strip |
 | `⇧⌘E` / `⌃⇧G` | Files / source control |
@@ -284,12 +287,14 @@ ships inside the app bundle and every shell Wortel spawns gets its directory on
 `PATH`, so the command exists inside a session and nowhere else.
 
 ```sh
-wortel open README.md                       # preview a file
+wortel open README.md                       # open a file in a tab
 wortel new --cwd ~/Developer/lijn           # a session there
 wortel new --branch fix/1482 --from main    # a session in its own worktree
 wortel rename "css rules"                   # rename the session you are in
 wortel notify "Build finished"              # raise attention on this session
-wortel cd ../new-site                       # move this session, agent and all
+wortel list                                 # every open session, and what it is doing
+wortel send api "run the tests" --enter     # type into another session
+wortel wait api --idle                      # until that session goes quiet
 ```
 
 Two decisions shape it: it **never steals focus** (windows are ordered front, the

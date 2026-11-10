@@ -15,7 +15,7 @@ import Foundation
 /// name the session after the ticket you're on. cmux took the other road and now
 /// maintains adapters for six agents and explicitly skips ten more.
 enum WortelCommand: Codable, Equatable {
-    /// Open a file in a preview window.
+    /// Open a file as a tab (or bring forward a preview of it that is already open).
     case open(path: String)
     /// Start a session. `cwd` defaults to the caller's directory, and `branch`
     /// asks for a worktree the way the sidebar's picker does. `base` is what a
@@ -273,7 +273,7 @@ enum WortelCommandParser {
     static let usage = """
         usage: wortel <command> [arguments]
 
-          open <path>              open a file in a preview window
+          open <path>              open a file in a tab
           new [--cwd <path>] [--name <name>] [--branch <branch>] [--from <ref>] [--pr <n|url>] [--worktree] [-- <command>]
                                    start a session; --branch gives it a worktree,
                                    --from picks what a new branch forks from,

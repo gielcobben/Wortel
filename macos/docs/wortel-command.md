@@ -26,7 +26,7 @@ not on your `PATH` in Terminal.app or iTerm, by design.
 
 ### `wortel open <path>`
 
-Opens a file in a preview window — the same window a double-click in the Files
+Opens a file as a tab in the side column, the same view a double-click in the Files
 pane gives you: source, diff, or rendered Markdown depending on the file.
 
 ```sh

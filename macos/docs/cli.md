@@ -8,7 +8,7 @@ A command line's way into the running app. A handful of verbs, one socket,
 no plugin system.
 
 ```sh
-wortel open src/PreviewWindow.swift      # a preview window for a file
+wortel open src/PreviewWindow.swift      # open a file in a tab
 wortel new --branch fix/1482             # a session, in its own worktree off trunk
 wortel rename "1482 login redirect"      # this session
 wortel notify "Tests failed"             # this session wants you
@@ -199,8 +199,8 @@ you'd expect. Fired by a hook while you're in another app, it leaves the window
 waiting instead of yanking you out of what you were doing. An agent finishing a
 background task must not be able to take your keyboard.
 
-**A command means the session it was run in.** `rename` and `notify` take no
-session argument: the shell already knows which one it is, via
+**A command means the session it was run in.** `rename` and `notify` need no
+session argument (they accept `--session`): the shell already knows which one it is, via
 `$WORTEL_SESSION_ID` (exported per surface, and the same variable the agent
 marker files are keyed on). Identity comes from where you ran the command rather
 than from something you have to look up and could get wrong. Run from outside

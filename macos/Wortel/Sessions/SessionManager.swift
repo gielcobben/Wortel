@@ -3084,6 +3084,17 @@ final class SessionManager {
         return !isFolderCollapsed(folder)
     }
 
+    /// The open sessions that have a row, top to bottom as drawn (Sort Unread
+    /// First applied, folded sections left out). The outline's own list,
+    /// less anything closed since it last drew; the stored order with folded
+    /// sections left out when it has published nothing (before the first
+    /// draw, or with every section folded, when that is empty too).
+    private var drawnRows: [Session.ID] {
+        let live = Set(sessions.map(\.id))
+        let drawn = sidebarRowOrder.filter(live.contains)
+        return drawn.isEmpty ? sessions.filter(isVisibleInSidebar).map(\.id) : drawn
+    }
+
     private var selectedIndex: Int? {
         sessions.firstIndex { $0.id == selectedID }
     }

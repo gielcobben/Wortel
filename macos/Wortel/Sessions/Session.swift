@@ -62,7 +62,7 @@ final class Session: Identifiable {
     /// leaves it, which is the point of a "come back to this".
     var colour: SessionColour?
     /// The worktree this session is waiting for, while git makes it. The row
-    /// and the page are there from the moment Fork is pressed; the shell
+    /// and the page are there from the moment the session is asked for; the shell
     /// starts once its folder exists. In a large repository the checkout is
     /// most of a minute, and it used to happen with nothing on screen and end
     /// in an alert. Never persisted: a session still waiting at quit was

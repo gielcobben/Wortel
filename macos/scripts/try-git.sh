@@ -143,11 +143,8 @@ Look over, with the git panel open (⌃⌘1):
   [ ] origin/giel/remote-only: checks out as a new local branch
   [ ] … › Pull and … › Push: each refuses in one sentence
   [ ] Edit README.md, then switch to giel/conflict: names README.md
-  [ ] Open Branch (⇧⌘O), type "Jump to": Create “Jump-to”, from main
   [ ] Run two servers in the session, open the running list: Stop All
       python3 -m http.server 8801 & python3 -m http.server 8802 &
-  [ ] Open Branch, type #7: opens worktree/pr-7 with seven.txt;
-      type #8: checks out giel/shape-lab itself, tracking origin
   [ ] Session › Worktree › Clean Up Worktrees: squashed and picked say
       "Merged · branch too"; calm-test says "Branch kept"
   [ ] Open worktree/squashed: Changes says "Merged into main"
@@ -155,31 +152,19 @@ Look over, with the git panel open (⌃⌘1):
   [ ] New Worktree Session (⇧⌘N): the row's shell starts in its worktree,
       not /, in this folder; ask the agent something and the branch is
       renamed for the session's name (git branch)
-  [ ] Open Branch (⇧⌘O) lists shop-toolbar-clean and the rest made by hand
-      as Not open; picking one opens a session there
   [ ] Close (⇧⌘W) a worktree session with changes: it leaves the sidebar;
-      ⇧⌘O lists it as Archived; pick it: back in its worktree, agent resumed
+      ⌘P lists it as Archived once you type its name; pick it: back in its
+      worktree, agent resumed
   [ ] Close a fresh, untouched worktree session: its folder is in the Trash
-      a moment later, and ⇧⌘O doesn't list it
+      a moment later, and ⌘P doesn't list it
   [ ] exit in a worktree session: archived, like closing it
-  [ ] Open Branch with nothing typed: the open, archived and not open ones;
-      type giel/toolbar-clean: only its worktree, no second one
-  [ ] Folder menu › Worktree Location…, pick ../shop-trees: the next
-      ⇧⌘N lands there; Use Wortel's Worktree Folder puts it back
+  [ ] New Worktree Session (⇧⌘N) › Location, pick ../shop-trees: the next
+      ⇧⌘N lands there; Wortel's Worktree Folder puts it back
   [ ] ⌘O on ../shop-toolbar-proposal: lands in the shop folder, not a new
       one, named for its branch; rename it and the branch shows under it
   [ ] cd ../shop-toolbar-clean in a session: the branch line appears
   [ ] Git panel › worktree chip › shop-toolbar-clean › Open Session: goes to
       that session
-
-In "Try fork":
-  [ ] Fork Session (⌥⇧⌘N): "Try fork (fork)" opens with README.md staged plus
-      an unstaged edit, staged.txt staged, run.sh executable, blob.bin
-      untracked, and a note that vendor/lib was skipped
-  [ ] The fork has .env and config/local.json, and no node_modules
-  [ ] git status in "Try fork" itself: unchanged
-  [ ] With claude running in "Try fork", Fork Session starts
-      claude --resume <…>.jsonl --fork-session in the fork, same conversation
 
 Done: scripts/try-git.sh --clean
 EOF

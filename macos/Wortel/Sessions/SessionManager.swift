@@ -1267,8 +1267,9 @@ final class SessionManager {
                               initialInput: nil)
             return
         }
-        // A resume a move typed is still the one owed: the agent was quit on
-        // purpose, and resuming it where it was would undo the move.
+        // A resume already typed is still the one owed until its agent answers
+        // or the window passes (`OwedResume.isOwed`); don't replace it with one
+        // worked out from this lost shell.
         if session.owedResume?.isOwed(at: Date()) != true,
            let owed = owedResume(forLostShellOf: session, lostAt: lostAt) {
             session.owedResume = owed
@@ -2949,11 +2950,6 @@ final class SessionManager {
     func requestCloseSelected() {
         guard let selected else { return }
         requestClose(selected)
-    }
-
-    func closeSelected() {
-        guard let selected else { return }
-        close(selected)
     }
 
     func rename(_ session: Session, to name: String) {

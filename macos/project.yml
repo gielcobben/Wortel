@@ -495,6 +495,10 @@ targets:
       # wrong is a row sliding out from under the pointer, which no build or
       # crash will ever report.
       - path: Wortel/Sessions/SidebarSort.swift
+      # How the sidebar groups sessions and where a dropped one lands. A wrong
+      # index doesn't throw: it files a session elsewhere, which renames it,
+      # and saves that.
+      - path: Wortel/Sessions/SidebarLayout.swift
       # The agent marker format is a contract between two languages — the shell
       # integration writes it, Swift parses it — so nothing catches a drift on
       # either side at compile time. Same for the agent→resume-command table: a

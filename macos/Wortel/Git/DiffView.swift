@@ -493,8 +493,13 @@ final class DiffLineCellView: NSView {
         bounds.fill()
 
         let numColumn = (gutterWidth - 6) / 2
+        // A step brighter on an added or removed line: the tint under it ate
+        // most of tertiary's contrast. Context keeps the quiet colour, so a
+        // whole file's gutter doesn't get louder.
+        let changed = line.kind == .addition || line.kind == .deletion
         let numberAttrs: [NSAttributedString.Key: Any] = [
-            .font: font, .foregroundColor: NSColor.tertiaryLabelColor,
+            .font: font,
+            .foregroundColor: changed ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor,
         ]
 
         if line.kind != .hunkHeader {

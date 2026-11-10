@@ -2412,6 +2412,9 @@ final class SessionManager {
             \(session.runningAgent.map { ", ending its \($0)" } ?? "", privacy: .public)
             """)
         let wasSelected = session.id == selectedID
+        // Over the rows as drawn, so it is the row above on screen, sorted
+        // or not, and never one inside a folded section.
+        let drawnNeighbour = SidebarStep.afterClosing(session.id, in: drawnRows)
         let hadAttention = session.needsAttention
         busyTimers.removeValue(forKey: session.id)?.cancel()
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
@@ -2474,7 +2477,7 @@ final class SessionManager {
         // not one row further down. Only the topmost row has nothing above
         // it, and there the row below is the only answer.
         if wasSelected {
-            selectedID = sessions[max(index - 1, 0)].id
+            selectedID = drawnNeighbour ?? sessions[max(index - 1, 0)].id
         }
         scheduleSave()
     }
@@ -3056,8 +3059,10 @@ final class SessionManager {
     /// Move the selection one row up the sidebar (⌘⌥↑), wrapping at the start.
     func selectPrevious() { selectStepping(by: -1) }
 
-    /// Walk `sessions` from the selection in `step` direction, cyclically, and
-    /// select the first row that's actually on screen.
+    /// Select the row `step` over from the selection, cyclically, in the rows
+    /// as the sidebar draws them (`drawnRows`, `SidebarStep`): Sort Unread
+    /// First is followed, so it is the next row on screen, and folded
+    /// sections have no rows, so they are skipped as before.
     ///
     /// Sessions inside a collapsed folder are skipped rather than expanded into.
     /// The other selection paths (drop, rename, ⌘-number) un-collapse instead —
@@ -3065,15 +3070,8 @@ final class SessionManager {
     /// This one only means "one row over", and expanding a folder in passing
     /// would rearrange the sidebar as a side effect of moving through it.
     private func selectStepping(by step: Int) {
-        guard let i = selectedIndex, sessions.count > 1 else { return }
-        let n = sessions.count
-        for offset in 1..<n {
-            let candidate = sessions[((i + step * offset) % n + n) % n]
-            if isVisibleInSidebar(candidate) {
-                selectedID = candidate.id
-                return
-            }
-        }
+        guard let next = SidebarStep.neighbour(of: selectedID, in: drawnRows, by: step) else { return }
+        selectedID = next
     }
 
     /// Whether a session has a row in the sidebar right now — i.e. it isn't

@@ -271,8 +271,13 @@ final class SessionManager {
     /// What's on screen just changed (selection, Wortel coming forward or
     /// going back, the window covered or shown): tell the ledger.
     private func noteShowing() {
-        seen.show(appIsActive && windowIsVisible ? selectedID : nil, at: Date(),
-                  present: !Self.userIsAway())
+        let id = appIsActive && windowIsVisible ? selectedID : nil
+        guard id != seen.showing else { return }
+        let present = !Self.userIsAway()
+        AgentStatusLog.log.debug("""
+            showing \(id?.uuidString ?? "nothing", privacy: .public) present=\(present, privacy: .public)
+            """)
+        seen.show(id, at: Date(), present: present)
     }
 
 
@@ -3478,6 +3483,10 @@ final class SessionManager {
                 // and so a turn you read to the end was "over" a few seconds
                 // after you went to another app. Not news by then.
                 let seen = lastWrite.map { self.seen.saw(session.id, writtenAt: $0, now: Date()) } ?? false
+                AgentStatusLog.log.debug("""
+                    \(source, privacy: .public)-quiesce: last written \(lastWrite?.description ?? "unknown", privacy: .public), \
+                    seen=\(seen, privacy: .public) id=\(session.id.uuidString, privacy: .public)
+                    """)
                 // An error's words are the error's, not the last answer's.
                 let body = kind == .failed ? inferredBody : answer ?? inferredBody
                 let tag = answer == nil || kind == .failed ? "" : "-answer"

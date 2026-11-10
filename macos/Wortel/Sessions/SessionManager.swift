@@ -2676,6 +2676,15 @@ final class SessionManager {
     /// Archived sessions whose worktree is being removed right now, which
     /// can't be restored until that's settled.
     @ObservationIgnored private var removingArchived: Set<UUID> = []
+
+    /// Clean Up Worktrees is removing (or has finished with) the worktree at
+    /// `path`: an archived session there can't be restored into it meanwhile.
+    func setRemovingWorktree(_ removing: Bool, at path: String) {
+        let root = GitWorktree.realPath(path)
+        let ids = archived.filter { GitWorktree.realPath($0.checkout) == root }.map(\.id)
+        if removing { removingArchived.formUnion(ids) } else { removingArchived.subtract(ids) }
+    }
+
     /// Something about an archived worktree went wrong and the user should
     /// hear it (restoring one whose folder can't be made again). Set by
     /// AppDelegate.

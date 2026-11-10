@@ -271,12 +271,14 @@ final class WorktreeCleanupModel {
             // Asked now, per row: each removal walks the worktree first, and
             // by the fifth the answers from before the first are old. A
             // session opened or restored in the meantime must count.
+            manager.setRemovingWorktree(true, at: row.path)
             usage = WorktreeUsage(manager: manager)
             let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
             let users = usage.users(of: row.path, in: processes)
             let removal = await WorktreeCleanup.removeReporting(
                 path: row.path, knownRepos: knownRepos, usedBy: users,
                 deleteBranch: deletesBranch(row))
+            manager.setRemovingWorktree(false, at: row.path)
             if let error = removal.error, let index = rows.firstIndex(where: { $0.path == row.path }) {
                 rows[index].removing = false
                 rows[index].error = error

@@ -307,7 +307,9 @@ types nothing, because text typed after the CLI has already reported failure is
 sent twice by a script that retries.
 
 **`wait` holds the connection, not the main thread.** The reply simply comes
-later, as `new --branch`'s does. While any wait is open, a quarter-second timer
+later, as `new --branch`'s does. The CLI waits up to eleven minutes for a `new` that makes a worktree
+(`WortelCLI.worktreeAnswerTimeout`), and a preparing row closed in the app
+answers it at once with a failure. While any wait is open, a quarter-second timer
 looks at each one: a few dictionary reads for `--idle` and `--exit`, and for
 `--for` a read of the active screen only when the pty's output counter has moved
 since the last one, at most twice a second (`PtyHost.outputGeneration`). A wait

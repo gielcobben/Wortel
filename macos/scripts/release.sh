@@ -23,6 +23,12 @@
 #                                         Strands anyone who already took it,
 #                                         so it is only for a release nobody
 #                                         has downloaded yet. Version required.
+#   ./scripts/release.sh --publish --allow-dirty  publish with uncommitted
+#                                         changes in the tree. Emergencies only:
+#                                         the release is then not rebuildable.
+#   ./scripts/release.sh --publish --no-tests     skip WortelTests and the
+#                                         updates/ tests that run before the
+#                                         build. Emergencies only.
 #
 # Publishing requires a release note: web/src/content/releases/<version>.md, one
 # Markdown file whose name is the version. It is checked before anything is
@@ -74,6 +80,8 @@ PUBLISH=0
 INSTALL=1
 NOTES=1
 REPUBLISH=0
+ALLOW_DIRTY=0
+RUN_TESTS=1
 VERSION=""
 BUILD_FILE="$RELEASES_DIR/BUILD"        # tracked record: last published version string
 # Lift the flags out of the argument list before the positional parse below, so
@@ -84,6 +92,8 @@ for arg in "$@"; do
     --no-install) INSTALL=0 ;;
     --no-notes) NOTES=0 ;;
     --republish) REPUBLISH=1 ;;
+    --allow-dirty) ALLOW_DIRTY=1 ;;
+    --no-tests) RUN_TESTS=0 ;;
     *) ARGS+=("$arg") ;;
   esac
 done
@@ -94,6 +104,17 @@ case "${1:-}" in
     PUBLISH=1
     NOTARIZE=1                          # publishing a non-notarized zip fails Gatekeeper on other Macs
     VERSION="${2:-}"
+    # What ships is what is committed. A publish from a tree with uncommitted
+    # changes is a release no commit can rebuild or bisect. Checked first,
+    # while stopping is free.
+    if [ "$ALLOW_DIRTY" = 0 ] && [ -n "$(git -C "$ROOT/.." status --porcelain)" ]; then
+      echo "✗ Uncommitted changes. Commit them (the release note included), or pass --allow-dirty." >&2
+      git -C "$ROOT/.." status --short >&2
+      exit 1
+    fi
+    # The uploader is needed at the very end, after notarization. Find out
+    # now whether it can be installed.
+    [ -x "$ROOT/../updates/node_modules/.bin/wrangler" ] || ( cd "$ROOT/../updates" && npm ci --silent )
     # What's actually out there. `releases/BUILD` is only ever *this checkout's*
     # memory of it: a release cut from another machine or a worktree, or one
     # whose commit was discarded, leaves it stale — and then the counter below
@@ -191,7 +212,29 @@ echo "==> Signing identity: $IDENTITY"
 
 # --- Build ------------------------------------------------------------------
 echo "==> Regenerating project + building Release"
-command -v xcodegen >/dev/null && xcodegen generate
+command -v xcodegen >/dev/null || { echo "✗ xcodegen not found (brew install xcodegen). Building without it would build a stale project." >&2; exit 1; }
+xcodegen generate
+# The versions every package resolves to are the tracked ones
+# (macos/Package.resolved), not whatever is newest today. The project is
+# generated and ignored, so its own copy is put back each time.
+RESOLVED_DIR="Wortel.xcodeproj/project.xcworkspace/xcshareddata/swiftpm"
+mkdir -p "$RESOLVED_DIR"
+cp "$ROOT/Package.resolved" "$RESOLVED_DIR/Package.resolved"
+# The suite is 85 seconds and a publish is permanent.
+if [ "$PUBLISH" = 1 ] && [ "$RUN_TESTS" = 1 ]; then
+  echo "==> Running tests"
+  if ! xcodebuild -project Wortel.xcodeproj -scheme WortelTests -onlyUsePackageVersionsFromResolvedFile test > build/xcodebuild-test.log 2>&1; then
+    echo "✗ Tests failed. Last lines (full log: build/xcodebuild-test.log):" >&2
+    tail -40 build/xcodebuild-test.log >&2
+    echo "  To publish anyway: --no-tests" >&2
+    exit 1
+  fi
+  (
+    cd "$ROOT/../updates"
+    [ -d node_modules ] || npm ci --silent
+    npm test --silent
+  ) || { echo "✗ updates/ tests failed." >&2; exit 1; }
+fi
 # When publishing, stamp both version fields from the argument so Sparkle (which
 # compares CFBundleVersion) sees each release as newer. Otherwise use the
 # versions baked into project.yml.
@@ -202,6 +245,7 @@ fi
 # Build a universal binary so it runs on both Apple Silicon and Intel Macs.
 # (A single-arch build shows "app is damaged" on the other architecture.)
 if ! xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Release \
+      -onlyUsePackageVersionsFromResolvedFile \
       ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
       ${VERSION_ARGS[@]+"${VERSION_ARGS[@]}"} \
       clean build > build/xcodebuild.log 2>&1; then
@@ -294,7 +338,9 @@ if [ "$PUBLISH" = 1 ]; then
   [ "$BUILT" = "$VERSION" ] || { echo "✗ Built version ($BUILT) ≠ requested ($VERSION)" >&2; exit 1; }
 
   # Sparkle's CLI tools ship inside the resolved SPM artifact bundle.
-  SPARKLE_BIN="$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path '*artifacts/sparkle/Sparkle/bin' 2>/dev/null | head -1)"
+  # From the build that made $APP, so the tools match the linked Sparkle.
+  SPARKLE_BIN="${APP%/Build/Products/*}/SourcePackages/artifacts/sparkle/Sparkle/bin"
+  [ -d "$SPARKLE_BIN" ] || SPARKLE_BIN="$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path '*artifacts/sparkle/Sparkle/bin' 2>/dev/null | head -1)"
   [ -n "$SPARKLE_BIN" ] || { echo "✗ Sparkle tools not found. Open Wortel.xcodeproj in Xcode once to resolve packages." >&2; exit 1; }
 
   mkdir -p "$RELEASES_DIR"
@@ -339,13 +385,20 @@ if [ "$PUBLISH" = 1 ]; then
   # Upload to R2. --remote is REQUIRED — without it wrangler writes to the local
   # simulator and the custom domain serves nothing (silent 404). Only the full
   # zip + appcast go up; there are no deltas to upload.
+  #
+  # The wrangler the updates/ lockfile pins, not whatever `npx` finds from a
+  # folder with no package.json. This step holds the Cloudflare credentials.
+  UPDATES="$ROOT/../updates"
+  [ -x "$UPDATES/node_modules/.bin/wrangler" ] || ( cd "$UPDATES" && npm ci --silent )
+  WRANGLER="$UPDATES/node_modules/.bin/wrangler"
+  [ -x "$WRANGLER" ] || { echo "✗ wrangler not found in updates/node_modules after npm ci." >&2; exit 1; }
   echo "==> Uploading to R2 ($BUCKET)"
-  npx wrangler r2 object put "$BUCKET/Wortel-${VERSION}.zip" --file "$ZIP" --content-type application/zip --remote
-  npx wrangler r2 object put "$BUCKET/appcast.xml" --file "$RELEASES_DIR/appcast.xml" --content-type application/xml --remote
+  "$WRANGLER" r2 object put "$BUCKET/Wortel-${VERSION}.zip" --file "$ZIP" --content-type application/zip --remote
+  "$WRANGLER" r2 object put "$BUCKET/appcast.xml" --file "$RELEASES_DIR/appcast.xml" --content-type application/xml --remote
 
   # Stable "latest" download for the website: same bytes as the versioned zip,
   # overwritten every release, short TTL, saved by browsers as Wortel.zip.
-  npx wrangler r2 object put "$BUCKET/Wortel-latest.zip" --file "$ZIP" \
+  "$WRANGLER" r2 object put "$BUCKET/Wortel-latest.zip" --file "$ZIP" \
     --content-type application/zip \
     --content-disposition 'attachment; filename="Wortel.zip"' \
     --cache-control 'public, max-age=300' --remote

@@ -382,4 +382,18 @@ final class WortelCommandTests: XCTestCase {
     func testTheAppGivesUpOnASendBeforeTheCLIDoes() {
         XCTAssertLessThanOrEqual(WortelCLI.sendPatience + 2, WortelCLI.answerTimeout)
     }
+
+    func testAnswerDeadlines() {
+        let plain = WortelCommand.newSession(cwd: nil, name: nil, branch: nil, base: nil)
+        let worktree = WortelCommand.newWorktree(cwd: nil, name: nil)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: .rename(session: nil, name: "x")), 10)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: plain), 10)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: .newSession(cwd: nil, name: nil, branch: "x", base: nil)), 660)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: worktree), 660)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: .newFromPullRequest(cwd: nil, name: nil, pr: "1")), 660)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: .newRunning(worktree, argv: ["claude"])), 660)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: .newRunning(plain, argv: ["ls"])), 10)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: .wait(session: "a", text: nil, fromStart: false, idle: true, exit: false, timeout: 5)), 15)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: .wait(session: "a", text: nil, fromStart: false, idle: true, exit: false, timeout: 0)), 0)
+    }
 }

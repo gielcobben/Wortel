@@ -55,6 +55,19 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   accepts posts with no error, but nothing is ever displayed. `--notarize` adds
   hardened runtime + notarization + a `.dmg` for distributing to other Macs
   (needs a `notarytool` keychain profile — see the script footer).
+  `--publish` refuses uncommitted changes and runs `WortelTests` and the
+  `updates/` tests before it builds (`--allow-dirty`, `--no-tests` to
+  override); it uploads with the wrangler pinned in `updates/`.
+- **Package versions are pinned in `macos/Package.resolved`** (tracked; the
+  project's own copy is generated and ignored). `release.sh` copies it into the
+  generated project and builds with `-onlyUsePackageVersionsFromResolvedFile`,
+  so a release never picks up whatever is newest that day. Local Debug builds
+  are not forced onto it. To take a newer version of a package: change
+  `project.yml` if needed (the two branch-only grammars are pinned by
+  `revision:`), run `xcodegen generate`, resolve in Xcode or with
+  `-resolvePackageDependencies`, check the build and the diff highlighting by
+  hand, then copy `Wortel.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
+  back over `macos/Package.resolved` and commit it.
 - There is no linter config. For the app itself, "verify" still means building
   and running it — the UI has no test coverage.
 - The one test target is `WortelTests`, covering the git panel's logic and the

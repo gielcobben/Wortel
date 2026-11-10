@@ -278,18 +278,52 @@ final class SessionStore {
     /// the list *doesn't* contain (see `SessionManager.recoverOrphanedShells`).
     private(set) var loadedCleanly = true
 
-    func load() -> [PersistedSession] {
-        loadedCleanly = true
-        guard let data = try? Data(contentsOf: Self.fileURL) else { return [] }
+    /// What reading the file came to. Only a file that isn't there is an
+    /// empty list; one that is there and can't be read says nothing about
+    /// which sessions exist.
+    enum Loaded {
+        case sessions([PersistedSession])
+        case missing
+        case unreadable
+    }
+
+    nonisolated static func read(_ url: URL) -> (Loaded, Error?) {
+        let data: Data
         do {
-            return try JSONDecoder().decode([PersistedSession].self, from: data)
+            data = try Data(contentsOf: url)
         } catch {
+            let cocoa = error as NSError
+            let posix = cocoa.userInfo[NSUnderlyingErrorKey] as? NSError
+            let missing = (cocoa.domain == NSCocoaErrorDomain && cocoa.code == NSFileReadNoSuchFileError)
+                || (cocoa.domain == NSPOSIXErrorDomain && cocoa.code == Int(ENOENT))
+                || (posix?.domain == NSPOSIXErrorDomain && posix?.code == Int(ENOENT))
+            return (missing ? .missing : .unreadable, missing ? nil : error)
+        }
+        do {
+            return (.sessions(try JSONDecoder().decode([PersistedSession].self, from: data)), nil)
+        } catch {
+            return (.unreadable, error)
+        }
+    }
+
+    func load() -> [PersistedSession] {
+        let (loaded, error) = Self.read(Self.fileURL)
+        switch loaded {
+        case .sessions(let sessions):
+            loadedCleanly = true
+            return sessions
+        case .missing:
+            loadedCleanly = true
+            return []
+        case .unreadable:
             // Unreadable is not empty. Starting fresh is still the only way to
             // open a window, but the next save would overwrite the list, and
             // with it every session's id: the shells the keeper is holding for
             // them could then never be attached to, or closed, again. Set it
             // aside so it can be recovered. One copy, replaced each time, so a
-            // file that keeps failing doesn't leave a trail.
+            // file that keeps failing doesn't leave a trail. A file that is
+            // there and can't be read at all is the same case as one that
+            // doesn't decode.
             loadedCleanly = false
             NSLog("sessions.json unreadable, set aside: %@", String(describing: error))
             let aside = DataDirectory.file("sessions.unreadable.json")

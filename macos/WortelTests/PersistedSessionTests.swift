@@ -390,4 +390,54 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertEqual(session.runningAgent, "codex")
         XCTAssertNil(session.runningModel)
     }
+
+    // MARK: - Reading the file
+
+    private func withTempFile(_ body: (URL) throws -> Void) throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+        try body(dir.appendingPathComponent("sessions.json"))
+    }
+
+    func testAMissingFileIsAnEmptyList() throws {
+        try withTempFile { url in
+            guard case .missing = SessionStore.read(url).0 else { return XCTFail("expected .missing") }
+        }
+    }
+
+    func testAFileThatCannotBeReadIsNotEmpty() throws {
+        try XCTSkipIf(getuid() == 0, "running as root")
+        try withTempFile { url in
+            try Data("[]".utf8).write(to: url)
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+            guard case .unreadable = SessionStore.read(url).0 else { return XCTFail("expected .unreadable") }
+        }
+    }
+
+    func testAFileThatDoesNotDecodeIsNotEmpty() throws {
+        try withTempFile { url in
+            try Data("not json".utf8).write(to: url)
+            guard case .unreadable = SessionStore.read(url).0 else { return XCTFail("expected .unreadable") }
+        }
+    }
+
+    func testADirectoryInItsPlaceIsNotEmpty() throws {
+        try withTempFile { url in
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+            guard case .unreadable = SessionStore.read(url).0 else { return XCTFail("expected .unreadable") }
+        }
+    }
+
+    func testAGoodFileLoads() throws {
+        try withTempFile { url in
+            try Data("[]".utf8).write(to: url)
+            guard case .sessions(let list) = SessionStore.read(url).0 else { return XCTFail("expected .sessions") }
+            XCTAssertEqual(list.count, 0)
+        }
+    }
 }

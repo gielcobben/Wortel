@@ -7,14 +7,22 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build && rm -rf dist/refs dist/pixel && find dist -name .DS_Store -delete",
+    "check": "astro check && tsc -p worker",
     "preview": "astro preview",
     "deploy": "npm run build && wrangler deploy",
     "cf-preview": "npm run build && wrangler dev"
   },
+  "engines": {
+    "node": ">=22.18"
+  },
   "devDependencies": {
+    "@astrojs/check": "^0.9.12",
     "@astrojs/svelte": "^7.2.5",
+    "@cloudflare/workers-types": "^5.20261109.1",
+    "@types/node": "^26.6.6",
     "astro": "^5.0.0",
     "svelte": "^5.56.5",
+    "typescript": "^5.9.3",
     "wrangler": "^4.134.0"
   },
   "dependencies": {

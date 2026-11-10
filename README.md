@@ -72,7 +72,7 @@ made against a measurement.
 - macOS 14 (Sonoma) or later to **run**
 - **Xcode 26 or later** to build, for the macOS 26 SDK
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
-- Node 20 or later, only for `web/` and `updates/`
+- Node 22.18 or later, only for `web/` and `updates/`
 
 The SDK requirement and the deployment target are deliberately far apart. The
 app targets macOS 14 and runs there in full, but it imports `FoundationModels`
@@ -134,9 +134,10 @@ cd updates && npm install && npm test       # pure logic, no network
 ## Tests
 
 ```sh
+./scripts/check.sh                                               # all three apps
 cd macos
-xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # 412 tests, ~85s
-cd ../updates && npm test                                        # 16 tests, <1s
+xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # the Swift suite, ~85s
+cd ../updates && npm test                                        # the worker logic, <1s
 ```
 
 The Swift target is deliberately **not hosted by the app**: hosting would launch

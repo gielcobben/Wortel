@@ -347,6 +347,12 @@ final class Session: Identifiable {
             .map { ($0 as NSString).lastPathComponent } ?? displayName
     }
 
+    /// The pointer is over this session's sidebar row. Here, and observed,
+    /// rather than read off `SessionManager.hoveredRowID`: every row's view
+    /// read that one property, so each move of the pointer redrew every row
+    /// to tell two of them something. Never saved.
+    var isSidebarRowHovered = false
+
     /// In a linked worktree, whoever made it: what the row's glyph and branch
     /// line follow. Removing one is still `isInOwnWorktree`'s alone.
     var isInWorktree: Bool { isInOwnWorktree || linkedCheckout != nil }

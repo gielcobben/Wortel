@@ -367,22 +367,24 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         }
     }
 
-    /// What isn't a page is another app's link (`mailto:`, `vscode://`). One the
-    /// user clicked in the page goes to its app, one the page followed by itself
-    /// asks first, and one from a frame inside the page goes nowhere.
+    /// What isn't a page is another app's link (`mailto:`, `vscode://`). From the
+    /// page itself it asks first, clicked or not, since a script can click a link
+    /// as well as a person can; from a frame inside the page it goes nowhere.
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
         let url = action.request.url
-        // A new-window navigation has no target frame; it belongs to the page.
-        let inMainFrame = action.targetFrame?.isMainFrame ?? true
+        // Where it came from, not only where it goes: a link in an embedded
+        // frame can target the page itself. Read as optional on purpose: a
+        // navigation the app started (`load`) can arrive with no source frame
+        // despite the type saying otherwise, and counts as the page's own.
+        let source: WKFrameInfo? = action.sourceFrame
+        let fromMainFrame = source?.isMainFrame ?? true
+        // A new-window navigation has no target frame; it belongs to its source.
+        let toMainFrame = action.targetFrame?.isMainFrame ?? true
         switch BrowserExternalLink.decide(scheme: url?.scheme,
-                                          clicked: action.navigationType == .linkActivated,
-                                          inMainFrame: inMainFrame) {
+                                          fromMainFrame: fromMainFrame, toMainFrame: toMainFrame) {
         case .load:
             decisionHandler(.allow)
-        case .open:
-            if let url { NSWorkspace.shared.open(url) }
-            decisionHandler(.cancel)
         case .ask:
             decisionHandler(.cancel)
             if let url { askToOpen(url, over: webView.window) }

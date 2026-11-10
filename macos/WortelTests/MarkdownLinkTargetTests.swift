@@ -56,6 +56,25 @@ final class MarkdownLinkTargetTests: XCTestCase {
                        .package(root.appendingPathComponent("Tool.app").standardizedFileURL))
     }
 
+    /// A symlink is judged by what it points at: one called `docs` that
+    /// leads to an app must not be opened as if it were a folder.
+    func testASymlinkToAnAppIsAPackage() throws {
+        let app = root.appendingPathComponent("Tool.app/Contents/MacOS")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("docs"),
+                                                   withDestinationURL: root.appendingPathComponent("Tool.app"))
+        XCTAssertEqual(target("docs"),
+                       .package(root.appendingPathComponent("docs").standardizedFileURL))
+    }
+
+    /// And a symlink to an ordinary folder is still a folder.
+    func testASymlinkToAFolderIsAFolder() throws {
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("elsewhere"),
+                                                   withDestinationURL: root.appendingPathComponent("macos"))
+        XCTAssertEqual(target("elsewhere"),
+                       .folder(root.appendingPathComponent("elsewhere").standardizedFileURL))
+    }
+
     func testOtherBundleKindsArePackagesToo() throws {
         for name in ["Pane.prefPane", "Flow.workflow", "Thing.bundle"] {
             try FileManager.default.createDirectory(at: root.appendingPathComponent(name),

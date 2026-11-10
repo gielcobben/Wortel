@@ -1117,9 +1117,13 @@ final class SessionManager {
     /// for an agent that is merely hard to see.
     private func sweepDeadAgentMarkers() {
         var removedAny = false
+        // One read for every session asked about, as `AgentLiveness` asks of
+        // a caller like this one.
+        let table = GhosttyRuntime.recentProcessTable()
         for session in sessions where session.runningAgent != nil {
             guard let agent = session.runningAgent else { continue }
-            guard !AgentLiveness.isRunning(agent: agent, shellPID: session.runningShellPID) else {
+            guard !AgentLiveness.isRunning(agent: agent, shellPID: session.runningShellPID,
+                                           table: table) else {
                 goneSweeps[session.id] = nil // seen alive; any earlier miss was noise
                 continue
             }
@@ -1147,7 +1151,7 @@ final class SessionManager {
             // every agent its resume. (A session with a terminal on screen
             // hears about its shell itself; see `shellEnded`.)
             if session.surfaceView == nil, session.owedResume == nil,
-               let shell = session.runningShellPID, AgentLiveness.shellIsGone(shellPID: shell),
+               let shell = session.runningShellPID, AgentLiveness.shellIsGone(shellPID: shell, table: table),
                let owed = owedResume(forLostShellOf: session, lostAt: Date()) {
                 session.owedResume = owed
             }
@@ -2405,6 +2409,12 @@ final class SessionManager {
 
     func close(_ session: Session) {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
+        // Closed while git was still making its worktree: whoever is waiting
+        // on it (the CLI) is told now. Removed before it's called, so
+        // `finishWorktreeSession` finding nothing later is the normal case.
+        if let completion = worktreeCompletions.removeValue(forKey: session.id) {
+            completion(.failure(Failure(message: "The session was closed before its worktree was ready.")), [])
+        }
         // On the record because its shell and agent end with it, and after
         // 2026-10-10 two sessions were gone and nothing could say how.
         KeeperLog.log.notice("""

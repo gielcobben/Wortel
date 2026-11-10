@@ -447,38 +447,17 @@ final class SessionManager {
     /// ever dropped. Sessions keep their array order within a group. Purely a
     /// view of `sessions` + folder state — nothing here is stored.
     var sidebarGroups: [SidebarGroup] {
-        // Pinned sessions are shown in their own section, first, and not in
-        // their folders as well.
-        let pinned = pinnedIDs.compactMap { id in sessions.first { $0.id == id } }
-        let pinnedSet = Set(pinned.map(\.id))
-        var byKey: [String: [Session]] = [:]
-        for session in sessions where !pinnedSet.contains(session.id) {
-            byKey[session.folderPath ?? "", default: []].append(session)
+        // The rules live in `SidebarLayout`; this maps its ids back to sessions.
+        // First wins on a duplicate id, as the `sessions.first` lookups it
+        // replaced did.
+        let byID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return SidebarLayout.groups(
+            rows: sessions.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
+            pinned: pinnedIDs, folderOrder: folderOrder, declaredFolders: declaredFolders
+        ).map { group in
+            SidebarGroup(folder: group.folder, sessions: group.ids.compactMap { byID[$0] },
+                         isPinned: group.isPinned)
         }
-        // A folder whose sessions are all pinned stays, empty, to come back to.
-        // One whose sessions are all archived doesn't: they're found with
-        // ⌘P, and restoring one brings its folder back.
-        let pinnedFolders = Set(pinned.compactMap(\.folderPath))
-
-        var groups: [SidebarGroup] = []
-        if !pinned.isEmpty {
-            groups.append(SidebarGroup(folder: nil, sessions: pinned, isPinned: true))
-        }
-        if let top = byKey[""], !top.isEmpty {
-            groups.append(SidebarGroup(folder: nil, sessions: top))
-        }
-        var emitted = Set<String>()
-        func emit(_ folder: String) {
-            guard !emitted.contains(folder),
-                  byKey[folder] != nil || declaredFolders.contains(folder)
-                    || pinnedFolders.contains(folder) else { return }
-            emitted.insert(folder)
-            groups.append(SidebarGroup(folder: folder, sessions: byKey[folder] ?? []))
-        }
-        for folder in folderOrder { emit(folder) }
-        for session in sessions { if let f = session.folderPath { emit(f) } }
-        for folder in declaredFolders { emit(folder) }
-        return groups
     }
 
     func isFolderCollapsed(_ folder: String) -> Bool { collapsedFolders.contains(folder) }

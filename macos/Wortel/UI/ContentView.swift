@@ -533,18 +533,18 @@ enum SessionActions {
             return item
         }
 
-        // Shortest title first, so the group reads as a tidy wedge rather
-        // than a ragged edge. "Unpin" is still the shortest.
+        // The items with shortcuts first, then Colour, which opens a submenu,
+        // last: the same order as the several-sessions menu below.
         let pinned = manager.isPinned(session)
         _ = item(pinned ? "Unpin" : "Pin", pinned ? "pin.slash" : "pin", key: "p", [.command, .option]) {
             manager.setPinned(session, !pinned)
         }
         // ⌥⌘R, as in the Session menu: plain ⌘R is a browser's Reload.
         _ = item("Rename", "pencil", key: "r", [.command, .option]) { manager.editingID = session.id }
-        menu.addItem(SessionColourMenu.item(for: session, manager: manager))
         _ = item("Mark as Unread", "circle.dashed", key: "u", [.command, .shift]) {
             manager.markUnread(session)
         }
+        menu.addItem(SessionColourMenu.item(for: session, manager: manager))
 
         menu.addItem(.separator())
         if let cwd = session.cwd {

@@ -12,6 +12,9 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     static let pillInset = NSSize(width: 10, height: 1)
     /// The pill's corners: a tab's and a titlebar button's.
     static let pillRadius: CGFloat = 8
+    /// A session row without a branch line (see `heightOfRowByItem`). The
+    /// trailing slot's right clearance is measured on it, for every row.
+    static let oneLineRowHeight: CGFloat = 30
     /// The selected row's fill, and the hover's, over the sidebar material. The
     /// hover has to stay visibly lighter than the selection it isn't.
     static let pillAlpha: CGFloat = 0.08
@@ -190,9 +193,12 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
         super.layout()
         let pill = pillRect
         let size = SidebarCloseButton.size
-        // Equal clearance top, bottom and right, so the glyph reads as inset from
-        // the pill rather than floating in the row.
-        let gap = max(0, (pill.height - size) / 2)
+        // Equal clearance top, bottom and right on a one-line row, so the glyph
+        // reads as inset from the pill rather than floating in the row. The
+        // right clearance is that one-line row's whatever the row's height: a
+        // two-line (worktree) row's taller pill would otherwise push its glyph
+        // 7pt further in, out of the column every other row's sits in.
+        let gap = max(0, (Self.oneLineRowHeight - 2 * Self.pillInset.height - size) / 2)
         // Backing-aligned: the sidebar's width isn't always integral, and a
         // circle on a half-pixel origin draws visibly lopsided.
         let slot = backingAlignedRect(
@@ -1091,9 +1097,10 @@ struct SidebarOutlineView: NSViewRepresentable {
             // row is something you read and pick all day, not scan past.
             // Sections apart, rows close, as the ChatGPT app's are: the gap
             // goes above a header, and a row's pill nearly touches the next.
-            if item is FolderItem || item is PinnedItem || item is LooseHeaderItem { return 30 + sectionGap(item) }
+            let oneLine = SidebarPillRowView.oneLineRowHeight
+            if item is FolderItem || item is PinnedItem || item is LooseHeaderItem { return oneLine + sectionGap(item) }
             if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 44 }
-            return 30
+            return oneLine
         }
 
         /// The room above a section header: none for the first, which the

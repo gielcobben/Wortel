@@ -483,6 +483,9 @@ targets:
       # in ways nothing reports: an arrow that is lit and does nothing, or a
       # step onto a session that was just closed.
       - path: Wortel/Sessions/SessionHistory.swift
+      # One row over, and the row to land on after a close, over the rows as
+      # drawn. Off by one here is the wrong session selected, silently.
+      - path: Wortel/Sessions/SidebarStep.swift
       # Sort Unread First: a drawn order over the stored one, and the rules that
       # hold the selected row and a pending click's row still. Every way it's
       # wrong is a row sliding out from under the pointer, which no build or

@@ -72,6 +72,10 @@ print(String(data: try! JSONSerialization.data(withJSONObject: out, options: [.s
 SOURCES = ["Wortel/Processes/ProcessTable.swift", "Wortel/Processes/RunningJobs.swift",
            "Wortel/Sessions/AgentResumeStore.swift", "Wortel/Sessions/AgentConversation.swift",
            "Wortel/Sessions/FolderRoot.swift",
+           # AgentResumeStore reads an agent's flags and its conversation
+           # files through these.
+           "Wortel/Sessions/AgentCommandLine.swift", "Wortel/Sessions/AgentFiles.swift",
+           "Wortel/Sessions/AgentAnswer.swift", "Wortel/Sessions/ClaudeTranscriptTail.swift",
            "Wortel/CLI/WortelCommand.swift",
            # AgentResumeStore finds its folder through it (WORTEL_DATA_DIR).
            "Wortel/DataDirectory.swift"]

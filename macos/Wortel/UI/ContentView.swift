@@ -548,12 +548,12 @@ enum SessionActions {
 
         menu.addItem(.separator())
         if let cwd = session.cwd {
-            _ = item("Show in Finder", "folder.badge.gearshape") {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
-            }
             _ = item("Copy Path", "doc.on.doc") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(cwd, forType: .string)
+            }
+            _ = item("Show in Finder", "folder.badge.gearshape") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
             }
         }
 

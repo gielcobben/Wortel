@@ -262,14 +262,17 @@ final class WorktreeCleanupModel {
     func removeSelected() async {
         isWorking = true
         defer { isWorking = false }
-        // Read fresh, once: things may have started since the sheet opened.
-        let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
         // One at a time, on purpose, unlike the checks: removing a worktree
         // and deleting its branch write the repository's shared files, and
         // two at once trip over each other's locks. Each row says when it's
         // the one going.
         for row in rows where row.remove {
             if let index = rows.firstIndex(where: { $0.path == row.path }) { rows[index].removing = true }
+            // Asked now, per row: each removal walks the worktree first, and
+            // by the fifth the answers from before the first are old. A
+            // session opened or restored in the meantime must count.
+            usage = WorktreeUsage(manager: manager)
+            let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
             let users = usage.users(of: row.path, in: processes)
             let removal = await WorktreeCleanup.removeReporting(
                 path: row.path, knownRepos: knownRepos, usedBy: users,

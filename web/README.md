@@ -106,9 +106,13 @@ the app's own hover from `styles/app.css`.
 
 ### 1:1 with the canvas
 
-- Window chrome is `components/Window.astro`, a copy of the canvas's `Window`
-  node: the same shadow, 18px radius, glass and inner rim. Sizes are the
-  canvas's (sidebar 234, column 384).
+- A window's edge is drawn once, in `.stage .win` (styles/site.css): one
+  rounded clip, one hairline just inside it as a real 0.5px border (snapped to
+  device pixels, unlike a 0.5px box-shadow), and the canvas's drop shadow
+  without its near-black ring, which was drawn for a black artboard. The
+  canvas's own shadow and Rim are switched off inside it, so nothing is drawn
+  twice. `components/Window.astro` is the canvas's Window otherwise: glass,
+  then the layout row, at the canvas's sizes (sidebar 234, column 384).
 - `wholeRows()` hides terminal and sidebar rows that do not fit, so a window
   never shows half a row. Call it on any window whose height is not the
   canvas's.

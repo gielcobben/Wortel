@@ -35,8 +35,8 @@ const chapters = [
           <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
           <div class="flex min-h-0 self-stretch min-w-[80px] flex-1"><Terminal /></div>
         </Window>
-        <button type="button" class="dock glass" data-dock aria-label="Wortel in the Dock: quit or reopen">
-          <img src="/icon-512.png" width="56" height="56" alt="" data-icon />
+        <button type="button" class="dock" data-dock aria-label="Wortel in the Dock: quit or reopen">
+          <img src="/icon-512.png" width="72" height="72" alt="" data-icon />
           <i data-running></i>
         </button>
         <div class="keys glass" data-keys="quit" aria-hidden="true"><kbd>⌘</kbd><kbd>Q</kbd></div>
@@ -62,16 +62,18 @@ const chapters = [
   .dots i:nth-child(2) { animation-delay: 0.2s; } .dots i:nth-child(3) { animation-delay: 0.4s; }
   @keyframes blink { 50% { opacity: 0.25; } }
 
+  /* The app's icon as it sits in the Dock: the icon itself and its running
+     dot. No tile behind it, which only drew a second rounded square around
+     the icon's own. */
   .dock {
-    appearance: none; border: 0; padding: 0; font: inherit; color: inherit; box-sizing: border-box; cursor: pointer; position: relative; flex: none;
-    width: 80px; height: 80px; display: grid; place-items: center; border-radius: 22px;
-    transition: transform 0.2s var(--ease-out);
+    appearance: none; border: 0; padding: 0; background: none; font: inherit; color: inherit; cursor: pointer;
+    position: relative; flex: none; width: 72px; height: 80px; display: grid; justify-items: center; align-content: start;
   }
+  .dock img { display: block; width: 72px; height: 72px; filter: drop-shadow(0 4px 8px rgb(0 0 0 / 0.3)); transition: transform 0.25s var(--ease-out), filter 0.1s; }
   .dock:hover img { transform: translateY(-4px) scale(1.06); }
-  .dock:active img { filter: brightness(0.8); }
-  .dock:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .dock img { display: block; transition: transform 0.25s var(--ease-out), filter 0.1s; }
-  .dock i { position: absolute; bottom: 4px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--ink-2); }
+  .dock:active img { filter: drop-shadow(0 4px 8px rgb(0 0 0 / 0.3)) brightness(0.8); }
+  .dock:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 16px; }
+  .dock i { position: absolute; bottom: 0; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.3); }
   .keys { left: 50%; top: 208px; translate: -50% 0; }
   @media (max-width: 760px) { .scene { align-items: flex-start; } .away { left: 0; translate: none; width: calc(100% - 16px); } .dock { margin-left: calc(50% - 48px); } .keys { left: calc(50% - 8px); } }
 </style>

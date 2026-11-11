@@ -160,4 +160,4 @@
 /* The glass behind a window blurs what is under it. A backdrop filter is not
    clipped by its parent's rounded corners, so it left a square of blur poking
    out behind each corner: the glass takes the window's radius itself. */
-.wapp [class*="backdrop-blur"] { border-radius: inherit; }
+.wapp [class*="backdrop-blur"] { border-radius: 18px; }

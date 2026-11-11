@@ -9,9 +9,9 @@ This repo holds everything for **Wortel** — a minimal, performance-first, full
 native macOS terminal built on libghostty.
 
 > **Naming:** "wortel" is Dutch for **root** (as in the root of a plant / the
-> root shell) — that's the intended metaphor, not "carrot". Some current landing
-> assets (favicon, copy) lean on the carrot reading; those are placeholders to be
-> reworked around the root theme.
+> root shell) — that's the intended metaphor, not "carrot". The brand is built
+> on it: the mark is a prompt and a block cursor with its reflection below a
+> waterline (the root), and the look is a foggy lake. See /brand on the site.
 
 ```
 macos/    The macOS app. Swift + XcodeGen. Ships to updates.wortel.sh via

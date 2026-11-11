@@ -428,13 +428,16 @@ if [ "$PUBLISH" = 1 ]; then
   # the login Keychain (never in the repo: unlike the phc_ token it can write
   # to the project). Add it once with:
   #   security add-generic-password -a "$USER" -s wortel-posthog-annotations -w <key>
-  # @current is the key owner's current project, which on a one-project
-  # organisation is the only one. Not fatal, like the deploy; the status is
-  # printed so a scoping problem (403) is visible rather than swallowed.
+  # The project is named by id, not @current: @current is whichever project the
+  # key's owner last had open in PostHog, which drifts to another project the
+  # moment one is opened in the browser. The id survived the project's move to
+  # its own organisation on 2026-11-11. Not fatal, like the deploy; the status
+  # is printed so a scoping problem (403) is visible rather than swallowed.
+  PH_PROJECT=245316
   PH_KEY="$(security find-generic-password -s wortel-posthog-annotations -w 2>/dev/null || true)"
   if [ -n "$PH_KEY" ]; then
     PH_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
-      "https://eu.posthog.com/api/projects/@current/annotations/" \
+      "https://eu.posthog.com/api/projects/$PH_PROJECT/annotations/" \
       -H "Authorization: Bearer $PH_KEY" -H 'Content-Type: application/json' \
       -d "{\"content\":\"Wortel $VERSION\",\"date_marker\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"scope\":\"project\"}" \
       || echo 000)"

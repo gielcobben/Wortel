@@ -52,11 +52,55 @@ export function fitSidebar(nav: HTMLElement) {
 export function wholeRows(root: ParentNode) {
   const terms = Array.from(root.querySelectorAll<HTMLElement>('[data-name="Terminal"], [data-name="Strip terminal"]'));
   const navs = Array.from(root.querySelectorAll<HTMLElement>('[data-name="Sessions"]'));
+  terms.forEach((t) => { if (t.dataset.name === 'Terminal') withHeader(t); });
   const run = () => { terms.forEach(fitTerminal); navs.forEach(fitSidebar); };
   run();
   const ro = new ResizeObserver(run);
   [...terms, ...navs].forEach((el) => ro.observe(el));
   document.fonts?.ready.then(run);
+}
+
+// ---- the start of a Claude Code session ------------------------------------
+// What a session opens with, as Claude Code 2.1 draws it in a 60-column
+// terminal (captured from a real session in a pty): the mascot in block
+// characters, the version, the model and the folder, then two empty rows.
+// The mascot is the captured cells drawn as shapes, one 8.5 by 19 point cell
+// each, so its blocks meet the way a terminal's do instead of leaving the
+// gaps a font's block glyphs leave between lines.
+
+const MASCOT = '<svg width="76.5" height="57" viewBox="0 0 76.5 57" aria-hidden="true"><path fill="#000" d="M17 0h8.5v19h-8.5zM25.5 0h8.5v19h-8.5zM34 0h8.5v19h-8.5zM42.5 0h8.5v19h-8.5zM51 0h8.5v19h-8.5zM59.5 0h8.5v19h-8.5zM17 19h8.5v19h-8.5zM25.5 19h8.5v19h-8.5zM34 19h8.5v19h-8.5zM42.5 19h8.5v19h-8.5zM51 19h8.5v19h-8.5z"/><path fill="#d77757" d="M12.75 0h4.25v9.5h-4.25zM12.75 9.5h4.25v9.5h-4.25zM17 0h4.25v9.5h-4.25zM21.25 0h4.25v9.5h-4.25zM17 9.5h4.25v9.5h-4.25zM25.5 0h4.25v9.5h-4.25zM29.75 0h4.25v9.5h-4.25zM25.5 9.5h4.25v9.5h-4.25zM29.75 9.5h4.25v9.5h-4.25zM34 0h4.25v9.5h-4.25zM38.25 0h4.25v9.5h-4.25zM34 9.5h4.25v9.5h-4.25zM38.25 9.5h4.25v9.5h-4.25zM42.5 0h4.25v9.5h-4.25zM46.75 0h4.25v9.5h-4.25zM42.5 9.5h4.25v9.5h-4.25zM46.75 9.5h4.25v9.5h-4.25zM51 0h4.25v9.5h-4.25zM55.25 0h4.25v9.5h-4.25zM51 9.5h4.25v9.5h-4.25zM59.5 0h4.25v9.5h-4.25zM63.75 0h4.25v9.5h-4.25zM59.5 9.5h4.25v9.5h-4.25zM63.75 9.5h4.25v9.5h-4.25zM4.25 19h4.25v9.5h-4.25zM8.5 19h4.25v9.5h-4.25zM12.75 19h4.25v9.5h-4.25zM12.75 28.5h4.25v9.5h-4.25zM17 19h4.25v9.5h-4.25zM21.25 19h4.25v9.5h-4.25zM17 28.5h4.25v9.5h-4.25zM21.25 28.5h4.25v9.5h-4.25zM25.5 19h4.25v9.5h-4.25zM29.75 19h4.25v9.5h-4.25zM25.5 28.5h4.25v9.5h-4.25zM29.75 28.5h4.25v9.5h-4.25zM34 19h4.25v9.5h-4.25zM38.25 19h4.25v9.5h-4.25zM34 28.5h4.25v9.5h-4.25zM38.25 28.5h4.25v9.5h-4.25zM42.5 19h4.25v9.5h-4.25zM46.75 19h4.25v9.5h-4.25zM42.5 28.5h4.25v9.5h-4.25zM46.75 28.5h4.25v9.5h-4.25zM51 19h4.25v9.5h-4.25zM55.25 19h4.25v9.5h-4.25zM51 28.5h4.25v9.5h-4.25zM55.25 28.5h4.25v9.5h-4.25zM59.5 19h4.25v9.5h-4.25zM63.75 19h4.25v9.5h-4.25zM59.5 28.5h4.25v9.5h-4.25zM63.75 28.5h4.25v9.5h-4.25zM68 19h4.25v9.5h-4.25zM72.25 19h4.25v9.5h-4.25zM12.75 38h4.25v9.5h-4.25zM21.25 38h4.25v9.5h-4.25zM55.25 38h4.25v9.5h-4.25zM63.75 38h4.25v9.5h-4.25z"/></svg>';
+
+/** The header a Claude Code session starts with. `path` is the folder, as Claude shortens it. */
+export function claudeHeader(path = '~/Developer/wortel') {
+  const head = document.createElement('div');
+  head.dataset.name = 'Header';
+  head.className = 'relative shrink-0 pt-[19px] pb-[38px]';
+  head.innerHTML = MASCOT;
+  (head.firstElementChild as SVGElement).setAttribute('style', 'position:absolute;left:0;top:19px');
+  const row = (text: string, cls: string) => {
+    const p = document.createElement('p');
+    p.className = 'h-[19px] whitespace-pre pl-[93.5px] ' + cls;
+    p.textContent = text;
+    return p;
+  };
+  const first = row('', '');
+  const name = document.createElement('span');
+  name.className = 'font-bold';
+  name.textContent = 'Claude Code';
+  const ver = document.createElement('span');
+  ver.className = 'text-[#666666] dark:text-[#999999]';
+  ver.textContent = ' v2.1.322';
+  first.append(name, ver);
+  head.append(first,
+    row('Opus 5.5 with high effort', 'text-[#666666] dark:text-[#999999]'),
+    row(path, 'text-[#666666] dark:text-[#999999]'));
+  return head;
+}
+
+/** Give a Claude terminal its header, once. */
+export function withHeader(root: HTMLElement, path?: string) {
+  if (root.querySelector(':scope > [data-name="Header"]') || !root.querySelector(':scope > [data-name="Prompt"]')) return;
+  root.prepend(claudeHeader(path));
 }
 
 // ---- the sidebar ----------------------------------------------------------
@@ -172,7 +216,11 @@ export class Terminal {
     // Lines are printed above the rule that opens the prompt box.
     this.anchor = named(root, 'Rule')!;
     this.prompt = named(root, 'Prompt')!;
+    this.mode = named(root, 'Mode');
+    withHeader(root);
   }
+
+  mode: HTMLElement | null;
 
   /** The agent's lines, in order: everything above the prompt box. */
   lines() {
@@ -191,10 +239,11 @@ export class Terminal {
     this.fit();
   }
 
-  /** Build a screen without showing it: run `fn`, take what it printed. */
-  compose(fn: () => void) {
+  /** Build a session's screen without showing it: its header, then what `fn` prints. */
+  compose(fn: () => void, path?: string) {
     const keep = this.lines();
     this.clear();
+    this.root.insertBefore(claudeHeader(path), this.anchor);
     fn();
     const made = this.lines();
     this.swap(keep);
@@ -240,12 +289,41 @@ export class Terminal {
     return p;
   }
 
-  /** A status line while the agent works: the turning glyph and what it is doing. */
-  status(text: string) {
-    const p = this.print('Worked', text);
+  /** The status line while the agent works: just above the prompt box, the way
+   *  Claude Code draws it, with "esc to interrupt" added to the mode line.
+   *  Removing the returned line (or calling idle()) puts both back. */
+  status(text: string, detail = 'thinking') {
+    this.idle();
+    const p = document.createElement('p');
     p.dataset.name = 'Status';
-    p.firstElementChild!.classList.add('spin');
+    p.className = 'relative shrink-0 whitespace-pre-wrap pl-[17px] pr-1 [overflow-wrap:anywhere]';
+    p.innerHTML = '';
+    const glyph = document.createElement('span');
+    glyph.className = 'spin absolute top-0 left-[0px] text-[#d77757]';
+    glyph.textContent = '✽';
+    const said = document.createElement('span');
+    said.className = 'text-[#d77757]';
+    said.textContent = text + ' ';
+    const meta = document.createElement('span');
+    meta.className = 'text-[#666666] dark:text-[#999999]';
+    meta.textContent = `(${detail})`;
+    p.append(glyph, said, meta);
+    this.root.insertBefore(p, this.anchor);
+    if (this.mode && !this.mode.querySelector('[data-esc]')) {
+      const esc = document.createElement('span');
+      esc.dataset.esc = '';
+      esc.className = 'text-[#666666] dark:text-[#999999]';
+      esc.textContent = ' · esc to interrupt';
+      this.mode.append(esc);
+    }
+    this.fit();
     return p;
+  }
+
+  /** The agent stopped: no status line, no "esc to interrupt". */
+  idle() {
+    this.root.querySelector(':scope > [data-name="Status"]')?.remove();
+    this.mode?.querySelector('[data-esc]')?.remove();
   }
 }
 

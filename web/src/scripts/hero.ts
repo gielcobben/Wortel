@@ -6,7 +6,7 @@
 // time, so the whole sequence can be retimed in one place. ?t=<seconds> seeks
 // it and holds (for screenshots); reduced motion skips straight to the end.
 import { gsap } from 'gsap';
-import { fitTerminal, named, reduced, wholeRows } from './app';
+import { Terminal, fitTerminal, named, reduced, wholeRows } from './app';
 
 const q = (root: ParentNode, sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
 
@@ -26,23 +26,29 @@ export function playHero() {
   const prompt = named(term, 'Prompt')!;
   const ask = (you.textContent || '').replace(/^❯/, '');
 
-  // What you type lands in the prompt box, with the block cursor after it.
+  // A new session: Claude Code's header at the top, the prompt box pinned to
+  // the bottom (styles/app.css), and the suggestion it shows before you type.
+  const t = new Terminal(term);
   prompt.classList.remove('h-[19px]');
   prompt.classList.add('min-h-[19px]', 'whitespace-pre-wrap', 'pl-[17px]', 'pr-1', '[overflow-wrap:anywhere]');
   const typed = document.createElement('span');
   const caret = document.createElement('span');
   caret.style.cssText = 'display:inline-block;width:8.5px;height:17px;vertical-align:-3px;background:var(--primary)';
-  prompt.append(typed, caret);
+  const hint = document.createElement('span');
+  hint.className = 'text-[#666666] dark:text-[#999999]';
+  hint.textContent = 'Try "edit <filepath> to..."';
+  prompt.append(typed, caret, hint);
+  // Before you type, it suggests a start; while the agent works the box is
+  // empty; when the turn ends it suggests a next step, as Claude Code does.
+  const type = (text: string, suggest = '') => {
+    typed.textContent = text;
+    hint.textContent = suggest;
+    hint.hidden = text.length > 0 || !suggest;
+  };
+  const FIRST = 'Try "edit <filepath> to..."', NEXT = 'commit this';
 
-  // A live status line while the agent works, swapped for "Worked for" at the end.
+  // The line Claude's own turn ends with stays hidden until the turn ends.
   const worked = body.find((l) => l.dataset.name === 'Worked');
-  const status = worked ? (worked.cloneNode(true) as HTMLElement) : null;
-  if (status) {
-    status.dataset.name = 'Status';
-    status.querySelector('span:last-child')!.textContent = 'Shaving the open and close curves… (esc to interrupt)';
-    status.querySelector('span')!.classList.add('spin');
-    term.insertBefore(status, lines[firstRule]);
-  }
 
   const rows = changes ? q(changes, '[data-name$=".swift"], [data-name$=".md"]') : [];
   const header = changes?.querySelector('span');
@@ -76,8 +82,8 @@ export function playHero() {
 
   // Time 0: an idle session. Seeking backwards restores it.
   tl.call(() => {
-    hide(you); body.forEach(hide); hide(status); rows.forEach(hide);
-    typed.textContent = '';
+    hide(you); body.forEach(hide); t.idle(); rows.forEach(hide);
+    type('', FIRST);
     if (header) header.textContent = 'Changes (0)';
     if (diff) diff.style.opacity = '0';
     fit();
@@ -85,16 +91,16 @@ export function playHero() {
 
   // You type.
   const per = 0.019;
-  for (let i = 1; i <= ask.length; i++) tl.call(() => { typed.textContent = ask.slice(0, i); }, [], at.type + i * per);
-  let t = at.type + ask.length * per + 0.5;
+  for (let i = 1; i <= ask.length; i++) tl.call(() => type(ask.slice(0, i), FIRST), [], at.type + i * per);
+  let beat = at.type + ask.length * per + 0.5;
   // Return: it becomes your message, and the agent starts.
-  tl.call(() => { typed.textContent = ''; show(you); show(status); fit(); }, [], t);
+  tl.call(() => { type(''); show(you); t.status('Shaving the open and close curves…', 'thinking'); fit(); }, [], beat);
 
   let count = 0;
   for (const line of body) {
     if (line.dataset.name === 'Worked') continue;
     const name = line.dataset.name;
-    t += !name ? 0 : name === 'Result' ? 0.32 : name === 'Claude' ? 0.9 : 0.55;
+    beat += !name ? 0 : name === 'Result' ? 0.32 : name === 'Claude' ? 0.9 : 0.55;
     const row = name === 'Tool' ? rowFor(line) : null;
     tl.call(() => {
       show(line); fit();
@@ -103,10 +109,10 @@ export function playHero() {
       count = rows.filter((r) => !r.hasAttribute('hidden')).length;
       if (header) header.textContent = `Changes (${count})`;
       if (diff && row === rows[0]) gsap.to(diff, { opacity: 1, duration: 0.5 });
-    }, [], t);
+    }, [], beat);
   }
-  t += 0.6;
-  tl.call(() => { hide(status); show(worked); fit(); }, [], t);
+  beat += 0.6;
+  tl.call(() => { t.idle(); show(worked); type('', NEXT); fit(); }, [], beat);
 
   // The other sessions keep working in the sidebar: three dots, in turn.
   if (sidebarDots.length && !reduced()) {
@@ -117,7 +123,7 @@ export function playHero() {
 
   // ---- play, or hold a frame ------------------------------------------------
   const params = new URLSearchParams(location.search);
-  if (params.has('t')) { frozen = true; tl.seek(Number(params.get('t'))); fit(); return; }
+  if (params.has('t')) { frozen = true; tl.seek(Number(params.get('t')), false); fit(); return; }
   if (reduced()) { frozen = true; tl.progress(1); fit(); return; }
   tl.play();
 }

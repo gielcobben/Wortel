@@ -27,7 +27,7 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) 
   const tail = home.slice(home.findIndex((l) => (l.textContent || '').includes('SidebarOutlineView.swift')) - 0);
   const worked = home.find((l) => l.dataset.name === 'Worked')!;
   let busy: HTMLElement | null = null;
-  const settle = () => { busy?.remove(); busy = null; tail.forEach((l) => (l.hidden = false)); };
+  const settle = () => { if (busy) term.idle(); busy = null; tail.forEach((l) => (l.hidden = false)); };
 
   // The session that wants you, and its question.
   let question: HTMLElement[] = [];
@@ -54,7 +54,7 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) 
     const lines = screen(session);
     settle();
     if (at.session !== session) { sb.select(session, animate); title.textContent = session; }
-    if (at.screen !== lines || lines === asking) { term.swap(lines); if (animate && at.screen !== lines) fadeIn(term.root); }
+    if (at.screen !== lines || lines === asking) { term.idle(); term.swap(lines); if (animate && at.screen !== lines) fadeIn(term.root); }
     if (at.status !== status) sb.status(HERO, status);
     if (at.note !== withNote || !animate) {
       gsap.to(note, withNote
@@ -74,8 +74,10 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) 
         return;
       }
       const result = term.print('Result', 'Running…');
+      term.status('Running the build…', '2s');
       sb.status(HERO, 'working'); at.status = 'working';
       f.later(() => {
+        term.idle();
         result.lastElementChild!.textContent = 'built in 2.14s';
         term.gap();
         fadeIn(term.print('Claude', 'Built. The hero paints in 0.8s, down from 2.1s.'));
@@ -98,7 +100,7 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) 
           if (!a) return;
           // Play the session's last stretch back: lines arrive, a status turns.
           tail.forEach((l) => (l.hidden = true));
-          busy = term.status('Checking the build… (esc to interrupt)');
+          busy = term.status('Checking the build…', '9s · thinking');
           term.fit();
           const beats = tail.filter((l) => l.dataset.name && l !== worked);
           beats.forEach((l, i) => f.later(() => {
@@ -181,7 +183,7 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]'
         term.print('Tool', '(docs/survey.md)', 'Write');
         term.print('Result', 'Wrote 41 lines');
         term.gap();
-      }),
+      }, '/…/wortel/codebase-survey-and-fixes'),
     }],
     [ORDER[2], {
       dir: 'appcast-cleanup', branch: 'appcast-cleanup', diff: false,
@@ -197,7 +199,7 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]'
         term.print('Tool', '(macos/scripts/release.sh --dry-run)', 'Bash');
         term.print('Result', 'The feed is valid. Nothing published.');
         term.gap();
-      }),
+      }, '/…/wortel/appcast-cleanup'),
     }],
   ]);
   // A session that is not on a branch of its own works in the repository itself.

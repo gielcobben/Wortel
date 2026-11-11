@@ -115,6 +115,13 @@ the app's own hover from `styles/app.css`.
   canvas's own shadow and Rim are switched off inside it, so nothing is drawn
   twice. `components/Window.astro` is the canvas's Window otherwise: glass,
   then the layout row, at the canvas's sizes (sidebar 234, column 384).
+- Claude Code sessions look the way Claude Code 2.1 draws them (captured from
+  a real session in a 60x34 pty): the header with the mascot, version, model
+  and folder at the top; the prompt box and mode line pinned to the bottom; the
+  status line one row above them while it works, with "esc to interrupt" on
+  the mode line. `app.ts` adds the header (`claudeHeader`) and the status
+  (`term.status()` / `term.idle()`); `app.css` pins the box. The canvas drew
+  the older layout, where the box follows the last line.
 - `wholeRows()` hides terminal and sidebar rows that do not fit, so a window
   never shows half a row. Call it on any window whose height is not the
   canvas's.

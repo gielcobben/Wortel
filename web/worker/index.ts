@@ -60,20 +60,18 @@ async function proxy(request: Request, url: URL): Promise<Response> {
   target.hostname = isAsset ? ASSET_HOST : API_HOST;
   target.pathname = path;
 
+  // Events are read and rewritten first: building `outbound` from `request`
+  // below hands it the body, after which it can't be read here.
+  if (request.method === 'POST' && INGEST.test(path)) {
+    return ingest(request, target);
+  }
+
   // Built from `request` so method, body and content-type carry over. The
   // headers on a Request constructed this way are mutable, which the ones on
   // the original are not.
   const outbound = new Request(target.toString(), request);
 
-  // The site sets no cookies of its own, but anything a visitor picked up on
-  // this domain would otherwise be forwarded to PostHog for no reason.
-  outbound.headers.delete('cookie');
-
-  // Without this every event arrives from a Cloudflare edge address. PostHog
-  // reads X-Forwarded-For for the daily cookieless hash, so dropping it would
-  // collapse every visitor behind one colo into a single "person".
-  const ip = request.headers.get('CF-Connecting-IP');
-  if (ip) outbound.headers.set('X-Forwarded-For', ip);
+  forwardHeaders(request, outbound.headers);
 
   // Host is derived from the URL by the runtime; setting it by hand is ignored.
 
@@ -84,4 +82,83 @@ async function proxy(request: Request, url: URL): Promise<Response> {
   }
 
   return fetch(outbound);
+}
+
+function forwardHeaders(request: Request, headers: Headers): void {
+  // The site sets no cookies of its own, but anything a visitor picked up on
+  // this domain would otherwise be forwarded to PostHog for no reason.
+  headers.delete('cookie');
+
+  // Without this every event arrives from a Cloudflare edge address. PostHog
+  // reads X-Forwarded-For for the daily cookieless hash, so dropping it would
+  // collapse every visitor behind one colo into a single "person".
+  const ip = request.headers.get('CF-Connecting-IP');
+  if (ip) headers.set('X-Forwarded-For', ip);
+}
+
+async function ingest(request: Request, target: URL): Promise<Response> {
+  const country = (request as { cf?: { country?: string } }).cf?.country;
+  const events = await readEvents(request);
+  // Fail closed: an event this cannot read is one it cannot strip the
+  // location from, and /privacy promises there is none. Losing a pageview
+  // costs less than breaking that.
+  if (!events) return new Response('{"status":1}', { status: 200 });
+  for (const event of events) stampCountry(event, country);
+
+  target.searchParams.delete('compression');
+  const headers = new Headers(request.headers);
+  forwardHeaders(request, headers);
+  headers.set('content-type', 'application/json');
+  headers.delete('content-encoding');
+  headers.delete('content-length');
+  return fetch(target.toString(), { method: 'POST', headers, body: JSON.stringify(events) });
+}
+
+// ---- location: the country and nothing finer ---------------------------------
+//
+// PostHog looks every event's IP address up and stores the city, the postal
+// code and coordinates beside it. /privacy says the site learns an approximate
+// country, so this does the lookup itself: `$geoip_disable` turns PostHog's off,
+// and the country Cloudflare already resolved for the request goes in instead.
+// It also keeps the country under cookieless mode, which drops the address
+// before PostHog's lookup ever sees it.
+//
+// Only the event endpoints carry properties; /flags and the rest pass through.
+
+const INGEST = /^\/(e|i\/v0\/e|batch|capture|track)\/?$/;
+
+type PHEvent = { properties?: Record<string, unknown> } & Record<string, unknown>;
+
+/** The events in a capture request, or null when the body is not one we know. */
+async function readEvents(request: Request): Promise<PHEvent[] | null> {
+  try {
+    // Gzip is told apart by its magic bytes, which is what PostHog does too:
+    // posthog-js 1.447 sends a gzipped body with no `compression` parameter
+    // and no content-encoding, so trusting either one dropped every event.
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    let text: string;
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      const plain = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      text = await new Response(plain).text();
+    } else {
+      text = new TextDecoder().decode(bytes);
+    }
+    const parsed: unknown = JSON.parse(text);
+    const list = Array.isArray(parsed) ? parsed
+      : (parsed as { batch?: unknown }).batch ?? [parsed];
+    if (!Array.isArray(list) || !list.every((e) => e && typeof e === 'object')) return null;
+    return list as PHEvent[];
+  } catch {
+    return null;
+  }
+}
+
+function stampCountry(event: PHEvent, country: string | undefined): void {
+  const properties = (event.properties ??= {});
+  for (const key of Object.keys(properties)) {
+    if (key.startsWith('$geoip_')) delete properties[key];
+  }
+  properties.$geoip_disable = true;
+  // XX is Cloudflare's "unknown", T1 is Tor: neither is a country.
+  if (country && country !== 'XX' && country !== 'T1') properties.$geoip_country_code = country;
 }

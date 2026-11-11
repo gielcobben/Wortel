@@ -5,31 +5,26 @@
 // THREE THINGS MAKE THIS DIFFERENT FROM THE STOCK SNIPPET, and each one is
 // here for a reason worth keeping:
 //
-// 1. persistence: 'memory'. Nothing is written to the reader's machine: no
-//    cookie, no localStorage, no sessionStorage. That is what makes a consent
-//    banner unnecessary rather than merely unfashionable, because what
-//    ePrivacy asks permission for is the storage, not the counting. A landing
-//    page that opens with a consent dialog is one that argues with you before
-//    it has said what it is.
+// 1. cookieless_mode: 'always'. Nothing is written to the reader's machine:
+//    no cookie, no localStorage, no sessionStorage, no IndexedDB. That is what
+//    makes a consent banner unnecessary rather than merely unfashionable,
+//    because what ePrivacy asks permission for is the storage, not the
+//    counting. A landing page that opens with a consent dialog is one that
+//    argues with you before it has said what it is. Instead PostHog's server
+//    hashes address + user agent + host with a salt it rotates daily, so a
+//    reader is one visitor across pages for a day and a stranger tomorrow. It
+//    needs "cookieless tracking" on in the project's settings, or every event
+//    is discarded on arrival.
 //
-//    **This was cookieless_mode: 'always' first, and that silently sent
-//    nothing at all.** It is the documented way to do this and it looks right
-//    in every check short of watching the network: the library loads, remote
-//    config loads, posthog.config reads back exactly what you set. But
-//    has_opted_out_capturing() is true and consent status is stuck at
-//    'pending' forever, because the SDK records consent IN the storage that
-//    cookieless mode disables, and 'pending' suppresses every capture.
-//    opt_in_capturing() cannot fix it: it writes to the same disabled store.
-//    Verified against posthog-js 1.415.1 on the live site, and confirmed by
-//    running a second instance side by side with cookieless_mode removed,
-//    which captured immediately. If you ever put it back, watch for a POST to
-//    /ph/i/v0/e/ and do not settle for the config reading correctly.
+//    **Watch the network, not the config.** On posthog-js 1.415.1 this mode
+//    silently sent nothing (consent was recorded in the storage the mode
+//    disables and stuck at 'pending'), so the site ran on persistence:
+//    'memory' until 2026-11-11, when 1.447.10 was checked sending every event
+//    with nothing stored. has_opted_out_capturing() still reads true and
+//    consent still reads 'pending' there; is_capturing() is what tells the
+//    truth. If you touch this, look for a POST to /ph/i/v0/e/.
 //
-//    What memory persistence costs is honest to state: the id lives for one
-//    page load, so a reader who visits three pages is three "users" and
-//    session length means nothing. Pageviews and download clicks stay exact,
-//    and so does the funnel that matters, because landing on a page and
-//    clicking its download button happen inside the same page load.
+//    Location is the proxy's job, not PostHog's: see worker/index.ts.
 //
 // 2. api_host points at this origin. worker/index.ts forwards /ph to PostHog.
 //    Built from location.origin rather than hardcoded so a preview build, a
@@ -94,12 +89,16 @@ const ENABLED = import.meta.env.PROD;
       ui_host: 'https://eu.posthog.com',
       defaults: '2026-05-30',
       person_profiles: 'identified_only',
-      // Nothing on the reader's machine, so nothing to consent to. NOT
-      // cookieless_mode: see the note above, it sends nothing.
-      persistence: 'memory',
+      // Nothing on the reader's machine, so nothing to consent to. PostHog
+      // counts visitors by a daily hash instead: see the note above.
+      cookieless_mode: 'always',
       autocapture: false,
       disable_session_recording: true,
       disable_surveys: true,
+      // How fast each page is for the people reading it (LCP, CLS, INP, FCP),
+      // which a page whose pitch is speed should know. Not the network timing
+      // half: that is every resource URL the page loads, and nobody reads it.
+      capture_performance: { web_vitals: true, network_timing: false },
     });
 
     // Declared events: see components/Analytics.astro for the convention.

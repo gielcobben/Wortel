@@ -1,7 +1,7 @@
 ---
 title: Privacy
 description: What Wortel and wortel.sh record, what they never record, and how to turn the app's reporting off.
-updated: 2026-11-09
+updated: 2026-11-10
 nav: Privacy
 order: 10
 ---
@@ -53,7 +53,15 @@ One short message when something happens, saying what happened and nothing
 about the thing it happened to:
 
 - the app started, roughly how many sessions came back (as a range like "4-7",
-  never an exact count), and roughly how many agents resumed
+  never an exact count), and roughly how many agents resumed; whether this is
+  the first time it has started on this Mac; whether the time before, it quit
+  normally or ended some other way (a crash or a force quit); and whether macOS
+  allows it to show notifications
+- if the time before ended in a crash that macOS kept a report of: which kind
+  of crash it was, the version, whether the Mac is Apple Silicon or Intel, and
+  where in Wortel's own code it happened, as a number that only the build's
+  own debug file can turn into a name. Never the report itself, nothing named
+  in it, and nothing about other programs
 - the app quit, and roughly how long it ran
 - a session was created, and whether that was from the menu, the `wortel`
   command, a worktree, opening a folder, or the shortcut that starts one in
@@ -77,7 +85,15 @@ about the thing it happened to:
   what they are, what they are serving, or where they are running)
 - something was quit from that list, and whether it was one that had outlived
   its session
-- a background session asked for attention, and which kind of signal raised it
+- an agent was started in a session, and which one, chosen from the fixed list
+  of agents Wortel recognises (Claude Code, Codex, Pi, Gemini, OpenCode, Goose,
+  Aider, Amp, Crush, Cline, Ollama, llm, Cursor). Anything else is reported as
+  "other", never by its name, and never what it was asked or where it ran
+- a background session asked for attention, which kind of signal raised it,
+  and which of those agents (if any) it came from
+- the background process that keeps your terminals running stopped
+  unexpectedly, and roughly how many sessions it took with it
+- a session in a worktree was archived, or brought back from the archive
 - the jump-to-next-waiting shortcut was used
 - the shortcut that shows and hides Wortel from any app was used
 - a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`,
@@ -107,7 +123,8 @@ did.
 
 Your session list, window layout and preferences are stored in
 `~/Library/Application Support/Wortel/` and in your preferences file, and stay
-there. Your shell configuration is yours and is never read by Wortel for any
+there. While Wortel is open it also keeps an empty file named `running` in that
+folder, which is how the next launch knows whether it quit normally. Your shell configuration is yours and is never read by Wortel for any
 purpose beyond running your shell.
 
 The other thing the app talks to is the update server, described next, and that
@@ -141,20 +158,30 @@ off automatic update checks, which also means updates stop arriving.
 wortel.sh uses PostHog, hosted in the EU, to count how the page is doing. It
 records page views, and four things worth naming: which download button was
 clicked, which release note was opened, whether anyone interacted with the
-demo window, and the version offered at the time.
+demo window, and the version offered at the time. It also measures how quickly
+each page loaded and responded, so we know if the site is slow for anyone.
 
 **Nothing is stored on your device.** No cookies, no local storage, no session
-storage. The identifier PostHog uses lives in memory for one page load and is
-gone when you navigate. The practical consequence is that we cannot tell a
-returning reader from a new one, and cannot follow anyone from page to page.
-That is the trade, and it is deliberate.
+storage.
+
+To count visitors without storing anything, PostHog combines your IP address,
+your browser's user agent and the site's address with a secret that changes
+every day, and keeps only the scrambled result (a hash), never the parts. The
+same browser on the same day gives the same hash, so we can see how many people
+visited and how many pages each one read. The next day the secret changes and so
+does the hash, so a visit can never be linked to one on another day, and we
+cannot tell a returning reader from a new one.
 
 Analytics requests go to wortel.sh itself rather than to PostHog directly. That
 is done so the page adds no third-party origin and so an ad blocker does not
-change what the page does. It does not send PostHog anything extra.
+change what the page does. The one thing it changes on the way is location: it
+switches off PostHog's own lookup, which would record a city and postal code,
+and adds only the country instead.
 
-Your IP address reaches the server, because that is how the web works, and is
-used to derive an approximate country. It is not used to build a profile of you.
+Your IP address reaches the server, because that is how the web works. It is
+used for the daily hash above and to look up an approximate country, and then
+thrown away: it is not stored, and neither is a city or anything finer than the
+country. It is not used to build a profile of you.
 
 There is no cookie banner because there are no cookies. What European law asks
 consent for is storing things on your device, and none of this does.

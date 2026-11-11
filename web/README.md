@@ -44,7 +44,8 @@ src/
   pages/llms*.txt.ts       maps for language models
   components/home/         Hero, Panes, Agents, Worktrees, Survival, Glance (specs + FAQ)
   app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
-  components/Stage.astro   a stage: the lake, a window, chapter tabs and captions
+  components/Stage.astro   a stage: the lake, a window, and the bar (chapters, caption, play/pause)
+  components/Window.astro  the window's chrome exactly as the canvas draws it: glass, layout, rim
   scripts/app.ts           tools for acting on a generated window: select a row, set a status, print a line
   scripts/film.ts          a film with chapters: autoplay, tabs, arrow keys, captions
   scripts/hero.ts          the landing sequence (one GSAP timeline)
@@ -87,18 +88,40 @@ then `.row12` rows: a label in columns 1 to 3, content in 4 to 11. Don't name
 a site class after a Tailwind utility (`block`, `grid`, `flex`…): the app's
 generated markup uses those.
 
-### Motion
+### Motion and interaction
 
 Every stage below the hero is a film with chapters (`scripts/film.ts`). A
 chapter is a function that puts a real window in that chapter's state from
 wherever it was, written through `scripts/app.ts` (`sb.select(…)`,
 `sb.status(…, 'attention')`, `term.print('Tool', '(npm run build)', 'Bash')`)
 rather than by touching markup. Chapters play by themselves while the stage is
-on screen; pressing a tab, or the arrow keys on the row, goes there and stops
-the autoplay. Nothing is tied to scroll. Each stage picks its own part of the
-lake photo (`at`, `zoom`) and its own window size, so no two look alike.
+on screen; a tab, the arrow keys, the pause button, or anything pressed in the
+window itself stops that, and play picks it up again. Nothing is tied to scroll.
+
+The windows answer to the pointer: sessions select, folders fold, the sidebar
+and column buttons and the tabs work (panes), the notification and the
+prompt's choices work (agents), the Dock icon quits and reopens (survival).
+Anything pressable is marked `data-row`, `data-fold` or `data-press` and gets
+the app's own hover from `styles/app.css`.
+
+### 1:1 with the canvas
+
+- Window chrome is `components/Window.astro`, a copy of the canvas's `Window`
+  node: the same shadow, 18px radius, glass and inner rim. Sizes are the
+  canvas's (sidebar 234, column 384).
+- `wholeRows()` hides terminal and sidebar rows that do not fit, so a window
+  never shows half a row. Call it on any window whose height is not the
+  canvas's.
+- Traffic lights are drawn in CSS as true 14pt circles in the captures'
+  colours, so they are crisp at 1x, 2x and 3x.
+- Headings step in size with whole-pixel line-heights, so every window sits on
+  a whole pixel.
+- To check a window against the canvas: `opmaak render "<frame>" --scale 1`,
+  screenshot the same markup at 1510x1015, and `magick compare`. Text will
+  differ (the canvas renders with its server's fonts); boxes should not.
+
 `/?t=<s>` holds the landing sequence at a time, for screenshots. Reduced
-motion does not autoplay and opens each scene on its most telling chapter.
+motion starts every film paused, on its most telling chapter.
 
 The download button points at `https://updates.wortel.sh/Wortel-latest.zip`,
 which `release.sh --publish` always mirrors to the newest signed build. The

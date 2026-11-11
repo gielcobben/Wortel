@@ -24,7 +24,7 @@ const latest = await latestRelease();
       <p class="label" data-fade>Free · macOS {SITE.minMacOS} {SITE.minMacOSName} or later</p>
     </div>
 
-    <Stage w={1104} h={704} class="first">
+    <Stage h={704} class="first" reveal={false}>
       <div class="win wapp" data-win data-ph-demo aria-hidden="true" inert>
         <HeroWindow />
       </div>
@@ -43,6 +43,9 @@ const latest = await latestRelease();
   .lead { max-width: 560px; margin-top: 24px; }
   .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
   .label { margin-top: 16px; }
-  .hero :global(.stage.first) { padding-block: 48px; }
+  .hero :global(.stage.first) { padding-top: 48px; }
+  /* The column a little narrower than the canvas drew it (it is a divider you
+     drag), so the three tabs in the main bar show their names in full. */
+  .hero :global([data-name="Side column slot"]) { width: 336px; }
   @media (max-width: 800px) { .hero { padding-top: 112px; } .bhead { margin-bottom: 48px; } }
 </style>

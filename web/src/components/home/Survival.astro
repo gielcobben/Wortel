@@ -1,16 +1,18 @@
 ---
 // Quit the app, keep the work. A small window over the Dock, and four
 // chapters (scripts/scenes.ts): an agent mid-task, ⌘Q, the sessions counting
-// on where the window was, and the window back with what it missed.
+// on where the window was, and the window back with what it missed. The Dock
+// icon is a real button: it quits and reopens.
 import Stage from '../Stage.astro';
+import Window from '../Window.astro';
 import Sidebar from '../../app/gen/Sidebar.astro';
-import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
+import Terminal from '../../app/gen/Terminal.astro';
 
 const chapters = [
   { label: 'Mid-task', caption: 'An agent is halfway through a job, and you are done for the day.' },
   { label: 'Quit', keys: '⌘Q', caption: 'The window goes. The shells are not the app’s children, so they do not.' },
   { label: 'Away', caption: 'Wortel is not running. The sessions are, under a small process beside it.' },
-  { label: 'Back', caption: 'Open it again: the same shells, scrollback included. A crash is the same story.' },
+  { label: 'Back', caption: 'Click the icon: the same shells, scrollback included. A crash is the same story.' },
 ];
 ---
 <section class="sec" id="survival">
@@ -18,9 +20,9 @@ const chapters = [
     <div class="bhead" data-reveal>
       <h2 class="h2">Quit the app, keep the work. <span class="tone">Your shells run under a small process beside the app, so closing the window stops being a decision about the work.</span></h2>
     </div>
-    <Stage film="survival" chapters={chapters} at="30% 40%" zoom="140%" w={760} h={472}>
-      <div class="scene" aria-hidden="true">
-        <div class="away glass" data-ghost>
+    <Stage film="survival" chapters={chapters} at="30% 40%" zoom="140%" h={496} class="small">
+      <div class="scene">
+        <div class="away glass" data-ghost aria-hidden="true">
           <p class="label">Wortel is not running. These are.</p>
           <ul>
             <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Quicker panes</span><span class="tm" data-clock="72">1m 12s</span></li>
@@ -28,19 +30,16 @@ const chapters = [
             <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Sparkle appcast cleanup</span><span class="tm" data-clock="1284">21m 24s</span></li>
           </ul>
         </div>
-        <div class="win wapp" data-frame inert>
-          <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
-          <div class="relative flex size-full">
-            <div class="flex w-[234px] shrink-0"><Sidebar /></div>
-            <div class="w-px shrink-0 bg-sidebar-border"></div>
-            <div class="flex min-w-0 flex-1"><TerminalNarrow /></div>
-          </div>
-        </div>
-        <div class="dock glass" data-dock>
+        <Window data-frame style="--w: 792px">
+          <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
+          <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
+          <div class="flex min-h-0 self-stretch min-w-[80px] flex-1"><Terminal /></div>
+        </Window>
+        <button type="button" class="dock glass" data-dock aria-label="Wortel in the Dock: quit or reopen">
           <img src="/icon-512.png" width="56" height="56" alt="" data-icon />
           <i data-running></i>
-        </div>
-        <div class="keys glass" data-keys="quit"><kbd>⌘</kbd><kbd>Q</kbd></div>
+        </button>
+        <div class="keys glass" data-keys="quit" aria-hidden="true"><kbd>⌘</kbd><kbd>Q</kbd></div>
       </div>
     </Stage>
   </div>
@@ -51,7 +50,7 @@ const chapters = [
   .scene { position: relative; display: flex; flex-direction: column; align-items: center; gap: 24px; width: 100%; }
   .scene :global(.win) { transform-origin: 50% calc(100% + 64px); }
   .away {
-    position: absolute; left: 50%; top: 0; translate: -50% 0; width: min(760px, 100%); height: var(--h); border-radius: 18px;
+    position: absolute; left: 50%; top: 0; translate: -50% 0; width: min(792px, 100%); height: var(--h); border-radius: 18px;
     display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; opacity: 0;
   }
   .away ul { list-style: none; margin: 0; padding: 0; width: min(440px, calc(100% - 48px)); }
@@ -63,9 +62,16 @@ const chapters = [
   .dots i:nth-child(2) { animation-delay: 0.2s; } .dots i:nth-child(3) { animation-delay: 0.4s; }
   @keyframes blink { 50% { opacity: 0.25; } }
 
-  .dock { position: relative; width: 80px; height: 80px; display: grid; place-items: center; border-radius: 22px; flex: none; }
-  .dock img { display: block; }
+  .dock {
+    appearance: none; border: 0; padding: 0; font: inherit; color: inherit; box-sizing: border-box; cursor: pointer; position: relative; flex: none;
+    width: 80px; height: 80px; display: grid; place-items: center; border-radius: 22px;
+    transition: transform 0.2s var(--ease-out);
+  }
+  .dock:hover img { transform: translateY(-4px) scale(1.06); }
+  .dock:active img { filter: brightness(0.8); }
+  .dock:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dock img { display: block; transition: transform 0.25s var(--ease-out), filter 0.1s; }
   .dock i { position: absolute; bottom: 4px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--ink-2); }
-  .keys { left: 50%; top: 200px; translate: -50% 0; }
+  .keys { left: 50%; top: 208px; translate: -50% 0; }
   @media (max-width: 760px) { .scene { align-items: flex-start; } .away { left: 0; translate: none; width: calc(100% - 16px); } .dock { margin-left: calc(50% - 48px); } .keys { left: calc(50% - 8px); } }
 </style>

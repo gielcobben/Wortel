@@ -6,7 +6,7 @@
 // time, so the whole sequence can be retimed in one place. ?t=<seconds> seeks
 // it and holds (for screenshots); reduced motion skips straight to the end.
 import { gsap } from 'gsap';
-import { named, reduced } from './app';
+import { fitTerminal, named, reduced, wholeRows } from './app';
 
 const q = (root: ParentNode, sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
 
@@ -56,6 +56,8 @@ export function playHero() {
     if (live()) gsap.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.22, ease: 'power1.out', clearProps: 'opacity' });
   };
   const hide = (el?: Element | null) => el?.setAttribute('hidden', '');
+  // Only whole rows: as lines arrive, the oldest leave the top a row at a time.
+  const fit = () => fitTerminal(term);
 
   // Which change row a tool line brings in.
   const rowFor = (line: HTMLElement) => {
@@ -78,6 +80,7 @@ export function playHero() {
     typed.textContent = '';
     if (header) header.textContent = 'Changes (0)';
     if (diff) diff.style.opacity = '0';
+    fit();
   }, [], 0);
 
   // You type.
@@ -85,7 +88,7 @@ export function playHero() {
   for (let i = 1; i <= ask.length; i++) tl.call(() => { typed.textContent = ask.slice(0, i); }, [], at.type + i * per);
   let t = at.type + ask.length * per + 0.5;
   // Return: it becomes your message, and the agent starts.
-  tl.call(() => { typed.textContent = ''; show(you); show(status); }, [], t);
+  tl.call(() => { typed.textContent = ''; show(you); show(status); fit(); }, [], t);
 
   let count = 0;
   for (const line of body) {
@@ -94,7 +97,7 @@ export function playHero() {
     t += !name ? 0 : name === 'Result' ? 0.32 : name === 'Claude' ? 0.9 : 0.55;
     const row = name === 'Tool' ? rowFor(line) : null;
     tl.call(() => {
-      show(line);
+      show(line); fit();
       if (!row) return;
       show(row);
       count = rows.filter((r) => !r.hasAttribute('hidden')).length;
@@ -103,16 +106,18 @@ export function playHero() {
     }, [], t);
   }
   t += 0.6;
-  tl.call(() => { hide(status); show(worked); }, [], t);
+  tl.call(() => { hide(status); show(worked); fit(); }, [], t);
 
   // The other sessions keep working in the sidebar: three dots, in turn.
   if (sidebarDots.length && !reduced()) {
     gsap.to(sidebarDots, { opacity: 0.25, duration: 0.5, ease: 'sine.inOut', stagger: { each: 0.18, repeat: -1, yoyo: true } });
   }
 
+  wholeRows(win);
+
   // ---- play, or hold a frame ------------------------------------------------
   const params = new URLSearchParams(location.search);
-  if (params.has('t')) { frozen = true; tl.seek(Number(params.get('t'))); return; }
-  if (reduced()) { frozen = true; tl.progress(1); return; }
+  if (params.has('t')) { frozen = true; tl.seek(Number(params.get('t'))); fit(); return; }
+  if (reduced()) { frozen = true; tl.progress(1); fit(); return; }
   tl.play();
 }

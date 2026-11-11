@@ -1,14 +1,16 @@
 // The scenes on the homepage's stages below the panes. Each is a film with
 // chapters (film.ts): a chapter is a function that puts a real window (app.ts)
 // in that chapter's state, from wherever it was, so chapters can be played in
-// order or jumped between. Nothing is tied to scroll.
+// order or jumped between. The windows answer to the pointer as well; a click
+// in one pauses its film. Nothing is tied to scroll.
 import { gsap } from 'gsap';
-import { Sidebar, Terminal, named, pressKeys, reduced, type Status } from './app';
+import { Pointer, Sidebar, Terminal, named, pressKeys, reduced, sessionScreen, wholeRows, type Status } from './app';
 import { film } from './film';
 
 const fadeIn = (el: Element) => gsap.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.28, ease: 'power1.out', clearProps: 'opacity' });
 const tap = (keys: HTMLElement) => pressKeys(gsap.timeline(), keys, 0, 1.1);
 const BEAT = 0.5; // from a key going down to the app reacting
+const REACH = 0.75; // the pointer's travel to what it presses
 
 // ---- agents: a session stops for you, and one key takes you to it ----------
 for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) {
@@ -20,8 +22,14 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) 
   const enter = v.querySelector<HTMLElement>('[data-keys="enter"]')!;
   const HOME = 'Quicker panes', HERO = 'Landing page hero';
 
-  // The two screens: the session you are in, and the one that wants you.
+  // The session you are in. Its last stretch is what "at work" plays back.
   const home = term.lines();
+  const tail = home.slice(home.findIndex((l) => (l.textContent || '').includes('SidebarOutlineView.swift')) - 0);
+  const worked = home.find((l) => l.dataset.name === 'Worked')!;
+  let busy: HTMLElement | null = null;
+  const settle = () => { busy?.remove(); busy = null; tail.forEach((l) => (l.hidden = false)); };
+
+  // The session that wants you, and its question.
   let question: HTMLElement[] = [];
   const asking = term.compose(() => {
     term.print('You', 'Make the landing page hero load faster.');
@@ -37,57 +45,105 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) 
       term.plain('  3. No, and tell Claude what to do differently'),
     ];
   });
+  const screens = new Map<string, HTMLElement[]>([[HOME, home], [HERO, asking]]);
+  const screen = (name: string) => screens.get(name) || screens.set(name, sessionScreen(term, name)).get(name)!;
 
   // Where the scene is, so a chapter only changes what differs.
-  let at = { session: '', screen: null as HTMLElement[] | null, status: '' as Status | '', note: false };
-  const show = (session: string, screen: HTMLElement[], status: Status, withNote: boolean, animate: boolean) => {
+  let at = { session: HOME, screen: home as HTMLElement[], status: '' as Status | '', note: false };
+  const show = (session: string, status: Status, withNote: boolean, animate: boolean) => {
+    const lines = screen(session);
+    settle();
     if (at.session !== session) { sb.select(session, animate); title.textContent = session; }
-    if (at.screen !== screen || screen === asking) { term.swap(screen); if (animate && at.screen !== screen) fadeIn(term.root); }
+    if (at.screen !== lines || lines === asking) { term.swap(lines); if (animate && at.screen !== lines) fadeIn(term.root); }
     if (at.status !== status) sb.status(HERO, status);
     if (at.note !== withNote || !animate) {
       gsap.to(note, withNote
-        ? { opacity: 1, x: 0, duration: animate ? 0.6 : 0, ease: 'expo.out' }
-        : { opacity: 0, x: 40, duration: animate ? 0.4 : 0, ease: 'power2.in' });
+        ? { autoAlpha: 1, x: 0, duration: animate ? 0.6 : 0, ease: 'expo.out', overwrite: true }
+        : { autoAlpha: 0, x: 48, duration: animate ? 0.35 : 0, ease: 'power2.in', overwrite: true });
     }
-    at = { session, screen, status, note: withNote };
+    at = { session, screen: lines, status, note: withNote };
   };
 
-  film(v, (f) => [
-    { hold: 3.2, enter: (a) => show(HOME, home, 'working', false, a) },
-    { hold: 3.8, enter: (a) => show(HOME, home, 'attention', true, a) },
-    {
-      hold: 4.4,
-      enter: (a) => {
-        show(HOME, home, 'attention', true, a);
-        if (!a) { show(HERO, asking, 'attention', false, false); return; }
-        tap(jump);
-        f.later(() => show(HERO, asking, 'attention', false, true), BEAT);
+  const f = film(v, (f) => {
+    // The answer: the build runs, comes back, and the dot is gone.
+    const answer = (yes: boolean) => {
+      question.forEach((q) => q.remove());
+      if (!yes) {
+        fadeIn(term.print('Claude', 'Understood. I will leave the build to you.'));
+        sb.status(HERO, 'none'); at.status = 'none';
+        return;
+      }
+      const result = term.print('Result', 'Running…');
+      sb.status(HERO, 'working'); at.status = 'working';
+      f.later(() => {
+        result.lastElementChild!.textContent = 'built in 2.14s';
+        term.gap();
+        fadeIn(term.print('Claude', 'Built. The hero paints in 0.8s, down from 2.1s.'));
+        term.gap();
+        term.print('Worked', 'Worked for 48s');
+        sb.status(HERO, 'none'); at.status = 'none';
+      }, 2);
+    };
+    // The choices in the prompt can be pressed.
+    question.slice(2).forEach((q, i) => {
+      q.dataset.press = '';
+      q.addEventListener('click', () => { f.pause(); f.mark(3); answer(i < 2); });
+    });
+
+    return [
+      {
+        hold: 5,
+        enter: (a) => {
+          show(HOME, 'working', false, a);
+          if (!a) return;
+          // Play the session's last stretch back: lines arrive, a status turns.
+          tail.forEach((l) => (l.hidden = true));
+          busy = term.status('Checking the build… (esc to interrupt)');
+          term.fit();
+          const beats = tail.filter((l) => l.dataset.name && l !== worked);
+          beats.forEach((l, i) => f.later(() => {
+            l.hidden = false;
+            // The empty row above a block arrives with it.
+            const gap = l.previousElementSibling as HTMLElement | null;
+            if (gap && !gap.dataset.name) gap.hidden = false;
+            term.fit();
+          }, 0.7 + i * 0.55));
+          f.later(settle, 0.7 + beats.length * 0.55 + 0.4);
+        },
       },
-    },
-    {
-      hold: 6,
-      enter: (a) => {
-        show(HERO, asking, 'attention', false, a);
-        if (a) tap(enter);
-        f.later(() => {
-          question.forEach((q) => q.remove());
-          const result = term.print('Result', 'Running…');
-          sb.status(HERO, 'working'); at.status = 'working';
-          f.later(() => {
-            result.lastElementChild!.textContent = 'built in 2.14s';
-            term.gap();
-            fadeIn(term.print('Claude', 'Built. The hero paints in 0.8s, down from 2.1s.'));
-            term.gap();
-            term.print('Worked', 'Worked for 48s');
-            sb.status(HERO, 'none'); at.status = 'none';
-          }, 2);
-        }, a ? BEAT : 0);
+      { hold: 3.8, enter: (a) => show(HOME, 'attention', true, a) },
+      {
+        hold: 4.4,
+        enter: (a) => {
+          if (!a) { show(HERO, 'attention', false, false); return; }
+          show(HOME, 'attention', true, a);
+          tap(jump);
+          f.later(() => show(HERO, 'attention', false, true), BEAT);
+        },
       },
-    },
-  ], 1);
+      {
+        hold: 6,
+        enter: (a) => {
+          show(HERO, 'attention', false, a);
+          if (a) tap(enter);
+          f.later(() => answer(true), a ? BEAT : 0);
+        },
+      },
+    ];
+  }, 1);
+
+  // ---- your hands ------------------------------------------------------------
+  // The notification takes you there, the way a click on one does.
+  note.addEventListener('click', () => { f.pause(); f.mark(2); show(HERO, 'attention', false, true); });
+  sb.clickable((name) => {
+    f.pause();
+    if (name === HERO && at.status === 'attention') f.mark(2);
+    show(name, at.status || 'working', false, true);
+  });
+  wholeRows(v);
 }
 
-// ---- worktrees: pick a branch, and the window is that worktree --------------
+// ---- worktrees: pick a session, and the window is that worktree -------------
 for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]')) {
   const sb = new Sidebar(named(v, 'Sidebar')!);
   const term = new Terminal(named(v, 'Terminal')!);
@@ -97,15 +153,22 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]'
   const header = named(col, 'Changes header')!.querySelector('span')!;
   const rows = Array.from(named(col, 'Change list')!.querySelectorAll<HTMLElement>('[data-name$=".swift"], [data-name$=".md"]'));
   const diff = named(col, 'Diff')!;
-  const shell = named(v, 'Strip terminal')!.querySelectorAll('p')[1].querySelectorAll('span');
+  // The shell's prompt names the directory and the branch; a long one wraps, as it would.
+  const prompt = named(v, 'Strip terminal')!.querySelectorAll('p')[1];
+  prompt.classList.remove('h-[19px]', 'whitespace-pre');
+  prompt.classList.add('min-h-[19px]', 'whitespace-pre-wrap', '[overflow-wrap:anywhere]');
+  const shell = prompt.querySelectorAll('span');
   const cols = { changes: v.querySelector<HTMLElement>('[data-col="changes"]')!, history: v.querySelector<HTMLElement>('[data-col="history"]')! };
+  const pointer = new Pointer(v.querySelector<HTMLElement>('.set')!);
 
   type File = [mark: 'M' | '?', name: string, path: string];
+  type Tree = { dir: string; branch: string; files: File[]; diff: boolean; screen: HTMLElement[] };
   const read = (r: HTMLElement): File => [r.children[0].textContent as 'M' | '?', r.children[1].textContent!, r.children[2].textContent!];
-  const SESSIONS: { row: string; dir: string; branch: string; files: File[]; screen: HTMLElement[]; diff: boolean }[] = [
-    { row: 'Quicker panes', dir: 'wortel', branch: 'main', files: rows.map(read), screen: term.lines(), diff: true },
-    {
-      row: 'Icon grid survey and fixes', dir: 'codebase-survey-and-fixes', branch: 'codebase-survey-and-fixes', diff: false,
+  const ORDER = ['Quicker panes', 'Icon grid survey and fixes', 'Sparkle appcast cleanup'];
+  const TREES = new Map<string, Tree>([
+    [ORDER[0], { dir: 'wortel', branch: 'main', files: rows.map(read), diff: true, screen: term.lines() }],
+    [ORDER[1], {
+      dir: 'codebase-survey-and-fixes', branch: 'codebase-survey-and-fixes', diff: false,
       files: [['M', 'IconGrid.swift', 'ikoon/Views'], ['M', 'GridMetrics.swift', 'ikoon/Model'], ['?', 'survey.md', 'docs']],
       screen: term.compose(() => {
         term.print('You', 'Survey the icon grid and fix what is off.');
@@ -119,9 +182,9 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]'
         term.print('Result', 'Wrote 41 lines');
         term.gap();
       }),
-    },
-    {
-      row: 'Sparkle appcast cleanup', dir: 'appcast-cleanup', branch: 'appcast-cleanup', diff: false,
+    }],
+    [ORDER[2], {
+      dir: 'appcast-cleanup', branch: 'appcast-cleanup', diff: false,
       files: [['M', 'appcast.xml', 'updates/public'], ['M', 'release.sh', 'macos/scripts']],
       screen: term.compose(() => {
         term.print('You', 'Clean up the Sparkle appcast and the script that writes it.');
@@ -135,16 +198,19 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]'
         term.print('Result', 'The feed is valid. Nothing published.');
         term.gap();
       }),
-    },
-  ];
+    }],
+  ]);
+  // A session that is not on a branch of its own works in the repository itself.
+  const tree = (name: string) => TREES.get(name)
+    || TREES.set(name, { dir: 'wortel', branch: 'main', files: [], diff: false, screen: sessionScreen(term, name) }).get(name)!;
 
-  let on = -1, column: 'changes' | 'history' = 'changes';
-  const session = (i: number, animate: boolean) => {
-    if (on === i) return;
-    on = i;
-    const s = SESSIONS[i];
-    sb.select(s.row, animate);
-    title.textContent = s.row;
+  let on = ORDER[0], column: 'changes' | 'history' = 'changes';
+  const session = (name: string, animate: boolean) => {
+    if (on === name) return;
+    on = name;
+    const s = tree(name);
+    sb.select(name, animate);
+    title.textContent = name;
     term.swap(s.screen);
     shell[1].textContent = `${s.dir} `;
     shell[3].textContent = s.branch;
@@ -168,63 +234,101 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]'
     if (column === which) return;
     const d = animate ? 1 : 0;
     gsap.to(cols[column], { autoAlpha: 0, duration: 0.16 * d, ease: 'power1.in' });
-    gsap.fromTo(cols[which], { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.32 * d, delay: 0.16 * d, ease: 'power2.out' });
+    gsap.fromTo(cols[which], { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.32 * d, delay: 0.16 * d, ease: 'power2.out', clearProps: 'transform' });
     column = which;
   };
 
-  film(v, () => [
-    ...SESSIONS.map((_, i) => ({ hold: 3.8, enter: (a: boolean) => { showColumn('changes', a); session(i, a); } })),
-    { hold: 4.6, enter: (a: boolean) => { session(0, a); showColumn('history', a); } },
+  const f = film(v, (f) => [
+    ...ORDER.map((name) => ({
+      hold: 4,
+      enter: (a: boolean) => {
+        showColumn('changes', a);
+        if (!a || on === name) { session(name, a); pointer.hide(); return; }
+        // The film picks the session the way you would: with the pointer.
+        pointer.click(sb.row(name), REACH);
+        f.later(() => session(name, true), REACH);
+        f.later(() => pointer.hide(), REACH + 1.2);
+      },
+    })),
+    { hold: 4.6, enter: (a: boolean) => { pointer.hide(); session(ORDER[0], a); showColumn('history', a); } },
   ], 1);
+
+  // ---- your hands ------------------------------------------------------------
+  sb.clickable((name) => {
+    f.pause(); pointer.hide();
+    const i = ORDER.indexOf(name);
+    if (i >= 0) f.mark(i);
+    showColumn('changes', true);
+    session(name, true);
+  });
+  // History carries a Changes tab: it goes back.
+  const back = named(cols.history, 'Changes tab');
+  if (back) { back.dataset.press = ''; back.addEventListener('click', () => { f.pause(); f.mark(ORDER.indexOf(on) >= 0 ? ORDER.indexOf(on) : 0); showColumn('changes', true); }); }
+  wholeRows(v);
 }
 
 // ---- survival: quit, and the work goes on -----------------------------------
 for (const v of document.querySelectorAll<HTMLElement>('[data-film="survival"]')) {
   const frame = v.querySelector<HTMLElement>('[data-frame]')!;
   const ghost = v.querySelector<HTMLElement>('[data-ghost]')!;
+  const dock = v.querySelector<HTMLElement>('[data-dock]')!;
   const icon = v.querySelector<HTMLElement>('[data-icon]')!;
   const running = v.querySelector<HTMLElement>('[data-running]')!;
   const keys = v.querySelector<HTMLElement>('[data-keys="quit"]')!;
   const sb = new Sidebar(named(v, 'Sidebar')!);
   const term = new Terminal(named(v, 'Terminal')!);
+  const pointer = new Pointer(v.querySelector<HTMLElement>('.set')!);
+  wholeRows(v);
   sb.pulse();
   // The agent's last lines are what the window misses while it is closed.
   const missed = term.lines().slice(-9);
-  const miss = (hidden: boolean) => missed.forEach((l) => l.toggleAttribute('hidden', hidden));
+  const miss = (hidden: boolean) => { missed.forEach((l) => l.toggleAttribute('hidden', hidden)); term.fit(); };
 
   // The sessions keep time whether or not there is a window to show it.
   const clocks = Array.from(v.querySelectorAll<HTMLElement>('[data-clock]'));
   const fmt = (s: number) => `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
   if (!reduced()) setInterval(() => clocks.forEach((c) => { const s = Number(c.dataset.clock) + 1; c.dataset.clock = String(s); c.textContent = fmt(s); }), 1000);
 
-  const win = (open: boolean, animate: boolean) => {
-    gsap.to(frame, open
-      ? { scale: 1, opacity: 1, duration: animate ? 0.7 : 0, ease: 'expo.out', overwrite: true }
-      : { scale: 0.08, opacity: 0, duration: animate ? 0.55 : 0, ease: 'power2.in', overwrite: true });
-    gsap.to(running, { opacity: open ? 1 : 0, duration: animate ? 0.2 : 0, delay: animate && !open ? 0.5 : 0, overwrite: true });
+  let open = true;
+  const win = (to: boolean, animate: boolean) => {
+    open = to;
+    gsap.to(frame, to
+      ? { scale: 1, autoAlpha: 1, duration: animate ? 0.7 : 0, ease: 'expo.out', overwrite: true }
+      : { scale: 0.08, autoAlpha: 0, duration: animate ? 0.55 : 0, ease: 'power2.in', overwrite: true });
+    gsap.to(running, { opacity: to ? 1 : 0, duration: animate ? 0.2 : 0, delay: animate && !to ? 0.5 : 0, overwrite: true });
   };
   const away = (shown: boolean, animate: boolean) => gsap.to(ghost, { opacity: shown ? 1 : 0, duration: animate ? 0.4 : 0, delay: animate && shown ? 0.35 : 0, overwrite: true });
+  const bounce = () => gsap.fromTo(icon, { y: 0 }, { y: -20, duration: 0.18, ease: 'power2.out', yoyo: true, repeat: 1 });
+  const reopen = () => { away(false, true); miss(false); win(true, true); };
 
-  film(v, (f) => [
-    { hold: 3, enter: (a) => { miss(true); away(false, a); win(true, a); } },
+  const f = film(v, (f) => [
+    { hold: 3, enter: (a) => { pointer.hide(); miss(true); away(false, a); win(true, a); } },
     {
       hold: 2.8,
       enter: (a) => {
-        miss(true); away(false, a); win(true, a);
+        pointer.hide(); miss(true); away(false, a); win(true, a);
         if (!a) return;
         tap(keys);
         f.later(() => win(false, true), BEAT);
       },
     },
-    { hold: 4, enter: (a) => { win(false, a); away(true, a); } },
+    { hold: 4, enter: (a) => { pointer.hide(); win(false, a); away(true, a); } },
     {
-      hold: 5,
+      hold: 5.4,
       enter: (a) => {
         if (!a) { miss(false); away(false, false); win(true, false); return; }
-        win(false, false);
-        gsap.to(icon, { y: -20, duration: 0.18, ease: 'power2.out', yoyo: true, repeat: 1 });
-        f.later(() => { away(false, true); miss(false); win(true, true); }, 0.4);
+        win(false, false); away(true, false);
+        // The film reopens it the way you would: a click on the Dock icon.
+        pointer.click(dock, REACH);
+        f.later(() => { bounce(); f.later(reopen, 0.4); f.later(() => pointer.hide(), 1.4); }, REACH);
       },
     },
   ], 2);
+
+  // ---- your hands: the Dock icon quits and reopens ---------------------------
+  dock.addEventListener('click', () => {
+    f.pause(); pointer.hide();
+    if (open) { f.mark(2); miss(true); win(false, true); away(true, true); }
+    else { f.mark(3); bounce(); gsap.delayedCall(0.4, reopen); }
+  });
 }

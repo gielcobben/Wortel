@@ -1,0 +1,15 @@
+---
+// The app's window, with the chrome the canvas gives every one of its states:
+// the glass behind the panes, the layout row, and the rim on top. The size,
+// the corner radius and the shadow come from .stage .win (styles/site.css).
+// The default slot is the row of panes; "over" is for anything the window
+// itself owns (the traffic lights when no pane carries them).
+interface Props { class?: string; live?: boolean; [key: string]: unknown }
+const { class: cls, live = false, ...rest } = Astro.props;
+---
+<div class:list={["win wapp", cls]} inert={!live} aria-hidden="true" {...rest}>
+  <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+  <div class="relative flex size-full"><slot /></div>
+  <slot name="over" />
+  <div class="pointer-events-none absolute inset-0 rounded-[18px] shadow-[inset_0_0_0_0.5px_rgb(0_0_0/0.12)] dark:shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.1)]"></div>
+</div>

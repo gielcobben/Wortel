@@ -1,12 +1,13 @@
 ---
-// The window, explained by the ways people arrange it.
+// The window, explained by the ways people arrange it, and by letting you.
 //
 // One live window built from the canvas's pane library. Its chapters are
 // arrangements you would actually use, named for what you are doing rather
-// than for the panes involved; scripts/panes.ts moves the window from one to
-// the next the way the app does it, a place at a time. The window is never
-// scaled.
+// than for the panes involved. The window's own controls work too: the
+// sidebar and column buttons, the tabs, the sessions. scripts/panes.ts moves
+// it the way the app does, a place at a time. The window is never scaled.
 import Stage from '../Stage.astro';
+import Window from '../Window.astro';
 import Sidebar from '../../app/gen/Sidebar.astro';
 import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
 import FileMain from '../../app/gen/FileMain.astro';
@@ -17,9 +18,9 @@ import Files from '../../app/gen/Files.astro';
 import BottomStrip from '../../app/gen/BottomStrip.astro';
 
 const chapters = [
-  { label: 'Everything', caption: 'Four places: the sidebar, the main area, a side column and a bottom strip. Each has its own tabs.' },
+  { label: 'Everything', caption: 'Sidebar, main area, side column, bottom strip. Four places, each with its own tabs.' },
   { label: 'Reviewing', caption: 'The commits and their graph in the column, beside the agent that made them.' },
-  { label: 'Previewing', caption: 'A browser in the main area, with the dev server in the strip under it.' },
+  { label: 'Previewing', caption: 'A browser in the main area, with a shell for the dev server in the strip under it.' },
   { label: 'Reading', caption: 'Any file opens in a tab: source, rendered Markdown, or Quick Look for the rest.' },
   { label: 'Quiet', keys: '⌘B ⌥⌘B ⌘J', caption: 'Three keys fold the rest away. What is left is a very good terminal.' },
 ];
@@ -30,37 +31,57 @@ const chapters = [
     <div class="bhead" data-reveal>
       <h2 class="h2">One window, four places. <span class="tone">Each place holds what you put there, or nothing at all. Nothing is fixed, and there is no layout to configure.</span></h2>
     </div>
-    <Stage film="panes" chapters={chapters} at="12% 78%" zoom="170%" w={1040} h={616}>
-      <div class="win wapp" data-pwin aria-hidden="true" inert>
-        <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
-        <div class="relative flex size-full">
-          <div class="slot sb" data-slot="sidebar">
-            <div class="pane" data-pane="sidebar"><Sidebar /></div>
+    <Stage film="panes" chapters={chapters} own="Yours now. Every button, tab and session in the window works." at="12% 78%" zoom="170%">
+      <Window live data-pwin>
+        <div class="slot sb" data-slot="sidebar">
+          <div class="pane" data-pane="sidebar"><Sidebar /></div>
+        </div>
+        <div class="divider" data-div="sidebar"></div>
+        <div class="mainarea">
+          <div class="slot main" data-slot="main">
+            <div class="pane" data-pane="terminal"><TerminalNarrow /></div>
+            <div class="pane" data-pane="file"><FileMain /></div>
+            <div class="pane" data-pane="browser"><Browser /></div>
           </div>
-          <div class="divider" data-div="sidebar"></div>
-          <div class="mainarea">
-            <div class="slot main" data-slot="main">
-              <div class="pane" data-pane="terminal"><TerminalNarrow /></div>
-              <div class="pane" data-pane="file"><FileMain /></div>
-              <div class="pane" data-pane="browser"><Browser /></div>
-            </div>
-            <div class="slot strip" data-slot="strip">
-              <div class="pane" data-pane="strip"><BottomStrip /></div>
-            </div>
-          </div>
-          <div class="divider" data-div="side"></div>
-          <div class="slot side" data-slot="side">
-            <div class="pane" data-pane="changes"><Changes /></div>
-            <div class="pane" data-pane="history"><History /></div>
-            <div class="pane" data-pane="files"><Files /></div>
+          <div class="slot strip" data-slot="strip">
+            <div class="pane" data-pane="strip"><BottomStrip /></div>
           </div>
         </div>
-        <div class="lights">
-          <img src="/app/3ef4fc84971102ffed5f4a10ada4399c.png" alt="" width="16" height="16" />
-          <img src="/app/d1dbbe84aaf8f948789bed8b07c2622c.png" alt="" width="16" height="16" />
-          <img src="/app/ebeda5316137eb91580afb0a92bd4f45.png" alt="" width="16" height="16" />
+        <div class="divider" data-div="side"></div>
+        <div class="slot side" data-slot="side">
+          <div class="pane" data-pane="changes"><Changes /></div>
+          <div class="pane" data-pane="history"><History /></div>
+          <div class="pane" data-pane="files"><Files /></div>
         </div>
-      </div>
+        <div class="lights" slot="over" data-name="Traffic lights" aria-hidden="true">
+          <img data-name="Close" src="/app/3ef4fc84971102ffed5f4a10ada4399c.png" alt="" width="32" height="32" />
+          <img data-name="Minimise" src="/app/d1dbbe84aaf8f948789bed8b07c2622c.png" alt="" width="32" height="32" />
+          <img data-name="Zoom" src="/app/ebeda5316137eb91580afb0a92bd4f45.png" alt="" width="32" height="32" />
+        </div>
+      </Window>
+      <!-- What the main bar gains when a neighbour is hidden, as the canvas
+           draws its "No sidebar" and "Terminal" states. Cloned by panes.ts. -->
+      <template data-tpl="lead">
+        <div data-lead class="contents">
+          <div data-name="Show Sidebar" class="flex size-7 shrink-0 items-center justify-center">
+            <div class="h-[15px] w-[20px] shrink-0 bg-sidebar-accent-foreground [mask-image:url(/app/c804bc011fff44d7ff3a76bab3d40e38.png)] [mask-size:100%_100%]"></div>
+          </div>
+          <div data-name="Back and Forward" class="flex shrink-0 gap-1">
+            <div class="flex size-7 shrink-0 items-center justify-center">
+              <div class="h-[14px] w-[11px] shrink-0 bg-sidebar-accent-foreground [mask-image:url(/app/acdd01364b7ff6a1ea67ea95134701f8.png)] [mask-size:100%_100%]"></div>
+            </div>
+            <div class="flex size-7 shrink-0 items-center justify-center">
+              <div class="h-[14px] w-[11px] shrink-0 bg-sidebar-ring [mask-image:url(/app/9ec6755acab17a098748e05ef189ea76.png)] [mask-size:100%_100%]"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+      <template data-tpl="trail">
+        <div data-name="Toolbar divider" class="h-4 w-px shrink-0 bg-input"></div>
+        <div data-name="Show Side Column" class="flex size-7 shrink-0 items-center justify-center">
+          <div class="h-[15px] w-[20px] shrink-0 bg-sidebar-accent-foreground [mask-image:url(/app/fcba5c820534b40058a17d1ab0846f7f.png)] [mask-size:100%_100%]"></div>
+        </div>
+      </template>
     </Stage>
   </div>
 </section>
@@ -71,28 +92,28 @@ const chapters = [
 </script>
 
 <style>
-  .win :global([data-pane="browser"] img[data-name="Web page"]) { object-position: 50% 0; }
+  [data-film="panes"] :global([data-pane="browser"] img[data-name="Web page"]) { object-position: 50% 0; }
 
-  /* Slots, sized the way the app's split views are (minimums from the source). */
+  /* Slots, sized the way the canvas sizes them: the sidebar 234, the column
+     384. A divider stays where it was dragged, so the strip's height is ours. */
   .slot { position: relative; display: grid; min-height: 0; min-width: 0; overflow: hidden; }
   .slot > * { grid-area: 1 / 1; min-width: 0; min-height: 0; }
   .sb { width: 234px; flex: none; }
   .mainarea { display: flex; flex-direction: column; flex: 1; min-width: 80px; min-height: 0; }
   .main { flex: 1; min-height: 80px; }
-  .strip { flex: none; height: 168px; min-height: 0; }
-  .side { width: 336px; flex: none; }
+  .strip { flex: none; height: 200px; min-height: 0; }
+  .side { width: 384px; flex: none; }
   .divider { width: 1px; flex: none; background: var(--sidebar-border); align-self: stretch; }
   .pane { display: flex; }
   /* A folding slot clips its pane, the way a split view does, instead of
      reflowing it through every width on the way to zero. */
   .sb .pane { min-width: 234px; }
-  .side .pane { min-width: 336px; }
-  .strip .pane { min-height: 168px; }
+  .side .pane { min-width: 384px; }
+  .strip .pane { min-height: 200px; }
   .pane > :global(*) { flex: 1; }
   .pane:not(:first-child) { visibility: hidden; opacity: 0; }
 
   /* The window owns the traffic lights, as AppKit does; the pane's copy hides. */
   .lights { position: absolute; left: 11px; top: 12px; display: flex; gap: 7px; z-index: 5; }
-  .lights img { width: 16px; height: 16px; }
-  .win :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }
+  [data-film="panes"] :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }
 </style>

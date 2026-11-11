@@ -131,3 +131,33 @@
 .wapp .spin { animation: wapp-spin 2.4s linear infinite; transform-origin: 50% 55%; }
 @keyframes wapp-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .wapp .spin { animation: none; } }
+
+/* ---- what answers to the pointer ------------------------------------------
+   Parts of a window a visitor can press (scripts/app.ts marks them). They
+   take the app's own hover: a step under the selection, never a web hover. */
+.wapp [data-row], .wapp [data-fold], .wapp [data-press] { cursor: pointer; }
+.wapp [data-row]:not(:has(> [data-name="Pill"])):hover::before {
+  content: ''; position: absolute; inset: 1px 10px; border-radius: 8px; background: var(--sidebar-accent); opacity: 0.6;
+}
+.wapp [data-fold]:hover > span { color: var(--sidebar-foreground); }
+.wapp [data-press] { border-radius: 8px; transition: background-color 0.15s; }
+.wapp [data-press]:hover { background: var(--sidebar-accent); }
+.wapp [data-press]:active { background: var(--sidebar-ring); }
+
+/* ---- traffic lights --------------------------------------------------------
+   The canvas carries them as 2x captures. Drawn here instead, as true circles
+   of the same 14 points in the colours those captures render at, so they are
+   crisp at every pixel density. The image is kept for its name and alt, and
+   given no pixels of its own to paint. */
+.wapp [data-name="Traffic lights"] > img {
+  box-sizing: content-box; width: 0; height: 0; padding: 7px; margin: 1px; border-radius: 50%;
+  background: radial-gradient(60% 44% at 50% 104%, var(--glow), transparent), var(--fill);
+}
+.wapp [data-name="Close"] { --fill: #f35f55; --glow: #ffc6bd; }
+.wapp [data-name="Minimise"] { --fill: #fcbf00; --glow: #fff670; }
+.wapp [data-name="Zoom"] { --fill: #37c000; --glow: #a8f58a; }
+
+/* The glass behind a window blurs what is under it. A backdrop filter is not
+   clipped by its parent's rounded corners, so it left a square of blur poking
+   out behind each corner: the glass takes the window's radius itself. */
+.wapp [class*="backdrop-blur"] { border-radius: inherit; }

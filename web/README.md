@@ -44,7 +44,8 @@ src/
   pages/llms*.txt.ts       maps for language models
   components/home/         Hero, Panes, Agents, Worktrees, Survival, Glance (specs + FAQ)
   app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
-  components/Stage.astro   a stage: the lake, a window, and the bar (chapters, caption, play/pause)
+  components/Stage.astro   a scene: the heading (its grey half changes per chapter), then the lake
+                           with the chapter tabs and play/pause over the window
   components/Window.astro  the window's chrome exactly as the canvas draws it: glass, layout, rim
   scripts/app.ts           tools for acting on a generated window: select a row, set a status, print a line
   scripts/film.ts          a film with chapters: autoplay, tabs, arrow keys, captions
@@ -81,9 +82,10 @@ follows the page's colour scheme through the tokens in styles/app.css.
 ### One layout
 
 Every page sits on one container with one left edge; nothing is centred. A
-homepage section is `.sec` > `.bhead` (two-tone heading) + a `Stage` (the app
-on a part of the foggy lake, at a window's natural proportions, with its
-chapter tabs above it and a caption under it, all in one frame). An inner page is `.phead` and
+homepage scene is `.sec` > a `Stage`: the two-tone heading, whose black half is
+the scene's claim and whose grey half is the current chapter's line, then the
+stage, a part of the foggy lake with the chapter tabs and a round play/pause
+button over the app window at its natural proportions. An inner page is `.phead` and
 then `.row12` rows: a label in columns 1 to 3, content in 4 to 11. Don't name
 a site class after a Tailwind utility (`block`, `grid`, `flex`…): the app's
 generated markup uses those.

@@ -18,20 +18,17 @@ import Files from '../../app/gen/Files.astro';
 import BottomStrip from '../../app/gen/BottomStrip.astro';
 
 const chapters = [
-  { label: 'Everything', caption: 'Sidebar, main area, side column, bottom strip. Four places, each with its own tabs.' },
-  { label: 'Reviewing', caption: 'The commits and their graph in the column, beside the agent that made them.' },
-  { label: 'Previewing', caption: 'A browser in the main area, with a shell for the dev server in the strip under it.' },
-  { label: 'Reading', caption: 'Any file opens in a tab: source, rendered Markdown, or Quick Look for the rest.' },
-  { label: 'Quiet', keys: '⌘B ⌥⌘B ⌘J', caption: 'Three keys fold the rest away. What is left is a very good terminal.' },
+  { label: 'Everything', caption: 'Sessions on the left, the terminal in the middle, your repository beside it and a second shell underneath.' },
+  { label: 'Reviewing', caption: 'Review what an agent did with its commits beside it, and the strip folded away.' },
+  { label: 'Previewing', caption: 'Preview the site in a browser tab, with the dev server running underneath.' },
+  { label: 'Reading', caption: 'Read the plan in a tab of its own, with the project’s files beside it.' },
+  { label: 'Quiet', caption: 'Or fold it all away with three keys, and keep a very good terminal.' },
 ];
 ---
 <section id="panes" class="sec">
   <span id="sessions" class="anchor"></span><span id="git-and-files" class="anchor"></span>
   <div class="page">
-    <div class="bhead" data-reveal>
-      <h2 class="h2">One window, four places. <span class="tone">Each place holds what you put there, or nothing at all. Nothing is fixed, and there is no layout to configure.</span></h2>
-    </div>
-    <Stage film="panes" chapters={chapters} own="Yours now. Every button, tab and session in the window works." at="12% 78%" zoom="170%">
+    <Stage title="One window, four places." film="panes" chapters={chapters} own="Yours now. Every button, tab and session in the window works, and none of it is a setting." at="12% 78%" zoom="170%">
       <Window live data-pwin>
         <div class="slot sb" data-slot="sidebar">
           <div class="pane" data-pane="sidebar"><Sidebar /></div>

@@ -12,18 +12,15 @@ import Changes from '../../app/gen/Changes.astro';
 import History from '../../app/gen/History.astro';
 
 const chapters = [
-  { label: 'Your branch', caption: 'The session you started in: its shell, its branch, its changes.' },
-  { label: 'A second', keys: '⇧⌘N', caption: 'A session on a branch gets a directory of its own. It costs a directory, not a clone.' },
-  { label: 'A third', caption: 'Each one shows only its own work. Nothing changes the ground under another.' },
-  { label: 'One history', caption: 'They share the repository’s history, objects and remotes. Worktrees live outside it.' },
+  { label: 'First', caption: 'Every session works in a directory of its own, on a branch of its own.' },
+  { label: 'Second', caption: 'Open another on a branch and it gets its own worktree. It costs a directory, not a clone.' },
+  { label: 'Third', caption: 'Each shows only its own changes, so no agent edits the ground under another.' },
+  { label: 'Shared history', caption: 'They share one history, and the worktrees live outside the repository.' },
 ];
 ---
 <section class="sec" id="worktrees">
   <div class="page">
-    <div class="bhead" data-reveal>
-      <h2 class="h2">Five agents, one repository. <span class="tone">Open a session on a branch and Wortel checks it out in a directory of its own. Each agent edits its own files, and nothing changes the ground under another mid-task.</span></h2>
-    </div>
-    <Stage film="worktrees" chapters={chapters} at="50% 100%" zoom="150%">
+    <Stage title="Five agents, one repository." film="worktrees" chapters={chapters} at="50% 100%" zoom="150%">
       <Window live>
         <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
         <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>

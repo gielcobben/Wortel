@@ -1,14 +1,17 @@
 ---
-// A stage: a part of the foggy lake, a window (or whatever the slot holds)
-// standing on it, and, when the scene has chapters, the bar that runs it:
-// chapter tabs, the current chapter's caption, play/pause. scripts/film.ts
-// drives it.
-export interface Chapter { label: string; caption: string; keys?: string }
+// A scene: its heading, then the stage. The stage is a part of the foggy lake
+// with the controls on top (the chapter tabs, and play/pause beside them) and
+// the window under them. The heading's black half is the scene's claim and
+// stays; its grey half is the current chapter's line and changes with it.
+// scripts/film.ts drives it.
+export interface Chapter { label: string; caption: string }
 interface Props {
-  /** The scene's name: scripts find the stage by [data-film="name"]. */
+  /** The scene's name: scripts find the scene by [data-film="name"]. */
   film?: string;
+  /** The black half of the heading: what the whole scene says. */
+  title?: string;
   chapters?: Chapter[];
-  /** Said when the reader arranges something no chapter covers. */
+  /** The grey half when the reader arranges something no chapter covers. */
   own?: string;
   /** Which part of the photo: a background-position, and how far in. */
   at?: string;
@@ -20,28 +23,37 @@ interface Props {
   reveal?: boolean;
   class?: string;
 }
-const { film, chapters = [], own, at = '50% 62%', zoom = 'cover', w = 1104, h = 664, reveal = true, class: cls } = Astro.props;
+const { film, title, chapters = [], own, at = '50% 62%', zoom = 'cover', w = 1104, h = 664, reveal = true, class: cls } = Astro.props;
+const lines = [...chapters.map((c, i) => ({ key: String(i), text: c.caption })), ...(own ? [{ key: 'own', text: own }] : [])];
 ---
-<div class:list={['stage', cls]} data-film={film} data-reveal={reveal ? '' : undefined} style={`--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
-  {chapters.length > 0 && (
-    <div class="bar glass">
-      <div class="chapters" role="tablist" aria-label="Chapters">
-        <span class="thumb still" aria-hidden="true"></span>
-        {chapters.map((c, i) => (
-          <button type="button" role="tab" data-chapter={i} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1}>{c.label}</button>
-        ))}
+<div data-film={film}>
+  {title && (
+    <div class="bhead" data-reveal>
+      <!-- Every chapter's heading is laid in the same place, so the tallest
+           sets the height and nothing below moves when the chapter changes.
+           Only the first is a heading; the rest are its alternates. -->
+      <div class="heads">
+        {lines.map((l, i) => i === 0
+          ? <h2 class="h2 on" data-caption={l.key}>{title} <span class="tone">{l.text}</span></h2>
+          : <p class="h2" data-caption={l.key} aria-hidden="true">{title} <span class="tone">{l.text}</span></p>)}
       </div>
-      <div class="say" aria-live="polite">
-        {chapters.map((c, i) => (
-          <p class:list={{ on: i === 0 }} data-caption={i}>{c.keys && <kbd>{c.keys}</kbd>}{c.caption}</p>
-        ))}
-        {own && <p data-caption="own">{own}</p>}
-      </div>
-      <button type="button" class="play" data-play aria-label="Pause" aria-pressed="false">
-        <svg class="i-pause" width="12" height="14" viewBox="0 0 12 14" aria-hidden="true"><rect x="1" y="1" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="7.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
-        <svg class="i-play" width="12" height="14" viewBox="0 0 12 14" aria-hidden="true"><path d="M2.5 1.6v10.8a.6.6 0 0 0 .9.5l8.4-5.4a.6.6 0 0 0 0-1L3.4 1.1a.6.6 0 0 0-.9.5z" fill="currentColor"/></svg>
-      </button>
     </div>
   )}
-  <div class="set"><slot /></div>
+  <div class:list={['stage', cls]} data-reveal={reveal ? '' : undefined} style={`--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
+    {chapters.length > 0 && (
+      <div class="controls">
+        <div class="chapters glass" role="tablist" aria-label="Chapters">
+          <span class="thumb still" aria-hidden="true"></span>
+          {chapters.map((c, i) => (
+            <button type="button" role="tab" data-chapter={i} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1}>{c.label}</button>
+          ))}
+        </div>
+        <button type="button" class="play glass" data-play aria-label="Pause" aria-pressed="false">
+          <svg class="i-pause" width="12" height="14" viewBox="0 0 12 14" aria-hidden="true"><rect x="1" y="1" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="7.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
+          <svg class="i-play" width="12" height="14" viewBox="0 0 12 14" aria-hidden="true"><path d="M2.5 1.6v10.8a.6.6 0 0 0 .9.5l8.4-5.4a.6.6 0 0 0 0-1L3.4 1.1a.6.6 0 0 0-.9.5z" fill="currentColor"/></svg>
+        </button>
+      </div>
+    )}
+    <div class="set"><slot /></div>
+  </div>
 </div>

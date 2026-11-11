@@ -10,20 +10,17 @@ import Terminal from '../../app/gen/Terminal.astro';
 
 const chapters = [
   { label: 'Mid-task', caption: 'An agent is halfway through a job, and you are done for the day.' },
-  { label: 'Quit', keys: '⌘Q', caption: 'The window goes. The shells are not the app’s children, so they do not.' },
-  { label: 'Away', caption: 'Wortel is not running. The sessions are, under a small process beside it.' },
-  { label: 'Back', caption: 'Click the icon: the same shells, scrollback included. A crash is the same story.' },
+  { label: 'Quit', caption: 'Your shells are not the app’s children, so they keep running.' },
+  { label: 'Away', caption: 'With Wortel closed, every session carries on under a small process beside it.' },
+  { label: 'Back', caption: 'Open it again and every shell is where it was, scrollback included. A crash is the same story.' },
 ];
 ---
 <section class="sec" id="survival">
   <div class="page">
-    <div class="bhead" data-reveal>
-      <h2 class="h2">Quit the app, keep the work. <span class="tone">Your shells run under a small process beside the app, so closing the window stops being a decision about the work.</span></h2>
-    </div>
-    <Stage film="survival" chapters={chapters} at="30% 40%" zoom="140%" h={496} class="small">
+    <Stage title="Quit the app, keep the work." film="survival" chapters={chapters} at="30% 40%" zoom="140%" h={496} class="small">
       <div class="scene">
         <div class="away glass" data-ghost aria-hidden="true">
-          <p class="label">Wortel is not running. These are.</p>
+          <p class="label">Still running</p>
           <ul>
             <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Quicker panes</span><span class="tm" data-clock="72">1m 12s</span></li>
             <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Marketing screenshots</span><span class="tm" data-clock="431">7m 11s</span></li>

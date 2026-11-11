@@ -10,18 +10,15 @@ import Sidebar from '../../app/gen/Sidebar.astro';
 import Terminal from '../../app/gen/Terminal.astro';
 
 const chapters = [
-  { label: 'At work', caption: 'Output that keeps moving is an agent at work. Nothing is installed into it to know that.' },
-  { label: 'Needs you', caption: 'A screen gone still is a question. The session gets a dot, and a notification finds you.' },
-  { label: 'Go to it', keys: '⌥⇧⌘↓', caption: 'One shortcut jumps to the next session that is waiting. So does the notification.' },
-  { label: 'Answered', keys: '⏎', caption: 'Say yes, and it is back at work. The dot is gone.' },
+  { label: 'At work', caption: 'While its output keeps moving, an agent is at work. Nothing is installed into it to tell.' },
+  { label: 'Needs you', caption: 'When its screen goes still, the session gets a dot and a notification finds you.' },
+  { label: 'Go to it', caption: 'One shortcut, ⌥⇧⌘↓, or a click on the notification, takes you to the session that is waiting.' },
+  { label: 'Answered', caption: 'Say yes and it goes back to work. The dot is gone.' },
 ];
 ---
 <section class="sec" id="coding-agents">
   <div class="page">
-    <div class="bhead" data-reveal>
-      <h2 class="h2">Know which agent needs you. <span class="tone">Hand one repository to Claude Code, another to Codex, a third to Aider. Wortel reads the screen and marks what is working and what is waiting.</span></h2>
-    </div>
-    <Stage film="agents" chapters={chapters} at="86% 64%" zoom="210%" h={616}>
+    <Stage title="Know which agent needs you." film="agents" chapters={chapters} at="86% 64%" zoom="210%" h={616}>
       <Window live>
         <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
         <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>

@@ -41,12 +41,14 @@ const commits = (b: Branch) => {
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Five branches growing out of the main branch, two merging back">
         <line class="trunk" x1="0" y1={Y0} x2={W} y2={Y0} />
         {branches.map((b, i) => (
-          <g class="br" data-br={i}>
+          <g class="br" data-br={i} data-from={b.from} data-to={b.to}>
             <path class="line" d={path(b)} pathLength="1" />
             {commits(b).map((x) => <circle class="c" cx={x} cy={b.y} r="5" />)}
-            <g class="tag" transform={`translate(${b.from + 2 * R + 8} ${b.y - 16})`}>
-              <text class="name">{b.name}</text>
-              <text class="agent" x={b.name.length * 8.6 + 10}>{b.agent}</text>
+            <g transform={`translate(${b.from + 2 * R + 8} ${b.y - 16})`}>
+              <g class="tag">
+                <text class="name">{b.name}</text>
+                <text class="agent" x={b.name.length * 8.6 + 10}>{b.agent}</text>
+              </g>
             </g>
           </g>
         ))}

@@ -32,9 +32,9 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
     </div>
   </section>
 
-  <section class="page cats" data-reveal-group="0.06">
+  <section class="page cats">
     {CATEGORIES.map((c) => (
-      <article class:list={['cat', { us: c.key === 'wortel' }]} data-reveal>
+      <article class:list={['cat', { us: c.key === 'wortel' }]}>
         <p class="label">{c.kind}</p>
         <p class="what">{c.what}</p>
         <p class="eg">{c.examples}</p>
@@ -60,7 +60,7 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
         {DEFAULTS.map((d, i) => (
           <label class="cell app slot" style={`order:${i + 2}`}><span class="vh">Compare with</span>
             <select data-pick={i}>{others.map((a) => <option value={a.key} data-kind={a.kind} selected={a.key === d}>{a.name}</option>)}</select>
-            <span data-kind>{others.find((a) => a.key === d)!.kind}</span>
+            <span class="kindline">{others.find((a) => a.key === d)!.kind}</span>
           </label>
         ))}
       </div>
@@ -77,7 +77,7 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
                   return (
                     <div class:list={['cell', { us: a.key === 'wortel' }]} role="cell" data-col={a.key}>
                       {!ax.descriptive && <span class:list={['v', c.v]}><i aria-hidden="true"></i>{label[c.v]}</span>}
-                      <span class="note">{c.note}</span>
+                      {c.note.toLowerCase() !== label[c.v].toLowerCase() && <span class="note">{c.note}</span>}
                     </div>
                   );
                 })}
@@ -104,7 +104,7 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
       });
       root.querySelectorAll<HTMLElement>('.head [data-col]').forEach((c) => { c.hidden = c.dataset.col !== 'wortel'; });
       picks.forEach((p) => {
-        const kind = p.parentElement!.querySelector('[data-kind]')!;
+        const kind = p.parentElement!.querySelector('.kindline')!;
         kind.textContent = p.selectedOptions[0]?.dataset.kind || '';
       });
     };
@@ -129,7 +129,10 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
 
   .thead { display: flex; flex-direction: column; gap: 16px; margin-bottom: 48px; }
   .thead > * { margin: 0; }
-  .grid { display: flex; flex-direction: column; overflow-x: auto; }
+  .grid { display: flex; flex-direction: column; }
+  /* Sideways scroll only where it is needed: a scroll container would stop the
+     header row from sticking. */
+  @media (max-width: 1000px) { .grid { overflow-x: auto; } }
   .row { display: flex; border-top: 1px solid var(--line); min-width: 900px; }
   .q { flex: 0 0 280px; padding: 16px 16px 16px 0; font-size: 15px; line-height: 24px; color: var(--ink); font-weight: 500; }
   .cell { flex: 1 1 0; min-width: 0; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
@@ -141,9 +144,16 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
   .app.us { border-radius: 12px 12px 0 0; }
   .slot { display: none; }
   :global(.picking) .slot { display: flex; }
-  .slot select { align-self: flex-start; max-width: 100%; font: 600 17px/24px var(--font-display); color: var(--ink); background: var(--btn-2); border: 0; border-radius: 8px; padding: 4px 8px; margin-left: -8px; cursor: pointer; }
+  .slot select {
+    appearance: none; -webkit-appearance: none; align-self: flex-start; max-width: 100%;
+    font: 600 17px/24px var(--font-display); color: var(--ink); cursor: pointer;
+    background: var(--btn-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14'%3E%3Cpath d='M1.5 5 5 1.5 8.5 5M1.5 9 5 12.5 8.5 9' fill='none' stroke='%2377746a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center;
+    border: 0; border-radius: 8px; padding: 4px 28px 4px 8px; margin-left: -8px;
+  }
+  .slot select:hover { background-color: var(--line-2); }
   .slot span { font-size: 13px; line-height: 16px; color: var(--ink-3); }
   .group { display: grid; grid-template-columns: 280px 1fr; gap: 0; padding: 48px 0 16px; border-top: 1px solid var(--line-2); min-width: 900px; }
+  .head + .group { margin-top: 16px; }
   .group p { margin: 0; }
   .v { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; line-height: 24px; font-weight: 500; color: var(--ink); }
   .v i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }

@@ -22,7 +22,7 @@ import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
       <p class="small" data-reveal><kbd>⌥⇧⌘↓</kbd> &nbsp;jumps to the next session that is waiting.</p>
     </div>
 
-    <div class="visual" data-agents data-reveal>
+    <div class="visual" data-agents data-reveal aria-hidden="true">
       <div class="desk">
         <div class="wapp dark side">
           <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
@@ -62,7 +62,7 @@ import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
 
   .visual { position: relative; }
   .desk {
-    position: relative; height: 640px; border-radius: 24px; overflow: hidden;
+    position: relative; height: 560px; border-radius: 24px; overflow: hidden;
     background: url(/img/lake-1600.jpg) 30% 70% / cover;
   }
   @media (prefers-color-scheme: dark) { .desk { background-image: linear-gradient(rgb(14 14 12 / 0.55), rgb(14 14 12 / 0.55)), url(/img/lake-1600.jpg); } }

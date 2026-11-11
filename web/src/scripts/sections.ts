@@ -45,12 +45,17 @@ for (const g of document.querySelectorAll<SVGElement>('[data-graph]')) {
   const tl = gsap.timeline({ defaults: { ease: 'none' } });
   brs.forEach((b, i) => {
     const line = b.querySelector('.line')!;
-    const dots = b.querySelectorAll('.c');
+    const dots = Array.from(b.querySelectorAll<SVGCircleElement>('.c'));
     const tag = b.querySelector('.tag');
+    const from = Number(b.dataset.from), to = Number(b.dataset.to);
     const start = i * 0.18;
     tl.fromTo(line, { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1 }, start);
-    tl.fromTo(tag, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.2 }, start + 0.15);
-    tl.fromTo(dots, { scale: 0, transformOrigin: '50% 50%' }, { scale: 1, duration: 0.08, stagger: 0.1 }, start + 0.25);
+    tl.fromTo(tag, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.2 }, start + 0.2);
+    // Each commit appears as the line reaches it.
+    dots.forEach((d) => {
+      const at = (Number(d.getAttribute('cx')) - from) / (to - from);
+      tl.fromTo(d, { scale: 0, transformOrigin: '50% 50%' }, { scale: 1, duration: 0.06 }, start + at * 1.0);
+    });
   });
   if (reduced) { tl.progress(1); continue; }
   ScrollTrigger.create({ trigger: g, start: 'top 85%', end: 'bottom 35%', scrub: 0.5, animation: tl });

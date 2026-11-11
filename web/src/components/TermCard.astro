@@ -3,10 +3,10 @@
 // demos. Lines are typed out by scripts/sections.ts when the card comes on
 // screen: a line with `cmd` is typed after a prompt, the rest appear whole.
 export type Line = { cmd?: string; out?: string; tone?: 'dim' | 'ok' | 'warn' | 'err' | 'accent'; pause?: number };
-interface Props { title: string; lines: Line[]; height?: number; class?: string; id?: string }
-const { title, lines, height = 360, class: cls, id } = Astro.props;
+interface Props { title: string; lines: Line[]; height?: number; class?: string; id?: string; nowrap?: boolean }
+const { title, lines, height = 360, class: cls, id, nowrap = false } = Astro.props;
 ---
-<div class:list={['term', cls]} style={`--h:${height}px`} data-term id={id}>
+<div class:list={['term', cls, { nowrap }]} style={`--h:${height}px`} data-term id={id}>
   <div class="bar">
     <span class="lights"><i></i><i></i><i></i></span>
     <span class="title">{title}</span>
@@ -30,11 +30,12 @@ const { title, lines, height = 360, class: cls, id } = Astro.props;
   .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
   .title { font: 500 13px/16px var(--font-sans); color: rgb(255 255 255 / 0.55); }
   .screen {
-    height: var(--h); padding: 12px 16px; overflow: hidden;
+    height: var(--h); padding: 12px 16px; overflow: hidden; overflow-x: auto; scrollbar-width: none;
     display: flex; flex-direction: column; justify-content: flex-start;
     font: 500 14px/19px var(--font-mono); letter-spacing: -0.155px; color: #e6edf3;
   }
   .ln { margin: 0; white-space: pre-wrap; min-height: 19px; }
+  .nowrap .ln { white-space: pre; }
   .pr { color: #3fb950; }
   .cmd .typed { color: #e6edf3; }
   .dim { color: #8b949e; } .ok { color: #3fb950; } .warn { color: #d29922; } .err { color: #ff7b72; } .accent { color: #79c0ff; }

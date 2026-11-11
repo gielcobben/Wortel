@@ -21,7 +21,7 @@ import Changes from '../../app/gen/Changes.astro';
   <div class="bench">
     <div class="win wapp dark" data-rwin>
       <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
-      <div class="relative flex size-full">
+      <div class="relative flex size-full" aria-hidden="true" inert>
         <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
         <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
         <div class="flex min-h-0 min-w-[80px] flex-1 self-stretch"><TerminalNarrow /></div>
@@ -100,5 +100,6 @@ import Changes from '../../app/gen/Changes.astro';
   .grip:hover span, .grip:focus-visible span, :global(.dragging) .grip span { opacity: 1; height: 64px; background: var(--ink); }
   .size { font-family: var(--font-mono); }
   :global(.dragging) { cursor: ew-resize; user-select: none; }
-  @media (max-width: 700px) { .bench { align-items: flex-start; } .win { height: 480px; } }
+  /* A thing you drag: it needs a pointer and room. */
+  @media (max-width: 760px), (pointer: coarse) { .rz { display: none; } }
 </style>

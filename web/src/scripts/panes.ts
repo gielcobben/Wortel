@@ -57,25 +57,27 @@ export function initPanes() {
   // 03 side column, then the column cycles through its three panes
   tl.to(ph('side'), { autoAlpha: 0, scale: 0.98, duration: 0.4 }, S.side[0]);
   tl.fromTo(pane('changes'), { autoAlpha: 0, x: 24 }, { autoAlpha: 1, x: 0, ...IN }, S.side[0] + 0.1);
-  tl.to(pane('changes'), { autoAlpha: 0, ...SWAP }, S.side[0] + 1.3);
-  tl.fromTo(pane('history'), { autoAlpha: 0 }, { autoAlpha: 1, ...SWAP }, S.side[0] + 1.3);
-  tl.to(pane('history'), { autoAlpha: 0, ...SWAP }, S.side[0] + 2.3);
-  tl.fromTo(pane('files'), { autoAlpha: 0 }, { autoAlpha: 1, ...SWAP }, S.side[0] + 2.3);
+  // One pane out, then the next in: never two dense layers at once.
+  const OUT = { duration: 0.25, ease: 'power1.in' }, INN = { duration: 0.35, ease: 'power2.out' };
+  tl.to(pane('changes'), { autoAlpha: 0, ...OUT }, S.side[0] + 1.3);
+  tl.fromTo(pane('history'), { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, ...INN }, S.side[0] + 1.55);
+  tl.to(pane('history'), { autoAlpha: 0, ...OUT }, S.side[0] + 2.3);
+  tl.fromTo(pane('files'), { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, ...INN }, S.side[0] + 2.55);
 
   // 04 bottom strip
   tl.to(ph('strip'), { autoAlpha: 0, scale: 0.98, duration: 0.4 }, S.strip[0]);
   tl.fromTo(pane('strip'), { autoAlpha: 0, y: 32 }, { autoAlpha: 1, y: 0, ...IN }, S.strip[0] + 0.1);
 
   // 05 any tab, any place: a browser takes the main area, a plan the column
-  tl.to(pane('terminal'), { autoAlpha: 0, ...SWAP }, S.anywhere[0]);
-  tl.fromTo(pane('browser'), { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, ...SWAP }, S.anywhere[0]);
-  tl.to(pane('files'), { autoAlpha: 0, ...SWAP }, S.anywhere[0] + 0.7);
-  tl.fromTo(pane('file'), { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, ...SWAP }, S.anywhere[0] + 0.7);
+  tl.to(pane('terminal'), { autoAlpha: 0, duration: 0.25, ease: 'power1.in' }, S.anywhere[0]);
+  tl.fromTo(pane('browser'), { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.4, ease: 'power2.out' }, S.anywhere[0] + 0.25);
+  tl.to(pane('files'), { autoAlpha: 0, duration: 0.25, ease: 'power1.in' }, S.anywhere[0] + 0.7);
+  tl.fromTo(pane('file'), { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.4, ease: 'power2.out' }, S.anywhere[0] + 0.95);
 
   // 06 quiet: everything folds away and the terminal has the window
   const q = S.quiet[0];
-  tl.to(pane('browser'), { autoAlpha: 0, ...SWAP }, q);
-  tl.to(pane('terminal'), { autoAlpha: 1, y: 0, ...SWAP }, q);
+  tl.to(pane('browser'), { autoAlpha: 0, duration: 0.25, ease: 'power1.in' }, q);
+  tl.to(pane('terminal'), { autoAlpha: 1, y: 0, duration: 0.4, ease: 'power2.out' }, q + 0.25);
   tl.to(slot('sidebar'), { width: 0, duration: 1, ease: 'power3.inOut' }, q + 0.3);
   tl.to(div('sidebar'), { autoAlpha: 0, duration: 0.3 }, q + 1.0);
   if (mainBar) tl.to(mainBar, { paddingLeft: 84, duration: 1, ease: 'power3.inOut' }, q + 0.3);

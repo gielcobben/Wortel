@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // ==========================================================================
@@ -35,7 +36,15 @@ import Foundation
 enum TelemetryEvent: Equatable {
     /// Cold launch. `sessions` is how many were restored, which is the single
     /// most useful number about how this app is actually used.
-    case appLaunched(sessions: CountBucket, agentsResumed: CountBucket)
+    ///
+    /// `first` is the launch that made the install id, which is what turns a
+    /// download count into "and then opened it, and came back a week later".
+    /// `previousExit` is how the run before this one ended: the crash and
+    /// force-quit rate per version, from a marker file and nothing else (see
+    /// `ExitMarker`). `notifications` is whether macOS lets attention reach
+    /// anyone outside the window, which decides how much the feature can do.
+    case appLaunched(sessions: CountBucket, agentsResumed: CountBucket, first: Bool,
+                     previousExit: PreviousExit, notifications: NotificationState)
 
     /// Quit, with how long it ran. Answers whether Wortel is opened for a task
     /// or left up all day, which is a different product either way.
@@ -84,8 +93,27 @@ enum TelemetryEvent: Equatable {
 
     /// A background session asked for attention. The typed kind is the feature
     /// the product's positioning rests on, so it is worth knowing which signals
-    /// actually fire in the wild.
-    case agentAttention(kind: AttentionCause)
+    /// actually fire in the wild, and from which agent.
+    case agentAttention(kind: AttentionCause, agent: AgentName)
+
+    /// An agent was started in a session, by the person (a resume Wortel typed
+    /// itself is `agentsResumed` on launch, not this). Which agent, from the
+    /// fixed list the shell integration detects, and nothing about what it was
+    /// asked or where: it says which integrations deserve the work first.
+    case agentStarted(kind: AgentName)
+
+    /// The process that keeps every shell alive went away underneath us, with
+    /// roughly how many sessions it took. After a crash, the one failure that
+    /// costs people the most work, and until now visible only to the person it
+    /// happened to.
+    case keeperLost(sessions: CountBucket)
+
+    /// A worktree session closed into the archive (closing one archives it),
+    /// and one brought back. Whether the archive is a place people return to
+    /// or a polite bin is the ratio of the two. No properties: only worktree
+    /// sessions are archived, and which one is nobody's business.
+    case sessionArchived
+    case sessionUnarchived
 
     /// Someone used the jump-to-next-waiting shortcut. Without this, attention
     /// looks used simply because it fires; this says whether anyone acts on it.
@@ -99,6 +127,17 @@ enum TelemetryEvent: Equatable {
 
     /// A `wortel` command was served over the socket.
     case commandRun(verb: CommandVerb)
+
+    /// The run before this launch crashed and macOS kept a report of it. What
+    /// is sent is what makes a crash fixable and nothing that describes the
+    /// machine or the work on it: the kind of fault, which version and chip it
+    /// was, and where in *Wortel's own code* it happened, as a number. That
+    /// number means nothing without this build's dSYM, which never leaves the
+    /// release machine (`scripts/symbolicate.sh`). Function names, file names,
+    /// paths, other programs' frames and the report itself stay on the Mac.
+    /// See `CrashReport` for the reduction.
+    case appCrashed(signal: CrashSignal, exception: CrashException, site: CodeOffset?,
+                    signature: CrashSignature?, version: CalVer?, arch: CrashArch)
 
     /// The last event this install will ever send: reporting was turned off.
     /// Sent, rather than silently stopping, because the opt-out rate is the one
@@ -125,6 +164,11 @@ enum TelemetryEvent: Equatable {
         case .processQuit: return "process_quit"
         case .agentAttention: return "agent_attention"
         case .agentJumpUsed: return "agent_jump_used"
+        case .agentStarted: return "agent_started"
+        case .keeperLost: return "keeper_lost"
+        case .sessionArchived: return "session_archived"
+        case .sessionUnarchived: return "session_unarchived"
+        case .appCrashed: return "app_crashed"
         case .globalHotkeyUsed: return "global_hotkey_used"
         case .commandRun: return "command_run"
         case .reportingDisabled: return "reporting_disabled"
@@ -135,8 +179,10 @@ enum TelemetryEvent: Equatable {
     /// are added once by the client and are not per-event.
     var properties: [String: String] {
         switch self {
-        case let .appLaunched(sessions, agentsResumed):
-            return ["sessions": sessions.rawValue, "agents_resumed": agentsResumed.rawValue]
+        case let .appLaunched(sessions, agentsResumed, first, previousExit, notifications):
+            return ["sessions": sessions.rawValue, "agents_resumed": agentsResumed.rawValue,
+                    "first": first ? "true" : "false", "previous_exit": previousExit.rawValue,
+                    "notifications": notifications.rawValue]
         case let .appQuit(uptime):
             return ["uptime": uptime.rawValue]
         case let .sessionCreated(via):
@@ -157,9 +203,17 @@ enum TelemetryEvent: Equatable {
             return ["jobs": jobs.rawValue, "orphans": orphans.rawValue]
         case let .processQuit(orphan):
             return ["orphan": orphan ? "true" : "false"]
-        case let .agentAttention(kind):
+        case let .agentAttention(kind, agent):
+            return ["kind": kind.rawValue, "agent": agent.rawValue]
+        case let .agentStarted(kind):
             return ["kind": kind.rawValue]
-        case .agentJumpUsed, .globalHotkeyUsed, .reportingDisabled:
+        case let .keeperLost(sessions):
+            return ["sessions": sessions.rawValue]
+        case let .appCrashed(signal, exception, site, signature, version, arch):
+            return ["signal": signal.rawValue, "exception": exception.rawValue,
+                    "site": site?.rawValue ?? "none", "signature": signature?.rawValue ?? "none",
+                    "crashed_version": version?.rawValue ?? "unknown", "crashed_arch": arch.rawValue]
+        case .agentJumpUsed, .globalHotkeyUsed, .reportingDisabled, .sessionArchived, .sessionUnarchived:
             return [:]
         case let .commandRun(verb):
             return ["verb": verb.rawValue]
@@ -304,6 +358,143 @@ enum AttentionCause: String {
     case failed
     case turnDone = "turn_done"
     case finished
+}
+
+/// How the run before this launch ended. `none` is the first launch, when
+/// there was no run before. `unclean` is anything that ended without the app
+/// quitting: a force quit, `kill -9`, a power cut, or a crash nobody reported.
+enum PreviousExit: String, CaseIterable {
+    case none
+    case clean
+    case unclean
+    case crashed
+}
+
+// ---- crashes: every value below is built from numbers or a closed set -----
+
+/// The signal a crash ended in. Anything else is `other`.
+enum CrashSignal: String, CaseIterable {
+    case segv, abrt, bus, ill, trap, fpe, kill, other
+
+    init(reported: String?) {
+        switch reported {
+        case "SIGSEGV": self = .segv
+        case "SIGABRT": self = .abrt
+        case "SIGBUS": self = .bus
+        case "SIGILL": self = .ill
+        case "SIGTRAP": self = .trap
+        case "SIGFPE": self = .fpe
+        case "SIGKILL": self = .kill
+        default: self = .other
+        }
+    }
+}
+
+/// The Mach exception type. `breakpoint` is what a Swift runtime trap (a
+/// force unwrap of nil, an index out of range) arrives as.
+enum CrashException: String, CaseIterable {
+    case badAccess = "bad_access"
+    case crash
+    case breakpoint
+    case badInstruction = "bad_instr"
+    case arithmetic
+    case guardViolation = "guard"
+    case resource
+    case other
+
+    init(reported: String?) {
+        switch reported {
+        case "EXC_BAD_ACCESS": self = .badAccess
+        case "EXC_CRASH": self = .crash
+        case "EXC_BREAKPOINT": self = .breakpoint
+        case "EXC_BAD_INSTRUCTION": self = .badInstruction
+        case "EXC_ARITHMETIC": self = .arithmetic
+        case "EXC_GUARD": self = .guardViolation
+        case "EXC_RESOURCE": self = .resource
+        default: self = .other
+        }
+    }
+}
+
+/// Which slice of the universal binary crashed, so the right half of the
+/// dSYM is used to read the offset.
+enum CrashArch: String, CaseIterable {
+    case arm64, x86_64, other
+
+    init(cpuType: String?) {
+        switch cpuType {
+        case "ARM-64": self = .arm64
+        case "X86-64": self = .x86_64
+        default: self = .other
+        }
+    }
+}
+
+/// An offset into Wortel's own binary, in hex. A number, and only ever made
+/// from one: it says where in *our* code, and only to someone holding this
+/// build's dSYM. Ten hex digits at most, which is a terabyte of code.
+struct CodeOffset: Equatable {
+    let value: UInt64
+    init?(_ value: UInt64) {
+        guard value <= 0xFF_FFFF_FFFF else { return nil }
+        self.value = value
+    }
+    var rawValue: String { String(value, radix: 16) }
+}
+
+/// The same crash, wherever it happens: a hash of the top in-binary offsets,
+/// so PostHog can group by it. Twelve hex characters of SHA-256, made from
+/// numbers only.
+struct CrashSignature: Equatable {
+    let rawValue: String
+
+    /// The first five offsets, top of the stack first. nil without any.
+    init?(offsets: [CodeOffset]) {
+        let top = offsets.prefix(5)
+        guard !top.isEmpty else { return nil }
+        let text = top.map(\.rawValue).joined(separator: ",")
+        rawValue = SHA256.hash(data: Data(text.utf8)).prefix(6)
+            .map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// A Wortel version (`2026.46.4`), rebuilt from three integers rather than
+/// passed through, so a report whose version field holds anything else
+/// produces nothing rather than that text.
+struct CalVer: Equatable {
+    let year: Int, week: Int, release: Int
+
+    init?(_ text: String?) {
+        guard let parts = text?.split(separator: ".", omittingEmptySubsequences: false), parts.count == 3,
+              let year = Int(parts[0]), let week = Int(parts[1]), let release = Int(parts[2]),
+              (2000...2999).contains(year), (1...53).contains(week), (1...99).contains(release)
+        else { return nil }
+        (self.year, self.week, self.release) = (year, week, release)
+    }
+
+    var rawValue: String { "\(year).\(week).\(release)" }
+}
+
+/// Mirrors `Permissions.State` for notifications.
+enum NotificationState: String, CaseIterable {
+    case granted
+    case denied
+    case notAsked = "not_asked"
+    case unknown
+}
+
+/// The agents the shell integration recognises, and nothing else: the list in
+/// `Resources/ghostty/shell-integration/*` is already closed, so this mirrors
+/// it. `noAgent` is attention raised by a plain command finishing.
+///
+/// Built from the detected command name in `TelemetryBridging`, which is the
+/// one place a string turns into one of these. Anything unrecognised becomes
+/// `other`, never the name.
+enum AgentName: String, CaseIterable {
+    case claude, codex, pi, gemini, opencode, goose, aider, amp, crush, cline, ollama, llm
+    case cursor
+    case other
+    case noAgent = "none"
 }
 
 /// The `wortel` command's verbs. Mirrors `WortelCommand` rather than reading

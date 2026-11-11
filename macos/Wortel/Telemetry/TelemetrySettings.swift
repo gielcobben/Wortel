@@ -120,6 +120,13 @@ enum TelemetrySettings {
         return fresh
     }
 
+    /// Whether an id has been made yet, without making one. False on the first
+    /// reporting launch of an install, which is the `first` on `app_launched`;
+    /// read before that event is captured, since sending it is what makes one.
+    static var hasInstallID: Bool {
+        UserDefaults.standard.string(forKey: installIDKey) != nil
+    }
+
     // ---- the first-run notice ---------------------------------------------
 
     /// Whether the one-time notice still has to be shown. False forever after.

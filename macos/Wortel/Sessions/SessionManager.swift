@@ -769,6 +769,10 @@ final class SessionManager {
         // still needs the watcher, or nothing would ever record a running agent and
         // the *next* launch would have nothing to resume.
         startAgentActivityWatch()
+        // Every marker read until restore is done belongs to an agent that was
+        // already running (it survived the last quit), so none is "started".
+        // Set on every way out, the first launch's early return included.
+        defer { agentMarkersBaselined = true }
         var persisted = store.load()
         archived = ArchiveStore.load()
         // In both files: archived, then the app ended before sessions.json
@@ -954,6 +958,9 @@ final class SessionManager {
     /// badges need refreshing. Fail-safe: if the watch can't be set up the badges
     /// simply never appear.
     private var agentWatchSource: DispatchSourceFileSystemObject?
+    /// False until `restore()` has matched the markers left by agents that
+    /// survived the last quit, so those are not reported as started.
+    private var agentMarkersBaselined = false
 
     private func startAgentActivityWatch() {
         guard agentWatchSource == nil else { return }
@@ -1000,8 +1007,18 @@ final class SessionManager {
                 changed = true
                 session.liveConversationID = nil
             }
+            // A run Wortel started itself (a resume it owed and typed) is not
+            // one the person started, and the markers already live when this
+            // first runs are agents that survived the last quit, counted as
+            // `agents_resumed` on launch. Everything else is someone starting
+            // an agent.
+            var isOwedResume = false
             if let marker, let owed = session.owedResume, AgentConversation.confirms(marker, owed) {
                 session.owedResume = nil
+                isOwedResume = true
+            }
+            if let marker, isNewRun, agentMarkersBaselined, !isOwedResume {
+                Telemetry.capture(.agentStarted(kind: AgentName(command: marker.agent)))
             }
             if marker != nil, isNewRun { noteConversation(session) }
             // An agent launching is the moment to start listening for its first
@@ -1388,6 +1405,9 @@ final class SessionManager {
             terminals restarted, \(loss.resumed, privacy: .public) agents resumed, \
             \(survived, privacy: .public) survived; new keeper: \(keeperBack, privacy: .public)
             """)
+        // Every lost keeper, including one that took nothing with it: how
+        // often this happens at all is the number, and the bucket says how bad.
+        Telemetry.capture(.keeperLost(sessions: CountBucket(loss.restarted)))
         guard loss.restarted + survived + loss.resumed > 0 else { return }
         onKeeperLost?(KeeperLoss(at: loss.at, restarted: loss.restarted, resumed: loss.resumed,
                                  survived: survived, keeperBack: keeperBack))
@@ -2766,6 +2786,7 @@ final class SessionManager {
         archived.insert(item, at: 0)
         ArchiveStore.save(archived)
         close(session)
+        Telemetry.capture(.sessionArchived)
         // Both files at once: a crash between them would leave it live and
         // archived, or neither.
         saveNow()
@@ -2865,6 +2886,7 @@ final class SessionManager {
         if let folder = session.folderPath { collapsedFolders.remove(folder) }
         selectedID = session.id
         saveNow()
+        Telemetry.capture(.sessionUnarchived)
         return session
     }
 
@@ -3811,7 +3833,8 @@ final class SessionManager {
         // rather than signals the detector saw. `title` and `body` are the
         // agent's own words about the user's own work and go no further than
         // this line: only the kind is reported.
-        Telemetry.capture(.agentAttention(kind: AttentionCause(kind)))
+        Telemetry.capture(.agentAttention(kind: AttentionCause(kind),
+                                          agent: AgentName(command: session.runningAgent)))
     }
 
     /// Start the "caught up" clock for a session: if it stays actively-viewed

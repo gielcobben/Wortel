@@ -42,6 +42,8 @@ final class TelemetryTests: XCTestCase {
             "sessions", "agents_resumed", "uptime", "via", "automatic",
             "pane", "mode", "kind", "verb", "jobs", "orphans", "orphan",
             "where", "area", "result", "message",
+            "first", "previous_exit", "notifications", "agent",
+            "signal", "exception", "site", "signature", "crashed_version", "crashed_arch",
         ]
         for event in Self.everyEvent {
             for key in event.properties.keys {
@@ -70,7 +72,9 @@ final class TelemetryTests: XCTestCase {
     /// anonymity flag, and the fact that nothing else rides along.
     func testEncodedBatchIsAnonymousAndCarriesOnlyKnownKeys() throws {
         let payloads = [TelemetryClient.Payload(event: .appLaunched(sessions: .twoToThree,
-                                                                    agentsResumed: .one),
+                                                                    agentsResumed: .one, first: false,
+                                                                    previousExit: .clean,
+                                                                    notifications: .granted),
                                                 at: Date(timeIntervalSince1970: 1_760_000_000))]
         let data = try TelemetryClient.encode(payloads, distinctID: "test-install")
         let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -81,6 +85,8 @@ final class TelemetryTests: XCTestCase {
         // Without this, PostHog builds a person profile and these events stop
         // being anonymous. Nothing visible would change.
         XCTAssertEqual(properties["$process_person_profile"] as? Bool, false)
+        // Without this, PostHog stores a city and postal code for the sender.
+        XCTAssertEqual(properties["$geoip_disable"] as? Bool, true)
 
         XCTAssertEqual(event["event"] as? String, "app_launched")
         XCTAssertEqual(properties["distinct_id"] as? String, "test-install")
@@ -89,7 +95,8 @@ final class TelemetryTests: XCTestCase {
         // The full set, spelled out: anything new appearing on the wire has to
         // be added here deliberately.
         let expected: Set<String> = [
-            "sessions", "agents_resumed", "distinct_id", "$process_person_profile",
+            "sessions", "agents_resumed", "first", "previous_exit", "notifications",
+            "distinct_id", "$process_person_profile", "$geoip_disable",
             "app_version", "macos", "arch", "platform",
         ]
         XCTAssertEqual(Set(properties.keys), expected)
@@ -200,6 +207,156 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(TabArea(.bottom).rawValue, "bottom")
     }
 
+    /// Every agent the shell integration detects maps to its own case, and
+    /// anything else, however it is spelled, to `other`: the name itself must
+    /// never be what comes out.
+    func testAgentNames() {
+        let detected = ["claude", "pi", "aider", "codex", "cursor-agent", "gemini", "opencode",
+                        "goose", "cline", "ollama", "llm", "crush", "amp"]
+        for command in detected {
+            XCTAssertNotEqual(AgentName(command: command), .other, "\(command) is detected but unmapped")
+        }
+        XCTAssertEqual(AgentName(command: "cursor-agent"), .cursor)
+        XCTAssertEqual(AgentName(command: "my-secret-tool"), .other)
+        XCTAssertEqual(AgentName(command: "Claude"), .other)
+        XCTAssertEqual(AgentName(command: "/usr/local/bin/claude"), .other)
+        XCTAssertEqual(AgentName(command: ""), .other)
+        XCTAssertEqual(AgentName(command: nil), .noAgent)
+        XCTAssertEqual(AgentName.noAgent.rawValue, "none")
+    }
+
+    // MARK: - Crashes
+
+    /// The shape of a real `.ips` (captured from a deliberate crash on macOS
+    /// 27, trimmed to the fields that matter plus the ones that must never
+    /// come out). Frames 0 and 1 are one inlined frame at the same offset;
+    /// frame 3 is in dyld, not us.
+    static let crashReport = """
+        {"app_name":"Wortel","timestamp":"2026-11-10 19:44:31.00 -0500","app_version":"2026.46.5",\
+        "slice_uuid":"0ec31609-a943-36fc-8520-220d311377a8","build_version":"2026.46.5","bug_type":"309",\
+        "os_version":"macOS 27.0.1 (26A434)","name":"Wortel"}
+        {"procPath":"/Applications/Wortel.app/Contents/MacOS/Wortel","cpuType":"ARM-64",\
+        "codeSigningID":"com.gielcobben.Wortel","modelCode":"Mac16,1","faultingThread":0,
+        "exception":{"codes":"0x1, 0x102900698","type":"EXC_BREAKPOINT","signal":"SIGTRAP"},
+        "threads":[{"triggered":true,"id":1,"queue":"com.apple.main-thread","frames":[
+          {"imageOffset":1688,"sourceFile":"/Users/someone/secret-repo/Session.swift","symbol":"Swift runtime failure","imageIndex":0},
+          {"imageOffset":1688,"sourceLine":2,"sourceFile":"Session.swift","symbol":"deep(_:)","imageIndex":0},
+          {"imageOffset":1652,"sourceLine":4,"sourceFile":"main.swift","symbol":"main","imageIndex":0},
+          {"imageOffset":204416,"symbol":"start","imageIndex":1}]},
+          {"id":2,"name":"my-branch-name","frames":[{"imageOffset":999,"imageIndex":0}]}],
+        "usedImages":[{"name":"Wortel","uuid":"0EC31609-A943-36FC-8520-220D311377A8","base":4337958912,"arch":"arm64"},
+          {"name":"dyld","uuid":"d341ddcb-7969-3a9c-8e03-0cf4751398a9","base":6527885312,"arch":"arm64e"}]}
+        """
+
+    func testCrashReportReducesToNumbersAndClosedSets() throws {
+        let summary = try XCTUnwrap(CrashReport.reduce(Self.crashReport, executable: "Wortel",
+                                                       bundleID: "com.gielcobben.Wortel"))
+        XCTAssertEqual(summary.signal, .trap)
+        XCTAssertEqual(summary.exception, .breakpoint)
+        XCTAssertEqual(summary.arch, .arm64)
+        XCTAssertEqual(summary.version.rawValue, "2026.46.5")
+        // Faulting thread only, ours only, the inlined repeat folded, dyld gone.
+        XCTAssertEqual(summary.offsets.map(\.value), [1688, 1652])
+
+        let properties = summary.event.properties
+        XCTAssertEqual(properties["site"], "698")
+        XCTAssertEqual(properties["signature"]?.count, 12)
+        // Nothing from the report's text reaches the event.
+        let sent = properties.values.joined(separator: " ")
+        for secret in ["secret", "Session", "deep", "main", "someone", "branch", "Mac16", "Applications"] {
+            XCTAssertFalse(sent.contains(secret), "\(secret) leaked into app_crashed: \(sent)")
+        }
+    }
+
+    func testCrashReportOfAnotherAppIsIgnored() {
+        XCTAssertNil(CrashReport.reduce(Self.crashReport, executable: "Wortel", bundleID: "com.example.Other"))
+        XCTAssertNil(CrashReport.reduce(Self.crashReport, executable: "wortel-keeper", bundleID: nil))
+        XCTAssertNil(CrashReport.reduce("not a report", executable: "Wortel", bundleID: nil))
+    }
+
+    /// Same offsets, same signature; different offsets, different one.
+    func testCrashSignatureIsStable() {
+        let a = CrashSignature(offsets: [CodeOffset(1688)!, CodeOffset(1652)!])
+        XCTAssertEqual(a, CrashSignature(offsets: [CodeOffset(1688)!, CodeOffset(1652)!]))
+        XCTAssertNotEqual(a, CrashSignature(offsets: [CodeOffset(1652)!, CodeOffset(1688)!]))
+        XCTAssertNil(CrashSignature(offsets: []))
+    }
+
+    func testCalVerOnlyFromIntegers() {
+        XCTAssertEqual(CalVer("2026.46.4")?.rawValue, "2026.46.4")
+        XCTAssertEqual(CalVer("2026.046.04")?.rawValue, "2026.46.4")
+        XCTAssertNil(CalVer("2026.46"))
+        XCTAssertNil(CalVer("2026.46.4-beta"))
+        XCTAssertNil(CalVer("/Users/x/2026.46.4"))
+        XCTAssertNil(CalVer("0.0.0"))
+        XCTAssertNil(CalVer(nil))
+        XCTAssertNil(CodeOffset(0x100_0000_0000))
+    }
+
+    /// A report on disk is matched to the unclean run by date: one written
+    /// before that run started is some older crash, already reported.
+    func testLatestCrashReportIsAfterTheRunStarted() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wortel-ips-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("Wortel-2026-11-10-194431.ips")
+        try Self.crashReport.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2_000)],
+                                              ofItemAtPath: file.path)
+        XCTAssertNotNil(CrashReport.latest(after: Date(timeIntervalSince1970: 1_000), in: dir,
+                                           executable: "Wortel", bundleID: "com.gielcobben.Wortel"))
+        XCTAssertNil(CrashReport.latest(after: Date(timeIntervalSince1970: 3_000), in: dir,
+                                        executable: "Wortel", bundleID: "com.gielcobben.Wortel"))
+    }
+
+    /// Written late, after the next run had already started: the crash inside
+    /// is the older run's, which was counted as unclean, so it isn't sent again.
+    func testLateCrashReportIsNotBlamedOnTheNextRun() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wortel-ips-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("Wortel-2026-11-10-194431.ips")
+        try Self.crashReport.write(to: file, atomically: true, encoding: .utf8)
+        // Crashed 2026-11-10 19:44:31 -0500.
+        let crashed = try XCTUnwrap(CrashReport.reduce(Self.crashReport, executable: "Wortel", bundleID: nil)?.crashedAt)
+        XCTAssertEqual(crashed.timeIntervalSince1970, 1_794_357_871, accuracy: 1)
+        XCTAssertNil(CrashReport.latest(after: crashed.addingTimeInterval(60), in: dir,
+                                        executable: "Wortel", bundleID: "com.gielcobben.Wortel"))
+        XCTAssertNotNil(CrashReport.latest(after: crashed.addingTimeInterval(-60), in: dir,
+                                           executable: "Wortel", bundleID: "com.gielcobben.Wortel"))
+    }
+
+    func testCrashOfABuildWithoutAReleaseVersionIsIgnored() {
+        let dev = Self.crashReport.replacingOccurrences(of: "\"app_version\":\"2026.46.5\"",
+                                                        with: "\"app_version\":\"0.0.0\"")
+        XCTAssertNil(CrashReport.reduce(dev, executable: "Wortel", bundleID: nil))
+    }
+
+    // MARK: - How the last run ended
+
+    func testPreviousExit() {
+        XCTAssertEqual(ExitMarker.previousExit(firstLaunch: true, markerFound: true, crashReported: true), .none)
+        XCTAssertEqual(ExitMarker.previousExit(firstLaunch: false, markerFound: false, crashReported: false), .clean)
+        // A report with no marker is a report about some older run.
+        XCTAssertEqual(ExitMarker.previousExit(firstLaunch: false, markerFound: false, crashReported: true), .clean)
+        XCTAssertEqual(ExitMarker.previousExit(firstLaunch: false, markerFound: true, crashReported: false), .unclean)
+        XCTAssertEqual(ExitMarker.previousExit(firstLaunch: false, markerFound: true, crashReported: true), .crashed)
+    }
+
+    /// Armed, a second arm sees the first run's marker; disarmed, it doesn't.
+    func testExitMarkerFile() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wortel-exit-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: url) }
+        ExitMarker.arm(at: url)
+        XCTAssertFalse(ExitMarker.lastRunEndedUncleanly)
+        ExitMarker.arm(at: url)          // relaunch without a quit
+        XCTAssertTrue(ExitMarker.lastRunEndedUncleanly)
+        ExitMarker.disarm(at: url)
+        ExitMarker.arm(at: url)          // relaunch after a quit
+        XCTAssertFalse(ExitMarker.lastRunEndedUncleanly)
+    }
+
     // MARK: -
 
     /// One of every case, with every closed-set value that case can take. This
@@ -214,7 +371,12 @@ final class TelemetryTests: XCTestCase {
         var events: [TelemetryEvent] = []
 
         for count in CountBucket.allCases {
-            events.append(.appLaunched(sessions: count, agentsResumed: count))
+            for exit in PreviousExit.allCases {
+                for notifications in NotificationState.allCases {
+                    events.append(.appLaunched(sessions: count, agentsResumed: count, first: exit == .none,
+                                               previousExit: exit, notifications: notifications))
+                }
+            }
         }
         for uptime in DurationBucket.allCases {
             events.append(.appQuit(uptime: uptime))
@@ -259,8 +421,30 @@ final class TelemetryTests: XCTestCase {
         events.append(.processQuit(orphan: false))
         let causes: [AttentionCause] = [.needsInput, .failed, .turnDone, .finished]
         for cause in causes {
-            events.append(.agentAttention(kind: cause))
+            for agent in AgentName.allCases {
+                events.append(.agentAttention(kind: cause, agent: agent))
+            }
         }
+        for agent in AgentName.allCases {
+            events.append(.agentStarted(kind: agent))
+        }
+        for count in CountBucket.allCases {
+            events.append(.keeperLost(sessions: count))
+        }
+        events.append(.sessionArchived)
+        events.append(.sessionUnarchived)
+        let offsets = [CodeOffset(0x6_98)!, CodeOffset(0xFF_FFFF_FFFF)!, CodeOffset(0)!]
+        for signal in CrashSignal.allCases {
+            for exception in CrashException.allCases {
+                for arch in CrashArch.allCases {
+                    events.append(.appCrashed(signal: signal, exception: exception, site: offsets[1],
+                                              signature: CrashSignature(offsets: offsets),
+                                              version: CalVer("2026.46.14"), arch: arch))
+                }
+            }
+        }
+        events.append(.appCrashed(signal: .other, exception: .other, site: nil, signature: nil,
+                                  version: nil, arch: .other))
         let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .list, .read, .send,
                                     .wait, .version]
         for verb in verbs {

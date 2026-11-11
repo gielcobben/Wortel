@@ -177,6 +177,10 @@ actor TelemetryClient {
             // accumulate into a record of one install's behaviour. Also about
             // four times cheaper, which is a happy coincidence and not why.
             object["$process_person_profile"] = false
+            // No location. PostHog otherwise looks the sender's address up and
+            // stores a city and postal code with every event, which the privacy
+            // page never promised the app would send and nothing here reads.
+            object["$geoip_disable"] = true
             return [
                 "event": payload.event.name,
                 "properties": object,

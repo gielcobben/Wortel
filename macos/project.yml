@@ -565,6 +565,12 @@ targets:
       - path: Wortel/Telemetry/TelemetrySettings.swift
       - path: Wortel/Telemetry/TelemetryClient.swift
       - path: Wortel/Telemetry/TelemetryBridging.swift
+      # How the last run ended, from a marker file. Pure decision, tested;
+      # the failure is a crash rate that reads as zero.
+      - path: Wortel/Telemetry/ExitMarker.swift
+      # A crash report reduced to closed sets and offsets. The test is the
+      # proof that nothing from the report but numbers comes out.
+      - path: Wortel/Telemetry/CrashReport.swift
       # Process survival. The keeper is the one part of Wortel that has to
       # outlive the app, so it is tested for real — a server on a temp socket,
       # a client over a socket pair, actual ptys with actual shells on them.

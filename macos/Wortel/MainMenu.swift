@@ -663,6 +663,8 @@ enum MainMenu {
         let helpMenu = NSMenu(title: "Help")
         helpItem.submenu = helpMenu
         helpMenu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "/")
+        helpMenu.addItem(.separator())
+        helpMenu.addItem(withTitle: "Send Feedback\u{2026}", action: #selector(AppDelegate.sendFeedback(_:)), keyEquivalent: "")
         NSApp.helpMenu = helpMenu
 
         // Which window is key is the only thing that moves ⌘1…⌘3. Read the key

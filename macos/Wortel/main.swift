@@ -13,6 +13,11 @@ PtyHost.readEnableFlag()
 _ = DataDirectory.url
 InstanceLock.acquireOrHandOff()
 
+// How the last run ended, read and re-armed now that this copy is the one that
+// stays: a crash during launch is exactly the one worth seeing. One stat and
+// one empty file, nothing on the network. See ExitMarker.
+if ExitMarker.applies { ExitMarker.arm() }
+
 // Same reason, same order. The scrub drops any variable whose value reaches
 // into the temp directory, so a DO_NOT_TRACK read afterwards is one that can
 // silently never fire, and an opt-out that fails open is the worst kind there

@@ -441,8 +441,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // window is up: the client is not built, no preference is read and no
         // request is made. Same one-runloop-turn trick as warmRemainingSurfaces.
         DispatchQueue.main.async {
-            Telemetry.capture(.appLaunched(sessions: CountBucket(restored),
-                                           agentsResumed: CountBucket(resumed)))
+            // Read now, before the capture below: sending is what makes the id.
+            let first = TelemetrySettings.isEnabled && !TelemetrySettings.hasInstallID
+            // Only after a run that never quit, and only when it would be
+            // reported: otherwise nothing reads the crash reports at all.
+            let uncleanSince = TelemetrySettings.isEnabled ? ExitMarker.uncleanRunStartedAt : nil
+            // Asked of macOS directly rather than read off `Permissions`, which
+            // may not have heard back yet this early and would say "unknown"
+            // on every launch. The answer arrives off the main thread, which is
+            // also where the crash report, a few hundred KB of JSON, is read.
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                let crash = uncleanSince.flatMap { CrashReport.latest(after: $0) }
+                let previousExit = ExitMarker.previousExit(
+                    firstLaunch: first, markerFound: ExitMarker.lastRunEndedUncleanly,
+                    crashReported: crash != nil)
+                if let crash { Telemetry.capture(crash.event) }
+                let notifications: NotificationState
+                switch settings.authorizationStatus {
+                case .notDetermined: notifications = .notAsked
+                case .denied: notifications = .denied
+                case .authorized, .provisional, .ephemeral:
+                    // The same rule as `Permissions.refresh`: allowed with
+                    // every way of showing one turned off is not allowed.
+                    notifications = settings.alertSetting == .enabled
+                        || settings.notificationCenterSetting == .enabled ? .granted : .denied
+                @unknown default: notifications = .unknown
+                }
+                Telemetry.capture(.appLaunched(sessions: CountBucket(restored),
+                                               agentsResumed: CountBucket(resumed),
+                                               first: first, previousExit: previousExit,
+                                               notifications: notifications))
+            }
             // Hangs off the ⓘ in the sidebar, which is also where it lives
             // afterwards: shown once, reachable forever.
             TelemetryNotice.shared.presentFirstRunIfNeeded()
@@ -734,6 +763,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         cli?.stop()
         // Nothing we started outlives us: a fetch hung on a dead network would.
         GitService.terminateAll()
+        // Last: this run quit properly. See ExitMarker.
+        if ExitMarker.applies { ExitMarker.disarm() }
     }
 
     // MARK: - A lost keeper
@@ -1176,6 +1207,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// is kept.
     @objc func showKeyboardShortcuts(_ sender: Any?) {
         NSWorkspace.shared.open(URL(string: "https://wortel.sh/docs#shortcuts")!)
+    }
+
+    /// A new mail to us, with the three facts every report needs already in
+    /// it, where the person can read them before anything is sent. Mail rather
+    /// than a form or a PostHog survey: it goes nowhere until they press Send,
+    /// it says exactly what it carries, and a reply is one click away.
+    @objc func sendFeedback(_ sender: Any?) {
+        let device = TelemetryClient.deviceProperties()
+        let chip = device["arch"] == "arm64" ? "Apple Silicon" : "Intel"
+        var mail = URLComponents()
+        mail.scheme = "mailto"
+        mail.path = "hello@wortel.sh"
+        mail.queryItems = [
+            URLQueryItem(name: "subject", value: "Wortel feedback"),
+            URLQueryItem(name: "body", value: """
+
+
+
+                Wortel \(device["app_version"] ?? "unknown"), macOS \(device["macos"] ?? "unknown"), \(chip)
+                """),
+        ]
+        if let url = mail.url { NSWorkspace.shared.open(url) }
     }
 
     @objc func newBottomTerminal(_ sender: Any?) {

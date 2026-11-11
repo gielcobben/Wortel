@@ -7,7 +7,7 @@ design record.
 
 ## The shape of it
 
-Four files in `Wortel/Telemetry/`:
+Seven files in `Wortel/Telemetry/`:
 
 | File | What it is |
 | --- | --- |
@@ -16,6 +16,8 @@ Four files in `Wortel/Telemetry/`:
 | `TelemetrySettings.swift` | Whether it reports at all, and the install id. |
 | `TelemetryClient.swift` | The actor that batches and sends. |
 | `TelemetryNotice.swift` | The disclosure popover, and the switch in it. |
+| `ExitMarker.swift` | How the last run ended, from one empty file. |
+| `CrashReport.swift` | A macOS crash report reduced to closed sets and offsets. |
 
 Call sites are one line and never conditional:
 
@@ -75,6 +77,42 @@ published build reports.
 for the same reason `PtyHost.readEnableFlag()` is: the scrub can drop a variable
 whose value points into the temp directory, and a flag read afterwards is one
 that silently never fires. An opt-out that fails open is the worst kind.
+
+## How a run ended
+
+`app_launched` carries `previous_exit`: `none` (first launch), `clean`,
+`unclean` or `crashed`. The mechanism is a file named `running` in the data
+folder, created by `main.swift` right after `InstanceLock` and removed in
+`applicationWillTerminate`. Finding it at launch means the last run never
+quit. Nothing runs while the app is dying: no signal handler, no reporter.
+
+It is armed before the first frame on purpose, which is the one exception to
+the launch rule below: a crash during launch is the one most worth seeing, and
+the cost is a stat and an empty write, with no network and no client.
+
+`crashed` instead of `unclean` means macOS kept a crash report for that run:
+the newest `Wortel-*.ips` in `~/Library/Logs/DiagnosticReports` written after
+the marker's date, with our bundle id. It is reduced on the launch after, off
+the main thread, to `app_crashed`: signal and exception type (closed sets),
+the version (rebuilt from integers), the chip, `site` (the hex offset of the
+topmost frame inside Wortel's own binary on the faulting thread) and
+`signature` (12 hex chars of SHA-256 over the top five such offsets, for
+grouping). Symbols, file names, paths, thread names and system frames are
+never read into anything sent; `TelemetryTests` feeds it a report full of them.
+
+To read a site, `release.sh --publish` archives each release's dSYMs in
+`releases/dsyms/<version>/` (git-ignored, never uploaded), and:
+
+```sh
+./scripts/symbolicate.sh 2026.47.1 1a2b3c          # arm64 by default
+```
+
+A crash of the keeper is not an app crash; it shows as `keeper_lost`.
+
+Archives are worktree sessions only, so `session_archived` and
+`session_unarchived` carry nothing. `agent_started` is a run the person
+started: the agents alive at launch and the resumes Wortel types itself are
+`agents_resumed` instead.
 
 ## Launch cost
 

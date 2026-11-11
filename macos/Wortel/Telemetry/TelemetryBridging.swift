@@ -87,3 +87,29 @@ extension CommandVerb {
         }
     }
 }
+
+extension AgentName {
+    /// The one place a command name becomes reportable, and it can only come
+    /// out as a case of the list: an agent the integration starts detecting
+    /// later reports as `other` until someone adds it here on purpose. nil is
+    /// a session with no agent running.
+    init(command: String?) {
+        guard let command else { self = .noAgent; return }
+        switch command {
+        case "claude": self = .claude
+        case "codex": self = .codex
+        case "pi": self = .pi
+        case "gemini": self = .gemini
+        case "opencode": self = .opencode
+        case "goose": self = .goose
+        case "aider": self = .aider
+        case "amp": self = .amp
+        case "crush": self = .crush
+        case "cline": self = .cline
+        case "ollama": self = .ollama
+        case "llm": self = .llm
+        case "cursor-agent": self = .cursor
+        default: self = .other
+        }
+    }
+}

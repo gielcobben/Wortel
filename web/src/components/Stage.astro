@@ -1,0 +1,36 @@
+---
+// A stage: a part of the foggy lake, a window (or whatever the slot holds)
+// standing on it, and, when the scene has chapters, their tabs across the top
+// and a caption for the current one underneath. scripts/film.ts runs it.
+export interface Chapter { label: string; caption: string; keys?: string; mono?: boolean }
+interface Props {
+  /** The scene's name: scripts find the stage by [data-film="name"]. */
+  film?: string;
+  chapters?: Chapter[];
+  /** Which part of the photo: a background-position, and how far in. */
+  at?: string;
+  zoom?: string;
+  /** The window's size, in the app's own points. */
+  w?: number;
+  h?: number;
+  class?: string;
+}
+const { film, chapters = [], at = '50% 62%', zoom = 'cover', w = 960, h = 600, class: cls } = Astro.props;
+---
+<div class:list={['stage', cls]} data-film={film} style={`--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
+  {chapters.length > 0 && (
+    <div class="chapters glass" role="tablist" aria-label="Chapters">
+      {chapters.map((c, i) => (
+        <button type="button" role="tab" data-chapter={i} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1} class:list={{ mono: c.mono }}>{c.label}</button>
+      ))}
+    </div>
+  )}
+  <div class="set"><slot /></div>
+  {chapters.length > 0 && (
+    <div class="subs" aria-live="polite">
+      {chapters.map((c, i) => (
+        <p class:list={['glass', { on: i === 0 }]} data-caption={i}>{c.keys && <kbd>{c.keys}</kbd>}{c.caption}</p>
+      ))}
+    </div>
+  )}
+</div>

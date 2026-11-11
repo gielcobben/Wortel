@@ -1,6 +1,7 @@
 ---
-// The landing: what Wortel is, the download, and the app itself, where you
-// type a request and an agent does the job (scripts/hero.ts).
+// The landing: what Wortel is, the download, and the app on the foggy lake,
+// where you type a request and an agent does the job (scripts/hero.ts).
+import Stage from '../Stage.astro';
 import HeroWindow from '../../app/gen/HeroWindow.astro';
 import { SITE } from '../../data/site';
 import { latestRelease } from '../../data/release';
@@ -23,11 +24,11 @@ const latest = await latestRelease();
       <p class="label" data-fade>Free · macOS {SITE.minMacOS} {SITE.minMacOSName} or later</p>
     </div>
 
-    <div class="shot">
+    <Stage w={1104} h={704} class="first">
       <div class="win wapp" data-win data-ph-demo aria-hidden="true" inert>
         <HeroWindow />
       </div>
-    </div>
+    </Stage>
   </div>
 </section>
 
@@ -42,5 +43,6 @@ const latest = await latestRelease();
   .lead { max-width: 560px; margin-top: 24px; }
   .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
   .label { margin-top: 16px; }
+  .hero :global(.stage.first) { padding-block: 48px; }
   @media (max-width: 800px) { .hero { padding-top: 112px; } .bhead { margin-bottom: 48px; } }
 </style>

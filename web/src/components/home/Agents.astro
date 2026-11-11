@@ -1,55 +1,56 @@
 ---
-// Agents: who needs you, as it happens. A short film on the real window
-// (scripts/scenes.ts): a background session stops for permission, its dot
-// turns, a notification arrives, one shortcut takes you there, you answer,
-// and it goes back to work.
+// Agents: who needs you, as it happens. The desktop's corner: a window on the
+// left, and where macOS puts notifications on the right. The chapters are the
+// moments (scripts/scenes.ts): at work, stopped for permission, one shortcut
+// to get there, answered.
+import Stage from '../Stage.astro';
 import Sidebar from '../../app/gen/Sidebar.astro';
 import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
+
+const chapters = [
+  { label: 'At work', caption: 'Output that keeps moving is an agent at work. Nothing is installed into it to know that.' },
+  { label: 'Needs you', caption: 'A screen gone still is a question. The session gets a dot, and a notification finds you.' },
+  { label: 'Go to it', keys: '⌥⇧⌘↓', caption: 'One shortcut jumps to the next session that is waiting.' },
+  { label: 'Answered', keys: '⏎', caption: 'Say yes, and it is back at work. The dot is gone.' },
+];
 ---
 <section class="sec" id="coding-agents">
   <div class="page">
     <div class="bhead" data-reveal>
       <h2 class="h2">Know which agent needs you. <span class="tone">Hand one repository to Claude Code, another to Codex, a third to Aider. Wortel reads the screen and marks what is working and what is waiting.</span></h2>
     </div>
-    <div class="shot" style="--h: 520px" data-agents aria-hidden="true">
-      <div class="win wapp" inert>
-        <div class="absolute inset-0 bg-sidebar"></div>
-        <div class="relative flex size-full">
-          <div class="flex w-[234px] shrink-0"><Sidebar /></div>
-          <div class="w-px shrink-0 bg-sidebar-border"></div>
-          <div class="flex min-w-0 flex-1"><TerminalNarrow /></div>
+    <Stage film="agents" chapters={chapters} at="86% 64%" zoom="210%" w={744} h={600} class="corner">
+      <div class="desk" aria-hidden="true">
+        <div class="win wapp" inert>
+          <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+          <div class="relative flex size-full">
+            <div class="flex w-[234px] shrink-0"><Sidebar /></div>
+            <div class="w-px shrink-0 bg-sidebar-border"></div>
+            <div class="flex min-w-0 flex-1"><TerminalNarrow /></div>
+          </div>
         </div>
-      </div>
-      <div class="note" data-note>
-        <img src="/icon-128.png" width="40" height="40" alt="" />
-        <div class="txt">
-          <p class="ttl"><b>Landing page hero</b><span>now</span></p>
-          <p class="msg">Claude wants to run <span class="mono">npm run build</span></p>
+        <div class="notes">
+          <div class="note" data-note>
+            <img src="/icon-128.png" width="40" height="40" alt="" />
+            <div class="txt">
+              <p class="ttl"><b>Landing page hero</b><span>now</span></p>
+              <p class="msg">Claude wants to run <span class="mono">npm run build</span></p>
+            </div>
+          </div>
         </div>
+        <div class="keys glass" data-keys="jump"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↓</kbd></div>
+        <div class="keys glass" data-keys="enter"><kbd>⏎</kbd></div>
       </div>
-      <div class="keys" data-keys="jump"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↓</kbd></div>
-      <div class="keys" data-keys="enter"><kbd>⏎</kbd></div>
-    </div>
-    <ul class="facts" data-reveal-group>
-      <li class="fact" data-reveal>
-        <h3 class="h3">Working</h3>
-        <p class="body">Output that keeps moving is an agent at work. Nothing is installed into the agent and nothing is written into its configuration.</p>
-      </li>
-      <li class="fact" data-reveal>
-        <h3 class="h3">Waiting on you</h3>
-        <p class="body">A screen gone still is a question, a permission or a stop. The session gets a dot, and a notification arrives if you were looking elsewhere.</p>
-      </li>
-      <li class="fact" data-reveal>
-        <h3 class="h3">Next in line <kbd>⌥⇧⌘↓</kbd></h3>
-        <p class="body">One key jumps to the next session that is waiting. Anything still running when you quit is picked back up on launch.</p>
-      </li>
-    </ul>
+    </Stage>
   </div>
 </section>
 
 <style>
+  /* The window stands to the left; notifications arrive top right, as on a Mac. */
+  .desk { position: relative; width: 100%; display: flex; justify-content: flex-start; gap: 24px; }
+  .notes { flex: 1; min-width: 0; display: flex; justify-content: flex-end; align-items: flex-start; }
   .note {
-    position: absolute; z-index: 3; top: 16px; right: 16px; width: 344px;
+    width: min(344px, 100%);
     display: flex; gap: 8px; align-items: center; padding: 12px 16px 12px 12px;
     border-radius: 18px;
     background: rgb(246 246 246 / 0.8);
@@ -65,9 +66,13 @@ import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
   .ttl span { opacity: 0.5; font-size: 12px; }
   .msg { font-size: 13px; line-height: 16px; opacity: 0.8; }
   .msg .mono { font-size: 12px; }
-  .keys { left: 50%; top: 248px; translate: -50% 0; }
+  .keys { right: 0; bottom: 0; }
   @media (prefers-color-scheme: dark) {
     .note { background: rgb(44 44 44 / 0.8); color: #f5f5f7; box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.14), 0 8px 24px rgb(0 0 0 / 0.4); }
   }
-  @media (max-width: 760px) { .note { right: calc(var(--gutter) + 8px); width: 296px; } .keys { left: calc(50% - var(--gutter) / 2); } }
+  @media (max-width: 1000px) {
+    .notes { position: absolute; right: 0; top: 16px; z-index: 3; }
+    .keys { right: 16px; bottom: 16px; }
+  }
+  @media (max-width: 760px) { .notes { right: 32px; } .note { width: 296px; } .keys { right: 32px; } }
 </style>

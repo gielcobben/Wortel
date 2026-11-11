@@ -1,14 +1,17 @@
-// The films in the homepage's shots below the panes. Each is one looping GSAP
-// timeline acting on a real window (see app.ts): it starts when its shot comes
-// on screen and pauses when it leaves. Beats are at named times, so a scene is
-// retimed in one place. Nothing is tied to scroll.
+// The scenes on the homepage's stages below the panes. Each is a film with
+// chapters (film.ts): a chapter is a function that puts a real window (app.ts)
+// in that chapter's state, from wherever it was, so chapters can be played in
+// order or jumped between. Nothing is tied to scroll.
 import { gsap } from 'gsap';
-import { Sidebar, Terminal, named, pressKeys, reduced, whileVisible } from './app';
+import { Sidebar, Terminal, named, pressKeys, reduced, type Status } from './app';
+import { film } from './film';
 
 const fadeIn = (el: Element) => gsap.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.28, ease: 'power1.out', clearProps: 'opacity' });
+const tap = (keys: HTMLElement) => pressKeys(gsap.timeline(), keys, 0, 1.1);
+const BEAT = 0.5; // from a key going down to the app reacting
 
 // ---- agents: a session stops for you, and one key takes you to it ----------
-for (const v of document.querySelectorAll<HTMLElement>('[data-agents]')) {
+for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) {
   const sb = new Sidebar(named(v, 'Sidebar')!);
   const term = new Terminal(named(v, 'Terminal')!);
   const title = named(v, 'Title')!;
@@ -34,61 +37,68 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-agents]')) {
       term.plain('  3. No, and tell Claude what to do differently'),
     ];
   });
-  let result: HTMLElement | null = null;
 
-  const reset = () => {
-    sb.select(HOME, false); title.textContent = HOME; term.swap(home);
-    sb.status(HERO, 'working');
-    gsap.set(note, { opacity: 0, x: 40 });
+  // Where the scene is, so a chapter only changes what differs.
+  let at = { session: '', screen: null as HTMLElement[] | null, status: '' as Status | '', note: false };
+  const show = (session: string, screen: HTMLElement[], status: Status, withNote: boolean, animate: boolean) => {
+    if (at.session !== session) { sb.select(session, animate); title.textContent = session; }
+    if (at.screen !== screen || screen === asking) { term.swap(screen); if (animate && at.screen !== screen) fadeIn(term.root); }
+    if (at.status !== status) sb.status(HERO, status);
+    if (at.note !== withNote || !animate) {
+      gsap.to(note, withNote
+        ? { opacity: 1, x: 0, duration: animate ? 0.6 : 0, ease: 'expo.out' }
+        : { opacity: 0, x: 40, duration: animate ? 0.4 : 0, ease: 'power2.in' });
+    }
+    at = { session, screen, status, note: withNote };
   };
-  reset();
-  if (reduced()) { sb.status(HERO, 'attention'); gsap.set(note, { opacity: 1, x: 0 }); continue; }
 
-  whileVisible(v, () => {
-    const tl = gsap.timeline({ repeat: -1 });
-    const at = { stop: 1.6, note: 2.0, jump: 3.8, arrive: 4.25, enter: 6.4, answer: 6.85, done: 9.0, back: 11.6, end: 12.4 };
-    tl.call(reset, [], 0);
-    // It stops and waits: the dot turns, and a notification finds you.
-    tl.call(() => sb.status(HERO, 'attention'), [], at.stop);
-    tl.to(note, { opacity: 1, x: 0, duration: 0.6, ease: 'expo.out' }, at.note);
-    // One shortcut, and you are in that session, looking at its question.
-    pressKeys(tl, jump, at.jump);
-    tl.call(() => { sb.select(HERO); title.textContent = HERO; term.swap(asking); fadeIn(term.root); }, [], at.arrive);
-    tl.to(note, { opacity: 0, x: 40, duration: 0.4, ease: 'power2.in' }, at.arrive + 0.2);
-    // Yes.
-    pressKeys(tl, enter, at.enter);
-    tl.call(() => {
-      question.forEach((q) => q.remove());
-      result = term.print('Result', 'Running…');
-      sb.status(HERO, 'working');
-    }, [], at.answer);
-    tl.call(() => {
-      if (result) result.lastElementChild!.textContent = 'built in 2.14s';
-      term.gap();
-      fadeIn(term.print('Claude', 'Built. The hero paints in 0.8s, down from 2.1s.'));
-      term.gap();
-      term.print('Worked', 'Worked for 48s');
-      sb.status(HERO, 'none');
-    }, [], at.done);
-    // Back to what you were doing.
-    tl.call(() => { sb.select(HOME); title.textContent = HOME; term.swap(home); fadeIn(term.root); }, [], at.back);
-    tl.set({}, {}, at.end);
-    return tl;
-  });
+  film(v, (f) => [
+    { hold: 3.2, enter: (a) => show(HOME, home, 'working', false, a) },
+    { hold: 3.8, enter: (a) => show(HOME, home, 'attention', true, a) },
+    {
+      hold: 4.4,
+      enter: (a) => {
+        show(HOME, home, 'attention', true, a);
+        if (!a) { show(HERO, asking, 'attention', false, false); return; }
+        tap(jump);
+        f.later(() => show(HERO, asking, 'attention', false, true), BEAT);
+      },
+    },
+    {
+      hold: 6,
+      enter: (a) => {
+        show(HERO, asking, 'attention', false, a);
+        if (a) tap(enter);
+        f.later(() => {
+          question.forEach((q) => q.remove());
+          const result = term.print('Result', 'Running…');
+          sb.status(HERO, 'working'); at.status = 'working';
+          f.later(() => {
+            result.lastElementChild!.textContent = 'built in 2.14s';
+            term.gap();
+            fadeIn(term.print('Claude', 'Built. The hero paints in 0.8s, down from 2.1s.'));
+            term.gap();
+            term.print('Worked', 'Worked for 48s');
+            sb.status(HERO, 'none'); at.status = 'none';
+          }, 2);
+        }, a ? BEAT : 0);
+      },
+    },
+  ], 1);
 }
 
-// ---- worktrees: pick a session, and the window is that branch ---------------
-for (const v of document.querySelectorAll<HTMLElement>('[data-worktrees]')) {
+// ---- worktrees: pick a branch, and the window is that worktree --------------
+for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]')) {
   const sb = new Sidebar(named(v, 'Sidebar')!);
   const term = new Terminal(named(v, 'Terminal')!);
   const title = named(v, 'Title')!;
   const col = named(v, 'Changes pane')!;
   const branch = named(col, 'Branch')!.querySelector('span')!;
   const header = named(col, 'Changes header')!.querySelector('span')!;
-  const list = named(col, 'Change list')!;
-  const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-name$=".swift"], [data-name$=".md"]'));
+  const rows = Array.from(named(col, 'Change list')!.querySelectorAll<HTMLElement>('[data-name$=".swift"], [data-name$=".md"]'));
   const diff = named(col, 'Diff')!;
   const shell = named(v, 'Strip terminal')!.querySelectorAll('p')[1].querySelectorAll('span');
+  const cols = { changes: v.querySelector<HTMLElement>('[data-col="changes"]')!, history: v.querySelector<HTMLElement>('[data-col="history"]')! };
 
   type File = [mark: 'M' | '?', name: string, path: string];
   const read = (r: HTMLElement): File => [r.children[0].textContent as 'M' | '?', r.children[1].textContent!, r.children[2].textContent!];
@@ -128,7 +138,10 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-worktrees]')) {
     },
   ];
 
-  const go = (i: number, animate = true) => {
+  let on = -1, column: 'changes' | 'history' = 'changes';
+  const session = (i: number, animate: boolean) => {
+    if (on === i) return;
+    on = i;
     const s = SESSIONS[i];
     sb.select(s.row, animate);
     title.textContent = s.row;
@@ -138,33 +151,35 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-worktrees]')) {
     branch.textContent = s.branch;
     header.textContent = `Changes (${s.files.length})`;
     rows.forEach((r, k) => {
-      const f = s.files[k];
-      r.toggleAttribute('hidden', !f);
-      if (!f) return;
-      r.children[0].textContent = f[0];
-      r.children[0].classList.toggle('text-chart-1', f[0] === 'M');
-      r.children[0].classList.toggle('text-chart-3', f[0] === '?');
-      r.children[1].textContent = f[1];
-      r.children[2].textContent = f[2];
+      const file = s.files[k];
+      r.toggleAttribute('hidden', !file);
+      if (!file) return;
+      r.children[0].textContent = file[0];
+      r.children[0].classList.toggle('text-chart-1', file[0] === 'M');
+      r.children[0].classList.toggle('text-chart-3', file[0] === '?');
+      r.children[1].textContent = file[1];
+      r.children[2].textContent = file[2];
     });
     rows[0].classList.toggle('bg-secondary', s.diff);
     diff.style.visibility = s.diff ? '' : 'hidden';
     if (animate) [term.root, col.querySelector('[data-name="Page"]')!, shell[1].parentElement!].forEach(fadeIn);
   };
-  go(0, false);
-  if (reduced()) continue;
+  const showColumn = (which: 'changes' | 'history', animate: boolean) => {
+    if (column === which) return;
+    const d = animate ? 1 : 0;
+    gsap.to(cols[column], { autoAlpha: 0, duration: 0.16 * d, ease: 'power1.in' });
+    gsap.fromTo(cols[which], { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.32 * d, delay: 0.16 * d, ease: 'power2.out' });
+    column = which;
+  };
 
-  whileVisible(v, () => {
-    const tl = gsap.timeline({ repeat: -1 });
-    const HOLD = 3.4;
-    SESSIONS.forEach((_, i) => tl.call(() => go(i), [], i === 0 ? 0.01 : i * HOLD));
-    tl.set({}, {}, SESSIONS.length * HOLD);
-    return tl;
-  });
+  film(v, () => [
+    ...SESSIONS.map((_, i) => ({ hold: 3.8, enter: (a: boolean) => { showColumn('changes', a); session(i, a); } })),
+    { hold: 4.6, enter: (a: boolean) => { session(0, a); showColumn('history', a); } },
+  ], 1);
 }
 
 // ---- survival: quit, and the work goes on -----------------------------------
-for (const v of document.querySelectorAll<HTMLElement>('[data-survival]')) {
+for (const v of document.querySelectorAll<HTMLElement>('[data-film="survival"]')) {
   const frame = v.querySelector<HTMLElement>('[data-frame]')!;
   const ghost = v.querySelector<HTMLElement>('[data-ghost]')!;
   const icon = v.querySelector<HTMLElement>('[data-icon]')!;
@@ -175,31 +190,41 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-survival]')) {
   sb.pulse();
   // The agent's last lines are what the window misses while it is closed.
   const missed = term.lines().slice(-9);
+  const miss = (hidden: boolean) => missed.forEach((l) => l.toggleAttribute('hidden', hidden));
 
   // The sessions keep time whether or not there is a window to show it.
   const clocks = Array.from(v.querySelectorAll<HTMLElement>('[data-clock]'));
   const fmt = (s: number) => `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
-  if (reduced()) continue;
-  setInterval(() => clocks.forEach((c) => { const s = Number(c.dataset.clock) + 1; c.dataset.clock = String(s); c.textContent = fmt(s); }), 1000);
+  if (!reduced()) setInterval(() => clocks.forEach((c) => { const s = Number(c.dataset.clock) + 1; c.dataset.clock = String(s); c.textContent = fmt(s); }), 1000);
 
-  whileVisible(v, () => {
-    const tl = gsap.timeline({ repeat: -1 });
-    const at = { quit: 1.2, gone: 1.65, away: 2.3, launch: 5.4, back: 5.75, end: 9.4 };
-    tl.call(() => missed.forEach((l) => l.setAttribute('hidden', '')), [], 0);
-    tl.set(frame, { opacity: 1, scale: 1 }, 0).set(ghost, { opacity: 0 }, 0).set(running, { opacity: 1 }, 0);
-    // ⌘Q: the window goes down into the Dock.
-    pressKeys(tl, keys, at.quit);
-    tl.to(frame, { scale: 0.08, opacity: 0, duration: 0.55, ease: 'power2.in' }, at.gone);
-    tl.to(running, { opacity: 0, duration: 0.2 }, at.gone + 0.5);
-    // No window. The sessions are still there, still counting.
-    tl.to(ghost, { opacity: 1, duration: 0.4 }, at.away);
-    // A click on the icon: it bounces, and the window is back with what it missed.
-    tl.to(icon, { y: -20, duration: 0.18, ease: 'power2.out', yoyo: true, repeat: 1 }, at.launch);
-    tl.to(running, { opacity: 1, duration: 0.2 }, at.back);
-    tl.to(ghost, { opacity: 0, duration: 0.25 }, at.back);
-    tl.call(() => missed.forEach((l) => l.removeAttribute('hidden')), [], at.back);
-    tl.to(frame, { scale: 1, opacity: 1, duration: 0.7, ease: 'expo.out' }, at.back);
-    tl.set({}, {}, at.end);
-    return tl;
-  });
+  const win = (open: boolean, animate: boolean) => {
+    gsap.to(frame, open
+      ? { scale: 1, opacity: 1, duration: animate ? 0.7 : 0, ease: 'expo.out', overwrite: true }
+      : { scale: 0.08, opacity: 0, duration: animate ? 0.55 : 0, ease: 'power2.in', overwrite: true });
+    gsap.to(running, { opacity: open ? 1 : 0, duration: animate ? 0.2 : 0, delay: animate && !open ? 0.5 : 0, overwrite: true });
+  };
+  const away = (shown: boolean, animate: boolean) => gsap.to(ghost, { opacity: shown ? 1 : 0, duration: animate ? 0.4 : 0, delay: animate && shown ? 0.35 : 0, overwrite: true });
+
+  film(v, (f) => [
+    { hold: 3, enter: (a) => { miss(true); away(false, a); win(true, a); } },
+    {
+      hold: 2.8,
+      enter: (a) => {
+        miss(true); away(false, a); win(true, a);
+        if (!a) return;
+        tap(keys);
+        f.later(() => win(false, true), BEAT);
+      },
+    },
+    { hold: 4, enter: (a) => { win(false, a); away(true, a); } },
+    {
+      hold: 5,
+      enter: (a) => {
+        if (!a) { miss(false); away(false, false); win(true, false); return; }
+        win(false, false);
+        gsap.to(icon, { y: -20, duration: 0.18, ease: 'power2.out', yoyo: true, repeat: 1 });
+        f.later(() => { away(false, true); miss(false); win(true, true); }, 0.4);
+      },
+    },
+  ], 2);
 }

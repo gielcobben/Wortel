@@ -1,11 +1,12 @@
 ---
-// The window, explained by letting you arrange it.
+// The window, explained by the ways people arrange it.
 //
-// One complete, live window built from the canvas's pane library, and under
-// it one fact per place. Each fact lists what that place can hold, and the
-// list is the control: pick History and the column shows History, pick Hidden
-// and the place folds away, the way its shortcut does in the app. Until you
-// touch it, it arranges itself (scripts/panes.ts). The window is never scaled.
+// One live window built from the canvas's pane library. Its chapters are
+// arrangements you would actually use, named for what you are doing rather
+// than for the panes involved; scripts/panes.ts moves the window from one to
+// the next the way the app does it, a place at a time. The window is never
+// scaled.
+import Stage from '../Stage.astro';
 import Sidebar from '../../app/gen/Sidebar.astro';
 import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
 import FileMain from '../../app/gen/FileMain.astro';
@@ -15,26 +16,23 @@ import History from '../../app/gen/History.astro';
 import Files from '../../app/gen/Files.astro';
 import BottomStrip from '../../app/gen/BottomStrip.astro';
 
-const PLACES = [
-  { key: 'sidebar', name: 'Sidebar', keys: '⌘B', body: 'Every session by name, grouped by folder, with a dot when an agent wants you.',
-    options: [['sidebar', 'Sessions'], ['hidden', 'Hidden']] },
-  { key: 'main', name: 'Main', keys: '⌘T', body: 'The work in front of you. A terminal, and just as happily a file or a browser.',
-    options: [['terminal', 'Terminal'], ['file', 'File'], ['browser', 'Browser']] },
-  { key: 'side', name: 'Column', keys: '⌥⌘B', body: 'Your repository beside the shell: what changed, the commits, the files.',
-    options: [['changes', 'Changes'], ['history', 'History'], ['files', 'Files'], ['hidden', 'Hidden']] },
-  { key: 'strip', name: 'Strip', keys: '⌘J', body: 'A second shell under the terminal, for the dev server and the logs.',
-    options: [['strip', 'Shell'], ['hidden', 'Hidden']] },
+const chapters = [
+  { label: 'Everything', caption: 'Four places: the sidebar, the main area, a side column and a bottom strip. Each has its own tabs.' },
+  { label: 'Reviewing', caption: 'The commits and their graph in the column, beside the agent that made them.' },
+  { label: 'Previewing', caption: 'A browser in the main area, with the dev server in the strip under it.' },
+  { label: 'Reading', caption: 'Any file opens in a tab: source, rendered Markdown, or Quick Look for the rest.' },
+  { label: 'Quiet', keys: '⌘B ⌥⌘B ⌘J', caption: 'Three keys fold the rest away. What is left is a very good terminal.' },
 ];
 ---
-<section id="panes" class="sec" data-panes>
+<section id="panes" class="sec">
   <span id="sessions" class="anchor"></span><span id="git-and-files" class="anchor"></span>
   <div class="page">
     <div class="bhead" data-reveal>
-      <h2 class="h2">One window, four places. <span class="tone">Each place holds what you put there, or nothing at all. There is no layout to configure: try it.</span></h2>
+      <h2 class="h2">One window, four places. <span class="tone">Each place holds what you put there, or nothing at all. Nothing is fixed, and there is no layout to configure.</span></h2>
     </div>
-    <div class="shot" style="--h: 560px">
+    <Stage film="panes" chapters={chapters} at="12% 78%" zoom="170%" w={1040} h={616}>
       <div class="win wapp" data-pwin aria-hidden="true" inert>
-        <div class="absolute inset-0 bg-sidebar"></div>
+        <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
         <div class="relative flex size-full">
           <div class="slot sb" data-slot="sidebar">
             <div class="pane" data-pane="sidebar"><Sidebar /></div>
@@ -63,20 +61,7 @@ const PLACES = [
           <img src="/app/ebeda5316137eb91580afb0a92bd4f45.png" alt="" width="16" height="16" />
         </div>
       </div>
-    </div>
-    <ul class="facts four places">
-      {PLACES.map((p) => (
-        <li class="fact" data-place={p.key}>
-          <h3 class="h3">{p.name} <kbd>{p.keys}</kbd></h3>
-          <p class="body">{p.body}</p>
-          <div class="seg" role="group" aria-label={`What the ${p.name.toLowerCase()} holds`}>
-            {p.options.map(([v, label], i) => (
-              <button type="button" data-set={v} aria-pressed={i === 0 ? 'true' : 'false'}>{label}</button>
-            ))}
-          </div>
-        </li>
-      ))}
-    </ul>
+    </Stage>
   </div>
 </section>
 
@@ -94,15 +79,15 @@ const PLACES = [
   .sb { width: 234px; flex: none; }
   .mainarea { display: flex; flex-direction: column; flex: 1; min-width: 80px; min-height: 0; }
   .main { flex: 1; min-height: 80px; }
-  .strip { flex: none; height: 176px; min-height: 0; }
-  .side { width: 360px; flex: none; }
+  .strip { flex: none; height: 168px; min-height: 0; }
+  .side { width: 336px; flex: none; }
   .divider { width: 1px; flex: none; background: var(--sidebar-border); align-self: stretch; }
   .pane { display: flex; }
   /* A folding slot clips its pane, the way a split view does, instead of
      reflowing it through every width on the way to zero. */
   .sb .pane { min-width: 234px; }
-  .side .pane { min-width: 360px; }
-  .strip .pane { min-height: 176px; }
+  .side .pane { min-width: 336px; }
+  .strip .pane { min-height: 168px; }
   .pane > :global(*) { flex: 1; }
   .pane:not(:first-child) { visibility: hidden; opacity: 0; }
 
@@ -110,17 +95,4 @@ const PLACES = [
   .lights { position: absolute; left: 11px; top: 12px; display: flex; gap: 7px; z-index: 5; }
   .lights img { width: 16px; height: 16px; }
   .win :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }
-
-  /* What a place holds, as a row of choices. The current one is filled. */
-  .seg { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 16px; }
-  .seg button {
-    all: unset; box-sizing: border-box; cursor: pointer; height: 24px; padding: 0 10px; border-radius: 999px;
-    font-size: 13px; line-height: 24px; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2);
-    transition: color 0.2s, background-color 0.2s, box-shadow 0.2s;
-  }
-  .seg button:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-3); }
-  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--fog-0); box-shadow: none; }
-  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .fact kbd { transition: transform 0.1s, border-bottom-width 0.1s; }
-  .fact :global(kbd.down) { transform: translateY(1px); border-bottom-width: 1px; }
 </style>

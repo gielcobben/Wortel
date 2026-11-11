@@ -1,64 +1,60 @@
 ---
-// Quit the app, keep the work. The film (scripts/scenes.ts): ⌘Q, the window
-// goes down into the Dock, the sessions keep counting where the window was,
-// and a click on the icon brings it back with what it missed.
+// Quit the app, keep the work. A small window over the Dock, and four
+// chapters (scripts/scenes.ts): an agent mid-task, ⌘Q, the sessions counting
+// on where the window was, and the window back with what it missed.
+import Stage from '../Stage.astro';
 import Sidebar from '../../app/gen/Sidebar.astro';
 import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
+
+const chapters = [
+  { label: 'Mid-task', caption: 'An agent is halfway through a job, and you are done for the day.' },
+  { label: 'Quit', keys: '⌘Q', caption: 'The window goes. The shells are not the app’s children, so they do not.' },
+  { label: 'Away', caption: 'Wortel is not running. The sessions are, under a small process beside it.' },
+  { label: 'Back', caption: 'Open it again: the same shells, scrollback included. A crash is the same story.' },
+];
 ---
 <section class="sec" id="survival">
   <div class="page">
     <div class="bhead" data-reveal>
-      <h2 class="h2">Quit the app, keep the work. <span class="tone">Your shells are not the app’s children. They run under a small process beside it, so closing the window stops being a decision about the work.</span></h2>
+      <h2 class="h2">Quit the app, keep the work. <span class="tone">Your shells run under a small process beside the app, so closing the window stops being a decision about the work.</span></h2>
     </div>
-    <div class="shot stage" style="--h: 448px" data-survival aria-hidden="true">
-      <div class="away" data-ghost>
-        <p class="label">Wortel is not running. These are.</p>
-        <ul>
-          <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Quicker panes</span><span class="tm" data-clock="72">1m 12s</span></li>
-          <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Marketing screenshots</span><span class="tm" data-clock="431">7m 11s</span></li>
-          <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Sparkle appcast cleanup</span><span class="tm" data-clock="1284">21m 24s</span></li>
-        </ul>
-      </div>
-      <div class="win wapp" data-frame inert>
-        <div class="absolute inset-0 bg-sidebar"></div>
-        <div class="relative flex size-full">
-          <div class="flex w-[234px] shrink-0"><Sidebar /></div>
-          <div class="w-px shrink-0 bg-sidebar-border"></div>
-          <div class="flex min-w-0 flex-1"><TerminalNarrow /></div>
+    <Stage film="survival" chapters={chapters} at="30% 40%" zoom="140%" w={760} h={472}>
+      <div class="scene" aria-hidden="true">
+        <div class="away glass" data-ghost>
+          <p class="label">Wortel is not running. These are.</p>
+          <ul>
+            <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Quicker panes</span><span class="tm" data-clock="72">1m 12s</span></li>
+            <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Marketing screenshots</span><span class="tm" data-clock="431">7m 11s</span></li>
+            <li><span class="dots"><i></i><i></i><i></i></span><span class="nm">Sparkle appcast cleanup</span><span class="tm" data-clock="1284">21m 24s</span></li>
+          </ul>
         </div>
+        <div class="win wapp" data-frame inert>
+          <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+          <div class="relative flex size-full">
+            <div class="flex w-[234px] shrink-0"><Sidebar /></div>
+            <div class="w-px shrink-0 bg-sidebar-border"></div>
+            <div class="flex min-w-0 flex-1"><TerminalNarrow /></div>
+          </div>
+        </div>
+        <div class="dock glass" data-dock>
+          <img src="/icon-512.png" width="56" height="56" alt="" data-icon />
+          <i data-running></i>
+        </div>
+        <div class="keys glass" data-keys="quit"><kbd>⌘</kbd><kbd>Q</kbd></div>
       </div>
-      <div class="dock" data-dock>
-        <img src="/icon-512.png" width="56" height="56" alt="" data-icon />
-        <i data-running></i>
-      </div>
-      <div class="keys" data-keys="quit"><kbd>⌘</kbd><kbd>Q</kbd></div>
-    </div>
-    <ul class="facts" data-reveal-group>
-      <li class="fact" data-reveal>
-        <h3 class="h3">Still thinking</h3>
-        <p class="body">An agent that was working when you quit is still working when you come back.</p>
-      </li>
-      <li class="fact" data-reveal>
-        <h3 class="h3">Scrollback included</h3>
-        <p class="body">The session reattaches to the shell it already had, with everything it printed while you were away.</p>
-      </li>
-      <li class="fact" data-reveal>
-        <h3 class="h3">A crash is the same story</h3>
-        <p class="body">It is on by default, and there is nothing to switch on.</p>
-      </li>
-    </ul>
+    </Stage>
   </div>
 </section>
 
 <style>
-  /* The stage is the window and, under it, the Dock it goes down into. */
-  .stage { padding-bottom: 104px; }
-  .stage .win { transform-origin: 50% calc(100% + 64px); }
+  /* The window and, under it, the Dock it goes down into. */
+  .scene { position: relative; display: flex; flex-direction: column; align-items: center; gap: 24px; width: 100%; }
+  .scene :global(.win) { transform-origin: 50% calc(100% + 64px); }
   .away {
-    position: absolute; inset: 0 0 104px 0; border-radius: 18px; border: 1px dashed var(--line-2);
-    display: flex; flex-direction: column; justify-content: center; gap: 16px; padding: 0 48px; opacity: 0;
+    position: absolute; left: 50%; top: 0; translate: -50% 0; width: min(760px, 100%); height: var(--h); border-radius: 18px;
+    display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; opacity: 0;
   }
-  .away ul { list-style: none; margin: 0; padding: 0; width: min(480px, 100%); }
+  .away ul { list-style: none; margin: 0; padding: 0; width: min(440px, calc(100% - 48px)); }
   .away li { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; height: 40px; border-top: 1px solid var(--line); font-size: 15px; color: var(--ink); }
   .away li:last-child { border-bottom: 1px solid var(--line); }
   .tm { font: 500 13px/1 var(--font-mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
@@ -67,14 +63,9 @@ import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
   .dots i:nth-child(2) { animation-delay: 0.2s; } .dots i:nth-child(3) { animation-delay: 0.4s; }
   @keyframes blink { 50% { opacity: 0.25; } }
 
-  .dock {
-    position: absolute; left: 50%; bottom: 0; translate: -50% 0; width: 80px; height: 80px;
-    display: grid; place-items: center; border-radius: 22px;
-    background: color-mix(in srgb, var(--fog-2) 70%, transparent);
-    box-shadow: inset 0 0 0 0.5px var(--line-2);
-  }
+  .dock { position: relative; width: 80px; height: 80px; display: grid; place-items: center; border-radius: 22px; flex: none; }
   .dock img { display: block; }
   .dock i { position: absolute; bottom: 4px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--ink-2); }
-  .keys { right: 24px; top: 24px; }
-  @media (max-width: 760px) { .away { right: var(--gutter); padding: 0 24px; } .dock { left: calc(50% - var(--gutter) / 2); } }
+  .keys { left: 50%; top: 200px; translate: -50% 0; }
+  @media (max-width: 760px) { .scene { align-items: flex-start; } .away { left: 0; translate: none; width: calc(100% - 16px); } .dock { margin-left: calc(50% - 48px); } .keys { left: calc(50% - 8px); } }
 </style>

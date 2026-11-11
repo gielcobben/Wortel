@@ -3,6 +3,10 @@ import HeroWindow from '../../app/gen/HeroWindow.astro';
 import { SITE } from '../../data/site';
 import { latestRelease } from '../../data/release';
 const latest = await latestRelease();
+import { getCollection } from 'astro:content';
+import { compareVersions } from '../../content.config';
+// The newest release note, as the pill above the headline.
+const newest = (await getCollection('releases')).sort((a, b) => compareVersions(b.id, a.id))[0];
 
 // The headline, split into words server-side so the landing animation can lift
 // them one at a time without a flash of unsplit text.
@@ -19,6 +23,11 @@ const words = (s: string) => s.split(' ');
   </div>
 
   <div class="page copy">
+    {newest && (
+      <a class="news" href={`/updates#${newest.id}`} data-fade data-ph="changelog_opened" data-ph-version={newest.id} data-ph-location="hero">
+        <span class="tag">New</span><span class="nt">{newest.data.title}</span><span aria-hidden="true">→</span>
+      </a>
+    )}
     <h1 class="display" data-h1>
       <span class="vh">Wortel: a native macOS terminal for coding agents. </span>
       {words(line1).map((w) => <span class="w">{w} </span>)}<br />
@@ -52,7 +61,7 @@ const words = (s: string) => s.split(' ');
 </script>
 
 <style>
-  .hero { position: relative; padding-top: 160px; overflow: clip; }
+  .hero { position: relative; padding-top: 120px; overflow: clip; }
   .scene { position: absolute; inset: 0 0 0 0; overflow: hidden; }
   .lake {
     position: absolute; inset: 0; width: 100%; height: 100%;
@@ -83,16 +92,26 @@ const words = (s: string) => s.split(' ');
   }
 
   .copy { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; }
-  .display { max-width: 16ch; color: #1b1b17; }
+  .news {
+    display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 16px 0 4px; margin-bottom: 24px;
+    border-radius: 999px; font-size: 14px; color: #4d4b44;
+    background: rgb(255 255 255 / 0.55); box-shadow: inset 0 0 0 1px rgb(27 27 23 / 0.08);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    max-width: 100%; transition: background-color 0.2s;
+  }
+  .news:hover { background: rgb(255 255 255 / 0.8); }
+  .news .tag { height: 24px; padding: 0 8px; display: inline-flex; align-items: center; border-radius: 999px; background: #1b1b17; color: #fbfaf7; font-size: 12px; font-weight: 500; }
+  .news .nt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .display { max-width: 16ch; color: #1b1b17; font-size: clamp(40px, 5.2vw, 68px); }
   .display .tone { color: #85837a; }
   .w { display: inline-block; white-space: pre; }
   .lead { max-width: 600px; margin-top: 24px; color: #4d4b44; }
-  .ctas { display: flex; gap: 16px; margin-top: 40px; flex-wrap: wrap; justify-content: center; }
+  .ctas { display: flex; gap: 16px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
   .meta { margin-top: 24px; color: #6b6960; }
 
   .stage {
     position: relative; display: flex; justify-content: center;
-    margin-top: 80px; padding-inline: 24px; padding-bottom: 80px;
+    margin-top: 56px; padding-inline: 24px; padding-bottom: 80px;
   }
   .win {
     display: flex; width: min(1222px, 100%); min-width: 0; height: 795px;
@@ -108,6 +127,8 @@ const words = (s: string) => s.split(' ');
     .display { color: var(--ink); }
     .display .tone { color: var(--ink-3); }
     .lead, .meta { color: var(--ink-2); }
+    .news { background: rgb(255 255 255 / 0.06); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+    .news .tag { background: var(--ink); color: var(--fog-0); }
   }
   @media (max-width: 700px) {
     .hero { padding-top: 128px; }

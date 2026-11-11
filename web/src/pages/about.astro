@@ -1,9 +1,7 @@
 ---
-// /about: Roots. The name, a short history of the terminal Wortel grows out
-// of, and what it believes. Set in the system's serif (New York on a Mac),
-// because this is the one page that is read rather than scanned.
+// /about: the name, a short history of the terminal Wortel grows out of, and
+// what it believes. One text column, like every page that is read.
 import Layout from '../layouts/Layout.astro';
-import Mark from '../components/Mark.astro';
 import { SITE } from '../data/site';
 
 const abs = (p: string) => new URL(p, SITE.url).href;
@@ -36,138 +34,55 @@ const beliefs = [
   ['Less, until it is right', 'Every feature has to earn its place in the window. Most of the work is taking things out.'],
 ];
 ---
-<Layout title={title} description={description} path="/about" schema={schema} bare>
-  <header class="top">
-    <div class="sky" aria-hidden="true"><img src="/img/lake.jpg" alt="" width="3072" height="2048" /></div>
-    <div class="page inner" data-reveal-group>
-      <p class="eyebrow" data-reveal>Roots</p>
-      <h1 class="serif" data-reveal>Wortel is Dutch<br />for <em>root</em>.</h1>
-      <p class="lead" data-reveal>
-        The root of a plant, the part below the surface that holds everything up. And the root shell, where the real work happens. Yes, it also means carrot. We have made our peace with that.
-      </p>
-    </div>
+<Layout title={title} description={description} path="/about" schema={schema}>
+  <header class="column phead" data-reveal-group>
+    <h1 class="display" data-reveal>Wortel is Dutch for root.</h1>
+    <p class="lead" data-reveal>
+      The root of a plant, the part below the surface that holds everything up. And the root shell, where the real work happens.
+    </p>
   </header>
 
-  <section class="section page why">
-    <div class="split" data-reveal-group>
-      <div class="k"><p class="eyebrow" data-reveal>Why it exists</p></div>
-      <div class="v prose big" data-reveal>
-        <p>Working with coding agents changed what a terminal is for. You no longer sit in one shell. You keep five going, in five checkouts, and the hard part stops being the typing. It becomes knowing which one is waiting for you, what each one changed, and not losing any of it when you close the lid.</p>
-        <p>The tools that grew up around this tend to be apps with a terminal tucked inside. Wortel goes the other way: it is the terminal, a real one on Ghostty’s engine, and the rest of the window is arranged around it. Native, quiet, and with nothing to configure.</p>
-      </div>
-    </div>
+  <section class="column prose" data-reveal-group>
+    <p data-reveal>Working with coding agents changed what a terminal is for. You no longer sit in one shell. You keep five going, in five checkouts, and the hard part stops being the typing. It becomes knowing which one is waiting for you, what each one changed, and not losing any of it when you close the lid.</p>
+    <p data-reveal>The tools that grew up around this tend to be apps with a terminal tucked inside. Wortel goes the other way: it is the terminal, a real one on Ghostty’s engine, and the rest of the window is arranged around it. Native, quiet, and with nothing to configure.</p>
+    <p data-reveal>Made in the Netherlands by {SITE.author}.</p>
   </section>
 
-  <section class="section tree" data-history>
-    <div class="page">
-      <div class="split">
-        <div class="k"><p class="eyebrow">Family tree</p></div>
-        <div class="v"><h2 class="h2">Sixty years<br /><span class="tone">of the same blinking cursor.</span></h2></div>
-      </div>
+  <section class="section column">
+    <div class="head" data-reveal-group>
+      <h2 class="h2" data-reveal>Sixty years of the same blinking cursor.</h2>
     </div>
-    <ol class="line page">
-      <span class="rail" aria-hidden="true"><span class="fill" data-fill></span></span>
-      {history.map((h, i) => (
-        <li class:list={[i % 2 ? 'r' : 'l', { us: h.us }]} data-reveal>
-          <span class="dot" aria-hidden="true">{h.us && <Mark size={20} />}</span>
-          <div class="item">
-            <p class="y">{h.y}</p>
-            <p class="t">{h.t}</p>
-            <p class="d">{h.d}</p>
-          </div>
+    <ol class="rows" data-reveal-group="0.04">
+      {history.map((h) => (
+        <li class:list={{ us: h.us }} data-reveal>
+          <span class="y">{h.y}</span>
+          <div><p class="t">{h.t}</p><p class="body">{h.d}</p></div>
         </li>
       ))}
     </ol>
   </section>
 
-  <section class="section page beliefs">
-    <div class="split">
-      <div class="k"><p class="eyebrow">What it believes</p></div>
-      <div class="v"><h2 class="h2">Six things<br /><span class="tone">we will not trade away.</span></h2></div>
+  <section class="section column">
+    <div class="head" data-reveal-group>
+      <h2 class="h2" data-reveal>What it believes.</h2>
     </div>
-    <ol class="list" data-reveal-group="0.06">
+    <ol class="rows" data-reveal-group="0.04">
       {beliefs.map(([t, d], i) => (
         <li data-reveal>
-          <span class="n">{String(i + 1).padStart(2, '0')}</span>
-          <p class="t">{t}</p>
-          <p class="d">{d}</p>
+          <span class="y">{String(i + 1).padStart(2, '0')}</span>
+          <div><p class="t">{t}</p><p class="body">{d}</p></div>
         </li>
       ))}
     </ol>
-  </section>
-
-  <section class="section page maker">
-    <div class="card" data-reveal>
-      <Mark size={40} />
-      <p class="serif q">Made in the Netherlands by {SITE.author}, in Wortel, with a few agents at work in the sidebar.</p>
-      <p class="who"><a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="about">Download Wortel</a></p>
-    </div>
   </section>
 </Layout>
 
-<script>
-  import { gsap } from 'gsap';
-  import { ScrollTrigger } from 'gsap/ScrollTrigger';
-  gsap.registerPlugin(ScrollTrigger);
-  const tree = document.querySelector('[data-history]');
-  const fill = document.querySelector<HTMLElement>('[data-fill]');
-  if (tree && fill) {
-    gsap.fromTo(fill, { scaleY: 0 }, { scaleY: 1, ease: 'none', scrollTrigger: { trigger: tree.querySelector('.line'), start: 'top 60%', end: 'bottom 60%', scrub: 0.4 } });
-  }
-  const sky = document.querySelector<HTMLElement>('.sky img');
-  if (sky && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    gsap.to(sky, { yPercent: 12, scale: 1.06, ease: 'none', scrollTrigger: { trigger: '.top', start: 'top top', end: 'bottom top', scrub: true } });
-  }
-</script>
-
 <style>
-  .serif { font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.02em; }
-  .top { position: relative; padding-top: 200px; padding-bottom: 160px; overflow: hidden; }
-  .sky { position: absolute; inset: 0; }
-  .sky img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 12%; opacity: 0.6; }
-  .sky::after { content: ''; position: absolute; inset: 0; background: linear-gradient(var(--fog-0) 0%, transparent 30%, transparent 55%, var(--fog-0) 100%); }
-  @media (prefers-color-scheme: dark) { .sky img { opacity: 0.25; filter: brightness(0.5) saturate(0.6); } }
-  .inner { position: relative; }
-  h1.serif { font-size: clamp(56px, 8vw, 112px); line-height: 1; margin: 24px 0 0; color: var(--ink); }
-  h1 em { font-style: italic; color: var(--moss); }
-  .top .lead { max-width: 620px; margin-top: 40px; }
-
-  .prose.big { font-size: 21px; line-height: 32px; color: var(--ink); }
-  .prose.big p + p { margin-top: 24px; }
-
-  /* The family tree: a centre line that fills as you scroll, items either side. */
-  .tree { background: var(--fog-1); }
-  .line { position: relative; list-style: none; margin: 96px auto 0; padding-block: 0 32px; display: flex; flex-direction: column; gap: 48px; }
-  .rail { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line-2); }
-  .fill { position: absolute; inset: 0; background: var(--ink); transform-origin: top; }
-  .line li { position: relative; display: grid; grid-template-columns: 1fr 1fr; column-gap: 64px; }
-  .line li.l .item { grid-column: 1; text-align: right; }
-  .line li.r .item { grid-column: 2; }
-  .dot { position: absolute; left: 50%; top: 4px; width: 9px; height: 9px; margin-left: -4px; border-radius: 50%; background: var(--fog-1); border: 1.5px solid var(--ink); display: grid; place-items: center; }
-  .line li.us .dot { width: 40px; height: 40px; margin-left: -20px; top: -8px; background: var(--ink); color: var(--fog-0); border: 0; }
-  .item p { margin: 0; }
-  .y { font: 500 13px/24px var(--font-mono); color: var(--ink-3); }
-  .t { font: 600 21px/32px var(--font-display); letter-spacing: -0.015em; color: var(--ink); }
-  .d { font-size: 15px; line-height: 24px; color: var(--ink-2); max-width: 360px; display: inline-block; }
-  .line li.us .t { color: var(--moss); }
-  @media (max-width: 800px) {
-    .rail { left: 4px; }
-    .dot { left: 4px; }
-    .line li { grid-template-columns: 1fr; padding-left: 40px; }
-    .line li.l .item, .line li.r .item { grid-column: 1; text-align: left; }
-    .line li.us .dot { margin-left: -16px; width: 32px; height: 32px; }
-  }
-
-  .beliefs .list { list-style: none; padding: 0; margin: 80px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--line); }
-  .beliefs li { padding: 32px 32px 48px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
-  .beliefs li p { margin: 0; }
-  .beliefs .n { font: 500 13px/24px var(--font-mono); color: var(--ink-3); }
-  .beliefs .t { font-family: var(--font-display); }
-  @media (max-width: 900px) { .beliefs .list { grid-template-columns: 1fr; } }
-
-  .maker { padding-top: 0; }
-  .card { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 32px; padding: 96px 32px; border-radius: 24px; background: var(--ink); color: var(--fog-0); }
-  .q { font-size: clamp(28px, 3.2vw, 44px); line-height: 1.2; max-width: 860px; margin: 0; }
-  .who { margin: 0; }
-  .who .btn { background: var(--fog-0); color: var(--ink); }
+  .prose { font-size: 17px; line-height: 28px; }
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows li { display: grid; grid-template-columns: 80px 1fr; gap: 16px; padding-block: 20px; border-top: 1px solid var(--line); }
+  .rows li:last-child { border-bottom: 1px solid var(--line); }
+  .y { font: 500 14px/24px var(--font-mono); color: var(--ink-3); }
+  .t { margin: 0 0 4px; font-weight: 600; font-size: 16px; line-height: 24px; color: var(--ink); }
+  .us .y, .us .t { color: var(--blue); }
 </style>

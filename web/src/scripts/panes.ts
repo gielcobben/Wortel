@@ -1,21 +1,20 @@
-// The panes section: one GSAP timeline, scrubbed by scroll.
+// The panes section: one GSAP timeline, played a step at a time.
 //
 // The timeline is written like a film's storyboard: each step has a named start
-// and a hold, so retiming a beat is one number. The page never snaps or locks:
-// the section is tall, its stage is sticky, and scroll position IS the
-// playhead. Captions and the step list follow the playhead.
+// and a hold, so retiming a beat is one number. A step plays to the end of its
+// hold; the steps advance by themselves while the section is on screen, and a
+// click on one stops that and goes there. Scrolling is never involved.
 //
 // ?panes=<seconds> seeks the timeline and freezes it, for screenshots.
 import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
-gsap.registerPlugin(ScrollTrigger);
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function initPanes() {
   const root = document.querySelector<HTMLElement>('[data-panes]');
   if (!root) return;
   const win = root.querySelector<HTMLElement>('[data-pwin]');
-  if (!win || getComputedStyle(root.querySelector('.stagebox')!).display === 'none') return;
+  if (!win) return;
 
   const slot = (k: string) => win.querySelector<HTMLElement>(`[data-slot="${k}"]`)!;
   const pane = (k: string) => win.querySelector<HTMLElement>(`[data-pane="${k}"]`)!;
@@ -24,7 +23,7 @@ export function initPanes() {
   const mainBar = pane('terminal').querySelector<HTMLElement>('[data-name="Main bar"]');
 
   const caps = Array.from(root.querySelectorAll<HTMLElement>('[data-cap]'));
-  const steps = Array.from(root.querySelectorAll<HTMLElement>('[data-step]'));
+  const steps = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-goto]'));
 
   // ---- storyboard ---------------------------------------------------------
   // [start of the step's motion, end of its hold]
@@ -87,7 +86,7 @@ export function initPanes() {
   tl.set({}, {}, S.quiet[1]);
 
   // ---- on a phone, the stage pans to the place the step is about ----------
-  const phone = matchMedia('(max-width: 600px)');
+  const phone = matchMedia('(max-width: 700px)');
   const focus: Record<string, string | null> = { sidebar: 'sidebar', main: 'main', side: 'side', strip: 'strip', anywhere: 'side', quiet: null };
   const pan = (idx: number) => {
     if (!phone.matches) { gsap.set(win, { x: 0 }); return; }
@@ -110,8 +109,8 @@ export function initPanes() {
     order.forEach((k, i) => { if (time >= S[k][0] - 0.2) idx = i; });
     if (idx === current) return;
     current = idx;
-    caps.forEach((c, i) => c.classList.toggle('on', i === idx));
-    steps.forEach((s, i) => { s.classList.toggle('on', i === idx); s.classList.toggle('done', i < idx); });
+    caps.forEach((c, i) => c.classList.toggle('on', i === Math.max(0, idx)));
+    steps.forEach((s, i) => s.setAttribute('aria-selected', String(i === Math.max(0, idx))));
     pan(idx);
   };
 
@@ -122,22 +121,35 @@ export function initPanes() {
     return;
   }
 
-  const st = ScrollTrigger.create({
-    trigger: root,
-    start: 'top top',
-    end: 'bottom bottom',
-    scrub: 0.6,
-    animation: tl,
-    onUpdate: () => sync(tl.time()),
-  });
   sync(0);
 
-  // The step list is a table of contents: jump to the hold of that step.
-  root.querySelectorAll<HTMLButtonElement>('[data-goto]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const k = order[Number(b.dataset.goto)];
-      const target = (S[k][0] + 1.0) / tl.duration();
-      window.scrollTo({ top: st.start + target * (st.end - st.start), behavior: 'smooth' });
-    });
-  });
+  // Go to a step: play forward through the beats in between, or, going back,
+  // jump to just before the step and play its own beat.
+  let step = -1;
+  const go = (i: number) => {
+    step = i;
+    const k = order[i];
+    const end = S[k][1] - 0.2;
+    if (end < tl.time()) tl.seek(S[k][0] - 0.05);
+    tl.tweenTo(end, { duration: Math.min(2.4, Math.max(0.8, end - tl.time())), ease: 'none', onUpdate: () => sync(tl.time()) });
+    sync(S[k][0]);
+  };
+
+  // While the section is on screen the steps advance by themselves; a click
+  // anywhere in the row hands control to the reader for good.
+  const HOLD = 5000;
+  let timer = 0, auto = !reduced();
+  const tick = () => {
+    clearTimeout(timer);
+    if (!auto) return;
+    go((step + 1) % order.length);
+    timer = window.setTimeout(tick, step === order.length - 1 ? HOLD + 1500 : HOLD);
+  };
+  new IntersectionObserver(([e]) => {
+    if (e.isIntersecting) { if (auto && !timer) tick(); }
+    else { clearTimeout(timer); timer = 0; }
+  }, { threshold: 0.5 }).observe(win);
+
+  steps.forEach((b, i) => b.addEventListener('click', () => { auto = false; clearTimeout(timer); go(i); }));
+  if (reduced()) { tl.seek(S.side[1] - 0.2); sync(tl.time()); step = 2; }
 }

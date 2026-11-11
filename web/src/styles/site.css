@@ -1,189 +1,132 @@
 /* ==========================================================================
-   wortel.sh — the site's own design system.
+   wortel.sh: the site's own design system.
 
-   THE LOOK: a foggy lake at first light. Warm fog whites, mossy greens taken
-   from the rocks, ink for type. In dark mode the same lake at night. Every
-   colour below was sampled from the hero photograph or derived from one.
+   THE LOOK: the app's own. A black page, white type, the blue of the cursor
+   in the icon as the one accent. The app is dark, so the page is dark: the
+   window never sits on a surface it would not sit on in real life. The foggy
+   lake is the desktop the window stands on, not the page.
+
+   THE LAYOUT: one axis. Every section is a centred head (title, one line of
+   copy) over a centred visual, and long text is a centred column. Nothing
+   sits left or right of anything else.
 
    THE GRID: every margin, padding, gap and fixed height is a multiple of 8.
-   Exempt: 1px hairlines, radii, font sizes and content-derived widths. When
-   text sets a row's height, give it a px line-height on the grid.
+   Exempt: 1px hairlines, radii, font sizes and content-derived widths.
 
    COPY: no em-dashes, anywhere a person reads (see the repo's CLAUDE.md).
    ========================================================================== */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 
-  /* fog: page, raised band, tile */
-  --fog-0: #fbfaf7;
-  --fog-1: #f3f2ed;
-  --fog-2: #e9e7e0;
-  --fog-3: #dedbd2;
-  /* ink: text, secondary, tertiary */
-  --ink: #1b1b17;
-  --ink-2: #6b6960;
-  --ink-3: #77746a;
-  /* The lighter half of a two-tone headline: large type only. */
-  --tone: #9c998e;
-  --line: rgb(27 27 23 / 0.1);
-  --line-2: rgb(27 27 23 / 0.16);
-  /* moss: the one accent, from the sunlit grass on the rocks */
-  --moss: #4f6127;
-  --moss-2: #7d9a3c;
-  --moss-soft: rgb(125 154 60 / 0.14);
-  /* buttons */
-  --btn: #1b1b17;
-  --btn-ink: #fbfaf7;
-  --btn-2: rgb(27 27 23 / 0.06);
-  --nav: rgb(251 250 247 / 0.9);
-  --shadow-window: 0 40px 80px -24px rgb(40 38 28 / 0.35), 0 16px 32px -16px rgb(40 38 28 / 0.25);
+  --bg: #000;
+  --bg-1: #0d0d0d;
+  --bg-2: #161616;
+  --ink: #f5f5f5;
+  --ink-2: rgb(255 255 255 / 0.62);
+  --ink-3: rgb(255 255 255 / 0.44);
+  --line: rgb(255 255 255 / 0.08);
+  --line-2: rgb(255 255 255 / 0.14);
+  /* The cursor in the app icon. */
+  --blue: #3b8ff6;
+  --blue-soft: rgb(59 143 246 / 0.18);
+
+  --shadow-window: 0 24px 64px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(0 0 0 / 0.85);
 
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
-  --font-serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
   --font-mono: "SF Mono", SFMono-Regular, ui-monospace, Menlo, monospace;
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
   --page: 1200px;
+  --text: 640px;
   --gutter: 32px;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fog-0: #0e0e0c;
-    --fog-1: #151512;
-    --fog-2: #1d1d19;
-    --fog-3: #272722;
-    --ink: #ecebe6;
-    --ink-2: #9e9b90;
-    --ink-3: #8a877c;
-    --tone: #6c6a61;
-    --line: rgb(236 235 230 / 0.09);
-    --line-2: rgb(236 235 230 / 0.15);
-    --moss: #b4c387;
-    --moss-2: #a3b86a;
-    --moss-soft: rgb(163 184 106 / 0.14);
-    --btn: #ecebe6;
-    --btn-ink: #0e0e0c;
-    --btn-2: rgb(236 235 230 / 0.08);
-    --nav: rgb(14 14 12 / 0.9);
-    --shadow-window: 0 40px 80px -24px rgb(0 0 0 / 0.6), 0 16px 32px -16px rgb(0 0 0 / 0.5);
-  }
-}
+@media (max-width: 640px) { :root { --gutter: 16px; } }
 
 html {
-  background: var(--fog-0);
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: 17px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
 }
-body { background: var(--fog-0); overflow-x: clip; }
-::selection { background: var(--moss-soft); color: var(--ink); }
+body { margin: 0; background: var(--bg); overflow-x: clip; }
+::selection { background: var(--blue-soft); color: var(--ink); }
 a { color: inherit; text-decoration: none; }
-:focus-visible { outline: 2px solid var(--moss-2); outline-offset: 2px; border-radius: 4px; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
 
 /* ---- layout ------------------------------------------------------------- */
 .page { width: 100%; max-width: calc(var(--page) + 2 * var(--gutter)); margin-inline: auto; padding-inline: var(--gutter); }
-@media (max-width: 640px) { :root { --gutter: 24px; } }
+.column { width: 100%; max-width: calc(var(--text) + 2 * var(--gutter)); margin-inline: auto; padding-inline: var(--gutter); }
+
+.section { position: relative; padding-top: 160px; }
+@media (max-width: 800px) { .section { padding-top: 120px; } }
+
+/* Every section opens the same way: a centred title and one line under it. */
+.head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; margin-bottom: 64px; }
+.head .lead { max-width: 560px; }
 
 /* ---- type --------------------------------------------------------------- */
-.display {
-  font-family: var(--font-display);
-  font-size: clamp(40px, 5.6vw, 72px);
-  line-height: 1.04;
-  font-weight: 600;
-  letter-spacing: -0.032em;
-  text-wrap: balance;
-}
-.h2 {
-  font-family: var(--font-display);
-  font-size: clamp(32px, 3.6vw, 48px);
-  line-height: 1.1;
-  font-weight: 600;
-  letter-spacing: -0.028em;
-  text-wrap: balance;
-}
-.h3 {
-  font-family: var(--font-display);
-  font-size: 21px;
-  line-height: 32px;
-  font-weight: 600;
-  letter-spacing: -0.012em;
-}
-.tone { color: var(--tone); }
-.display, .h2, .h3 { color: var(--ink); }
-.display .tone, .h2 .tone { color: var(--tone); }
-.lead { font-size: clamp(19px, 1.6vw, 22px); line-height: 1.45; color: var(--ink-2); letter-spacing: -0.01em; text-wrap: pretty; }
-.body { font-size: 17px; line-height: 28px; color: var(--ink-2); text-wrap: pretty; }
-.small { font-size: 14px; line-height: 24px; color: var(--ink-2); }
-.label {
-  font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: 0.01em;
-  color: var(--ink-3);
-}
-.eyebrow {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 13px; line-height: 16px; font-weight: 500; color: var(--moss);
-}
+.display, .h2, .h3 { margin: 0; color: var(--ink); font-family: var(--font-display); font-weight: 600; text-wrap: balance; }
+.display { font-size: clamp(40px, 5vw, 64px); line-height: 1.05; letter-spacing: -0.035em; }
+.h2 { font-size: clamp(32px, 3.4vw, 44px); line-height: 1.1; letter-spacing: -0.03em; }
+.h3 { font-size: 17px; line-height: 24px; letter-spacing: -0.01em; }
+.tone { color: var(--ink-3); }
+.lead { margin: 0; font-size: 19px; line-height: 28px; color: var(--ink-2); letter-spacing: -0.01em; text-wrap: pretty; }
+.body { margin: 0; font-size: 15px; line-height: 24px; color: var(--ink-2); text-wrap: pretty; }
+.label { margin: 0; font-size: 13px; line-height: 16px; color: var(--ink-3); }
 .mono { font-family: var(--font-mono); font-size: 0.88em; }
-kbd, .kbd {
+kbd {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 24px; height: 24px; padding: 0 6px;
-  font: 500 13px/1 var(--font-sans);
-  color: var(--ink); background: var(--fog-0);
-  border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 6px;
+  font: 500 12px/1 var(--font-sans); color: var(--ink);
+  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 6px;
 }
 
 /* ---- buttons ------------------------------------------------------------ */
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
-  height: 48px; padding: 0 24px; border-radius: 999px;
-  font: 500 16px/1 var(--font-sans); letter-spacing: -0.01em;
-  background: var(--btn); color: var(--btn-ink);
-  transition: transform 0.2s var(--ease-out), background-color 0.2s, opacity 0.2s;
-  white-space: nowrap;
+  height: 40px; padding: 0 20px; border-radius: 999px;
+  font: 500 15px/1 var(--font-sans); letter-spacing: -0.01em; white-space: nowrap;
+  background: var(--ink); color: #000;
+  transition: opacity 0.2s, transform 0.2s var(--ease-out);
 }
-.btn:hover { transform: translateY(-1px); }
-.btn:active { transform: translateY(0) scale(0.98); }
-.btn.ghost { background: var(--btn-2); color: var(--ink); }
+.btn:hover { opacity: 0.88; }
+.btn:active { transform: scale(0.98); }
+.btn.ghost { background: var(--bg-2); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
 .btn.sm { height: 32px; padding: 0 16px; font-size: 14px; }
 .btn svg { flex: none; }
 .link { color: var(--ink); border-bottom: 1px solid var(--line-2); transition: border-color 0.2s; }
 .link:hover { border-color: var(--ink); }
 
-/* ---- sections ----------------------------------------------------------- */
-.section { padding-block: 128px; position: relative; }
-@media (max-width: 800px) { .section { padding-block: 96px; } }
-.rule { height: 1px; background: var(--line); border: 0; margin: 0; }
-
-/* A split head, the way the reference sites set a section: label left, the
-   two-tone headline and its copy right, on a 12-column grid. */
-.split { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 32px; row-gap: 24px; }
-.split > .k { grid-column: 1 / span 4; }
-.split > .v { grid-column: 5 / span 8; }
-@media (max-width: 900px) { .split > .k, .split > .v { grid-column: 1 / -1; } }
+/* ---- the shot: the app window on the foggy lake, as on a desktop -------- */
+.shot {
+  position: relative; overflow: hidden; border-radius: 24px;
+  display: flex; justify-content: center; padding: 56px 48px;
+  background: #3b3d3a url(/img/lake-1600.jpg) 50% 60% / cover no-repeat;
+}
+@media (min-width: 1300px) { .shot { background-image: url(/img/lake.jpg); } }
+@media (max-width: 700px) { .shot { padding: 24px 0 24px 16px; justify-content: flex-start; border-radius: 16px; } }
 
 /* Things that only exist for screen readers and crawlers. */
 .vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.anchor { position: absolute; top: 0; }
 
 /* Reveal on enter: set by src/scripts/reveal.ts. Without JS nothing hides. */
 .js [data-reveal] { opacity: 0; transform: translateY(12px); }
 .js [data-reveal].in { opacity: 1; transform: none; transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); transition-delay: var(--d, 0s); }
-
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .js [data-reveal] { opacity: 1; transform: none; }
 }
 
 /* ---- prose: Markdown and long-form copy ---------------------------------- */
-.prose { font-size: 17px; line-height: 28px; color: var(--ink-2); }
+.prose { font-size: 16px; line-height: 28px; color: var(--ink-2); }
 .prose :where(p) { margin: 0; text-wrap: pretty; }
 .prose > * + * { margin-top: 16px; }
 .prose strong { color: var(--ink); font-weight: 600; }
@@ -194,30 +137,21 @@ kbd, .kbd {
 .prose ol { list-style: decimal; }
 .prose li + li { margin-top: 8px; }
 .prose li::marker { color: var(--ink-3); }
-.prose h2 { font: 600 24px/32px var(--font-display); letter-spacing: -0.02em; color: var(--ink); margin: 48px 0 0; }
-.prose h3 { font: 600 19px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); margin: 32px 0 0; }
-.prose code {
-  font: 500 0.86em var(--font-mono); padding: 2px 6px; border-radius: 6px;
-  background: var(--fog-1); color: var(--ink); border: 1px solid var(--line);
-}
-.prose pre { margin: 24px 0 0; padding: 16px 24px; border-radius: 12px; background: #1f1f1f; color: #e6edf3; overflow-x: auto; font: 500 14px/24px var(--font-mono); }
-.prose pre code { background: none; border: 0; padding: 0; color: inherit; }
+.prose h2 { font: 600 24px/32px var(--font-display); letter-spacing: -0.02em; color: var(--ink); margin: 64px 0 0; }
+.prose h3 { font: 600 17px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); margin: 32px 0 0; }
+.prose code { font: 500 0.86em var(--font-mono); padding: 2px 6px; border-radius: 6px; background: var(--bg-2); color: var(--ink); }
+.prose pre { margin: 24px 0 0; padding: 16px 24px; border-radius: 12px; background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); overflow-x: auto; font: 500 14px/24px var(--font-mono); }
+.prose pre code { background: none; padding: 0; color: inherit; }
 .prose table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 24px; }
 .prose th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 13px; padding: 8px 16px 8px 0; border-bottom: 1px solid var(--line-2); }
 .prose td { padding: 12px 16px 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink); }
 .prose td.mono { font-family: var(--font-mono); font-size: 14px; white-space: nowrap; }
 .prose hr { border: 0; height: 1px; background: var(--line); margin: 48px 0; }
 
-/* A page head: the inner pages open the same way. */
-.phead { padding-top: 160px; padding-bottom: 80px; }
-.phead .display { font-size: clamp(40px, 5vw, 64px); }
-.phead .lead { max-width: 640px; margin-top: 24px; }
+/* Inner pages open the way a homepage section does, with more air above. */
+.phead { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; padding-top: 176px; padding-bottom: 80px; }
+.phead .lead { max-width: 560px; }
 
 /* Skip to content, for keyboards. */
-.skip { position: fixed; left: 16px; top: -48px; z-index: 100; padding: 8px 16px; border-radius: 8px; background: var(--ink); color: var(--fog-0); font-size: 14px; transition: top 0.2s; }
+.skip { position: fixed; left: 16px; top: -48px; z-index: 100; padding: 8px 16px; border-radius: 8px; background: var(--ink); color: #000; font-size: 14px; transition: top 0.2s; }
 .skip:focus { top: 16px; }
-
-/* On the night page a dark window needs an edge to stand off the background. */
-@media (prefers-color-scheme: dark) {
-  .wapp.dark { outline: 1px solid rgb(255 255 255 / 0.08); outline-offset: 0; }
-}

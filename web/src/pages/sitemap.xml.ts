@@ -67,12 +67,6 @@ const PAGES: { path: string; changefreq: string; priority: string; sources: stri
     sources: ['src/pages/about.astro'],
   },
   {
-    path: '/brand',
-    changefreq: 'yearly',
-    priority: '0.3',
-    sources: ['src/pages/brand.astro', 'public/brand'],
-  },
-  {
     path: '/compare',
     changefreq: 'monthly',
     priority: '0.7',

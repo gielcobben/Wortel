@@ -1,0 +1,71 @@
+---
+// What the window is for, in six short cards on one centred grid. Each card
+// keeps the anchor llms.txt links to; the long version of each is on /docs.
+const CARDS = [
+  {
+    id: 'coding-agents', title: 'Knows which agent needs you',
+    body: 'Claude Code, Codex, Aider or anything else: the sidebar marks what is working and what is waiting, and a notification arrives when one goes quiet.',
+    keys: ['⌥⇧⌘↓'],
+  },
+  {
+    id: 'worktrees', title: 'A worktree per agent',
+    body: 'Open a session on a branch and it gets its own directory, sharing the repository’s history. Five agents, one repository, no collisions.',
+    keys: ['⇧⌘N'],
+  },
+  {
+    id: 'survival', title: 'Quit, and they keep going',
+    body: 'Your shells run beside the app, not inside it. Quit, update or crash, and every session comes back with its scrollback.',
+    keys: ['⌘Q'],
+  },
+  {
+    id: 'zero-config', title: 'Nothing to configure',
+    body: 'No settings window and no dotfile. The font, the theme and the keybinds are chosen once. Font size is the one thing you change.',
+    keys: ['⌘+', '⌘−'],
+  },
+  {
+    id: 'command', title: 'Scriptable from any shell',
+    body: 'A bundled wortel command lists, reads, sends to and waits on sessions, so anything that can run a command can drive the app.',
+    keys: [],
+    mono: 'wortel list',
+  },
+  {
+    id: 'ghostty-engine', title: 'Ghostty inside',
+    body: 'libghostty, unmodified: Ghostty’s VT parser, Metal renderer and glyph atlas. Terminal behaviour and speed are Ghostty’s own.',
+    keys: [],
+    mono: 'libghostty',
+  },
+];
+---
+<section class="section" data-reveal-group="0.05">
+  <div class="page">
+    <div class="head">
+      <h2 class="h2" data-reveal>Made for a day with agents.</h2>
+      <p class="lead" data-reveal>The parts that matter when several of them are at work at once.</p>
+    </div>
+    <div class="grid">
+      {CARDS.map((c) => (
+        <article class="card" id={c.id} data-reveal>
+          <h3 class="h3">{c.title}</h3>
+          <p class="body">{c.body}</p>
+          <p class="keys">
+            {c.keys.map((k) => <kbd>{k}</kbd>)}
+            {c.mono && <code>{c.mono}</code>}
+          </p>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .card {
+    display: flex; flex-direction: column; gap: 8px; padding: 32px;
+    border-radius: 16px; background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line);
+    scroll-margin-top: 96px;
+  }
+  .keys { display: flex; gap: 4px; margin: auto 0 0; padding-top: 16px; }
+  code { font: 500 12px/24px var(--font-mono); color: var(--ink-2); padding: 0 8px; border-radius: 6px; background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); }
+  @media (max-width: 960px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .card { padding: 24px; } }
+</style>

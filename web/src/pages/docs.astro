@@ -11,36 +11,28 @@ const schema = [{
 }];
 ---
 <Layout title={DOCS.title} description={DOCS.description} path="/docs" schema={schema}>
-  <header class="page phead" data-reveal-group>
-    <p class="eyebrow" data-reveal>Docs</p>
+  <header class="column phead" data-reveal-group>
     <h1 class="display" data-reveal>{DOCS.heading}</h1>
     <p class="lead" data-reveal>{DOCS.lead}</p>
-  </header>
-  <div class="page body">
-    <nav class="toc" aria-label="On this page">
-      <p class="label">On this page</p>
-      <ol>{DOCS_SECTIONS.map((s) => <li><a href={`#${s.id}`}>{s.title}</a></li>)}</ol>
+    <nav class="toc" aria-label="On this page" data-reveal>
+      {DOCS_SECTIONS.map((s) => <a href={`#${s.id}`}>{s.title}</a>)}
     </nav>
-    <div class="secs">
-      {DOCS_SECTIONS.map((s) => (
-        <section id={s.id} class="sec">
-          <h2 class="h3">{s.title}</h2>
-          {s.lead && <p class="lead small-lead">{s.lead}</p>}
-          <div class="prose"><Blocks blocks={s.blocks} /></div>
-        </section>
-      ))}
-    </div>
+  </header>
+  <div class="column">
+    {DOCS_SECTIONS.map((s) => (
+      <section id={s.id} class="sec">
+        <h2 class="t">{s.title}</h2>
+        {s.lead && <p class="lead">{s.lead}</p>}
+        <div class="prose"><Blocks blocks={s.blocks} /></div>
+      </section>
+    ))}
   </div>
 </Layout>
 <style>
-  .body { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 32px; padding-bottom: 80px; }
-  .toc { grid-column: 1 / span 3; position: sticky; top: 96px; align-self: start; }
-  .toc ol { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-direction: column; gap: 8px; }
-  .toc a { font-size: 14px; line-height: 24px; color: var(--ink-2); }
+  .toc { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; }
+  .toc a { height: 32px; padding: 0 16px; display: inline-flex; align-items: center; border-radius: 999px; font-size: 14px; color: var(--ink-2); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); transition: color 0.2s; }
   .toc a:hover { color: var(--ink); }
-  .secs { grid-column: 4 / span 9; }
-  .sec { padding-block: 48px; border-top: 1px solid var(--line); scroll-margin-top: 64px; }
-  .sec .h3 { margin: 0; font-size: 28px; line-height: 32px; letter-spacing: -0.022em; }
-  .small-lead { font-size: 19px; margin: 16px 0 24px; max-width: 720px; }
-  @media (max-width: 900px) { .toc { display: none; } .secs { grid-column: 1 / -1; } }
+  .sec { padding-block: 56px; border-top: 1px solid var(--line); scroll-margin-top: 56px; }
+  .t { margin: 0; font: 600 24px/32px var(--font-display); letter-spacing: -0.02em; color: var(--ink); }
+  .sec .lead { font-size: 17px; line-height: 28px; margin: 8px 0 24px; }
 </style>

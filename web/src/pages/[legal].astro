@@ -21,16 +21,11 @@ const schema = [{
 }];
 ---
 <Layout title={`${entry.data.title}: ${SITE.name}`} description={entry.data.description} path={path} schema={schema} bare>
-  <header class="page phead">
-    <p class="eyebrow">Legal</p>
+  <header class="column phead">
     <h1 class="display">{entry.data.title}</h1>
-    <p class="label upd">Updated {updated}</p>
+    <p class="label">Updated {updated}</p>
   </header>
-  <div class="page">
-    <div class="prose doc"><Content /></div>
+  <div class="column">
+    <div class="prose"><Content /></div>
   </div>
 </Layout>
-<style>
-  .upd { margin-top: 24px; }
-  .doc { max-width: 720px; padding-bottom: 128px; }
-</style>

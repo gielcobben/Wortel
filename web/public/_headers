@@ -24,8 +24,6 @@
   Cache-Control: public, max-age=604800
 /img/*
   Cache-Control: public, max-age=604800
-/brand/*
-  Cache-Control: public, max-age=86400
 
 # Stable but occasionally regenerated (see web/README.md for the ImageMagick
 # commands). A day is long enough to matter for social scrapers re-fetching the

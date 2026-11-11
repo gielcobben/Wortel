@@ -1,5 +1,5 @@
-// The landing: the mist lifts off the lake, the headline surfaces, the window
-// rises out of the water, and then an agent does a small job in it.
+// The landing: the copy settles, the window rises onto the lake, and then an
+// agent does a small job in it.
 //
 // Built the way the product films are: one GSAP timeline, every beat at a named
 // time, so the whole sequence can be retimed in one place. ?t=<seconds> seeks
@@ -54,15 +54,11 @@ export function playHero() {
 
   // ---- build the timeline -------------------------------------------------
   const tl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } });
-  const at = { mist: 0, words: 0.15, copy: 0.7, window: 0.55, agent: 2.1 };
+  const at = { copy: 0, window: 0.35, agent: 1.6 };
 
-  tl.fromTo(hero.querySelector('.lake'), { scale: 1.14 }, { scale: 1, duration: 3.2 }, at.mist);
-  // Blur on the wrapper, not the photo: the photo's own filter is the night grade.
-  tl.fromTo(hero.querySelector('.scene'), { filter: 'blur(14px)' }, { filter: 'blur(0px)', duration: 2.6, clearProps: 'filter' }, at.mist);
-  tl.fromTo(q(hero, '.mist'), { opacity: 1.6 }, { opacity: 1, duration: 3.2 }, at.mist);
-  tl.fromTo(q(hero, '[data-h1] .w'), { opacity: 0, y: 28, filter: 'blur(10px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 1.4, stagger: 0.07 }, at.words);
-  tl.fromTo(q(hero, '[data-fade]'), { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 1.2, stagger: 0.1 }, at.copy);
-  tl.fromTo(win, { opacity: 0, y: 180, scale: 0.94, filter: 'blur(18px)' }, { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 2.1, clearProps: 'filter,transform,opacity' }, at.window);
+  tl.fromTo(q(hero, '[data-fade]'), { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 1.1, stagger: 0.08 }, at.copy);
+  tl.fromTo(hero.querySelector('[data-shot]'), { opacity: 0 }, { opacity: 1, duration: 1.2, ease: 'power2.out' }, at.window);
+  tl.fromTo(win, { opacity: 0, y: 64 }, { opacity: 1, y: 0, duration: 1.6, clearProps: 'transform,opacity' }, at.window + 0.2);
 
   // The agent. Hidden state is set at time 0 so seeking backwards restores it.
   tl.call(() => {
@@ -105,12 +101,4 @@ export function playHero() {
   if (params.has('t')) { tl.seek(Number(params.get('t'))); return; }
   if (reduced()) { tl.progress(1); return; }
   tl.play();
-
-  // As the page scrolls, the photo falls behind and the window comes forward.
-  const lake = hero.querySelector<HTMLElement>('.lake')!;
-  const onScroll = () => {
-    const y = Math.min(window.scrollY, 1200);
-    lake.style.translate = `0 ${y * 0.35}px`;
-  };
-  window.addEventListener('scroll', onScroll, { passive: true });
 }

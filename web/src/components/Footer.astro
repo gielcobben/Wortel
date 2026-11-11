@@ -1,60 +1,41 @@
 ---
-import Mark from './Mark.astro';
 import { SITE } from '../data/site';
 import { latestRelease } from '../data/release';
 interface Props { bare?: boolean }
 const { bare = false } = Astro.props;
 const latest = await latestRelease();
-const cols: [string, [string, string][]][] = [
-  ['Wortel', [['Features', '/#panes'], ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare']]],
-  ['About', [['About', '/about'], ['Brand', '/brand'], ['llms.txt', '/llms.txt']]],
-  ['Legal', [['Privacy', '/privacy'], ['Terms', '/terms']]],
+const links: [string, string][] = [
+  ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare'], ['About', '/about'],
+  ['Privacy', '/privacy'], ['Terms', '/terms'], ['llms.txt', '/llms.txt'],
 ];
 ---
 <footer class="foot">
   {!bare && (
     <section class="cta page" data-reveal-group>
-      <h2 class="h2" data-reveal>Put down roots.</h2>
+      <img src="/icon-512.png" width="96" height="96" alt="" data-reveal />
+      <h2 class="h2" data-reveal>Try Wortel.</h2>
       <p class="lead" data-reveal>Free for macOS {SITE.minMacOS} {SITE.minMacOSName} or later. It updates itself.</p>
-      <div class="row" data-reveal>
-        <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="footer" data-ph-version={latest?.version}>
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v9m0 0L4.5 7.5M8 11l3.5-3.5M3 14h10" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Download for macOS
-        </a>
+      <div data-reveal>
+        <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="footer" data-ph-version={latest?.version}>Download for macOS</a>
       </div>
       {latest && <p class="label" data-reveal>Version {latest.version}{latest.size && ` · ${latest.size}`}</p>}
     </section>
   )}
-  <div class="page grid">
-    <div class="sig">
-      <a class="brand" href="/"><Mark size={24} /><span>wortel</span></a>
-      <p class="small">Wortel is Dutch for root.</p>
-    </div>
-    {cols.map(([h, items]) => (
-      <div class="col">
-        <p class="label">{h}</p>
-        <ul>{items.map(([t, href]) => <li><a href={href}>{t}</a></li>)}</ul>
-      </div>
-    ))}
-  </div>
   <div class="page base">
-    <p class="label">© {new Date().getFullYear()} {SITE.author}</p>
-    <p class="label">Built on <a class="link" href="https://ghostty.org">Ghostty</a>.</p>
+    <nav class="links" aria-label="Footer">
+      {links.map(([t, h]) => <a href={h}>{t}</a>)}
+    </nav>
+    <p class="label">© {new Date().getFullYear()} {SITE.author} · Built on <a class="link" href="https://ghostty.org">Ghostty</a> · Wortel is Dutch for root</p>
   </div>
 </footer>
 
 <style>
-  .foot { border-top: 1px solid var(--line); }
-  .cta { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; padding-block: 160px 128px; }
-  .cta .row { margin-top: 16px; }
-  .grid { position: relative; display: grid; grid-template-columns: 2fr repeat(3, 1fr); gap: 32px; padding-block: 64px; }
-  /* The rule sits on the grid's edges, not the page's padding. */
-  .cta + .grid::before { content: ''; position: absolute; top: 0; left: var(--gutter); right: var(--gutter); height: 1px; background: var(--line); }
-  .sig { display: flex; flex-direction: column; gap: 16px; }
-  .brand { display: inline-flex; align-items: center; gap: 8px; font: 600 20px/24px var(--font-display); letter-spacing: -0.035em; color: var(--ink); }
-  .col ul { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-direction: column; gap: 8px; }
-  .col a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 0.2s; }
-  .col a:hover { color: var(--ink); }
-  .base { display: flex; justify-content: space-between; gap: 16px; padding-block: 24px 40px; flex-wrap: wrap; }
-  @media (max-width: 800px) { .grid { grid-template-columns: 1fr 1fr; } .sig { grid-column: 1 / -1; } }
+  .foot { margin-top: 160px; }
+  .cta { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; padding-bottom: 160px; }
+  .cta img { margin-bottom: 8px; }
+  .cta .btn { margin-top: 16px; }
+  .base { display: flex; flex-direction: column; align-items: center; gap: 16px; padding-block: 40px 48px; border-top: 1px solid var(--line); text-align: center; }
+  .links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24px; }
+  .links a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 0.2s; }
+  .links a:hover { color: var(--ink); }
 </style>

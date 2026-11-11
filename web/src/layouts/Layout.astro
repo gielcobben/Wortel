@@ -13,8 +13,6 @@ interface Props {
   path?: string;
   /** JSON-LD graph nodes. Rendered as one @graph so crawlers see one document. */
   schema?: unknown[];
-  /** The nav starts transparent over a hero photo and turns solid on scroll. */
-  overHero?: boolean;
   /** Leave out the footer's closing call to download. */
   bare?: boolean;
 }
@@ -24,7 +22,6 @@ const {
   description = SITE.description,
   path = '/',
   schema = [],
-  overHero = false,
   bare = false,
 } = Astro.props;
 
@@ -65,10 +62,9 @@ const ogImage = new URL('/og.png', SITE.url).href;
     <meta name="twitter:image:alt" content={`${SITE.name}: ${SITE.tagline}`} />
 
     <meta name="apple-mobile-web-app-title" content={SITE.name} />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0e0c" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfaf7" />
+    <meta name="theme-color" content="#000000" />
 
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://updates.wortel.sh" crossorigin />
@@ -92,7 +88,7 @@ const ogImage = new URL('/og.png', SITE.url).href;
   </head>
   <body>
     <a class="skip" href="#top">Skip to content</a>
-    <Nav overHero={overHero} />
+    <Nav />
     <main id="top">
       <slot />
     </main>

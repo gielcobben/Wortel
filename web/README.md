@@ -36,25 +36,22 @@ src/
   content/releases/*.md    the changelog, one Markdown file per release
   content/legal/*.md       /privacy, /terms (the filename is the route)
   pages/index.astro        the homepage: sections in components/home/
-  pages/about.astro        /about   Roots: the name, a family tree, six beliefs
-  pages/brand.astro        /brand   name, mark, icon, colours, asset zip
+  pages/about.astro        /about   the name, a family tree, six beliefs
   pages/updates.astro      /updates the changelog
   pages/compare.astro      /compare Wortel against nine named apps
   pages/docs.astro         /docs    commands, shortcuts, behaviour
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms*.txt.ts       maps for language models
-  components/home/         Hero, Statement, Panes, Agents, Worktrees, Survival,
-                           NoSettings, Command, Engine (specs + FAQ)
+  components/home/         Hero, Panes, Features, Faq (specs + questions)
   app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
   scripts/hero.ts          the landing sequence (one GSAP timeline)
-  scripts/panes.ts         the scroll-scrubbed panes explainer
-  scripts/sections.ts      everything else that moves
-  styles/site.css          the site's design system (fog, ink, moss; 8px grid)
+  scripts/panes.ts         the panes explainer, played a step at a time
+  styles/site.css          the site's design system (dark, one centred axis, 8px grid)
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
 public/
   app/                     glyphs and images the generated panes use
-  img/lake*.jpg            the foggy lake
-  brand/                   icon, marks, and the zip /brand links to
+  img/lake*.jpg            the foggy lake: the desktop every window stands on
+  icon-*.png, favicon-*    the app icon, exported from macos/Wortel/AppIcon.icon
 scripts/opmaak/            jsx2astro.mjs: canvas markup -> src/app/gen
 ```
 
@@ -77,9 +74,9 @@ files in src/app/gen; scripts can find nodes by their `data-name`.
 ### Motion
 
 The landing and the panes explainer are written the way the product films
-are: one GSAP timeline each, every beat at a named time. Scroll never locks:
-the panes section is tall and its stage is sticky, so scroll position is the
-playhead. For screenshots, `/?t=<s>` holds the landing at a time and
+are: one GSAP timeline each, every beat at a named time. Nothing is tied to
+scroll: the panes steps advance by themselves while on screen and a click takes
+over. For screenshots, `/?t=<s>` holds the landing at a time and
 `/?panes=<s>` holds the panes timeline. Reduced motion skips to the end state.
 
 The download button points at `https://updates.wortel.sh/Wortel-latest.zip`,
@@ -285,8 +282,11 @@ and while they sat in `public/` they were published too, which was 4.2MB of the
 SRGB="/System/Library/ColorSync/Profiles/sRGB Profile.icc"
 magick art/app-shot-dark.png -profile "$SRGB" -resize 1392x912 -strip public/screenshot.png
 # icons
-rsvg-convert -w 180 -h 180 public/favicon.svg | magick - -background '#0e0f0d' -flatten public/apple-touch-icon.png
-rsvg-convert -w 96  -h 96  public/favicon.svg -o public/favicon-96.png
+# exported from the app's own Icon Composer file, so the site never drifts from it
+ictool="/Applications/Icon Composer.app/Contents/Executables/ictool"
+"$ictool" ../macos/Wortel/AppIcon.icon --export-image --output-file /tmp/icon.png --platform macOS --rendition Default --width 512 --height 512 --scale 2
+for n in 512 180 128 96 32; do sips -z $n $n /tmp/icon.png --out public/icon-$n.png; done
+mv public/icon-180.png public/apple-touch-icon.png; mv public/icon-96.png public/favicon-96.png; mv public/icon-32.png public/favicon-32.png
 ```
 
 `public/og.png` (1200x630) is composed from the grid background, the cropped app

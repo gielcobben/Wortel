@@ -129,28 +129,58 @@ const INGEST = /^\/(e|i\/v0\/e|batch|capture|track)\/?$/;
 
 type PHEvent = { properties?: Record<string, unknown> } & Record<string, unknown>;
 
+// Caps, because this unpacks whatever anyone POSTs: a few KB of gzip can
+// expand to gigabytes. A real batch from the site is a few KB either way, so
+// these are far above anything legitimate and anything over them is dropped.
+const MAX_BODY = 256 * 1024;
+const MAX_PLAIN = 2 * 1024 * 1024;
+const MAX_EVENTS = 200;
+
 /** The events in a capture request, or null when the body is not one we know. */
 async function readEvents(request: Request): Promise<PHEvent[] | null> {
   try {
+    if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY) return null;
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.length > MAX_BODY) return null;
     // Gzip is told apart by its magic bytes, which is what PostHog does too:
     // posthog-js 1.447 sends a gzipped body with no `compression` parameter
     // and no content-encoding, so trusting either one dropped every event.
-    const bytes = new Uint8Array(await request.arrayBuffer());
-    let text: string;
-    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
-      const plain = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-      text = await new Response(plain).text();
-    } else {
-      text = new TextDecoder().decode(bytes);
-    }
-    const parsed: unknown = JSON.parse(text);
+    const gzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
+    const plain = gzip ? await gunzip(bytes) : bytes;
+    if (!plain || plain.length > MAX_PLAIN) return null;
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(plain));
     const list = Array.isArray(parsed) ? parsed
       : (parsed as { batch?: unknown }).batch ?? [parsed];
-    if (!Array.isArray(list) || !list.every((e) => e && typeof e === 'object')) return null;
+    if (!Array.isArray(list) || list.length > MAX_EVENTS) return null;
+    if (!list.every((e) => e && typeof e === 'object')) return null;
     return list as PHEvent[];
   } catch {
     return null;
   }
+}
+
+/** Decompressed, or null the moment it passes MAX_PLAIN. */
+async function gunzip(bytes: Uint8Array): Promise<Uint8Array | null> {
+  const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > MAX_PLAIN) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.length;
+  }
+  return out;
 }
 
 function stampCountry(event: PHEvent, country: string | undefined): void {

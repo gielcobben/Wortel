@@ -181,6 +181,10 @@ async function count(request: Request, env: Env, key: string): Promise<void> {
           ...(country ? { country } : {}),
           platform: 'updates',
           $process_person_profile: false,
+          // The request reaching PostHog comes from this Worker, so a lookup
+          // would place every update check at a Cloudflare data centre.
+          // `country` above is the visitor's, from Cloudflare.
+          $geoip_disable: true,
         },
       }),
     });

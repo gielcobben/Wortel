@@ -44,14 +44,14 @@ src/
   pages/llms*.txt.ts       maps for language models
   components/home/         Hero, Panes, Agents, Worktrees, Survival, Glance (specs + FAQ)
   app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
+  scripts/app.ts           tools for acting on a generated window: select a row, set a status, print a line
   scripts/hero.ts          the landing sequence (one GSAP timeline)
-  scripts/panes.ts         the panes explainer, played a step at a time
-  scripts/sections.ts      the loops inside the agents and survival shots
+  scripts/panes.ts         the window you arrange: a state per place, and a storyboard that presses for you
+  scripts/scenes.ts        the films in the agents, worktrees and survival shots
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
 public/
   app/                     glyphs and images the generated panes use
-  img/lake*.jpg            the foggy lake every window stands on
   icon-*.png, favicon-*    the app icon, exported from macos/Wortel/AppIcon.icon
 scripts/opmaak/            jsx2astro.mjs: canvas markup -> src/app/gen
 ```
@@ -77,19 +77,24 @@ follows the page's colour scheme through the tokens in styles/app.css.
 ### One layout
 
 Every page sits on one container with one left edge; nothing is centred. A
-homepage section is `.sec` > `.bhead` (two-tone heading) + `.shot` (the app on
-the lake) + `.facts` (a row of short points). An inner page is `.phead` and
+homepage section is `.sec` > `.bhead` (two-tone heading) + `.shot` (the app,
+standing directly on the page: no wallpaper, no card) + `.facts` (a row of
+short points). An inner page is `.phead` and
 then `.row12` rows: a label in columns 1 to 3, content in 4 to 11. Don't name
 a site class after a Tailwind utility (`block`, `grid`, `flex`…): the app's
 generated markup uses those.
 
 ### Motion
 
-The landing and the panes explainer are written the way the product films
-are: one GSAP timeline each, every beat at a named time. Nothing is tied to
-scroll: the panes steps advance by themselves while on screen and a click takes
-over. For screenshots, `/?t=<s>` holds the landing at a time and
-`/?panes=<s>` holds the panes timeline. Reduced motion skips to the end state.
+Every shot is a small film on a real window, written the way the product films
+are: one GSAP timeline, every beat at a named time (`const at = {…}`), acting
+through `scripts/app.ts` so a scene says `sb.select(…)`, `sb.status(…, 'attention')`,
+`term.print('Tool', '(npm run build)', 'Bash')` rather than touching markup.
+Films start when their shot comes on screen and pause when it leaves; nothing
+is tied to scroll. The panes window is not a film but a state machine you can
+press, with a storyboard that presses it until you do. `/?t=<s>` holds the
+landing at a time and `/?panes=quiet` holds the folded window, for screenshots.
+Reduced motion shows each scene's telling frame and does not move.
 
 The download button points at `https://updates.wortel.sh/Wortel-latest.zip`,
 which `release.sh --publish` always mirrors to the newest signed build. The

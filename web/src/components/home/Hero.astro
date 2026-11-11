@@ -1,6 +1,6 @@
 ---
-// The landing: what Wortel is, the download, and the app on the foggy lake,
-// where an agent then does a small job (scripts/hero.ts).
+// The landing: what Wortel is, the download, and the app itself, where you
+// type a request and an agent does the job (scripts/hero.ts).
 import HeroWindow from '../../app/gen/HeroWindow.astro';
 import { SITE } from '../../data/site';
 import { latestRelease } from '../../data/release';
@@ -23,7 +23,7 @@ const latest = await latestRelease();
       <p class="label" data-fade>Free · macOS {SITE.minMacOS} {SITE.minMacOSName} or later</p>
     </div>
 
-    <div class="shot full" data-shot>
+    <div class="shot">
       <div class="win wapp" data-win data-ph-demo aria-hidden="true" inert>
         <HeroWindow />
       </div>

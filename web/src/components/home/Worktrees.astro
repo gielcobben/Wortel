@@ -1,24 +1,30 @@
 ---
-// Worktrees: several agents on several branches of one repository, shown the
-// way the app shows it: branch marks in the sidebar, the graph in History.
+// Worktrees: each session is its own branch in its own directory. The film
+// (scripts/scenes.ts) walks the selection through three sessions, and the
+// rest of the window follows each one: the shell's directory and branch, the
+// branch in the column, and only that session's changes.
 import Sidebar from '../../app/gen/Sidebar.astro';
 import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
-import History from '../../app/gen/History.astro';
+import BottomStrip from '../../app/gen/BottomStrip.astro';
+import Changes from '../../app/gen/Changes.astro';
 ---
 <section class="sec" id="worktrees">
   <div class="page">
     <div class="bhead" data-reveal>
       <h2 class="h2">Five agents, one repository. <span class="tone">Open a session on a branch and Wortel checks it out in a directory of its own. Each agent edits its own files, and nothing changes the ground under another mid-task.</span></h2>
     </div>
-    <div class="shot crop" style="--at: 82% 72%" aria-hidden="true">
+    <div class="shot" style="--h: 560px" data-worktrees aria-hidden="true">
       <div class="win wapp" inert>
-        <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+        <div class="absolute inset-0 bg-sidebar"></div>
         <div class="relative flex size-full">
           <div class="flex w-[234px] shrink-0"><Sidebar /></div>
           <div class="w-px shrink-0 bg-sidebar-border"></div>
-          <div class="flex min-w-[80px] flex-1"><TerminalNarrow /></div>
+          <div class="flex min-w-[80px] flex-1 flex-col">
+            <div class="flex min-h-0 flex-1"><TerminalNarrow /></div>
+            <div class="flex h-[112px] shrink-0"><BottomStrip /></div>
+          </div>
           <div class="w-px shrink-0 bg-sidebar-border"></div>
-          <div class="flex w-[384px] min-w-[260px] shrink-[3]"><History /></div>
+          <div class="flex w-[360px] min-w-[260px] shrink-[3]"><Changes /></div>
         </div>
       </div>
     </div>

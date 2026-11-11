@@ -1,8 +1,8 @@
 ---
-// Agents: the sidebar as the thing that tells you who needs you. The window is
-// the real one from the canvas at 1:1; scripts/sections.ts runs a small loop
-// on it while it is on screen: a session is working, goes still, asks for
-// permission, and a notification comes in.
+// Agents: who needs you, as it happens. A short film on the real window
+// (scripts/scenes.ts): a background session stops for permission, its dot
+// turns, a notification arrives, one shortcut takes you there, you answer,
+// and it goes back to work.
 import Sidebar from '../../app/gen/Sidebar.astro';
 import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
 ---
@@ -11,9 +11,9 @@ import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
     <div class="bhead" data-reveal>
       <h2 class="h2">Know which agent needs you. <span class="tone">Hand one repository to Claude Code, another to Codex, a third to Aider. Wortel reads the screen and marks what is working and what is waiting.</span></h2>
     </div>
-    <div class="shot crop" style="--at: 18% 70%" data-agents aria-hidden="true">
+    <div class="shot" style="--h: 520px" data-agents aria-hidden="true">
       <div class="win wapp" inert>
-        <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+        <div class="absolute inset-0 bg-sidebar"></div>
         <div class="relative flex size-full">
           <div class="flex w-[234px] shrink-0"><Sidebar /></div>
           <div class="w-px shrink-0 bg-sidebar-border"></div>
@@ -27,6 +27,8 @@ import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
           <p class="msg">Claude wants to run <span class="mono">npm run build</span></p>
         </div>
       </div>
+      <div class="keys" data-keys="jump"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↓</kbd></div>
+      <div class="keys" data-keys="enter"><kbd>⏎</kbd></div>
     </div>
     <ul class="facts" data-reveal-group>
       <li class="fact" data-reveal>
@@ -47,14 +49,14 @@ import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
 
 <style>
   .note {
-    position: absolute; z-index: 2; top: 24px; right: 24px; width: 344px;
+    position: absolute; z-index: 3; top: 16px; right: 16px; width: 344px;
     display: flex; gap: 8px; align-items: center; padding: 12px 16px 12px 12px;
     border-radius: 18px;
-    background: rgb(246 246 246 / 0.78);
+    background: rgb(246 246 246 / 0.8);
     backdrop-filter: blur(24px) saturate(1.8); -webkit-backdrop-filter: blur(24px) saturate(1.8);
     box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 8px 24px rgb(0 0 0 / 0.14);
     font-family: var(--font-sans); color: #1d1d1f;
-    opacity: 0; transform: translateX(380px);
+    opacity: 0;
   }
   .note img { width: 40px; height: 40px; flex: none; }
   .note p { margin: 0; }
@@ -63,8 +65,9 @@ import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
   .ttl span { opacity: 0.5; font-size: 12px; }
   .msg { font-size: 13px; line-height: 16px; opacity: 0.8; }
   .msg .mono { font-size: 12px; }
+  .keys { left: 50%; top: 248px; translate: -50% 0; }
   @media (prefers-color-scheme: dark) {
-    .note { background: rgb(40 40 40 / 0.78); color: #f5f5f7; box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.14), 0 8px 24px rgb(0 0 0 / 0.4); }
+    .note { background: rgb(44 44 44 / 0.8); color: #f5f5f7; box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.14), 0 8px 24px rgb(0 0 0 / 0.4); }
   }
-  @media (max-width: 760px) { .note { right: 16px; top: 16px; width: 296px; } }
+  @media (max-width: 760px) { .note { right: calc(var(--gutter) + 8px); width: 296px; } .keys { left: calc(50% - var(--gutter) / 2); } }
 </style>

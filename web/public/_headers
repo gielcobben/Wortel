@@ -22,8 +22,6 @@
 # year in cache is the difference between a cold and a warm second visit.
 /app/*
   Cache-Control: public, max-age=604800
-/img/*
-  Cache-Control: public, max-age=604800
 
 # Stable but occasionally regenerated (see web/README.md for the ImageMagick
 # commands). A day is long enough to matter for social scrapers re-fetching the

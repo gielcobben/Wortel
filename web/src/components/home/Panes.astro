@@ -1,90 +1,82 @@
 ---
-// The window, explained by putting it together.
+// The window, explained by letting you arrange it.
 //
-// One live window on the lake, built from the canvas's pane library, and a row
-// of six steps under it on the page grid. Each step plays its part of one GSAP
-// timeline (scripts/panes.ts): the empty skeleton, each place filling with its
-// pane, tabs moving, everything folding away again. The steps advance by
-// themselves while the section is on screen and a click takes over. Nothing is
-// pinned and the scroll is never touched. The window is never scaled.
+// One complete, live window built from the canvas's pane library, and under
+// it one fact per place. Each fact lists what that place can hold, and the
+// list is the control: pick History and the column shows History, pick Hidden
+// and the place folds away, the way its shortcut does in the app. Until you
+// touch it, it arranges itself (scripts/panes.ts). The window is never scaled.
 import Sidebar from '../../app/gen/Sidebar.astro';
 import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
+import FileMain from '../../app/gen/FileMain.astro';
+import Browser from '../../app/gen/Browser.astro';
 import Changes from '../../app/gen/Changes.astro';
 import History from '../../app/gen/History.astro';
 import Files from '../../app/gen/Files.astro';
-import FileColumn from '../../app/gen/FileColumn.astro';
-import Browser from '../../app/gen/Browser.astro';
 import BottomStrip from '../../app/gen/BottomStrip.astro';
 
-const STEPS = [
-  { place: 'Sidebar', keys: ['⌘B'], body: 'Every session by name, grouped by folder, with a dot when an agent wants you.' },
-  { place: 'Main', keys: ['⌘T'], body: 'The terminal you are in. It takes a file, code or a browser just as happily.' },
-  { place: 'Column', keys: ['⌥⌘B'], body: 'Changes, History and Files: your repository, beside the shell.' },
-  { place: 'Strip', keys: ['⌘J'], body: 'A second shell for the dev server and the logs, under the terminal.' },
-  { place: 'Anywhere', keys: [], body: 'Drag any tab to any place. A browser in the main area, a plan in the column.' },
-  { place: 'Quiet', keys: [], body: 'Three keys put it all away. What is left is a terminal, and a very good one.' },
+const PLACES = [
+  { key: 'sidebar', name: 'Sidebar', keys: '⌘B', body: 'Every session by name, grouped by folder, with a dot when an agent wants you.',
+    options: [['sidebar', 'Sessions'], ['hidden', 'Hidden']] },
+  { key: 'main', name: 'Main', keys: '⌘T', body: 'The work in front of you. A terminal, and just as happily a file or a browser.',
+    options: [['terminal', 'Terminal'], ['file', 'File'], ['browser', 'Browser']] },
+  { key: 'side', name: 'Column', keys: '⌥⌘B', body: 'Your repository beside the shell: what changed, the commits, the files.',
+    options: [['changes', 'Changes'], ['history', 'History'], ['files', 'Files'], ['hidden', 'Hidden']] },
+  { key: 'strip', name: 'Strip', keys: '⌘J', body: 'A second shell under the terminal, for the dev server and the logs.',
+    options: [['strip', 'Shell'], ['hidden', 'Hidden']] },
 ];
-
-const P = {
-  sidebar: { label: 'Sidebar', hint: 'Sessions' },
-  main: { label: 'Main', hint: 'Terminal, file, code or browser' },
-  strip: { label: 'Bottom strip', hint: 'A second row of tabs' },
-  side: { label: 'Side column', hint: 'Changes, History, Files or a file' },
-};
 ---
 <section id="panes" class="sec" data-panes>
   <span id="sessions" class="anchor"></span><span id="git-and-files" class="anchor"></span>
   <div class="page">
     <div class="bhead" data-reveal>
-      <h2 class="h2">One window, four places. <span class="tone">A sidebar, a main area, a side column and a bottom strip. Any tab goes in any of them, and there is no layout to configure.</span></h2>
+      <h2 class="h2">One window, four places. <span class="tone">Each place holds what you put there, or nothing at all. There is no layout to configure: try it.</span></h2>
     </div>
-    <div class="shot full" style="--at: 50% 88%">
+    <div class="shot" style="--h: 560px">
       <div class="win wapp" data-pwin aria-hidden="true" inert>
-        <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+        <div class="absolute inset-0 bg-sidebar"></div>
         <div class="relative flex size-full">
           <div class="slot sb" data-slot="sidebar">
-            <div class="ph" data-ph><b>{P.sidebar.label}</b><i>{P.sidebar.hint}</i></div>
             <div class="pane" data-pane="sidebar"><Sidebar /></div>
           </div>
           <div class="divider" data-div="sidebar"></div>
           <div class="mainarea">
             <div class="slot main" data-slot="main">
-              <div class="ph" data-ph><b>{P.main.label}</b><i>{P.main.hint}</i></div>
               <div class="pane" data-pane="terminal"><TerminalNarrow /></div>
+              <div class="pane" data-pane="file"><FileMain /></div>
               <div class="pane" data-pane="browser"><Browser /></div>
             </div>
             <div class="slot strip" data-slot="strip">
-              <div class="ph" data-ph><b>{P.strip.label}</b><i>{P.strip.hint}</i></div>
               <div class="pane" data-pane="strip"><BottomStrip /></div>
             </div>
           </div>
           <div class="divider" data-div="side"></div>
           <div class="slot side" data-slot="side">
-            <div class="ph" data-ph><b>{P.side.label}</b><i>{P.side.hint}</i></div>
             <div class="pane" data-pane="changes"><Changes /></div>
             <div class="pane" data-pane="history"><History /></div>
             <div class="pane" data-pane="files"><Files /></div>
-            <div class="pane" data-pane="file"><FileColumn /></div>
           </div>
         </div>
-        <div class="lights" aria-hidden="true">
+        <div class="lights">
           <img src="/app/3ef4fc84971102ffed5f4a10ada4399c.png" alt="" width="16" height="16" />
           <img src="/app/d1dbbe84aaf8f948789bed8b07c2622c.png" alt="" width="16" height="16" />
           <img src="/app/ebeda5316137eb91580afb0a92bd4f45.png" alt="" width="16" height="16" />
         </div>
-        <div class="pointer-events-none absolute inset-0 rounded-[18px] "></div>
       </div>
     </div>
-    <ol class="facts six steps" role="tablist" aria-label="The parts of the window">
-      {STEPS.map((s, i) => (
-        <li class="fact">
-          <button type="button" role="tab" data-goto={i} aria-selected="false">
-            <span class="h3"><span class="n">{String(i + 1).padStart(2, '0')}</span>{s.place}{s.keys.map((k) => <kbd>{k}</kbd>)}</span>
-            <span class="body">{s.body}</span>
-          </button>
+    <ul class="facts four places">
+      {PLACES.map((p) => (
+        <li class="fact" data-place={p.key}>
+          <h3 class="h3">{p.name} <kbd>{p.keys}</kbd></h3>
+          <p class="body">{p.body}</p>
+          <div class="seg" role="group" aria-label={`What the ${p.name.toLowerCase()} holds`}>
+            {p.options.map(([v, label], i) => (
+              <button type="button" data-set={v} aria-pressed={i === 0 ? 'true' : 'false'}>{label}</button>
+            ))}
+          </div>
         </li>
       ))}
-    </ol>
+    </ul>
   </div>
 </section>
 
@@ -102,40 +94,33 @@ const P = {
   .sb { width: 234px; flex: none; }
   .mainarea { display: flex; flex-direction: column; flex: 1; min-width: 80px; min-height: 0; }
   .main { flex: 1; min-height: 80px; }
-  .strip { flex: none; height: 30%; min-height: 0; }
-  .side { width: 320px; flex: none; }
+  .strip { flex: none; height: 176px; min-height: 0; }
+  .side { width: 360px; flex: none; }
   .divider { width: 1px; flex: none; background: var(--sidebar-border); align-self: stretch; }
   .pane { display: flex; }
-  /* Collapsing a slot clips its pane, the way a split view does, instead of
+  /* A folding slot clips its pane, the way a split view does, instead of
      reflowing it through every width on the way to zero. */
-  .sb .pane { min-width: 180px; }
-  .side .pane { min-width: 260px; }
-  .strip .pane { min-height: 100px; }
+  .sb .pane { min-width: 234px; }
+  .side .pane { min-width: 360px; }
+  .strip .pane { min-height: 176px; }
   .pane > :global(*) { flex: 1; }
-
-  .ph {
-    margin: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-    border: 1px dashed var(--sidebar-ring); border-radius: 12px; text-align: center; padding: 8px;
-    color: var(--sidebar-foreground);
-  }
-  .ph b { font: 500 13px/16px var(--font-sans); }
-  .ph i { font: 400 11px/16px var(--font-sans); font-style: normal; color: var(--sidebar-accent-foreground); }
+  .pane:not(:first-child) { visibility: hidden; opacity: 0; }
 
   /* The window owns the traffic lights, as AppKit does; the pane's copy hides. */
   .lights { position: absolute; left: 11px; top: 12px; display: flex; gap: 7px; z-index: 5; }
   .lights img { width: 16px; height: 16px; }
   .win :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }
 
-  /* The steps are facts you can press. The rule over the current one fills. */
-  .steps .fact { position: relative; padding-top: 0; }
-  .steps .fact::before { content: ''; position: absolute; left: 0; top: -1px; height: 1px; width: 0; background: var(--ink); }
-  .steps .fact.on::before { width: 100%; }
-  .auto .steps .fact.on::before { transition: width 5.2s linear; }
-  .steps button { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 4px; width: 100%; padding-top: 16px; }
-  .steps button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
-  .steps .h3, .steps .body { transition: color 0.3s; }
-  .steps .fact:not(.on) .h3 { color: var(--ink-2); }
-  .steps .fact:not(.on) .body { color: var(--ink-3); }
-  .steps button:hover .h3 { color: var(--ink); }
-  .n { display: inline-block; width: 28px; font: 500 12px/24px var(--font-mono); color: var(--ink-3); letter-spacing: 0; }
+  /* What a place holds, as a row of choices. The current one is filled. */
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 16px; }
+  .seg button {
+    all: unset; box-sizing: border-box; cursor: pointer; height: 24px; padding: 0 10px; border-radius: 999px;
+    font-size: 13px; line-height: 24px; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2);
+    transition: color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  }
+  .seg button:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-3); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--fog-0); box-shadow: none; }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .fact kbd { transition: transform 0.1s, border-bottom-width 0.1s; }
+  .fact :global(kbd.down) { transform: translateY(1px); border-bottom-width: 1px; }
 </style>

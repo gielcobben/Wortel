@@ -1,153 +1,116 @@
-// The panes section: one GSAP timeline, played a step at a time.
+// The panes section: a window you arrange.
 //
-// The timeline is written like a film's storyboard: each step has a named start
-// and a hold, so retiming a beat is one number. A step plays to the end of its
-// hold; the steps advance by themselves while the section is on screen, and a
-// click on one stops that and goes there. Scrolling is never involved.
-//
-// ?panes=<seconds> seeks the timeline and freezes it, for screenshots.
+// The window has four places and a state per place: what it holds, or hidden.
+// set() moves one place to a new state the way the app does it: a pane swaps
+// out and in, a hidden place folds to nothing and its neighbours take the
+// room. The choices under the window call set(); until someone presses one, a
+// short storyboard presses them itself so the window is never still.
 import { gsap } from 'gsap';
+import { reduced } from './app';
 
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+type Place = 'sidebar' | 'main' | 'side' | 'strip';
 
 export function initPanes() {
   const root = document.querySelector<HTMLElement>('[data-panes]');
-  if (!root) return;
-  const win = root.querySelector<HTMLElement>('[data-pwin]');
-  if (!win) return;
+  const win = root?.querySelector<HTMLElement>('[data-pwin]');
+  if (!root || !win) return;
 
   const slot = (k: string) => win.querySelector<HTMLElement>(`[data-slot="${k}"]`)!;
   const pane = (k: string) => win.querySelector<HTMLElement>(`[data-pane="${k}"]`)!;
-  const ph = (k: string) => slot(k).querySelector<HTMLElement>('[data-ph]')!;
   const div = (k: string) => win.querySelector<HTMLElement>(`[data-div="${k}"]`)!;
-  const mainBar = pane('terminal').querySelector<HTMLElement>('[data-name="Main bar"]');
+  const bars = Array.from(win.querySelectorAll<HTMLElement>('[data-slot="main"] header'));
 
-  const steps = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-goto]'));
+  const state: Record<Place, string> = { sidebar: 'sidebar', main: 'terminal', side: 'changes', strip: 'strip' };
+  const size = { sidebar: slot('sidebar').offsetWidth || 234, side: slot('side').offsetWidth || 360, strip: slot('strip').offsetHeight || 176 };
+  const FOLD = { duration: 0.55, ease: 'power3.inOut' };
 
-  // ---- storyboard ---------------------------------------------------------
-  // [start of the step's motion, end of its hold]
-  const S = {
-    sidebar: [0.6, 2.4],
-    main: [2.4, 4.2],
-    side: [4.2, 7.4],
-    strip: [7.4, 9.0],
-    anywhere: [9.0, 11.0],
-    quiet: [11.0, 13.2],
-  } as const;
-  const order = Object.keys(S) as (keyof typeof S)[];
-  const IN = { duration: 0.8, ease: 'power3.out' };
-  const SWAP = { duration: 0.5, ease: 'power2.inOut' };
+  // ---- one place, one change ------------------------------------------------
+  function set(place: Place, value: string, instant = false) {
+    const from = state[place];
+    if (from === value) return;
+    state[place] = value;
+    const d = instant ? 0 : 1;
 
-  const all = ['sidebar', 'terminal', 'browser', 'strip', 'changes', 'history', 'files', 'file'];
-  gsap.set(all.map(pane), { autoAlpha: 0 });
-
-  const tl = gsap.timeline({ paused: true, defaults: { ease: 'power2.inOut' } });
-  tl.set({}, {}, 0);
-
-  // 01 sidebar
-  tl.to(ph('sidebar'), { autoAlpha: 0, scale: 0.98, duration: 0.4 }, S.sidebar[0]);
-  tl.fromTo(pane('sidebar'), { autoAlpha: 0, x: -24 }, { autoAlpha: 1, x: 0, ...IN }, S.sidebar[0] + 0.1);
-
-  // 02 main
-  tl.to(ph('main'), { autoAlpha: 0, scale: 0.98, duration: 0.4 }, S.main[0]);
-  tl.fromTo(pane('terminal'), { autoAlpha: 0, y: 24 }, { autoAlpha: 1, y: 0, ...IN }, S.main[0] + 0.1);
-
-  // 03 side column, then the column cycles through its three panes
-  tl.to(ph('side'), { autoAlpha: 0, scale: 0.98, duration: 0.4 }, S.side[0]);
-  tl.fromTo(pane('changes'), { autoAlpha: 0, x: 24 }, { autoAlpha: 1, x: 0, ...IN }, S.side[0] + 0.1);
-  // One pane out, then the next in: never two dense layers at once.
-  const OUT = { duration: 0.25, ease: 'power1.in' }, INN = { duration: 0.35, ease: 'power2.out' };
-  tl.to(pane('changes'), { autoAlpha: 0, ...OUT }, S.side[0] + 1.3);
-  tl.fromTo(pane('history'), { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, ...INN }, S.side[0] + 1.55);
-  tl.to(pane('history'), { autoAlpha: 0, ...OUT }, S.side[0] + 2.3);
-  tl.fromTo(pane('files'), { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, ...INN }, S.side[0] + 2.55);
-
-  // 04 bottom strip
-  tl.to(ph('strip'), { autoAlpha: 0, scale: 0.98, duration: 0.4 }, S.strip[0]);
-  tl.fromTo(pane('strip'), { autoAlpha: 0, y: 32 }, { autoAlpha: 1, y: 0, ...IN }, S.strip[0] + 0.1);
-
-  // 05 any tab, any place: a browser takes the main area, a plan the column
-  tl.to(pane('terminal'), { autoAlpha: 0, duration: 0.25, ease: 'power1.in' }, S.anywhere[0]);
-  tl.fromTo(pane('browser'), { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.4, ease: 'power2.out' }, S.anywhere[0] + 0.25);
-  tl.to(pane('files'), { autoAlpha: 0, duration: 0.25, ease: 'power1.in' }, S.anywhere[0] + 0.7);
-  tl.fromTo(pane('file'), { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.4, ease: 'power2.out' }, S.anywhere[0] + 0.95);
-
-  // 06 quiet: everything folds away and the terminal has the window
-  const q = S.quiet[0];
-  tl.to(pane('browser'), { autoAlpha: 0, duration: 0.25, ease: 'power1.in' }, q);
-  tl.to(pane('terminal'), { autoAlpha: 1, y: 0, duration: 0.4, ease: 'power2.out' }, q + 0.25);
-  tl.to(slot('sidebar'), { width: 0, duration: 1, ease: 'power3.inOut' }, q + 0.3);
-  tl.to(div('sidebar'), { autoAlpha: 0, duration: 0.3 }, q + 1.0);
-  if (mainBar) tl.to(mainBar, { paddingLeft: 84, duration: 1, ease: 'power3.inOut' }, q + 0.3);
-  tl.to(slot('side'), { width: 0, duration: 1, ease: 'power3.inOut' }, q + 0.5);
-  tl.to(div('side'), { autoAlpha: 0, duration: 0.3 }, q + 1.2);
-  tl.to(slot('strip'), { height: 0, duration: 1, ease: 'power3.inOut' }, q + 0.7);
-  tl.set({}, {}, S.quiet[1]);
-
-  // ---- on a phone, the stage pans to the place the step is about ----------
-  const phone = matchMedia('(max-width: 760px)');
-  const focus: Record<string, string | null> = { sidebar: 'sidebar', main: 'main', side: 'side', strip: 'strip', anywhere: 'side', quiet: null };
-  const pan = (idx: number) => {
-    if (!phone.matches) { gsap.set(win, { x: 0 }); return; }
-    const box = win.parentElement!;
-    const k = idx < 0 ? 'sidebar' : focus[order[idx]];
-    let x = 0;
-    if (k) {
-      const el = slot(k);
-      const r = el.getBoundingClientRect(), w = win.getBoundingClientRect();
-      const centre = r.left - w.left + r.width / 2;
-      x = Math.min(0, Math.max(box.clientWidth - win.offsetWidth, box.clientWidth / 2 - centre));
+    // Fold or unfold the place itself.
+    if (place !== 'main' && (value === 'hidden' || from === 'hidden')) {
+      const open = value !== 'hidden';
+      const s = slot(place);
+      if (place === 'strip') gsap.to(s, { height: open ? size.strip : 0, ...FOLD, duration: FOLD.duration * d });
+      else {
+        gsap.to(s, { width: open ? size[place] : 0, ...FOLD, duration: FOLD.duration * d });
+        gsap.to(div(place), { autoAlpha: open ? 1 : 0, duration: 0.2 * d, delay: open ? 0 : 0.3 * d });
+      }
+      // With no sidebar, the main bar makes room for the traffic lights.
+      if (place === 'sidebar') gsap.to(bars, { paddingLeft: open ? '' : 84, ...FOLD, duration: FOLD.duration * d, clearProps: open ? 'paddingLeft' : '' });
     }
-    gsap.to(win, { x, duration: 0.7, ease: 'power3.inOut', overwrite: 'auto' });
-  };
 
-  // ---- the step row follows ------------------------------------------------
-  const mark = (idx: number) => {
-    steps.forEach((s, i) => {
-      s.setAttribute('aria-selected', String(i === idx));
-      s.parentElement!.classList.toggle('on', i === idx);
-    });
-    pan(idx);
-  };
+    // Swap what the place holds: the old pane out, then the new one in.
+    const a = from !== 'hidden' ? pane(from) : null;
+    const b = value !== 'hidden' ? pane(value) : null;
+    if (a && b && a !== b) {
+      gsap.to(a, { autoAlpha: 0, duration: 0.14 * d, ease: 'power1.in' });
+      gsap.fromTo(b, { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.3 * d, delay: 0.14 * d, ease: 'power2.out' });
+    }
 
-  const params = new URLSearchParams(location.search);
-  if (params.has('panes')) {
-    const t = Number(params.get('panes'));
-    tl.seek(t);
-    let idx = -1;
-    order.forEach((k, i) => { if (t >= S[k][0] - 0.2) idx = i; });
-    mark(idx);
-    return;
+    // The choices under the window follow.
+    const fact = root!.querySelector<HTMLElement>(`[data-place="${place}"]`)!;
+    fact.querySelectorAll<HTMLButtonElement>('[data-set]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.set === value)));
+    if (!instant && place !== 'main' && (value === 'hidden' || from === 'hidden')) {
+      const key = fact.querySelector('kbd');
+      key?.classList.add('down');
+      setTimeout(() => key?.classList.remove('down'), 160);
+    }
+    pan(place);
   }
 
-  // Go to a step: play forward through the beats in between, or, going back,
-  // jump to just before the step and play its own beat.
-  let step = -1;
-  const go = (i: number) => {
-    step = i;
-    const k = order[i];
-    const end = S[k][1] - 0.2;
-    if (end < tl.time()) tl.seek(S[k][0] - 0.05);
-    tl.tweenTo(end, { duration: Math.min(2.4, Math.max(0.8, end - tl.time())), ease: 'none' });
-    mark(i);
-  };
+  // ---- on a phone, the window pans to the place that changed ----------------
+  const phone = matchMedia('(max-width: 760px)');
+  function pan(place: Place) {
+    if (!phone.matches) { gsap.set(win!, { x: 0 }); return; }
+    const box = win!.parentElement!;
+    const r = slot(place === 'strip' ? 'main' : place).getBoundingClientRect(), w = win!.getBoundingClientRect();
+    const centre = r.left - w.left + Math.max(r.width, 120) / 2;
+    const x = Math.min(0, Math.max(box.clientWidth - win!.offsetWidth, box.clientWidth / 2 - centre));
+    gsap.to(win!, { x, duration: 0.6, ease: 'power3.inOut', overwrite: 'auto' });
+  }
 
-  // While the section is on screen the steps advance by themselves; a click
-  // anywhere in the row hands control to the reader for good.
-  const HOLD = 5200;
-  let timer = 0, auto = !reduced();
-  const tick = () => {
-    clearTimeout(timer);
+  // ---- your hands -------------------------------------------------------------
+  let auto = !reduced();
+  let timer = 0;
+  root.querySelectorAll<HTMLButtonElement>('[data-set]').forEach((b) => b.addEventListener('click', () => {
+    auto = false; clearTimeout(timer);
+    set(b.closest<HTMLElement>('[data-place]')!.dataset.place as Place, b.dataset.set!);
+  }));
+
+  // ---- its own: a storyboard of presses, while nobody has touched it --------
+  // [seconds to wait, place, value]
+  const STORY: [number, Place, string][] = [
+    [2.2, 'side', 'history'],
+    [2.2, 'side', 'files'],
+    [2.0, 'main', 'file'],
+    [2.2, 'main', 'browser'],
+    [2.2, 'strip', 'hidden'],
+    [1.0, 'side', 'hidden'],
+    [1.0, 'sidebar', 'hidden'],
+    [0.9, 'main', 'terminal'],
+    [3.2, 'sidebar', 'sidebar'],
+    [0.5, 'side', 'changes'],
+    [0.5, 'strip', 'strip'],
+  ];
+  let i = 0;
+  const next = () => {
     if (!auto) return;
-    go((step + 1) % order.length);
-    timer = window.setTimeout(tick, step === order.length - 1 ? HOLD + 1500 : HOLD);
+    const [wait, place, value] = STORY[i % STORY.length];
+    timer = window.setTimeout(() => { if (!auto) return; set(place, value); i++; next(); }, wait * 1000);
   };
   new IntersectionObserver(([e]) => {
-    if (e.isIntersecting) { if (auto && !timer) tick(); }
-    else { clearTimeout(timer); timer = 0; }
-  }, { threshold: 0.5 }).observe(win);
+    clearTimeout(timer);
+    if (e.isIntersecting && auto) next();
+  }, { threshold: 0.4 }).observe(win);
 
-  root.classList.toggle('auto', auto);
-  steps.forEach((b, i) => b.addEventListener('click', () => { auto = false; root.classList.remove('auto'); clearTimeout(timer); go(i); }));
-  if (reduced()) { tl.seek(S.side[1] - 0.2); step = 2; mark(2); }
+  // ?panes=quiet holds the folded window, for screenshots.
+  if (new URLSearchParams(location.search).get('panes') === 'quiet') {
+    auto = false;
+    (['strip', 'side', 'sidebar'] as Place[]).forEach((p) => set(p, 'hidden', true));
+  }
 }

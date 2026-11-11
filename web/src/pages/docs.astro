@@ -1,0 +1,46 @@
+---
+// /docs: the reference. Everything here comes from DOCS_SECTIONS in site.ts,
+// which llms-full.txt renders too.
+import Layout from '../layouts/Layout.astro';
+import Blocks from '../components/Blocks.astro';
+import { SITE, DOCS, DOCS_SECTIONS } from '../data/site';
+const abs = (p: string) => new URL(p, SITE.url).href;
+const schema = [{
+  '@type': 'TechArticle', '@id': abs('/docs#article'), url: abs('/docs'), headline: DOCS.title,
+  description: DOCS.description, isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
+}];
+---
+<Layout title={DOCS.title} description={DOCS.description} path="/docs" schema={schema}>
+  <header class="page phead" data-reveal-group>
+    <p class="eyebrow" data-reveal>Docs</p>
+    <h1 class="display" data-reveal>{DOCS.heading}</h1>
+    <p class="lead" data-reveal>{DOCS.lead}</p>
+  </header>
+  <div class="page body">
+    <nav class="toc" aria-label="On this page">
+      <p class="label">On this page</p>
+      <ol>{DOCS_SECTIONS.map((s) => <li><a href={`#${s.id}`}>{s.title}</a></li>)}</ol>
+    </nav>
+    <div class="secs">
+      {DOCS_SECTIONS.map((s) => (
+        <section id={s.id} class="sec">
+          <h2 class="h3">{s.title}</h2>
+          {s.lead && <p class="lead small-lead">{s.lead}</p>}
+          <div class="prose"><Blocks blocks={s.blocks} /></div>
+        </section>
+      ))}
+    </div>
+  </div>
+</Layout>
+<style>
+  .body { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 32px; padding-bottom: 80px; }
+  .toc { grid-column: 1 / span 3; position: sticky; top: 96px; align-self: start; }
+  .toc ol { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-direction: column; gap: 8px; }
+  .toc a { font-size: 14px; line-height: 24px; color: var(--ink-2); }
+  .toc a:hover { color: var(--ink); }
+  .secs { grid-column: 4 / span 9; }
+  .sec { padding-block: 48px; border-top: 1px solid var(--line); scroll-margin-top: 64px; }
+  .sec .h3 { margin: 0; font-size: 28px; line-height: 32px; letter-spacing: -0.022em; }
+  .small-lead { font-size: 19px; margin: 16px 0 24px; max-width: 720px; }
+  @media (max-width: 900px) { .toc { display: none; } .secs { grid-column: 1 / -1; } }
+</style>

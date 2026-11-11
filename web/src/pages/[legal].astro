@@ -1,0 +1,36 @@
+---
+// One page per Markdown file in src/content/legal/: the filename is the route.
+import Layout from '../layouts/Layout.astro';
+import { getCollection, render } from 'astro:content';
+import { SITE } from '../data/site';
+
+export async function getStaticPaths() {
+  const pages = await getCollection('legal');
+  return pages.map((entry) => ({ params: { legal: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+const path = `/${entry.id}`;
+const abs = (p: string) => new URL(p, SITE.url).href;
+const updated = entry.data.updated.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+const schema = [{
+  '@type': 'WebPage', '@id': abs(`${path}#webpage`), url: abs(path), name: entry.data.title,
+  description: entry.data.description, isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') },
+  inLanguage: 'en', dateModified: entry.data.updated.toISOString().slice(0, 10),
+}];
+---
+<Layout title={`${entry.data.title}: ${SITE.name}`} description={entry.data.description} path={path} schema={schema} bare>
+  <header class="page phead">
+    <p class="eyebrow">Legal</p>
+    <h1 class="display">{entry.data.title}</h1>
+    <p class="label upd">Updated {updated}</p>
+  </header>
+  <div class="page">
+    <div class="prose doc"><Content /></div>
+  </div>
+</Layout>
+<style>
+  .upd { margin-top: 24px; }
+  .doc { max-width: 720px; padding-bottom: 128px; }
+</style>

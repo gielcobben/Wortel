@@ -1,0 +1,155 @@
+---
+// /compare: Wortel against nine named apps. All copy is in src/data/compare.ts.
+//
+// The grid shows Wortel and three others, chosen with plain <select>s. Every
+// column is in the HTML (so a crawler, a reader without JS, and llms-full.txt
+// all see the whole table); the script only hides the ones not picked.
+import Layout from '../layouts/Layout.astro';
+import { SITE } from '../data/site';
+import { COMPARE, CATEGORIES, APPS, AXES, GROUPS, type Verdict } from '../data/compare';
+
+const abs = (p: string) => new URL(p, SITE.url).href;
+const schema = [{
+  '@type': 'WebPage', '@id': abs('/compare#webpage'), url: abs('/compare'), name: COMPARE.title,
+  description: COMPARE.description, isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
+}];
+const DEFAULTS = ['ghostty', 'cmux', 'conductor'];
+const others = APPS.filter((a) => a.key !== 'wortel');
+const axis = (id: string) => AXES.find((a) => a.id === id)!;
+const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly', unknown: 'Not published' };
+---
+<Layout title={COMPARE.title} description={COMPARE.description} path="/compare" schema={schema}>
+  <header class="page phead" data-reveal-group>
+    <p class="eyebrow" data-reveal>Compare</p>
+    <h1 class="display" data-reveal>{COMPARE.heading}</h1>
+    <p class="lead" data-reveal>{COMPARE.lead}</p>
+  </header>
+
+  <section class="page intro">
+    <div class="split">
+      <div class="k"><p class="label">The short version</p></div>
+      <div class="v prose">{COMPARE.intro.map((p) => <p>{p}</p>)}</div>
+    </div>
+  </section>
+
+  <section class="page cats" data-reveal-group="0.06">
+    {CATEGORIES.map((c) => (
+      <article class:list={['cat', { us: c.key === 'wortel' }]} data-reveal>
+        <p class="label">{c.kind}</p>
+        <p class="what">{c.what}</p>
+        <p class="eg">{c.examples}</p>
+        {c.useIf ? <p class="use small">{c.useIf}</p> : <a class="btn sm" href={SITE.download} data-ph="download_clicked" data-ph-location="compare">Download</a>}
+      </article>
+    ))}
+  </section>
+
+  <section class="page table" data-compare>
+    <div class="thead">
+      <h2 class="h2">{COMPARE.tableHeading}</h2>
+      <p class="body">{COMPARE.tableLead}</p>
+    </div>
+    <div class="grid" role="table" aria-label="Wortel compared with other apps">
+      <div class="row head" role="row">
+        <div class="q" role="columnheader"></div>
+        <div class="cell app us" role="columnheader" data-col="wortel"><b>{SITE.name}</b><span>{APPS[0].kind}</span></div>
+        {others.map((a) => (
+          <div class="cell app" role="columnheader" data-col={a.key}>
+            <b>{a.name}</b><span>{a.kind}</span>
+          </div>
+        ))}
+        {DEFAULTS.map((d, i) => (
+          <label class="cell app slot" style={`order:${i + 2}`}><span class="vh">Compare with</span>
+            <select data-pick={i}>{others.map((a) => <option value={a.key} data-kind={a.kind} selected={a.key === d}>{a.name}</option>)}</select>
+            <span data-kind>{others.find((a) => a.key === d)!.kind}</span>
+          </label>
+        ))}
+      </div>
+      {GROUPS.map((g) => (
+        <>
+          <div class="group" role="row"><p class="h3" role="cell">{g.title}</p><p class="small" role="cell">{g.blurb}</p></div>
+          {g.axes.map((id) => {
+            const ax = axis(id);
+            return (
+              <div class="row" role="row">
+                <div class="q" role="rowheader">{ax.q}</div>
+                {APPS.map((a) => {
+                  const c = ax.cells[a.key];
+                  return (
+                    <div class:list={['cell', { us: a.key === 'wortel' }]} role="cell" data-col={a.key}>
+                      {!ax.descriptive && <span class:list={['v', c.v]}><i aria-hidden="true"></i>{label[c.v]}</span>}
+                      <span class="note">{c.note}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </>
+      ))}
+    </div>
+    <p class="small caveat">{COMPARE.caveat}</p>
+  </section>
+</Layout>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-compare]');
+  if (root) {
+    const picks = Array.from(root.querySelectorAll<HTMLSelectElement>('[data-pick]'));
+    const apply = () => {
+      const order = ['wortel', ...picks.map((p) => p.value)];
+      root.querySelectorAll<HTMLElement>('.row:not(.head) [data-col]').forEach((c) => {
+        const i = order.indexOf(c.dataset.col!);
+        c.hidden = i < 0;
+        c.style.order = String(i + 1);
+      });
+      root.querySelectorAll<HTMLElement>('.head [data-col]').forEach((c) => { c.hidden = c.dataset.col !== 'wortel'; });
+      picks.forEach((p) => {
+        const kind = p.parentElement!.querySelector('[data-kind]')!;
+        kind.textContent = p.selectedOptions[0]?.dataset.kind || '';
+      });
+    };
+    root.classList.add('picking');
+    picks.forEach((p) => p.addEventListener('change', apply));
+    apply();
+  }
+</script>
+
+<style>
+  .intro { padding-bottom: 80px; }
+  .cats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; padding-bottom: 128px; }
+  .cat { display: flex; flex-direction: column; gap: 8px; padding: 24px; border-radius: 16px; background: var(--fog-1); }
+  .cat.us { background: var(--ink); color: var(--fog-0); }
+  .cat.us .label, .cat.us .eg { color: color-mix(in srgb, var(--fog-0) 60%, transparent); }
+  .cat.us .btn { background: var(--fog-0); color: var(--ink); align-self: flex-start; margin-top: auto; }
+  .cat p { margin: 0; }
+  .what { font: 600 19px/24px var(--font-display); letter-spacing: -0.015em; }
+  .eg { font-size: 14px; line-height: 24px; color: var(--ink-3); }
+  .use { margin-top: auto !important; padding-top: 16px; }
+  @media (max-width: 1000px) { .cats { grid-template-columns: 1fr 1fr; } }
+
+  .thead { display: flex; flex-direction: column; gap: 16px; margin-bottom: 48px; }
+  .thead > * { margin: 0; }
+  .grid { display: flex; flex-direction: column; overflow-x: auto; }
+  .row { display: flex; border-top: 1px solid var(--line); min-width: 900px; }
+  .q { flex: 0 0 280px; padding: 16px 16px 16px 0; font-size: 15px; line-height: 24px; color: var(--ink); font-weight: 500; }
+  .cell { flex: 1 1 0; min-width: 0; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+  :global(.picking) .cell[hidden] { display: none; }
+  .cell.us { background: var(--fog-1); }
+  .head { position: sticky; top: 64px; z-index: 2; background: var(--fog-0); border-top: 0; }
+  .app b { font: 600 17px/24px var(--font-display); }
+  .app span { font-size: 13px; line-height: 16px; color: var(--ink-3); }
+  .app.us { border-radius: 12px 12px 0 0; }
+  .slot { display: none; }
+  :global(.picking) .slot { display: flex; }
+  .slot select { align-self: flex-start; max-width: 100%; font: 600 17px/24px var(--font-display); color: var(--ink); background: var(--btn-2); border: 0; border-radius: 8px; padding: 4px 8px; margin-left: -8px; cursor: pointer; }
+  .slot span { font-size: 13px; line-height: 16px; color: var(--ink-3); }
+  .group { display: grid; grid-template-columns: 280px 1fr; gap: 0; padding: 48px 0 16px; border-top: 1px solid var(--line-2); min-width: 900px; }
+  .group p { margin: 0; }
+  .v { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; line-height: 24px; font-weight: 500; color: var(--ink); }
+  .v i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
+  .v.yes i { background: var(--moss-2); border-color: var(--moss-2); }
+  .v.partial i { background: linear-gradient(90deg, var(--ink-3) 50%, transparent 50%); border-color: var(--ink-3); }
+  .v.no, .v.unknown { color: var(--ink-3); }
+  .note { font-size: 13px; line-height: 20px; color: var(--ink-2); }
+  .caveat { max-width: 720px; margin-top: 48px; padding-bottom: 80px; }
+</style>

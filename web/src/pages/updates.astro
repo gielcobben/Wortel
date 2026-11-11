@@ -1,0 +1,70 @@
+---
+// The changelog: every release note, newest first, each with its own anchor.
+// The notes are the Markdown files in src/content/releases/, the same ones
+// release-notes/[version].html.ts turns into Sparkle's in-app dialog.
+import Layout from '../layouts/Layout.astro';
+import { getCollection, render } from 'astro:content';
+import { compareVersions } from '../content.config';
+import { SITE } from '../data/site';
+
+const entries = await getCollection('releases');
+const releases = await Promise.all(
+  entries
+    .sort((a, b) => compareVersions(b.id, a.id))
+    .map(async (entry) => ({ entry, Content: (await render(entry)).Content })),
+);
+const latest = releases[0];
+const oldest = releases[releases.length - 1];
+const fmt = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+const abs = (p: string) => new URL(p, SITE.url).href;
+const title = `Changelog: every ${SITE.name} release`;
+const description =
+  `Release notes for every version of ${SITE.name}, the native macOS terminal built on Ghostty. ` +
+  `${releases.length} releases since ${oldest ? fmt(oldest.entry.data.date) : ''}.`;
+const schema = [{
+  '@type': 'WebPage', '@id': abs('/updates#webpage'), url: abs('/updates'), name: title, description,
+  isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
+  ...(latest && { dateModified: latest.entry.data.date.toISOString().slice(0, 10) }),
+}];
+---
+<Layout title={title} description={description} path="/updates" schema={schema}>
+  <header class="page phead" data-reveal-group>
+    <p class="eyebrow" data-reveal>Changelog</p>
+    <h1 class="display" data-reveal>What changed,<br /><span class="tone">release by release.</span></h1>
+    <p class="lead" data-reveal>
+      {releases.length} releases since {oldest && fmt(oldest.entry.data.date)}. Wortel updates itself, quietly, so this page is for reading rather than for doing anything.
+    </p>
+  </header>
+
+  <div class="page log">
+    {releases.map(({ entry, Content }, i) => (
+      <article class="rel" id={entry.id}>
+        <div class="meta">
+          <a class="ver" href={`#${entry.id}`} data-ph="changelog_opened" data-ph-version={entry.id}>{entry.id}</a>
+          <time datetime={entry.data.date.toISOString().slice(0, 10)}>{fmt(entry.data.date)}</time>
+          {i === 0 && <span class="pill">Latest</span>}
+        </div>
+        <div class="content">
+          <h2 class="t">{entry.data.title}</h2>
+          <div class="prose"><Content /></div>
+        </div>
+      </article>
+    ))}
+  </div>
+</Layout>
+
+<style>
+  .log { padding-bottom: 80px; }
+  .rel { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 32px; padding-block: 64px; border-top: 1px solid var(--line); scroll-margin-top: 64px; }
+  .meta { grid-column: 1 / span 3; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; align-self: start; position: sticky; top: 96px; }
+  .ver { font: 500 15px/24px var(--font-mono); color: var(--ink); }
+  .ver:hover { text-decoration: underline; text-underline-offset: 4px; }
+  time { font-size: 14px; line-height: 24px; color: var(--ink-3); }
+  .pill { font-size: 12px; line-height: 16px; font-weight: 500; padding: 4px 8px; border-radius: 999px; background: var(--moss-soft); color: var(--moss); }
+  .content { grid-column: 4 / span 8; }
+  .t { margin: 0 0 24px; font: 600 28px/32px var(--font-display); letter-spacing: -0.022em; color: var(--ink); text-wrap: balance; }
+  @media (max-width: 900px) {
+    .meta { grid-column: 1 / -1; position: static; flex-direction: row; align-items: center; margin-bottom: 16px; }
+    .content { grid-column: 1 / -1; }
+  }
+</style>

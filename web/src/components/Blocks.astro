@@ -1,0 +1,23 @@
+---
+// One Block[] from site.ts as HTML. llms-full.txt renders the same arrays as
+// Markdown, which is why the shape stays this narrow.
+import type { Block } from '../data/site';
+interface Props { blocks: Block[] }
+const { blocks } = Astro.props;
+---
+{blocks.map((b) =>
+  'p' in b ? <p>{b.p}</p>
+  : 'list' in b ? <ul>{b.list.map((i) => <li>{i}</li>)}</ul>
+  : (
+    <table>
+      <thead><tr><th>{b.table.head[0]}</th><th>{b.table.head[1]}</th></tr></thead>
+      <tbody>
+        {b.table.rows.map(([a, c]) => (
+          <tr>
+            <td class={b.table.mono === 'first' ? 'mono' : undefined}>{a}</td>
+            <td class={b.table.mono === 'last' ? 'mono' : undefined}>{c}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ))}

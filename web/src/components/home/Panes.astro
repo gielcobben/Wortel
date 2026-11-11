@@ -198,12 +198,30 @@ const P = {
   .lights img { width: 16px; height: 16px; }
   .win :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }
 
-  /* Narrow screens: no stage, the steps read as a list. */
+  /* Narrow screens: the window on top, the step you are on underneath. */
   @media (max-width: 1000px) {
-    .panes { height: auto; padding-block: 96px; }
-    .sticky { position: relative; height: auto; min-height: 0; display: block; padding: 0 var(--gutter); }
-    .stagebox { display: none; }
-    .steps .k { opacity: 1; }
+    .sticky {
+      grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 16px; padding: 88px var(--gutter) 24px;
+    }
+    .rail { display: contents; }
+    .rail .eyebrow { order: 1; }
+    .rail .h2 { order: 2; font-size: 32px; margin: 0; }
+    .stagebox { order: 3; }
+    .steps { order: 4; margin: 0; min-height: 152px; }
+    .steps li { border: 0 !important; display: none; }
+    .steps li.on { display: block; }
     .cap { grid-template-rows: 1fr; }
+    .cap .inner { padding-left: 32px; }
+    .steps button { height: 40px; }
+    .steps .k { opacity: 1; }
+    .win { height: 100%; }
+  }
+  /* Phones: the window keeps a real width and the stage pans to the place
+     the current step is about (scripts/panes.ts), rather than squeezing. */
+  @media (max-width: 600px) {
+    .win { width: 760px; flex: none; }
+    .rail .h2 { font-size: 28px; }
+    .cap .small { margin-bottom: 0; }
   }
 </style>

@@ -84,6 +84,23 @@ export function initPanes() {
   tl.to(slot('strip'), { height: 0, duration: 1, ease: 'power3.inOut' }, q + 0.7);
   tl.set({}, {}, S.quiet[1]);
 
+  // ---- on a phone, the stage pans to the place the step is about ----------
+  const phone = matchMedia('(max-width: 600px)');
+  const focus: Record<string, string | null> = { sidebar: 'sidebar', main: 'main', side: 'side', strip: 'strip', anywhere: 'side', quiet: null };
+  const pan = (idx: number) => {
+    if (!phone.matches) { gsap.set(win, { x: 0 }); return; }
+    const box = win.parentElement!;
+    const k = idx < 0 ? 'sidebar' : focus[order[idx]];
+    let x = 0;
+    if (k) {
+      const el = slot(k);
+      const r = el.getBoundingClientRect(), w = win.getBoundingClientRect();
+      const centre = r.left - w.left + r.width / 2;
+      x = Math.min(0, Math.max(box.clientWidth - win.offsetWidth, box.clientWidth / 2 - centre));
+    }
+    gsap.to(win, { x, duration: 0.7, ease: 'power3.inOut', overwrite: 'auto' });
+  };
+
   // ---- captions follow the playhead ---------------------------------------
   let current = -2;
   const sync = (time: number) => {
@@ -93,6 +110,7 @@ export function initPanes() {
     current = idx;
     caps.forEach((c, i) => c.classList.toggle('on', i === idx));
     steps.forEach((s, i) => { s.classList.toggle('on', i === idx); s.classList.toggle('done', i < idx); });
+    pan(idx);
   };
 
   const params = new URLSearchParams(location.search);

@@ -337,6 +337,21 @@ if [ "$PUBLISH" = 1 ]; then
   BUILT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
   [ "$BUILT" = "$VERSION" ] || { echo "✗ Built version ($BUILT) ≠ requested ($VERSION)" >&2; exit 1; }
 
+  # Keep this build's dSYMs. The app reports a crash as an offset into its own
+  # binary and nothing else (see Telemetry/CrashReport.swift), so turning that
+  # number back into a function needs the dSYM of exactly this build — and the
+  # next `clean build` deletes it. Local only and git-ignored: R2 is served
+  # publicly by the updates Worker, so they never go there. Not fatal: a
+  # missing dSYM costs symbolication later, not the release.
+  DSYM_DIR="$RELEASES_DIR/dsyms/$VERSION"
+  mkdir -p "$DSYM_DIR"
+  for dsym in "${APP%/Wortel.app}"/Wortel.app.dSYM "${APP%/Wortel.app}"/wortel-keeper*.dSYM; do
+    [ -d "$dsym" ] && ditto "$dsym" "$DSYM_DIR/$(basename "$dsym")"
+  done
+  [ -d "$DSYM_DIR/Wortel.app.dSYM" ] \
+    && echo "==> Archived dSYMs in $DSYM_DIR" \
+    || echo "!  No Wortel.app.dSYM beside $APP; crashes in $VERSION can't be symbolicated." >&2
+
   # Sparkle's CLI tools ship inside the resolved SPM artifact bundle.
   # From the build that made $APP, so the tools match the linked Sparkle.
   SPARKLE_BIN="${APP%/Build/Products/*}/SourcePackages/artifacts/sparkle/Sparkle/bin"
@@ -406,6 +421,30 @@ if [ "$PUBLISH" = 1 ]; then
   # Record the version only after every upload succeeded, so a failed run
   # doesn't advance the record. Commit this file alongside appcast.xml.
   echo "$VERSION" > "$BUILD_FILE"
+
+  # Mark the release on every PostHog chart, so a change in launches, crashes or
+  # retention can be read against the version that caused it. The key is a
+  # personal API key with the annotation:write scope and nothing else, kept in
+  # the login Keychain (never in the repo: unlike the phc_ token it can write
+  # to the project). Add it once with:
+  #   security add-generic-password -a "$USER" -s wortel-posthog-annotations -w <key>
+  # @current is the key owner's current project, which on a one-project
+  # organisation is the only one. Not fatal, like the deploy; the status is
+  # printed so a scoping problem (403) is visible rather than swallowed.
+  PH_KEY="$(security find-generic-password -s wortel-posthog-annotations -w 2>/dev/null || true)"
+  if [ -n "$PH_KEY" ]; then
+    PH_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+      "https://eu.posthog.com/api/projects/@current/annotations/" \
+      -H "Authorization: Bearer $PH_KEY" -H 'Content-Type: application/json' \
+      -d "{\"content\":\"Wortel $VERSION\",\"date_marker\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"scope\":\"project\"}" \
+      || echo 000)"
+    case "$PH_STATUS" in
+      2??) echo "==> Annotated $VERSION in PostHog" ;;
+      *) echo "!  PostHog annotation failed (HTTP $PH_STATUS); the release itself is fine." >&2 ;;
+    esac
+  else
+    echo "!  No wortel-posthog-annotations key in the Keychain; skipping the PostHog annotation." >&2
+  fi
 
   # Redeploy the landing page. It reads the version number out of the appcast at
   # *build time* (see web/src/pages/index.astro), so a publish alone never

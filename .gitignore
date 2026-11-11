@@ -14,6 +14,9 @@ macos/releases/*.delta
 macos/releases/*.html
 # generate_appcast retires archives past --maximum-versions into here.
 macos/releases/old_updates/
+# Each release's dSYMs, archived by release.sh --publish to symbolicate the
+# offsets crash reports carry. Local only: R2 is publicly served.
+macos/releases/dsyms/
 
 # Web app (web/) — Node + Astro + Cloudflare build output
 node_modules/

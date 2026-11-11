@@ -1,6 +1,9 @@
 ---
-import '../styles/global.css';
+import '../styles/app.css';
+import '../styles/site.css';
 import Analytics from '../components/Analytics.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
 import { SITE } from '../data/site';
 
 interface Props {
@@ -10,6 +13,10 @@ interface Props {
   path?: string;
   /** JSON-LD graph nodes. Rendered as one @graph so crawlers see one document. */
   schema?: unknown[];
+  /** The nav starts transparent over a hero photo and turns solid on scroll. */
+  overHero?: boolean;
+  /** Leave out the footer's closing call to download. */
+  bare?: boolean;
 }
 
 const {
@@ -17,6 +24,8 @@ const {
   description = SITE.description,
   path = '/',
   schema = [],
+  overHero = false,
+  bare = false,
 } = Astro.props;
 
 // Built off the configured `site` rather than Astro.url, so a preview host or a
@@ -35,8 +44,6 @@ const ogImage = new URL('/og.png', SITE.url).href;
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
-    <!-- max-image-preview:large is what lets the og image ride along in a
-         result; the default (`standard`) shows a thumbnail or nothing. -->
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
 
     <meta property="og:type" content="website" />
@@ -58,25 +65,14 @@ const ogImage = new URL('/og.png', SITE.url).href;
     <meta name="twitter:image:alt" content={`${SITE.name}: ${SITE.tagline}`} />
 
     <meta name="apple-mobile-web-app-title" content={SITE.name} />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1c1d27" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0e0c" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfaf7" />
 
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <!-- Raster fallback: Google's favicon crawler documents a >=48px square
-         image, and some feed readers still won't take an SVG. -->
     <link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-
-    <!-- Both faces paint in the first screen (the wordmark and the app replica),
-         so they're worth the early fetch rather than waiting on CSS parse. -->
-    <link rel="preload" href="/fonts/geist-pixel-square.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/handlee.woff2" as="font" type="font/woff2" crossorigin />
-    <!-- The download and the version line both come off this host. -->
     <link rel="preconnect" href="https://updates.wortel.sh" crossorigin />
 
-    <!-- A pointer for retrieval agents: the same content, already flattened.
-         `describedby` is the registered relation for "this document is
-         described by that one". -->
     <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt: a site map for language models" />
     <link rel="describedby" type="text/markdown" href="/llms-full.txt" title="Full page content as Markdown" />
 
@@ -87,12 +83,21 @@ const ogImage = new URL('/og.png', SITE.url).href;
       />
     )}
 
-    <!-- Last in the head, and same-origin (see components/Analytics.astro): it
-         needs no preconnect of its own, and it renders to nothing at all in a
-         dev build. -->
+    <!-- Reveal-on-enter hides content until it is on screen. Only with JS, so
+         a reader without it, or a crawler, sees everything. -->
+    <script is:inline>document.documentElement.classList.add('js')</script>
+
+    <slot name="head" />
     <Analytics />
   </head>
   <body>
-    <slot />
+    <Nav overHero={overHero} />
+    <main id="top">
+      <slot />
+    </main>
+    <Footer bare={bare} />
+    <script>
+      import '../scripts/reveal';
+    </script>
   </body>
 </html>

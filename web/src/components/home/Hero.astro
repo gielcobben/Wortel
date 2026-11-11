@@ -1,0 +1,117 @@
+---
+import HeroWindow from '../../app/gen/HeroWindow.astro';
+import { SITE } from '../../data/site';
+import { latestRelease } from '../../data/release';
+const latest = await latestRelease();
+
+// The headline, split into words server-side so the landing animation can lift
+// them one at a time without a flash of unsplit text.
+const line1 = 'Many agents.';
+const line2 = 'One calm terminal.';
+const words = (s: string) => s.split(' ');
+---
+<section class="hero" data-hero>
+  <div class="scene" aria-hidden="true">
+    <img class="lake" src="/img/lake.jpg" alt="" width="3072" height="2048" fetchpriority="high" decoding="async" />
+    <div class="mist m1"></div>
+    <div class="mist m2"></div>
+    <div class="veil"></div>
+  </div>
+
+  <div class="page copy">
+    <h1 class="display" data-h1>
+      <span class="vh">Wortel: a native macOS terminal for coding agents. </span>
+      {words(line1).map((w) => <span class="w">{w} </span>)}<br />
+      <span class="tone">{words(line2).map((w) => <span class="w">{w} </span>)}</span>
+    </h1>
+    <p class="lead" data-fade>
+      Wortel is a native macOS terminal built on Ghostty. Every agent gets a named session and its own worktree, and the sidebar tells you which one needs you.
+    </p>
+    <div class="ctas" data-fade>
+      <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="hero" data-ph-version={latest?.version}>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v9m0 0L4.5 7.5M8 11l3.5-3.5M3 14h10" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Download for macOS
+      </a>
+      <a class="btn ghost" href="#panes">How it works</a>
+    </div>
+    <p class="meta label" data-fade>
+      Free · macOS {SITE.minMacOS} {SITE.minMacOSName} or later{latest && ` · Version ${latest.version}`}
+    </p>
+  </div>
+
+  <div class="stage" data-stage>
+    <div class="win wapp dark" data-win data-ph-demo>
+      <HeroWindow />
+    </div>
+  </div>
+</section>
+
+<script>
+  import { playHero } from '../../scripts/hero';
+  playHero();
+</script>
+
+<style>
+  .hero { position: relative; padding-top: 160px; overflow: clip; }
+  .scene { position: absolute; inset: 0 0 0 0; overflow: hidden; }
+  .lake {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; object-position: 50% 62%;
+    transform-origin: 50% 70%;
+  }
+  /* Mist: two soft sheets that drift slowly, so the photo breathes. */
+  .mist {
+    position: absolute; inset: -20%;
+    background:
+      radial-gradient(40% 24% at 30% 58%, rgb(255 255 253 / 0.75), transparent 70%),
+      radial-gradient(36% 20% at 72% 64%, rgb(255 255 253 / 0.6), transparent 70%);
+    filter: blur(24px);
+    animation: drift 38s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+  .m2 {
+    background:
+      radial-gradient(30% 18% at 60% 52%, rgb(255 255 253 / 0.55), transparent 70%),
+      radial-gradient(44% 22% at 18% 70%, rgb(255 255 253 / 0.5), transparent 70%);
+    animation-duration: 52s; animation-direction: alternate-reverse;
+  }
+  @keyframes drift { from { transform: translate3d(-4%, 0, 0); } to { transform: translate3d(5%, -1.5%, 0); } }
+  /* The photo hands over to the page colour where the window ends. */
+  .veil {
+    position: absolute; inset: auto 0 0 0; height: 40%;
+    background: linear-gradient(to bottom, transparent, var(--fog-0) 92%);
+  }
+
+  .copy { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .display { max-width: 16ch; color: #1b1b17; }
+  .display .tone { color: #85837a; }
+  .w { display: inline-block; white-space: pre; }
+  .lead { max-width: 600px; margin-top: 24px; color: #4d4b44; }
+  .ctas { display: flex; gap: 16px; margin-top: 40px; flex-wrap: wrap; justify-content: center; }
+  .meta { margin-top: 24px; color: #6b6960; }
+
+  .stage {
+    position: relative; display: flex; justify-content: center;
+    margin-top: 80px; padding-inline: 24px; padding-bottom: 80px;
+  }
+  .win {
+    display: flex; width: min(1222px, 100%); min-width: 0; height: 795px;
+    border-radius: 18px;
+    box-shadow: var(--shadow-window);
+  }
+
+  /* The lake at night. The fog is no longer bright enough to carry ink. */
+  @media (prefers-color-scheme: dark) {
+    .lake { filter: brightness(0.3) saturate(0.55) contrast(1.15) hue-rotate(-8deg); }
+    .mist { opacity: 0.12; }
+    .display { color: var(--ink); }
+    .display .tone { color: var(--ink-3); }
+    .lead, .meta { color: var(--ink-2); }
+  }
+  @media (max-width: 700px) {
+    .hero { padding-top: 128px; }
+    .stage { margin-top: 56px; justify-content: flex-start; }
+    .win { width: 1000px; flex: none; height: 640px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .mist { animation: none; } }
+</style>

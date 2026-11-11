@@ -1,0 +1,82 @@
+---
+// Worktrees: five branches growing out of one repository, drawn as the page
+// scrolls (scripts/sections.ts scrubs stroke-dashoffset). Roots, really.
+const W = 1200, H = 520, Y0 = 260;
+type Branch = { name: string; agent: string; from: number; to: number; y: number; merge?: boolean };
+const branches: Branch[] = [
+  { name: 'api-rate-limits', agent: 'Claude Code', from: 120, to: 760, y: 76, merge: true },
+  { name: 'onboarding-copy', agent: 'Codex', from: 220, to: 1040, y: 156 },
+  { name: 'flaky-tests', agent: 'Aider', from: 330, to: 900, y: 364, merge: true },
+  { name: 'search-index', agent: 'Claude Code', from: 420, to: 1080, y: 444 },
+  { name: 'icon-tweaks', agent: 'Codex', from: 560, to: 1060, y: 220 },
+];
+const R = 40;
+const path = (b: Branch) => {
+  const up = b.y < Y0 ? -1 : 1;
+  let d = `M ${b.from} ${Y0} C ${b.from + R} ${Y0}, ${b.from + R} ${b.y}, ${b.from + 2 * R} ${b.y} L ${b.merge ? b.to - 2 * R : b.to} ${b.y}`;
+  if (b.merge) d += ` C ${b.to - R} ${b.y}, ${b.to - R} ${Y0}, ${b.to} ${Y0}`;
+  void up;
+  return d;
+};
+const commits = (b: Branch) => {
+  const xs: number[] = [];
+  const end = b.merge ? b.to - 2 * R : b.to;
+  for (let x = b.from + 2 * R + 48; x < end - 16; x += 96) xs.push(x);
+  return xs;
+};
+---
+<section class="wt section">
+  <div class="page">
+    <div class="split" data-reveal-group>
+      <div class="k"><p class="eyebrow" data-reveal>Worktrees</p></div>
+      <div class="v">
+        <h2 class="h2" data-reveal>Five agents.<br /><span class="tone">One repository, no collisions.</span></h2>
+        <p class="body" data-reveal>
+          Open a session on a branch and Wortel checks it out in its own directory, sharing the repository’s history, objects and remotes. It costs a directory, not a clone. Each agent edits its own files on its own branch, and nothing changes the ground under one mid-task.
+        </p>
+      </div>
+    </div>
+
+    <div class="graph" data-graph>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Five branches growing out of the main branch, two merging back">
+        <line class="trunk" x1="0" y1={Y0} x2={W} y2={Y0} />
+        {branches.map((b, i) => (
+          <g class="br" data-br={i}>
+            <path class="line" d={path(b)} pathLength="1" />
+            {commits(b).map((x) => <circle class="c" cx={x} cy={b.y} r="5" />)}
+            <g class="tag" transform={`translate(${b.from + 2 * R + 8} ${b.y - 16})`}>
+              <text class="name">{b.name}</text>
+              <text class="agent" x={b.name.length * 8.6 + 10}>{b.agent}</text>
+            </g>
+          </g>
+        ))}
+        <circle class="head" cx="24" cy={Y0} r="7" />
+        <text class="main" x="24" y={Y0 + 32}>main</text>
+      </svg>
+    </div>
+
+    <div class="facts" data-reveal-group>
+      <div data-reveal><p class="t">A worktree per session</p><p class="small"><kbd>⇧⌘N</kbd> or <span class="mono">wortel new --branch</span>. A branch that has a worktree opens the one it has.</p></div>
+      <div data-reveal><p class="t">Forks from the default branch</p><p class="small">Not from whichever agent’s half-finished branch you happened to be standing in.</p></div>
+      <div data-reveal><p class="t">Out of the repository</p><p class="small">Worktrees live outside it, where they cannot be committed by accident.</p></div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .split .h2 { margin: 0 0 24px; }
+  .graph { margin-top: 80px; overflow-x: auto; scrollbar-width: none; }
+  .graph svg { width: 100%; min-width: 800px; height: auto; display: block; overflow: visible; }
+  .trunk { stroke: var(--ink); stroke-width: 2; }
+  .head { fill: var(--ink); }
+  .main { font: 500 13px var(--font-mono); fill: var(--ink-2); }
+  .line { fill: none; stroke: var(--moss-2); stroke-width: 2; stroke-linecap: round; }
+  .br:nth-child(odd) .line { stroke: var(--ink-3); }
+  .c { fill: var(--fog-0); stroke: var(--ink-2); stroke-width: 2; }
+  .name { font: 500 13px var(--font-mono); fill: var(--ink); }
+  .agent { font: 400 13px var(--font-sans); fill: var(--ink-3); }
+  .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; margin-top: 80px; padding-top: 32px; border-top: 1px solid var(--line); }
+  .facts .t { margin: 0 0 8px; font-weight: 600; font-size: 15px; line-height: 24px; }
+  .facts .small { margin: 0; }
+  @media (max-width: 800px) { .facts { grid-template-columns: 1fr; } }
+</style>

@@ -1,0 +1,19 @@
+---
+import '../../styles/app.css';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import Terminal from '../../app/gen/Terminal.astro';
+import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
+import Changes from '../../app/gen/Changes.astro';
+import History from '../../app/gen/History.astro';
+import Files from '../../app/gen/Files.astro';
+import FileColumn from '../../app/gen/FileColumn.astro';
+import FileMain from '../../app/gen/FileMain.astro';
+import Code from '../../app/gen/Code.astro';
+import Browser from '../../app/gen/Browser.astro';
+import BottomStrip from '../../app/gen/BottomStrip.astro';
+import Palette from '../../app/gen/Palette.astro';
+const boxes = [[Sidebar,234,815],[Terminal,1075,815],[TerminalNarrow,690,815],[Changes,384,815],[History,384,815],[Files,384,815],[FileColumn,384,815],[FileMain,1075,815],[Code,1075,815],[Browser,1075,815],[BottomStrip,1075,312],[Palette,560,453]] as const;
+---
+<html><body style="margin:0;background:#666;display:flex;flex-wrap:wrap;gap:24px;padding:24px">
+{boxes.map(([C,w,h]) => <div class="wapp dark" style={`position:relative;display:flex;width:${w}px;height:${h}px;overflow:hidden;border-radius:12px`}><div class="absolute inset-0 bg-sidebar"></div><div class="relative flex size-full"><C /></div></div>)}
+</body></html>

@@ -1,0 +1,40 @@
+---
+// The wortel command: one session driving another. Output formats are the
+// real ones from macos/docs/wortel-command.md.
+import TermCard from '../TermCard.astro';
+const lines = [
+  { cmd: 'wortel list' },
+  { out: '  ID       NAME                STATE     AGENT  BRANCH', tone: 'dim' as const },
+  { out: '* 3F2A91C0 web/landing-hero    working   claude -' },
+  { out: '  9B1E07D2 web/tests (you)     idle      -      -' },
+  { out: '  C04D11A8 fix login redirect  needs-you codex  fix/1482', tone: 'warn' as const },
+  { out: '' },
+  { cmd: 'wortel send fix "Yes, run the migration." --enter', pause: 0.8 },
+  { cmd: 'wortel wait fix --idle --timeout 20m', pause: 0.6 },
+  { cmd: 'wortel read fix --lines 2', pause: 1.6 },
+  { out: '● Migration applied. The redirect test passes ten times in a row.' },
+  { out: '✻ Worked for 4m 12s', tone: 'dim' as const },
+];
+---
+<section class="cmd section">
+  <div class="page grid">
+    <div class="copy" data-reveal-group>
+      <p class="eyebrow" data-reveal>The wortel command</p>
+      <h2 class="h2" data-reveal>One session can<br /><span class="tone">run the others.</span></h2>
+      <p class="body" data-reveal>
+        A <span class="mono">wortel</span> command sits on every session’s PATH, with no installer and no admin prompt. Anything that can run a command can drive the app: open a file in a tab, start a session in its own worktree, raise a dot, or list, read, send to and wait on any other session.
+      </p>
+      <p class="body" data-reveal>Which is how Wortel avoids shipping an integration per agent. A terminal that adapts to six agents by name is wrong about the seventh.</p>
+      <p data-reveal><a class="link" href="/docs#command">Every command, in the docs</a></p>
+    </div>
+    <div class="visual">
+      <TermCard title="web/tests" lines={lines} height={400} />
+    </div>
+  </div>
+</section>
+<style>
+  .grid { display: grid; grid-template-columns: 5fr 7fr; gap: 64px; align-items: center; }
+  .copy { display: flex; flex-direction: column; gap: 24px; }
+  .copy > * { margin: 0; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .visual { overflow-x: auto; } }
+</style>

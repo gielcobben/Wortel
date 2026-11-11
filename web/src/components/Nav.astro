@@ -1,0 +1,59 @@
+---
+import Mark from './Mark.astro';
+import { SITE } from '../data/site';
+interface Props { overHero?: boolean }
+const { overHero = false } = Astro.props;
+const here = Astro.url.pathname.replace(/\/$/, '') || '/';
+const links = [
+  ['Features', '/#panes'],
+  ['Changelog', '/updates'],
+  ['Docs', '/docs'],
+  ['About', '/about'],
+];
+---
+<header class:list={['nav', { over: overHero }]} data-nav>
+  <div class="page bar">
+    <a class="brand" href="/" aria-label="Wortel, home">
+      <Mark size={24} />
+      <span class="word">wortel</span>
+    </a>
+    <nav class="links" aria-label="Main">
+      {links.map(([t, h]) => (
+        <a href={h} aria-current={here === h ? 'page' : undefined}>{t}</a>
+      ))}
+    </nav>
+    <a class="btn sm" href={SITE.download} data-ph="download_clicked" data-ph-location="nav">Download</a>
+  </div>
+</header>
+
+<script>
+  const nav = document.querySelector<HTMLElement>('[data-nav]')!;
+  const set = () => nav.classList.toggle('scrolled', window.scrollY > 8);
+  set();
+  window.addEventListener('scroll', set, { passive: true });
+</script>
+
+<style>
+  .nav {
+    position: fixed; inset: 0 0 auto; z-index: 50; height: 64px;
+    transition: background-color 0.3s, box-shadow 0.3s, backdrop-filter 0.3s;
+  }
+  .nav.scrolled, .nav:not(.over) {
+    background: var(--nav);
+    backdrop-filter: saturate(1.8) blur(20px);
+    -webkit-backdrop-filter: saturate(1.8) blur(20px);
+    box-shadow: 0 1px 0 var(--line);
+  }
+  .bar { height: 64px; display: flex; align-items: center; gap: 32px; }
+  .brand { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); }
+  .word { font: 600 20px/24px var(--font-display); letter-spacing: -0.035em; }
+  .links { display: flex; gap: 24px; margin-left: auto; }
+  .links a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 0.2s; }
+  .links a:hover, .links a[aria-current] { color: var(--ink); }
+  @media (max-width: 700px) {
+    .links { display: none; }
+    .btn { margin-left: auto; }
+  }
+  /* Over the photo the fog is bright in both themes, so the nav stays ink. */
+  .nav.over:not(.scrolled) { --ink: #1b1b17; --ink-2: #4d4b44; --btn: #1b1b17; --btn-ink: #fbfaf7; }
+</style>

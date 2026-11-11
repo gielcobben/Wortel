@@ -1,13 +1,18 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
-import svelte from '@astrojs/svelte';
+import tailwindcss from '@tailwindcss/vite';
 
-// The landing page is fully static — Astro builds to ./dist, which the
-// Cloudflare Worker in wrangler.jsonc serves as static assets at wortel.sh.
-// Svelte powers the interactive product demo (src/demo/*), embedded as a
-// client island on the landing page and the standalone /demo route.
+// The site is fully static: Astro builds to ./dist, which the Cloudflare Worker
+// in wrangler.jsonc serves as static assets at wortel.sh.
+//
+// Tailwind is here for one reason: the app window on the page is generated
+// from the Opmaak canvas (src/app/gen/*.astro), whose markup is Tailwind. The
+// site's own styles are plain CSS in src/styles/site.css and per-component
+// <style> blocks.
 export default defineConfig({
   site: 'https://wortel.sh',
   output: 'static',
-  integrations: [svelte()],
+  server: { port: 4340 },
+  devToolbar: { enabled: false },
+  vite: { plugins: [tailwindcss()] },
 });

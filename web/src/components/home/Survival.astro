@@ -1,0 +1,57 @@
+---
+// Quit the app, keep the work: the card plays a loop while on screen
+// (scripts/sections.ts): an agent runs, ⌘Q, the window goes, the work does not,
+// the window comes back with everything it missed.
+import TermCard from '../TermCard.astro';
+const lines = [
+  { out: '● Running the test suite after the rate limit change', tone: 'accent' as const },
+  { out: '  ⎿ 128 of 412 passed', tone: 'dim' as const },
+  { out: '  ⎿ 256 of 412 passed', tone: 'dim' as const },
+  { out: '  ⎿ 412 of 412 passed', tone: 'ok' as const },
+  { out: '● All green. Writing the migration for the new limits table.' },
+  { out: '● Write(db/migrations/0042_rate_limits.sql)', tone: 'accent' as const },
+  { out: '  ⎿ Wrote 18 lines', tone: 'dim' as const },
+  { out: '● Done. The migration runs clean against a copy of production.' },
+];
+---
+<section class="sv section">
+  <div class="page grid">
+    <div class="visual" data-survival>
+      <div class="frame" data-frame>
+        <TermCard title="api-rate-limits" lines={lines} height={300} />
+      </div>
+      <div class="ghost" data-ghost aria-hidden="true">
+        <p class="label">Wortel is closed</p>
+        <p class="still"><span class="pulse"></span> api-rate-limits is still running</p>
+      </div>
+      <div class="key" data-key aria-hidden="true"><kbd>⌘</kbd><kbd>Q</kbd></div>
+    </div>
+    <div class="copy" data-reveal-group>
+      <p class="eyebrow" data-reveal>Sessions that survive</p>
+      <h2 class="h2" data-reveal>Quit the app.<br /><span class="tone">Keep the work.</span></h2>
+      <p class="body" data-reveal>
+        Your shells are not the app’s children. They run under a small process beside it, so closing the window stops being a decision about the work. An agent that was thinking when you quit is still thinking when you come back, and the session reattaches to the shell it had, scrollback included.
+      </p>
+      <p class="body" data-reveal>A crash is the same story. It is on by default, and there is nothing to switch on.</p>
+    </div>
+  </div>
+</section>
+<style>
+  .grid { display: grid; grid-template-columns: 7fr 5fr; gap: 64px; align-items: center; }
+  .copy { display: flex; flex-direction: column; gap: 24px; }
+  .copy > * { margin: 0; }
+  .visual { position: relative; padding: 48px; border-radius: 24px; background: var(--fog-1); }
+  .frame { position: relative; z-index: 1; }
+  .ghost {
+    position: absolute; inset: 48px; border-radius: 16px; border: 1px dashed var(--line-2);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    opacity: 0;
+  }
+  .ghost p { margin: 0; }
+  .still { font-size: 15px; line-height: 24px; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--moss-2); box-shadow: 0 0 0 0 var(--moss-2); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  .key { position: absolute; z-index: 2; right: 24px; bottom: 24px; display: flex; gap: 4px; opacity: 0; }
+  .key kbd { height: 40px; min-width: 40px; font-size: 17px; border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .visual { padding: 24px; } .ghost { inset: 24px; } }
+</style>

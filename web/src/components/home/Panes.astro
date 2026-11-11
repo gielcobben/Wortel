@@ -1,0 +1,208 @@
+---
+// The window, explained by putting it together.
+//
+// A sticky stage holds one live window built from the canvas's pane library.
+// Scrolling through the section scrubs a single GSAP timeline (scripts/panes.ts):
+// the empty skeleton, then each place filling with its pane, tabs moving, and
+// everything folding away again. The window is never scaled: its height is
+// what the viewport has room for, and it reflows like the real one.
+import Sidebar from '../../app/gen/Sidebar.astro';
+import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
+import Changes from '../../app/gen/Changes.astro';
+import History from '../../app/gen/History.astro';
+import Files from '../../app/gen/Files.astro';
+import FileColumn from '../../app/gen/FileColumn.astro';
+import Browser from '../../app/gen/Browser.astro';
+import BottomStrip from '../../app/gen/BottomStrip.astro';
+
+const STEPS = [
+  {
+    key: 'sidebar', place: 'Sidebar', keys: ['⌘B'],
+    title: 'Every session, by name.',
+    body: 'Sessions sit in the sidebar under the names you gave them, grouped by folder, with a mark for every worktree and a dot when an agent wants you.',
+  },
+  {
+    key: 'main', place: 'Main', keys: ['⌘T'],
+    title: 'The work in front of you.',
+    body: 'The main area holds the terminal you are in. It takes a file, code or a browser just as happily.',
+  },
+  {
+    key: 'side', place: 'Side column', keys: ['⌃⌘1', '⌃⌘2', '⌃⌘3'],
+    title: 'Your repository, beside the shell.',
+    body: 'Changes, History and Files: the diff of what an agent just did, the commits with their graph, and the project as a tree.',
+  },
+  {
+    key: 'strip', place: 'Bottom strip', keys: ['⇧⌘D'],
+    title: 'A second shell, out of the way.',
+    body: 'The dev server, the test watcher, the logs. Under the terminal, never on top of it.',
+  },
+  {
+    key: 'anywhere', place: 'Any tab, any place', keys: ['⇧⌘L'],
+    title: 'Tabs go where you put them.',
+    body: 'A browser in the main area, a plan in the column, a shell in the strip. Drag any tab to any place. Nothing is fixed, and nothing needs setting up.',
+  },
+  {
+    key: 'quiet', place: 'Quiet', keys: ['⌘B', '⌥⌘B', '⌘J'],
+    title: 'And quiet, when you want it.',
+    body: 'Three keys put the sidebar, the column and the strip away. What is left is a terminal, and it is a very good one.',
+  },
+];
+
+const placeholder = (label: string, hint: string) => (
+  { label, hint }
+);
+const P = {
+  sidebar: placeholder('Sidebar', 'Sessions'),
+  main: placeholder('Main', 'Terminal, file, code or browser'),
+  strip: placeholder('Bottom strip', 'A second row of tabs'),
+  side: placeholder('Side column', 'Changes, History, Files or a file'),
+};
+---
+<section id="panes" class="panes" data-panes>
+  <div class="sticky">
+    <aside class="rail">
+      <p class="eyebrow">The window</p>
+      <h2 class="h2">One window.<br /><span class="tone">Four places to put things.</span></h2>
+      <ol class="steps" aria-live="polite">
+        {STEPS.map((s, i) => (
+          <li data-step={i}>
+            <button type="button" data-goto={i}>
+              <span class="n">{String(i + 1).padStart(2, '0')}</span>
+              <span class="p">{s.place}</span>
+              <span class="k">{s.keys.map((k) => <kbd>{k}</kbd>)}</span>
+            </button>
+            <div class="cap" data-cap={i}>
+              <div class="inner">
+                <p class="t">{s.title}</p>
+                <p class="small">{s.body}</p>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </aside>
+
+    <div class="stagebox">
+      <div class="win wapp dark" data-pwin>
+        <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+        <div class="relative flex size-full">
+          <div class="slot sb" data-slot="sidebar">
+            <div class="ph" data-ph><b>{P.sidebar.label}</b><i>{P.sidebar.hint}</i></div>
+            <div class="pane" data-pane="sidebar"><Sidebar /></div>
+          </div>
+          <div class="divider" data-div="sidebar"></div>
+          <div class="mainarea">
+            <div class="slot main" data-slot="main">
+              <div class="ph" data-ph><b>{P.main.label}</b><i>{P.main.hint}</i></div>
+              <div class="pane" data-pane="terminal"><TerminalNarrow /></div>
+              <div class="pane" data-pane="browser"><Browser /></div>
+            </div>
+            <div class="slot strip" data-slot="strip">
+              <div class="ph" data-ph><b>{P.strip.label}</b><i>{P.strip.hint}</i></div>
+              <div class="pane" data-pane="strip"><BottomStrip /></div>
+            </div>
+          </div>
+          <div class="divider" data-div="side"></div>
+          <div class="slot side" data-slot="side">
+            <div class="ph" data-ph><b>{P.side.label}</b><i>{P.side.hint}</i></div>
+            <div class="pane" data-pane="changes"><Changes /></div>
+            <div class="pane" data-pane="history"><History /></div>
+            <div class="pane" data-pane="files"><Files /></div>
+            <div class="pane" data-pane="file"><FileColumn /></div>
+          </div>
+        </div>
+        <div class="lights" aria-hidden="true">
+          <img src="/app/3ef4fc84971102ffed5f4a10ada4399c.png" alt="" width="16" height="16" />
+          <img src="/app/d1dbbe84aaf8f948789bed8b07c2622c.png" alt="" width="16" height="16" />
+          <img src="/app/ebeda5316137eb91580afb0a92bd4f45.png" alt="" width="16" height="16" />
+        </div>
+        <div class="pointer-events-none absolute inset-0 rounded-[18px] shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.1)]"></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<script>
+  import { initPanes } from '../../scripts/panes';
+  initPanes();
+</script>
+
+<style>
+  .panes { position: relative; height: 680vh; background: var(--fog-0); }
+  .sticky {
+    position: sticky; top: 0; height: 100vh; min-height: 720px;
+    display: grid; grid-template-columns: 368px minmax(0, 1fr); gap: 48px;
+    padding: 96px 24px 32px max(var(--gutter), calc((100vw - var(--page)) / 2));
+    overflow: hidden;
+  }
+  .rail { display: flex; flex-direction: column; gap: 16px; padding-top: 24px; }
+  .h2 { font-size: 36px; }
+  .steps { list-style: none; margin: 32px 0 0; padding: 0; display: flex; flex-direction: column; }
+  .steps li { border-top: 1px solid var(--line); }
+  .steps li:last-child { border-bottom: 1px solid var(--line); }
+  .steps button {
+    all: unset; box-sizing: border-box; cursor: pointer; width: 100%;
+    display: grid; grid-template-columns: 32px 1fr auto; align-items: center; height: 48px;
+  }
+  .steps .n { font: 500 12px/16px var(--font-mono); color: var(--ink-3); transition: color 0.3s; }
+  .steps .p { font-size: 15px; line-height: 24px; color: var(--ink-2); transition: color 0.3s; }
+  .steps .k { display: flex; gap: 4px; opacity: 0; transition: opacity 0.3s; }
+  .steps .k kbd { height: 24px; min-width: 24px; font-size: 12px; }
+  .steps li.on .n, .steps li.on .p { color: var(--ink); }
+  .steps li.on .p { font-weight: 500; }
+  .steps li.on .k { opacity: 1; }
+  .cap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.5s var(--ease-out); }
+  .cap .inner { overflow: hidden; padding-left: 32px; }
+  .cap .t { margin: 0; font-weight: 600; font-size: 17px; line-height: 24px; letter-spacing: -0.01em; }
+  .cap .small { margin: 8px 0 24px; }
+  li.on .cap { grid-template-rows: 1fr; }
+
+  .stagebox { position: relative; min-height: 0; min-width: 0; display: flex; align-items: center; }
+  .win {
+    position: relative; display: flex; overflow: hidden;
+    width: min(1222px, 100%); height: min(795px, 100%);
+    border-radius: 18px; box-shadow: var(--shadow-window);
+    background: #6d6b62;
+  }
+  @media (prefers-color-scheme: dark) { .win { background: #2a2a26; } }
+
+  /* Slots, sized the way the app's split views are (minimums from the source). */
+  .slot { position: relative; display: grid; min-height: 0; min-width: 0; overflow: hidden; }
+  .slot > * { grid-area: 1 / 1; min-width: 0; min-height: 0; }
+  .sb { width: 234px; flex: none; }
+  .mainarea { display: flex; flex-direction: column; flex: 1; min-width: 80px; min-height: 0; }
+  .main { flex: 1; min-height: 80px; }
+  .strip { flex: none; height: 30%; min-height: 0; }
+  .side { width: 384px; flex: none; }
+  .divider { width: 1px; flex: none; background: var(--sidebar-border); align-self: stretch; }
+  .pane { display: flex; }
+  /* Collapsing a slot clips its pane, the way a split view does, instead of
+     reflowing it through every width on the way to zero. */
+  .sb .pane { min-width: 180px; }
+  .side .pane { min-width: 260px; }
+  .strip .pane { min-height: 100px; }
+  .pane > :global(*) { flex: 1; }
+
+  .ph {
+    margin: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    border: 1px dashed rgb(255 255 255 / 0.28); border-radius: 12px; text-align: center; padding: 8px;
+    color: rgb(255 255 255 / 0.9);
+  }
+  .ph b { font: 500 13px/16px var(--font-sans); }
+  .ph i { font: 400 11px/16px var(--font-sans); font-style: normal; color: rgb(255 255 255 / 0.4); }
+
+  /* The window owns the traffic lights, as AppKit does; the pane's copy hides. */
+  .lights { position: absolute; left: 11px; top: 12px; display: flex; gap: 7px; z-index: 5; }
+  .lights img { width: 16px; height: 16px; }
+  .win :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }
+
+  /* Narrow screens: no stage, the steps read as a list. */
+  @media (max-width: 1000px) {
+    .panes { height: auto; padding-block: 96px; }
+    .sticky { position: relative; height: auto; min-height: 0; display: block; padding: 0 var(--gutter); }
+    .stagebox { display: none; }
+    .steps .k { opacity: 1; }
+    .cap { grid-template-rows: 1fr; }
+  }
+</style>

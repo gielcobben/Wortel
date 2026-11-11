@@ -1,0 +1,104 @@
+---
+// Drag the window's edge. The panes give way in the order the app's split
+// views do (the terminal first, then the column, then the sidebar), using the
+// minimums from the source. Nothing is scaled: this is the window at 1:1.
+import Sidebar from '../../app/gen/Sidebar.astro';
+import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
+import Changes from '../../app/gen/Changes.astro';
+---
+<section class="rz section" data-resize>
+  <div class="page">
+    <div class="split" data-reveal-group>
+      <div class="k"><p class="eyebrow" data-reveal>Layout</p></div>
+      <div class="v">
+        <h2 class="h2" data-reveal>Drag the edge.<br /><span class="tone">It decides like a Mac.</span></h2>
+        <p class="body" data-reveal>
+          There are no layout settings, because there is nothing to decide twice. As the window narrows the terminal gives way first, then the column, then the sidebar, the way a split view does. Drag a divider and it stays where you put it.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="bench">
+    <div class="win wapp dark" data-rwin>
+      <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+      <div class="relative flex size-full">
+        <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
+        <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
+        <div class="flex min-h-0 min-w-[80px] flex-1 self-stretch"><TerminalNarrow /></div>
+        <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
+        <div class="flex min-h-0 self-stretch w-[384px] min-w-[260px] shrink-[3]"><Changes /></div>
+      </div>
+      <div class="pointer-events-none absolute inset-0 rounded-[18px] shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.1)]"></div>
+      <button class="grip" type="button" data-grip aria-label="Resize the window: drag, or use the arrow keys"><span></span></button>
+    </div>
+    <p class="size label" data-size aria-live="polite"></p>
+  </div>
+</section>
+
+<script>
+  import { gsap } from 'gsap';
+  import { ScrollTrigger } from 'gsap/ScrollTrigger';
+  gsap.registerPlugin(ScrollTrigger);
+  const root = document.querySelector<HTMLElement>('[data-resize]');
+  const win = root?.querySelector<HTMLElement>('[data-rwin]');
+  const grip = root?.querySelector<HTMLElement>('[data-grip]');
+  const size = root?.querySelector<HTMLElement>('[data-size]');
+  if (root && win && grip && size) {
+    const MIN = 522, MAX = 1222;
+    const bench = win.parentElement!;
+    const maxNow = () => Math.max(MIN, Math.min(MAX, bench.clientWidth - 48));
+    const state = { w: maxNow() };
+    const apply = () => {
+      state.w = Math.max(MIN, Math.min(maxNow(), state.w));
+      win.style.width = `${Math.round(state.w)}px`;
+      size.textContent = `${Math.round(state.w)} × ${win.offsetHeight} pt`;
+    };
+    apply();
+    window.addEventListener('resize', apply);
+
+    let startX = 0, startW = 0, touched = false;
+    grip.addEventListener('pointerdown', (e) => {
+      touched = true; gsap.killTweensOf(state);
+      startX = e.clientX; startW = state.w; grip.setPointerCapture(e.pointerId);
+      root.classList.add('dragging');
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!grip.hasPointerCapture(e.pointerId)) return;
+      // The window is centred, so its edge moves half as far as its width.
+      state.w = startW + (e.clientX - startX) * 2; apply();
+    });
+    grip.addEventListener('pointerup', () => root.classList.remove('dragging'));
+    grip.addEventListener('keydown', (e) => {
+      const d = e.key === 'ArrowLeft' ? -24 : e.key === 'ArrowRight' ? 24 : 0;
+      if (!d) return;
+      e.preventDefault(); touched = true; state.w += d; apply();
+    });
+
+    // A hint, once: the window narrows by itself and comes back.
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      ScrollTrigger.create({
+        trigger: win, start: 'top 70%', once: true,
+        onEnter: () => {
+          if (touched) return;
+          const full = maxNow();
+          gsap.timeline({ onUpdate: apply })
+            .to(state, { w: Math.max(MIN, full - 440), duration: 2.2, ease: "power2.inOut" }, 0.3)
+            .to(state, { w: full, duration: 1.8, ease: 'power2.inOut' }, 3.2);
+        },
+      });
+    }
+  }
+</script>
+
+<style>
+  .split .h2 { margin: 0 0 24px; }
+  .bench { position: relative; margin-top: 80px; display: flex; flex-direction: column; align-items: center; gap: 16px; padding-inline: 24px; overflow: hidden; }
+  .win { position: relative; display: flex; height: 640px; flex: none; border-radius: 18px; box-shadow: var(--shadow-window); background: #6d6b62; }
+  @media (prefers-color-scheme: dark) { .win { background: #2a2a26; } }
+  .grip { all: unset; position: absolute; top: 0; bottom: 0; right: -12px; width: 24px; cursor: ew-resize; display: grid; place-items: center; z-index: 3; touch-action: none; }
+  .grip span { width: 4px; height: 48px; border-radius: 2px; background: var(--ink-3); opacity: 0.6; transition: opacity 0.2s, height 0.2s; }
+  .grip:hover span, .grip:focus-visible span, :global(.dragging) .grip span { opacity: 1; height: 64px; background: var(--ink); }
+  .size { font-family: var(--font-mono); }
+  :global(.dragging) { cursor: ew-resize; user-select: none; }
+  @media (max-width: 700px) { .bench { align-items: flex-start; } .win { height: 480px; } }
+</style>

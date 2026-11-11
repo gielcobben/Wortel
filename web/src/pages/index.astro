@@ -2,6 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import Hero from '../components/home/Hero.astro';
 import Panes from '../components/home/Panes.astro';
+import Resize from '../components/home/Resize.astro';
 import Statement from '../components/home/Statement.astro';
 import Agents from '../components/home/Agents.astro';
 import Worktrees from '../components/home/Worktrees.astro';
@@ -19,6 +20,7 @@ const schema = homeSchema(await latestRelease());
   <Hero />
   <Statement />
   <Panes />
+  <Resize />
   <Agents />
   <Worktrees />
   <Survival />

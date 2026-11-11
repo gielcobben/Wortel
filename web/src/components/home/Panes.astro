@@ -62,7 +62,7 @@ const P = {
   <div class="sticky">
     <aside class="rail">
       <p class="eyebrow">The window</p>
-      <h2 class="h2">One window.<br /><span class="tone">Four places to put things.</span></h2>
+      <h2 class="h2">One window.<br /><span class="tone">Four places.</span></h2>
       <ol class="steps" aria-live="polite">
         {STEPS.map((s, i) => (
           <li data-step={i}>
@@ -132,12 +132,13 @@ const P = {
   .panes { position: relative; height: 680vh; background: var(--fog-0); }
   .sticky {
     position: sticky; top: 0; height: 100vh; min-height: 720px;
-    display: grid; grid-template-columns: 368px minmax(0, 1fr); gap: 48px;
+    display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 40px;
     padding: 96px 24px 32px max(var(--gutter), calc((100vw - var(--page)) / 2));
     overflow: hidden;
   }
   .rail { display: flex; flex-direction: column; gap: 16px; padding-top: 24px; }
-  .h2 { font-size: 36px; }
+  .h2 { font-size: 40px; }
+  .win :global([data-pane="browser"] img[data-name="Web page"]) { object-position: 50% 0; }
   .steps { list-style: none; margin: 32px 0 0; padding: 0; display: flex; flex-direction: column; }
   .steps li { border-top: 1px solid var(--line); }
   .steps li:last-child { border-bottom: 1px solid var(--line); }
@@ -174,7 +175,7 @@ const P = {
   .mainarea { display: flex; flex-direction: column; flex: 1; min-width: 80px; min-height: 0; }
   .main { flex: 1; min-height: 80px; }
   .strip { flex: none; height: 30%; min-height: 0; }
-  .side { width: 384px; flex: none; }
+  .side { width: 320px; flex: none; }
   .divider { width: 1px; flex: none; background: var(--sidebar-border); align-self: stretch; }
   .pane { display: flex; }
   /* Collapsing a slot clips its pane, the way a split view does, instead of

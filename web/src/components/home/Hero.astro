@@ -102,7 +102,8 @@ const words = (s: string) => s.split(' ');
 
   /* The lake at night. The fog is no longer bright enough to carry ink. */
   @media (prefers-color-scheme: dark) {
-    .lake { filter: brightness(0.3) saturate(0.55) contrast(1.15) hue-rotate(-8deg); }
+    .lake { filter: brightness(0.2) contrast(1.5) saturate(0.6); }
+    .scene::after { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 40% at 50% 30%, rgb(14 14 12 / 0.1), rgb(14 14 12 / 0.55)); }
     .mist { opacity: 0.12; }
     .display { color: var(--ink); }
     .display .tone { color: var(--ink-3); }

@@ -20,8 +20,12 @@
 # means shipping it under a new name, never overwriting one of these in place.
 # Both are preloaded in the document head and paint in the first screen, so a
 # year in cache is the difference between a cold and a warm second visit.
-/fonts/*
-  Cache-Control: public, max-age=31536000, immutable
+/app/*
+  Cache-Control: public, max-age=604800
+/img/*
+  Cache-Control: public, max-age=604800
+/brand/*
+  Cache-Control: public, max-age=86400
 
 # Stable but occasionally regenerated (see web/README.md for the ImageMagick
 # commands). A day is long enough to matter for social scrapers re-fetching the

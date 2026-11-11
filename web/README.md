@@ -9,7 +9,7 @@ static (`output: 'static'`); no server runtime, no SSR.
 
 ```sh
 npm install
-npm run dev        # http://localhost:4321
+npm run dev        # http://localhost:4340
 npm run check      # typecheck the pages and the worker; ../scripts/check.sh runs every app
 ```
 
@@ -29,27 +29,58 @@ feed at `updates.wortel.sh`. See the repo root `CLAUDE.md`.
 
 ```
 src/
-  data/site.ts             ALL landing-page AND /docs copy: the single source
-  data/compare.ts          ALL /compare copy: the apps, the ten questions, every cell
+  data/site.ts             landing-page AND /docs copy: the single source
+  data/compare.ts          ALL /compare copy: the apps, the questions, every cell
+  data/release.ts          the newest release, read from the appcast at build time
+  data/schema.ts           the homepage's JSON-LD
   content/releases/*.md    the changelog, one Markdown file per release
-  content.config.ts        the release collection's schema + version sorting
-  pages/index.astro        the landing page + JSON-LD
-  pages/updates.astro      /updates         the changelog
-  pages/compare.astro      /compare         Wortel against nine named apps
-  pages/docs.astro         /docs            the reference: commands, shortcuts
+  content/legal/*.md       /privacy, /terms (the filename is the route)
+  pages/index.astro        the homepage: sections in components/home/
+  pages/about.astro        /about   Roots: the name, a family tree, six beliefs
+  pages/brand.astro        /brand   name, mark, icon, colours, asset zip
+  pages/updates.astro      /updates the changelog
+  pages/compare.astro      /compare Wortel against nine named apps
+  pages/docs.astro         /docs    commands, shortcuts, behaviour
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
-  pages/llms.txt.ts        /llms.txt        short map for language models
-  pages/llms-full.txt.ts   /llms-full.txt   every page as Markdown, grid included
-  pages/sitemap.xml.ts     /sitemap.xml
-  components/PreviewWindow.astro  the app's file-preview window, for /updates
-  components/CompareGrid.astro    the comparison grid, for /compare
-  components/Blocks.astro         one Block[] as HTML, for the page and /docs
-  layouts/Layout.astro     html shell + meta/OG/canonical/icons
-  styles/global.css        all styling (terminal-flavored dark theme)
-  demo/                    the Svelte replica of the app window (see below)
-public/                    static assets (favicon, og.png, screenshots, robots.txt)
-  _headers                 response headers: immutable caching, HSTS, noindex
+  pages/llms*.txt.ts       maps for language models
+  components/home/         Hero, Statement, Panes, Agents, Worktrees, Survival,
+                           NoSettings, Command, Engine (specs + FAQ)
+  app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
+  scripts/hero.ts          the landing sequence (one GSAP timeline)
+  scripts/panes.ts         the scroll-scrubbed panes explainer
+  scripts/sections.ts      everything else that moves
+  styles/site.css          the site's design system (fog, ink, moss; 8px grid)
+  styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
+public/
+  app/                     glyphs and images the generated panes use
+  img/lake*.jpg            the foggy lake
+  brand/                   icon, marks, and the zip /brand links to
+scripts/opmaak/            jsx2astro.mjs: canvas markup -> src/app/gen
 ```
+
+### The app window is live HTML, not a screenshot
+
+Every window on the site is built from the Opmaak canvas "Wortel"
+(https://opmaak.dev/c/2v3opz6osv), whose panes are Tailwind markup over the
+app's measured tokens. To pick up a change made on the canvas:
+
+```sh
+OPMAAK_CANVAS=2v3opz6osv opmaak tree "Pane · Changes · Dark" > /tmp/changes.jsx
+node scripts/opmaak/jsx2astro.mjs /tmp/changes.jsx src/app/gen/Changes.astro \
+  --select "Changes pane" --assets /tmp/ids.txt
+# then fetch any new ids into public/app/<id>.png from https://opmaak.dev/a/<id>
+```
+
+The hero window is the `Window` of the "Foggy Lake" frame. Don't hand-edit
+files in src/app/gen; scripts can find nodes by their `data-name`.
+
+### Motion
+
+The landing and the panes explainer are written the way the product films
+are: one GSAP timeline each, every beat at a named time. Scroll never locks:
+the panes section is tall and its stage is sticky, so scroll position is the
+playhead. For screenshots, `/?t=<s>` holds the landing at a time and
+`/?panes=<s>` holds the panes timeline. Reduced motion skips to the end state.
 
 The download button points at `https://updates.wortel.sh/Wortel-latest.zip`,
 which `release.sh --publish` always mirrors to the newest signed build. The

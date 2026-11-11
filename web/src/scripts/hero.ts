@@ -56,7 +56,9 @@ export function playHero() {
   const tl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } });
   const at = { mist: 0, words: 0.15, copy: 0.7, window: 0.55, agent: 2.1 };
 
-  tl.fromTo(hero.querySelector('.lake'), { scale: 1.14, filter: 'blur(14px)' }, { scale: 1, filter: 'blur(0px)', duration: 3.2 }, at.mist);
+  tl.fromTo(hero.querySelector('.lake'), { scale: 1.14 }, { scale: 1, duration: 3.2 }, at.mist);
+  // Blur on the wrapper, not the photo: the photo's own filter is the night grade.
+  tl.fromTo(hero.querySelector('.scene'), { filter: 'blur(14px)' }, { filter: 'blur(0px)', duration: 2.6, clearProps: 'filter' }, at.mist);
   tl.fromTo(q(hero, '.mist'), { opacity: 1.6 }, { opacity: 1, duration: 3.2 }, at.mist);
   tl.fromTo(q(hero, '[data-h1] .w'), { opacity: 0, y: 28, filter: 'blur(10px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 1.4, stagger: 0.07 }, at.words);
   tl.fromTo(q(hero, '[data-fade]'), { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 1.2, stagger: 0.1 }, at.copy);

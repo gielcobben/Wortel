@@ -1,7 +1,7 @@
 ---
 import { SPECS, FAQ } from '../../data/site';
 ---
-<section class="engine section" id="specs">
+<section class="engine section" id="ghostty-engine">
   <div class="page">
     <div class="split" data-reveal-group>
       <div class="k"><p class="eyebrow" data-reveal>Under the surface</p></div>
@@ -12,7 +12,7 @@ import { SPECS, FAQ } from '../../data/site';
         </p>
       </div>
     </div>
-    <dl class="specs" data-reveal-group="0.04">
+    <dl class="specs" id="specs" data-reveal-group="0.04">
       {SPECS.map(([k, v]) => (
         <div class="row" data-reveal><dt>{k}</dt><dd>{v}</dd></div>
       ))}

@@ -1,19 +1,27 @@
 ---
-// At a glance and the questions, in the one text column the site uses for
-// anything read rather than looked at.
+// What it is made of, and the questions. Same parts as every other section:
+// a heading, then facts on the grid.
 import { SPECS, FAQ } from '../../data/site';
 ---
-<section class="section" id="faq">
-  <span id="specs" class="anchor"></span>
-  <div class="column">
-    <div class="head" data-reveal-group>
-      <h2 class="h2" data-reveal>Questions.</h2>
+<section class="sec" id="zero-config">
+  <span id="ghostty-engine" class="anchor"></span><span id="specs" class="anchor"></span>
+  <div class="page">
+    <div class="bhead" data-reveal>
+      <h2 class="h2">Native to the core, with nothing to configure. <span class="tone">Swift and AppKit around Ghostty’s own engine, unmodified. The font, the theme and the keybinds were chosen once. Font size is the one thing you change.</span></h2>
     </div>
-    <dl class="specs">
+    <dl class="facts specs" data-reveal-group="0.04">
       {SPECS.map(([k, v]) => (
-        <div class="row"><dt>{k}</dt><dd>{v}</dd></div>
+        <div class="fact" data-reveal><dt class="label">{k}</dt><dd class="h3">{v}</dd></div>
       ))}
     </dl>
+  </div>
+</section>
+
+<section class="sec" id="faq">
+  <div class="page">
+    <div class="bhead" data-reveal>
+      <h2 class="h2">Questions. <span class="tone">The short answers. The exact ones are in <a class="link" href="/docs">the docs</a>.</span></h2>
+    </div>
     <div class="list">
       {FAQ.map((f) => (
         <details>
@@ -26,12 +34,10 @@ import { SPECS, FAQ } from '../../data/site';
 </section>
 
 <style>
-  .specs { margin: 0 0 64px; }
-  .row { display: grid; grid-template-columns: 160px 1fr; gap: 24px; padding-block: 12px; border-top: 1px solid var(--line); }
-  .row:last-child { border-bottom: 1px solid var(--line); }
-  dt { font-size: 15px; line-height: 24px; color: var(--ink-3); }
-  dd { margin: 0; font-size: 15px; line-height: 24px; color: var(--ink); }
-  @media (max-width: 640px) { .row { grid-template-columns: 1fr; gap: 0; } }
+  .specs { margin-top: 0; }
+  .specs dt { margin-bottom: 8px; }
+  .specs dd { margin: 0; font-weight: 500; }
+  .bhead .link { color: inherit; }
 
   .list { display: flex; flex-direction: column; }
   details { border-top: 1px solid var(--line); }
@@ -45,5 +51,5 @@ import { SPECS, FAQ } from '../../data/site';
   summary i::before, summary i::after { content: ''; position: absolute; left: 0; top: 5px; width: 12px; height: 1.5px; background: var(--ink-3); border-radius: 1px; transition: transform 0.3s var(--ease-out); }
   summary i::after { transform: rotate(90deg); }
   details[open] summary i::after { transform: rotate(0); }
-  details .body { margin: 0 0 24px; }
+  details .body { margin: 0 0 24px; max-width: 784px; }
 </style>

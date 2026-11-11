@@ -54,11 +54,11 @@ export function playHero() {
 
   // ---- build the timeline -------------------------------------------------
   const tl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } });
-  const at = { copy: 0, window: 0.35, agent: 1.6 };
+  const at = { copy: 0, window: 0.3, agent: 1.6 };
 
   tl.fromTo(q(hero, '[data-fade]'), { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 1.1, stagger: 0.08 }, at.copy);
   tl.fromTo(hero.querySelector('[data-shot]'), { opacity: 0 }, { opacity: 1, duration: 1.2, ease: 'power2.out' }, at.window);
-  tl.fromTo(win, { opacity: 0, y: 64 }, { opacity: 1, y: 0, duration: 1.6, clearProps: 'transform,opacity' }, at.window + 0.2);
+  tl.fromTo(win, { opacity: 0, y: 48 }, { opacity: 1, y: 0, duration: 1.6, clearProps: 'transform,opacity' }, at.window + 0.2);
 
   // The agent. Hidden state is set at time 0 so seeking backwards restores it.
   tl.call(() => {

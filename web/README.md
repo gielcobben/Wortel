@@ -36,21 +36,22 @@ src/
   content/releases/*.md    the changelog, one Markdown file per release
   content/legal/*.md       /privacy, /terms (the filename is the route)
   pages/index.astro        the homepage: sections in components/home/
-  pages/about.astro        /about   the name, a family tree, six beliefs
+  pages/about.astro        /about   the name, why it exists, a family tree, six beliefs
   pages/updates.astro      /updates the changelog
   pages/compare.astro      /compare Wortel against nine named apps
   pages/docs.astro         /docs    commands, shortcuts, behaviour
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms*.txt.ts       maps for language models
-  components/home/         Hero, Panes, Features, Faq (specs + questions)
+  components/home/         Hero, Panes, Agents, Worktrees, Survival, Glance (specs + FAQ)
   app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
   scripts/hero.ts          the landing sequence (one GSAP timeline)
   scripts/panes.ts         the panes explainer, played a step at a time
-  styles/site.css          the site's design system (dark, one centred axis, 8px grid)
+  scripts/sections.ts      the loops inside the agents and survival shots
+  styles/site.css          the site's design system: READ ITS HEADER before adding a section
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
 public/
   app/                     glyphs and images the generated panes use
-  img/lake*.jpg            the foggy lake: the desktop every window stands on
+  img/lake*.jpg            the foggy lake every window stands on
   icon-*.png, favicon-*    the app icon, exported from macos/Wortel/AppIcon.icon
 scripts/opmaak/            jsx2astro.mjs: canvas markup -> src/app/gen
 ```
@@ -69,7 +70,18 @@ node scripts/opmaak/jsx2astro.mjs /tmp/changes.jsx src/app/gen/Changes.astro \
 ```
 
 The hero window is the `Window` of the "Foggy Lake" frame. Don't hand-edit
-files in src/app/gen; scripts can find nodes by their `data-name`.
+files in src/app/gen; scripts can find nodes by their `data-name`. The canvas
+has a light and a dark mode of every state with identical markup, so a window
+follows the page's colour scheme through the tokens in styles/app.css.
+
+### One layout
+
+Every page sits on one container with one left edge; nothing is centred. A
+homepage section is `.sec` > `.bhead` (two-tone heading) + `.shot` (the app on
+the lake) + `.facts` (a row of short points). An inner page is `.phead` and
+then `.row12` rows: a label in columns 1 to 3, content in 4 to 11. Don't name
+a site class after a Tailwind utility (`block`, `grid`, `flex`…): the app's
+generated markup uses those.
 
 ### Motion
 

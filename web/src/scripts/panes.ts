@@ -22,7 +22,6 @@ export function initPanes() {
   const div = (k: string) => win.querySelector<HTMLElement>(`[data-div="${k}"]`)!;
   const mainBar = pane('terminal').querySelector<HTMLElement>('[data-name="Main bar"]');
 
-  const caps = Array.from(root.querySelectorAll<HTMLElement>('[data-cap]'));
   const steps = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-goto]'));
 
   // ---- storyboard ---------------------------------------------------------
@@ -86,7 +85,7 @@ export function initPanes() {
   tl.set({}, {}, S.quiet[1]);
 
   // ---- on a phone, the stage pans to the place the step is about ----------
-  const phone = matchMedia('(max-width: 700px)');
+  const phone = matchMedia('(max-width: 760px)');
   const focus: Record<string, string | null> = { sidebar: 'sidebar', main: 'main', side: 'side', strip: 'strip', anywhere: 'side', quiet: null };
   const pan = (idx: number) => {
     if (!phone.matches) { gsap.set(win, { x: 0 }); return; }
@@ -102,26 +101,24 @@ export function initPanes() {
     gsap.to(win, { x, duration: 0.7, ease: 'power3.inOut', overwrite: 'auto' });
   };
 
-  // ---- captions follow the playhead ---------------------------------------
-  let current = -2;
-  const sync = (time: number) => {
-    let idx = -1;
-    order.forEach((k, i) => { if (time >= S[k][0] - 0.2) idx = i; });
-    if (idx === current) return;
-    current = idx;
-    caps.forEach((c, i) => c.classList.toggle('on', i === Math.max(0, idx)));
-    steps.forEach((s, i) => s.setAttribute('aria-selected', String(i === Math.max(0, idx))));
+  // ---- the step row follows ------------------------------------------------
+  const mark = (idx: number) => {
+    steps.forEach((s, i) => {
+      s.setAttribute('aria-selected', String(i === idx));
+      s.parentElement!.classList.toggle('on', i === idx);
+    });
     pan(idx);
   };
 
   const params = new URLSearchParams(location.search);
   if (params.has('panes')) {
     const t = Number(params.get('panes'));
-    tl.seek(t); sync(t);
+    tl.seek(t);
+    let idx = -1;
+    order.forEach((k, i) => { if (t >= S[k][0] - 0.2) idx = i; });
+    mark(idx);
     return;
   }
-
-  sync(0);
 
   // Go to a step: play forward through the beats in between, or, going back,
   // jump to just before the step and play its own beat.
@@ -131,13 +128,13 @@ export function initPanes() {
     const k = order[i];
     const end = S[k][1] - 0.2;
     if (end < tl.time()) tl.seek(S[k][0] - 0.05);
-    tl.tweenTo(end, { duration: Math.min(2.4, Math.max(0.8, end - tl.time())), ease: 'none', onUpdate: () => sync(tl.time()) });
-    sync(S[k][0]);
+    tl.tweenTo(end, { duration: Math.min(2.4, Math.max(0.8, end - tl.time())), ease: 'none' });
+    mark(i);
   };
 
   // While the section is on screen the steps advance by themselves; a click
   // anywhere in the row hands control to the reader for good.
-  const HOLD = 5000;
+  const HOLD = 5200;
   let timer = 0, auto = !reduced();
   const tick = () => {
     clearTimeout(timer);
@@ -150,6 +147,7 @@ export function initPanes() {
     else { clearTimeout(timer); timer = 0; }
   }, { threshold: 0.5 }).observe(win);
 
-  steps.forEach((b, i) => b.addEventListener('click', () => { auto = false; clearTimeout(timer); go(i); }));
-  if (reduced()) { tl.seek(S.side[1] - 0.2); sync(tl.time()); step = 2; }
+  root.classList.toggle('auto', auto);
+  steps.forEach((b, i) => b.addEventListener('click', () => { auto = false; root.classList.remove('auto'); clearTimeout(timer); go(i); }));
+  if (reduced()) { tl.seek(S.side[1] - 0.2); step = 2; mark(2); }
 }

@@ -7,12 +7,10 @@
    tokens are the app's measured macOS colours, so they are scoped to .wapp:
    the site has its own palette in site.css and the two never mix.
 
-   A window is dark when it, or an ancestor, carries .dark, the same way the
-   canvas follows a frame's mode.
+   A window follows the page: the canvas's light mode on the light page, its
+   dark mode at night (Tailwind's own dark: variant is the same media query).
    ========================================================================== */
 @import "tailwindcss";
-
-@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --color-background: var(--background);
@@ -93,39 +91,40 @@
   -webkit-user-select: none;
 }
 
-.wapp.dark,
-.dark .wapp {
-  --background: #1f1f1f;
-  --foreground: rgb(255 255 255 / 0.9);
-  --card: #2e2e2e;
-  --card-foreground: rgb(255 255 255 / 0.9);
-  --popover: rgb(37 37 37 / 0.8);
-  --popover-foreground: rgb(255 255 255 / 0.9);
-  --primary: #007aff;
-  --primary-foreground: #ffffff;
-  --secondary: rgb(255 255 255 / 0.11);
-  --secondary-foreground: rgb(255 255 255 / 0.9);
-  --muted: rgb(255 255 255 / 0.04);
-  --muted-foreground: rgb(255 255 255 / 0.55);
-  --accent: rgb(255 255 255 / 0.07);
-  --accent-foreground: rgb(255 255 255 / 0.9);
-  --destructive: #ff453a;
-  --border: rgb(255 255 255 / 0.08);
-  --input: rgb(255 255 255 / 0.12);
-  --ring: #007aff;
-  --chart-1: #ff9f0a;
-  --chart-2: #63e6e2;
-  --chart-3: #30d158;
-  --chart-4: #ff453a;
-  --chart-5: #0a84ff;
-  --sidebar: oklch(0.269 0 0 / 85%);
-  --sidebar-foreground: rgb(255 255 255 / 0.9);
-  --sidebar-primary: rgb(255 255 255 / 0.02);
-  --sidebar-primary-foreground: rgb(255 255 255 / 0.35);
-  --sidebar-accent: rgb(255 255 255 / 0.08);
-  --sidebar-accent-foreground: rgb(255 255 255 / 0.66);
-  --sidebar-border: rgb(255 255 255 / 0.08);
-  --sidebar-ring: rgb(255 255 255 / 0.18);
+@media (prefers-color-scheme: dark) {
+  .wapp {
+    --background: #1f1f1f;
+    --foreground: rgb(255 255 255 / 0.9);
+    --card: #2e2e2e;
+    --card-foreground: rgb(255 255 255 / 0.9);
+    --popover: rgb(37 37 37 / 0.8);
+    --popover-foreground: rgb(255 255 255 / 0.9);
+    --primary: #007aff;
+    --primary-foreground: #ffffff;
+    --secondary: rgb(255 255 255 / 0.11);
+    --secondary-foreground: rgb(255 255 255 / 0.9);
+    --muted: rgb(255 255 255 / 0.04);
+    --muted-foreground: rgb(255 255 255 / 0.55);
+    --accent: rgb(255 255 255 / 0.07);
+    --accent-foreground: rgb(255 255 255 / 0.9);
+    --destructive: #ff453a;
+    --border: rgb(255 255 255 / 0.08);
+    --input: rgb(255 255 255 / 0.12);
+    --ring: #007aff;
+    --chart-1: #ff9f0a;
+    --chart-2: #63e6e2;
+    --chart-3: #30d158;
+    --chart-4: #ff453a;
+    --chart-5: #0a84ff;
+    --sidebar: oklch(0.269 0 0 / 85%);
+    --sidebar-foreground: rgb(255 255 255 / 0.9);
+    --sidebar-primary: rgb(255 255 255 / 0.02);
+    --sidebar-primary-foreground: rgb(255 255 255 / 0.35);
+    --sidebar-accent: rgb(255 255 255 / 0.08);
+    --sidebar-accent-foreground: rgb(255 255 255 / 0.66);
+    --sidebar-border: rgb(255 255 255 / 0.08);
+    --sidebar-ring: rgb(255 255 255 / 0.18);
+  }
 }
 
 /* The agent's status glyph turns while it works (see scripts/hero.ts). */

@@ -2,11 +2,11 @@
 // The window, explained by putting it together.
 //
 // One live window on the lake, built from the canvas's pane library, and a row
-// of steps under it. Each step plays its part of one GSAP timeline
-// (scripts/panes.ts): the empty skeleton, each place filling with its pane,
-// tabs moving, everything folding away again. The steps advance by themselves
-// while the section is on screen, and a click takes over. Nothing is pinned
-// and the scroll is never touched. The window is never scaled.
+// of six steps under it on the page grid. Each step plays its part of one GSAP
+// timeline (scripts/panes.ts): the empty skeleton, each place filling with its
+// pane, tabs moving, everything folding away again. The steps advance by
+// themselves while the section is on screen and a click takes over. Nothing is
+// pinned and the scroll is never touched. The window is never scaled.
 import Sidebar from '../../app/gen/Sidebar.astro';
 import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
 import Changes from '../../app/gen/Changes.astro';
@@ -17,106 +17,74 @@ import Browser from '../../app/gen/Browser.astro';
 import BottomStrip from '../../app/gen/BottomStrip.astro';
 
 const STEPS = [
-  {
-    key: 'sidebar', place: 'Sidebar', keys: ['⌘B'],
-    title: 'Every session, by name.',
-    body: 'Sessions sit in the sidebar under the names you gave them, grouped by folder, with a mark for every worktree and a dot when an agent wants you.',
-  },
-  {
-    key: 'main', place: 'Main', keys: ['⌘T'],
-    title: 'The work in front of you.',
-    body: 'The main area holds the terminal you are in. It takes a file, code or a browser just as happily.',
-  },
-  {
-    key: 'side', place: 'Column', keys: ['⌃⌘1', '⌃⌘2', '⌃⌘3'],
-    title: 'Your repository, beside the shell.',
-    body: 'Changes, History and Files: the diff of what an agent just did, the commits with their graph, and the project as a tree.',
-  },
-  {
-    key: 'strip', place: 'Strip', keys: ['⇧⌘D'],
-    title: 'A second shell, out of the way.',
-    body: 'The dev server, the test watcher, the logs. Under the terminal, never on top of it.',
-  },
-  {
-    key: 'anywhere', place: 'Anywhere', keys: ['⇧⌘L'],
-    title: 'Tabs go where you put them.',
-    body: 'A browser in the main area, a plan in the column, a shell in the strip. Drag any tab to any place. Nothing is fixed, and nothing needs setting up.',
-  },
-  {
-    key: 'quiet', place: 'Quiet', keys: ['⌘B', '⌥⌘B', '⌘J'],
-    title: 'And quiet, when you want it.',
-    body: 'Three keys put the sidebar, the column and the strip away. What is left is a terminal, and it is a very good one.',
-  },
+  { place: 'Sidebar', keys: ['⌘B'], body: 'Every session by name, grouped by folder, with a dot when an agent wants you.' },
+  { place: 'Main', keys: ['⌘T'], body: 'The terminal you are in. It takes a file, code or a browser just as happily.' },
+  { place: 'Column', keys: ['⌥⌘B'], body: 'Changes, History and Files: your repository, beside the shell.' },
+  { place: 'Strip', keys: ['⌘J'], body: 'A second shell for the dev server and the logs, under the terminal.' },
+  { place: 'Anywhere', keys: [], body: 'Drag any tab to any place. A browser in the main area, a plan in the column.' },
+  { place: 'Quiet', keys: [], body: 'Three keys put it all away. What is left is a terminal, and a very good one.' },
 ];
 
-const placeholder = (label: string, hint: string) => (
-  { label, hint }
-);
 const P = {
-  sidebar: placeholder('Sidebar', 'Sessions'),
-  main: placeholder('Main', 'Terminal, file, code or browser'),
-  strip: placeholder('Bottom strip', 'A second row of tabs'),
-  side: placeholder('Side column', 'Changes, History, Files or a file'),
+  sidebar: { label: 'Sidebar', hint: 'Sessions' },
+  main: { label: 'Main', hint: 'Terminal, file, code or browser' },
+  strip: { label: 'Bottom strip', hint: 'A second row of tabs' },
+  side: { label: 'Side column', hint: 'Changes, History, Files or a file' },
 };
 ---
-<section id="panes" class="section" data-panes>
+<section id="panes" class="sec" data-panes>
   <span id="sessions" class="anchor"></span><span id="git-and-files" class="anchor"></span>
   <div class="page">
-    <div class="head" data-reveal-group>
-      <h2 class="h2" data-reveal>One window.<br /><span class="tone">Every pane where you want it.</span></h2>
-      <p class="lead" data-reveal>Four places, any tab in any of them, and no layout settings. This is the whole of it.</p>
+    <div class="bhead" data-reveal>
+      <h2 class="h2">One window, four places. <span class="tone">A sidebar, a main area, a side column and a bottom strip. Any tab goes in any of them, and there is no layout to configure.</span></h2>
     </div>
-    <div class="shot stagebox">
-    <div class="win wapp dark" data-pwin aria-hidden="true" inert>
-      <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
-      <div class="relative flex size-full">
-        <div class="slot sb" data-slot="sidebar">
-          <div class="ph" data-ph><b>{P.sidebar.label}</b><i>{P.sidebar.hint}</i></div>
-          <div class="pane" data-pane="sidebar"><Sidebar /></div>
-        </div>
-        <div class="divider" data-div="sidebar"></div>
-        <div class="mainarea">
-          <div class="slot main" data-slot="main">
-            <div class="ph" data-ph><b>{P.main.label}</b><i>{P.main.hint}</i></div>
-            <div class="pane" data-pane="terminal"><TerminalNarrow /></div>
-            <div class="pane" data-pane="browser"><Browser /></div>
+    <div class="shot full" style="--at: 50% 88%">
+      <div class="win wapp" data-pwin aria-hidden="true" inert>
+        <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+        <div class="relative flex size-full">
+          <div class="slot sb" data-slot="sidebar">
+            <div class="ph" data-ph><b>{P.sidebar.label}</b><i>{P.sidebar.hint}</i></div>
+            <div class="pane" data-pane="sidebar"><Sidebar /></div>
           </div>
-          <div class="slot strip" data-slot="strip">
-            <div class="ph" data-ph><b>{P.strip.label}</b><i>{P.strip.hint}</i></div>
-            <div class="pane" data-pane="strip"><BottomStrip /></div>
+          <div class="divider" data-div="sidebar"></div>
+          <div class="mainarea">
+            <div class="slot main" data-slot="main">
+              <div class="ph" data-ph><b>{P.main.label}</b><i>{P.main.hint}</i></div>
+              <div class="pane" data-pane="terminal"><TerminalNarrow /></div>
+              <div class="pane" data-pane="browser"><Browser /></div>
+            </div>
+            <div class="slot strip" data-slot="strip">
+              <div class="ph" data-ph><b>{P.strip.label}</b><i>{P.strip.hint}</i></div>
+              <div class="pane" data-pane="strip"><BottomStrip /></div>
+            </div>
+          </div>
+          <div class="divider" data-div="side"></div>
+          <div class="slot side" data-slot="side">
+            <div class="ph" data-ph><b>{P.side.label}</b><i>{P.side.hint}</i></div>
+            <div class="pane" data-pane="changes"><Changes /></div>
+            <div class="pane" data-pane="history"><History /></div>
+            <div class="pane" data-pane="files"><Files /></div>
+            <div class="pane" data-pane="file"><FileColumn /></div>
           </div>
         </div>
-        <div class="divider" data-div="side"></div>
-        <div class="slot side" data-slot="side">
-          <div class="ph" data-ph><b>{P.side.label}</b><i>{P.side.hint}</i></div>
-          <div class="pane" data-pane="changes"><Changes /></div>
-          <div class="pane" data-pane="history"><History /></div>
-          <div class="pane" data-pane="files"><Files /></div>
-          <div class="pane" data-pane="file"><FileColumn /></div>
+        <div class="lights" aria-hidden="true">
+          <img src="/app/3ef4fc84971102ffed5f4a10ada4399c.png" alt="" width="16" height="16" />
+          <img src="/app/d1dbbe84aaf8f948789bed8b07c2622c.png" alt="" width="16" height="16" />
+          <img src="/app/ebeda5316137eb91580afb0a92bd4f45.png" alt="" width="16" height="16" />
         </div>
+        <div class="pointer-events-none absolute inset-0 rounded-[18px] "></div>
       </div>
-      <div class="lights" aria-hidden="true">
-        <img src="/app/3ef4fc84971102ffed5f4a10ada4399c.png" alt="" width="16" height="16" />
-        <img src="/app/d1dbbe84aaf8f948789bed8b07c2622c.png" alt="" width="16" height="16" />
-        <img src="/app/ebeda5316137eb91580afb0a92bd4f45.png" alt="" width="16" height="16" />
-      </div>
-      <div class="pointer-events-none absolute inset-0 rounded-[18px] shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.1)]"></div>
     </div>
-    </div>
-    <div class="steps" role="tablist" aria-label="The parts of the window">
+    <ol class="facts six steps" role="tablist" aria-label="The parts of the window">
       {STEPS.map((s, i) => (
-        <button type="button" role="tab" data-goto={i} aria-selected="false">{s.place}</button>
+        <li class="fact">
+          <button type="button" role="tab" data-goto={i} aria-selected="false">
+            <span class="h3"><span class="n">{String(i + 1).padStart(2, '0')}</span>{s.place}{s.keys.map((k) => <kbd>{k}</kbd>)}</span>
+            <span class="body">{s.body}</span>
+          </button>
+        </li>
       ))}
-    </div>
-    <div class="caps" aria-live="polite">
-      {STEPS.map((s, i) => (
-        <div class="cap" data-cap={i}>
-          <p class="h3">{s.title}</p>
-          <p class="body">{s.body}</p>
-          <p class="keys">{s.keys.map((k) => <kbd>{k}</kbd>)}</p>
-        </div>
-      ))}
-    </div>
+    </ol>
   </div>
 </section>
 
@@ -127,11 +95,6 @@ const P = {
 
 <style>
   .win :global([data-pane="browser"] img[data-name="Web page"]) { object-position: 50% 0; }
-  .win {
-    position: relative; display: flex; overflow: hidden;
-    width: min(1222px, 100%); height: 720px;
-    border-radius: 18px; box-shadow: var(--shadow-window);
-  }
 
   /* Slots, sized the way the app's split views are (minimums from the source). */
   .slot { position: relative; display: grid; min-height: 0; min-width: 0; overflow: hidden; }
@@ -152,42 +115,27 @@ const P = {
 
   .ph {
     margin: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-    border: 1px dashed rgb(255 255 255 / 0.28); border-radius: 12px; text-align: center; padding: 8px;
-    color: rgb(255 255 255 / 0.9);
+    border: 1px dashed var(--sidebar-ring); border-radius: 12px; text-align: center; padding: 8px;
+    color: var(--sidebar-foreground);
   }
   .ph b { font: 500 13px/16px var(--font-sans); }
-  .ph i { font: 400 11px/16px var(--font-sans); font-style: normal; color: rgb(255 255 255 / 0.4); }
+  .ph i { font: 400 11px/16px var(--font-sans); font-style: normal; color: var(--sidebar-accent-foreground); }
 
   /* The window owns the traffic lights, as AppKit does; the pane's copy hides. */
   .lights { position: absolute; left: 11px; top: 12px; display: flex; gap: 7px; z-index: 5; }
   .lights img { width: 16px; height: 16px; }
   .win :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }
 
-  /* The steps: one centred row, the way a segmented control reads. */
-  .steps {
-    display: flex; justify-content: center; flex-wrap: wrap; gap: 4px;
-    width: fit-content; max-width: 100%; margin: 32px auto 0; padding: 4px;
-    border-radius: 999px; background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line);
-  }
-  .steps button {
-    all: unset; cursor: pointer; height: 32px; padding: 0 16px; border-radius: 999px;
-    font-size: 14px; line-height: 32px; color: var(--ink-2); transition: color 0.2s, background-color 0.2s;
-  }
-  .steps button:hover { color: var(--ink); }
-  .steps button[aria-selected="true"] { background: var(--bg-2); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
-  .steps button:focus-visible { outline: 2px solid var(--blue); }
-
-  .caps { display: grid; max-width: 560px; margin: 32px auto 0; text-align: center; }
-  .cap { grid-area: 1 / 1; display: flex; flex-direction: column; align-items: center; gap: 8px; opacity: 0; transition: opacity 0.4s; pointer-events: none; }
-  .cap.on { opacity: 1; pointer-events: auto; }
-  .keys { display: flex; gap: 4px; margin: 8px 0 0; }
-
-  /* Phones: the window keeps a real width and pans to the place the step is
-     about (scripts/panes.ts), rather than squeezing. */
-  @media (max-width: 700px) {
-    .win { width: 760px; flex: none; height: 560px; }
-    .shot { padding-right: 16px; }
-    .steps { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-    .steps button { flex: none; }
-  }
+  /* The steps are facts you can press. The rule over the current one fills. */
+  .steps .fact { position: relative; padding-top: 0; }
+  .steps .fact::before { content: ''; position: absolute; left: 0; top: -1px; height: 1px; width: 0; background: var(--ink); }
+  .steps .fact.on::before { width: 100%; }
+  .auto .steps .fact.on::before { transition: width 5.2s linear; }
+  .steps button { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 4px; width: 100%; padding-top: 16px; }
+  .steps button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+  .steps .h3, .steps .body { transition: color 0.3s; }
+  .steps .fact:not(.on) .h3 { color: var(--ink-2); }
+  .steps .fact:not(.on) .body { color: var(--ink-3); }
+  .steps button:hover .h3 { color: var(--ink); }
+  .n { display: inline-block; width: 28px; font: 500 12px/24px var(--font-mono); color: var(--ink-3); letter-spacing: 0; }
 </style>

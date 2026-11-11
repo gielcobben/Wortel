@@ -6,7 +6,7 @@
 // all see the whole table); the script only hides the ones not picked.
 import Layout from '../layouts/Layout.astro';
 import { SITE } from '../data/site';
-import { COMPARE, APPS, AXES, GROUPS, type Verdict } from '../data/compare';
+import { COMPARE, CATEGORIES, APPS, AXES, GROUPS, type Verdict } from '../data/compare';
 
 const abs = (p: string) => new URL(p, SITE.url).href;
 const schema = [{
@@ -19,19 +19,33 @@ const axis = (id: string) => AXES.find((a) => a.id === id)!;
 const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly', unknown: 'Not published' };
 ---
 <Layout title={COMPARE.title} description={COMPARE.description} path="/compare" schema={schema}>
-  <header class="column phead" data-reveal-group>
+  <header class="page phead" data-reveal-group>
     <h1 class="display" data-reveal>{COMPARE.heading}</h1>
     <p class="lead" data-reveal>{COMPARE.lead}</p>
   </header>
 
-  <section class="column intro">
-    <div class="prose">{COMPARE.intro.map((p) => <p>{p}</p>)}</div>
-  </section>
+  <div class="page">
+    <section class="row12">
+      <div class="k"><h2 class="label">The short version</h2></div>
+      <div class="v prose">{COMPARE.intro.map((p) => <p>{p}</p>)}</div>
+    </section>
+    <section class="row12">
+      <div class="k"><h2 class="label">Four kinds of tool, and Wortel</h2></div>
+      <ul class="v cats">
+        {CATEGORIES.map((c) => (
+          <li class:list={['cat', { us: c.key === 'wortel' }]}>
+            <p class="what">{c.what}</p>
+            <p class="body">{c.kind}: {c.examples}</p>
+            {c.useIf && <p class="body">{c.useIf}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  </div>
 
-  <section class="page table" data-compare>
-    <div class="head">
-      <h2 class="h2">{COMPARE.tableHeading}</h2>
-      <p class="lead">{COMPARE.tableLead}</p>
+  <section class="page sec table" data-compare>
+    <div class="bhead">
+      <h2 class="h2">{COMPARE.tableHeading} <span class="tone">{COMPARE.tableLead}</span></h2>
     </div>
     <div class="grid" role="table" aria-label="Wortel compared with other apps">
       <div class="row top" role="row">
@@ -51,7 +65,7 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
       </div>
       {GROUPS.map((g) => (
         <>
-          <div class="group" role="row"><p class="h3" role="cell">{g.title}</p><p class="body" role="cell">{g.blurb}</p></div>
+          <div class="group" role="row"><p class="h3" role="cell">{g.title}</p><p class="small" role="cell">{g.blurb}</p></div>
           {g.axes.map((id) => {
             const ax = axis(id);
             return (
@@ -61,7 +75,7 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
                   const c = ax.cells[a.key];
                   return (
                     <div class:list={['cell', { us: a.key === 'wortel' }]} role="cell" data-col={a.key}>
-                      {!ax.descriptive && <span class:list={['v', c.v]}><i aria-hidden="true"></i>{label[c.v]}</span>}
+                      {!ax.descriptive && <span class:list={['vd', c.v]}><i aria-hidden="true"></i>{label[c.v]}</span>}
                       {c.note.toLowerCase() !== label[c.v].toLowerCase() && <span class="note">{c.note}</span>}
                     </div>
                   );
@@ -72,7 +86,7 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
         </>
       ))}
     </div>
-    <p class="body caveat">{COMPARE.caveat}</p>
+    <p class="small caveat">{COMPARE.caveat}</p>
   </section>
 </Layout>
 
@@ -100,18 +114,23 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
 </script>
 
 <style>
-  .intro { padding-bottom: 0; }
-  .table { padding-top: 160px; }
+  .cats { list-style: none; margin: 0; padding: 0; }
+  .cat { display: grid; grid-template-columns: 1fr; gap: 4px; padding-block: 16px; border-top: 1px solid var(--line); }
+  .cat:first-child { border-top: 0; padding-top: 0; }
+  .cat p { margin: 0; }
+  .what { font-weight: 600; font-size: 16px; line-height: 24px; color: var(--ink); }
+  .cat.us .what { color: var(--accent); }
+
   .grid { display: flex; flex-direction: column; }
   /* Sideways scroll only where it is needed: a scroll container would stop the
      header row from sticking. */
   @media (max-width: 1000px) { .grid { overflow-x: auto; } }
   .row { display: flex; border-top: 1px solid var(--line); min-width: 900px; }
-  .q { flex: 0 0 280px; padding: 16px 16px 16px 0; font-size: 15px; line-height: 24px; color: var(--ink); font-weight: 500; }
+  .q { flex: 0 0 calc((100% - 352px) / 4 + 96px); padding: 16px 16px 16px 0; font-size: 15px; line-height: 24px; color: var(--ink); font-weight: 500; }
   .cell { flex: 1 1 0; min-width: 0; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
   :global(.picking) .cell[hidden] { display: none; }
-  .cell.us { background: var(--bg-1); }
-  .row.top { position: sticky; top: 56px; z-index: 2; background: var(--bg); border-top: 0; }
+  .cell.us { background: var(--fog-1); }
+  .row.top { position: sticky; top: 64px; z-index: 2; background: var(--fog-0); border-top: 0; }
   .app b { font: 600 17px/24px var(--font-display); }
   .app span { font-size: 13px; line-height: 16px; color: var(--ink-3); }
   .app.us { border-radius: 12px 12px 0 0; }
@@ -120,19 +139,19 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
   .slot select {
     appearance: none; -webkit-appearance: none; align-self: flex-start; max-width: 100%;
     font: 600 17px/24px var(--font-display); color: var(--ink); cursor: pointer;
-    background: var(--bg-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14'%3E%3Cpath d='M1.5 5 5 1.5 8.5 5M1.5 9 5 12.5 8.5 9' fill='none' stroke='%23999999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center;
+    background: var(--btn-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14'%3E%3Cpath d='M1.5 5 5 1.5 8.5 5M1.5 9 5 12.5 8.5 9' fill='none' stroke='%2377746a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center;
     border: 0; border-radius: 8px; padding: 4px 28px 4px 8px; margin-left: -8px;
   }
   .slot select:hover { background-color: var(--line-2); }
   .slot span { font-size: 13px; line-height: 16px; color: var(--ink-3); }
-  .group { display: grid; grid-template-columns: 280px 1fr; gap: 0; padding: 48px 0 16px; border-top: 1px solid var(--line-2); min-width: 900px; }
+  .group { display: grid; grid-template-columns: calc((100% - 352px) / 4 + 96px) 1fr; gap: 0; padding: 48px 0 16px; border-top: 1px solid var(--line-2); min-width: 900px; }
   .top + .group { margin-top: 16px; }
   .group p { margin: 0; }
-  .v { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; line-height: 24px; font-weight: 500; color: var(--ink); }
-  .v i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
-  .v.yes i { background: var(--blue); border-color: var(--blue); }
-  .v.partial i { background: linear-gradient(90deg, var(--ink-3) 50%, transparent 50%); border-color: var(--ink-3); }
-  .v.no, .v.unknown { color: var(--ink-3); }
+  .vd { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; line-height: 24px; font-weight: 500; color: var(--ink); }
+  .vd i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
+  .vd.yes i { background: var(--accent); border-color: var(--accent); }
+  .vd.partial i { background: linear-gradient(90deg, var(--ink-3) 50%, transparent 50%); border-color: var(--ink-3); }
+  .vd.no, .vd.unknown { color: var(--ink-3); }
   .note { font-size: 13px; line-height: 20px; color: var(--ink-2); }
-  .caveat { max-width: 640px; margin: 48px auto 0; text-align: center; }
+  .caveat { max-width: 784px; margin-top: 48px; }
 </style>

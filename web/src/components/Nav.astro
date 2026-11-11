@@ -31,19 +31,18 @@ const links = [
 
 <style>
   .nav {
-    position: fixed; inset: 0 0 auto; z-index: 50; height: 56px;
-    background: rgb(0 0 0 / 0.72);
+    position: fixed; inset: 0 0 auto; z-index: 50; height: 64px;
+    background: var(--nav);
     backdrop-filter: saturate(1.8) blur(20px);
     -webkit-backdrop-filter: saturate(1.8) blur(20px);
-    box-shadow: 0 1px 0 var(--line);
   }
-  .bar { height: 56px; display: flex; align-items: center; gap: 32px; }
-  .brand { display: inline-flex; align-items: center; gap: 8px; font: 600 16px/24px var(--font-display); letter-spacing: -0.02em; color: var(--ink); }
+  .bar { height: 64px; display: flex; align-items: center; gap: 32px; }
+  .brand { display: inline-flex; align-items: center; gap: 8px; font: 600 17px/24px var(--font-display); letter-spacing: -0.02em; color: var(--ink); }
   .links { display: flex; gap: 24px; margin-left: auto; }
   .links a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 0.2s; }
   .links a:hover, .links a[aria-current] { color: var(--ink); }
   .menu { display: none; position: relative; }
-  .menu summary { list-style: none; cursor: pointer; width: 32px; height: 32px; border-radius: 999px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px; background: var(--bg-2); }
+  .menu summary { list-style: none; cursor: pointer; width: 32px; height: 32px; border-radius: 999px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px; background: var(--btn-2); }
   .menu summary::-webkit-details-marker { display: none; }
   .menu summary span { width: 14px; height: 1.5px; border-radius: 1px; background: var(--ink); transition: transform 0.25s var(--ease-out); }
   .menu[open] summary span:first-child { transform: translateY(3.25px) rotate(45deg); }
@@ -51,10 +50,10 @@ const links = [
   .sheet {
     position: absolute; right: 0; top: 40px; min-width: 200px; padding: 8px;
     display: flex; flex-direction: column; border-radius: 16px;
-    background: var(--bg-2); box-shadow: 0 0 0 1px var(--line), 0 16px 40px rgb(0 0 0 / 0.5);
+    background: var(--fog-0); box-shadow: 0 0 0 1px var(--line), 0 16px 40px rgb(0 0 0 / 0.12);
   }
   .sheet a { height: 40px; display: flex; align-items: center; padding: 0 16px; border-radius: 8px; font-size: 15px; color: var(--ink); }
-  .sheet a:hover, .sheet a[aria-current] { background: var(--line); }
+  .sheet a:hover, .sheet a[aria-current] { background: var(--btn-2); }
   @media (max-width: 700px) {
     .links { display: none; }
     .btn { margin-left: auto; }

@@ -1,0 +1,62 @@
+---
+// Quit the app, keep the work. The shot plays a loop while it is on screen
+// (scripts/sections.ts): ⌘Q, the window goes, the sessions do not, and the
+// window comes back with what it missed.
+import Sidebar from '../../app/gen/Sidebar.astro';
+import Terminal from '../../app/gen/Terminal.astro';
+---
+<section class="sec" id="survival">
+  <div class="page">
+    <div class="bhead" data-reveal>
+      <h2 class="h2">Quit the app, keep the work. <span class="tone">Your shells are not the app’s children. They run under a small process beside it, so closing the window stops being a decision about the work.</span></h2>
+    </div>
+    <div class="shot crop" style="--at: 50% 96%" data-survival aria-hidden="true">
+      <div class="win wapp" data-frame inert>
+        <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+        <div class="relative flex size-full">
+          <div class="flex w-[234px] shrink-0"><Sidebar /></div>
+          <div class="w-px shrink-0 bg-sidebar-border"></div>
+          <div class="flex min-w-0 flex-1"><Terminal /></div>
+        </div>
+      </div>
+      <div class="closed" data-ghost>
+        <span class="dots"><i></i><i></i><i></i></span>
+        <span>Wortel is closed. Three sessions are still running.</span>
+      </div>
+      <div class="keys" data-key><kbd>⌘</kbd><kbd>Q</kbd></div>
+    </div>
+    <ul class="facts" data-reveal-group>
+      <li class="fact" data-reveal>
+        <h3 class="h3">Still thinking</h3>
+        <p class="body">An agent that was working when you quit is still working when you come back.</p>
+      </li>
+      <li class="fact" data-reveal>
+        <h3 class="h3">Scrollback included</h3>
+        <p class="body">The session reattaches to the shell it already had, with everything it printed while you were away.</p>
+      </li>
+      <li class="fact" data-reveal>
+        <h3 class="h3">A crash is the same story</h3>
+        <p class="body">It is on by default, and there is nothing to switch on.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<style>
+  .closed {
+    position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+    display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 20px; border-radius: 999px;
+    font-size: 14px; white-space: nowrap; color: var(--ink);
+    background: color-mix(in srgb, var(--fog-0) 78%, transparent);
+    backdrop-filter: blur(24px) saturate(1.8); -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    box-shadow: 0 0 0 0.5px var(--line-2), 0 8px 24px rgb(0 0 0 / 0.12);
+    opacity: 0;
+  }
+  .dots { display: inline-flex; gap: 3px; }
+  .dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--ink-2); animation: blink 1.2s infinite; }
+  .dots i:nth-child(2) { animation-delay: 0.2s; } .dots i:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  .keys { position: absolute; right: 24px; bottom: 24px; display: flex; gap: 4px; opacity: 0; }
+  .keys kbd { height: 40px; min-width: 40px; font-size: 17px; border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.16); }
+  @media (max-width: 760px) { .closed { font-size: 13px; padding: 0 16px; } }
+</style>

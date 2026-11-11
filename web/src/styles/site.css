@@ -1,14 +1,22 @@
 /* ==========================================================================
    wortel.sh: the site's own design system.
 
-   THE LOOK: the app's own. A black page, white type, the blue of the cursor
-   in the icon as the one accent. The app is dark, so the page is dark: the
-   window never sits on a surface it would not sit on in real life. The foggy
-   lake is the desktop the window stands on, not the page.
+   THE LOOK: a foggy lake at first light. Warm fog whites and ink for type,
+   sampled from the photograph the windows stand on. In dark mode the same
+   lake at night. The one accent is the blue of the cursor in the app icon.
 
-   THE LAYOUT: one axis. Every section is a centred head (title, one line of
-   copy) over a centred visual, and long text is a centred column. Nothing
-   sits left or right of anything else.
+   THE LAYOUT: one container, one left edge. Everything on every page starts
+   at the container's left edge: the nav, every heading, every visual, every
+   list. Nothing is centred and nothing alternates sides.
+
+   A homepage section is always the same three parts, in this order:
+     .bhead   a two-tone heading: the claim in ink, its explanation in grey
+     .shot    one framed visual, the full width of the container
+     .facts   a row of short facts on the 12-column grid
+   Inner pages open with .phead and put their content on the same grid.
+
+   THE APP: every visual is the real app, generated from the Opmaak canvas
+   (see app.css). It follows the page: light on the light page, dark at night.
 
    THE GRID: every margin, padding, gap and fixed height is a multiple of 8.
    Exempt: 1px hairlines, radii, font sizes and content-derived widths.
@@ -17,21 +25,31 @@
    ========================================================================== */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light dark;
 
-  --bg: #000;
-  --bg-1: #0d0d0d;
-  --bg-2: #161616;
-  --ink: #f5f5f5;
-  --ink-2: rgb(255 255 255 / 0.62);
-  --ink-3: rgb(255 255 255 / 0.44);
-  --line: rgb(255 255 255 / 0.08);
-  --line-2: rgb(255 255 255 / 0.14);
+  /* fog: page, raised band, tile */
+  --fog-0: #fbfaf7;
+  --fog-1: #f3f2ed;
+  --fog-2: #e9e7e0;
+  --fog-3: #dedbd2;
+  /* ink: text, secondary, tertiary */
+  --ink: #1b1b17;
+  --ink-2: #6b6960;
+  --ink-3: #77746a;
+  /* The grey half of a two-tone heading: large type only. */
+  --tone: #9c998e;
+  --line: rgb(27 27 23 / 0.1);
+  --line-2: rgb(27 27 23 / 0.16);
   /* The cursor in the app icon. */
-  --blue: #3b8ff6;
-  --blue-soft: rgb(59 143 246 / 0.18);
-
-  --shadow-window: 0 24px 64px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(0 0 0 / 0.85);
+  --accent: #0070f5;
+  --accent-soft: rgb(0 112 245 / 0.12);
+  --btn: #1b1b17;
+  --btn-ink: #fbfaf7;
+  --btn-2: rgb(27 27 23 / 0.06);
+  --nav: rgb(251 250 247 / 0.86);
+  --shadow-window: 0 32px 64px -16px rgb(40 38 28 / 0.32), 0 0 0 0.5px rgb(0 0 0 / 0.28);
+  /* What lies over the lake so it sits back behind a window. */
+  --lake-veil: linear-gradient(transparent, transparent);
 
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
@@ -40,52 +58,70 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
   --page: 1200px;
-  --text: 640px;
   --gutter: 32px;
+  --col-gap: 32px;
 }
-@media (max-width: 640px) { :root { --gutter: 16px; } }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fog-0: #0e0e0c;
+    --fog-1: #151512;
+    --fog-2: #1d1d19;
+    --fog-3: #272722;
+    --ink: #ecebe6;
+    --ink-2: #9e9b90;
+    --ink-3: #8a877c;
+    --tone: #6c6a61;
+    --line: rgb(236 235 230 / 0.09);
+    --line-2: rgb(236 235 230 / 0.15);
+    --accent: #4a9bff;
+    --accent-soft: rgb(74 155 255 / 0.16);
+    --btn: #ecebe6;
+    --btn-ink: #0e0e0c;
+    --btn-2: rgb(236 235 230 / 0.08);
+    --nav: rgb(14 14 12 / 0.86);
+    --shadow-window: 0 32px 64px -16px rgb(0 0 0 / 0.6), 0 0 0 0.5px rgb(0 0 0 / 0.85);
+    --lake-veil: linear-gradient(rgb(10 10 9 / 0.62), rgb(10 10 9 / 0.62));
+  }
+}
+@media (max-width: 640px) { :root { --gutter: 16px; --col-gap: 16px; } }
 
 html {
-  background: var(--bg);
+  background: var(--fog-0);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   scroll-behavior: smooth;
+  scroll-padding-top: 80px;
 }
-body { margin: 0; background: var(--bg); overflow-x: clip; }
-::selection { background: var(--blue-soft); color: var(--ink); }
+body { margin: 0; background: var(--fog-0); overflow-x: clip; }
+::selection { background: var(--accent-soft); color: var(--ink); }
 a { color: inherit; text-decoration: none; }
-:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
-/* ---- layout ------------------------------------------------------------- */
+/* ---- the container and its grid ----------------------------------------- */
 .page { width: 100%; max-width: calc(var(--page) + 2 * var(--gutter)); margin-inline: auto; padding-inline: var(--gutter); }
-.column { width: 100%; max-width: calc(var(--text) + 2 * var(--gutter)); margin-inline: auto; padding-inline: var(--gutter); }
-
-.section { position: relative; padding-top: 160px; }
-@media (max-width: 800px) { .section { padding-top: 120px; } }
-
-/* Every section opens the same way: a centred title and one line under it. */
-.head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; margin-bottom: 64px; }
-.head .lead { max-width: 560px; }
+.grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--col-gap); }
 
 /* ---- type --------------------------------------------------------------- */
-.display, .h2, .h3 { margin: 0; color: var(--ink); font-family: var(--font-display); font-weight: 600; text-wrap: balance; }
-.display { font-size: clamp(40px, 5vw, 64px); line-height: 1.05; letter-spacing: -0.035em; }
-.h2 { font-size: clamp(32px, 3.4vw, 44px); line-height: 1.1; letter-spacing: -0.03em; }
-.h3 { font-size: 17px; line-height: 24px; letter-spacing: -0.01em; }
-.tone { color: var(--ink-3); }
+.display, .h2, .h3 { margin: 0; color: var(--ink); font-family: var(--font-display); font-weight: 600; }
+.display { font-size: clamp(36px, 4.4vw, 56px); line-height: 1.07; letter-spacing: -0.034em; text-wrap: balance; }
+.h2 { font-size: clamp(24px, 2.6vw, 32px); line-height: 1.25; letter-spacing: -0.024em; text-wrap: pretty; }
+.h3 { font-size: 16px; line-height: 24px; letter-spacing: -0.01em; }
+.tone { color: var(--tone); }
 .lead { margin: 0; font-size: 19px; line-height: 28px; color: var(--ink-2); letter-spacing: -0.01em; text-wrap: pretty; }
 .body { margin: 0; font-size: 15px; line-height: 24px; color: var(--ink-2); text-wrap: pretty; }
+.small { margin: 0; font-size: 14px; line-height: 24px; color: var(--ink-2); }
 .label { margin: 0; font-size: 13px; line-height: 16px; color: var(--ink-3); }
 .mono { font-family: var(--font-mono); font-size: 0.88em; }
 kbd {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 24px; height: 24px; padding: 0 6px;
   font: 500 12px/1 var(--font-sans); color: var(--ink);
-  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 6px;
+  background: var(--fog-0); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 6px;
 }
 
 /* ---- buttons ------------------------------------------------------------ */
@@ -93,29 +129,60 @@ kbd {
   display: inline-flex; align-items: center; gap: 8px;
   height: 40px; padding: 0 20px; border-radius: 999px;
   font: 500 15px/1 var(--font-sans); letter-spacing: -0.01em; white-space: nowrap;
-  background: var(--ink); color: #000;
-  transition: opacity 0.2s, transform 0.2s var(--ease-out);
+  background: var(--btn); color: var(--btn-ink);
+  transition: opacity 0.2s, transform 0.2s var(--ease-out), background-color 0.2s;
 }
-.btn:hover { opacity: 0.88; }
+.btn:hover { opacity: 0.86; }
 .btn:active { transform: scale(0.98); }
-.btn.ghost { background: var(--bg-2); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+.btn.ghost { background: var(--btn-2); color: var(--ink); }
+.btn.ghost:hover { opacity: 1; background: var(--line-2); }
 .btn.sm { height: 32px; padding: 0 16px; font-size: 14px; }
 .btn svg { flex: none; }
 .link { color: var(--ink); border-bottom: 1px solid var(--line-2); transition: border-color 0.2s; }
 .link:hover { border-color: var(--ink); }
 
-/* ---- the shot: the app window on the foggy lake, as on a desktop -------- */
+/* ---- a homepage section (.sec): heading, shot, facts ---------------------- */
+.sec { position: relative; padding-top: 144px; }
+@media (max-width: 800px) { .sec { padding-top: 96px; } }
+
+.bhead { max-width: 784px; margin-bottom: 40px; }
+
+/* The shot: the app on the foggy lake, the way a window stands on a desktop.
+   --at moves the photo so no two shots show the same water. */
 .shot {
-  position: relative; overflow: hidden; border-radius: 24px;
-  display: flex; justify-content: center; padding: 56px 48px;
-  background: #3b3d3a url(/img/lake-1600.jpg) 50% 60% / cover no-repeat;
+  position: relative; overflow: hidden; border-radius: 20px; box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--lake-veil), #cfcdc4 url(/img/lake-1600.jpg) var(--at, 50% 62%) / cover no-repeat;
 }
-@media (min-width: 1300px) { .shot { background-image: url(/img/lake.jpg); } }
-@media (max-width: 700px) { .shot { padding: 24px 0 24px 16px; justify-content: flex-start; border-radius: 16px; } }
+@media (min-width: 1300px) { .shot { background-image: var(--lake-veil), url(/img/lake.jpg); } }
+/* A window that fills the shot (the hero, the panes). */
+.shot.full { display: flex; justify-content: center; padding: 56px 48px; }
+/* A window that runs off the bottom edge, so the eye lands on its top half. */
+.shot.crop { height: 600px; padding: 56px 48px 0; display: flex; justify-content: center; align-items: flex-start; }
+.shot .win {
+  position: relative; display: flex; flex: none; overflow: hidden;
+  width: 100%; height: 720px; border-radius: 18px; box-shadow: var(--shadow-window);
+}
+.shot .win::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.14); }
+@media (max-width: 760px) {
+  /* The window keeps a real width and the shot crops it: never scaled. */
+  .shot.full, .shot.crop { padding: 24px 0 24px 16px; justify-content: flex-start; }
+  .shot.crop { padding-bottom: 0; height: 480px; }
+  .shot .win { width: 920px; height: 600px; }
+  .shot { border-radius: 16px; }
+}
+
+/* Facts: short points under a shot, three or six across. */
+.facts { list-style: none; margin: 32px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px var(--col-gap); }
+.facts.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.fact { padding-top: 16px; border-top: 1px solid var(--line); }
+.fact .h3 { margin-bottom: 4px; }
+.fact kbd { margin-left: 4px; vertical-align: 1px; }
+@media (max-width: 1000px) { .facts.six { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .facts, .facts.six { grid-template-columns: 1fr; gap: 24px; } }
 
 /* Things that only exist for screen readers and crawlers. */
 .vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-.anchor { position: absolute; top: 0; }
+.anchor { position: absolute; top: 64px; }
 
 /* Reveal on enter: set by src/scripts/reveal.ts. Without JS nothing hides. */
 .js [data-reveal] { opacity: 0; transform: translateY(12px); }
@@ -137,21 +204,29 @@ kbd {
 .prose ol { list-style: decimal; }
 .prose li + li { margin-top: 8px; }
 .prose li::marker { color: var(--ink-3); }
-.prose h2 { font: 600 24px/32px var(--font-display); letter-spacing: -0.02em; color: var(--ink); margin: 64px 0 0; }
+.prose h2 { font: 600 24px/32px var(--font-display); letter-spacing: -0.02em; color: var(--ink); margin: 48px 0 0; }
 .prose h3 { font: 600 17px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); margin: 32px 0 0; }
-.prose code { font: 500 0.86em var(--font-mono); padding: 2px 6px; border-radius: 6px; background: var(--bg-2); color: var(--ink); }
-.prose pre { margin: 24px 0 0; padding: 16px 24px; border-radius: 12px; background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); overflow-x: auto; font: 500 14px/24px var(--font-mono); }
-.prose pre code { background: none; padding: 0; color: inherit; }
+.prose code { font: 500 0.86em var(--font-mono); padding: 2px 6px; border-radius: 6px; background: var(--fog-1); color: var(--ink); border: 1px solid var(--line); }
+.prose pre { margin: 24px 0 0; padding: 16px 24px; border-radius: 12px; background: var(--fog-1); border: 1px solid var(--line); color: var(--ink); overflow-x: auto; font: 500 14px/24px var(--font-mono); }
+.prose pre code { background: none; border: 0; padding: 0; color: inherit; }
 .prose table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 24px; }
 .prose th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 13px; padding: 8px 16px 8px 0; border-bottom: 1px solid var(--line-2); }
 .prose td { padding: 12px 16px 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink); }
 .prose td.mono { font-family: var(--font-mono); font-size: 14px; white-space: nowrap; }
 .prose hr { border: 0; height: 1px; background: var(--line); margin: 48px 0; }
 
-/* Inner pages open the way a homepage section does, with more air above. */
-.phead { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; padding-top: 176px; padding-bottom: 80px; }
-.phead .lead { max-width: 560px; }
+/* ---- inner pages --------------------------------------------------------- */
+/* The page head: the same left edge and measure as a homepage heading. */
+.phead { padding-top: 160px; padding-bottom: 64px; }
+.phead .display { max-width: 784px; }
+.phead .lead { max-width: 640px; margin-top: 24px; }
+/* A row of an inner page: a quiet label in the first three columns, the
+   content in the next eight. Every inner page is made of these. */
+.row12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--col-gap); row-gap: 16px; padding-block: 48px; border-top: 1px solid var(--line); }
+.row12 > .k { grid-column: 1 / span 3; }
+.row12 > .v { grid-column: 4 / span 8; min-width: 0; }
+@media (max-width: 900px) { .row12 > .k, .row12 > .v { grid-column: 1 / -1; } }
 
 /* Skip to content, for keyboards. */
-.skip { position: fixed; left: 16px; top: -48px; z-index: 100; padding: 8px 16px; border-radius: 8px; background: var(--ink); color: #000; font-size: 14px; transition: top 0.2s; }
+.skip { position: fixed; left: 16px; top: -48px; z-index: 100; padding: 8px 16px; border-radius: 8px; background: var(--ink); color: var(--fog-0); font-size: 14px; transition: top 0.2s; }
 .skip:focus { top: 16px; }

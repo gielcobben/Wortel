@@ -62,7 +62,8 @@ const ogImage = new URL('/og.png', SITE.url).href;
     <meta name="twitter:image:alt" content={`${SITE.name}: ${SITE.tagline}`} />
 
     <meta name="apple-mobile-web-app-title" content={SITE.name} />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0e0c" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfaf7" />
 
     <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96" />

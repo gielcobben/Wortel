@@ -21,11 +21,13 @@ const schema = [{
 }];
 ---
 <Layout title={`${entry.data.title}: ${SITE.name}`} description={entry.data.description} path={path} schema={schema} bare>
-  <header class="column phead">
+  <header class="page phead">
     <h1 class="display">{entry.data.title}</h1>
-    <p class="label">Updated {updated}</p>
   </header>
-  <div class="column">
-    <div class="prose"><Content /></div>
+  <div class="page">
+    <div class="row12">
+      <div class="k"><p class="label">Updated {updated}</p></div>
+      <div class="v prose"><Content /></div>
+    </div>
   </div>
 </Layout>

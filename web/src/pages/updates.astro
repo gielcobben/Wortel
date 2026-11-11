@@ -30,39 +30,41 @@ const schema = [{
 }];
 ---
 <Layout title={title} description={description} path="/updates" schema={schema}>
-  <header class="column phead" data-reveal-group>
+  <header class="page phead" data-reveal-group>
     <h1 class="display" data-reveal>Changelog</h1>
     <p class="lead" data-reveal>
-      {releases.length} releases since {oldest && fmt(oldest.entry.data.date)}. Wortel updates itself, so this page is for reading.
+      {releases.length} releases since {oldest && fmt(oldest.entry.data.date)}. Wortel updates itself, quietly, so this page is for reading rather than for doing anything.
     </p>
   </header>
 
-  <div class="column log">
+  <div class="page">
     {releases.slice(0, FULL).map(({ entry, Content }, i) => (
-      <article class="rel" id={entry.id}>
-        <p class="meta">
+      <article class="row12 rel" id={entry.id}>
+        <div class="k meta">
           <a class="ver" href={`#${entry.id}`} data-ph="changelog_opened" data-ph-version={entry.id}>{entry.id}</a>
           <time datetime={entry.data.date.toISOString().slice(0, 10)}>{fmt(entry.data.date)}</time>
           {i === 0 && <span class="pill">Latest</span>}
-        </p>
-        <h2 class="t">{entry.data.title}</h2>
-        <div class="prose"><Content /></div>
+        </div>
+        <div class="v">
+          <h2 class="t">{entry.data.title}</h2>
+          <div class="prose"><Content /></div>
+        </div>
       </article>
     ))}
-    <section class="older">
-      <h2 class="label">Earlier releases</h2>
-      {releases.slice(FULL).map(({ entry, Content }) => (
-        <details class="old" id={entry.id}>
-          <summary data-ph="changelog_opened" data-ph-version={entry.id}>
-            <span class="ver">{entry.id}</span>
-            <span class="ot">{entry.data.title}</span>
-          </summary>
-          <div class="prose">
-            <p class="label"><time datetime={entry.data.date.toISOString().slice(0, 10)}>{fmt(entry.data.date)}</time></p>
-            <Content />
-          </div>
-        </details>
-      ))}
+    <section class="row12">
+      <div class="k"><h2 class="label">Earlier releases</h2></div>
+      <div class="v">
+        {releases.slice(FULL).map(({ entry, Content }) => (
+          <details class="old" id={entry.id}>
+            <summary data-ph="changelog_opened" data-ph-version={entry.id}>
+              <span class="ver">{entry.id}</span>
+              <span class="ot">{entry.data.title}</span>
+              <time datetime={entry.data.date.toISOString().slice(0, 10)}>{fmt(entry.data.date)}</time>
+            </summary>
+            <div class="prose"><Content /></div>
+          </details>
+        ))}
+      </div>
     </section>
   </div>
 </Layout>
@@ -78,20 +80,21 @@ const schema = [{
 </script>
 
 <style>
-  .rel { padding-block: 56px; border-top: 1px solid var(--line); scroll-margin-top: 56px; }
-  .meta { display: flex; align-items: center; gap: 16px; margin: 0 0 16px; }
+  .meta { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; align-self: start; position: sticky; top: 96px; }
   .ver { font: 500 14px/24px var(--font-mono); color: var(--ink); }
-  .ver:hover { text-decoration: underline; text-underline-offset: 4px; }
+  a.ver:hover { text-decoration: underline; text-underline-offset: 4px; }
   time { font-size: 14px; line-height: 24px; color: var(--ink-3); }
-  .pill { font-size: 12px; line-height: 16px; font-weight: 500; padding: 4px 8px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); }
+  .pill { font-size: 12px; line-height: 16px; font-weight: 500; padding: 4px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
   .t { margin: 0 0 24px; font: 600 24px/32px var(--font-display); letter-spacing: -0.02em; color: var(--ink); text-wrap: balance; }
-  .older { padding-top: 56px; border-top: 1px solid var(--line); }
-  .older .label { margin: 0 0 16px; }
-  .old { border-top: 1px solid var(--line); scroll-margin-top: 56px; }
-  .old summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 120px 1fr; gap: 16px; align-items: baseline; padding-block: 16px; }
+  .old { border-bottom: 1px solid var(--line); }
+  .old:first-child { border-top: 1px solid var(--line); }
+  .old summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 104px 1fr auto; gap: 16px; align-items: baseline; padding-block: 16px; }
   .old summary::-webkit-details-marker { display: none; }
   .old .ot { font-size: 15px; line-height: 24px; color: var(--ink); }
   .old summary:hover .ot { text-decoration: underline; text-underline-offset: 4px; }
-  .old .prose { padding: 0 0 40px; }
-  @media (max-width: 640px) { .old summary { grid-template-columns: 1fr; gap: 0; } }
+  .old .prose { padding: 8px 0 40px; }
+  @media (max-width: 900px) {
+    .meta { position: static; flex-direction: row; align-items: center; gap: 16px; }
+    .old summary { grid-template-columns: 1fr; gap: 0; }
+  }
 </style>

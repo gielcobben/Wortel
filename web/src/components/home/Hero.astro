@@ -1,5 +1,5 @@
 ---
-// The landing: the icon, one line, one button, and the app on the foggy lake
+// The landing: what Wortel is, the download, and the app on the foggy lake,
 // where an agent then does a small job (scripts/hero.ts).
 import HeroWindow from '../../app/gen/HeroWindow.astro';
 import { SITE } from '../../data/site';
@@ -7,26 +7,24 @@ import { latestRelease } from '../../data/release';
 const latest = await latestRelease();
 ---
 <section class="hero" id="what-is-wortel" data-hero>
-  <div class="page copy">
-    <img class="icon" src="/icon-512.png" width="96" height="96" alt="" data-fade />
-    <h1 class="display" data-fade>
-      <span class="vh">Wortel: a native macOS terminal for coding agents. </span>
-      Many agents.<br /><span class="tone">One calm terminal.</span>
-    </h1>
-    <p class="lead" data-fade>
-      A native macOS terminal on Ghostty’s engine. Every agent gets a named session and its own worktree, and the sidebar tells you which one needs you.
-    </p>
-    <div class="ctas" data-fade>
-      <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="hero" data-ph-version={latest?.version}>Download for macOS</a>
-    </div>
-    <p class="label" data-fade>
-      Free · macOS {SITE.minMacOS} or later{latest && <> · <a class="link" href="/updates">Version {latest.version}</a></>}
-    </p>
-  </div>
-
   <div class="page">
-    <div class="shot" data-shot>
-      <div class="win wapp dark" data-win data-ph-demo aria-hidden="true" inert>
+    <div class="bhead">
+      <h1 class="display" data-fade>
+        <span class="vh">Wortel: a native macOS terminal for coding agents. </span>
+        Many agents.<br /><span class="tone">One calm terminal.</span>
+      </h1>
+      <p class="lead" data-fade>
+        Wortel is a native macOS terminal on Ghostty’s engine. Every agent gets a named session and its own worktree, and the sidebar tells you which one needs you.
+      </p>
+      <div class="ctas" data-fade>
+        <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="hero" data-ph-version={latest?.version}>Download for macOS</a>
+        {latest && <a class="btn ghost" href="/updates" data-ph="changelog_opened" data-ph-location="hero" data-ph-version={latest.version}>What’s new in {latest.version}</a>}
+      </div>
+      <p class="label" data-fade>Free · macOS {SITE.minMacOS} {SITE.minMacOSName} or later</p>
+    </div>
+
+    <div class="shot full" data-shot>
+      <div class="win wapp" data-win data-ph-demo aria-hidden="true" inert>
         <HeroWindow />
       </div>
     </div>
@@ -39,18 +37,10 @@ const latest = await latestRelease();
 </script>
 
 <style>
-  .hero { padding-top: 152px; }
-  .copy { display: flex; flex-direction: column; align-items: center; text-align: center; }
-  .icon { margin-bottom: 32px; }
-  .display { max-width: 14ch; }
+  .hero { padding-top: 144px; }
+  .bhead { margin-bottom: 64px; }
   .lead { max-width: 560px; margin-top: 24px; }
-  .ctas { margin-top: 32px; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
   .label { margin-top: 16px; }
-  .shot { margin-top: 80px; }
-  .win { display: flex; width: min(1222px, 100%); height: 760px; border-radius: 18px; box-shadow: var(--shadow-window); }
-  @media (max-width: 700px) {
-    .hero { padding-top: 120px; }
-    .shot { margin-top: 56px; }
-    .win { width: 1000px; flex: none; height: 640px; }
-  }
+  @media (max-width: 800px) { .hero { padding-top: 112px; } .bhead { margin-bottom: 48px; } }
 </style>

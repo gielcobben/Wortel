@@ -1,9 +1,14 @@
 ---
+// The homepage tells one story, top to bottom, and every part of it has the
+// same shape (see styles/site.css): what Wortel is, the window, the agents in
+// it, the branches under them, what happens when you quit, what it is made of.
 import Layout from '../layouts/Layout.astro';
 import Hero from '../components/home/Hero.astro';
 import Panes from '../components/home/Panes.astro';
-import Features from '../components/home/Features.astro';
-import Faq from '../components/home/Faq.astro';
+import Agents from '../components/home/Agents.astro';
+import Worktrees from '../components/home/Worktrees.astro';
+import Survival from '../components/home/Survival.astro';
+import Glance from '../components/home/Glance.astro';
 import { homeSchema } from '../data/schema';
 import { latestRelease } from '../data/release';
 
@@ -13,6 +18,12 @@ const schema = homeSchema(await latestRelease());
 <Layout path="/" schema={schema}>
   <Hero />
   <Panes />
-  <Features />
-  <Faq />
+  <Agents />
+  <Worktrees />
+  <Survival />
+  <Glance />
 </Layout>
+
+<script>
+  import '../scripts/sections';
+</script>

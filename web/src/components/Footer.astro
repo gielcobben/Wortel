@@ -1,41 +1,71 @@
 ---
+// The close of every page: a last shot of the lake with the download on it,
+// then the links, on the same container and grid as everything above.
 import { SITE } from '../data/site';
 import { latestRelease } from '../data/release';
 interface Props { bare?: boolean }
 const { bare = false } = Astro.props;
 const latest = await latestRelease();
-const links: [string, string][] = [
-  ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare'], ['About', '/about'],
-  ['Privacy', '/privacy'], ['Terms', '/terms'], ['llms.txt', '/llms.txt'],
+const cols: [string, [string, string][]][] = [
+  ['Wortel', [['Download', SITE.download], ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare']]],
+  ['More', [['About', '/about'], ['llms.txt', '/llms.txt']]],
+  ['Legal', [['Privacy', '/privacy'], ['Terms', '/terms']]],
 ];
 ---
 <footer class="foot">
   {!bare && (
-    <section class="cta page" data-reveal-group>
-      <img src="/icon-512.png" width="96" height="96" alt="" data-reveal />
-      <h2 class="h2" data-reveal>Try Wortel.</h2>
-      <p class="lead" data-reveal>Free for macOS {SITE.minMacOS} {SITE.minMacOSName} or later. It updates itself.</p>
-      <div data-reveal>
-        <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="footer" data-ph-version={latest?.version}>Download for macOS</a>
+    <section class="sec page">
+      <div class="shot cta" style="--at: 50% 38%" data-reveal>
+        <img src="/icon-512.png" width="80" height="80" alt="" />
+        <h2 class="h2">Put down roots. <span class="tone">Free for macOS {SITE.minMacOS} {SITE.minMacOSName} or later, and it updates itself.</span></h2>
+        <div class="go">
+          <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="footer" data-ph-version={latest?.version}>Download for macOS</a>
+          {latest && <span class="label">Version {latest.version}{latest.size && ` · ${latest.size}`}</span>}
+        </div>
       </div>
-      {latest && <p class="label" data-reveal>Version {latest.version}{latest.size && ` · ${latest.size}`}</p>}
     </section>
   )}
-  <div class="page base">
-    <nav class="links" aria-label="Footer">
-      {links.map(([t, h]) => <a href={h}>{t}</a>)}
-    </nav>
-    <p class="label">© {new Date().getFullYear()} {SITE.author} · Built on <a class="link" href="https://ghostty.org">Ghostty</a> · Wortel is Dutch for root</p>
+  <div class="page">
+    <div class="grid12 links">
+      <div class="sig">
+        <a class="brand" href="/"><img src="/icon-128.png" width="24" height="24" alt="" /><span>Wortel</span></a>
+        <p class="small">Wortel is Dutch for root.</p>
+      </div>
+      {cols.map(([h, items]) => (
+        <div class="col">
+          <p class="label">{h}</p>
+          <ul>{items.map(([t, href]) => <li><a href={href}>{t}</a></li>)}</ul>
+        </div>
+      ))}
+    </div>
+    <div class="base">
+      <p class="label">© {new Date().getFullYear()} {SITE.author}</p>
+      <p class="label">Built on <a class="link" href="https://ghostty.org">Ghostty</a></p>
+    </div>
   </div>
 </footer>
 
 <style>
-  .foot { margin-top: 160px; }
-  .cta { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; padding-bottom: 160px; }
-  .cta img { margin-bottom: 8px; }
-  .cta .btn { margin-top: 16px; }
-  .base { display: flex; flex-direction: column; align-items: center; gap: 16px; padding-block: 40px 48px; border-top: 1px solid var(--line); text-align: center; }
-  .links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24px; }
-  .links a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 0.2s; }
-  .links a:hover { color: var(--ink); }
+  .foot { padding-bottom: 40px; }
+  .cta { min-height: 480px; padding: 48px; display: flex; flex-direction: column; align-items: flex-start; }
+  /* Fog over the top of the photo, so the words always have something to sit on. */
+  .cta::before { content: ''; position: absolute; inset: 0 0 25% 0; background: linear-gradient(color-mix(in srgb, var(--fog-0) 88%, transparent), transparent); pointer-events: none; }
+  .cta > * { position: relative; }
+  .cta .h2 { max-width: 560px; margin-top: 32px; }
+  .cta .tone { color: var(--ink-2); }
+  .cta .go { display: flex; align-items: center; gap: 16px; margin-top: 32px; flex-wrap: wrap; }
+  .cta .label { color: var(--ink-2); }
+  .links { margin-top: 96px; padding-top: 48px; border-top: 1px solid var(--line); row-gap: 40px; }
+  .sig { grid-column: span 6; display: flex; flex-direction: column; gap: 16px; }
+  .col { grid-column: span 2; }
+  .brand { display: inline-flex; align-items: center; gap: 8px; font: 600 17px/24px var(--font-display); letter-spacing: -0.02em; color: var(--ink); }
+  .col ul { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-direction: column; gap: 8px; }
+  .col a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 0.2s; }
+  .col a:hover { color: var(--ink); }
+  .base { display: flex; justify-content: space-between; gap: 16px; margin-top: 64px; flex-wrap: wrap; }
+  @media (max-width: 800px) {
+    .sig { grid-column: 1 / -1; }
+    .col { grid-column: span 4; }
+    .cta { padding: 32px 24px; min-height: 440px; }
+  }
 </style>

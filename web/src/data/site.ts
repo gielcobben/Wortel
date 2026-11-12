@@ -32,6 +32,7 @@ export const SITE = {
     'A zero-config macOS terminal on Ghostty’s real engine. Named sessions instead of tabs, a worktree per agent, and shells that keep running when you quit.',
   tagline: 'A native macOS terminal your agents can live in.',
   author: 'Giel Cobben',
+  authorUrl: 'https://gielcobben.com',
   /** release.sh --publish always mirrors the newest signed zip here. */
   download: 'https://updates.wortel.sh/Wortel-latest.zip',
   appcast: 'https://updates.wortel.sh/appcast.xml',

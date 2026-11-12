@@ -11,7 +11,7 @@ export function homeSchema(LATEST: Release | null) {
     '@type': 'Person',
     '@id': abs('/#author'),
     name: SITE.author,
-    url: SITE.url,
+    url: SITE.authorUrl,
   };
 
   const app = {

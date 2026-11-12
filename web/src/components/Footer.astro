@@ -1,11 +1,23 @@
 ---
-// The close of every page: the lake with the icon and the download on it,
+// The close of every page: a photo with the icon and the download on it,
 // then the links, on the same container and grid as everything above.
 import { SITE } from '../data/site';
 import { latestRelease } from '../data/release';
 interface Props { bare?: boolean }
 const { bare = false } = Astro.props;
 const latest = await latestRelease();
+// Each page closes on its own photo (README, Photos), so going from page to
+// page never ends on the same picture twice: [photo, which part, how far in].
+// The words sit top left, so each crop keeps fog there, never a dark hill.
+const here = Astro.url.pathname.replace(/\/$/, '') || '/';
+const closing: Record<string, [string, string, string]> = {
+  '/': ['lake', '50% 38%', 'cover'],
+  '/updates': ['skye', '50% 60%', 'cover'],
+  '/docs': ['haze', '50% 70%', 'cover'],
+  '/compare': ['hills', '0% 0%', '130%'],
+  '/about': ['haze', '0% 45%', '160%'],
+};
+const [photo, at, zoom] = closing[here] ?? closing['/'];
 const cols: [string, [string, string][]][] = [
   ['Wortel', [['Download', '/download'], ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare']]],
   ['More', [['About', '/about'], ['llms.txt', '/llms.txt']]],
@@ -15,7 +27,7 @@ const cols: [string, [string, string][]][] = [
 <footer class="foot">
   {!bare && (
     <section class="sec page">
-      <div class="stage cta" style="--at: 50% 38%" data-reveal>
+      <div class="stage cta" style={`--photo: url(/img/${photo}.jpg); --at: ${at}; --zoom: ${zoom}`} data-reveal>
         <img src="/icon-512.png" width="80" height="80" alt="" />
         <h2 class="h2">Put down roots. <span class="tone">Free for macOS {SITE.minMacOS} {SITE.minMacOSName} or later, and it updates itself.</span></h2>
         <div class="go">

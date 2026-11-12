@@ -383,13 +383,15 @@ back to the build date rather than failing the build.
 Every stage stands on one of four photos from Unsplash (free to use under
 the Unsplash License, credit optional). `<Stage photo="…">` picks one, and
 `at`/`zoom` the part of it; neighbouring sections never share a photo.
+The closing call (components/Footer.astro) picks a photo per page, with a
+crop that keeps fog behind the words.
 
 | File | Where | Source |
 |---|---|---|
-| `lake.jpg` | Hero, Worktrees, the closing call | the "Foggy Lake" shot on the Opmaak canvas, found on Unsplash |
-| `skye.jpg` | Panes, /download | https://unsplash.com/photos/LGOX15iP0u0 |
-| `haze.jpg` | Agents | https://unsplash.com/photos/dDKjrFzijbM |
-| `hills.jpg` | Survival (cropped to the forest; the flower at the bottom stays out) | https://unsplash.com/photos/Mg1AQZnCgJE |
+| `lake.jpg` | Hero, Worktrees, the homepage's closing call | the "Foggy Lake" shot on the Opmaak canvas, found on Unsplash |
+| `skye.jpg` | Panes, /download, the closing call on /updates | https://unsplash.com/photos/LGOX15iP0u0 |
+| `haze.jpg` | Agents, the closing call on /docs and /about | https://unsplash.com/photos/dDKjrFzijbM |
+| `hills.jpg` | Survival and the closing call on /compare (cropped to the forest and fog; the flower at the bottom stays out) | https://unsplash.com/photos/Mg1AQZnCgJE |
 
 The three newer ones were picked for colour: the closest of ~30 misty-lake
 photos to the lake by their Lab distribution. Saved at 2400px, quality 76,

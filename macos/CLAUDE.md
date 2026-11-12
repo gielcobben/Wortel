@@ -721,6 +721,10 @@ the same thing by all three.
   that touches the network and must never make the terminal wait. `SerialGate`
   (`GitService.backgroundStatus`) is the other: a queue that lets background
   `git status` scans run one at a time app-wide, holding no state of Wortel's.
+  `SurfaceAccessibilityWatch` is the third: the pty's output handler and
+  libghostty's scrollbar action call it on their own threads, because a hop to
+  main per read is what a terminal under `cat` can't afford. It holds two
+  values behind a lock and throttles to one main-thread hop a quarter second.
 - **Nothing about the user's work leaves the machine.** Wortel reports anonymous
   feature usage (`Wortel/Telemetry/`, opt-out, `docs/telemetry.md`) and that is
   the whole of it. No case in `TelemetryEvent` takes a `String`, which is what

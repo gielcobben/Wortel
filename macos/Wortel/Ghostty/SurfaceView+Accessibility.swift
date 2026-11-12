@@ -30,13 +30,11 @@ extension SurfaceView {
     override func accessibilityHelp() -> String? { "Terminal content area" }
 
     override func accessibilityValue() -> Any? {
-        Self.noteAccessibilityClient()
-        return accessibilitySnapshot()?.text.string ?? ""
+        accessibilitySnapshot()?.text.string ?? ""
     }
 
     override func accessibilityNumberOfCharacters() -> Int {
-        Self.noteAccessibilityClient()
-        return accessibilitySnapshot()?.text.length ?? 0
+        accessibilitySnapshot()?.text.length ?? 0
     }
 
     /// The value is the visible screen, so all of it is visible.
@@ -92,7 +90,6 @@ extension SurfaceView {
     /// viewport's top left (`y * cols + x`, the end cell included), clamped to
     /// the viewport, and `tl_px_x` of -1 when none of it is on screen.
     override func accessibilitySelectedTextRange() -> NSRange {
-        Self.noteAccessibilityClient()
         let none = NSRange(location: 0, length: 0)
         guard let surface, let snapshot = accessibilitySnapshot(), snapshot.columns > 0 else { return none }
         var text = ghostty_text_s()
@@ -141,13 +138,15 @@ extension SurfaceView {
     // MARK: - The text
 
     /// The visible screen's text, read once per change and kept until output,
-    /// a scroll or a resize could have changed it.
+    /// a scroll or a resize could have changed it. Every text attribute comes
+    /// through here, which is what makes any of them switch notifications on.
     private func accessibilitySnapshot() -> AccessibilitySnapshot? {
+        Self.noteAccessibilityClient()
         guard let surface else { return nil }
         let size = ghostty_surface_size(surface)
         let key = AccessibilitySnapshot.Key(
             columns: Int(size.columns), rows: Int(size.rows),
-            output: ptyHost?.outputGeneration,
+            output: outputGeneration,
             scroll: accessibilityWatch.scrollPosition)
         if let snapshot = accessibilityWatch.snapshot, snapshot.isCurrent(for: key) { return snapshot }
         let snapshot = readAccessibilitySnapshot(surface: surface, size: size, key: key)
@@ -188,7 +187,7 @@ extension SurfaceView {
 
         return AccessibilitySnapshot(
             text: TerminalAXText(rows: texts, endsLine: endsLine),
-            key: key, columns: columns,
+            key: key,
             cellWidth: cellWidth, cellHeight: cellHeight,
             paddingLeft: paddingLeft ?? 0, paddingTop: paddingTop)
     }
@@ -246,12 +245,18 @@ extension SurfaceView {
         }
         accessibilityWatch.missedChange = false
         NSAccessibility.post(element: self, notification: .valueChanged)
-        // Output can clear or move the selection.
-        accessibilitySelectionMayHaveChanged()
+        // Not the selection: only a click, a drag or a key changes that, and
+        // reading it formats all of its text, which after a Select All over
+        // the scrollback is megabytes four times a second.
     }
 
     override func viewDidUnhide() {
         super.viewDidUnhide()
+        accessibilityChangeMissedWhileAway()
+    }
+
+    /// Shown again (unhidden, or put in a window): say what changed meanwhile.
+    func accessibilityChangeMissedWhileAway() {
         if accessibilityWatch.missedChange { accessibilityScreenChanged() }
     }
 
@@ -298,7 +303,7 @@ final class AccessibilitySnapshot {
 
     let text: TerminalAXText
     let key: Key
-    let columns: Int
+    var columns: Int { key.columns }
     let cellWidth: CGFloat
     let cellHeight: CGFloat
     let paddingLeft: CGFloat
@@ -307,11 +312,10 @@ final class AccessibilitySnapshot {
     /// Rows' cell maps, filled in as bounds and selection questions need them.
     var cells: [Int: RowCells] = [:]
 
-    init(text: TerminalAXText, key: Key, columns: Int, cellWidth: CGFloat, cellHeight: CGFloat,
+    init(text: TerminalAXText, key: Key, cellWidth: CGFloat, cellHeight: CGFloat,
          paddingLeft: CGFloat, paddingTop: CGFloat) {
         self.text = text
         self.key = key
-        self.columns = columns
         self.cellWidth = cellWidth
         self.cellHeight = cellHeight
         self.paddingLeft = paddingLeft

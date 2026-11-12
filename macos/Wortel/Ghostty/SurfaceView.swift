@@ -442,6 +442,7 @@ final class SurfaceView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if window != nil { accessibilityChangeMissedWhileAway() }
         // Track key-window state so effective focus (and thus the child's
         // DECSET 1004 focus reporting) drops when the app deactivates.
         // Selector-based observers auto-unregister on dealloc.

@@ -56,7 +56,10 @@
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
   --font-mono: "SF Mono", SFMono-Regular, ui-monospace, Menlo, monospace;
 
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Strong curves: ease-out for anything answering the reader, ease-in-out
+     for something already on screen moving to a new place. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
   --page: 1200px;
   --gutter: 32px;
@@ -136,16 +139,21 @@ kbd {
   height: 40px; padding: 0 20px; border-radius: 999px;
   font: 500 15px/1 var(--font-sans); letter-spacing: -0.01em; white-space: nowrap;
   background: var(--btn); color: var(--btn-ink);
-  transition: opacity 0.2s, transform 0.2s var(--ease-out), background-color 0.2s;
+  transition: transform 160ms var(--ease-out), opacity 200ms ease, background-color 200ms ease;
 }
-.btn:hover { opacity: 0.86; }
-.btn:active { transform: scale(0.98); }
+.btn:active { transform: scale(0.97); }
 .btn.ghost { background: var(--btn-2); color: var(--ink); }
-.btn.ghost:hover { opacity: 1; background: var(--line-2); }
+/* Hover only where there is a pointer that hovers: on a phone a tap would
+   leave it stuck on. Every hover on the site sits behind this query. */
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover { opacity: 0.86; }
+  .btn.ghost:hover { opacity: 1; background: var(--line-2); }
+  .link:hover,   .chapters button:hover { color: var(--ink); }
+  .play:hover { background-color: color-mix(in srgb, var(--fog-0) 92%, transparent); }
+}
 .btn.sm { height: 32px; padding: 0 16px; font-size: 14px; }
 .btn svg { flex: none; }
-.link { color: var(--ink); border-bottom: 1px solid var(--line-2); transition: border-color 0.2s; }
-.link:hover { border-color: var(--ink); }
+.link { color: var(--ink); border-bottom: 1px solid var(--line-2); transition: border-color 200ms ease; }
 
 /* ---- a homepage section (.sec): heading, shot, facts ---------------------- */
 .sec { position: relative; padding-top: 144px; }
@@ -207,42 +215,49 @@ kbd {
 /* ---- the controls: chapter tabs, and play/pause beside them -------------- */
 .controls { display: flex; align-items: center; justify-content: center; gap: 8px; max-width: 100%; flex: none; }
 
-/* The chapters are a segmented control. A thumb slides under the current one
-   and, while the scene plays by itself, fills to show how long it has left. */
+/* The chapters are a segmented control. The thumb is a second, lit copy of
+   the labels (black pill, white words) clipped to the current tab, so a label
+   turns white exactly where the pill is while it slides, never as a separate
+   fade. While the scene plays by itself the pill fills to show how long the
+   chapter has left. */
 .chapters { position: relative; display: flex; flex: 0 1 auto; min-width: 0; padding: 4px; border-radius: 999px; overflow-x: auto; scrollbar-width: none; }
 .chapters::-webkit-scrollbar { display: none; }
 .chapters button {
   all: unset; box-sizing: border-box; position: relative; z-index: 1; flex: none; cursor: pointer;
   height: 32px; padding: 0 12px; border-radius: 999px;
   font: 500 13px/32px var(--font-sans); color: var(--ink-2); white-space: nowrap;
-  transition: color 0.25s;
+  transition: color 200ms ease;
 }
-.chapters button:hover { color: var(--ink); }
-.chapters button[aria-selected="true"] { color: var(--btn-ink); }
-.chapters button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.chapters button:active { transform: scale(0.97); }
+.chapters button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .thumb {
-  position: absolute; left: 0; top: 4px; height: 32px; width: var(--tw, 0); transform: translateX(var(--tx, 0)); border-radius: 999px;
-  background: var(--btn); overflow: hidden; pointer-events: none;
-  transition: transform 0.45s var(--ease-out), width 0.45s var(--ease-out), opacity 0.25s;
+  position: absolute; left: 0; top: 4px; z-index: 2; display: flex; width: max-content; height: 32px; padding-left: 4px;
+  background: var(--btn); color: var(--btn-ink); pointer-events: none;
+  clip-path: inset(0 calc(100% - var(--tx, 0px) - var(--tw, 0px)) 0 var(--tx, 0px) round 999px);
+  transition: clip-path 300ms var(--ease-out), opacity 200ms ease;
 }
-.thumb.still { transition: none; }
-.thumb::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--btn-ink) 18%, transparent); transform: scaleX(0); transform-origin: 0 50%; }
-.auto .thumb::after { transform: scaleX(1); transition: transform var(--hold, 4s) linear; }
+.thumb > span { flex: none; padding: 0 12px; font: 500 13px/32px var(--font-sans); white-space: nowrap; }
+.thumb::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: var(--tw, 0px); transform: translateX(var(--tx, 0px));
+  background: linear-gradient(color-mix(in srgb, var(--btn-ink) 18%, transparent), color-mix(in srgb, var(--btn-ink) 18%, transparent)) no-repeat 0 0 / 0% 100%;
+  transition: transform 300ms var(--ease-out), width 300ms var(--ease-out);
+}
+.auto .thumb::after { background-size: 100% 100%; transition: transform 300ms var(--ease-out), width 300ms var(--ease-out), background-size var(--hold, 4s) linear; }
+.thumb.still, .thumb.still::after { transition: none; }
 .own .thumb { opacity: 0; }
 
 /* Play and pause: a round button of its own beside the tabs. */
 .play {
   appearance: none; border: 0; padding: 0; font: inherit; cursor: pointer; flex: none;
   width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--ink);
-  transition: transform 0.2s var(--ease-out);
+  transition: transform 160ms var(--ease-out), background-color 200ms ease;
 }
-.play:hover { color: var(--ink); background-color: color-mix(in srgb, var(--fog-0) 92%, transparent); }
 .play:active { transform: scale(0.94); }
 .play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.play svg { grid-area: 1 / 1; transition: opacity 0.2s, transform 0.2s; }
-.play .i-play, .play[aria-pressed="true"] .i-pause { opacity: 0; transform: scale(0.6); }
-.play[aria-pressed="true"] .i-play { opacity: 1; transform: none; }
+/* The two icons are one control changing its mind: they cross with a blur,
+   so the eye reads a morph rather than one icon swapped for another. */
+.play svg { grid-area: 1 / 1; transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out), filter 200ms var(--ease-out); }
+.play .i-play, .play[aria-pressed="true"] .i-pause { opacity: 0; transform: scale(0.5); filter: blur(4px); }
+.play[aria-pressed="true"] .i-play { opacity: 1; transform: none; filter: none; }
 
 /* ---- the heading that changes with the chapter ----------------------------
    Every chapter's version is laid in one grid cell, so the tallest sets the
@@ -251,9 +266,11 @@ kbd {
 .heads { display: grid; }
 .heads > * { grid-area: 1 / 1; margin: 0; }
 .heads > :not(.on) { color: transparent; pointer-events: none; user-select: none; }
-.heads .tone { transition: opacity 0.2s; }
-.heads > .on .tone { transition: opacity 0.35s 0.1s; }
-.heads > :not(.on) .tone { opacity: 0; }
+.heads .tone { transition: opacity 200ms ease, filter 200ms ease; }
+.heads > .on .tone { transition: opacity 350ms var(--ease-out) 100ms, filter 350ms var(--ease-out) 100ms; }
+/* A little blur on the line leaving and the one arriving, so the moment
+   both are faint reads as one line changing, not two overlapping. */
+.heads > :not(.on) .tone { opacity: 0; filter: blur(4px); }
 
 @media (max-width: 760px) {
   /* The window keeps a real width and the stage crops it: never scaled. */
@@ -286,10 +303,14 @@ kbd {
 
 /* Reveal on enter: set by src/scripts/reveal.ts. Without JS nothing hides. */
 .js [data-reveal] { opacity: 0; transform: translateY(12px); }
-.js [data-reveal].in { opacity: 1; transform: none; transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); transition-delay: var(--d, 0s); }
+.js [data-reveal].in { opacity: 1; transform: none; transition: opacity 600ms var(--ease-out), transform 600ms var(--ease-out); transition-delay: var(--d, 0s); }
+/* Reduced motion keeps the fade (it says something arrived) and drops the
+   movement. */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .js [data-reveal] { opacity: 1; transform: none; }
+  .js [data-reveal] { transform: none; }
+  .js [data-reveal].in { transition: opacity 400ms ease; }
+  .heads .tone, .heads > .on .tone { filter: none; }
 }
 
 /* ---- prose: Markdown and long-form copy ---------------------------------- */

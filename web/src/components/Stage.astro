@@ -45,7 +45,7 @@ const lines = [...chapters.map((c, i) => ({ key: String(i), text: c.caption })),
     {chapters.length > 0 && (
       <div class="controls">
         <div class="chapters glass" role="tablist" aria-label="Chapters">
-          <span class="thumb still" aria-hidden="true"></span>
+          <span class="thumb still" aria-hidden="true">{chapters.map((c) => <span>{c.label}</span>)}</span>
           {chapters.map((c, i) => (
             <button type="button" role="tab" data-chapter={i} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1}>{c.label}</button>
           ))}

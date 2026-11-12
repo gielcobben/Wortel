@@ -77,7 +77,7 @@ export function playHero() {
   const tl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } });
   const at = { copy: 0, window: 0.25, type: 1.5 };
 
-  tl.fromTo(q(hero, '[data-fade]'), { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 1.1, stagger: 0.08 }, at.copy);
+  tl.fromTo(q(hero, '[data-fade]'), { opacity: 0, y: 16, filter: 'blur(6px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 1.1, stagger: 0.08, clearProps: 'filter' }, at.copy);
   tl.fromTo(win, { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 1.5, clearProps: 'transform,opacity' }, at.window);
 
   // Time 0: an idle session. Seeking backwards restores it.

@@ -39,8 +39,9 @@ const links = [
   .bar { height: 64px; display: flex; align-items: center; gap: 32px; }
   .brand { display: inline-flex; align-items: center; gap: 8px; font: 600 17px/24px var(--font-display); letter-spacing: -0.02em; color: var(--ink); }
   .links { display: flex; gap: 24px; margin-left: auto; }
-  .links a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 0.2s; }
-  .links a:hover, .links a[aria-current] { color: var(--ink); }
+  .links a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 200ms ease; }
+  .links a[aria-current] { color: var(--ink); }
+  @media (hover: hover) and (pointer: fine) { .links a:hover { color: var(--ink); } .sheet a:hover { background: var(--btn-2); } }
   .menu { display: none; position: relative; }
   .menu summary { list-style: none; cursor: pointer; width: 32px; height: 32px; border-radius: 999px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px; background: var(--btn-2); }
   .menu summary::-webkit-details-marker { display: none; }
@@ -51,9 +52,13 @@ const links = [
     position: absolute; right: 0; top: 40px; min-width: 200px; padding: 8px;
     display: flex; flex-direction: column; border-radius: 16px;
     background: var(--fog-0); box-shadow: 0 0 0 1px var(--line), 0 16px 40px rgb(0 0 0 / 0.12);
+    /* It opens out of the button in its top right corner. */
+    transform-origin: calc(100% - 16px) -8px;
+    transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
   }
+  @starting-style { .menu[open] .sheet { opacity: 0; transform: scale(0.96); } }
   .sheet a { height: 40px; display: flex; align-items: center; padding: 0 16px; border-radius: 8px; font-size: 15px; color: var(--ink); }
-  .sheet a:hover, .sheet a[aria-current] { background: var(--btn-2); }
+  .sheet a[aria-current] { background: var(--btn-2); }
   @media (max-width: 700px) {
     .links { display: none; }
     .btn { margin-left: auto; }

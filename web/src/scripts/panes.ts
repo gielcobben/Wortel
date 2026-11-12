@@ -41,7 +41,7 @@ export function initPanes() {
 
   const state: Layout = { ...CHAPTERS[0] };
   const size = { sidebar: 234, side: 384, strip: slot('strip').offsetHeight || 200 };
-  const FOLD = { duration: 0.6, ease: 'power3.inOut' };
+  const FOLD = { duration: 0.5, ease: 'power3.inOut' };
   // The buttons the main bar gains with no sidebar: Show Sidebar, Back, Forward.
   const LEAD = 28 + 8 + 60 + 8;
 
@@ -92,8 +92,9 @@ export function initPanes() {
     const a = from !== 'hidden' ? pane(from) : null;
     const b = value !== 'hidden' ? pane(value) : null;
     if (a && b && a !== b) {
-      gsap.to(a, { autoAlpha: 0, duration: 0.16 * d, delay, ease: 'power1.in' });
-      gsap.fromTo(b, { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.32 * d, delay: delay + 0.16 * d, ease: 'power2.out', clearProps: 'transform' });
+      // The app swaps at once; a short fade in only says what changed.
+      gsap.set(a, { autoAlpha: 0, delay });
+      gsap.fromTo(b, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.2 * d, delay, ease: 'power2.out', clearProps: 'transform' });
     } else if (b && !a) {
       // Unfolding onto a pane that was not the one left there.
       Array.from(slot(place).querySelectorAll<HTMLElement>('[data-pane]')).forEach((p) => gsap.set(p, { autoAlpha: p === b ? 1 : 0, clearProps: 'transform' }));

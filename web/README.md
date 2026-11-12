@@ -106,6 +106,24 @@ prompt's choices work (agents), the Dock icon quits and reopens (survival).
 Anything pressable is marked `data-row`, `data-fold` or `data-press` and gets
 the app's own hover from `styles/app.css`.
 
+Rules for motion, so a new piece moves like the rest:
+- Curves are `--ease-out` (anything answering the reader) and `--ease-in-out`
+  (something on screen moving to a new place), both in `site.css`. No ease-in:
+  it starts slow, which reads as lag. Exits are quicker than entrances.
+- Answers to a click stay under 300ms (the chapter thumb is 300ms, a press
+  160ms). Only the films and the landing sequence take longer.
+- Tabs and columns inside a window swap at once, with a 200ms fade in, as the
+  app does. Nothing slides between tabs.
+- Every hover sits behind `@media (hover: hover) and (pointer: fine)`, so a tap
+  on a phone never leaves one stuck on.
+- Nothing appears from `scale(0)`: from 0.5 or more, with opacity.
+- Crossfades of text or icons (the heading's grey line, play/pause) carry a
+  4px blur, so the overlap reads as one thing changing.
+- The chapter tabs are two copies of the labels: the lit copy (the black pill
+  with white words) is clipped to the current tab and the clip slides, so a
+  label turns white exactly where the pill is.
+- Reduced motion keeps fades and drops movement.
+
 ### 1:1 with the canvas
 
 - A window's edge is drawn once, in `.stage .win` (styles/site.css): one

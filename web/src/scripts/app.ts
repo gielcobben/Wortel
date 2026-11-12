@@ -154,7 +154,7 @@ export class Sidebar {
       const dot = el.firstElementChild as HTMLElement;
       dot.classList.remove('bg-chart-1', 'bg-chart-2');
       dot.classList.add(status === 'attention' ? 'bg-chart-1' : 'bg-chart-2');
-      gsap.fromTo(dot, { scale: 0 }, { scale: 1, duration: 0.4, ease: 'back.out(3)' });
+      gsap.fromTo(dot, { scale: 0.5, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.35, ease: 'back.out(1.7)', clearProps: 'transform,opacity' });
     }
     row.classList.remove('pr-3'); row.classList.add('pr-[34px]');
     row.appendChild(el);
@@ -361,7 +361,7 @@ export function sessionScreen(term: Terminal, name: string) {
 export function pressKeys(tl: gsap.core.Timeline, keys: HTMLElement, at: number, hold = 0.9) {
   tl.fromTo(keys, { opacity: 0, y: 8, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.25, ease: 'power2.out' }, at);
   tl.to(keys.querySelectorAll('kbd'), { y: 2, duration: 0.08, yoyo: true, repeat: 1 }, at + 0.4);
-  tl.to(keys, { opacity: 0, y: -4, duration: 0.25, ease: 'power2.in' }, at + hold);
+  tl.to(keys, { opacity: 0, y: -4, duration: 0.2, ease: 'power2.out' }, at + hold);
 }
 
 /** The pointer a film uses when the thing it shows is done with the mouse. */

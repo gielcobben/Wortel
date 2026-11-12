@@ -136,13 +136,15 @@
    Parts of a window a visitor can press (scripts/app.ts marks them). They
    take the app's own hover: a step under the selection, never a web hover. */
 .wapp [data-row], .wapp [data-fold], .wapp [data-press] { cursor: pointer; }
-.wapp [data-row]:not(:has(> [data-name="Pill"])):hover::before {
-  content: ''; position: absolute; inset: 1px 10px; border-radius: 8px; background: var(--sidebar-accent); opacity: 0.6;
-}
-.wapp [data-fold]:hover > span { color: var(--sidebar-foreground); }
-.wapp [data-press] { border-radius: 8px; transition: background-color 0.15s; }
-.wapp [data-press]:hover { background: var(--sidebar-accent); }
+.wapp [data-press] { border-radius: 8px; transition: background-color 150ms ease; }
 .wapp [data-press]:active { background: var(--sidebar-ring); }
+@media (hover: hover) and (pointer: fine) {
+  .wapp [data-row]:not(:has(> [data-name="Pill"])):hover::before {
+    content: ''; position: absolute; inset: 1px 10px; border-radius: 8px; background: var(--sidebar-accent); opacity: 0.6;
+  }
+  .wapp [data-fold]:hover > span { color: var(--sidebar-foreground); }
+  .wapp [data-press]:hover { background: var(--sidebar-accent); }
+}
 
 /* ---- traffic lights --------------------------------------------------------
    The canvas carries them as 2x captures. Drawn here instead, as true circles

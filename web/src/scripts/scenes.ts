@@ -59,7 +59,7 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) 
     if (at.note !== withNote || !animate) {
       gsap.to(note, withNote
         ? { autoAlpha: 1, x: 0, duration: animate ? 0.6 : 0, ease: 'expo.out', overwrite: true }
-        : { autoAlpha: 0, x: 48, duration: animate ? 0.35 : 0, ease: 'power2.in', overwrite: true });
+        : { autoAlpha: 0, x: 48, duration: animate ? 0.25 : 0, ease: 'power2.out', overwrite: true });
     }
     at = { session, screen: lines, status, note: withNote };
   };
@@ -235,8 +235,9 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]'
   const showColumn = (which: 'changes' | 'history', animate: boolean) => {
     if (column === which) return;
     const d = animate ? 1 : 0;
-    gsap.to(cols[column], { autoAlpha: 0, duration: 0.16 * d, ease: 'power1.in' });
-    gsap.fromTo(cols[which], { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.32 * d, delay: 0.16 * d, ease: 'power2.out', clearProps: 'transform' });
+    // The app swaps at once; a short fade in only says what changed.
+    gsap.set(cols[column], { autoAlpha: 0 });
+    gsap.fromTo(cols[which], { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.2 * d, ease: 'power2.out' });
     column = which;
   };
 

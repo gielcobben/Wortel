@@ -75,11 +75,17 @@ export function playHero() {
   // ---- the timeline ---------------------------------------------------------
   let frozen = false;
   const tl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } });
-  const at = { copy: 0, window: 0.25, type: 1.5 };
+  // In reading order: the claim a line at a time, then the rest of the copy;
+  // then the lake opens and the window rises; and only once it has settled
+  // does anything happen in it, so the eye is already there.
+  const at = { copy: 0.15, stage: 1.0, type: 3.0 };
 
-  tl.fromTo(q(hero, '[data-fade]'), { opacity: 0, y: 16, filter: 'blur(6px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 1.1, stagger: 0.08, clearProps: 'filter' }, at.copy);
-  // The stage, its photo and the window come in on their own (site.css,
-  // Reveal), as every stage does, so the first one matches the rest.
+  tl.fromTo(q(hero, '[data-fade]'), { opacity: 0, y: 20, filter: 'blur(8px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 1.3, stagger: 0.14, clearProps: 'filter' }, at.copy);
+  // The stage, its photo and the window come in as every stage does (site.css,
+  // Reveal), only at this moment rather than on scroll.
+  const stage = hero.querySelector<HTMLElement>('.stage');
+  const open = () => stage?.classList.add('in');
+  tl.call(open, [], at.stage);
 
   // Time 0: an idle session. Seeking backwards restores it.
   tl.call(() => {
@@ -124,7 +130,7 @@ export function playHero() {
 
   // ---- play, or hold a frame ------------------------------------------------
   const params = new URLSearchParams(location.search);
-  if (params.has('t')) { frozen = true; tl.seek(Number(params.get('t')), false); fit(); return; }
-  if (reduced()) { frozen = true; tl.progress(1); fit(); return; }
+  if (params.has('t')) { frozen = true; tl.seek(Number(params.get('t')), false); open(); fit(); return; }
+  if (reduced()) { frozen = true; tl.progress(1); open(); fit(); return; }
   tl.play();
 }

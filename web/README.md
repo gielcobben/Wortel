@@ -124,7 +124,9 @@ Rules for motion, so a new piece moves like the rest:
   and rises 48px, the photo inside it settles from 112% to its crop over
   1.8s, and what stands on it (controls, then the window) rises 40px a beat
   later (+200ms, +320ms). The hero's stage does the same, so the first one
-  matches the rest.
+  matches the rest, but `scripts/hero.ts` picks the moment (`reveal="manual"`):
+  the claim a line at a time, then the copy, then at 1s the lake opens and
+  the window rises, and the typing starts at 3s, once it has settled.
 - The photo is the stage's `::before`, apart from the frame, and drifts 80px
   over the time the stage takes to cross the screen (a scroll-driven
   animation, where the browser has them). It overhangs top and bottom by 40px,

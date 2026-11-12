@@ -10,9 +10,9 @@ const latest = await latestRelease();
 <section class="hero" id="what-is-wortel" data-hero>
   <div class="page">
     <div class="bhead">
-      <h1 class="display" data-fade>
+      <h1 class="display">
         <span class="vh">Wortel: a native macOS terminal for coding agents. </span>
-        Many agents.<br /><span class="tone">One calm terminal.</span>
+        <span class="line" data-fade>Many agents.</span><br /><span class="line tone" data-fade>One calm terminal.</span>
       </h1>
       <p class="lead" data-fade>
         Wortel is a native macOS terminal on Ghostty’s engine. Every agent gets a named session and its own worktree, and the sidebar tells you which one needs you.
@@ -24,7 +24,7 @@ const latest = await latestRelease();
       <p class="label" data-fade>Free · macOS {SITE.minMacOS} {SITE.minMacOSName} or later</p>
     </div>
 
-    <Stage h={704} class="first">
+    <Stage h={704} class="first" reveal="manual">
       <div class="win wapp" data-win data-ph-demo aria-hidden="true" inert>
         <HeroWindow />
       </div>
@@ -44,6 +44,14 @@ const latest = await latestRelease();
   .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
   .label { margin-top: 16px; }
   .hero :global(.stage.first) { padding-top: 48px; }
+  /* scripts/hero.ts brings all of this in, in reading order; until it runs,
+     nothing shows, so nothing flashes and then vanishes. */
+  :global(.js) [data-fade] { opacity: 0; animation: unhide 0s 4s forwards; }
+  /* If the script never runs, the words still come back. */
+  @keyframes unhide { to { opacity: 1; } }
+  .line { display: inline-block; }
+  /* The window rises once the photo has opened a little, not with it. */
+  :global(.js) .hero :global(.stage.first > *) { transition-delay: 450ms; }
   /* The column a little narrower than the canvas drew it (it is a divider you
      drag), so the three tabs in the main bar show their names in full. */
   .hero :global([data-name="Side column slot"]) { width: 336px; }

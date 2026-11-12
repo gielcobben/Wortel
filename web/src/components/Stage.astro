@@ -21,8 +21,9 @@ interface Props {
   /** The window's size, in the app's own points. */
   w?: number;
   h?: number;
-  /** Fade up the first time it comes on screen (the hero brings itself in). */
-  reveal?: boolean;
+  /** Come in the first time it is on screen; 'manual' leaves the moment to a
+      script, which adds .in itself (the hero, in its own sequence). */
+  reveal?: boolean | 'manual';
   class?: string;
 }
 const { film, title, chapters = [], own, photo = 'lake', at = '50% 62%', zoom = 'cover', w = 1104, h = 664, reveal = true, class: cls } = Astro.props;
@@ -41,7 +42,7 @@ const lines = [...chapters.map((c, i) => ({ key: String(i), text: c.caption })),
       </div>
     </div>
   )}
-  <div class:list={['stage', cls]} data-reveal={reveal ? '' : undefined} style={`--photo:url(/img/${photo}.jpg);--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
+  <div class:list={['stage', cls]} data-reveal={reveal === true ? '' : reveal || undefined} style={`--photo:url(/img/${photo}.jpg);--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
     {chapters.length > 0 && (
       <div class="controls">
         <div class="chapters glass" role="tablist" aria-label="Chapters">

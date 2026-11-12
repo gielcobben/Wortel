@@ -14,4 +14,4 @@ document.querySelectorAll<HTMLElement>('[data-reveal-group]').forEach((g) => {
   const step = Number(g.dataset.revealGroup) || 0.08;
   g.querySelectorAll<HTMLElement>('[data-reveal]').forEach((el, i) => el.style.setProperty('--d', `${i * step}s`));
 });
-document.querySelectorAll('[data-reveal]').forEach((el) => io.observe(el));
+document.querySelectorAll('[data-reveal]:not([data-reveal="manual"])').forEach((el) => io.observe(el));

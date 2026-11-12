@@ -157,11 +157,12 @@ kbd {
    it at the proportions a window has, under the scene's controls: the chapter
    tabs and a play/pause button. What a chapter shows is said by the heading
    above the stage (components/Stage.astro).
-   --at and --zoom pick the part of the photo, so no two stages look alike. */
+   --photo picks one of the four photos (README lists them), and --at and
+   --zoom the part of it, so neighbouring stages never look alike. */
 .stage {
   position: relative; overflow: hidden; border-radius: 20px;
   display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 32px 48px 48px;
-  background: var(--lake-veil), #cfcdc4 url(/img/lake.jpg) var(--at, 50% 62%) / var(--zoom, cover) no-repeat;
+  background: var(--lake-veil), #cfcdc4 var(--photo, url(/img/lake.jpg)) var(--at, 50% 62%) / var(--zoom, cover) no-repeat;
   box-shadow: inset 0 0 0 1px var(--line);
 }
 /* The window: the size is the scene's. Its edge is drawn once, here, for

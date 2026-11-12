@@ -56,7 +56,7 @@ src/
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
 public/
   app/                     glyphs and images the generated panes use
-  img/lake*.jpg            the foggy lake every window stands on
+  img/*.jpg                the four photos the windows stand on (see Photos)
   icon-*.png, favicon-*    the app icon, exported from macos/Wortel/AppIcon.icon
 scripts/opmaak/            jsx2astro.mjs: canvas markup -> src/app/gen
 ```
@@ -377,3 +377,20 @@ build-stamped `lastmod` told crawlers all five URLs changed every time one
 Markdown file shipped, which is how a site teaches Google to ignore the field.
 Uncommitted edits do not count, deliberately. No git in the environment falls
 back to the build date rather than failing the build.
+
+## Photos
+
+Every stage stands on one of four photos from Unsplash (free to use under
+the Unsplash License, credit optional). `<Stage photo="…">` picks one, and
+`at`/`zoom` the part of it; neighbouring sections never share a photo.
+
+| File | Where | Source |
+|---|---|---|
+| `lake.jpg` | Hero, Worktrees, the closing call | the "Foggy Lake" shot on the Opmaak canvas, found on Unsplash |
+| `skye.jpg` | Panes, /download | https://unsplash.com/photos/LGOX15iP0u0 |
+| `haze.jpg` | Agents | https://unsplash.com/photos/dDKjrFzijbM |
+| `hills.jpg` | Survival (cropped to the forest; the flower at the bottom stays out) | https://unsplash.com/photos/Mg1AQZnCgJE |
+
+The three newer ones were picked for colour: the closest of ~30 misty-lake
+photos to the lake by their Lab distribution. Saved at 2400px, quality 76,
+with a light blur on hills and haze to settle the film grain.

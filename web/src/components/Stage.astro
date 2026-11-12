@@ -13,7 +13,9 @@ interface Props {
   chapters?: Chapter[];
   /** The grey half when the reader arranges something no chapter covers. */
   own?: string;
-  /** Which part of the photo: a background-position, and how far in. */
+  /** Which photo (a file in public/img, lake by default), which part of it
+      (a background-position), and how far in. */
+  photo?: string;
   at?: string;
   zoom?: string;
   /** The window's size, in the app's own points. */
@@ -23,7 +25,7 @@ interface Props {
   reveal?: boolean;
   class?: string;
 }
-const { film, title, chapters = [], own, at = '50% 62%', zoom = 'cover', w = 1104, h = 664, reveal = true, class: cls } = Astro.props;
+const { film, title, chapters = [], own, photo = 'lake', at = '50% 62%', zoom = 'cover', w = 1104, h = 664, reveal = true, class: cls } = Astro.props;
 const lines = [...chapters.map((c, i) => ({ key: String(i), text: c.caption })), ...(own ? [{ key: 'own', text: own }] : [])];
 ---
 <div data-film={film}>
@@ -39,7 +41,7 @@ const lines = [...chapters.map((c, i) => ({ key: String(i), text: c.caption })),
       </div>
     </div>
   )}
-  <div class:list={['stage', cls]} data-reveal={reveal ? '' : undefined} style={`--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
+  <div class:list={['stage', cls]} data-reveal={reveal ? '' : undefined} style={`--photo:url(/img/${photo}.jpg);--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
     {chapters.length > 0 && (
       <div class="controls">
         <div class="chapters glass" role="tablist" aria-label="Chapters">

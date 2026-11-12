@@ -7,7 +7,7 @@ interface Props { bare?: boolean }
 const { bare = false } = Astro.props;
 const latest = await latestRelease();
 const cols: [string, [string, string][]][] = [
-  ['Wortel', [['Download', SITE.download], ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare']]],
+  ['Wortel', [['Download', '/download'], ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare']]],
   ['More', [['About', '/about'], ['llms.txt', '/llms.txt']]],
   ['Legal', [['Privacy', '/privacy'], ['Terms', '/terms']]],
 ];

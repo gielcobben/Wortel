@@ -54,6 +54,7 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 
 ## Download
 
+- [Download page](${abs('/download')}): requirements (macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later, one universal app for Apple silicon and Intel), the three install steps, how updates arrive, and where Wortel keeps its sessions and worktrees.
 - [Latest signed build](${SITE.download}): a zip of Wortel.app; always the newest release.
 - [Sparkle appcast](${SITE.appcast}): the update feed, with version, release date and minimum macOS version.
 

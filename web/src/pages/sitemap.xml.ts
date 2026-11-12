@@ -61,6 +61,12 @@ const PAGES: { path: string; changefreq: string; priority: string; sources: stri
     sources: ['src/data/site.ts', 'src/pages/index.astro', 'src/components/home'],
   },
   {
+    path: '/download',
+    changefreq: 'monthly',
+    priority: '0.8',
+    sources: ['src/pages/download.astro'],
+  },
+  {
     path: '/about',
     changefreq: 'yearly',
     priority: '0.5',

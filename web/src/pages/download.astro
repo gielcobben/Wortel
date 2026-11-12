@@ -1,0 +1,182 @@
+---
+// /download: the button, what it takes, and the three steps after it. The
+// nav's Download leads here; the hero and the closing call on every page still
+// start the download straight away, because there the decision is made.
+//
+// The version line comes from the Sparkle feed (data/release.ts), the notes
+// from the newest file in src/content/releases, so this page never says
+// anything the changelog does not.
+import Layout from '../layouts/Layout.astro';
+import { getCollection, render } from 'astro:content';
+import { compareVersions } from '../content.config';
+import { SITE } from '../data/site';
+import { latestRelease } from '../data/release';
+
+const latest = await latestRelease();
+const entries = (await getCollection('releases')).sort((a, b) => compareVersions(b.id, a.id));
+const newest = entries[0];
+const Notes = newest ? (await render(newest)).Content : null;
+const fmt = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+
+const macOS = `macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later`;
+const abs = (p: string) => new URL(p, SITE.url).href;
+const title = `Download ${SITE.name} for macOS`;
+const description = `Download ${SITE.name}, the native macOS terminal for coding agents. Free, signed and notarized, one app for Apple silicon and Intel, ${macOS}.`;
+const schema = [{
+  '@type': 'WebPage', '@id': abs('/download#webpage'), url: abs('/download'), name: title, description,
+  isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
+}];
+
+const steps = [
+  ['Open the zip', 'Safari unzips it for you, so Wortel is already waiting in Downloads.'],
+  ['Drag it to Applications', 'From there it can replace itself when a new version comes out.'],
+  ['Open it', 'macOS asks once whether to open an app from the internet. Say yes, and you are in.'],
+];
+
+const needs: [string, string][] = [
+  ['macOS', `${SITE.minMacOS} ${SITE.minMacOSName} or later`],
+  ['Mac', 'Apple silicon or Intel, in one app'],
+  ['Download', latest?.size ? `${latest.size}, a zip of Wortel.app` : 'A zip of Wortel.app'],
+  ['Price', 'Free, for any use, including work'],
+];
+---
+<Layout title={title} description={description} path="/download" schema={schema} bare>
+  <header class="page phead" data-reveal-group>
+    <img class="icon" src="/icon-512.png" width="96" height="96" alt="" data-reveal />
+    <h1 class="display" data-reveal>Download Wortel.</h1>
+    <p class="lead" data-reveal>
+      One app for every Mac on {macOS}, signed and notarized by Apple. It is free, and it keeps itself up to date.
+    </p>
+    <div class="ctas" data-reveal>
+      <a class="btn" href={SITE.download} data-get data-ph="download_clicked" data-ph-location="download" data-ph-version={latest?.version}>Download for macOS</a>
+      {latest && <a class="btn ghost" href={`/updates#${latest.version}`} data-ph="changelog_opened" data-ph-location="download" data-ph-version={latest.version}>What’s new in {latest.version}</a>}
+    </div>
+    <p class="label" data-reveal aria-live="polite">
+      <span data-idle>{latest ? `Version ${latest.version}${latest.size ? ` · ${latest.size}` : ''}` : 'The newest version'} · {macOS}</span>
+      <span data-busy hidden>Downloading{latest && ` Wortel ${latest.version}`}. Nothing yet? <a class="link" href={SITE.download}>Try again</a>.</span>
+    </p>
+  </header>
+
+  <div class="page">
+    <section class="stage install" style="--at: 50% 30%" aria-label="Installing" data-reveal>
+      <figure class="file" aria-hidden="true">
+        <img src="/icon-512.png" width="80" height="80" alt="" />
+        <figcaption>Wortel</figcaption>
+      </figure>
+      <ol class="steps">
+        {steps.map(([t, d], i) => (
+          <li class="glass">
+            <span class="n">{i + 1}</span>
+            <h2 class="t">{t}</h2>
+            <p>{d}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <section class="row12 first">
+      <div class="k"><h2 class="label">What it takes</h2></div>
+      <div class="v">
+        <dl class="needs">
+          {needs.map(([k, v]) => (<div><dt>{k}</dt><dd>{v}</dd></div>))}
+        </dl>
+      </div>
+    </section>
+
+    <section class="row12">
+      <div class="k"><h2 class="label">Staying up to date</h2></div>
+      <div class="v prose big">
+        <p>Wortel looks for a new version every four hours, fetches it in the background and puts it in place the next time you quit. Your sessions keep running through an update, as they do through any quit.</p>
+      </div>
+    </section>
+
+    {newest && Notes && (
+      <section class="row12">
+        <div class="k meta">
+          <h2 class="label">In this version</h2>
+          <a class="ver" href={`/updates#${newest.id}`}>{newest.id}</a>
+          <time class="label" datetime={newest.data.date.toISOString().slice(0, 10)}>{fmt(newest.data.date)}</time>
+        </div>
+        <div class="v">
+          <div class="prose notes"><Notes /></div>
+          <a class="link more" href="/updates">Every release</a>
+        </div>
+      </section>
+    )}
+
+    <section class="row12">
+      <div class="k"><h2 class="label">Once it is open</h2></div>
+      <div class="v prose big">
+        <p>⌘N starts a session and ⌘/ lists every shortcut. The <code>wortel</code> command is already on the path of every session, with nothing to install. The rest is in the <a href="/docs">reference</a>.</p>
+      </div>
+    </section>
+
+    <section class="row12">
+      <div class="k"><h2 class="label">Where it keeps things</h2></div>
+      <div class="v">
+        <dl class="needs">
+          <div><dt>Sessions</dt><dd><code>~/Library/Application Support/Wortel</code></dd></div>
+          <div><dt>Worktrees</dt><dd><code>~/.wortel/worktrees</code>, outside your repositories</dd></div>
+        </dl>
+      </div>
+    </section>
+  </div>
+</Layout>
+
+<script>
+  // The download starts in place (the link is the zip), so the page stays and
+  // says so, with a second link in case the browser held it back.
+  const get = document.querySelector<HTMLAnchorElement>('[data-get]');
+  const idle = document.querySelector<HTMLElement>('[data-idle]');
+  const busy = document.querySelector<HTMLElement>('[data-busy]');
+  get?.addEventListener('click', () => {
+    if (idle) idle.hidden = true;
+    if (busy) busy.hidden = false;
+    document.documentElement.dataset.downloading = '';
+  });
+</script>
+
+<style>
+  .icon { display: block; width: 96px; height: 96px; margin-bottom: 32px; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
+  .phead .label { margin-top: 16px; }
+  .phead .label [hidden] { display: none; }
+
+  /* The lake as a desktop: the app where the download leaves it, and the three
+     steps from there on glass along the bottom. */
+  .install { min-height: 480px; padding: 48px; align-items: stretch; justify-content: space-between; gap: 48px; margin-bottom: 48px; }
+  .file { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 112px; }
+  .file img { display: block; width: 80px; height: 80px; filter: drop-shadow(0 4px 8px rgb(0 0 0 / 0.25)); transition: transform 0.6s var(--ease-out); }
+  /* Finder draws a desktop label dark on a light desktop and light on a dark
+     one; the fog is light by day and the lake dark at night. */
+  .file figcaption { font-size: 13px; line-height: 16px; font-weight: 500; color: var(--ink); padding: 0 6px; border-radius: 4px; }
+  @media (prefers-color-scheme: dark) { .file figcaption { color: #fff; text-shadow: 0 1px 3px rgb(0 0 0 / 0.6); } }
+  /* After the click, the file is selected, as Finder draws a selected icon. */
+  :global([data-downloading]) .file figcaption { background: var(--accent); color: #fff; text-shadow: none; }
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .steps li { border-radius: 18px; padding: 24px; }
+  .n { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 999px; background: var(--ink); color: var(--fog-0); font: 600 13px/24px var(--font-display); }
+  .steps .t { margin: 16px 0 0; font: 600 17px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); }
+  .steps p { margin: 8px 0 0; font-size: 15px; line-height: 24px; color: var(--ink-2); text-wrap: pretty; }
+
+  .row12.first { border-top: 0; }
+  .prose.big { font-size: 19px; line-height: 32px; color: var(--ink); }
+  .needs { margin: 0; }
+  .needs div { display: grid; grid-template-columns: 176px 1fr; gap: 16px; padding-block: 16px; border-top: 1px solid var(--line); }
+  .needs div:last-child { border-bottom: 1px solid var(--line); }
+  .needs dt { font-size: 15px; line-height: 24px; color: var(--ink-3); }
+  .needs dd { margin: 0; font-size: 15px; line-height: 24px; color: var(--ink); }
+  .needs code { font: 500 14px/24px var(--font-mono); }
+  .meta { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .ver { font: 600 17px/24px var(--font-display); color: var(--ink); }
+    .more { display: inline-block; margin-top: 24px; }
+
+  @media (max-width: 900px) {
+    .install { padding: 24px; gap: 32px; margin-bottom: 64px; }
+    .steps { grid-template-columns: 1fr; gap: 8px; }
+    .steps li { display: grid; grid-template-columns: 24px 1fr; column-gap: 16px; padding: 16px; }
+    .steps .t { margin: 0; }
+    .steps p { grid-column: 2; }
+    .needs div { grid-template-columns: 112px 1fr; }
+  }
+</style>

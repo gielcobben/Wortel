@@ -144,6 +144,12 @@ geometry (size/scale/appearance → libghostty). The keyboard path is subtle —
 and `keyTextAccumulator` to make IME (Korean/Japanese) and unclaimed command
 keys work; preserve the upstream comments when touching it. `GhosttyInput.swift`
 holds the NSEvent↔ghostty translation helpers and `KeyboardLayout`.
+The view is also an **AXTextArea** (`SurfaceView+Accessibility.swift`) so
+screen readers and read-aloud apps get the visible screen, the selection and
+per-range screen bounds. Every range is UTF-16 into the visible text, mapped to
+cells by `TerminalAXText` (pure, tested); Ghostty.app's cell-offset selection
+range is the thing not to copy. Built lazily, notifications off until a client
+asks. See `docs/accessibility.md`.
 
 **`Session`** (`Wortel/Sessions/Session.swift`) — one sidebar entry = one shell
 = one surface. The `SurfaceView` is created **lazily** (`ensureSurfaceView`) and

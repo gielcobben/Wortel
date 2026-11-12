@@ -102,6 +102,10 @@ final class SurfaceView: NSView {
     /// the IME candidate window position.
     private(set) var cellSize: NSSize = .init(width: 8, height: 16)
 
+    /// Accessibility state (`SurfaceView+Accessibility`). Made before the
+    /// surface, so the pty's output handler can hold it.
+    let accessibilityWatch = SurfaceAccessibilityWatch()
+
     /// Cached content size in points for backing-property changes (during
     /// animations the frame may lag the target size).
     private var contentSize: NSSize = .zero
@@ -229,6 +233,7 @@ final class SurfaceView: NSView {
 
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        accessibilityWatch.onChange = { [weak self] in self?.accessibilityScreenChanged() }
 
         self.surface = runtime.newSurface(
             view: self,
@@ -491,7 +496,10 @@ final class SurfaceView: NSView {
         resizePending = false
         let reflowed = size != contentSize
         contentSize = size
-        if reflowed { onSizeChange?() }
+        if reflowed {
+            onSizeChange?()
+            accessibilityWatch.outputArrived()
+        }
         let scaled = convertToBacking(size)
         setSurfaceSize(width: UInt32(max(0, scaled.width)), height: UInt32(max(0, scaled.height)))
     }
@@ -548,6 +556,7 @@ final class SurfaceView: NSView {
 
     func cellSizeDidChange(backing: NSSize) {
         cellSize = convertFromBacking(backing)
+        accessibilityWatch.outputArrived()
     }
 
     func setCursorShape(_ shape: ghostty_action_mouse_shape_e) {
@@ -671,6 +680,7 @@ final class SurfaceView: NSView {
 
     @objc override func selectAll(_ sender: Any?) {
         performBinding("select_all")
+        accessibilitySelectionMayHaveChanged()
     }
 
     @objc func increaseFontSize(_ sender: Any?) {
@@ -760,6 +770,7 @@ final class SurfaceView: NSView {
         // (`flagsChanged`), but not when it reached another view first.
         if override { refreshPointer(at: convert(event.locationInWindow, from: nil), mods: mods) }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
+        accessibilitySelectionMayHaveChanged()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -769,6 +780,7 @@ final class SurfaceView: NSView {
         let mods = pointerMods(event.modifierFlags)
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
         ghostty_surface_mouse_pressure(surface, 0, 0)
+        accessibilitySelectionMayHaveChanged()
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -810,7 +822,10 @@ final class SurfaceView: NSView {
         ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, pointerMods(event.modifierFlags))
     }
 
-    override func mouseDragged(with event: NSEvent) { mouseMoved(with: event) }
+    override func mouseDragged(with event: NSEvent) {
+        mouseMoved(with: event)
+        accessibilitySelectionMayHaveChanged()
+    }
     override func rightMouseDragged(with event: NSEvent) { mouseMoved(with: event) }
     override func otherMouseDragged(with event: NSEvent) { mouseMoved(with: event) }
 
@@ -861,6 +876,8 @@ final class SurfaceView: NSView {
 
     override func keyDown(with event: NSEvent) {
         Self.onKeyboardActivity?(self)
+        // Typing clears a selection, and a keybind can make one.
+        accessibilitySelectionMayHaveChanged()
         guard let surface else {
             interpretKeyEvents([event])
             return

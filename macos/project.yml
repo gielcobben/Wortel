@@ -479,6 +479,10 @@ targets:
       # pointing at a row that is no longer selected — none of them throw, and
       # the first time you find out is when a file you never highlighted is gone.
       - path: Wortel/Git/ChangeSelection.swift
+      # The terminal's accessibility text: UTF-16 ranges to cells and back.
+      # Wrong by one cell is a reader highlighting the neighbouring word, and
+      # nothing about that throws.
+      - path: Wortel/Ghostty/TerminalAXText.swift
       # The sidebar's twin of it, with the lead owned elsewhere (the session on
       # screen), and the bulk Close it decides. Same silent failure: a range a
       # row too wide closes a session you never highlighted.

@@ -371,11 +371,14 @@ final class GhosttyRuntime {
             return nil
         }
 
+        let accessibility = view.accessibilityWatch
         pty.onOutput = { bytes, count in
             // Watched on the way past, so a relaunch can tell the new terminal
             // what this one has been told. See `TerminalModes`.
             TerminalModeRecorder.shared.feed(session: session, bytes: bytes, count: count)
             ghostty_surface_write_buffer(surface, bytes, UInt(count))
+            // A lock take, and nothing more until a screen reader has asked.
+            accessibility.outputArrived()
         }
         // The shell ended. The keeper reaps it, so its exit code is the
         // keeper's; what reaches this side is the pty hanging up. Whoever owns
@@ -677,6 +680,15 @@ final class GhosttyRuntime {
             DispatchQueue.main.async {
                 view.cellSizeDidChange(backing: NSSize(width: CGFloat(size.width), height: CGFloat(size.height)))
             }
+            return true
+
+        case GHOSTTY_ACTION_SCROLLBAR:
+            // Only for accessibility: the viewport scrolled, or the history grew
+            // under it (the exec backend's only sign of output). Recorded here,
+            // on whatever thread this is; the view hears of it throttled.
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            let scrollbar = action.action.scrollbar
+            view.accessibilityWatch.scrolled(total: scrollbar.total, offset: scrollbar.offset)
             return true
 
         case GHOSTTY_ACTION_MOUSE_SHAPE:

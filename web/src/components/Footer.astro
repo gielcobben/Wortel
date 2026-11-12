@@ -61,7 +61,7 @@ const cols: [string, [string, string][]][] = [
   .foot { padding-bottom: 40px; }
   .cta { min-height: 480px; padding: 48px; align-items: flex-start; gap: 0; }
   /* Fog over the top of the photo, so the words always have something to sit on. */
-  .cta::before { content: ''; position: absolute; inset: 0 0 25% 0; background: linear-gradient(color-mix(in srgb, var(--fog-0) 88%, transparent), transparent); pointer-events: none; }
+  .cta { --over: linear-gradient(color-mix(in srgb, var(--fog-0) 88%, transparent), transparent 75%); }
   .cta > * { position: relative; }
   .cta .h2 { max-width: 560px; margin-top: 32px; }
   .cta .tone, .cta .label { color: var(--ink-2); }

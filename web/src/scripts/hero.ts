@@ -78,7 +78,8 @@ export function playHero() {
   const at = { copy: 0, window: 0.25, type: 1.5 };
 
   tl.fromTo(q(hero, '[data-fade]'), { opacity: 0, y: 16, filter: 'blur(6px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 1.1, stagger: 0.08, clearProps: 'filter' }, at.copy);
-  tl.fromTo(win, { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 1.5, clearProps: 'transform,opacity' }, at.window);
+  // The stage, its photo and the window come in on their own (site.css,
+  // Reveal), as every stage does, so the first one matches the rest.
 
   // Time 0: an idle session. Seeking backwards restores it.
   tl.call(() => {

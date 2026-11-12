@@ -60,6 +60,9 @@
      for something already on screen moving to a new place. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  /* Softer at the end, for big things arriving on the page: they come in
+     quickly and take their time to come to rest. */
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
 
   --page: 1200px;
   --gutter: 32px;
@@ -168,11 +171,30 @@ kbd {
    --photo picks one of the four photos (README lists them), and --at and
    --zoom the part of it, so neighbouring stages never look alike. */
 .stage {
-  position: relative; overflow: hidden; border-radius: 20px;
+  --r: 20px;
+  position: relative; overflow: hidden; border-radius: var(--r); isolation: isolate;
   display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 32px 48px 48px;
-  background: var(--lake-veil), #cfcdc4 var(--photo, url(/img/lake.jpg)) var(--at, 50% 62%) / var(--zoom, cover) no-repeat;
-  box-shadow: inset 0 0 0 1px var(--line);
+  background: #cfcdc4;
 }
+/* The photo is a layer of its own, so it can move apart from the frame: it
+   settles in when the stage arrives (Reveal, below) and drifts a little
+   against the scroll. It overhangs top and bottom by the drift, so no edge
+   ever shows. --over lays something on top of the photo (the footer's fog). */
+.stage::before {
+  content: ''; position: absolute; inset: -40px 0; z-index: -1; pointer-events: none;
+  background: var(--over, linear-gradient(transparent, transparent)), var(--lake-veil), var(--photo, url(/img/lake.jpg)) var(--at, 50% 62%) / var(--zoom, cover) no-repeat;
+}
+/* The frame's hairline, over the photo. */
+.stage::after {
+  content: ''; position: absolute; inset: 0; z-index: 30; pointer-events: none;
+  border-radius: inherit; box-shadow: inset 0 0 0 1px var(--line);
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .stage::before { animation: drift linear both; animation-timeline: view(); }
+  }
+}
+@keyframes drift { from { translate: 0 -40px; } to { translate: 0 40px; } }
 /* The window: the size is the scene's. Its edge is drawn once, here, for
    every window on the site:
    - one clip (overflow + radius) that everything inside is cut to;
@@ -274,7 +296,7 @@ kbd {
 
 @media (max-width: 760px) {
   /* The window keeps a real width and the stage crops it: never scaled. */
-  .stage { padding: 16px; gap: 16px; border-radius: 16px; align-items: flex-start; }
+  .stage { --r: 16px; padding: 16px; gap: 16px; align-items: flex-start; }
   .stage .set { align-items: flex-start; overflow: hidden; margin: 0 -16px -16px 0; padding: 0 0 16px; width: calc(100% + 16px); }
   .stage .win { width: var(--w, 1104px); max-width: none; height: min(var(--h, 664px), 560px); }
   .controls { justify-content: flex-start; width: 100%; }
@@ -301,15 +323,41 @@ kbd {
 .vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .anchor { position: absolute; top: 64px; }
 
-/* Reveal on enter: set by src/scripts/reveal.ts. Without JS nothing hides. */
-.js [data-reveal] { opacity: 0; transform: translateY(12px); }
-.js [data-reveal].in { opacity: 1; transform: none; transition: opacity 600ms var(--ease-out), transform 600ms var(--ease-out); transition-delay: var(--d, 0s); }
+/* Reveal on enter: set by src/scripts/reveal.ts. Without JS nothing hides.
+   Words come up out of a soft blur. A stage arrives in layers, each a beat
+   after the last, on one long settling curve:
+   1. the frame opens from a slightly smaller cut and rises;
+   2. the photo inside it, drawn in a little, settles back to its crop;
+   3. what stands on it (the controls, then the window) rises after. */
+.js [data-reveal] {
+  opacity: 0; translate: 0 16px; filter: blur(6px);
+  transition: opacity 900ms var(--ease-settle), translate 900ms var(--ease-settle), filter 700ms var(--ease-settle);
+  transition-delay: var(--d, 0s);
+}
+.js [data-reveal].in { opacity: 1; translate: none; filter: none; }
+
+.js .stage[data-reveal] {
+  filter: none; translate: 0 48px; clip-path: inset(4% 3% 0 3% round var(--r));
+  transition: opacity 700ms var(--ease-settle), translate 1200ms var(--ease-settle), clip-path 1200ms var(--ease-settle);
+}
+.js .stage[data-reveal].in { clip-path: inset(0 round var(--r)); }
+.js .stage[data-reveal]::before { scale: 1.12; transition: scale 1800ms var(--ease-settle); }
+.js .stage[data-reveal].in::before { scale: 1; }
+.js .stage[data-reveal] > * {
+  opacity: 0; translate: 0 40px;
+  transition: opacity 800ms var(--ease-settle), translate 1200ms var(--ease-settle);
+  transition-delay: calc(var(--d, 0s) + 200ms);
+}
+.js .stage[data-reveal] > :nth-child(2) { transition-delay: calc(var(--d, 0s) + 320ms); }
+.js .stage[data-reveal] > :nth-child(n + 3) { transition-delay: calc(var(--d, 0s) + 440ms); }
+.js .stage[data-reveal].in > * { opacity: 1; translate: none; }
+
 /* Reduced motion keeps the fade (it says something arrived) and drops the
    movement. */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .js [data-reveal] { transform: none; }
-  .js [data-reveal].in { transition: opacity 400ms ease; }
+  .js [data-reveal], .js .stage[data-reveal], .js .stage[data-reveal] > * { translate: none; filter: none; clip-path: none; transition: opacity 400ms ease; }
+  .js .stage[data-reveal]::before { scale: none; }
   .heads .tone, .heads > .on .tone { filter: none; }
 }
 

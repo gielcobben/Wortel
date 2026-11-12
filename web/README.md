@@ -98,7 +98,8 @@ wherever it was, written through `scripts/app.ts` (`sb.select(…)`,
 `sb.status(…, 'attention')`, `term.print('Tool', '(npm run build)', 'Bash')`)
 rather than by touching markup. Chapters play by themselves while the stage is
 on screen; a tab, the arrow keys, the pause button, or anything pressed in the
-window itself stops that, and play picks it up again. Nothing is tied to scroll.
+window itself stops that, and play picks it up again. Nothing the films do is
+tied to scroll; only the photos drift a little against it (below).
 
 The windows answer to the pointer: sessions select, folders fold, the sidebar
 and column buttons and the tabs work (panes), the notification and the
@@ -117,6 +118,17 @@ Rules for motion, so a new piece moves like the rest:
 - Every hover sits behind `@media (hover: hover) and (pointer: fine)`, so a tap
   on a phone never leaves one stuck on.
 - Nothing appears from `scale(0)`: from 0.5 or more, with opacity.
+- Arriving on the page (`data-reveal`, `scripts/reveal.ts`) uses
+  `--ease-settle`, a long soft landing: words rise 16px out of a 6px blur over
+  900ms. A stage arrives in layers: the frame opens from a slightly smaller cut
+  and rises 48px, the photo inside it settles from 112% to its crop over
+  1.8s, and what stands on it (controls, then the window) rises 40px a beat
+  later (+200ms, +320ms). The hero's stage does the same, so the first one
+  matches the rest.
+- The photo is the stage's `::before`, apart from the frame, and drifts 80px
+  over the time the stage takes to cross the screen (a scroll-driven
+  animation, where the browser has them). It overhangs top and bottom by 40px,
+  so no edge shows. The footer's fog rides on it through `--over`.
 - Crossfades of text or icons (the heading's grey line, play/pause) carry a
   4px blur, so the overlap reads as one thing changing.
 - The chapter tabs are two copies of the labels: the lit copy (the black pill

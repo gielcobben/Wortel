@@ -36,6 +36,7 @@ notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
 ## Full content
 
 - [Everything on one page, as Markdown](${abs('/llms-full.txt')}): the complete text of ${SITE.url}, covering what it is, the engine, sessions, coding agents, worktrees, session survival, git and files, zero-config, keyboard shortcuts, FAQ and specs.
+- Each main page is also available on its own as Markdown, at the same path with \`.md\` added: [${abs('/index.md')}](${abs('/index.md')}), [${abs('/docs.md')}](${abs('/docs.md')}), [${abs('/compare.md')}](${abs('/compare.md')}) and [${abs('/updates.md')}](${abs('/updates.md')}) (the full changelog, every release note).
 
 ## Page sections
 

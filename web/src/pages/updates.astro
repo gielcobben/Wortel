@@ -29,7 +29,7 @@ const schema = [{
   ...(latest && { dateModified: latest.entry.data.date.toISOString().slice(0, 10) }),
 }];
 ---
-<Layout title={title} description={description} path="/updates" schema={schema}>
+<Layout title={title} description={description} path="/updates" schema={schema} ogImage="/og/updates.png" markdown="/updates.md">
   <header class="page phead" data-reveal-group>
     <h1 class="display" data-reveal>Changelog</h1>
     <p class="lead" data-reveal>

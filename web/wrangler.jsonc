@@ -26,10 +26,18 @@
     // the sitemap with URLs that 307. Serving the no-slash form is the half of
     // that pair worth keeping: it matches what the site already claims about
     // itself, and it is what the internal links use.
-    "html_handling": "drop-trailing-slash"
+    "html_handling": "drop-trailing-slash",
+    // A path that matches no file gets dist/404.html (src/pages/404.astro)
+    // with a 404 status, instead of an empty body. Navigations are answered
+    // by the assets layer without invoking the Worker, so /ph is unaffected:
+    // posthog-js calls it with fetch and sendBeacon, never as a navigation.
+    "not_found_handling": "404-page"
   },
-  // Route the apex + www at wortel.sh. Requires the wortel.sh zone on this
-  // Cloudflare account; adjust/remove if you deploy to a *.workers.dev URL first.
+  // The apex only. www.wortel.sh is NOT routed here: it is a proxied
+  // placeholder record (AAAA 100::) plus a zone Redirect Rule that 301s it to
+  // https://wortel.sh with the path and query kept (Rules > Redirect Rules in
+  // the dashboard). Serving the site on both hosts would make two copies of
+  // every page; a redirect keeps one.
   "routes": [
     { "pattern": "wortel.sh", "custom_domain": true }
   ]

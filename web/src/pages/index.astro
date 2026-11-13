@@ -15,7 +15,7 @@ import { latestRelease } from '../data/release';
 const schema = homeSchema(await latestRelease());
 ---
 
-<Layout path="/" schema={schema}>
+<Layout path="/" schema={schema} markdown="/index.md">
   <Hero />
   <Panes />
   <Agents />

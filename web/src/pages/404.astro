@@ -1,0 +1,40 @@
+---
+// The page for a URL that leads nowhere. Built to dist/404.html, which
+// wrangler.jsonc's `not_found_handling: "404-page"` serves with a 404 status
+// for any path that matches no file. Browser navigations get it straight from
+// the assets layer without waking the Worker; anything else that misses goes
+// through worker/index.ts, which hands it back to ASSETS and gets the same page.
+//
+// noindex and no canonical: it is the answer for every bad URL at once, so it
+// is not a page of its own, and a search result pointing at it would be a bug.
+import Layout from '../layouts/Layout.astro';
+import { SITE } from '../data/site';
+
+const links: [string, string][] = [
+  ['/', 'What Wortel is'],
+  ['/docs', 'Commands and shortcuts'],
+  ['/updates', 'The changelog'],
+  ['/compare', 'How it compares'],
+];
+---
+<Layout title={`Not found: ${SITE.name}`} description="There is no page at this address." path="/404" noindex bare>
+  <header class="page phead" data-reveal-group>
+    <img class="icon" src="/icon-512.png" width="96" height="96" alt="" data-reveal />
+    <h1 class="display" data-reveal>Nothing grows here.</h1>
+    <p class="lead" data-reveal>
+      There is no page at this address. It may have moved, or the link was mistyped.
+    </p>
+    <div class="ctas" data-reveal>
+      <a class="btn" href="/">Go to the homepage</a>
+      <a class="btn ghost" href="/download">Download Wortel</a>
+    </div>
+    <ul class="more" data-reveal>
+      {links.map(([href, label]) => <li><a class="link" href={href}>{label}</a></li>)}
+    </ul>
+  </header>
+</Layout>
+
+<style>
+  .icon { display: block; width: 96px; height: 96px; margin-bottom: 32px; }
+  .more { list-style: none; padding: 0; margin: 32px 0 0; display: flex; flex-wrap: wrap; gap: 8px 24px; }
+</style>

@@ -18,7 +18,7 @@ const others = APPS.filter((a) => a.key !== 'wortel');
 const axis = (id: string) => AXES.find((a) => a.id === id)!;
 const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly', unknown: 'Not published' };
 ---
-<Layout title={COMPARE.title} description={COMPARE.description} path="/compare" schema={schema}>
+<Layout title={COMPARE.title} description={COMPARE.description} path="/compare" schema={schema} ogImage="/og/compare.png" markdown="/compare.md">
   <header class="page phead" data-reveal-group>
     <h1 class="display" data-reveal>{COMPARE.heading}</h1>
     <p class="lead" data-reveal>{COMPARE.lead}</p>

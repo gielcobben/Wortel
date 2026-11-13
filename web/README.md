@@ -42,6 +42,9 @@ src/
   pages/docs.astro         /docs    commands, shortcuts, behaviour
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms*.txt.ts       maps for language models
+  pages/*.md.ts            /index.md, /docs.md, /compare.md, /updates.md: pages as Markdown
+  data/markdown.ts         the renderers behind those and llms-full.txt
+  pages/404.astro          the not-found page (dist/404.html)
   components/home/         Hero, Panes, Agents, Worktrees, Survival, Glance (specs + FAQ)
   app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
   components/Stage.astro   a scene: the heading (its grey half changes per chapter), then the lake
@@ -59,6 +62,7 @@ public/
   img/*.jpg                the four photos the windows stand on (see Photos)
   icon-*.png, favicon-*    the app icon, exported from macos/Wortel/AppIcon.icon
 scripts/opmaak/            jsx2astro.mjs: canvas markup -> src/app/gen
+scripts/og/                render.mjs: the inner pages' social cards -> public/og
 ```
 
 ### The app window is live HTML, not a screenshot
@@ -379,7 +383,39 @@ mv public/icon-180.png public/apple-touch-icon.png; mv public/icon-96.png public
 ```
 
 `public/og.png` (1200x630) is composed from the grid background, the cropped app
-window and a text layer. See the git history for the exact commands.
+window and a text layer. See the git history for the exact commands. It is the
+homepage's card, and the fallback for any page that names none.
+
+The inner pages each have their own card in `public/og/<page>.png`, passed to
+`Layout` as `ogImage`. They are rendered by the Chrome already on the Mac, with
+no dependency, and committed:
+
+```sh
+node scripts/og/render.mjs          # all of them
+node scripts/og/render.mjs docs     # one
+```
+
+The copy for each card is in that script. Keep it to things that stay true (no
+version numbers, no release counts): social networks cache a card for days.
+
+### Markdown for agents
+
+Besides `/llms.txt` and `/llms-full.txt`, the main pages exist as Markdown at
+the same path plus `.md`: `/index.md`, `/docs.md`, `/compare.md`,
+`/updates.md`. Each page's `<head>` points at its own with
+`rel="alternate" type="text/markdown"` (the `markdown` prop on `Layout`). All of
+them, and `llms-full.txt`, render from `src/data/markdown.ts`.
+
+### Not found, and www
+
+`src/pages/404.astro` builds `dist/404.html`, which `not_found_handling:
+"404-page"` in `wrangler.jsonc` serves with a 404 status for any path that
+matches no file. It is `noindex` with no canonical.
+
+`www.wortel.sh` is not served by this Worker. It is a proxied placeholder DNS
+record plus a zone Redirect Rule (dashboard: Rules, Redirect Rules) that 301s
+to `https://wortel.sh` with the path and query kept, so there is one copy of
+every page.
 
 `public/robots.txt` is ours and **replaces Cloudflare's managed one**, which was
 the Content Signals boilerplate with no directives. It allows everything,

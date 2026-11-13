@@ -10,7 +10,7 @@ const schema = [{
   description: DOCS.description, isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
 }];
 ---
-<Layout title={DOCS.title} description={DOCS.description} path="/docs" schema={schema}>
+<Layout title={DOCS.title} description={DOCS.description} path="/docs" schema={schema} ogImage="/og/docs.png" markdown="/docs.md">
   <header class="page phead" data-reveal-group>
     <h1 class="display" data-reveal>{DOCS.heading}</h1>
     <p class="lead" data-reveal>{DOCS.lead}</p>

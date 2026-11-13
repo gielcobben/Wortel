@@ -159,6 +159,7 @@ the newer revision is a decision for the maintainer, and goes through
 | --- | --- |
 | `scripts/verify-running-jobs.py` | releasing a change to `Wortel/Processes/`. 44 real spawn shapes, about 5 minutes. Add a shape when a new miss is found, not only a fixture. |
 | `scripts/try-git.sh` | a release touching `Wortel/Git/`. Builds a repo with every situation the panel handles, and a checklist. |
+| `scripts/try-replay-modes.sh` | a change to the keeper's replay or to `TerminalModes`. Declares a fullscreen agent's modes while a throwaway copy is quit, floods past the replay, and asks the reattached terminal which modes it has. |
 | `scripts/try-keeper-loss.sh` | a change to keeper recovery. Kills a throwaway copy's keeper the way the Dock does. |
 | `scripts/check-theme-reports.py` | a change to appearance handling. |
 | `scripts/symbolicate.sh` | reading a crash: turns the offset a crash report carries back into a function and line, from that release's archived dSYM. |

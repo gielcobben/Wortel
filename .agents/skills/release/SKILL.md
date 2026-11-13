@@ -33,7 +33,7 @@ All commands run from `macos/`.
 4. **Checks against a real machine**, for what the release touches:
    `scripts/verify-running-jobs.py` for `Wortel/Processes/`,
    `scripts/try-git.sh` for `Wortel/Git/`, `scripts/try-keeper-loss.sh` for
-   keeper recovery. The script itself runs `WortelTests` and the `updates/`
+   keeper recovery, `scripts/try-replay-modes.sh` for the keeper's replay. The script itself runs `WortelTests` and the `updates/`
    tests.
 5. **The build has been used.** There are no UI tests. Someone has run this
    code as an app and seen its terminals draw.

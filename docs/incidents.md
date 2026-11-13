@@ -207,7 +207,7 @@ conversation, which pushed those startup bytes out of the keeper's bounded
 replay. The reattached terminal had the modes off.
 
 **Changed:** the replay reads the modes out of the bytes it drops and puts
-them in front of what it hands over (`a0c97fc`). Because it lives in the
+them in front of what it hands over (`7a6db22`). Because it lives in the
 keeper, it reaches a user only when their keeper next restarts.
 
 **Verified (2026-11-12):** a program in a throwaway copy declared the modes

@@ -1,0 +1,62 @@
+# Tabs and the workspace
+
+Part of the app's architecture record; the index is in `macos/AGENTS.md`.
+Paths are relative to `macos/`.
+
+**Tabs and the workspace** (`WorkspaceTabs`, `SideTab`, `GitPanelModel`,
+`Wortel/UI/SideTabStrip.swift`, `MainArea.swift`, `BottomStrip.swift`) — each
+session has three places for tabs, modelled on the ChatGPT app's bounded layout
+(a fixed set of regions, never a free grid of splits):
+
+- **the main area's row**: the session's own terminal (`SideTab.session`, by
+  the session's name) plus whatever is opened or dragged there;
+- **the side column's row**: Changes, History, Files, side terminals;
+- **the bottom strip** under the main area (⌘J).
+
+Besides panes and terminals, a tab can be a previewed file (`SideTab.file`) or
+a browser (`SideTab.browser(id)`, `Wortel/Browser/`), opened blank from "+" or
+on a server from the running-jobs popover. A browser's address lives on its
+session (`browserAddresses`, persisted) and its live web view in
+`BrowserTabs`, not in the view, so moving the tab doesn't reload it.
+
+A file or browser opened without saying where goes where you last *moved* one
+of its kind in that session (`WorkspaceTabs.home(for:)`, the column until
+then); ⌥-click puts it in the main area once without teaching that.
+
+A tab is in exactly one row; the one in front fills its area. Any tab goes in
+any row, except the session's terminal, which never leaves the
+main row and can't be closed: dragged onto the column it **swaps sides** instead,
+as ChatGPT's chat does. Opening a tab shows its row, closing the last hides the
+column or strip (instantly), hiding keeps the tabs, ⌘⇧T reopens the last closed
+in the row you're in. All of those rules live in **`WorkspaceTabs`**, a pure value
+with its own tests (`WorkspaceTabsTests`); `Session.workspace` reads the
+session's individually-observed fields into it and writes back only what
+changed, and `GitPanelModel` wraps each change with the side effects (the pane
+shown, the keyboard, saving). Change a rule there, not in the model.
+
+Things that look like detours and aren't:
+
+- **Terminals are never rebuilt when they move.** Side terminals (`sideSurfaces`
+  on the session, keyed by tab id, which is also their keeper id so they
+  survive a relaunch) live in always-mounted hosts (`SideTerminalHostController`)
+  that hide rather than remove; moving a terminal between rows is `addSubview`
+  into the other host. The session's own terminal stays mounted in the main
+  area and a pane in front of it is a cover that takes the keyboard away from it.
+- **The titlebar tabs are NSControls and the window is `isMovable = false`.** The
+  window server moves a window from any press in a transparent titlebar that
+  isn't on a control, whatever `mouseDownCanMoveWindow` says; the rows start
+  window drags themselves (`performWindowDrag`) from their empty space.
+- **Sidebar commands are Wortel's own** (`toggleSessionSidebar:`), not AppKit's
+  `toggleSidebar:`: SwiftUI's hosting views answer that one on its way up the
+  responder chain and swallow it.
+- **Terminals don't resize during pane animations** (`Motion.pane`,
+  `SurfaceView.holdResizes`): one resize when it lands instead of one a frame,
+  each of which made the program inside redraw. Collapsing panes never resize a
+  terminal below 40×20pt for the same reason.
+
+Width: the column's is per session and the same for every tab, and it may grow
+until the terminal has 320pt; the strip's height is app-wide. Tab drags are
+resolved by `TabDragController` against the rows and a few drop zones (the
+main area, the column, the strip, the far edge for swapping), each only for
+tabs allowed there. Side terminals' processes count as the session's
+(`processRoots`); agent tracking, naming and resume follow the main shell only.

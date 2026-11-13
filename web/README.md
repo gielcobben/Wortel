@@ -23,7 +23,7 @@ npm run cf-preview # build + `wrangler dev` (serve dist through the Worker local
 
 Deploy config is in `wrangler.jsonc` (assets-only Worker, `name: wortel-web`,
 custom domain `wortel.sh`). The account/zone is shared with the app's Sparkle
-feed at `updates.wortel.sh`. See the repo root `CLAUDE.md`.
+feed at `updates.wortel.sh`. See the repo root `AGENTS.md`.
 
 ## Structure
 

@@ -1,0 +1,157 @@
+# The git panel
+
+Part of the app's architecture record; the index is in `macos/AGENTS.md`.
+Paths are relative to `macos/`.
+
+**Git panel** (`Wortel/Git/`) — the trailing inspector: a Changes pane (status,
+diff, commit box) and a read-only History pane (commit list, graph gutter,
+diff), both driven by `GitRepoModel` off the `git` CLI (`GitService`). Its
+design is dominated by one rule: **cost must track the window on screen, not the
+size of the repo**, because the terminal beside it has to stay smooth on a
+monorepo. Four things follow from that, each of which looks like a pointless
+detour until you measure it on a large repo (numbers from a 200k–500k-commit
+synthetic; `WortelTests` pins all of them):
+
+- **`GitService.log` deliberately does not pass `--topo-order`.** Asking git for
+  an ordering where parents follow children makes it walk the entire repo before
+  printing a line — ~870ms vs ~20ms — and `--max-count` does not bound it. A
+  commit-graph file fixes that, but most repos don't have one. So we take git's
+  cheap default order and re-sort the window in `CommitOrder`, which reproduces
+  `--topo-order` exactly. Adding the flag back "for correctness" is the trap.
+- **`CommitGraph` retires lanes whose parents aren't loaded**, and folds lanes
+  waiting on the same commit (git's `|/`). Without the first, lane count grows
+  to the bottom of the list (26 lanes in a 1000-commit window); without the
+  second, twenty branches off one commit draw twenty columns where git draws
+  five.
+- **Paging freezes what's on screen.** `CommitOrder.topological(_:settled:)`
+  re-sorts only new commits; sorting the grown window wholesale is more faithful
+  to git but moves rows the reader is looking at.
+- **Parsing happens off the main actor, and diffs are capped** (`DiffParser`).
+  `GitRepoModel` is `@MainActor`, so parsing a regenerated lock file's 51MB
+  patch there froze the app — terminal included — for 1.2s.
+
+`refresh()` runs one `git status` at a time (it's a full worktree walk; the
+FSEvents watcher fires on every write, and bursts used to stack scans), and
+watches `# branch.oid` so a commit made **in the terminal** — the normal way —
+reloads History.
+
+**The panes show the session's own folder**: where it was started
+(`GitPanelModel.homeFolder`, its `originCwd`), so a worktree session's
+worktree (New Worktree Session starts one there),
+else its repository. Not where an agent is working: an agent `cd`'d or
+writing into another worktree of the same repository is that worktree's
+business, usually removed when it's done, and following it (or pointing at
+it with "N changes in …", since removed) left you somewhere you couldn't
+place. Another checkout is shown only when picked from the worktree chip,
+with Back to return. The shell is followed only out of the repository
+(`shownFolder`): a `cd` into a different one is a different project, and
+staying behind would commit to the one you left; a session started outside
+any repository follows its shell too. Same repository or not is read off
+the disk (`GitWorktree.commonDir(containing:)`), no git per prompt.
+
+**Only the repo on screen does git work.** `GitPanelModel` caches a model per
+root it has shown, and each keeps its watch, but only the shown one scans on a
+write (`GitRepoModel.setActive`); the rest mark themselves `isStale`, and a
+switch back re-reads only if stale (the header's spinner covers the catch-up).
+Before this, an agent merging in one worktree woke a full scan in every cached
+checkout at once. The other worktrees are the manager's cached listing
+(`worktreeListings`, no `git worktree list` of the panel's own), and what's in
+them is read **only when asked**: the worktree or branch list opening (they
+open at once, the counts fill in). No watch per worktree and no timer: on the
+work laptop's monorepo (`git status` 7s) both used to run for as long as the
+panel was up. Those reads go through `GitService.backgroundStatus`, one at a
+time app-wide, reuse a cached model's status when it's current, and stop when
+a newer read supersedes them or the list closes. Other checkouts are named for
+the session in them (`CheckoutPlace`), not their folder, which keeps the
+placeholder branch's name forever. Every git we run gets `-c core.fsmonitor=false`: with fsmonitor in the
+user's config each repo touched left a daemon running for good, for no gain
+(our reads never write the index the daemon's answers are keyed to). The Files
+tree follows the same rule: it doesn't re-root, re-list or `check-ignore` while
+it's off screen, and catches up when shown. And a hidden terminal takes no
+resize (`SurfaceView.isHidden`): switching between sessions whose columns
+differ used to re-wrap every session's terminal and SIGWINCH every agent.
+
+**The changes list holds a selection, not a selected row.** ⌘ toggles a row, ⇧
+takes the run from the anchor, ⇧↑/⇧↓ do the same from the keyboard, ⌘A takes the
+lot (free to bind because the menu bar keeps Select All on ⌘⇧A so plain ⌘A
+reaches whoever has focus). The range runs over the list *as drawn*, so it can
+span Staged Changes and Changes in one sweep; what each row means stays per row,
+which is why the context menu offers Stage and Unstage separately, each acting on
+its own half. Three rules keep it honest:
+
+- **The lead is always in the selection**, and it's the row the diff pane shows,
+  drawn at full accent where the rest of the selection sits back at 0.55. Blanking
+  the diff on a multi-selection would take it away at exactly the moment you're
+  deciding what to discard, and five identical pills with one diff under them
+  don't say which. `ChangeSelection` (pure, in `WortelTests`) exists for this: a
+  range one row wide, an anchor that moves when it shouldn't, a lead left on a
+  deselected row — none of them throw, the list highlights exactly what was
+  selected, the dialog counts exactly what was highlighted, and the first news is
+  a file you never pointed at being gone.
+- **Right-click inside the selection keeps it; outside collapses onto that row**
+  (the Finder's rule). It's what lets a destructive menu item be trusted: what
+  the menu acts on is always what's highlighted behind it. The row's hover +/-
+  button is the exception and acts on its row alone, because it's attached to one.
+- **A bulk action is one `git` per kind and one status**, never one per file
+  (`GitService.discardCommands`, `chunked`). Each mutation ends in a full worktree
+  walk, so forty rows a file at a time is forty of them next to a terminal that
+  has to stay smooth, and the three kinds of discard are not interchangeable:
+  `clean` on a tracked path leaves the edit in place, `restore` on an untracked
+  file fails outright, and both look like a discard that worked. Paths are split
+  by byte budget because an argv past `ARG_MAX` fails to spawn rather than
+  returning a git error.
+
+**What the watcher watches is not just the work tree**, and a session in a
+worktree is why. A linked worktree's `.git` is a *file*; its HEAD, index and
+reflog live under the primary's `.git/worktrees/<name>`, so nothing under its own
+root moves when you stage or commit there — a watch rooted at the work tree sees
+file edits and no git operation at all, and the panel goes on listing files that
+were committed minutes ago. So `GitRepoModel` widens the watch to that gitdir
+(`GitService.externalGitDir`), and the primary — whose `.git` holds *every*
+worktree's state under `worktrees/` — excludes that subtree in exchange, or every
+`git add` an agent runs next door walks this work tree; `objects/` goes too, as
+a `git add` there writes a blob and nothing else of this checkout's. (A
+worktree's commit also writes a ref in the shared `.git`, which the primary
+still sees. Rarer, and real news.) Any linked worktree *inside* the checkout
+(`wortel.worktreePath = .worktrees`, Claude Code's `.claude/worktrees`) is left
+out as well, a folder of nothing but worktrees as one path; FSEvents takes
+eight exclusions and the callback filters past that
+(`GitRepoWatcher.exclusions(forCheckoutAt:)`, re-read after each status). The
+widened watch is the checkout's own gitdir and not the common dir, which also
+holds `objects/` — one fetch would scan the work tree of every open session.
+
+Whether the panel is up is **per session**, not app-wide: it's a property of what
+the session is for — a manager sitting in `~` never wants it, the one in a repo
+always does. So `GitPanelModel` holds no visibility state of its own. `isVisible`
+mirrors the focused `Session.gitPanelVisible`, re-read on every `focus(session:)`
+and written back through `setVisible` (the one funnel, so a divider-drag
+dismissal is recorded like a ⌘⌥G); `SessionStore` persists it. A session switch
+that changes visibility **snaps** the inspector rather than animating it
+(`animatesVisibilityChange`) — animating would reflow the terminal on every frame
+of a switch that's meant to be instant.
+
+**Which pane** the column shows (`InspectorPane`: Changes / History / Files) is
+per session for the same reason and by the same mechanism — `pane` mirrors
+`Session.inspectorPane` through the `setPane` funnel. A session with no stored
+pane is a real state, not a gap: both an older `sessions.json` and a session
+you've never picked a pane on defer to `GitPanelModel.defaultPane`, the last pane
+chosen anywhere, so a new session inherits your habit instead of snapping to
+Changes. `lastSourceControlPane` is tracked separately so ⌘⌥G coming back from
+Files lands on History if that's where you were. One rule drives all three
+openers — the View menu, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
+hidden → open on that pane, showing another → swap, showing that one → close. A
+pane in the main row or the strip toggles there instead.
+
+**How wide** the column is, is per *session* and the same for every tab in it
+(`MainSplitViewController.ColumnWidth`, `Session.sideColumnWidth`): a width
+that changed with the tab in front made every tab switch a relayout of the
+terminal beside it. A session that has never had its divider dragged uses the
+last width chosen anywhere. Two rules keep that honest:
+only a *divider* drag is a preference (a window resize squeezing the terminal to
+its floor is not), and the width is committed once the drag settles, because
+dragging to the edge is how you close the panel and the last width before it goes
+is the minimum. A window resize goes to the main area, except while a browser is
+in front of the column: then the column takes all of it (its holding priority
+drops below the main area's) and the terminal holds still, and the width it
+leaves is kept like a drag's. The split view's `autosaveName` still carries the sidebar; the
+inspector's width it saves but does not get to decide (see `viewDidLayout`).

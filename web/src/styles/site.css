@@ -22,7 +22,7 @@
    THE GRID: every margin, padding, gap and fixed height is a multiple of 8.
    Exempt: 1px hairlines, radii, font sizes and content-derived widths.
 
-   COPY: no em-dashes, anywhere a person reads (see the repo's CLAUDE.md).
+   COPY: no em-dashes, anywhere a person reads (see the repo's AGENTS.md).
    ========================================================================== */
 
 :root {

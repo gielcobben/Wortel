@@ -12,8 +12,8 @@ Shells belong to a helper process rather than to the app, so quitting Wortel
 closes a window instead of killing whatever your agents were in the middle of.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/hero-dark.png">
-  <img alt="The Wortel window: a sidebar of named sessions grouped into folders, an agent running in the terminal, and the source-control inspector showing changed files and a diff" src=".github/assets/hero-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/hero-dark.webp">
+  <img alt="The Wortel window: a sidebar of named sessions grouped into folders, an agent running in the terminal, and the side column showing changed files and a diff" src=".github/assets/hero-light.webp">
 </picture>
 
 *One window: sessions named for what they are, an agent working in one of them,
@@ -24,8 +24,7 @@ wortel.sh &middot; [download](https://updates.wortel.sh/Wortel-latest.zip) &midd
 signed and notarized
 
 > **Naming.** "wortel" is Dutch for **root**, as in the root of a plant or the
-> root shell. That is the intended metaphor, not "carrot". Some landing assets
-> still lean on the carrot reading; those are placeholders.
+> root shell. That is the intended metaphor, not "carrot".
 
 ---
 
@@ -44,24 +43,48 @@ anything here. See [Third-party code](#third-party-code).
 
 ## Repository layout
 
-Three self-contained deployables. There is no shared build system and no
-workspace manager; work in one rarely touches another.
+Three self-contained deployables, and the docs that are true across all of
+them. There is no shared build system and no workspace manager; work in one
+rarely touches another.
 
 | Directory | What it is | Deploys to |
 | --- | --- | --- |
 | [`macos/`](macos/) | The app. Swift + XcodeGen. **This is the product.** | Sparkle, via R2 |
 | [`web/`](web/README.md) | The landing page. Astro, static. | wortel.sh |
 | [`updates/`](updates/README.md) | The Worker serving the appcast and the signed archives. | updates.wortel.sh |
+| [`docs/`](docs/) | Product, brand, voice, decisions, incidents, glossary. | |
 
 `updates/` is separate from `web/` on purpose. The update channel must not be
 able to go down with a bad landing-page build, and `release.sh --publish`
 redeploys the landing page at the end of every release. That Worker changes
 almost never.
 
-Each directory documents itself. Start with [`macos/CLAUDE.md`](macos/CLAUDE.md)
-for the app's architecture and the reasoning behind it: it is the design record,
-and it is unusually detailed because most of the decisions in this codebase were
-made against a measurement.
+Each directory documents itself. For the app, start with
+[`macos/AGENTS.md`](macos/AGENTS.md): it says which file under
+[`macos/docs/`](macos/docs/) to read before touching what. Those files are the
+design record, and they are unusually detailed because most of the decisions in
+this codebase were made against a measurement.
+
+---
+
+## Where things are written down
+
+The repository is set up to be worked on by coding agents as much as by people,
+so what would otherwise live in someone's head is in a file. Each one is short,
+and each is read when it is needed rather than all at once.
+
+| File | What it holds |
+| --- | --- |
+| [`AGENTS.md`](AGENTS.md) | The rules that hold everywhere, the commands, and what to read next. `CLAUDE.md` imports it, so every agent gets the same words. One more in each of `macos/`, `web/` and `updates/`. |
+| [`DESIGN.md`](DESIGN.md) | How the app and the site are designed, and the numbers they are built from: colours, type, metrics, states, motion. |
+| [`docs/product.md`](docs/product.md) | What Wortel is, what it believes, what it will not do, and how to tell whether a change belongs. |
+| [`docs/brand.md`](docs/brand.md) | The name, the mark, and how it looks in the app and on the site. |
+| [`docs/voice.md`](docs/voice.md) | How it writes: the site, the app, release notes, docs and commits. |
+| [`docs/decisions.md`](docs/decisions.md) | What was decided and why, and what was tried and taken out. |
+| [`docs/incidents.md`](docs/incidents.md) | The failures that left a rule behind. |
+| [`docs/glossary.md`](docs/glossary.md) | What the words mean here. |
+| [`macos/docs/`](macos/docs/) | The app: one file per area under `architecture/`, a design record per feature, building and debugging. |
+| [`.agents/skills/`](.agents/skills/) | Procedures an agent can run: building and swapping the app, a throwaway test copy, releasing, writing a release note. |
 
 ---
 
@@ -125,7 +148,7 @@ with `WORTEL_SIGN_IDENTITY`.
 ### `web/` and `updates/`
 
 ```sh
-cd web && npm install && npm run dev        # http://localhost:4321
+cd web && npm install && npm run dev        # http://localhost:4340
 cd updates && npm install && npm test       # pure logic, no network
 ```
 
@@ -214,13 +237,16 @@ log is read in git's cheap default order and re-sorted in-process (asking git fo
 at 870 ms against 20 ms, and `--max-count` does not bound it); diffs are parsed
 off the main actor and capped; only expanded directories in the file tree are
 listed, watched or `check-ignore`d. Each of those looks like a pointless detour
-until you measure it on a large repository, and `macos/CLAUDE.md` records the
-numbers.
+until you measure it on a large repository, and
+[`macos/docs/architecture/git-panel.md`](macos/docs/architecture/git-panel.md)
+records the numbers.
 
 ### What Wortel deliberately does not do
 
 These are not gaps waiting to be filled. Returning "unhandled" for them is how
 the design is enforced, and pull requests adding them are unlikely to land.
+[`docs/product.md`](docs/product.md) has the reasoning and the questions a new
+feature is held to.
 
 - **No splits.** A session has tabs in three rows (the main area, a side
   column, a strip under the terminal), not a grid of panes; the sidebar of
@@ -248,7 +274,7 @@ the design is enforced, and pull requests adding them are unlikely to land.
 | `⌃⌘[` / `⌃⌘]` | Back / forward through the sessions and tabs you were on |
 | `⌘P` | Go to a session, or bring back an archived one |
 | `⌘Y` | Find a prompt you typed to an agent |
-| `⌥⌘]` | Jump to the next session waiting on you |
+| `⌥⇧⌘↓` | Jump to the next session waiting on you |
 | `⌘B` / `⌥⌘B` / `⌘J` | Show or hide the sidebar, the side column, the bottom strip |
 | `⇧⌘E` / `⌃⇧G` | Files / source control |
 | `⌘T` | New terminal tab in the area you are in |
@@ -325,10 +351,12 @@ only place release notes are written and it feeds both the public changelog and
 the notes Sparkle embeds in the in-app update dialog. The check runs before
 anything is built.
 
-Note `--no-install`, which exists for a specific hazard: the install step quits
-Wortel, and a release is often cut from a shell running inside Wortel. That quit
-kills the shell, and with it the script, somewhere between removing the installed
-app and copying its replacement.
+Note `--no-install`, which exists for a specific hazard: a release is often cut
+from a shell running inside Wortel, and the install step removes
+`/Applications/Wortel.app` before copying its replacement. The process that
+keeps every session's shell alive runs out of that bundle, and so does the
+`wortel` command on every session's `PATH`. Publish with `--no-install` and take
+the update through Wortel ▸ Check for Updates…, like any other user.
 
 ---
 

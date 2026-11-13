@@ -19,7 +19,7 @@ closes a window instead of killing whatever your agents were in the middle of.
 *One window: sessions named for what they are, an agent working in one of them,
 and the diff of what it changed in the column beside it.*
 
-wortel.sh &middot; [download](https://updates.wortel.sh/Wortel-latest.zip) &middot;
+[wortel.sh](https://wortel.sh) &middot; [download](https://wortel.sh/download) &middot;
 [changelog](https://wortel.sh/updates) &middot; macOS 14 Sonoma or later, free,
 signed and notarized
 

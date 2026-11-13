@@ -1014,19 +1014,31 @@ final class SurfaceView: NSView {
         guard focused else { return false }
         guard let surface else { return false }
 
-        // Wortel's menu wins over ghostty's default keybinds (both usually
-        // agree, e.g. super+c == copy, but the menu is the source of truth).
-        if let menu = NSApp.mainMenu, menu.performKeyEquivalent(with: event) {
-            return true
-        }
-
-        // If ghostty considers this a binding, run it through keyDown.
         var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
         var bindingFlags = ghostty_binding_flags_e(0)
         let isBinding = (event.characters ?? "").withCString { ptr in
             ghosttyEvent.text = ptr
             return ghostty_surface_key_is_binding(surface, ghosttyEvent, &bindingFlags)
         }
+
+        // A performable binding is ghostty's, ahead of the menu: it acts only
+        // when it can, and otherwise the key goes to the program, as in
+        // Ghostty.app. That's ⌘C with nothing selected here, which is how
+        // Codex in fullscreen copies the selection it draws itself; the menu's
+        // Copy swallowed it. In legacy key encoding a ⌘ key sends nothing, so
+        // a shell sees no difference.
+        if isBinding, bindingFlags.rawValue & GHOSTTY_BINDING_FLAGS_PERFORMABLE.rawValue != 0 {
+            keyDown(with: event)
+            return true
+        }
+
+        // Otherwise Wortel's menu wins over ghostty's default keybinds (both
+        // usually agree, but the menu is the source of truth).
+        if let menu = NSApp.mainMenu, menu.performKeyEquivalent(with: event) {
+            return true
+        }
+
+        // If ghostty considers this a binding, run it through keyDown.
         if isBinding {
             keyDown(with: event)
             return true

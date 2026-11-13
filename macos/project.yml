@@ -327,6 +327,8 @@ targets:
       - path: Wortel/Keeper/KeeperProtocol.swift
       - path: Wortel/Keeper/KeeperServer.swift
       - path: Wortel/Keeper/ReplayBuffer.swift
+      # The replay reads the modes out of what it drops.
+      - path: Wortel/Ghostty/TerminalModes.swift
       - path: Wortel/Keeper/FileDescriptorChannel.swift
       - path: Wortel/Ghostty/PtyHost.swift
       - path: Wortel/Ghostty/ReplayAnswers.swift

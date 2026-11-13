@@ -95,6 +95,52 @@ final class KeeperPartsTests: XCTestCase {
         }
     }
 
+    /// The modes a program set in what was dropped go in front of the replay.
+    /// Codex resumed while nobody was attached turns on the alternate screen,
+    /// the mouse and the keyboard protocol, then reprints a long conversation:
+    /// without this, the terminal it was reattached to had none of them, and
+    /// scrolling and selecting in Codex did nothing.
+    func testModesSetInWhatWasDroppedAreKept() {
+        var buffer = ReplayBuffer(limit: 16)
+        append("\u{1B}[?1049h\u{1B}[>7u\u{1B}[?1000h\u{1B}[?1006h", to: &buffer)
+        append(String(repeating: "x", count: 40), to: &buffer)
+        let modes = "\u{1B}[?1000h\u{1B}[?1006h\u{1B}[?1049h\u{1B}[>7u"
+        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self),
+                       modes + cut(String(repeating: "x", count: 16)))
+    }
+
+    /// Read in the order written, across the ring's wrap and a sequence split
+    /// between two writes; and a mode turned off later in the dropped part is
+    /// off, not on.
+    func testDroppedModesAreReadInOrder() {
+        var buffer = ReplayBuffer(limit: 8)
+        append("abcdefgh", to: &buffer)
+        append("\u{1B}[?20", to: &buffer)
+        append("04h\u{1B}[?1000h", to: &buffer)
+        append("\u{1B}[?1000l", to: &buffer)
+        append("12345678", to: &buffer)
+        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self),
+                       "\u{1B}[?1000l\u{1B}[?2004h" + cut("12345678"))
+    }
+
+    /// What's still in the tail is replayed as it is, and isn't said twice.
+    func testModesInTheTailAreNotRepeated() {
+        var buffer = ReplayBuffer(limit: 16)
+        append("0123456789", to: &buffer)
+        append("\u{1B}[?2004h", to: &buffer)
+        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), cut("23456789\u{1B}[?2004h"))
+    }
+
+    /// A take starts over: modes dropped before it aren't put in front of the
+    /// next replay, which the app's own record covers from then on.
+    func testTakingForgetsTheDroppedModes() {
+        var buffer = ReplayBuffer(limit: 4)
+        append("\u{1B}[?2004habcd", to: &buffer)
+        _ = buffer.take()
+        append("abcdef", to: &buffer)
+        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), cut("cdef"))
+    }
+
     /// Nothing dropped, nothing put in front: a replay that is all there needs
     /// no resync, and the bytes go to the terminal exactly as the shell wrote
     /// them.

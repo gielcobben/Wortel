@@ -16,6 +16,14 @@ import Foundation
 /// `removeFirst`, which moves every remaining byte: once full, every read from
 /// a busy detached session copied half a megabyte to make room for a few
 /// hundred bytes.
+///
+/// **What it drops, it reads first.** A program declares its terminal modes
+/// once, at startup, and the cut takes that startup with it: Codex resumed
+/// while nobody was attached turns on the alternate screen, the mouse and the
+/// keyboard protocol, then reprints a long conversation, and reattached, the
+/// terminal had none of them, so scrolling and selecting in Codex did nothing.
+/// So the modes set in the dropped bytes go in front of the replay
+/// (`TerminalModes`), and the tail, being newer, still wins.
 struct ReplayBuffer {
     /// Grows to `limit`, then wraps: the oldest byte is at `head`.
     private var storage: [UInt8] = []
@@ -24,6 +32,10 @@ struct ReplayBuffer {
     /// between "you have everything" and "you have the tail", which is also
     /// what decides whether a replay needs `resync` in front of it.
     private(set) var dropped = 0
+    /// The modes set in the bytes dropped since the last `take`, read in the
+    /// order they were written.
+    private var droppedModes = TerminalModes()
+    private var droppedScanner = CSIScanner()
 
     let limit: Int
 
@@ -48,6 +60,8 @@ struct ReplayBuffer {
         // A single write larger than the whole buffer: keep only its tail, and
         // don't bother appending the part that is about to be dropped.
         if count >= limit {
+            noteDropped(oldestFirst: storage.count)
+            noteDropped(incoming, count: count - limit)
             dropped += storage.count + (count - limit)
             storage = Array(UnsafeBufferPointer(start: incoming + (count - limit), count: limit))
             head = 0
@@ -73,10 +87,16 @@ struct ReplayBuffer {
             storage = []
             head = 0
             dropped = 0
+            droppedModes = TerminalModes()
+            droppedScanner = CSIScanner()
         }
         guard !storage.isEmpty else { return Data() }
-        var data = Data(capacity: storage.count + Self.resync.count)
-        if dropped > 0 { data.append(Self.resync) }
+        let modes = dropped > 0 ? droppedModes.prelude : []
+        var data = Data(capacity: modes.count + storage.count + Self.resync.count)
+        if dropped > 0 {
+            data.append(contentsOf: modes)
+            data.append(Self.resync)
+        }
         data.append(contentsOf: storage[head...])
         data.append(contentsOf: storage[..<head])
         return data
@@ -86,6 +106,7 @@ struct ReplayBuffer {
     /// once full, so `storage.count == limit`, and `count < limit`.
     private mutating func overwriteOldest(with incoming: UnsafePointer<UInt8>, count: Int) {
         guard count > 0 else { return }
+        noteDropped(oldestFirst: count)
         let limit = self.limit
         let head = self.head
         storage.withUnsafeMutableBufferPointer { ring in
@@ -96,5 +117,31 @@ struct ReplayBuffer {
         }
         self.head = (head + count) % limit
         dropped += count
+    }
+
+    private mutating func noteDropped(_ bytes: UnsafePointer<UInt8>, count: Int) {
+        guard count > 0 else { return }
+        droppedModes.feed(bytes, count: count, parser: &droppedScanner)
+    }
+
+    /// Read the `count` oldest bytes, about to be dropped, in the order they
+    /// were written: from `head`, wrapping.
+    private mutating func noteDropped(oldestFirst count: Int) {
+        guard count > 0 else { return }
+        // Moved out and back so reading the ring isn't an access to `self`
+        // overlapping the one that updates them.
+        var modes = TerminalModes()
+        var scanner = CSIScanner()
+        swap(&modes, &droppedModes)
+        swap(&scanner, &droppedScanner)
+        let head = self.head
+        storage.withUnsafeBufferPointer { ring in
+            guard let base = ring.baseAddress else { return }
+            let first = min(count, ring.count - head)
+            modes.feed(base + head, count: first, parser: &scanner)
+            if count > first { modes.feed(base, count: count - first, parser: &scanner) }
+        }
+        swap(&modes, &droppedModes)
+        swap(&scanner, &droppedScanner)
     }
 }

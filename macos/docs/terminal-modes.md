@@ -62,6 +62,19 @@ program declares its modes. So the watching happens where the bytes are, and
 is the one about to exit. It is rewritten only when something changes, which in
 practice is once per agent launch.
 
+**And in the keeper, for what it throws away.** While nobody is attached, the
+keeper's replay holds only the last 512 KB, and a program started then declares
+its modes in the first bytes it writes. Codex resumed while Wortel wasn't
+attached turns on the alternate screen, the mouse (`?1000`, `?1002`, `?1003`,
+`?1006`) and the keyboard protocol, then reprints a long conversation, which
+pushes all of that out of the buffer before anyone reads it. Reattached, the
+terminal had none of them: scrolling and selecting in Codex did nothing, since
+in fullscreen Codex does both itself from the mouse reports. So `ReplayBuffer`
+reads the modes out of the bytes it drops and puts them in front of the replay
+it hands over, after the app's prelude (they are newer) and before the tail
+(which is newer still). A keeper started before this keeps the old behaviour
+until it is replaced, which is not on an update: one holding sessions is kept.
+
 **Modes first, then the replay.** The prelude goes in before the replayed
 output, so anything the program changed while nobody was attached wins over what
 was recorded before it detached — a vim that was quit while you were away sends

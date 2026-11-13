@@ -34,7 +34,8 @@ import Foundation
 /// bytes, which is precisely when a program declares its modes. So the app
 /// watches the output it is already handling, and writes it down
 /// (`TerminalModeStore`) because the process that knows is the one that is
-/// about to exit.
+/// about to exit. While nobody is attached the keeper is where the bytes are,
+/// and its replay reads the modes out of what it drops (`ReplayBuffer`).
 struct TerminalModes: Equatable {
     /// The DEC private modes worth restoring, by number.
     ///
@@ -178,15 +179,22 @@ struct TerminalModes: Equatable {
 /// next, and a scanner that restarted per chunk would miss exactly the
 /// sequences this is here to catch.
 ///
-/// It reads only the shape `ESC [ <introducer?> <parameters> <final>` and
+/// It reads only the shape `ESC [ <introducer> <parameters> <final>` and
 /// ignores everything else, including the text the terminal is actually
 /// printing. It is not a terminal: libghostty is, and this must never become a
 /// second one.
+///
+/// **Only sequences with a private introducer** (`?`, `>`, `<`, `=`) are
+/// reported, because every mode lives in one. The rest are mostly SGR, the
+/// most common sequence a TUI writes, and building a string for each one made
+/// the scan of a busy session's output ten times slower than it needs to be.
 struct CSIScanner {
     private enum State {
         case text
         case escape
         case parameters
+        /// A sequence with no private introducer: waiting for its end.
+        case skipping
         /// Inside a DCS, APC, PM or SOS string, waiting for its terminator.
         ///
         /// These carry arbitrary bytes, and one of the things they carry is
@@ -241,18 +249,28 @@ struct CSIScanner {
                     // A private introducer, and only in the first position.
                     if parameters.isEmpty, introducer == 0 { introducer = byte } else { state = .text }
                 case 0x30...0x3B:  // digits, `:` and `;`
-                    if parameters.count < Self.maximumParameters {
+                    if introducer == 0 {
+                        state = .skipping
+                    } else if parameters.count < Self.maximumParameters {
                         parameters.append(byte)
                     } else {
                         state = .text
                     }
                 case 0x40...0x7E:  // the final byte
-                    sequence(introducer, String(decoding: parameters, as: UTF8.self), byte)
+                    if introducer != 0 {
+                        sequence(introducer, String(decoding: parameters, as: UTF8.self), byte)
+                    }
                     state = .text
                 case 0x1B:
                     state = .escape
                 default:
                     state = .text
+                }
+            case .skipping:
+                switch byte {
+                case 0x30...0x3B: break
+                case 0x1B: state = .escape
+                default: state = .text
                 }
             }
         }

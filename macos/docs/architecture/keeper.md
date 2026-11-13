@@ -54,9 +54,9 @@ between them, and the corruption would be intermittent.
   One from another build that holds nothing is replaced, since that costs no
   shell.
 - **The replay buffer drops from the front, and is not scrollback.** What you
-  want after being away is how it ended. It only fills while detached. A known
-  limit follows from it: modes a program set in bytes that were dropped are not
-  in the replay (`docs/terminal-modes.md`).
+  want after being away is how it ended. It only fills while detached. The
+  terminal modes a program set in the bytes that were dropped are read on the
+  way out and put back in front of the replay (`docs/terminal-modes.md`).
 - **The replay is never fed from the main thread.** See `../docs/incidents.md`,
   2026-10-07.
 - **The signal sources in `main.swift` are kept in an array.** Release them and

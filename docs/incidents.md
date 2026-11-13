@@ -206,9 +206,15 @@ reports. Resumed in a session that was not attached, it reprinted a long
 conversation, which pushed those startup bytes out of the keeper's bounded
 replay. The reattached terminal had the modes off.
 
-**Status:** open on `main`. A fix has been written (the replay keeps the modes
-found in the bytes it drops) and is not committed yet. Because it lives in the
-keeper, it will reach a user only when their keeper next restarts.
+**Changed:** the replay reads the modes out of the bytes it drops and puts
+them in front of what it hands over (`a0c97fc`). Because it lives in the
+keeper, it reaches a user only when their keeper next restarts.
+
+**Verified (2026-11-12):** a program in a throwaway copy declared the modes
+while nothing was attached, wrote 1.2 MB after them, and asked the reattached
+terminal which modes it had. The release before the fix answered reset for all
+five and no keyboard flags. The fixed build answered set for all five, and the
+flags.
 
 **Related, shipped in 2026.46.4:** while a program owns the mouse, ⌘-click
 opens a link and ⌘-drag makes a terminal selection.

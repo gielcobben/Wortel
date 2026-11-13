@@ -3,6 +3,40 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.46.6</title>
+            <pubDate>Thu, 12 Nov 2026 23:20:00 -0500</pubDate>
+            <sparkle:version>2026.46.6</sparkle:version>
+            <sparkle:shortVersionString>2026.46.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Scroll and select in Codex after reopening Wortel</h1>
+<p class="date">Wortel 2026.46.6 &middot; 2026-11-12</p>
+<p><strong>Scrolling and selecting in Codex.</strong> Codex fills the whole terminal and does its own scrolling and selecting, so when it starts it asks the terminal to pass the mouse on. When Wortel started Codex again in a session you weren’t looking at, a long conversation could push that request out of what Wortel keeps for a session while you’re away. Opening the session then gave you a terminal that had never been asked, and the mouse did nothing. Wortel now notes those requests on their way out and repeats them when the session comes back. This takes effect once the process that keeps your terminals running has started afresh: close your sessions and quit Wortel for half a minute, or restart your Mac.</p>
+<p><strong>⌘C copies what Codex selected.</strong> With a selection Codex drew itself, ⌘C did nothing: Wortel’s Copy command took the key and found nothing selected in the terminal. The key now goes on to the program when the terminal has no selection of its own. Copying text you selected in the terminal works as before.</p>
+<p><strong>Smaller things.</strong> An image smaller than the side column no longer pulls its tab’s header down to the middle of the column; the picture is centred at its own size. A file that isn’t text no longer offers Diff and Source in its tab, where both showed the same picture.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.46.6.zip" length="23358397" type="application/octet-stream" sparkle:edSignature="R1bEeK1EwbKORiJ/P3GhxwoozBZeLIEz1V4bYFQVbtIZpMbaNWRBAMm0kPqEzrwPbgf25gAf+MVwAgtBEKm/Cw=="/>
+        </item>
+        <item>
             <title>2026.46.5</title>
             <pubDate>Thu, 12 Nov 2026 00:12:34 -0500</pubDate>
             <sparkle:version>2026.46.5</sparkle:version>
@@ -67,39 +101,6 @@
 <p class="date">Wortel 2026.46.4 &middot; 2026-11-10</p>
 <p><strong>⌘-click a link while an agent has the mouse.</strong> Codex, and other agents that fill the whole terminal, take the mouse over so they can do their own scrolling and selection. While they had it, ⌘-click on a URL went to the agent and did nothing, unless the agent had made that URL a link itself. URLs in a command, an approval prompt or your own message were stuck. Now holding ⌘ gives the mouse back to Wortel: ⌘-click opens the link, ⌘ over a URL underlines it, and ⌘-drag selects text you can copy with ⌘C, including in Codex’s approval prompt, where a plain drag selects nothing. A plain click or drag still goes to the agent, as before.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.46.4.zip" length="23195146" type="application/octet-stream" sparkle:edSignature="qUHgIjDnh2lOE6YhJHRU5V9RUQvJwB5JBCKweaPmKh1Mjs3DGgN5SXpj1Um5vrvUqZn3MiZcfQvKOp8jtvAdBA=="/>
-        </item>
-        <item>
-            <title>2026.46.3</title>
-            <pubDate>Tue, 10 Nov 2026 12:08:42 -0500</pubDate>
-            <sparkle:version>2026.46.3</sparkle:version>
-            <sparkle:shortVersionString>2026.46.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>No notification for an answer you already read</h1>
-<p class="date">Wortel 2026.46.3 &middot; 2026-11-10</p>
-<p><strong>No notification for an answer you already read.</strong> When an agent finished while you were looking at it, and you scrolled through its answer and then switched to another app, a notification quoting that answer could still arrive a few seconds later. Wortel waits for the screen to settle before it calls a turn finished, and your scrolling kept restarting that wait until you had left. Now Wortel checks whether the session was in front of you after the agent last wrote to its conversation, and if it was, it stays quiet. A turn that finishes after you’ve left still notifies you, and so does an error or a question.</p>
-<p><strong>Smaller things.</strong> A worktree session with its branch on a second line now has its status dots in line with every other row in the sidebar.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.46.3.zip" length="23191228" type="application/octet-stream" sparkle:edSignature="8gUki3103uM1cEcM/CxjTlcSIETN33EKjuSi8NdgOdO6IO6XR7l4XVCFjsvgLGfjOs/puYwSW7LRMq2ldUXjCQ=="/>
         </item>
     </channel>
 </rss>

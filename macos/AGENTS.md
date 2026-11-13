@@ -28,7 +28,7 @@ loaded.
 xcodegen generate            # after a fresh checkout or any change to project.yml
 xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug build
 xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # about 85s
-../scripts/check.sh macos    # the same tests, the way a release runs them
+../scripts/check.sh macos    # generate, then the same tests, in one command
 ```
 
 - The `.xcodeproj` is generated and gitignored. `project.yml` is the source of
@@ -37,9 +37,9 @@ xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # about 85s
   compiles, so **a new tested file is listed in both targets**.
 - There is no linter and no UI test. For the app itself, "verify" means building
   it and using it.
-- Never run `xcodebuild clean`. It throws away package objects a command-line
-  build can't always regenerate (the YAML grammar's scanner), and the link
-  fails. If a link fails that way, run the plain build again.
+- Don't `clean` a Debug build to fix something. It has cost a link failure on
+  the YAML grammar's scanner, and a plain rebuild recovers. (A release does run
+  `clean build`, against the pinned packages.)
 - Everything else about building, signing, pinned packages, the test target and
   `wortel.conf` is in `docs/building.md`.
 
@@ -56,7 +56,7 @@ xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # about 85s
 | Anything about worktrees | `docs/worktrees.md` (the model), `docs/architecture/worktrees.md` (the code) |
 | `Wortel/Files/`, `Wortel/Preview/`, `Wortel/Markdown/` | `docs/architecture/files-and-previews.md`, `docs/file-preview.md` |
 | `Wortel/Keeper/`, `WortelKeeper/` | `docs/architecture/keeper.md`, `../docs/incidents.md` |
-| `Wortel/CLI/`, `WortelCLI/` | `docs/cli.md` (design), `docs/wortel-command.md` (the user's guide) |
+| `Wortel/CLI/`, `WortelCLI/` | `docs/architecture/command-menus-hotkey.md`, `docs/cli.md` (design), `docs/wortel-command.md` (the user's guide) |
 | `Wortel/Processes/` | `docs/running-processes.md`. Run `scripts/verify-running-jobs.py` before it ships |
 | `Wortel/Telemetry/` | `docs/telemetry.md` |
 | `MainMenu.swift`, `GlobalHotkey.swift`, any shortcut | `docs/architecture/command-menus-hotkey.md`, `docs/shortcuts.md` |
@@ -80,8 +80,8 @@ of what looks unfinished here was tried, measured and taken out.
   say what to look at, and let the person try it. Synthetic keystrokes have
   landed in other apps and in a running agent.
 - **For a test of your own, use a throwaway copy**, never the real app and its
-  data: the `test-copy` skill. A second launch of the same bundle only brings
-  the first one forward (`InstanceLock`).
+  data: the `test-copy` skill. A second Wortel on the same data folder, from
+  any bundle, only brings the first one forward (`InstanceLock`).
 - **A Debug build and the installed app share one data folder and one keeper.**
   An older build opens a newer `sessions.json`, ignores the fields it doesn't
   know and saves it back without them. Install the new version before launching

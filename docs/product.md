@@ -60,11 +60,13 @@ an answer you have already read. False alarms are treated as bugs of the first
 rank, because one of them teaches you to ignore the rest.
 
 **The agent is a guest.** Nothing is installed into an agent and nothing is
-written into its configuration. Wortel reads the screen, as you do, and takes an
-agent's word where it gives one. There are no per-agent integrations: a
-terminal that adapts to six agents by name is wrong about the seventh. The
-`wortel` command is the whole interface, so anything that can run a command can
-drive the app.
+written into its configuration. Wortel reads the screen, as you do, takes an
+agent's word where it gives one, and may read the files an agent keeps for
+itself (its conversation, to resume it exactly). It never asks an agent to
+change. Detection has to work for an agent Wortel has never heard of: a
+terminal that only understands six agents by name is wrong about the seventh.
+Going the other way, the `wortel` command is the whole interface, so anything
+that can run a command can drive the app.
 
 **Your work outlives the window.** Quit, crash, update: the shells keep running
 and come back with what they printed. And nothing destructive happens without
@@ -86,7 +88,8 @@ enforced.
 - **No settings UI, no user config, no themes, no plugins.** The whole
   configuration is the read-only `macos/Resources/wortel.conf` inside the app.
   Font size is the one thing a user changes.
-- **No per-agent integrations, and no AI chat box of its own.**
+- **Nothing installed into an agent:** no hooks, no plugins, no config
+  written. And no AI chat box of its own.
 - **No search in the terminal's scrollback.** It was built and removed the same
   day: agents run in the alternate screen, so it only ever saw one screen.
 - **No setup or run scripts for worktrees.** Files only (`.worktreeinclude`).

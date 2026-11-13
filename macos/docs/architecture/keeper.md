@@ -49,8 +49,10 @@ between them, and the corruption would be intermittent.
   shells. One from another build with the same protocol is kept while it holds
   sessions: a stale binary is never worth a live shell. This also means a fix
   made in the keeper reaches a user only when their keeper next restarts.
-- **A keeper is killed only when it answers and names another protocol.** A ping
-  that timed out says nothing about the sessions behind it.
+- **A keeper holding sessions is killed only when it answers and names another
+  protocol.** A ping that timed out says nothing about the sessions behind it.
+  One from another build that holds nothing is replaced, since that costs no
+  shell.
 - **The replay buffer drops from the front, and is not scrollback.** What you
   want after being away is how it ended. It only fills while detached. A known
   limit follows from it: modes a program set in bytes that were dropped are not

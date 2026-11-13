@@ -77,7 +77,7 @@ and the mark, `docs/voice.md` the words.
 | --- | --- |
 | The app's colours, metrics and motion | `macos/Wortel/UI/Chrome.swift`. Every value below that has a `Chrome.` or `Motion.` name lives there. |
 | The terminal's look | `macos/Resources/wortel.conf` |
-| The app, drawn element by element | The public canvas, https://opmaak.dev/c/x7olxfuo7j. Four canvases: tokens and components, each pane by itself, twelve whole-window states in light and dark, and the same on wallpapers. Measured against the real app and checked pixel by pixel. |
+| The app, drawn element by element | The design canvas. Its public copy is https://opmaak.dev/c/x7olxfuo7j: tokens and components, each pane by itself, twelve whole-window states in light and dark, and the same on wallpapers. Measured against the real app and checked pixel by pixel. The site's windows are generated from the working copy named in `web/README.md`. |
 | The site | The header of `web/src/styles/site.css` |
 | The app's tokens on the site | `web/src/styles/app.css`, scoped to `.wapp` |
 
@@ -153,12 +153,12 @@ Every colour is one of these. The left column is the name on the canvas and in
 | --- | --- | --- | --- | --- |
 | `background` | `Chrome.content` | `#ffffff` | `#1f1f1f` | The pages: the terminal, the side column |
 | `card` | `Chrome.raised` | `#ffffff` | `#2e2e2e` | The tab in front, on a page. Lifted in dark, where the page's own colour would vanish into it |
-| `sidebar` | the window's vibrancy | 245 at 90% | 78 at 85% | The glass behind everything. In the app it is a system material; these are the canvas's stand-ins |
+| `sidebar` | the window's vibrancy | grey 245 at 90% | `oklch(0.269 0 0)` at 85% | The glass behind everything. In the app it is a system material; these are the canvas's stand-ins |
 | `sidebar-primary` | `Chrome.sidebar` | white 35% | white 2% | The session list's wash over the glass |
 | `sidebar-accent` | `Chrome.raisedOnBand`, `pillAlpha` | black 8% | white 8% | A selection on the glass: the session pill, the tab in front of a titlebar row |
 | `secondary` | `Chrome.selectedFill` | black 7% | white 11% | A selected row on a page, a glyph button that is on |
 | `accent` | `Chrome.hoverFill` | black 5% | white 7% | Hover on a control |
-| `muted` | `Chrome.stripBand` | black 3% | white 4% | The bottom strip's tab row, the palette's footer |
+| `muted` | `Chrome.stripBand` | black 3% | white 4% | The bottom strip's tab row. (The palette's footer is the label colour at 3%.) |
 | `border` | `Chrome.hairline` | black 7% | white 8% | Hairlines |
 | `input` | `Chrome.hairlineStrong` | black 10% | white 12% | Toolbar dividers, tab edges, field outlines |
 | `popover` | the `.popover` material | 226 at 90% | 37 at 80% | The command palette |
@@ -206,7 +206,8 @@ the app.
 - **Terminal:** SF Mono Medium 14pt on cells of 8.5 by 19pt, padding 5 by 2, a
   block cursor that does not blink. Regular weight at 14 with taller cells was
   tried; Medium stayed.
-- **Diffs and code:** SF Mono 12pt, rows 18pt.
+- **Diffs in the side column:** SF Mono 12pt, rows 18pt. A preview is for
+  reading, so it starts at 13pt and ⌘+ and ⌘- take it from 9 to 24.
 - **Rendered Markdown:** GitHub's metrics. Body 16 on 24, a 602pt measure,
   headings 32, 24, 20, 16, 14, 13.6 semibold, inline code at 85%.
 - **Weight is used sparingly.** Bold marks the tool an agent called and the
@@ -274,7 +275,7 @@ footer with the keys. The selected row is the accent with white text.
 | Three small dots in a soft wave | Working |
 | Orange dot, breathing | Needs input |
 | Red dot, breathing | Failed |
-| Mint dot | The agent's turn is done |
+| Mint dot, breathing | The agent's turn is done |
 | Blue dot, steady | Finished: a long command or a job ended |
 | Hollow ring | Unread: you have not been there since |
 | Number in place of the status | ⌘ is held: ⌘1 to ⌘9 |
@@ -309,7 +310,8 @@ outline around the one that now has the keyboard.
   pane lands.
 - The sidebar never re-sorts under the pointer.
 - A long name scrolls after resting a second, slowly, with faded edges.
-- Reduce Motion stills the dots, the ring and the wave.
+- Reduce Motion stills the dots and the wave. The flash around a session that
+  starts wanting you still fades out, without its fade in.
 
 ## Which surface for what
 
@@ -320,10 +322,13 @@ outline around the one that now has the keyboard.
   lists. The Session menu comes before Edit. There is no File menu.
 - **The same menu everywhere** for the same thing. A session's menu is one
   menu, in one order, wherever it opens.
-- **A tooltip for a name that was cut off**, and nothing cleverer.
+- **A tooltip says what the eye cannot see, and nothing cleverer:** a name
+  that was cut off, a glyph button's name and shortcut, a folder's directory,
+  what a waiting session wants and for how long.
 - **A notification is the news itself:** the start of the agent's answer. One
   per question. None for the session you are looking at.
-- **An empty state is a centred line**, not a picture.
+- **An empty state is a few centred lines**, with a small grey glyph at most.
+  Never an illustration.
 
 Wording rules for all of these are in `docs/voice.md`.
 
@@ -385,6 +390,7 @@ It stays at its real size and the stage crops it.
 - **Fonts:** the system's. SF Pro for text and display, SF Mono for code.
 - **Container:** 1200px with 32px gutters. One left edge for everything.
 - **Grid:** every margin, padding, gap and fixed height is a multiple of 8.
+  The insides of the pills below are the exception.
 - **Sections:** 144px above each. A heading is at most 784px wide.
 - **Stage:** 20px corners (16 on a phone), a 1px inset line. The window inside
   has 18px corners, one 0.5px hairline as a real border, and one soft shadow.
@@ -401,8 +407,9 @@ scroll but the photographs' small drift.
 
 ## Tried, and taken out
 
-Look here before proposing one of these again. The reasons are in
-`docs/decisions.md`.
+Look here before proposing one of these again. Most of the reasons are in
+`docs/decisions.md`; for the selection colour and the tabs on the glass they
+are in the comments in `SidebarOutlineView.swift` and `Chrome.swift`.
 
 - A second line on sidebar rows (the path, then the running agent).
 - A "Needs You" section at the top of the sidebar, and an Archived fold.

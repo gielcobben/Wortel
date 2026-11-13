@@ -46,7 +46,9 @@ follows the shell around; new sessions inherit the origin, not the drift.
 so an agent in it cannot disturb another.
 
 **Archive.** What closing a worktree session does: the shell ends, the worktree,
-branch and conversation are kept, and ⌘P brings it back. Not deletion.
+branch and conversation are kept, and ⌘P brings it back. Only a worktree with
+nothing worth keeping (Wortel's own, clean, its work already elsewhere) goes to
+the Trash instead.
 
 **Owned.** A worktree or branch Wortel made, recorded by a marker in git, never
 guessed from a path. Wortel only ever removes what it owns.
@@ -64,7 +66,8 @@ there. One running Wortel per data folder.
 are not the app's children. Never named in the UI.
 
 **Attach, detach.** The app taking over reading a session's pty from the keeper,
-and handing it back. Only one of the two reads at a time.
+and the keeper taking it back. There is no detach message: detaching is the
+connection closing. Only one of the two reads at a time.
 
 **Replay.** What the keeper buffered while nothing was attached, written into
 the new terminal on attach. Bounded, and not scrollback.
@@ -81,14 +84,15 @@ Code, Codex, Pi and the like. A guest. Wortel installs nothing into it.
 while an agent runs, saying which agent and since when. It exists only during a
 run.
 
-**Busy.** The session is working: the spinner.
+**Busy.** The session is working: three small dots in a wave, in the sidebar.
 
 **Attention.** The session wants you: a dot, the Dock badge, a notification. It
 has a kind, loudest first: **needs input**, **failed**, **turn done**,
 **finished**. A louder kind is never downgraded to a quieter one.
 
-**Turn.** One prompt and the agent's whole answer to it. A turn end counts only
-when the agent's own transcript shows one.
+**Turn.** One prompt and the agent's whole answer to it. For Claude Code and
+Codex a turn end counts only when the agent's own conversation file shows one.
+For other agents it comes from their signals or the screen.
 
 **Signal.** Something a program says about itself through the terminal: OSC 9;4
 progress, a title spinner, a notification escape, a bell.

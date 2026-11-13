@@ -5,8 +5,8 @@ description: Cut and publish a Wortel release with macos/scripts/release.sh. Cov
 
 # Release Wortel
 
-Publishing is public and hard to take back: everyone's app offers the update
-within the hour. Do it only when asked to, in so many words. A go-ahead for one
+Publishing is public and hard to take back: every installed copy offers the
+update within a few hours. Do it only when asked to, in so many words. A go-ahead for one
 release is not a go-ahead for the next.
 
 All commands run from `macos/`.
@@ -28,7 +28,8 @@ All commands run from `macos/`.
 
    If the profile is missing, ask the maintainer to store it again (the command
    is at the bottom of `scripts/release.sh`). Don't go looking in the Keychain.
-   It has also vanished between this check and the upload, so see step "After".
+   It has gone missing between this check and the upload before (2026-11-03),
+   so see "After".
 4. **Checks against a real machine**, for what the release touches:
    `scripts/verify-running-jobs.py` for `Wortel/Processes/`,
    `scripts/try-git.sh` for `Wortel/Git/`, `scripts/try-keeper-loss.sh` for
@@ -56,8 +57,9 @@ person, when they are ready.
 
 ## After
 
-- **Read the output for `==> Published <version>`.** The exit code is not
-  enough: a failed notarization has ended in exit 0.
+- **Read the output for `==> Published <version>`.** That line is the proof.
+  Don't go by the exit code alone: on 2026-11-03 a run whose notarization had
+  failed was first taken for a success.
 - Commit what the script changed (`releases/appcast.xml`, `releases/BUILD`) as
   `Release <version>: <title>`, after the note's own commit
   `Release note <version>: <title>`.

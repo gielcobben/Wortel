@@ -34,13 +34,14 @@ run (`588c518`).
 **Seen:** 2026.31.2 was published twice, as different builds.
 
 **Cause:** the version counter came from a local file that had not been
-committed, so a second machine derived the same number. Sparkle only offers a
+committed, so the next run derived the same number from it. Sparkle only offers a
 version strictly greater than the one installed, so everyone who took the first
 build was stranded on it.
 
 **Changed:** the version is derived from the live feed, the only state every
-machine that can publish shares. Replacing a published version needs
-`--republish` and a reason (`10c089d`).
+machine that can publish shares (`10c089d`). Replacing a published version
+needs `--republish` with the version spelled out, and only the last one
+published can be replaced (`4960108`).
 
 **Rule:** never publish the same version twice. Ship the next one.
 
@@ -68,8 +69,7 @@ app. Three fixes shipped on reasoning about what the `PATH` should have been.
 One dump of what it was settled it.
 
 **Rule:** measure before the second guess (`macos/docs/debugging.md`). The
-directory is stripped from `PATH`, and the CLI target is not named `wortel`
-(`c5e4c42`).
+directory is stripped from `PATH` in zsh and bash (`c5e4c42`, `b24f2bb`).
 
 ## 2026-08-09. Notarization rejected
 
@@ -166,10 +166,13 @@ gone, and by the time the app quit, its liveness sweep had already dropped the
 dead agents' resume plans.
 
 **Changed:** the app watches the keeper's pid and restarts dead terminals in
-place, with the exact resume and an explanation. A resume is owed until the
-agent is seen running. A keeper is replaced only on a confirmed protocol
-mismatch, and its life is logged at a level that is kept on disk. Shipped in
-2026.41.7 (`198a870`).
+place, with the exact resume and an explanation. A keeper is replaced only on
+a confirmed protocol mismatch, and its life is logged at a level that is kept
+on disk. Shipped in 2026.41.7 (`198a870`).
+
+**Again on 2026-10-10:** a second kill showed a resume could still be lost. A
+resume is now owed until the agent is seen running, and any failed reply from
+the keeper retires the connection. Shipped in 2026.41.9 (`c7e95d5`).
 
 **Still true:** a shell's coalition is inherited and cannot be separated
 without private API. Something outside can always kill the keeper. Recovery is
@@ -203,9 +206,9 @@ reports. Resumed in a session that was not attached, it reprinted a long
 conversation, which pushed those startup bytes out of the keeper's bounded
 replay. The reattached terminal had the modes off.
 
-**Status:** open on `main`. A fix exists on the `codex-mouse` branch (the
-replay keeps the modes found in the bytes it drops). Because it lives in the
-keeper, it reaches a user only when their keeper next restarts.
+**Status:** open on `main`. A fix has been written (the replay keeps the modes
+found in the bytes it drops) and is not committed yet. Because it lives in the
+keeper, it will reach a user only when their keeper next restarts.
 
 **Related, shipped in 2026.46.4:** while a program owns the mouse, ⌘-click
 opens a link and ⌘-drag makes a terminal selection.
@@ -237,5 +240,5 @@ conversation file has a turn written since the busy began. Shipped in
 the end before switching away. Wortel now remembers that an answer was on
 screen while you were looking, and raises nothing for it.
 
-**Rule:** a turn end is backed by the agent's own record, never by the screen
-alone.
+**Rule:** where an agent keeps a record of its turns, a turn end is checked
+against it. The screen alone is the fallback, for agents that keep none.

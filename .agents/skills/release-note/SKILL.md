@@ -34,7 +34,8 @@ summary: VoiceOver and read-aloud apps can now read what's in Wortel's terminal,
 ```
 
 - **Frontmatter:** exactly `date`, `title`, `summary`, in that order, unquoted.
-  They are schema-checked, so a malformed one fails the build.
+  The build fails when `date` is not a date or `title` is missing. `summary` is
+  optional to the schema and not to us: it leads the update dialog.
 - **Title:** sentence case, no full stop. The headline outcome, or two joined
   by ", and".
 - **Summary:** one to three full sentences. It leads the update dialog, so it
@@ -43,7 +44,7 @@ summary: VoiceOver and read-aloud apps can now read what's in Wortel's terminal,
   stop, then two to five sentences. No headings, no version, no date, no code
   blocks, no images. Small items close the note under `**Fixes.**` or
   `**Smaller things.**`.
-- **Length:** 90 to 230 words for a fix, 250 to 500 for a feature release.
+- **Length:** 90 to 230 words for a fix, 200 to 500 for a feature release.
 
 ## How it reads
 

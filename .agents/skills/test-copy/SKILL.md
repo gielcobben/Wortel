@@ -6,20 +6,20 @@ description: Run a throwaway copy of the Wortel app beside the real one, with it
 # A throwaway copy of Wortel
 
 For tests of your own. It is never the answer to "run the build" (that is the
-`run-build` skill). `macos/scripts/try-keeper-loss.sh` is a complete, working
-example of everything below.
+`run-build` skill). `macos/scripts/try-keeper-loss.sh` is a working example of
+making, launching, killing and cleaning up a copy.
 
 ## Why `WORTEL_DATA_DIR` alone is not enough
 
 `WORTEL_DATA_DIR` gives a launch its own sessions, keeper and `wortel` socket.
 UserDefaults are still shared, because they go by bundle id, and a first launch
-prunes folder order, pinned sessions and per-session defaults there. So the
+prunes folder order and pinned sessions there. So the
 copy gets its own bundle id as well.
 
 ## Make it
 
 ```sh
-SRC=<path to a built Wortel.app>          # see the run-build skill, step 2
+SRC=<path to a built Wortel.app>          # see the run-build skill, step 3
 COPY="$HOME/.wt/WortelTest.app"           # any short path
 DATA="$HOME/.wt/data"
 mkdir -p "$DATA"
@@ -37,8 +37,10 @@ open -g -n --env WORTEL_DATA_DIR="$DATA" --env DO_NOT_TRACK=1 "$COPY"
 
 ## Drive it without touching the UI
 
-The copy carries its own command. Use that one, not the `wortel` on your `PATH`,
-which talks to the real app:
+The copy carries its own command. **`WORTEL_DATA_DIR` is what points a command
+at the copy, not which binary you run.** Without it either binary talks to the
+person's real app, and a `send` types into their real sessions. Set it on
+every call:
 
 ```sh
 W="$COPY/Contents/Resources/bin/wortel"
@@ -76,12 +78,19 @@ started after launch:
 ## Put it away
 
 ```sh
+COPY="$HOME/.wt/WortelTest.app"
 kill <pid of the copy>                    # by pid, never by name
-pgrep -f "$COPY/Contents/Resources/bin/wortel-keeper"   # its keeper, still holding the shells
-rm -rf "$HOME/.wt"                        # after the keeper and its shells are gone
+sleep 1
+# Every pid under $1, and $1. From macos/scripts/try-keeper-loss.sh.
+tree() {
+  ps -axo pid=,ppid= | awk -v root=$1 '{p[$1]=$2} END {s[root]=1
+    for (n = 0; n < 8; n++) for (x in p) if (p[x] in s) s[x]=1
+    for (x in s) printf "%s ", x}'
+}
+for k in $(pgrep -f "$COPY/Contents/Resources/bin/wortel-keeper"); do kill -9 $(tree $k); done
+rm -rf "$HOME/.wt"
 ```
 
 The copy's keeper outlives it by design, exactly like the real one, so quitting
-the copy is not the end of it. Kill the keeper and every process under it; the
-`cleanup` and `tree` functions in `macos/scripts/try-keeper-loss.sh` do exactly
-that and are worth copying.
+the copy is not the end of it. The loop ends the keeper and every shell under
+it before the folder goes. Run the block as one command.

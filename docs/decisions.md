@@ -71,9 +71,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   double-tap gesture holds every single click for the double-click interval.
   Use AppKit's `doubleAction` and the click catchers (`f4ea301`, `643fe42`).
 - **2026-07-28. A row is one line.** The path subtitle and the running-agent
-  subtitle were both dropped (`b14563c`, `4b70440`).
-- **2026-09-08. A folder carries a directory, and a new session starts where
-  the selected one was born, not where its shell has wandered** (`e032078`).
+  subtitle were both dropped (`b14563c`, `4b70440`). The one exception since is
+  a worktree row, which carries its branch on a second line.
+- **2026-09-08. A folder carries a directory, and a new session in it starts
+  there.** Where there is none, it starts where the selected session was born,
+  not where its shell has wandered (`e032078`).
 - **2026-09-09. A generated name can never create a folder.** Its slash is
   replaced with a look-alike. Only a slash typed by hand moves a session
   (`6759a87`).
@@ -99,8 +101,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (`229f024`, `d024540`).
 - **2026-09-30. One Wortel per data folder.** A second copy brings the first
   forward and exits. Test builds get their own folder (`f9de25c`).
-- **2026-10-14. A session gets ten ports in `WORTEL_PORT`.** `PORT` is left
-  alone on purpose (`f580fad`).
+- **2026-10-14. A session gets a block of ten ports.** `WORTEL_PORT` holds the
+  first, and `CONDUCTOR_PORT` is set to the same. `PORT` is left alone on
+  purpose (`f580fad`).
 - **2026-11-09. Four ways to start a session, and only four:** ⌘N, ⌥⌘N at
   home, ⇧⌘N on a branch, ⌘O somewhere else. Cut that day: Fork Session, Open
   Branch (⇧⌘O), New Folder, Move To, Change Directory, `wortel fork` and
@@ -112,21 +115,27 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-07-10. Take the agent's own signal; fall back to the screen.** No
   list of per-agent screen patterns, no sniffing the Enter key. Those are what
   make the indicator flaky elsewhere.
-- **2026-07-13. Attention has kinds, classified by where the signal came from,
-  not by its text.** A louder kind is never downgraded. Sound only when it gets
-  louder (`dd7615a`, `7973141`).
+- **2026-07-13. Attention has kinds, and a louder kind is never downgraded.**
+  A sound plays for a fresh episode or a jump to a louder kind, and "finished"
+  is silent (`dd7615a`, `7973141`).
 - **2026-08-05. Trust in a self-reporting agent has no timeout.** Claude sends
   one progress report per turn and no keepalive, so a timeout made a thinking
   agent look silent. And one changed frame is never work: it takes two within
   five seconds, re-baselined on resize and activation (`a40d7b8`).
-- **2026-09-09. Agents are found by program name in argv, never by a path
-  component, and never by process name.** `/tmp/claude-501/…` and
-  `claude-demo/server.js` were both read as agents. Unknown counts as running:
-  liveness fails open and a marker needs several misses before it is removed
-  (`4c62c74`, `b09005a`).
-- **2026-10-30. A turn end must be backed by the agent's own transcript.** An
-  idle compaction, a recap or a spinner at startup is not a turn
-  (`ea8fc85`, `b9da818`).
+- **2026-09-09. An agent is found by its process name first, then by its
+  arguments, and liveness fails open.** Unknown counts as running, and a marker
+  needs several misses before it is removed (`4c62c74`, `b09005a`). The
+  argument pass accepts any path component equal to the name, so a tool running
+  out of `/tmp/claude-501/…` reads as Claude. That is why it is never used to
+  pick a process to signal.
+- **2026-09-17. For the jobs list the match is strict:** an argument counts
+  only as the program's own file or its package directory.
+  `claude-demo/server.js` was being read as an agent, and a false positive
+  there hides a real server (`fb118d7`).
+- **2026-10-30. For Claude Code and Codex, a turn end must be backed by the
+  agent's own conversation file.** An idle compaction, a recap or a spinner at
+  startup is not a turn. An agent that keeps no such file, and a file that
+  cannot be read, keep the older signals (`ea8fc85`, `b9da818`).
 - **2026-11-02. A minute without input counts as away**, and scripted input
   from `wortel send` is not the user coming back (`38fd58b`, `61aab5e`).
 - **2026-11-10. No notification for an answer already read** (`bfab785`).
@@ -137,8 +146,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 
 - **2026-07-22. The running agent is recorded at quit**, because the shell's
   last prompt deletes its marker (`588c518`).
-- **2026-10-07. Resume by exact conversation id.** "The newest transcript in
-  the folder" put three sessions into one conversation (`a94573c`, `c7e95d5`).
+- **2026-10-07. Resume by exact conversation id.** Guessing by file time (the
+  first transcript born after the agent started) put three sessions into one
+  conversation (`a94573c`, `c7e95d5`).
 - **2026-10-07. A marker is renamed into place whole, and a shell clears only
   the marker it wrote** (`1f5f80b`, `7e715c7`).
 - **Never signal a process found by matching its command line.** Take the
@@ -161,8 +171,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   private API, which is not used. The answer is recovery (`da09bc4`/`0066004`,
   `6a09af8`/`3500073`, `198a870`).
 - **2026-10-07. The protocol version stays "1".** A bump ends every running
-  shell on update. Additions are optional fields, and a new verb is its own
-  wire case so an older app refuses it (`c9b9713`).
+  shell on update. Every addition is optional, both ways (`c9b9713`).
 - **2026-10-08. A keeper holding shells is never replaced because a ping
   failed or its build is older.** Only when it answers and names another
   protocol.
@@ -171,15 +180,17 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 
 `macos/docs/worktrees.md` is the full record, with the survey behind it.
 
-- **2026-08-07. Worktrees live outside the repository**, in
-  `~/.wortel/worktrees`. Removal is never forced (`205a1da`).
+- **2026-08-07. Worktrees live outside the repository by default**, in
+  `~/.wortel/worktrees`. A repository can name another place with
+  `wortel.worktreePath` (`7d8d057`). Removal is never forced (`205a1da`).
 - **2026-08-10. A new branch forks from the default branch's remote ref**, not
   from where you stand. `--from HEAD` stacks on purpose (`698ce52`, `323d4a6`).
 - **2026-10-06. Cleanup inspects first, moves to the Trash, and never runs
   `git worktree prune`**, which would forget a worktree on an unmounted volume
   (`0949df6`).
 - **2026-10-14. Ownership is a recorded marker, not a path.** Wortel removes
-  only what it made, and never locks a worktree (`614c303`).
+  only what it made, and never locks a worktree. The old default paths still
+  count, for worktrees made before the marker (`614c303`).
 - **2026-10-14. Closing a worktree session archives it**, into its own file, so
   an older build never starts it as a live shell (`af02d49`).
 - **2026-10-27. ⇧⌘N has its sheet back**, with Return as the instant path. It
@@ -230,9 +241,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 
 ## Running processes
 
-- **2026-09-14. A job is a process group. Memory is footprint, not RSS. An
-  agent is never a row you can kill. No probing ports over HTTP**
-  (`23deb3b`, `474be65`).
+- **2026-09-14. A job is a tree of processes inside a process group, usually
+  the whole group. Memory is footprint, not RSS. An agent is never a row you
+  can kill. No probing ports over HTTP** (`23deb3b`, `474be65`).
 - **2026-09-17. A detached server is tied to its session only when its group
   holds a listening port.** Excluding `.app` bundles instead hid Electron dev
   builds (`fb118d7`).
@@ -242,10 +253,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 `macos/docs/cli.md` is the full record.
 
 - **2026-08-08. No installer, no symlink.** The binary is in the bundle and on
-  the `PATH` of every shell Wortel starts. The target is `WortelCLI`, because a
-  target named `wortel` collides with the app on a case-insensitive disk
-  (`c5e4c42`, `b24f2bb`).
+  the `PATH` of every shell Wortel starts (`c5e4c42`). The target is
+  `WortelCLI`, because a target named `wortel` collides with the app's in the
+  build intermediates on a case-insensitive disk (`76ea9f8`).
 - **2026-08-08. It never activates the app.**
+- **2026-10-14. A new verb or flag is its own case on the wire**, so an older
+  app refuses it instead of half-doing it (`e1ec96b`).
 - **2026-11-03. `wortel send` has no prompt and no label**, like a person
   typing. Replies are never written on the main thread (`c065094`).
 - **Rejected when the reach verbs were planned:** usage meters and rate-limit
@@ -258,10 +271,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   from the bundled integration's preexec hook, because libghostty has no
   "command started" action. Long-lived interactive programs are skipped.
 - **2026-07-15. OSC 7 reports `localhost`, not `$HOST`** (`fcf5052`).
-- **2026-07-29. A change goes into all three shells, and a fish change that
-  was not run in fish does not ship** (`aa715d5`).
+- **2026-07-29. A change goes into all three shells.** The fish copy often
+  cannot be run before it ships. That fix left fish out for that reason
+  (`aa715d5`); later ones went in marked untested. Say which in the commit.
 - **2026-08-08. PATH is set through `WORTEL_BIN_DIR`, and `Contents/MacOS` is
-  removed from it.** libghostty's `env_vars` only adds and was silently ignored.
+  removed from it in zsh and bash.** fish and elvish get the prepend only.
+  libghostty's `env_vars` only adds and was silently ignored (`b24f2bb`).
 
 ## Release and updates
 

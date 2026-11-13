@@ -73,8 +73,9 @@ the kernel withholds its environment.
   environment it was `exec`ed with. `ProcessTable.sessionTag` reads
   `WORTEL_SESSION_ID` this way.
 - **For the shell itself, after `.zshrc`**: add a dump to the bundled zsh
-  integration, rebuild and relaunch. Every session respawns, so the file appears
-  with no one typing. Remove it before committing.
+  integration, rebuild, relaunch and open a new session. Shells that were
+  already running are held by the keeper across the relaunch and do not run it
+  again. Remove it before committing.
 
   ```sh
   # Resources/ghostty/shell-integration/zsh/ghostty-integration,
@@ -96,10 +97,11 @@ They are pure classifiers, so test them without the app: extract the function
 with `sed`, source it in the real shell, and run a table of command lines
 against expected verdicts.
 
-**Don't ship a fish change that was not run in fish.** A syntax error there
-breaks every fish user at shell startup, which is worse than any bug it fixes.
-The wrapper-launch fix (`npx claude`, `bunx opencode`) is in zsh and bash only
-for that reason, and is still missing in fish.
+**The fish copy often cannot be run before it ships**, because fish is not on
+every machine this is built on. A syntax error there breaks every fish user at
+shell startup, which is worse than any bug it fixes. So keep a fish change
+small, mirror the zsh version line for line, run it in fish when you can, and
+say in the commit when you could not.
 
 ## A permission that is on and still refused
 
@@ -109,9 +111,11 @@ and is pinned to that binary's hash; the installed app is signed differently and
 matches nothing.
 
 ```sh
-sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
-  "select service, hex(csreq) from access where client='com.gielcobben.Wortel'"
-# a csreq that is a bare cdhash is the stale one (decode with: csreq -r - -t)
+db="/Library/Application Support/com.apple.TCC/TCC.db"   # reading it needs Full Disk Access
+sqlite3 "$db" "select service from access where client='com.gielcobben.Wortel'"
+sqlite3 "$db" "select hex(csreq) from access where client='com.gielcobben.Wortel' \
+  and service='kTCCServiceScreenCapture'" | xxd -r -p | csreq -r - -t
+# a requirement that is a bare cdhash is the stale one
 ```
 
 The fix is to remove Wortel from the list with the minus button and add

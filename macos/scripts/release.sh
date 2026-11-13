@@ -35,13 +35,16 @@
 # built, and it feeds two places at once — the changelog at wortel.sh/updates,
 # and the notes Sparkle shows in the in-app update dialog.
 #
-# --no-install exists for one specific hazard: the install step below quits
-# Wortel, and a release is often cut from a shell running *inside* Wortel. That
-# quit kills the shell — and with it this script, somewhere between the
-# `rm -rf /Applications/Wortel.app` and the `cp` that replaces it, which can
-# leave no installed app at all. Publishing itself never touches the running
-# app, so skip the install and take the update through Sparkle
-# (Wortel ▸ Check for Updates…) like any other user would.
+# --no-install exists for one specific hazard: a release is often cut from a
+# shell running *inside* Wortel, and the install step below does
+# `rm -rf /Applications/Wortel.app` before the `cp` that replaces it. That
+# unlinks the bundle the live keeper — which owns every session's pty — is
+# running out of, and the `wortel` command on every session's PATH goes with it
+# until the copy lands. (Before the keeper, the hazard was simpler: the quit
+# killed the shell, and with it this script, between the `rm` and the `cp`.)
+# Publishing itself never touches the running app, so skip the install and take
+# the update through Sparkle (Wortel ▸ Check for Updates…) like any other user
+# would.
 #
 # Versioning is CalVer (Framer-style): <ISO-week-year>.<ISO-week>.<Nth release
 # that week>, e.g. 2026.28.3 — auto-derived from the date, so there's no version

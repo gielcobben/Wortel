@@ -121,6 +121,64 @@ final class MarkdownParserTests: XCTestCase {
         XCTAssertEqual(blocks.map(\.kind), [.rule, .rule, .rule, .rule])
     }
 
+    // MARK: - Front matter
+
+    func testFrontMatterIsYAMLCode() {
+        let source = "---\nname: Wortel\ncolors:\n  page: \"#fff\"\n---\n\n# Title\n\nbody"
+        let blocks = MarkdownParser.parse(source)
+        XCTAssertEqual(blocks.map(\.kind), [.code(language: "yaml"), .heading(level: 1), .paragraph])
+        XCTAssertEqual(blocks[0].text, "name: Wortel\ncolors:\n  page: \"#fff\"")
+        // Lines still match the source: the YAML starts on 2, the heading on 7.
+        XCTAssertEqual(blocks.map(\.line), [2, 7, 9])
+    }
+
+    func testFrontMatterMayCloseWithDots() {
+        let blocks = MarkdownParser.parse("---\ntitle: x\n...\ntext")
+        XCTAssertEqual(blocks.map(\.kind), [.code(language: "yaml"), .paragraph])
+        XCTAssertEqual(blocks[1].line, 4)
+    }
+
+    func testUnclosedLeadingRuleIsStillARule() {
+        let blocks = MarkdownParser.parse("---\ntext")
+        XCTAssertEqual(blocks.map(\.kind), [.rule, .paragraph])
+    }
+
+    func testRuleLaterInTheFileIsNotFrontMatter() {
+        let blocks = MarkdownParser.parse("intro\n\n---\nkey: value\n---")
+        XCTAssertFalse(blocks.contains { $0.kind == .code(language: "yaml") })
+    }
+
+    /// A leading rule followed by a title, prose or a blank line is a rule,
+    /// even with another `---` further down.
+    func testLeadingRuleThenMarkdownIsNotFrontMatter() {
+        XCTAssertEqual(MarkdownParser.parse("---\n# Title\n\nintro\n\n---\nmore").map(\.kind),
+                       [.rule, .heading(level: 1), .paragraph, .rule, .paragraph])
+        XCTAssertEqual(MarkdownParser.parse("---\nTitle\n---").map(\.kind),
+                       [.rule, .heading(level: 2)])
+        XCTAssertEqual(MarkdownParser.parse("---\n\nSome paragraph.\n\n---").map(\.kind),
+                       [.rule, .paragraph, .rule])
+        XCTAssertEqual(MarkdownParser.parse("---\n---\n# Title").map(\.kind),
+                       [.rule, .rule, .heading(level: 1)])
+    }
+
+    func testIndentedDashesInsideFrontMatterDoNotCloseIt() {
+        let blocks = MarkdownParser.parse("---\ndescription: |\n  ---\n  more\nkey: v\n---\nbody")
+        XCTAssertEqual(blocks.map(\.kind), [.code(language: "yaml"), .paragraph])
+        XCTAssertEqual(blocks[0].text, "description: |\n  ---\n  more\nkey: v")
+    }
+
+    func testFenceStopsTheSearchForAClose() {
+        let blocks = MarkdownParser.parse("---\nkey: v\n```\n---\n```\n# Rest")
+        XCTAssertEqual(blocks.last?.kind, .heading(level: 1))
+        XCTAssertFalse(blocks.contains { $0.kind == .code(language: "yaml") })
+    }
+
+    func testCRLFAndBOMFilesParse() {
+        let blocks = MarkdownParser.parse("\u{FEFF}---\r\nname: x\r\n---\r\n# Title\r\nbody")
+        XCTAssertEqual(blocks.map(\.kind), [.code(language: "yaml"), .heading(level: 1), .paragraph])
+        XCTAssertEqual(blocks[0].text, "name: x")
+    }
+
     // MARK: - Fenced code
 
     func testFencedCodeCapturesLanguageAndBody() {

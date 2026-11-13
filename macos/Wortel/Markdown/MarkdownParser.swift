@@ -290,6 +290,12 @@ struct MarkdownImage: Equatable {
 /// Parses a Markdown string into `[MarkdownBlock]`. Pure and synchronous.
 enum MarkdownParser {
     static func parse(_ source: String) -> [MarkdownBlock] {
+        // "\r\n" is one Character in Swift and never equals "\n", so a CRLF
+        // file would otherwise be a single line. A BOM would hide the first
+        // line's `---` or `#`.
+        var source = source.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        if source.hasPrefix("\u{FEFF}") { source.removeFirst() }
         var blocks: [MarkdownBlock] = []
         for segment in segments(from: source) {
             switch segment {
@@ -343,7 +349,15 @@ enum MarkdownParser {
             codeLanguage = nil
         }
 
-        for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
+        var lines = source.split(separator: "\n", omittingEmptySubsequences: false)[...]
+
+        if let close = frontMatterClose(lines) {
+            segments.append(.code(language: "yaml", code: lines[1..<close].joined(separator: "\n"), line: 2))
+            lineNumber = close + 1
+            lines = lines[(close + 1)...]
+        }
+
+        for line in lines {
             lineNumber += 1
             let stripped = line.trimmingCharacters(in: .whitespaces)
             if stripped.hasPrefix("```") {
@@ -368,6 +382,41 @@ enum MarkdownParser {
         }
         if inCode { flushCode() } else { flushText() }
         return segments
+    }
+
+    /// The index of the line that closes YAML front matter, if the file opens
+    /// with some. Read as Markdown it was a rule, one run-on paragraph, and
+    /// then (the closing `---` under that paragraph) a setext heading, so
+    /// DESIGN.md opened with a page of huge bold tokens.
+    ///
+    /// Strict on purpose, because `---` is also a rule and a setext underline:
+    /// the markers sit in column 0 (YAML's own document markers; an indented
+    /// `---` inside a block scalar is content), the line after the opening one
+    /// is a `key:`, and a ``` fence ends the search. So a file that starts
+    /// with a rule and then a title, prose or a blank line reads as before.
+    private static func frontMatterClose(_ lines: ArraySlice<Substring>) -> Int? {
+        guard lines.count > 2, isMarker(lines[0], "---"), isYAMLKey(lines[1]) else { return nil }
+        for index in 2..<lines.count {
+            let line = lines[index]
+            if isMarker(line, "---") || isMarker(line, "...") { return index }
+            if line.hasPrefix("```") { return nil }
+        }
+        return nil
+    }
+
+    /// `marker` from column 0, with nothing after it but trailing whitespace.
+    private static func isMarker(_ line: Substring, _ marker: String) -> Bool {
+        line.hasPrefix(marker) && line.dropFirst(marker.count).allSatisfy(\.isWhitespace)
+    }
+
+    /// A line that opens a YAML mapping: `name:`, alone or followed by a space.
+    private static func isYAMLKey(_ line: Substring) -> Bool {
+        guard let first = line.first, first.isLetter || first == "_",
+              let colon = line.firstIndex(of: ":") else { return false }
+        let key = line[..<colon]
+        let after = line[line.index(after: colon)...]
+        return key.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
+            && (after.isEmpty || after.first == " ")
     }
 
     // MARK: - Block-level parsing of a text run

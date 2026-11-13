@@ -95,6 +95,16 @@ verdict is recorded here so it isn't retried by accident: **rendering quality wo
 over selection**, and the escape hatch is the mode switch, not a better
 renderer.
 
+**Front matter renders as a YAML code block.** A `---` on the first line, closed
+by `---` or `...`, is lifted out before any other parsing. Read as Markdown it
+was a rule, one run-on paragraph, and (the closing `---` sitting under that
+paragraph) a setext heading: `DESIGN.md` opened with a page of huge bold tokens.
+A table like GitHub's was passed over because front matter nests, and hiding it
+would hide part of the file. The test is strict, because `---` is also a rule:
+both markers in column 0, a `key:` on the line after the opening one, and no
+``` fence before the close. A file that starts with a rule and then a title,
+prose or a blank line renders as it did.
+
 **⌘F** searches whatever is on screen. It finds *lines* — the thing being
 searched is a table of hand-drawn rows, not text, so `NSTextFinder` has nothing
 to attach to — and it lives in the Edit menu, resolving through the responder

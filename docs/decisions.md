@@ -238,6 +238,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the column to a window to a tab. The browser was a pane, was removed as
   unused after six days, and came back as a tab. The separate browser window
   was dropped (`0e13607`, `6ee3e30`, `09ce308`).
+- **2026-11-13. Markdown front matter renders as a YAML code block**, not as
+  a table like GitHub's (front matter nests) and not hidden (it is part of the
+  file). Detection is strict, because `---` is also a rule and a setext
+  underline.
 
 ## Running processes
 

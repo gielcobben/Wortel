@@ -142,7 +142,9 @@ private struct PreviewTabHeader: View {
                 .truncationMode(.middle)
                 .help(document.requestedURL.path)
             Spacer(minLength: 8)
-            if document.availableModes.count > 1 {
+            // A binary file draws the same picture in every mode, so there is
+            // no choice to offer (the window disables its control likewise).
+            if !document.isBinary, document.availableModes.count > 1 {
                 ModeSwitch(modes: document.availableModes, selection: $document.mode)
             }
             Button(action: openInWindow) {

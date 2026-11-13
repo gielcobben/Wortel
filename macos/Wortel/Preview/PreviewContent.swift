@@ -27,7 +27,11 @@ struct PreviewContent: View {
                 // only when it doesn't fit. Quick Look scales *up* to fill the
                 // window, which turns a 16pt icon into a wall of blur.
                 if PreviewMode.isImage(document.url) {
+                    // The image keeps its size; the space around it is the
+                    // view's. Without the frame the whole tab shrinks to the
+                    // picture and its header floats down to mid-column with it.
                     ImagePreview(url: document.url, version: document.contentVersion)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     QuickLook(url: document.url)
                 }
@@ -146,6 +150,7 @@ struct PreviewContent: View {
             // The picture the code makes. NSImage renders SVG as vector, so it's
             // sharp at any size rather than a bitmap of one.
             ImagePreview(url: document.url, version: document.contentVersion)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if document.blocks.isEmpty {
             empty("Empty document")
         } else {

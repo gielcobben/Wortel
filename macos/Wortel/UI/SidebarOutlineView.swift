@@ -63,15 +63,24 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     /// Room below the last row of a section, so sections stand apart while
     /// the rows inside one sit close. Kept out of the pill and the hover.
     var gapBelow: CGFloat = 0 {
-        didSet { if gapBelow != oldValue { needsLayout = true; needsDisplay = true } }
+        didSet {
+            guard gapBelow != oldValue else { return }
+            needsLayout = true; needsDisplay = true
+            updateTrackingAreas()
+        }
+    }
+
+    /// The row without its gap: where the pill is, and what the pointer hovers.
+    var contentRect: NSRect {
+        var rect = bounds
+        rect.size.height -= gapBelow
+        if !isFlipped { rect.origin.y += gapBelow }
+        return rect
     }
 
     /// The pill, and the box the close button is laid out against.
     private var pillRect: NSRect {
-        var rect = bounds
-        rect.size.height -= gapBelow
-        if !isFlipped { rect.origin.y += gapBelow }
-        return rect.insetBy(dx: Self.pillInset.width, dy: Self.pillInset.height)
+        contentRect.insetBy(dx: Self.pillInset.width, dy: Self.pillInset.height)
     }
 
     override func drawBackground(in dirtyRect: NSRect) {
@@ -239,11 +248,14 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        // `.inVisibleRect` keeps the area right as the list scrolls, so the rect
-        // passed here is ignored.
+        // The row less its gap: the space between two sections hovers nothing.
+        // A row without one keeps `.inVisibleRect`, which follows the list as
+        // it scrolls and ignores the rect.
         let area = NSTrackingArea(
-            rect: .zero,
-            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            rect: gapBelow > 0 ? contentRect : .zero,
+            options: gapBelow > 0
+                ? [.mouseEnteredAndExited, .activeInActiveApp]
+                : [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
             owner: self,
             userInfo: nil)
         addTrackingArea(area)
@@ -387,8 +399,9 @@ final class SidebarCellView: NSTableCellView {
     /// The section gap under the last row of a section (see
     /// `SidebarPillRowView.gapBelow`): part of the row, so it folds away with
     /// the section's rows, but outside the content.
-    var gapBelow: CGFloat = 0 {
-        didSet { bottom.constant = -gapBelow }
+    /// Animated, it eases with the row's height in the same group.
+    func setGapBelow(_ gap: CGFloat, animated: Bool = false) {
+        (animated ? bottom.animator() : bottom).constant = -gap
     }
 
     init(content: AnyView) {
@@ -507,6 +520,13 @@ final class SidebarOutline: NSOutlineView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let row = self.row(at: point)
+        // The gap between two sections is no row's: a press there neither
+        // selects the session above it nor starts a drag.
+        if row >= 0, let rowView = rowView(atRow: row, makeIfNecessary: false) as? SidebarPillRowView,
+           rowView.gapBelow > 0,
+           !rowView.contentRect.contains(rowView.convert(point, from: self)) {
+            return
+        }
         // A press on a row's button ("+", "…", "×") is the button's, not a
         // header toggle.
         let onButton = window?.contentView?.hitTest(event.locationInWindow) is SidebarCloseButton
@@ -740,6 +760,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         private var looseShown = true
         private var shownLoose: [SessionItem] { looseShown ? looseItems : [] }
         private var folderItems: [FolderItem] = []          // ordered, as rendered
+        /// The sessions carrying a section gap (`gapBelow`): the last row of
+        /// every section but the last. Rebuilt with the items.
+        private var gapIDs: Set<Session.ID> = []
         private var childrenByFolder: [String: [SessionItem]] = [:]
         private var folderCache: [String: FolderItem] = [:]
         private var sessionCache: [UUID: SessionItem] = [:]
@@ -910,13 +933,10 @@ struct SidebarOutlineView: NSViewRepresentable {
             guard let outline else { return }
             let old = snapshot
             let changedTall = Set(new.flatMap(\.tallIDs)).symmetricDifference(old.flatMap(\.tallIDs))
-            let oldLast = lastRows
+            let oldGaps = gapIDs
             snapshot = new
             rebuildItems(resetLoose: false)
-            let newLast = lastRows
-            let changedLast = (oldLast + newLast).filter { item in
-                !(oldLast.contains { $0 === item } && newLast.contains { $0 === item })
-            }
+            let changedGaps = oldGaps.symmetricDifference(gapIDs)
             var folded: [Any] = []
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = Motion.tabs
@@ -947,11 +967,11 @@ struct SidebarOutlineView: NSViewRepresentable {
                     }
                 }
                 outline.endUpdates()
-                if !changedTall.isEmpty || !changedLast.isEmpty {
+                if !changedTall.isEmpty || !changedGaps.isEmpty {
                     var rows = IndexSet(changedTall.compactMap { id in
                         sessionCache[id].map { outline.row(forItem: $0) }.flatMap { $0 >= 0 ? $0 : nil }
                     })
-                    rows.formUnion(refreshGaps(changedLast, in: outline))
+                    rows.formUnion(moveGaps(changedGaps, in: outline))
                     outline.noteHeightOfRows(withIndexesChanged: rows)
                 }
             }
@@ -1020,6 +1040,9 @@ struct SidebarOutlineView: NSViewRepresentable {
                     looseItems = items
                 }
             }
+            let sections = (pinnedItems.isEmpty ? [] : [pinnedItems]) + (looseItems.isEmpty ? [] : [looseItems])
+                + folderItems.map { childrenByFolder[$0.name] ?? [] }
+            gapIDs = Set(sections.dropLast().compactMap { $0.last?.id })
             if resetLoose { looseShown = !manager.looseCollapsed }
             let liveIDs = Set(snapshot.flatMap(\.sessionIDs))
             sessionCache = sessionCache.filter { liveIDs.contains($0.key) }
@@ -1086,7 +1109,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                 content = AnyView(SidebarRowContent(manager: manager, session: session.session))
                 cell = SidebarCellView(content: content)
                 cell.dragTitle = session.session.leafName
-                cell.gapBelow = gapBelow(item)
+                cell.setGapBelow(gapBelow(item))
             } else if item is PinnedItem || item is LooseHeaderItem {
                 content = AnyView(SidebarSectionHeaderContent(manager: manager, isPinned: item is PinnedItem))
                 cell = SidebarCellView(content: content)
@@ -1118,33 +1141,27 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// The room under a section, carried by its last row: none under the
         /// last section, and none under a folded or empty one, whose rows
         /// aren't there to carry it. Folded sections stack as close as rows,
-        /// as the Claude app's do, and the gap folds in the same animation as
-        /// the rows. (It was the room above the next header, which then had
-        /// to change height beside the fold, and the two animations jumped.)
-        private func gapBelow(_ item: Any) -> CGFloat {
-            guard let session = item as? SessionItem else { return 0 }
-            let gap: CGFloat = 14
-            if session === pinnedItems.last { return looseItems.isEmpty && folderItems.isEmpty ? 0 : gap }
-            if session === looseItems.last { return folderItems.isEmpty ? 0 : gap }
-            return folderItems.dropLast().contains { childrenByFolder[$0.name]?.last === session } ? gap : 0
+        /// and the gap folds in the same animation as the rows. (It was the
+        /// room above the next header, which then had to change height beside
+        /// the fold, and the two animations made the title jump.)
+        private func gapBelow(_ item: Any?) -> CGFloat {
+            guard let session = item as? SessionItem, gapIDs.contains(session.id) else { return 0 }
+            return 14
         }
 
-        /// The last row of every section, which carries its gap.
-        private var lastRows: [SessionItem] {
-            [pinnedItems.last, looseItems.last].compactMap { $0 }
-                + folderItems.compactMap { childrenByFolder[$0.name]?.last }
-        }
-
-        /// Rows that keep their views through a move (`reorder`) and gained or
-        /// lost a section's last place: give them their gap, and their height.
-        private func refreshGaps(_ items: [SessionItem], in outline: NSOutlineView) -> IndexSet {
+        /// Rows that keep their views through a re-sort (`reorder`) and gained
+        /// or lost a section's last place: their gap eases in the move's
+        /// animation group, with their height (the rows returned).
+        private func moveGaps(_ ids: Set<Session.ID>, in outline: NSOutlineView) -> IndexSet {
             var rows = IndexSet()
-            for item in items {
+            for id in ids {
+                guard let item = sessionCache[id] else { continue }
                 let row = outline.row(forItem: item)
                 guard row >= 0 else { continue }
                 rows.insert(row)
                 (outline.rowView(atRow: row, makeIfNecessary: false) as? SidebarPillRowView)?.gapBelow = gapBelow(item)
-                (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCellView)?.gapBelow = gapBelow(item)
+                (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCellView)?
+                    .setGapBelow(gapBelow(item), animated: true)
             }
             return rows
         }
@@ -1553,7 +1570,17 @@ struct SidebarOutlineView: NSViewRepresentable {
             let topLevelEnd = rootOffset + shownLoose.count
             guard let item = outline.item(atRow: row) else { return (nil, topLevelEnd, nil) }
             let rect = outline.rect(ofRow: row)
-            let topHalf = hovered >= 0 && point.y < rect.midY
+            let gap = gapBelow(item)
+            let topHalf = hovered >= 0 && point.y < rect.minY + (rect.height - gap) / 2
+
+            // The gap under Pinned's last row is the gap above the next
+            // section, which is out of any folder: first among the folderless
+            // sessions, as onto their header.
+            if hovered >= 0, gap > 0, point.y >= rect.maxY - gap,
+               let session = item as? SessionItem, session === pinnedItems.last {
+                overSectionHeader = !looseItems.isEmpty
+                return (nil, rootOffset, nil)
+            }
 
             // Onto a section's header: first in it, as onto a folder's. Pinned
             // folded, onto the header itself: there are no rows to put a line
@@ -1573,8 +1600,10 @@ struct SidebarOutlineView: NSViewRepresentable {
                 // The top edge of the very first section is the "move to top
                 // level" zone — the top-level band renders above the folders but
                 // has no row to aim at when it's empty. Dropping here inserts
-                // the session above the first folder (at top level).
-                if folder === folderItems.first, point.y < rect.minY + rect.height * 0.34 {
+                // the session above the first folder (at top level). With a
+                // section above, the gap over this header is that section's,
+                // and its own drop handles it.
+                if folder === folderItems.first, rootOffset == 0, point.y < rect.minY + rect.height * 0.34 {
                     return (nil, topLevelEnd, nil)
                 }
                 return (nil, 0, folder) // onto the header → first in the folder
@@ -1634,7 +1663,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         private func insertionY(parent: Any?, index: Int) -> CGFloat {
             guard let outline else { return 0 }
             func topOfRow(_ row: Int) -> CGFloat { outline.rect(ofRow: row).minY }
-            func bottomOfRow(_ row: Int) -> CGFloat { outline.rect(ofRow: row).maxY }
+            // Under the row, not under its gap: the line stays with the
+            // section it drops into.
+            func bottomOfRow(_ row: Int) -> CGFloat { outline.rect(ofRow: row).maxY - gapBelow(outline.item(atRow: row)) }
 
             if parent is PinnedItem {
                 if index < pinnedItems.count { return topOfRow(outline.row(forItem: pinnedItems[index])) }

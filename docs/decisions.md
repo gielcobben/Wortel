@@ -109,10 +109,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   rows as drawn**, not the stored order (`24697f0`, `653029d`).
 - **2026-11-17. A folded section keeps no gap under it.** The 14pt between
   sections sets an open section's rows apart from the next; under a folded one
-  it only spread the headers out. Folded folders now stack as rows do, as the
-  Claude app's do. The gap is the bottom of a section's last row, so it folds
-  with the rows. As room above the next header it had to change that header's
-  height beside the fold, and the two animations made the title jump.
+  it only spread the headers out. Folded folders now stack as rows do. The
+  gap is the bottom of a section's last row, so it folds with the rows, and a
+  press or hover in it belongs to no row. As room above the next header it had
+  to change that header's height beside the fold, and the two animations made
+  the title jump.
 
 ## Sessions
 

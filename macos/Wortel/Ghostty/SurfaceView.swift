@@ -328,12 +328,48 @@ final class SurfaceView: NSView {
         // is `pty`: the surface's `receive_userdata` is an unretained pointer
         // to it, and libghostty's IO thread may still write an answer through
         // that pointer until the surface is gone.
-        guard let pty else { return ghostty_surface_free(surface) }
+        guard let pty else {
+            ghostty_surface_free(surface)
+            return retireLayer()
+        }
         pty.enqueue {
             DispatchQueue.main.async {
-                withExtendedLifetime((self, pty)) { ghostty_surface_free(surface) }
+                withExtendedLifetime((self, pty)) {
+                    ghostty_surface_free(surface)
+                    // Only if nothing has replaced the surface since.
+                    if self.surface == nil { self.retireLayer() }
+                }
             }
         }
+    }
+
+    /// Take libghostty's layer off this view once its surface is freed, and
+    /// keep it alive a little longer. Both halves were a crash.
+    ///
+    /// The layer outlives its surface: libghostty releases its own reference
+    /// on free but leaves the layer on the view, still pointing at the freed
+    /// renderer, and its `display` draws a frame through that pointer. In
+    /// Ghostty.app the view goes with the surface, so nothing ever asks. Here
+    /// a hibernated terminal keeps its view, hidden in the window, and a
+    /// resize of it (the sidebar opening or closing resizes every hidden
+    /// terminal) or a change of scale asked its layer to display: EXC_BAD_ACCESS
+    /// in `renderer.generic.Renderer.drawFrame` under a Core Animation commit
+    /// (2026-11-17). So the view gets a plain layer instead.
+    ///
+    /// Not dropped at once: a frame the renderer finished just before the free
+    /// hands its IOSurface to the layer in a block on the main queue
+    /// (`Frame.bufferCompleted`), which holds the layer unretained.
+    private func retireLayer() {
+        guard let old = layer else { return }
+        let blank = CALayer()
+        blank.contentsScale = old.contentsScale
+        layer = blank
+        Self.holdRetiredLayer(old)
+    }
+
+    private static func holdRetiredLayer(_ layer: CALayer) {
+        nonisolated(unsafe) let layer = layer
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { withExtendedLifetime(layer) {} }
     }
 
     /// Start a new shell in this view, in place of one that went with its
@@ -365,6 +401,9 @@ final class SurfaceView: NSView {
         TerminalModeRecorder.shared.forget(session: sessionID)
         if let old = surface {
             surface = nil
+            // The new surface puts its own layer on this view; the old one is
+            // held past the old surface's free, as `retireLayer` explains.
+            let oldLayer = layer
             // Freed only once the old pty's queue has nothing left to write
             // into it, as in `close`.
             if let pty {
@@ -372,10 +411,12 @@ final class SurfaceView: NSView {
                 pty.enqueue {
                     DispatchQueue.main.async {
                         withExtendedLifetime(pty) { ghostty_surface_free(old) }
+                        if let oldLayer { Self.holdRetiredLayer(oldLayer) }
                     }
                 }
             } else {
                 ghostty_surface_free(old)
+                if let oldLayer { Self.holdRetiredLayer(oldLayer) }
             }
         }
 
@@ -553,6 +594,7 @@ final class SurfaceView: NSView {
         surface = nil
         focused = false
         ghostty_surface_free(old)
+        retireLayer()
 
         let bytes = (try? FileManager.default.attributesOfItem(atPath: snapshot.path)[.size] as? Int) ?? -1
         let ms = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e6

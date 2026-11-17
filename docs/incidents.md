@@ -276,3 +276,33 @@ checked against the binary (`lldb … disassemble -n`) before trusting the
 header. Memory that grows with time, not with sessions, is a leak: find it
 with `heap` on the running app and `malloc_history` on a test copy started
 with `MallocStackLogging=1`.
+
+## 2026-11-17. A hibernated terminal crashed the app
+
+**Seen:** Wortel quit twice in ten minutes, the first time around hovering old
+sessions and opening one. Both reports: the main thread in a Core Animation
+commit, inside libghostty's `renderer.generic.Renderer.drawFrame`, once
+`EXC_BAD_ACCESS` reading a property, once a corrupt unfair lock. The system
+log had no hang for the beach ball seen just before; the likeliest reading is
+the app frozen while the crash report was written.
+
+**Cause:** libghostty's layer outlives its surface. On free it drops its own
+reference but leaves the layer on the view, and the layer's `display` still
+calls `drawFrame` on the freed renderer (`IOSurfaceLayer.display` tail-calls
+`display_cb(display_ctx)`, read off the disassembly). In Ghostty.app the view
+goes with the surface. Hibernation keeps the view, hidden in the window, so
+the next time Core Animation displayed that layer the app read freed memory.
+A test copy with `WORTEL_HIBERNATE_AFTER=5` and three sessions crashed with
+the same stack within seconds of the terminals hibernating.
+
+**Changed:** `SurfaceView.retireLayer` puts a plain layer on the view as the
+surface is freed (hibernate, close), and holds libghostty's two more seconds,
+because a frame finished just before the free hands its IOSurface to the layer
+from a main-queue block that holds the layer unretained. A restart holds the
+replaced layer the same way. The same test copy then lived through
+hibernation and four window resizes, three runs, and woken terminals read back
+their whole screens.
+
+**Rule:** a surface freed while its view lives on takes its layer with it.
+Anything that keeps a `SurfaceView` past its surface (hibernation now, any
+future pooling) goes through `retireLayer`.

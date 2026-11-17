@@ -64,6 +64,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-10-20. A reload of the config is applied synchronously on the main
   thread**, as Ghostty.app does. Applied a turn later, a program asking for the
   background colour got the old one. See `incidents.md` (`3d8e922`).
+- **2026-11-12. A performable libghostty binding goes before the menu**, as in
+  Ghostty.app, so ⌘C with nothing selected reaches the program (`24559b1`).
+  Libghostty's defaults on keys the menu owns and Wortel never handles (⌘J,
+  ⇧⌘T, ⌘F, ⌘G, ⇧⌘G) are unbound in `wortel.conf`: otherwise each one does
+  nothing and goes on to the program, and ⌘J typed `j` into Claude instead of
+  opening the strip. To list what is still performable, ask
+  `ghostty_surface_key_is_binding` for its flags; `ghostty_config_trigger`
+  doesn't report performable bindings.
 - **2026-11-16. The main window is movable only while fn-⌃ is held, a menu
   is open or the pointer is outside it** (`WindowMovability`). Not any
   modifier: ⌃ and ⌘ are down half the time in a terminal. Replaces

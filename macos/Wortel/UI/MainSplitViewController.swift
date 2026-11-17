@@ -313,6 +313,10 @@ final class MainSplitViewController: NSSplitViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        // Every pass, not only on a resize notification: the split view lays
+        // its panes out without one at launch, and the sidebar's controls
+        // were left where the zero-width panes before it had put them.
+        updateLeadingInsets()
         guard !didApplyInitialWidth, splitView.bounds.width > 0 else { return }
         didApplyInitialWidth = true
         lastSplitWidth = splitView.bounds.width
@@ -433,16 +437,19 @@ final class MainSplitViewController: NSSplitViewController {
     private func updateLeadingInsets() {
         guard let sidebarItem else { return }
         let controls = titleBars.sidebarControls
+        // In the controls' coordinates, through the window: what a pane's
+        // frame is relative to is the split view's business.
+        func minX(_ item: NSSplitViewItem) -> CGFloat {
+            let view = item.viewController.view
+            return controls.convert(view.bounds, from: view).minX
+        }
         let panes = splitViewItems.dropFirst().filter { !$0.isCollapsed }
-        let edge = panes.first.map {
-            max(0, $0.viewController.view.frame.minX - splitView.dividerThickness)
-        } ?? splitView.bounds.width
-        // The split view and the controls both start at the window's leading
-        // edge (BackdropController), so these x's are the same in both.
+        let edge = panes.first.map { max(0, minX($0) - splitView.dividerThickness) }
+            ?? controls.bounds.width
         let clearsTo = controls.place(sidebarEdge: edge, collapsed: sidebarItem.isCollapsed) + 8
         func clearance(_ item: NSSplitViewItem?) -> CGFloat {
             guard let item, !item.isCollapsed else { return 0 }
-            return max(0, clearsTo - item.viewController.view.frame.minX)
+            return max(0, clearsTo - minX(item))
         }
         titleBars.mainBar.leadingClearance = clearance(contentItem)
         titleBars.sideBar.leadingClearance = clearance(inspectorItem)

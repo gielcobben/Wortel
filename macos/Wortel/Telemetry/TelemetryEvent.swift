@@ -115,6 +115,11 @@ enum TelemetryEvent: Equatable {
     case sessionArchived
     case sessionUnarchived
 
+    /// A reminder was set on a session, from a menu or `wortel remind`.
+    /// Whether anyone comes back to sessions this way. No properties: when
+    /// it is for says something about the person's day.
+    case reminderSet
+
     /// Someone used the jump-to-next-waiting shortcut. Without this, attention
     /// looks used simply because it fires; this says whether anyone acts on it.
     case agentJumpUsed
@@ -168,6 +173,7 @@ enum TelemetryEvent: Equatable {
         case .keeperLost: return "keeper_lost"
         case .sessionArchived: return "session_archived"
         case .sessionUnarchived: return "session_unarchived"
+        case .reminderSet: return "reminder_set"
         case .appCrashed: return "app_crashed"
         case .globalHotkeyUsed: return "global_hotkey_used"
         case .commandRun: return "command_run"
@@ -213,7 +219,8 @@ enum TelemetryEvent: Equatable {
             return ["signal": signal.rawValue, "exception": exception.rawValue,
                     "site": site?.rawValue ?? "none", "signature": signature?.rawValue ?? "none",
                     "crashed_version": version?.rawValue ?? "unknown", "crashed_arch": arch.rawValue]
-        case .agentJumpUsed, .globalHotkeyUsed, .reportingDisabled, .sessionArchived, .sessionUnarchived:
+        case .agentJumpUsed, .globalHotkeyUsed, .reportingDisabled, .sessionArchived, .sessionUnarchived,
+             .reminderSet:
             return [:]
         case let .commandRun(verb):
             return ["verb": verb.rawValue]
@@ -507,6 +514,7 @@ enum CommandVerb: String {
     case rename
     case notify
     case mark
+    case remind
     case list
     case read
     case send

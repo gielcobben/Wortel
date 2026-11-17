@@ -191,6 +191,9 @@ final class Session: Identifiable {
     /// Marked unread by hand (⇧⌘U): the ring shows even on the selected row,
     /// and nothing clears it until you've left the session and come back.
     var markedUnread = false
+    /// When this session's reminder is due (Remind Me, `wortel remind`), or
+    /// nil. Saved; the manager keeps one timer for the earliest of them.
+    var remindAt: Date?
     /// Convenience for the count-based Dock badge and close bookkeeping.
     var needsAttention: Bool { attention != nil }
     /// A foreground command is currently running in this session. Debounced by
@@ -307,9 +310,10 @@ final class Session: Identifiable {
     var leafName: String { SessionName.leaf(of: name) }
 
     /// Whether the sidebar row is two lines tall: a worktree session named for
-    /// its task, with its branch under the name. Waiting on you doesn't add one:
-    /// the dot says it, and what the session said is on the row's tooltip.
-    var hasSecondLine: Bool { showsBranchLine || folderIsGone }
+    /// its task, with its branch under the name, or one with a reminder set,
+    /// with when under it. Waiting on you doesn't add one: the dot says it,
+    /// and what the session said is on the row's tooltip.
+    var hasSecondLine: Bool { showsBranchLine || folderIsGone || remindAt != nil }
 
     /// The folder this session stands in has been deleted (a removed worktree,
     /// a demo repo, a branch's folder cleaned up by an agent). Said on the row

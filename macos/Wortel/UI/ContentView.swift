@@ -372,6 +372,8 @@ struct SidebarRowContent: View {
                 let note = manager.attentionNote(for: session)
                 return SessionRow.Waiting(kind: kind, message: note.message, since: note.since)
             },
+            // (The day is read so that "Tomorrow" is written again at midnight.)
+            reminder: session.remindAt.map { ($0, manager.reminderDay).0 },
             // Only this row's rename: a late end of this field's edit, after
             // another row's has begun, must not end that one too.
             commit: { newName in
@@ -533,8 +535,8 @@ enum SessionActions {
             return item
         }
 
-        // The items with shortcuts first, then Colour, which opens a submenu,
-        // last: the same order as the several-sessions menu below.
+        // The items with shortcuts first, then Colour and Remind Me, which
+        // open submenus, last: the same order as the several-sessions menu below.
         let pinned = manager.isPinned(session)
         _ = item(pinned ? "Unpin" : "Pin", pinned ? "pin.slash" : "pin", key: "p", [.command, .option]) {
             manager.setPinned(session, !pinned)
@@ -545,6 +547,7 @@ enum SessionActions {
             manager.markUnread(session)
         }
         menu.addItem(SessionColourMenu.item(for: session, manager: manager))
+        ReminderMenu.items(for: session, manager: manager).forEach(menu.addItem)
 
         menu.addItem(.separator())
         if let cwd = session.cwd {
@@ -594,6 +597,7 @@ enum SessionActions {
             item("Mark as Unread", "circle.dashed") { manager.markUnread(sessions) }
         }
         menu.addItem(SessionColourMenu.item(for: sessions, manager: manager))
+        ReminderMenu.items(for: sessions, manager: manager).forEach(menu.addItem)
         menu.addItem(.separator())
         // Worktree sessions archive, as closing one does (`SessionManager.end`).
         item("Close \(sessions.count) Sessions", "xmark.square") { manager.requestClose(sessions) }
@@ -821,6 +825,11 @@ struct SessionRow: View {
     let isHovered: Bool
     /// What the session is waiting on you for, while it is: the row's tooltip.
     let waiting: Waiting?
+    /// When the session's reminder is due, while one is set: said under the
+    /// name, where a worktree's branch is, and after the branch if there is
+    /// one. Not at the row's end: that slot is the dots', and a time there
+    /// had to hide whenever one showed.
+    let reminder: Date?
     let commit: (String) -> Void
     let cancel: () -> Void
 
@@ -875,13 +884,31 @@ struct SessionRow: View {
                     // Where the work lives, under what the work is. Only for a
                     // worktree session whose name has moved on from the branch;
                     // the row height follows `hasSecondLine` (SidebarOutlineView).
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                        TruncatingLabel(text: branch, font: .systemFont(ofSize: 11),
-                                        color: .tertiaryLabelColor)
+                    // With a reminder set, its time goes first, written
+                    // short ("Tue 09:00"): the time is the news, and the
+                    // branch is what gives way when the line is too long.
+                    // A line that doesn't fit slides on hover, as the name
+                    // does.
+                    // The words are made here, once: the marquee draws its
+                    // line again on every frame of a slide.
+                    let due = reminder.map(ReminderWords.init)
+                    Marquee(active: isHovered) {
+                        HStack(spacing: 3) {
+                            if let due {
+                                reminderLine(due, short: true)
+                                Text(verbatim: "\u{00B7}").font(.system(size: 11)).foregroundStyle(Self.secondLineColor)
+                            }
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Self.secondLineColor)
+                            Text(verbatim: branch)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Self.secondLineColor)
+                                .lineLimit(1)
+                        }
                     }
+                } else if let reminder {
+                    reminderLine(ReminderWords(reminder))
                 }
             }
             Spacer(minLength: 4)
@@ -894,45 +921,121 @@ struct SessionRow: View {
         // redraws when the pointer comes onto it, so "4m" is current.
         .help(waiting.map { $0.text(at: .now) } ?? "")
     }
+
+    /// The second line's grey: the label colour itself, not SwiftUI's
+    /// `.tertiary`. That one is drawn vibrantly on the sidebar's glass and
+    /// loses it inside the marquee's fading mask: sliding, the line went the
+    /// colour of the glass behind it (measured: 0.65 at rest, 0.40 on hover,
+    /// on a 0.40 ground). This is the same in both.
+    private static let secondLineColor = Color(nsColor: .tertiaryLabelColor)
+
+    /// "Tomorrow at 09:00", with the clock the menu's Remind Me has, in the
+    /// branch line's size and grey. `short` writes it "Tue 09:00".
+    private func reminderLine(_ due: ReminderWords, short: Bool = false) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: ReminderMenu.glyph)
+                .font(.system(size: 9))
+                .foregroundStyle(Self.secondLineColor)
+            Text(verbatim: short ? due.short : due.full)
+                .font(.system(size: 11))
+                .foregroundStyle(Self.secondLineColor)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Reminder \(due.spoken)")
+    }
+
+    /// When a reminder is due, in the row's words.
+    private struct ReminderWords {
+        /// "tomorrow at 09:00", to follow "Reminder".
+        let spoken: String
+        /// "Tomorrow at 09:00".
+        let full: String
+        /// "Tue 09:00".
+        let short: String
+
+        init(_ due: Date) {
+            let now = Date()
+            spoken = ReminderTime.describe(due, now: now)
+            full = spoken.prefix(1).uppercased() + spoken.dropFirst()
+            short = ReminderTime.brief(due, now: now)
+        }
+    }
 }
 
 /// A session's name in its row: cut short with an ellipsis at rest, and on
-/// hover, when it doesn't fit, a marquee: after the pointer has rested a
-/// moment it slides slowly left to show the rest, between soft edges, and
-/// stops with the name's end by the row's buttons, as the ChatGPT app's rows
-/// do. Leaving the row puts it back.
-///
-/// Driven frame by frame from when the hover began (TimelineView), not by a
-/// SwiftUI animation: the sliding text appears in the same update the hover
-/// does, and an animation started there was skipped, the name jumping
-/// straight to its end.
+/// hover, when it doesn't fit, a marquee (`Marquee`).
 private struct MarqueeName: View {
     let text: String
     let active: Bool
 
-    @State private var textWidth: CGFloat = 0
-    @State private var boxWidth: CGFloat = 0
-    /// When the pointer came onto the row.
-    @State private var hoverStart: Date?
-    /// The slide has reached its end: stop redrawing.
-    @State private var settled = false
+    var body: some View {
+        Marquee(active: active) {
+            Text(text).font(.system(size: 13)).lineLimit(1)
+        }
+        .accessibilityLabel(text)
+    }
+}
 
-    private static let font = Font.system(size: 13)
+/// How a row's sliding lines move.
+private enum MarqueeMotion {
     /// Points a second: slow enough to read along.
     static let speed: CGFloat = 24
     /// How long the pointer rests on the row before it moves: passing over a
     /// row on the way somewhere doesn't set it going.
     static let delay: TimeInterval = 1.0
     /// The soft edges: wider where the text has come from than where it's
-    /// going, so the end of the name sits close to the row's buttons.
-    private static let leadingFade: CGFloat = 24
-    private static let trailingFade: CGFloat = 16
-    /// How far the sliding text may run past its box to the left: the
+    /// going, so the end of the line sits close to the row's buttons.
+    static let leadingFade: CGFloat = 24
+    static let trailingFade: CGFloat = 16
+    /// How far the sliding line may run past its box to the left: the
     /// pill's padding, so it slides out at the pill's edge.
-    private static let bleed: CGFloat = 10
+    static let bleed: CGFloat = 10
 
-    private var overflow: CGFloat { max(0, textWidth - boxWidth) }
-    /// To the name's end exactly: the trailing fade shrinks away as the end
+    static func duration(for distance: CGFloat) -> TimeInterval {
+        TimeInterval(distance / speed)
+    }
+
+    /// How far the line has slid `elapsed` seconds into the hover: nothing
+    /// during the delay, then eased in and out over the distance, then there.
+    static func offset(after elapsed: TimeInterval, distance: CGFloat) -> CGFloat {
+        let duration = self.duration(for: distance)
+        guard elapsed > delay, duration > 0 else { return 0 }
+        let t = min(1, (elapsed - delay) / duration)
+        let eased = t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
+        return distance * CGFloat(eased)
+    }
+}
+
+/// One line of a row (the session's name, or the branch and reminder under
+/// it): cut short at rest, and on hover, when it doesn't fit, a marquee:
+/// after the pointer has rested a moment it slides slowly left to show the
+/// rest, between soft edges, and stops with its end by the row's buttons, as
+/// the ChatGPT app's rows do. Leaving the row puts it back.
+///
+/// `line` is the line with whatever in it gives way left free to (a `Text`
+/// with a line limit): at rest it's given the row's width, and sliding, its
+/// own.
+///
+/// Driven frame by frame from when the hover began (TimelineView), not by a
+/// SwiftUI animation: the sliding text appears in the same update the hover
+/// does, and an animation started there was skipped, the name jumping
+/// straight to its end.
+private struct Marquee<Line: View>: View {
+    let active: Bool
+    @ViewBuilder let line: () -> Line
+
+    /// The line at its full width.
+    @State private var lineSize: CGSize = .zero
+    @State private var boxWidth: CGFloat = 0
+    /// When the pointer came onto the row.
+    @State private var hoverStart: Date?
+    /// The slide has reached its end: stop redrawing.
+    @State private var settled = false
+
+    private var overflow: CGFloat { max(0, lineSize.width - boxWidth) }
+    /// To the line's end exactly: the trailing fade shrinks away as the end
     /// arrives, so the last letter lands by the buttons unfaded.
     private var distance: CGFloat { overflow }
     private var sliding: Bool { active && overflow > 0.5 }
@@ -945,17 +1048,16 @@ private struct MarqueeName: View {
                 // left by half its overflow on hover and ended that far off.
                 // (A flexible frame's `.leading` didn't hold it; measured.)
                 TimelineView(.animation(minimumInterval: nil, paused: settled)) { context in
-                    let slid = Self.offset(after: context.date.timeIntervalSince(hoverStart), distance: distance)
+                    let slid = MarqueeMotion.offset(after: context.date.timeIntervalSince(hoverStart),
+                                                    distance: distance)
                     Color.clear
-                        .frame(height: 16)
+                        .frame(height: lineSize.height)
                         .overlay(alignment: .leading) {
-                            Text(text)
-                                .font(Self.font)
-                                .lineLimit(1)
+                            line()
                                 .fixedSize()
                                 .offset(x: -slid)
                                 // Where it sits at rest, inside the widened box.
-                                .padding(.leading, Self.bleed)
+                                .padding(.leading, MarqueeMotion.bleed)
                         }
                         .clipped()
                         // No fade on the left until there's something past the
@@ -963,30 +1065,25 @@ private struct MarqueeName: View {
                         // width once that much has gone by.
                         // And on the right, only while there's text still
                         // hidden there: it shrinks away as the end arrives.
-                        .mask(edges(leading: min(Self.leadingFade, slid),
-                                    trailing: min(Self.trailingFade, max(0, distance - slid)),
-                                    width: boxWidth + Self.bleed))
+                        .mask(edges(leading: min(MarqueeMotion.leadingFade, slid),
+                                    trailing: min(MarqueeMotion.trailingFade, max(0, distance - slid)),
+                                    width: boxWidth + MarqueeMotion.bleed))
                         // Out to the pill's edge while it slides, so the text
                         // fades away there rather than vanishing 10pt short of it.
-                        .padding(.leading, -Self.bleed)
+                        .padding(.leading, -MarqueeMotion.bleed)
                 }
             } else {
-                Text(text)
-                    .font(Self.font)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                line().frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { boxWidth = $0 }
-        // The name's full width, measured off to the side.
+        // The line's full size, measured off to the side.
         .background(
-            Text(text).font(Self.font).lineLimit(1).fixedSize().hidden()
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 },
+            line().fixedSize().hidden()
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { lineSize = $0 },
             alignment: .leading)
         .onChange(of: active) { _, now in begin(now) }
         .onAppear { begin(active) }
-        .accessibilityLabel(text)
     }
 
     private func begin(_ hovering: Bool) {
@@ -994,7 +1091,7 @@ private struct MarqueeName: View {
         hoverStart = hovering ? Date() : nil
         guard hovering else { return }
         // Stop redrawing once it has arrived.
-        let total = Self.delay + Self.duration(for: distance)
+        let total = MarqueeMotion.delay + MarqueeMotion.duration(for: distance)
         let started = hoverStart
         DispatchQueue.main.asyncAfter(deadline: .now() + total + 0.05) {
             if hoverStart == started { settled = true }
@@ -1002,7 +1099,7 @@ private struct MarqueeName: View {
     }
 
     /// Faded at the ends: on the left by `leading` points (what has slid past
-    /// the edge), and on the right, where the rest of the name is still to
+    /// the edge), and on the right, where the rest of the line is still to
     /// come.
     ///
     /// The left one is eased (smoothstep through a few stops) rather than a
@@ -1022,20 +1119,6 @@ private struct MarqueeName: View {
             .init(color: .black.opacity(eased($0)), location: 1 - trailing * $0)
         }
         return LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
-    }
-
-    static func duration(for distance: CGFloat) -> TimeInterval {
-        TimeInterval(distance / speed)
-    }
-
-    /// How far the name has slid `elapsed` seconds into the hover: nothing
-    /// during the delay, then eased in and out over the distance, then there.
-    static func offset(after elapsed: TimeInterval, distance: CGFloat) -> CGFloat {
-        let duration = self.duration(for: distance)
-        guard elapsed > delay, duration > 0 else { return 0 }
-        let t = min(1, (elapsed - delay) / duration)
-        let eased = t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
-        return distance * CGFloat(eased)
     }
 }
 

@@ -190,6 +190,27 @@ A colour is a note to yourself, and only you take it off: opening the session
 leaves it. Use it for a session you're nearly done with but want to keep, like
 a review waiting on CI.
 
+### `wortel remind [--session <s>] <when>`
+
+Brings the session back to you later, as Remind Me in the row's menu does:
+when the time comes, the session gets the unread ring and you get a
+notification. `<when>` is a duration (`20m`, `1h`, `2d`, `1w`, `in 2h`), a
+time on the clock (`15:00`, `3pm`, `9:30am`: today if it's still ahead,
+otherwise tomorrow), `tomorrow` or `next-week` (both at 9:00, next week being
+Monday), or a day with or without a time (`fri`, `friday 14:00`, `tomorrow
+3pm`, `2026-12-03 10:00`; a day alone means 9:00, and a weekday is the next one
+still ahead). Several words need no quotes. `wortel remind none` cancels it.
+
+```sh
+gh pr create --fill && wortel remind 1h     # look at CI in an hour
+wortel remind tomorrow
+wortel remind fri 9am
+wortel remind none
+```
+
+A session has one reminder; setting another replaces it. Opening the session
+before then leaves it set, and closing the session ends it.
+
 ## Reaching other sessions
 
 The commands above act on the session they're run in. These four act on any
@@ -230,8 +251,8 @@ names are a contract: new ones may be added, none will be renamed.
 
 ### Naming a session
 
-Wherever a command takes `<session>` (and `--session` on `rename`, `notify`
-and `mark`) you can give:
+Wherever a command takes `<session>` (and `--session` on `rename`, `notify`,
+`mark` and `remind`) you can give:
 
 - its **id**, the whole one or the short one `list` prints (any start of four
   characters or more);
@@ -343,7 +364,7 @@ take it over. Its id is the only thing the first one has to keep.
 
 ## Which session a command means
 
-`rename`, `notify` and `mark` act on the session they were run in, unless given `--session`. You never pass an id:
+`rename`, `notify`, `mark` and `remind` act on the session they were run in, unless given `--session`. You never pass an id:
 every Wortel shell carries `$WORTEL_SESSION_ID`, and the command reads it. Run
 from outside Wortel they say so instead of guessing:
 

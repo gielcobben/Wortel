@@ -302,6 +302,9 @@ targets:
       - path: Wortel/CLI/WortelCLIClient.swift
       # What `list` and `read` answer with, and how a person sees it.
       - path: Wortel/CLI/WortelReach.swift
+      # What `wortel remind` was given, as a moment: resolved here, so the
+      # command and the app's menu agree on what "tomorrow" means.
+      - path: Wortel/Sessions/ReminderTime.swift
       # Where the sockets are, which the two ends have to agree on.
       - path: Wortel/DataDirectory.swift
     settings:
@@ -333,6 +336,7 @@ targets:
       - path: Wortel/Ghostty/PtyHost.swift
       - path: Wortel/Ghostty/ReplayAnswers.swift
       - path: Wortel/CLI/WortelCommand.swift
+      - path: Wortel/Sessions/ReminderTime.swift
       - path: Wortel/CLI/WortelCLIClient.swift
       - path: Wortel/DataDirectory.swift
     settings:
@@ -466,6 +470,12 @@ targets:
       # What a session's colour can be, which both the file format above and
       # `wortel mark`'s answer depend on (Foundation only).
       - path: Wortel/Sessions/SessionColour.swift
+      # When a reminder is due, and what `wortel remind` takes: dates, which
+      # are wrong quietly (a reminder a day late), and pure (Foundation only).
+      - path: Wortel/Sessions/ReminderTime.swift
+      # The month grid and the times Custom… offers: a grid a column out or a
+      # time offered that has gone is the same kind of quiet.
+      - path: Wortel/Sessions/ReminderCalendar.swift
       # Same again: the Folder/Leaf name split is the whole of sidebar grouping,
       # and it's plain string handling (Foundation only) that `Session` — which
       # does drag in AppKit — only delegates to.

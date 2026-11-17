@@ -188,6 +188,7 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CommandVerb(.rename(session: nil, name: "x")).rawValue, "rename")
         XCTAssertEqual(CommandVerb(.notify(session: nil, title: "t", body: nil)).rawValue, "notify")
         XCTAssertEqual(CommandVerb(.mark(session: nil, colour: "red")).rawValue, "mark")
+        XCTAssertEqual(CommandVerb(.remind(session: nil, at: 0)).rawValue, "remind")
         XCTAssertEqual(CommandVerb(.list(caller: nil)).rawValue, "list")
         XCTAssertEqual(CommandVerb(.read(session: "x", lines: nil)).rawValue, "read")
         XCTAssertEqual(CommandVerb(.send(session: "x", text: "secret prompt", enter: true)).rawValue, "send")
@@ -433,6 +434,7 @@ final class TelemetryTests: XCTestCase {
         }
         events.append(.sessionArchived)
         events.append(.sessionUnarchived)
+        events.append(.reminderSet)
         let offsets = [CodeOffset(0x6_98)!, CodeOffset(0xFF_FFFF_FFFF)!, CodeOffset(0)!]
         for signal in CrashSignal.allCases {
             for exception in CrashException.allCases {
@@ -445,7 +447,7 @@ final class TelemetryTests: XCTestCase {
         }
         events.append(.appCrashed(signal: .other, exception: .other, site: nil, signature: nil,
                                   version: nil, arch: .other))
-        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .list, .read, .send,
+        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .remind, .list, .read, .send,
                                     .wait, .version]
         for verb in verbs {
             events.append(.commandRun(verb: verb))

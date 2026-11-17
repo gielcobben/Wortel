@@ -79,6 +79,7 @@ extension CommandVerb {
         case .rename: self = .rename
         case .notify: self = .notify
         case .mark: self = .mark
+        case .remind: self = .remind
         case .list: self = .list
         case .read: self = .read
         case .send: self = .send

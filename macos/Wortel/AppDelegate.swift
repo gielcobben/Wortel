@@ -310,6 +310,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             center.removeDeliveredNotifications(withIdentifiers: [id])
             center.removePendingNotificationRequests(withIdentifiers: [id])
         }
+        manager.onReminderChanged = { session, date in
+            Self.scheduleReminderFallback(for: session, at: date)
+        }
+        manager.onReminderDue = { session in
+            Self.postReminder(for: session)
+        }
 
         // Occlusion drives "can the user actually see the window": an active
         // app with a miniaturized or fully covered window should still get
@@ -673,6 +679,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().add(request)
     }
 
+    // MARK: - Reminders
+
+    /// A session's reminder banner, one per session, apart from its attention
+    /// banner: answering what an agent asked must not take back a reminder.
+    private static func reminderID(_ session: Session) -> String {
+        "reminder." + session.id.uuidString
+    }
+
+    nonisolated private static func reminderContent(sessionID: UUID, name: String) -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        content.title = "Reminder"
+        content.body = name
+        // You asked for it, at a time you chose: it rings like a calendar's.
+        content.sound = .default
+        content.userInfo = [sessionKey: sessionID.uuidString]
+        return content
+    }
+
+    /// The banner for a reminder, left with Notification Center so it comes
+    /// even with Wortel quit. Set a minute late on purpose
+    /// (`SessionManager.reminderFallbackDelay`): a Wortel that is
+    /// running takes it back on time and posts its own (`postReminder`),
+    /// with the session's name as it is by then. nil takes it back, shown or
+    /// not.
+    private static func scheduleReminderFallback(for session: Session, at date: Date?) {
+        let center = UNUserNotificationCenter.current()
+        let id = reminderID(session)
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+        guard let date else { return }
+        // With the time zone: the trigger is for that moment, not for that
+        // time on the clock wherever the Mac has travelled to since.
+        let when = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute, .second, .timeZone],
+            from: date.addingTimeInterval(SessionManager.reminderFallbackDelay))
+        center.add(UNNotificationRequest(
+            identifier: id, content: reminderContent(sessionID: session.id, name: session.name),
+            trigger: UNCalendarNotificationTrigger(dateMatching: when, repeats: false)))
+    }
+
+    /// A reminder went off for a session nobody is looking at. Unless the
+    /// late banner above already showed (the Mac slept through both), it is
+    /// taken back and this one posted in its place, so there is one banner.
+    private static func postReminder(for session: Session) {
+        let center = UNUserNotificationCenter.current()
+        let id = reminderID(session)
+        let sessionID = session.id
+        let name = session.name
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.getDeliveredNotifications { delivered in
+            guard !delivered.contains(where: { $0.request.identifier == id }) else { return }
+            UNUserNotificationCenter.current().add(UNNotificationRequest(
+                identifier: id, content: reminderContent(sessionID: sessionID, name: name), trigger: nil))
+        }
+    }
+
     /// Whether the user allowed notifications, remembered from the launch
     /// prompt. Only gates the chime we play ourselves — everything Notification
     /// Center delivers is already gated by the system.
@@ -758,6 +820,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the termination paths that never reach here.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         manager?.saveNow()
+        // The banners left with Notification Center are for now: under each
+        // session's name as it is on the way out.
+        manager?.scheduleReminderFallbacks()
         // The sessions outlive us; what their terminals were told has to as
         // well, or the next launch pastes into an agent without brackets.
         TerminalModeRecorder.shared.save()
@@ -1467,6 +1532,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.markUnread(session)
     }
 
+    /// Session ▸ Remind Me ▸ a preset (its index in `tag`), on the selected
+    /// session.
+    @objc func remindSession(_ sender: Any?) {
+        guard let session = manager.selected, let item = sender as? NSMenuItem,
+              ReminderTime.Preset.allCases.indices.contains(item.tag) else { return }
+        manager.setReminder(session, at: ReminderTime.date(for: ReminderTime.Preset.allCases[item.tag], now: Date()))
+    }
+
+    @objc func remindSessionCustom(_ sender: Any?) {
+        guard let session = manager.selected else { return }
+        ReminderDialog.present(on: window, initial: session.remindAt) { [manager] date in
+            manager.setReminder(session, at: date)
+        }
+    }
+
+    @objc func cancelSessionReminder(_ sender: Any?) {
+        guard let session = manager.selected else { return }
+        manager.setReminder(session, at: nil)
+    }
+
     /// Session ▸ Colour: the item's colour (none for None) on the selected
     /// session.
     @objc func setSessionColour(_ sender: Any?) {
@@ -1625,6 +1710,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(markSessionUnread(_:)) {
             return manager.selected != nil
+        }
+        if menuItem.action == #selector(remindSession(_:)) || menuItem.action == #selector(remindSessionCustom(_:)) {
+            return manager.selected != nil
+        }
+        if menuItem.action == #selector(cancelSessionReminder(_:)) {
+            return manager.selected?.remindAt != nil
         }
         if menuItem.action == #selector(setSessionColour(_:)) {
             let colour = (menuItem.representedObject as? String).flatMap(SessionColour.init(rawValue:))

@@ -110,7 +110,8 @@ To read a site, `release.sh --publish` archives each release's dSYMs in
 A crash of the keeper is not an app crash; it shows as `keeper_lost`.
 
 Archives are worktree sessions only, so `session_archived` and
-`session_unarchived` carry nothing. `agent_started` is a run the person
+`session_unarchived` carry nothing, and so does `reminder_set`: when a
+reminder is for says something about the person's day. `agent_started` is a run the person
 started: the agents alive at launch and the resumes Wortel types itself are
 `agents_resumed` instead.
 

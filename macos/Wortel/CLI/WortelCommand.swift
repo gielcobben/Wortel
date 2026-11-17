@@ -45,6 +45,10 @@ enum WortelCommand: Codable, Equatable {
     /// app's (`SessionColour`), and this file is also compiled into the CLI
     /// and the keeper, which have no business knowing them.
     case mark(session: String?, colour: String)
+    /// Remind me about this session at `at` (seconds since 1970), or cancel
+    /// its reminder (nil). Resolved to a moment by the CLI (`ReminderTime`),
+    /// so "tomorrow" means the same thing here as in the app's menu.
+    case remind(session: String?, at: Double?)
     /// Every open session, described (`WortelSessionInfo`, as JSON in the
     /// reply's `value`). `caller` is the asking shell's `$WORTEL_SESSION_ID`,
     /// so the list can say which row is "you".
@@ -80,6 +84,7 @@ enum WortelCommand: Codable, Equatable {
         case .rename: return "rename"
         case .notify: return "notify"
         case .mark: return "mark"
+        case .remind: return "remind"
         case .list: return "list"
         case .read: return "read"
         case .send: return "send"
@@ -287,6 +292,10 @@ enum WortelCommandParser {
           mark [--session <s>] <colour>
                                    colour this session in the sidebar: red, orange,
                                    yellow, green, blue, purple, grey, or none
+          remind [--session <s>] <when>
+                                   bring this session back to you, as the unread
+                                   ring and a notification: 20m, 1h, 15:00, 3pm,
+                                   tomorrow, fri 9am, next-week, or none to cancel
 
           list [--json]            the open sessions: id, name, state, agent,
                                    branch and directory
@@ -456,7 +465,7 @@ enum WortelCommandParser {
         // elsewhere is as safe as naming your own.
         var rest = rest
         var session = callerSession
-        if ["rename", "notify", "mark"].contains(verb), let flag = rest.firstIndex(of: "--session") {
+        if ["rename", "notify", "mark", "remind"].contains(verb), let flag = rest.firstIndex(of: "--session") {
             guard flag + 1 < rest.count else { throw ParseError.missing("a value", "--session") }
             session = rest[flag + 1]
             rest.removeSubrange(flag...(flag + 1))
@@ -500,6 +509,21 @@ enum WortelCommandParser {
                 throw ParseError.missing("a colour, or none", verb)
             }
             return .mark(session: session, colour: colour)
+
+        case "remind":
+            // `fri 9am` needs no quotes: the words are read as one.
+            let when = rest.joined(separator: " ")
+            guard !when.trimmingCharacters(in: .whitespaces).isEmpty else {
+                throw ParseError.missing("a time, or none", verb)
+            }
+            if ["none", "cancel", "off"].contains(when.lowercased()) {
+                return .remind(session: session, at: nil)
+            }
+            guard let date = ReminderTime.parse(when, now: Date()) else {
+                throw ParseError.invalid("remind", when,
+                                         "a time ahead like 20m, 1h, 15:00, 3pm, tomorrow, fri 9am or next-week, or none")
+            }
+            return .remind(session: session, at: date.timeIntervalSince1970)
 
         default:
             throw ParseError.unknown(verb)

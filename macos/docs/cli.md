@@ -265,8 +265,15 @@ matches two sessions is an error listing both, never a pick (`WortelSessionAddre
 A prompt typed into the wrong agent can't be undone, so convenience stops at
 the first sign of doubt. The short id `list` prints is the first block of the
 UUID, accepted as a prefix from four characters, the way git takes a short
-hash. `rename`, `notify` and `mark` accept `--session` too, because labelling a
-session from elsewhere is as harmless as labelling your own.
+hash. `rename`, `notify`, `mark` and `remind` accept `--session` too, because
+labelling a session from elsewhere is as harmless as labelling your own.
+
+**`remind` sends a moment, not the words.** The CLI turns `1h` or `tomorrow`
+into a date (`ReminderTime`, compiled into both ends) before sending it, so the
+command and the menu can't disagree about what "tomorrow" means, and the app
+only checks that it is ahead and within a year. A bare number is refused: `20`
+could be minutes or a time of day, and a wrong guess is a reminder that never
+comes.
 
 **`read` reads the active screen, not the viewport.** The active area is what
 the program last drew; the viewport is wherever the person at the keyboard has

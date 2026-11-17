@@ -126,6 +126,9 @@ struct PersistedSession: Codable {
     /// The session's port block (`PortBlock`), by its first port. Absent in
     /// files from before sessions had one; `restore` gives those one.
     let portBase: Int?
+    /// `Session.remindAt`. nil in older files, and for a session with no
+    /// reminder. A var: an archived session keeps none (`archivedEntry`).
+    var remindAt: Date?
 
     // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
@@ -134,7 +137,7 @@ struct PersistedSession: Codable {
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
         case runningAgent, runningModel, runningArgv, runningConversationID
-        case lastConversationID, portBase
+        case lastConversationID, portBase, remindAt
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
     /// so the synthesised encoder never writes it again.
@@ -156,7 +159,7 @@ struct PersistedSession: Codable {
          tabHabits: [String: String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil, lastConversationID: String? = nil,
-         portBase: Int? = nil) {
+         portBase: Int? = nil, remindAt: Date? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
         self.originCwd = originCwd
         self.selected = selected; self.nameSource = nameSource
@@ -182,6 +185,7 @@ struct PersistedSession: Codable {
         self.runningConversationID = runningConversationID
         self.lastConversationID = lastConversationID
         self.portBase = portBase
+        self.remindAt = remindAt
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -250,6 +254,7 @@ struct PersistedSession: Codable {
         lastConversationID = try c.decodeIfPresent(String.self, forKey: .lastConversationID)
             ?? runningConversationID
         portBase = try c.decodeIfPresent(Int.self, forKey: .portBase)
+        remindAt = try c.decodeIfPresent(Date.self, forKey: .remindAt)
     }
 }
 

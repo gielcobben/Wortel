@@ -130,6 +130,33 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertEqual(try parse(["mark", "teal"]), .mark(session: session, colour: "teal"))
     }
 
+    /// `remind` goes over as a moment, resolved here, and `none` cancels.
+    func testRemind() throws {
+        guard case .remind(let id, let at?) = try parse(["remind", "1h"]) else {
+            return XCTFail("remind 1h is a reminder")
+        }
+        XCTAssertEqual(id, session)
+        XCTAssertEqual(at, Date().addingTimeInterval(3600).timeIntervalSince1970, accuracy: 5)
+        XCTAssertEqual(try parse(["remind", "none"]), .remind(session: session, at: nil))
+        // Several words are one time, unquoted.
+        guard case .remind(_, _?) = try parse(["remind", "in", "2h"]) else {
+            return XCTFail("remind in 2h is a reminder")
+        }
+        XCTAssertEqual(try parse(["remind", "--session", "agent two", "cancel"]),
+                       .remind(session: "agent two", at: nil))
+    }
+
+    /// A reminder that can't be understood is refused here, not set for some
+    /// other time: a bare number could be minutes or a time of day.
+    func testRemindRefusesWhatItCantRead() {
+        XCTAssertThrowsError(try parse(["remind"]))
+        XCTAssertThrowsError(try parse(["remind", "20"]))
+        XCTAssertThrowsError(try parse(["remind", "soon"]))
+        XCTAssertThrowsError(try parse(["remind", "0m"]))
+        XCTAssertThrowsError(try parse(["remind", "1h", "check CI"]))
+        XCTAssertThrowsError(try parse(["remind", ""]))
+    }
+
     /// `--pr` is its own command on the wire, so an older app refuses it
     /// rather than opening a plain session, and it can't be mixed with a branch.
     func testNewFromPullRequest() throws {
@@ -329,6 +356,8 @@ final class WortelCommandTests: XCTestCase {
             .rename(session: session, name: "build"),
             .notify(session: nil, title: "Done", body: nil),
             .mark(session: session, colour: "yellow"),
+            .remind(session: session, at: 1_800_000_000),
+            .remind(session: nil, at: nil),
             .newWorktree(cwd: "/a", name: nil),
             .newFromPullRequest(cwd: "/a", name: nil, pr: "12"),
             .newRunning(.newWorktree(cwd: "/a", name: nil), argv: ["claude", "--resume", "x"]),
@@ -355,6 +384,7 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertEqual(WortelCommand.rename(session: nil, name: "a").verb, "rename")
         XCTAssertEqual(WortelCommand.notify(session: nil, title: "a", body: nil).verb, "notify")
         XCTAssertEqual(WortelCommand.mark(session: nil, colour: "red").verb, "mark")
+        XCTAssertEqual(WortelCommand.remind(session: nil, at: nil).verb, "remind")
         XCTAssertEqual(WortelCommand.list(caller: nil).verb, "list")
         XCTAssertEqual(WortelCommand.read(session: "a", lines: nil).verb, "read")
         XCTAssertEqual(WortelCommand.send(session: "a", text: "", enter: true).verb, "send")
@@ -364,7 +394,7 @@ final class WortelCommandTests: XCTestCase {
     }
 
     func testUsageListsEveryCommand() {
-        for verb in ["open", "new", "rename", "notify", "mark", "list", "read <session>",
+        for verb in ["open", "new", "rename", "notify", "mark", "remind", "list", "read <session>",
                      "send <session>", "wait <session>", "--version"] {
             XCTAssertTrue(WortelCommandParser.usage.contains(verb), "usage omits \(verb)")
         }

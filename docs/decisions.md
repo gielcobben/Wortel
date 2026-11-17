@@ -119,6 +119,42 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Branch (⇧⌘O), New Folder, Move To, Change Directory, `wortel fork` and
   `wortel cd`. Seven ways in was more than anyone kept apart. Don't add a fifth
   without answering that (`b447405`).
+- **2026-11-16. Remind Me, as Slack has it.** Row menu, Session menu, ⌘P and
+  `wortel remind`: Slack's own choices, In 30 Minutes, In 1 Hour, In 3 Hours,
+  Tomorrow at 09:00, Monday at 09:00 (the next one), Custom…. A row's menu
+  calls it Edit Reminder while one is set, with Cancel Reminder under it. When
+  it's due the session gets the unread ring and a banner, or only a flash of
+  the ring if you're looking at it. While it waits the row says when on a small
+  grey line under the name ("Tomorrow at 09:00"), where a worktree's branch
+  is. A row with a branch has both on that line, the time first and
+  written short there ("Tue 09:00"), so the branch isn't squeezed out; a
+  line that still doesn't fit slides on hover, as the name does. (Tried first, in order:
+  nothing on the row, with the time greyed at the top of the submenu, which
+  made a menu a place to look things up; a small clock in the status slot,
+  which said nothing without a hover it couldn't get, since the slot becomes
+  the "×"; that clock as a third hover button; the time as grey text in the
+  status slot, which had to hide whenever a dot, a ring or the working dots
+  were there. That slot is for what a session is doing now.) The row is a
+  line taller for it, which a second line was once taken out for; that one
+  came and went each time an agent finished, and this one comes when you set
+  a reminder and goes when it reminds you. There
+  is no note: the session's name is the note. One wall-clock timer, for the earliest. The banner is also left
+  with Notification Center a minute late, so it still comes with Wortel quit;
+  a running Wortel takes that one back and posts its own. Closing a session
+  ends its reminder, archived or not. Custom… is the system's alert holding
+  a month to pick a day from and a menu of times on the half hour. The
+  calendar is Wortel's own (`ReminderPicker`): the system's date field, with
+  its drop-down calendar, stepper and selection, was tried inline, in a sheet
+  and wrapped to match the alert's buttons, and never sat with them; macOS has
+  no other (SwiftUI's compact one is iOS only). A typed box (`fri 9am`) was
+  tried and taken out: a calendar was what was wanted. `wortel remind` kept
+  the words it learned for it. The alert shows no icon and no title: the month is the
+  heading, and an icon, "Remind Me" and the session's name made a header
+  taller than the thing it headed. (The title is still set, for VoiceOver.) It is a sheet on the
+  window, as Close's question is: the window dims under it. It is laid out with the picker short and then grown, with the
+  icon hidden: an alert that would be taller than about five thirds of its
+  width (measured, macOS 26) lays itself out sideways and twice as wide, and
+  one 292pt wide to stay under that read as not quite an alert.
 
 ## Attention and agent detection
 

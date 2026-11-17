@@ -362,6 +362,12 @@ enum MainMenu {
         // A colour of your own, for a session to come back to; checked in
         // AppDelegate.validateMenuItem.
         sessionMenu.addItem(SessionColourMenu.item(action: #selector(AppDelegate.setSessionColour(_:))))
+        // Slack's "Remind me about this": the session comes back as the
+        // unread ring and a notification. Validated in AppDelegate.
+        ReminderMenu.items(preset: #selector(AppDelegate.remindSession(_:)),
+                           custom: #selector(AppDelegate.remindSessionCustom(_:)),
+                           cancel: #selector(AppDelegate.cancelSessionReminder(_:)))
+            .forEach(sessionMenu.addItem)
         // Every worktree Wortel made, including those of sessions long
         // archived. A session's own goes when you close it, if there's
         // nothing in it worth keeping (`SessionManager.archive`).

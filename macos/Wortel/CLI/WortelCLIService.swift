@@ -113,6 +113,20 @@ final class WortelCLIService {
                                 value: colour?.rawValue ?? SessionColour.none)
             })
 
+        case .remind(let session, let at):
+            // Checked again here: the socket is also spoken to directly.
+            let date = at.map { Date(timeIntervalSince1970: $0) }
+            if let date, !(date.timeIntervalSinceNow > 0 && date.timeIntervalSinceNow <= ReminderTime.longest) {
+                reply(.failure("A reminder has to be for a time ahead, within a year."))
+                return
+            }
+            reply(withSession(session) { session in
+                manager.setReminder(session, at: date)
+                guard let date else { return .success("Reminder cancelled.") }
+                return .success("Reminder set for \(ReminderTime.describe(date, now: Date())).",
+                                value: ISO8601DateFormatter().string(from: date))
+            })
+
         case .notify(let session, let title, let body):
             reply(withSession(session) { session in
                 manager.notify(session, title: title, body: body ?? "")
@@ -205,7 +219,7 @@ final class WortelCLIService {
 
         // Listed rather than `default`, so a fourth kind of `new` is a
         // compile error here instead of this refusal.
-        case .open, .rename, .notify, .mark, .version, .newRunning,
+        case .open, .rename, .notify, .mark, .remind, .version, .newRunning,
              .list, .read, .send, .wait:
             reply(.failure("Only a new session can be given a command to run."))
         }
@@ -287,7 +301,7 @@ final class WortelCLIService {
     /// the session was closed while something in it was still running, which is
     /// the ordinary end of a background job whose shell outlived its row.
     ///
-    /// A name instead of an id is `--session` on `rename`, `notify` or `mark`,
+    /// A name instead of an id is `--session` on `rename`, `notify`, `mark` or `remind`,
     /// and is looked up the way `read` and `send` look one up.
     private func withSession(
         _ id: String?, _ body: (Session) -> WortelResponse

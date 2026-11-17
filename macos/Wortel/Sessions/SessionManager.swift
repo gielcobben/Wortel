@@ -51,6 +51,8 @@ final class SessionManager {
             // Coming back to a session marked unread: that's the "later" it was
             // marked for, so it clears the usual way from here.
             session.markedUnread = false
+            // A reminder that went off for it has been answered the same way.
+            answerReminder(session)
             // Left the previous session before it could count as read; start the
             // caught-up clock on the one you just landed on.
             cancelCaughtUp(oldValue)
@@ -238,6 +240,14 @@ final class SessionManager {
     /// Which sessions are waiting changed: what the Dock badge and the menu
     /// bar's list follow.
     @ObservationIgnored var onAttentionChanged: (() -> Void)?
+    /// A session's reminder was set (its date), or ended (nil: cancelled,
+    /// closed, or gone off and since visited). The app layer keeps a banner
+    /// waiting in Notification Center for it, so it still comes with Wortel
+    /// quit, and takes it back here.
+    @ObservationIgnored var onReminderChanged: ((Session, Date?) -> Void)?
+    /// A reminder went off for a session nobody is looking at: the banner,
+    /// now, under the session's name as it is now.
+    @ObservationIgnored var onReminderDue: ((Session) -> Void)?
 
     /// A foreground command finished in a session — its work tree may have
     /// changed. The app layer uses this to refresh the source-control panel.
@@ -773,6 +783,8 @@ final class SessionManager {
         // already running (it survived the last quit), so none is "started".
         // Set on every way out, the first launch's early return included.
         defer { agentMarkersBaselined = true }
+        // Last, once every saved session is back.
+        defer { syncReminders() }
         var persisted = store.load()
         archived = ArchiveStore.load()
         // In both files: archived, then the app ended before sessions.json
@@ -835,6 +847,8 @@ final class SessionManager {
         noteCheckout(session)
         // A colour only a newer build knows reads as none.
         session.colour = entry.colour.flatMap(SessionColour.init(rawValue:))
+        // One already past is due now: `syncReminders` fires it once launch is done.
+        session.remindAt = entry.remindAt
         // An earlier build named these "<folder>/<branch>" with the branch
         // whole, which read back as a folder of their own. The rename that
         // gave them their real names kept that folder half, so stopping it
@@ -2513,6 +2527,13 @@ final class SessionManager {
         raisedWhileAway.remove(session.id)
         unreadSince.removeValue(forKey: session.id)
         seen.forget(session.id)
+        // Closing ends its reminder, and takes back a banner one already showed.
+        let reminded = remindedIDs.remove(session.id) != nil
+        if session.remindAt != nil || reminded {
+            session.remindAt = nil
+            onReminderChanged?(session, nil)
+            armReminderTimer()
+        }
         if sidebarSelection.ids.contains(session.id) || sidebarSelection.anchor == session.id {
             var pruned = sidebarSelection
             pruned.prune(to: Set(sessions.lazy.map(\.id).filter { $0 != session.id }), lead: selectedID)
@@ -2810,6 +2831,9 @@ final class SessionManager {
         // checks out again if the folder goes: the shell may be standing in
         // another worktree, or none.
         if let branch = GitWorktree.checkedOutBranch(at: home.root) { entry.worktreeBranch = branch }
+        // Closing ends a reminder, archived or not: restored a week later, it
+        // would go off at once for something long since dealt with.
+        entry.remindAt = nil
         return ArchivedSession(session: entry, archivedAt: Date(), checkout: home.root,
                                repoHome: home.repoHome, isOwned: home.isOwned)
     }
@@ -3106,7 +3130,11 @@ final class SessionManager {
 
     /// Select a session by id (e.g. from tapping its attention notification).
     func select(id: Session.ID) {
-        guard sessions.contains(where: { $0.id == id }) else { return }
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        // Asked for the session already in front (its reminder's banner was
+        // clicked, with Wortel behind another app): nothing changes hands,
+        // so the reminder is answered here, ring and banner both.
+        if id == selectedID, answerReminder(session) { session.markedUnread = false }
         selectedID = id
     }
 
@@ -3876,6 +3904,119 @@ final class SessionManager {
         if cleared { refreshDockBadge() }
     }
 
+    // MARK: - Reminders
+
+    /// Slack's "Remind me about this", for a session: at `date` it comes back
+    /// as the unread ring and a banner. nil cancels. Visiting the session in
+    /// between doesn't: you asked to be reminded at that time, not the next
+    /// time you happened by.
+    func setReminder(_ session: Session, at date: Date?) {
+        // Still open: Custom…'s sheet can be answered after its session
+        // closed, and a banner for a session that's gone leads nowhere.
+        guard sessions.contains(where: { $0 === session }), session.remindAt != date else { return }
+        session.remindAt = date
+        // Set again after it went off (a snooze): the one that went off is
+        // done with, or the next visit would take the new one's banner back.
+        remindedIDs.remove(session.id)
+        onReminderChanged?(session, date)
+        scheduleSave()
+        armReminderTimer()
+        if date != nil { Telemetry.capture(.reminderSet) }
+    }
+
+    /// The same for the sidebar's selection.
+    func setReminder(_ batch: [Session], at date: Date?) {
+        batch.forEach { setReminder($0, at: date) }
+    }
+
+    /// The one timer behind every reminder: set for the earliest, re-armed as
+    /// each goes off or changes. Nothing runs for a session that has none.
+    @ObservationIgnored private var reminderTimer: DispatchWorkItem?
+    /// Sessions whose reminder went off and that haven't been visited since:
+    /// their banner is taken back when they are.
+    @ObservationIgnored private var remindedIDs: Set<Session.ID> = []
+
+    /// Counts the midnights since launch. A row that says "Tomorrow at
+    /// 09:00" reads it, so the line is written again when that becomes today.
+    private(set) var reminderDay = 0
+    @ObservationIgnored private var dayObserver: NSObjectProtocol?
+
+    private func watchDayChange() {
+        guard dayObserver == nil else { return }
+        dayObserver = NotificationCenter.default.addObserver(
+            forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.reminderDay += 1 }
+            }
+    }
+
+    /// On the wall clock, so a Mac asleep through the time reminds you as it
+    /// wakes, rather than late by however long it slept.
+    private func armReminderTimer() {
+        reminderTimer?.cancel()
+        reminderTimer = nil
+        guard let next = sessions.compactMap(\.remindAt).min() else { return }
+        watchDayChange()
+        let work = DispatchWorkItem { [weak self] in self?.remindersDue() }
+        reminderTimer = work
+        DispatchQueue.main.asyncAfter(wallDeadline: .now() + max(0, next.timeIntervalSinceNow), execute: work)
+    }
+
+    /// After launch: every reminder handed to Notification Center again (a
+    /// file written by another build may have ones it never heard of), and
+    /// the ones that came due while Wortel was closed go off now.
+    private func syncReminders() {
+        let now = Date()
+        scheduleReminderFallbacks(now: now)
+        remindersDue(now: now, launching: true)
+    }
+
+    /// Every pending reminder handed to Notification Center again, under the
+    /// session's name as it is now. At launch, and on the way out: the one
+    /// left there is only ever shown with Wortel quit, and a session may have
+    /// been renamed since its reminder was set.
+    func scheduleReminderFallbacks(now: Date = Date()) {
+        for session in sessions {
+            if let date = session.remindAt, date > now { onReminderChanged?(session, date) }
+        }
+    }
+
+    /// How long after a reminder's time the banner left with Notification
+    /// Center comes: a running Wortel takes it back within that.
+    static let reminderFallbackDelay: TimeInterval = 60
+
+    /// Takes back what a reminder that went off left behind, once its session
+    /// has been come to. False if none had.
+    @discardableResult
+    private func answerReminder(_ session: Session) -> Bool {
+        guard remindedIDs.remove(session.id) != nil else { return false }
+        onReminderChanged?(session, nil)
+        return true
+    }
+
+    /// `launching`: these came due while Wortel was closed. Nobody was
+    /// looking, whatever the window's flags say this early, so each gets its
+    /// ring; and Notification Center has shown its own banner for any more
+    /// than the fallback's delay overdue, so a second isn't posted.
+    private func remindersDue(now: Date = Date(), launching: Bool = false) {
+        for session in sessions {
+            guard let date = session.remindAt, date <= now else { continue }
+            session.remindAt = nil
+            scheduleSave()
+            if !launching, isActivelyViewing(session) {
+                // You're already here: the ring flashes, and that's all.
+                attentionFlash = AttentionFlash(kind: .finished)
+                onReminderChanged?(session, nil)
+            } else {
+                markUnread(session)
+                remindedIDs.insert(session.id)
+                if !launching || now.timeIntervalSince(date) < Self.reminderFallbackDelay {
+                    onReminderDue?(session)
+                }
+            }
+        }
+        armReminderTimer()
+    }
+
     /// When each session started wanting you, for Sort Unread First's "most
     /// recent first": set as its unread mark appears, by a signal or by hand.
     /// A live dot sorts by its episode's start (`attentionSince`) instead.
@@ -4381,7 +4522,8 @@ final class SessionManager {
             runningArgv: agent?.argv,
             runningConversationID: agent == nil ? nil : conversationID,
             lastConversationID: session.lastConversationID,
-            portBase: session.portBase)
+            portBase: session.portBase,
+            remindAt: session.remindAt)
     }
 
     /// The agent the next launch should bring back in `session`, and its

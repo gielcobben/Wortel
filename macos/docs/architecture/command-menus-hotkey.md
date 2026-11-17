@@ -4,7 +4,7 @@ Part of the app's architecture record; the index is in `macos/AGENTS.md`.
 Paths are relative to `macos/`.
 
 **The `wortel` command** (`Wortel/CLI/`, `WortelCLI/`) — a Unix socket the CLI
-speaks JSON at: `open`, `new`, `rename`, `notify`, `mark`, and
+speaks JSON at: `open`, `new`, `rename`, `notify`, `mark`, `remind`, and
 `list`, `read`, `send`, `wait`. `docs/wortel-command.md` is
 the user-facing guide, `docs/cli.md` the design record; the decisions that
 shape the code are that **there is no installer** (the binary

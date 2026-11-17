@@ -235,14 +235,17 @@ toolbar item on a glass capsule, and there is no switch for that.
 
 | | |
 | --- | --- |
-| Row | 30pt. With a branch line under the name, 44pt |
+| Row | 30pt. With a line under the name (a worktree's branch, a reminder's time), 44pt |
 | Section header | 30pt, with 14pt above all but the first |
 | Selection pill | 8pt corners |
 | Status | Centred in the last 34pt of the row. The dot and the close button share that slot, so nothing shifts on hover |
 | Session colour | A 3pt bar inside the pill's leading edge, in Finder's tag colours |
 
-A row is one line. A worktree row is the exception: the branch sits under the
-name with a small branch glyph.
+A row is one line. Two things add a second, small and grey, under the name: a
+worktree's branch, with a small branch glyph, and a reminder's time
+("Tomorrow at 09:00"), with a small clock. A row with both has them on the
+one line, the time first and written short ("Tue 09:00"). A line too long for
+the row slides on hover, as the name does.
 
 ### Tabs
 

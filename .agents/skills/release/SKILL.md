@@ -20,7 +20,14 @@ All commands run from `macos/`.
    derives it from the live feed, so work out which one is next before writing
    the file. The `release-note` skill covers the writing. Publishing without a
    note is refused before anything is built.
-3. **Notarization can log in:**
+3. **What's new is on wortel.sh/docs.** For each feature in the note that
+   someone would look up (a menu item, a shortcut, a `wortel` verb, a change
+   to how something behaves), check `web/src/data/site.ts`: the command table,
+   the shortcuts table, `DOCS_SECTIONS` and the FAQ. Add what's missing or now
+   untrue, in its own commit before the release, since `--publish` redeploys
+   the site. A new verb also belongs in `macos/docs/wortel-command.md`.
+   2026.47.1 shipped Remind Me with no word of it on /docs.
+4. **Notarization can log in:**
 
    ```sh
    xcrun notarytool history --keychain-profile notary >/dev/null && echo ok
@@ -30,12 +37,12 @@ All commands run from `macos/`.
    is at the bottom of `scripts/release.sh`). Don't go looking in the Keychain.
    It has gone missing between this check and the upload before (2026-11-03),
    so see "After".
-4. **Checks against a real machine**, for what the release touches:
+5. **Checks against a real machine**, for what the release touches:
    `scripts/verify-running-jobs.py` for `Wortel/Processes/`,
    `scripts/try-git.sh` for `Wortel/Git/`, `scripts/try-keeper-loss.sh` for
    keeper recovery, `scripts/try-replay-modes.sh` for the keeper's replay. The script itself runs `WortelTests` and the `updates/`
    tests.
-5. **The build has been used.** There are no UI tests. Someone has run this
+6. **The build has been used.** There are no UI tests. Someone has run this
    code as an app and seen its terminals draw.
 
 ## The command

@@ -609,6 +609,10 @@ targets:
       # sound: an answer let through is typed into an agent's prompt, a window
       # that never closes swallows every key.
       - path: Wortel/Ghostty/ReplayAnswers.swift
+      # The signals read off a hibernated session's output, and taken out of
+      # what is written back into its terminal. A signal missed is a dot that
+      # never lights; one let through is raised a second time, late.
+      - path: Wortel/Ghostty/SignalScanner.swift
       # How a shell is started when we own the pty rather than libghostty
       # (process survival). Pure description-in, description-out, and every
       # failure is silent: a shell that starts without the integration looks

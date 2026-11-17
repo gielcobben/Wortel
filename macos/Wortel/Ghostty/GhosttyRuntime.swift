@@ -115,6 +115,14 @@ final class GhosttyRuntime {
                 guard let mime = item.mime, let data = item.data,
                       String(cString: mime) == "text/plain" else { continue }
                 let string = String(cString: data)
+                // A screen dump for hibernation: libghostty's only way to say
+                // where it wrote the file is to "copy" the path. It goes to the
+                // view that asked, never to the pasteboard.
+                if let view = GhosttyRuntime.surfaceView(fromUserdata: userdata),
+                   let capture = view.screenFileCapture {
+                    capture(string)
+                    return
+                }
                 let pasteboard = NSPasteboard.general
                 pasteboard.declareTypes([.string], owner: nil)
                 pasteboard.setString(string, forType: .string)
@@ -346,40 +354,14 @@ final class GhosttyRuntime {
             pty.requestRedrawAfterNextResize()
         }
 
-        cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
-        cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
-        // The terminal has bytes for the program: the user typed, or it is
-        // answering a query (cursor position, device attributes) on its behalf.
-        // Not `write`: during the replay below, those answers are old and are
-        // held back (`ReplayAnswers`).
-        cfg.receive_buffer = { userdata, bytes, length in
-            guard let userdata, let bytes else { return }
-            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
-                .writeFromTerminal(bytes, count: length)
-        }
-        // The grid changed shape. Nobody sends SIGWINCH for us any more — and
-        // this is also what corrects the 80x24 the pty was opened at, since the
-        // surface had no size to give until now.
-        cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
-            guard let userdata else { return }
-            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
-                .resize(columns: columns, rows: rows, widthPx: widthPx, heightPx: heightPx)
-        }
+        Self.hostManaged(&cfg, pty: pty)
 
         guard let surface = ghostty_surface_new(app, &cfg) else {
             NSLog("wortel: host-managed surface could not be created")
             return nil
         }
 
-        let accessibility = view.accessibilityWatch
-        pty.onOutput = { bytes, count in
-            // Watched on the way past, so a relaunch can tell the new terminal
-            // what this one has been told. See `TerminalModes`.
-            TerminalModeRecorder.shared.feed(session: session, bytes: bytes, count: count)
-            ghostty_surface_write_buffer(surface, bytes, UInt(count))
-            // A lock take, and nothing more until a screen reader has asked.
-            accessibility.outputArrived()
-        }
+        pty.onOutput = Self.liveOutput(surface: surface, session: session, view: view)
         // The shell ended. The keeper reaps it, so its exit code is the
         // keeper's; what reaches this side is the pty hanging up. Whoever owns
         // the session decides what that means, and without an owner the
@@ -437,67 +419,9 @@ final class GhosttyRuntime {
         // whatever it asked it is still waiting on.
         let muteAnswers = resumed && !replay.isEmpty
         pty.enqueue {
-            if muteAnswers { pty.muteReplayAnswers() }
-            if !prelude.isEmpty {
-                prelude.withUnsafeBufferPointer { raw in
-                    guard let base = raw.baseAddress else { return }
-                    ghostty_surface_write_buffer(surface, base, UInt(raw.count))
-                }
-            }
-            // The buffer holds what the shell wrote while nobody was attached,
-            // and it has to reach the terminal before anything newer or the
-            // screen ends up out of order.
-            if !replay.isEmpty {
-                TerminalModeRecorder.shared.feed(session: session, replay: replay)
-                replay.withUnsafeBytes { raw in
-                    guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
-                    ghostty_surface_write_buffer(surface, base, UInt(raw.count))
-                }
-            }
-            if muteAnswers {
-                // Not after a replay cut off mid-sequence: the marker would
-                // cut it short, and the live rest of it would print as text.
-                let marked = ReplayAnswers.endsCleanly(replay)
-                if marked {
-                    ReplayAnswers.sentinel.withUnsafeBufferPointer { raw in
-                        guard let base = raw.baseAddress else { return }
-                        ghostty_surface_write_buffer(surface, base, UInt(raw.count))
-                    }
-                }
-                pty.replayWritten(markerSent: marked)
-            }
-
-            // And then, if the program asked to hear about it, what the
-            // appearance is *now*.
-            //
-            // Restoring `?2031` above only re-subscribes it; it says nothing
-            // about what changed while nobody was attached, and a Mac left on
-            // "Auto" flips at sunset. A session resumed the next morning has an
-            // agent still painting last night's palette: dark diff blocks on a
-            // white screen. It will never notice either, because it asked once,
-            // at its own startup, and has been waiting for us ever since.
-            //
-            // This is the one thing here written to the *program* rather than
-            // to the terminal, so it goes after the replay has been read for
-            // modes — a program that turned reporting off while detached said
-            // so in there, and must not be written to.
-            //
-            // Sent on every resume, not only when the appearance changed.
-            // Tracking what each program was last told would mean persisting a
-            // second belief about the far side and being wrong about it
-            // silently, which is the shape of the bug this whole file exists
-            // for. A report a program already agrees with costs it nothing: it
-            // sets the theme it is already painting. The only case that shows
-            // is a mode recorded as on for a program that has since exited, and
-            // the prelude above already accepts that same risk for seventeen
-            // modes with far more to say.
-            if resumed, TerminalModeRecorder.shared.modes(for: session).assuming(agent: agent).wantsColorSchemeReports {
-                let report = TerminalModes.colorSchemeReport(dark: dark)
-                report.withUnsafeBufferPointer { raw in
-                    guard let base = raw.baseAddress else { return }
-                    pty.write(base, count: raw.count)
-                }
-            }
+            Self.restore(surface: surface, pty: pty, session: session, prelude: prelude,
+                         replay: replay, recordReplay: true, muteAnswers: muteAnswers,
+                         colorScheme: resumed ? (dark: dark, agent: agent) : nil)
             // Last, so the shell's prompt and whatever preceded it are on
             // screen before the command appears under them. See `newSurface`.
             if let resumeAgain {
@@ -510,6 +434,136 @@ final class GhosttyRuntime {
         }
         pty.beginReading()
         return surface
+    }
+
+    /// Write a session's past into a new terminal: the modes the program
+    /// believes in, then what it wrote, then a marker that ends the window in
+    /// which the terminal's answers are held back (`ReplayAnswers`), then, if
+    /// the program asked to hear about it, what the appearance is now.
+    /// A reattach and a wake from hibernation both come back this way.
+    ///
+    /// **On the pty's queue only**, ahead of any read. See `hostManagedSurface`
+    /// for why none of it may run on the main thread.
+    static func restore(surface: ghostty_surface_t, pty: PtyHost, session: UUID, prelude: [UInt8],
+                        replay: Data, recordReplay: Bool, muteAnswers: Bool,
+                        colorScheme: (dark: Bool, agent: String?)?) {
+        if muteAnswers { pty.muteReplayAnswers() }
+        if !prelude.isEmpty {
+            prelude.withUnsafeBufferPointer { raw in
+                guard let base = raw.baseAddress else { return }
+                ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+            }
+        }
+        // The buffer holds what the shell wrote while nobody was attached,
+        // and it has to reach the terminal before anything newer or the
+        // screen ends up out of order.
+        if !replay.isEmpty {
+            if recordReplay { TerminalModeRecorder.shared.feed(session: session, replay: replay) }
+            replay.withUnsafeBytes { raw in
+                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+            }
+        }
+        if muteAnswers {
+            // Not after a replay cut off mid-sequence: the marker would
+            // cut it short, and the live rest of it would print as text.
+            let marked = ReplayAnswers.endsCleanly(replay)
+            if marked {
+                ReplayAnswers.sentinel.withUnsafeBufferPointer { raw in
+                    guard let base = raw.baseAddress else { return }
+                    ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+                }
+            }
+            pty.replayWritten(markerSent: marked)
+        }
+
+        // And then, if the program asked to hear about it, what the
+        // appearance is *now*.
+        //
+        // Restoring `?2031` above only re-subscribes it; it says nothing
+        // about what changed while nobody was attached, and a Mac left on
+        // "Auto" flips at sunset. A session resumed the next morning has an
+        // agent still painting last night's palette: dark diff blocks on a
+        // white screen. It will never notice either, because it asked once,
+        // at its own startup, and has been waiting for us ever since.
+        //
+        // This is the one thing here written to the *program* rather than
+        // to the terminal, so it goes after the replay has been read for
+        // modes — a program that turned reporting off while detached said
+        // so in there, and must not be written to.
+        //
+        // Sent on every resume, not only when the appearance changed.
+        // Tracking what each program was last told would mean persisting a
+        // second belief about the far side and being wrong about it
+        // silently, which is the shape of the bug this whole file exists
+        // for. A report a program already agrees with costs it nothing: it
+        // sets the theme it is already painting. The only case that shows
+        // is a mode recorded as on for a program that has since exited, and
+        // the prelude above already accepts that same risk for seventeen
+        // modes with far more to say.
+        if let colorScheme,
+           TerminalModeRecorder.shared.modes(for: session).assuming(agent: colorScheme.agent).wantsColorSchemeReports {
+            let report = TerminalModes.colorSchemeReport(dark: colorScheme.dark)
+            report.withUnsafeBufferPointer { raw in
+                guard let base = raw.baseAddress else { return }
+                pty.write(base, count: raw.count)
+            }
+        }
+    }
+
+    /// Point a surface config at a pty the app holds: the terminal's bytes
+    /// for the program and its size go there instead of to a child of its own.
+    private static func hostManaged(_ cfg: inout ghostty_surface_config_s, pty: PtyHost) {
+        cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
+        cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
+        // The terminal has bytes for the program: the user typed, or it is
+        // answering a query (cursor position, device attributes) on its behalf.
+        // Not `write`: during the replay below, those answers are old and are
+        // held back (`ReplayAnswers`).
+        cfg.receive_buffer = { userdata, bytes, length in
+            guard let userdata, let bytes else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
+                .writeFromTerminal(bytes, count: length)
+        }
+        // The grid changed shape. Nobody sends SIGWINCH for us any more — and
+        // this is also what corrects the 80x24 the pty was opened at, since the
+        // surface had no size to give until now.
+        cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
+            guard let userdata else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
+                .resize(columns: columns, rows: rows, widthPx: widthPx, heightPx: heightPx)
+        }
+    }
+
+    /// Where a keeper session's output goes while it has a terminal: into the
+    /// terminal, past the mode recorder. Hibernation swaps it out and back.
+    static func liveOutput(surface: ghostty_surface_t, session: UUID,
+                           view: SurfaceView) -> (UnsafePointer<UInt8>, Int) -> Void {
+        let accessibility = view.accessibilityWatch
+        return { bytes, count in
+            // Watched on the way past, so a relaunch can tell the new terminal
+            // what this one has been told. See `TerminalModes`.
+            TerminalModeRecorder.shared.feed(session: session, bytes: bytes, count: count)
+            ghostty_surface_write_buffer(surface, bytes, UInt(count))
+            // A lock take, and nothing more until a screen reader has asked.
+            accessibility.outputArrived()
+        }
+    }
+
+    /// A new terminal for a hibernated session, around the pty the view still
+    /// holds. Nothing is asked of the keeper: the app never stopped reading.
+    /// The caller writes the screen back and switches the output to it.
+    func wakeSurface(view: SurfaceView, pty: PtyHost, fontSize: Float) -> ghostty_surface_t? {
+        var cfg = ghostty_surface_config_new()
+        cfg.platform_tag = GHOSTTY_PLATFORM_MACOS
+        cfg.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
+            nsview: Unmanaged.passUnretained(view).toOpaque()))
+        cfg.userdata = Unmanaged.passUnretained(view).toOpaque()
+        cfg.scale_factor = Double(view.window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 2.0))
+        cfg.font_size = fontSize
+        cfg.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
+        Self.hostManaged(&cfg, pty: pty)
+        return ghostty_surface_new(app, &cfg)
     }
 
     /// How to start this session's shell — the same shell, with the same

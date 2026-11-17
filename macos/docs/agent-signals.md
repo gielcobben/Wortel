@@ -93,6 +93,18 @@ for known interactive programs (agents, editors, pagers, REPLs — see
 `_ghostty_wortel_interactive` in the zsh/bash/fish integrations), because they
 never return to the prompt; the agent's own signals take over.
 
+## While a terminal is hibernated
+
+A hibernated session (`docs/glossary.md`) has no libghostty surface, so
+nothing above is parsed by the core. `SignalScanner` reads channels 1 to 4
+off the pty instead (OSC 0/2, 7, 9, 9;4, 99, 133;D, 777 and BEL) and raises
+the same `SurfaceView` callbacks, then takes those sequences out of what is
+written back into the terminal on wake, so nothing is raised twice. Channel 5,
+the screen tier, needs a screen, and nothing answers a program's terminal
+queries while there is none: a session running an agent outside
+`HibernationPolicy.watchableAgents` (only claude so far) is not hibernated
+while that agent runs.
+
 ## Per-agent status (out-of-the-box defaults, terminal = ghostty)
 
 | Agent | Busy | Attention (needs you) |

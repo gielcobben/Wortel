@@ -5,8 +5,21 @@ import AppKit
 /// first responder — never a rebuild, never removeFromSuperview. The hidden
 /// views keep their last frame in their IOSurface layer, so switching back
 /// shows content instantly with zero flash.
+///
+/// Except a hibernated one (`HibernationPolicy`), which has no frame left to
+/// show: it wakes first, and the switch happens once its screen is back and
+/// it takes keys again, or after `wakePatience` at the most. The click lands
+/// a few milliseconds late instead of on an empty terminal.
 final class TerminalHostViewController: NSViewController {
     private(set) weak var currentView: SurfaceView?
+    /// Waking, to be shown as soon as its screen has been written back.
+    private weak var wakingView: SurfaceView?
+
+    /// The longest a switch waits for a hibernated terminal's screen. A
+    /// session with a short scrollback is back in 10 to 30 ms; this is for a
+    /// long one, which a switch would otherwise show half written and not yet
+    /// taking keys.
+    private static let wakePatience: TimeInterval = 0.5
 
     override func loadView() {
         view = NSView()
@@ -20,12 +33,42 @@ final class TerminalHostViewController: NSViewController {
         // rename, bell…), not just session switches. If we're already showing
         // this surface, do nothing — re-running would steal first responder
         // back from the rename field.
+        guard surfaceView !== wakingView else { return }
+
+        // Another session chosen while one was waking, the one on screen
+        // included: the waking one stays out of sight, and goes back on the
+        // clock.
+        if let waking = wakingView {
+            wakingView = nil
+            HibernationPolicy.shared.hidden(waking)
+        }
+
         guard surfaceView !== currentView else { return }
 
+        guard surfaceView.isHibernated else {
+            HibernationPolicy.shared.shown(surfaceView)
+            swap(to: surfaceView)
+            return
+        }
+        wakingView = surfaceView
+        var done = false
+        let swapWhenReady = { [weak self, weak surfaceView] in
+            guard !done, let self, let surfaceView, self.wakingView === surfaceView else { return }
+            done = true
+            self.wakingView = nil
+            self.swap(to: surfaceView)
+        }
+        HibernationPolicy.shared.shown(surfaceView, onRestored: swapWhenReady)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.wakePatience, execute: swapWhenReady)
+    }
+
+    private func swap(to surfaceView: SurfaceView) {
+        guard surfaceView !== currentView else { return }
         Signposts.interval("session-switch") {
             if let currentView {
                 currentView.isHidden = true
                 currentView.occlusionDidChange(visible: false)
+                HibernationPolicy.shared.hidden(currentView)
             }
 
             if surfaceView.superview !== view {
@@ -49,9 +92,14 @@ final class TerminalHostViewController: NSViewController {
     /// worktree is still being made). The last one shown is hidden, not
     /// removed, and comes back instantly as usual.
     func showNothing() {
+        if let waking = wakingView {
+            wakingView = nil
+            HibernationPolicy.shared.hidden(waking)
+        }
         guard let currentView else { return }
         currentView.isHidden = true
         currentView.occlusionDidChange(visible: false)
+        HibernationPolicy.shared.hidden(currentView)
         if view.window?.firstResponder === currentView { view.window?.makeFirstResponder(nil) }
         self.currentView = nil
     }

@@ -13,6 +13,9 @@ PtyHost.readEnableFlag()
 _ = DataDirectory.url
 InstanceLock.acquireOrHandOff()
 
+// Same reason: WORTEL_HIBERNATE_AFTER shortens hibernation for a test.
+_ = HibernationPolicy.after
+
 // How the last run ended, read and re-armed now that this copy is the one that
 // stays: a crash during launch is exactly the one worth seeing. One stat and
 // one empty file, nothing on the network. See ExitMarker.

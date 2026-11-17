@@ -56,6 +56,23 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-09-29. Tried and dropped: search in the terminal's scrollback.** Added
   and removed the same day. Agents run in the alternate screen, so it saw one
   screen (`39cc6fa`, `07b4af6`).
+- **2026-11-17. A terminal out of sight for ten minutes hibernates.** Every
+  hidden terminal kept its frames and scrollback, about 70 MB a session, so the
+  app's memory grew with the number of sessions. Now the surface is freed (on
+  a macOS memory warning, every hidden one at once) and the shell keeps
+  running; the app keeps reading its pty, so the keeper is never involved. The
+  screen is saved with libghostty's `write_screen_file:copy,vt` and written
+  into a new terminal when shown, followed by what came meanwhile.
+  `SignalScanner` reads titles, OSC 9;4, notifications, bells and OSC 133;D off
+  the output while there is no terminal, so the dots keep working. Nothing
+  answers a program's terminal queries meanwhile, so a running agent keeps
+  its terminal unless it has been watched through a hibernation (only
+  Claude Code so far). Waking takes 10 to 30 ms, and the switch waits for it
+  (half a second at most), so "a switch in one frame" now holds for sessions
+  seen in the last ten minutes. A
+  hibernated terminal's coloured scrollback keeps the theme it was saved in.
+  Side terminals don't hibernate. Measured on a test copy: 252 to 128 MB with
+  seven of eight terminals hibernated.
 - **2026-09-29. A terminal resizes once per pane animation and never while
   hidden.** Every resize re-wraps the screen and sends SIGWINCH to the agent
   (`2dfae43`, `c20f403`).

@@ -639,8 +639,13 @@ final class WortelCLIService {
             return waiter.exit ? .success(value: "exit")
                 : .failure("\u{201c}\(waiter.name)\u{201d} closed before it \(goal(of: waiter)).")
         }
-        let view = session.surfaceView
+        var view = session.surfaceView
         if waiter.exit, view?.shellHasExited ?? false { return .success(value: "exit") }
+        // Text is looked for on the screen, so a hibernated terminal wakes,
+        // and is read once its screen is back: read half restored, text that
+        // was there all along would look new when the rest arrives.
+        if waiter.watch != nil, view?.isHibernated == true { _ = manager.warmSurface(of: session) }
+        if view?.isHibernated == true || view?.isRestoring == true { view = nil }
         if var watch = waiter.watch, let view {
             defer { waiter.watch = watch }
             if screenIsDue(waiter, view: view, now: now) {

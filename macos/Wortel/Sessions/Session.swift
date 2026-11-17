@@ -428,6 +428,8 @@ final class Session: Identifiable {
         }
         surfaceView = view
         onSurfaceCreated?(view)
+        // Made out of sight until a host shows it, which wakes it first.
+        HibernationPolicy.shared.hidden(view)
         return view
     }
 

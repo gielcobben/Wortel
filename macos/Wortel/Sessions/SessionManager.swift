@@ -1592,7 +1592,10 @@ final class SessionManager {
             sweepDeadAgentMarkers()
         }
         for session in sessions {
-            guard session.runningAgent != nil, let view = session.surfaceView else {
+            // A hibernated terminal has no screen; when it wakes the tracker
+            // starts again from what it shows then (incident 2026-08-05).
+            guard session.runningAgent != nil, let view = session.surfaceView,
+                  !view.isHibernated, !view.isRestoring else {
                 releaseAgentScreenTracker(session)
                 continue
             }
@@ -3775,7 +3778,14 @@ final class SessionManager {
     /// there is no folder for a shell to start in.
     func warmSurface(of session: Session) -> SurfaceView? {
         guard sessions.contains(where: { $0 === session }), session.preparation == nil else { return nil }
-        return session.ensureSurfaceView(runtime: runtime)
+        let view = session.ensureSurfaceView(runtime: runtime)
+        // Read or typed into from outside: it needs its terminal, and goes
+        // back to sleep later if it is still out of sight.
+        if view.isHibernated {
+            HibernationPolicy.shared.shown(view)
+            if view.isHidden || view.superview == nil { HibernationPolicy.shared.hidden(view) }
+        }
+        return view
     }
 
     /// A session by id — what the CLI has, since a shell knows its session as
@@ -4682,6 +4692,14 @@ final class SessionManager {
         }
         session.onSurfaceCreated = { [weak self, weak session] view in
             guard let self, let session else { return }
+
+            // Out of sight long enough, a terminal hibernates. Not one whose
+            // agent shows it is working only by its screen changing: with no
+            // terminal there is no screen, and it would never be seen to stop.
+            view.mayHibernate = { [weak session] in
+                guard let agent = session?.runningAgent else { return true }
+                return HibernationPolicy.watchableAgents.contains(agent)
+            }
 
             view.onTitleChange = { [weak self, weak session] title in
                 guard let self, let session else { return }

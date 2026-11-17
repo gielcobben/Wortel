@@ -65,6 +65,10 @@ main area, the column, the strip, the far edge for swapping), each only for
 tabs allowed there. A file tab can also leave the window: past its edge the
 ghost becomes a small window that follows the pointer (`TabTearOffGhost`, a
 borderless panel, since the overlay is clipped to the window), and letting go
-there opens the file in a preview window at that spot. Side terminals'
-processes count as the session's (`processRoots`); agent tracking, naming and
+there opens the file in a preview window at that spot. The way back is
+`handleDock`: a preview window dragged by its row over a tab row (rows only,
+not the zones) fades out, the tab it would become shows in the row, and
+letting go makes it. The window server still moves the window, so the window
+watches the pointer on a common-modes timer until the button is up. Side
+terminals' processes count as the session's (`processRoots`); agent tracking, naming and
 resume follow the main shell only.

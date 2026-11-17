@@ -26,6 +26,10 @@ final class PreviewWindows {
     /// rather than calling `open` here, so a linked file gets the same diff
     /// treatment as one double-clicked in the tree.
     var onOpenFile: ((URL) -> Void)?
+    /// A window dragged by its row, the pointer on screen: whether it's over
+    /// one of the main window's tab rows, and on `.ended` whether it became
+    /// a tab there (MainSplitViewController.dockWindowDrag).
+    var onDock: ((TabDragController.DockPhase, URL, NSWindow, NSPoint) -> Bool)?
 
     init(highlighter: (any DiffHighlighting)? = nil) {
         self.highlighter = highlighter
@@ -71,6 +75,9 @@ final class PreviewWindows {
                                                  openFile: onOpenFile)
         controller.onClose = { [weak self] closed in
             self?.windows.removeAll { $0 === closed }
+        }
+        controller.onDock = { [weak self] phase, url, window, point in
+            self?.onDock?(phase, url, window, point) ?? false
         }
         if let window = controller.window {
             if let topLeft { put(window, at: topLeft) } else { place(window) }

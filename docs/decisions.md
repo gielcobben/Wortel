@@ -252,9 +252,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   row on the glass, the file tab's header in it, and a file button of its own
   in place of the system's proxy icon. No system window tabs for previews.
 - **2026-11-16. A file tab dragged out of the window becomes a preview
-  window** where it's let go, as Safari's tabs do. Files only: terminals and
-  browsers have no window of their own. Dragging a window back in is not built
-  yet.
+  window** where it's let go, as Safari's tabs do, and a preview window
+  dragged by its row onto a tab row becomes a tab again. Files only:
+  terminals and browsers have no window of their own. Only the rows take a
+  window, never the drop zones, so moving one over the main window does
+  nothing.
 - **2026-11-13. Markdown front matter renders as a YAML code block**, not as
   a table like GitHub's (front matter nests) and not hidden (it is part of the
   file). Detection is strict, because `---` is also a rule and a setext

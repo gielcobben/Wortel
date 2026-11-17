@@ -285,6 +285,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // A link in a rendered README is a fifth way to open a file, and it goes
         // through the same opener as the other four.
+        // A preview window dragged back onto a tab row becomes a tab there.
+        previewWindows.onDock = { [weak self] phase, url, window, point in
+            self?.splitController.dockWindowDrag(phase, url: url, dragged: window, at: point) ?? false
+        }
         previewWindows.onOpenFile = { [weak self] url in
             self?.openPreview(url)
         }

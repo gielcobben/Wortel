@@ -304,7 +304,9 @@ struct BottomAreaPane: View {
 /// a small window that follows the pointer (`TabTearOffGhost`), and letting go
 /// there opens the file in a preview window at that spot, as "Open in New
 /// Window" does. Only files: a terminal or a browser has no window of its own
-/// to go to.
+/// to go to. And back: a preview window dragged by its row over one of these
+/// rows hands over to `handleDock`, which shows the tab it would become and
+/// where, and makes it on letting go.
 @MainActor
 final class TabDragController {
     struct StripTarget {
@@ -325,6 +327,8 @@ final class TabDragController {
         /// Outside the window: a window of its own.
         case tearOff
     }
+
+    enum DockPhase { case moved, ended, cancelled }
 
     var strips: [StripTarget] = []
     /// The session terminal's area, in window coordinates.
@@ -444,6 +448,57 @@ final class TabDragController {
         }
     }
 
+    /// A preview window being dragged by its row, the pointer at `point` in
+    /// this window's coordinates. Only the tab rows take it, never the drop
+    /// zones: a window is moved over the main window all the time, and a
+    /// pane lighting up under it every time would be in the way. Returns
+    /// whether the pointer is over a row, so the window can step aside while
+    /// the tab stands in for it; on `.ended`, whether the tab was made.
+    @discardableResult
+    func handleDock(_ phase: DockPhase, url: URL, window: NSWindow, point: NSPoint,
+                    picture: () -> NSImage?) -> Bool {
+        let tab = SideTab.file(url.resolvingSymlinksInPath().standardizedFileURL.path)
+        switch phase {
+        case .moved:
+            guard let landing = stripLanding(tab: tab, point: point),
+                  case .strip(_, _, let marker) = landing else {
+                if docking { finish() }
+                return false
+            }
+            if overlay == nil {
+                guard let content = window.contentView else { return false }
+                let overlay = TabDragOverlay(frame: content.bounds)
+                overlay.autoresizingMask = [.width, .height]
+                let ghost = picture()
+                overlay.ghost = ghost
+                // Held a little way into the tab, by its glyph, as a tab
+                // picked up from a row usually is.
+                overlay.grabOffset = NSPoint(x: 24, y: (ghost?.size.height ?? Chrome.controlSize) / 2)
+                content.addSubview(overlay, positioned: .above, relativeTo: nil)
+                self.overlay = overlay
+            }
+            docking = true
+            target = landing
+            overlay?.pointer = overlay?.convert(point, from: nil) ?? point
+            overlay?.marker = overlay?.convert(marker, from: nil)
+            overlay?.zone = nil
+            overlay?.redraw()
+            return true
+        case .ended:
+            let landing = docking ? target : nil
+            if docking { finish() }
+            guard case .strip(let region, let index, _)? = landing else { return false }
+            onFileDrop([url], region, index)
+            return true
+        case .cancelled:
+            if docking { finish() }
+            return false
+        }
+    }
+
+    /// A preview window is over a row, standing in as a tab.
+    private var docking = false
+
     /// Whether `point` is over a terminal, which takes a dropped file itself.
     private static func isOverTerminal(_ point: NSPoint, in window: NSWindow?) -> Bool {
         guard let frameView = window?.contentView?.superview else { return false }
@@ -519,6 +574,12 @@ final class TabDragController {
     }
 
     private func landing(tab: SideTab, point: NSPoint) -> Target? {
+        if let strip = stripLanding(tab: tab, point: point) { return strip }
+        return zoneLanding(tab: tab, point: point)
+    }
+
+    /// The place in a tab row a drop at `point` would take, if it's over one.
+    private func stripLanding(tab: SideTab, point: NSPoint) -> Target? {
         for entry in strips {
             guard let strip = entry.strip, strip.window != nil, tab.fits(entry.region) else { continue }
             if strip.isHiddenOrHasHiddenAncestor {
@@ -535,6 +596,10 @@ final class TabDragController {
             let marker = NSRect(x: x - 1, y: rect.midY - 11, width: 2, height: 22)
             return .strip(entry.region, index: index, marker: marker)
         }
+        return nil
+    }
+
+    private func zoneLanding(tab: SideTab, point: NSPoint) -> Target? {
         // The session's own tab never goes *into* the column's row: it is the
         // main area's anchor, as the chat is in the ChatGPT app. Dropped on the
         // column (its row or its page), it trades places with it instead: the
@@ -606,6 +671,7 @@ final class TabDragController {
     }
 
     private func finish() {
+        docking = false
         tearOff?.hide()
         tearOff = nil
         tabPicture = nil

@@ -147,6 +147,28 @@ final class SideTabStrip: NSView {
         if orderChanged || activeChanged { revealActive(animated: hadTabs) }
     }
 
+    /// A tab as it looks in front of a row on the band, for a drag that
+    /// didn't start in a row: a preview window dragged back in by its own row
+    /// (TabDragController.handleDock). Drawn by a real tab, put in `window`
+    /// out of sight for the moment it takes, so it has the window's
+    /// appearance and is the same picture a dragged tab's ghost is.
+    static func picture(of item: Item, in window: NSWindow) -> NSImage? {
+        guard let host = window.contentView else { return nil }
+        let view = SideTabView(tab: item.tab, pinned: item.pinned)
+        view.configure(title: item.title, symbol: item.symbol, detail: nil, isActive: true)
+        let width = min(max(view.fittingWidth, minTabWidth), maxTabWidth)
+        view.frame = NSRect(x: -10_000, y: 0, width: width, height: tabHeight)
+        host.addSubview(view)
+        defer { view.removeFromSuperview() }
+        view.layoutSubtreeIfNeeded()
+        view.displayIfNeeded()
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
     private func makeView(for item: Item) -> SideTabView {
         let view = SideTabView(tab: item.tab, pinned: item.pinned)
         view.onSelect = { [weak self] in self?.onSelect(item.tab) }

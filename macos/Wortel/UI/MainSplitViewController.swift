@@ -268,6 +268,27 @@ final class MainSplitViewController: NSSplitViewController {
         tabDrag = drag
     }
 
+    /// A preview window dragged by its row, the pointer at `screenPoint`: over
+    /// one of this window's tab rows, and with nothing else in between, it
+    /// shows as the tab it would become (TabDragController.handleDock).
+    /// Returns whether it's over a row; on `.ended`, whether it became a tab.
+    func dockWindowDrag(_ phase: TabDragController.DockPhase, url: URL,
+                        dragged: NSWindow, at screenPoint: NSPoint) -> Bool {
+        guard let window = view.window, let tabDrag else { return false }
+        // The window under the pointer, looking past the one being dragged,
+        // which is under the pointer by definition.
+        let under = NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: dragged.windowNumber)
+        guard under == window.windowNumber else {
+            return tabDrag.handleDock(.cancelled, url: url, window: window, point: .zero) { nil }
+        }
+        let point = window.convertPoint(fromScreen: screenPoint)
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return tabDrag.handleDock(phase, url: url, window: window, point: point) { [manager] in
+            let item = TitleBarController.stripItem(for: .file(path), in: manager.selected)
+            return SideTabStrip.picture(of: item, in: window)
+        }
+    }
+
     /// A tab dropped somewhere that means "the column": already there, it
     /// comes to the front; from the bottom strip, it moves in.
     private func bringIntoColumn(_ tab: SideTab) {

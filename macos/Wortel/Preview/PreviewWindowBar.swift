@@ -19,6 +19,9 @@ import SwiftUI
 /// does.
 @MainActor
 final class PreviewWindowBar: ChromeBarView {
+    /// A press on the row's empty space, about to move the window.
+    var onWindowDrag: () -> Void = {}
+
     init(document: PreviewDocument) {
         super.init()
 
@@ -51,6 +54,11 @@ final class PreviewWindowBar: ChromeBarView {
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 1 { onWindowDrag() }
+        super.mouseDown(with: event)
+    }
 }
 
 /// The mode switch, or nothing when there's no choice to make.
@@ -91,8 +99,11 @@ final class FileButton: HoverFillButton, NSDraggingSource {
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
+    /// The file's tab's glyph (TitleBarController.stripItem), so the file
+    /// looks the same as a tab and as a window; an image gets its own.
     private static func symbol(for url: URL) -> String {
-        PreviewMode.isImage(url) ? "photo" : "doc.text"
+        if PreviewMode.isImage(url) { return "photo" }
+        return ["md", "markdown"].contains(url.pathExtension.lowercased()) ? "doc.richtext" : "doc.text"
     }
 
     /// Click or drag, decided here: past 6pt it's a drag (the tab strip's

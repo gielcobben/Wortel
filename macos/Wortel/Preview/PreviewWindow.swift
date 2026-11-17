@@ -17,6 +17,10 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     let file: PreviewDocument
     /// Called when the window closes, so the registry can forget it.
     var onClose: ((PreviewWindowController) -> Void)?
+    /// The window dragged by its row, the pointer on screen: whether it's
+    /// over one of the main window's tab rows, and on `.ended` whether it
+    /// became a tab there (PreviewWindows.onDock).
+    var onDock: ((TabDragController.DockPhase, URL, NSWindow, NSPoint) -> Bool)?
     /// ⌘F state, owned here because the menu item reaches this object through
     /// the responder chain — a window controller sits in it, after its window.
     private let find = PreviewFind()
@@ -99,8 +103,8 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         hosting.sizingOptions = []
         // The main window's layers: one behind-window material, the row on it,
         // and the file as an opaque page under the row's hairline.
-        let pane = ChromePaneController(bar: PreviewWindowBar(document: document),
-                                        content: hosting, bodyColor: Chrome.content)
+        let bar = PreviewWindowBar(document: document)
+        let pane = ChromePaneController(bar: bar, content: hosting, bodyColor: Chrome.content)
         window.contentViewController = BackdropController(child: pane)
         window.contentMinSize = NSSize(width: 360, height: 240)
         // Size is remembered, position is not — deliberately, and *not* through
@@ -115,6 +119,72 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // Control still read it.
         window.title = document.url.lastPathComponent
         movability = WindowMovability(window: window)
+        bar.onWindowDrag = { [weak self] in self?.followWindowDrag() }
+    }
+
+    // MARK: - Back into a tab
+    //
+    // Dragged by its row over one of the main window's tab rows, the window
+    // steps aside and the tab it would become stands in the row; let go
+    // there and it is that tab. The move itself stays the window server's
+    // (`performDrag`, ChromeBarView), so it still snaps and tiles; this only
+    // watches the pointer, on a timer in the common modes, until the button
+    // comes up. The pointer is read rather than the drag's events, which go
+    // to the window server and never to us.
+
+    private var dragTimer: Timer?
+    private var dragStart = NSPoint.zero
+    /// Past a few points: a click on the row never makes it a tab, even when
+    /// the window happens to sit over a tab row.
+    private var dragMoved = false
+    private var overRow = false
+
+    private func followWindowDrag() {
+        guard onDock != nil else { return }
+        dragTimer?.invalidate()
+        dragStart = NSEvent.mouseLocation
+        dragMoved = false
+        overRow = false
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.windowDragTick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        dragTimer = timer
+    }
+
+    private func windowDragTick() {
+        guard let window, let onDock else { return endWindowDrag() }
+        let point = NSEvent.mouseLocation
+        if !dragMoved, hypot(point.x - dragStart.x, point.y - dragStart.y) >= 6 { dragMoved = true }
+        let released = NSEvent.pressedMouseButtons & 1 == 0
+        guard dragMoved else {
+            if released { endWindowDrag() }
+            return
+        }
+        // Once more on letting go: if the timer couldn't run while the
+        // window moved, this is the only look at where it was let go.
+        let over = onDock(.moved, file.url, window, point)
+        if over != overRow {
+            overRow = over
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = over ? Motion.tabs : 0
+                window.animator().alphaValue = over ? 0 : 1
+            }
+        }
+        guard released else { return }
+        let docked = over && onDock(.ended, file.url, window, point)
+        endWindowDrag()
+        if docked {
+            window.close()
+        } else {
+            window.alphaValue = 1
+        }
+    }
+
+    private func endWindowDrag() {
+        dragTimer?.invalidate()
+        dragTimer = nil
+        overRow = false
     }
 
     @available(*, unavailable)
@@ -224,6 +294,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // Zoom and full-screen resize a window without ever ending a live
         // resize, so closing is the other place the final size is known.
         persistSize()
+        endWindowDrag()
         movability?.invalidate()
         movability = nil
         onClose?(self)

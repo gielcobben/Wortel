@@ -231,9 +231,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.openPreview(url)
         }
         // A tab becoming a window: the window opens and the tab goes.
-        previewTabs.onOpenInWindow = { [weak self] url, diff, hasChanges, topLeft in
+        previewTabs.onOpenInWindow = { [weak self] url, diff, hasChanges, mode, topLeft in
             guard let self else { return }
-            self.previewWindows.open(url, diff: diff, hasChanges: hasChanges, at: topLeft)
+            self.previewWindows.open(url, diff: diff, hasChanges: hasChanges, mode: mode, at: topLeft)
             self.gitPanel.close(.file(url.path))
         }
         // Browsers keep where they are on their session, so a relaunch or a
@@ -285,9 +285,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // A link in a rendered README is a fifth way to open a file, and it goes
         // through the same opener as the other four.
-        // A preview window dragged back onto a tab row becomes a tab there.
-        previewWindows.onDock = { [weak self] phase, url, window, point in
-            self?.splitController.dockWindowDrag(phase, url: url, dragged: window, at: point) ?? false
+        // A preview window dragged back onto a tab row becomes a tab there,
+        // with the window's diff and on its view: the way out keeps both, so
+        // the way back does too.
+        previewWindows.onDock = { [weak self] phase, document, window, point in
+            guard let self,
+                  let landing = self.splitController.dockWindowDrag(
+                      phase, url: document.url, dragged: window, at: point) else { return false }
+            if phase == .ended {
+                self.presentPreview(document.requestedURL, diff: document.diffSource,
+                                    mode: document.mode,
+                                    placement: .dropped(landing.region, index: landing.index))
+            }
+            return true
         }
         previewWindows.onOpenFile = { [weak self] url in
             self?.openPreview(url)
@@ -970,8 +980,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// History, the file tree, a path in a terminal, a link in Markdown) gets
     /// it without each passing it along.
     private func presentPreview(_ url: URL, diff: PreviewDiffSource = .none,
-                                hasChanges: Bool = false, placement: FilePlacement? = nil) {
-        place(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges),
+                                hasChanges: Bool = false, mode: PreviewMode? = nil,
+                                placement: FilePlacement? = nil) {
+        place(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges, mode: mode),
               placement ?? .home(inMain: Self.optionClicked))
     }
 

@@ -355,6 +355,9 @@ final class TabDragController {
     /// tear-off ghost stands in for it, and draw it again on the way back.
     private var tabPicture: NSImage?
     private var tearOff: TabTearOffGhost?
+    /// Whether the tab being dragged may leave the window. The ghost itself
+    /// is made only once it does: most drags are a reorder in a row.
+    private var canTearOff = false
     private weak var dragWindow: NSWindow?
     private var target: Target?
     private weak var source: NSView?
@@ -365,7 +368,7 @@ final class TabDragController {
             guard let window = view.window, let content = window.contentView else { return }
             let overlay = TabDragOverlay(frame: content.bounds)
             overlay.autoresizingMask = [.width, .height]
-            let picture = Self.snapshot(of: view)
+            let picture = view.snapshot()
             overlay.ghost = picture
             tabPicture = picture
             let grab = view.convert(point, from: nil)
@@ -373,10 +376,7 @@ final class TabDragController {
             content.addSubview(overlay, positioned: .above, relativeTo: nil)
             self.overlay = overlay
             dragWindow = window
-            if case .file = tab {
-                tearOff = TabTearOffGhost(tab: picture, grab: overlay.grabOffset,
-                                          appearance: window.effectiveAppearance)
-            }
+            canTearOff = { if case .file = tab { return true } else { return false } }()
             source = view
             view.alphaValue = 0.35
             update(tab: tab, point: point)
@@ -452,21 +452,22 @@ final class TabDragController {
     /// this window's coordinates. Only the tab rows take it, never the drop
     /// zones: a window is moved over the main window all the time, and a
     /// pane lighting up under it every time would be in the way. Returns
-    /// whether the pointer is over a row, so the window can step aside while
-    /// the tab stands in for it; on `.ended`, whether the tab was made.
+    /// the row and place the pointer is over, if any, so the window can step
+    /// aside while the tab stands in for it; on `.ended`, where the tab goes.
+    /// Making it is the caller's: it has the window's diff and view to keep.
     @discardableResult
     func handleDock(_ phase: DockPhase, url: URL, window: NSWindow, point: NSPoint,
-                    picture: () -> NSImage?) -> Bool {
+                    picture: () -> NSImage?) -> (region: TabRegion, index: Int)? {
         let tab = SideTab.file(url.resolvingSymlinksInPath().standardizedFileURL.path)
         switch phase {
         case .moved:
             guard let landing = stripLanding(tab: tab, point: point),
-                  case .strip(_, _, let marker) = landing else {
+                  case .strip(let region, let index, let marker) = landing else {
                 if docking { finish() }
-                return false
+                return nil
             }
             if overlay == nil {
-                guard let content = window.contentView else { return false }
+                guard let content = window.contentView else { return nil }
                 let overlay = TabDragOverlay(frame: content.bounds)
                 overlay.autoresizingMask = [.width, .height]
                 let ghost = picture()
@@ -483,16 +484,15 @@ final class TabDragController {
             overlay?.marker = overlay?.convert(marker, from: nil)
             overlay?.zone = nil
             overlay?.redraw()
-            return true
+            return (region, index)
         case .ended:
             let landing = docking ? target : nil
             if docking { finish() }
-            guard case .strip(let region, let index, _)? = landing else { return false }
-            onFileDrop([url], region, index)
-            return true
+            guard case .strip(let region, let index, _)? = landing else { return nil }
+            return (region, index)
         case .cancelled:
             if docking { finish() }
-            return false
+            return nil
         }
     }
 
@@ -657,8 +657,13 @@ final class TabDragController {
     /// Outside the window, a file tab becomes a window of its own: the
     /// ghost in the overlay gives way to one that can leave the window.
     private func updateTearOff(point: NSPoint) {
-        guard let tearOff, let window = dragWindow else { return }
+        guard canTearOff, let window = dragWindow else { return }
         let outside = !NSRect(origin: .zero, size: window.frame.size).contains(point)
+        if outside, tearOff == nil {
+            tearOff = TabTearOffGhost(tab: tabPicture, grab: overlay?.grabOffset ?? .zero,
+                                      appearance: window.effectiveAppearance)
+        }
+        guard let tearOff else { return }
         if outside {
             target = .tearOff
             overlay?.ghost = nil
@@ -674,6 +679,7 @@ final class TabDragController {
         docking = false
         tearOff?.hide()
         tearOff = nil
+        canTearOff = false
         tabPicture = nil
         dragWindow = nil
         draggingFile = false
@@ -683,14 +689,6 @@ final class TabDragController {
         source?.alphaValue = 1
         source = nil
         target = nil
-    }
-
-    private static func snapshot(of view: NSView) -> NSImage? {
-        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
-        view.cacheDisplay(in: view.bounds, to: rep)
-        let image = NSImage(size: view.bounds.size)
-        image.addRepresentation(rep)
-        return image
     }
 }
 

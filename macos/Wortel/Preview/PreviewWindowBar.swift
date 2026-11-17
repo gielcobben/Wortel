@@ -99,11 +99,10 @@ final class FileButton: HoverFillButton, NSDraggingSource {
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    /// The file's tab's glyph (TitleBarController.stripItem), so the file
-    /// looks the same as a tab and as a window; an image gets its own.
+    /// The file's tab's glyph, from the one place tabs get theirs, so the
+    /// file looks the same as a tab and as a window.
     private static func symbol(for url: URL) -> String {
-        if PreviewMode.isImage(url) { return "photo" }
-        return ["md", "markdown"].contains(url.pathExtension.lowercased()) ? "doc.richtext" : "doc.text"
+        TitleBarController.stripItem(for: .file(url.path), in: nil).symbol
     }
 
     /// Click or drag, decided here: past 6pt it's a drag (the tab strip's

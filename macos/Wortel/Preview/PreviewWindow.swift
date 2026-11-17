@@ -20,7 +20,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     /// The window dragged by its row, the pointer on screen: whether it's
     /// over one of the main window's tab rows, and on `.ended` whether it
     /// became a tab there (PreviewWindows.onDock).
-    var onDock: ((TabDragController.DockPhase, URL, NSWindow, NSPoint) -> Bool)?
+    var onDock: ((TabDragController.DockPhase, PreviewDocument, NSWindow, NSPoint) -> Bool)?
     /// ⌘F state, owned here because the menu item reaches this object through
     /// the responder chain — a window controller sits in it, after its window.
     private let find = PreviewFind()
@@ -117,7 +117,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         // Not shown (the row names the file), but the Window menu and Mission
         // Control still read it.
-        window.title = document.url.lastPathComponent
+        window.title = document.requestedURL.lastPathComponent
         movability = WindowMovability(window: window)
         bar.onWindowDrag = { [weak self] in self?.followWindowDrag() }
     }
@@ -163,7 +163,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         }
         // Once more on letting go: if the timer couldn't run while the
         // window moved, this is the only look at where it was let go.
-        let over = onDock(.moved, file.url, window, point)
+        let over = onDock(.moved, file, window, point)
         if over != overRow {
             overRow = over
             NSAnimationContext.runAnimationGroup { context in
@@ -172,19 +172,32 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
             }
         }
         guard released else { return }
-        let docked = over && onDock(.ended, file.url, window, point)
-        endWindowDrag()
+        let docked = over && onDock(.ended, file, window, point)
+        overRow = false
         if docked {
+            // Closed while still faded out: brought back first, it would
+            // flash for a frame on its way out.
+            closingIntoTab = true
             window.close()
         } else {
-            window.alphaValue = 1
+            endWindowDrag()
         }
     }
 
+    /// The window became a tab and is closing; it stays out of sight.
+    private var closingIntoTab = false
+
+    /// The drag is over, however it ended. Still standing in a row (the
+    /// window closed under the drag, or lost its way back), the tab goes
+    /// from the row and the window comes back.
     private func endWindowDrag() {
         dragTimer?.invalidate()
         dragTimer = nil
+        if overRow, let window {
+            _ = onDock?(.cancelled, file, window, NSEvent.mouseLocation)
+        }
         overRow = false
+        if !closingIntoTab { window?.alphaValue = 1 }
     }
 
     @available(*, unavailable)

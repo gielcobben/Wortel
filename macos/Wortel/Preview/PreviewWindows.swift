@@ -28,8 +28,9 @@ final class PreviewWindows {
     var onOpenFile: ((URL) -> Void)?
     /// A window dragged by its row, the pointer on screen: whether it's over
     /// one of the main window's tab rows, and on `.ended` whether it became
-    /// a tab there (MainSplitViewController.dockWindowDrag).
-    var onDock: ((TabDragController.DockPhase, URL, NSWindow, NSPoint) -> Bool)?
+    /// a tab there (MainSplitViewController.dockWindowDrag). Handed the
+    /// document, so the tab keeps the window's diff and view.
+    var onDock: ((TabDragController.DockPhase, PreviewDocument, NSWindow, NSPoint) -> Bool)?
 
     init(highlighter: (any DiffHighlighting)? = nil) {
         self.highlighter = highlighter
@@ -53,14 +54,17 @@ final class PreviewWindows {
     /// the cascade: a tab dragged out of the main window lands where it was
     /// let go.
     func open(_ url: URL, diff: PreviewDiffSource = .none, hasChanges: Bool = false,
-              at topLeft: NSPoint? = nil) {
+              mode preferred: PreviewMode? = nil, at topLeft: NSPoint? = nil) {
         // Identity is the resolved path — two aliases to one file are one window
         // — but the document is handed the path as *asked for*, so it can say the
         // file lives somewhere else. It resolves for itself.
         if focus(url) { return }
 
-        let mode = PreviewMode.inferred(for: url.resolvingSymlinksInPath(),
-                                        hasChanges: hasChanges, hasDiffSource: diff.exists)
+        // The view it was on as a tab, when it was one; else the inferred one.
+        let resolved = url.resolvingSymlinksInPath()
+        let mode = preferred.flatMap {
+            PreviewMode.available(for: resolved, hasDiffSource: diff.exists).contains($0) ? $0 : nil
+        } ?? PreviewMode.inferred(for: resolved, hasChanges: hasChanges, hasDiffSource: diff.exists)
         // The view it opened on, which is the only question here worth asking:
         // Rendered Markdown, a diff and plain source are three different
         // features sharing one window. The file this is about is never named.
@@ -76,8 +80,8 @@ final class PreviewWindows {
         controller.onClose = { [weak self] closed in
             self?.windows.removeAll { $0 === closed }
         }
-        controller.onDock = { [weak self] phase, url, window, point in
-            self?.onDock?(phase, url, window, point) ?? false
+        controller.onDock = { [weak self] phase, document, window, point in
+            self?.onDock?(phase, document, window, point) ?? false
         }
         if let window = controller.window {
             if let topLeft { put(window, at: topLeft) } else { place(window) }
@@ -97,8 +101,13 @@ final class PreviewWindows {
 
     /// At a point the person chose, kept on the screen it's on: let go near
     /// an edge, the window moves in until all of its row can be reached.
+    /// The screen is the pointer's, not the corner's: the corner sits up and
+    /// to the left of where the tab was let go, and near a display's edge it
+    /// is on the display next door.
     private func put(_ window: NSWindow, at topLeft: NSPoint) {
-        let screen = NSScreen.screens.first { $0.frame.contains(topLeft) } ?? NSScreen.main
+        let pointer = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(pointer) }
+            ?? NSScreen.screens.first { $0.frame.contains(topLeft) } ?? NSScreen.main
         var point = topLeft
         if let visible = screen?.visibleFrame {
             let size = window.frame.size

@@ -162,11 +162,7 @@ final class SideTabStrip: NSView {
         defer { view.removeFromSuperview() }
         view.layoutSubtreeIfNeeded()
         view.displayIfNeeded()
-        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
-        view.cacheDisplay(in: view.bounds, to: rep)
-        let image = NSImage(size: view.bounds.size)
-        image.addRepresentation(rep)
-        return image
+        return view.snapshot()
     }
 
     private func makeView(for item: Item) -> SideTabView {

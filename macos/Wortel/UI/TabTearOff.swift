@@ -23,6 +23,7 @@ final class TabTearOffGhost {
     /// Where the tab sits in the panel, so the pointer keeps hold of the tab
     /// at the very point it grabbed it.
     private let tabOrigin: NSPoint
+    private let tabHeight: CGFloat
     private let grab: NSPoint
 
     /// `tab` is the tab's picture; `grab` where the pointer holds it, from the
@@ -79,6 +80,7 @@ final class TabTearOffGhost {
             glass.addSubview(picture)
         }
         tabOrigin = origin
+        tabHeight = tabSize.height
         self.grab = grab
         panel.contentView = glass
     }
@@ -107,12 +109,18 @@ final class TabTearOffGhost {
         panel.orderOut(nil)
     }
 
-    /// Where the real window's top-left goes so its file name lands where
-    /// the tab was let go: the window's row puts the name just after its file
-    /// button, which is where the tab sits in the ghost.
+    /// Where the real window's top-left goes so it takes the ghost's place:
+    /// its file name where the tab's title was, its row's middle where the
+    /// tab's middle was, wherever on the tab the pointer holds it.
     func windowTopLeft(for pointer: NSPoint) -> NSPoint {
-        let nameX = Chrome.trafficLightInset + Chrome.controlSize + 8
-        return NSPoint(x: pointer.x - nameX - grab.x + 8,
-                       y: pointer.y + Chrome.titlebarHeight / 2)
+        // The window's row: traffic lights, the file button, 8pt, the name
+        // (PreviewWindowBar). The tab: 10pt in, a 16pt glyph, 8pt, the title
+        // (SideTabView).
+        let windowNameX = Chrome.trafficLightInset + Chrome.controlSize + 8
+        let tabTitleX: CGFloat = 10 + 16 + 8
+        let tabLeft = pointer.x - grab.x
+        let tabMiddle = pointer.y - grab.y + tabHeight / 2
+        return NSPoint(x: tabLeft + tabTitleX - windowNameX,
+                       y: tabMiddle + Chrome.titlebarHeight / 2)
     }
 }

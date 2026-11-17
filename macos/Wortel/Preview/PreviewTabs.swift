@@ -27,6 +27,9 @@ final class PreviewTabs {
     /// Where each file's diff comes from, recorded when it's opened and used
     /// when its document is made.
     private var sources: [String: (diff: PreviewDiffSource, hasChanges: Bool)] = [:]
+    /// The view a file arrived in, when it came from a window dragged back
+    /// in: it opens on that rather than on the inferred one.
+    private var arrivingModes: [String: PreviewMode] = [:]
     /// Files by when their tab was last in front, newest first: which ones a
     /// row keeps built behind the one in front (`keptBuilt(of:)`).
     private var shown: [String] = []
@@ -36,9 +39,9 @@ final class PreviewTabs {
     private static let keptBehind = 3
     /// Open a file a document links to (a link in rendered Markdown).
     var onOpenFile: ((URL) -> Void)?
-    /// Turn a tab into a window, its top-left at a point on screen when the
-    /// tab was dragged out to one.
-    var onOpenInWindow: ((URL, PreviewDiffSource, Bool, NSPoint?) -> Void)?
+    /// Turn a tab into a window, on the view the tab was showing, its
+    /// top-left at a point on screen when the tab was dragged out to one.
+    var onOpenInWindow: ((URL, PreviewDiffSource, Bool, PreviewMode?, NSPoint?) -> Void)?
 
     private struct Entry {
         let document: PreviewDocument
@@ -50,9 +53,13 @@ final class PreviewTabs {
     }
 
     /// The tab for a file, remembering where its diff comes from.
-    func tab(for url: URL, diff: PreviewDiffSource, hasChanges: Bool) -> SideTab {
+    func tab(for url: URL, diff: PreviewDiffSource, hasChanges: Bool,
+             mode: PreviewMode? = nil) -> SideTab {
         let path = url.resolvingSymlinksInPath().standardizedFileURL.path
-        if documents[path] == nil { sources[path] = (diff, hasChanges) }
+        if documents[path] == nil {
+            sources[path] = (diff, hasChanges)
+            arrivingModes[path] = mode
+        }
         return .file(path)
     }
 
@@ -61,8 +68,11 @@ final class PreviewTabs {
         if let entry = documents[path] { return (entry.document, entry.find) }
         let url = URL(fileURLWithPath: path)
         let source = sources[path] ?? (.none, false)
-        let mode = PreviewMode.inferred(for: url, hasChanges: source.hasChanges,
-                                        hasDiffSource: source.diff.exists)
+        let inferred = PreviewMode.inferred(for: url, hasChanges: source.hasChanges,
+                                            hasDiffSource: source.diff.exists)
+        let mode = arrivingModes.removeValue(forKey: path).flatMap {
+            PreviewMode.available(for: url, hasDiffSource: source.diff.exists).contains($0) ? $0 : nil
+        } ?? inferred
         Telemetry.capture(.previewOpened(mode: PreviewKind(mode), where: .tab))
         let entry = Entry(
             document: PreviewDocument(url: url, diffSource: source.diff, mode: mode,
@@ -94,12 +104,14 @@ final class PreviewTabs {
     func forget(_ path: String) {
         documents[path] = nil
         sources[path] = nil
+        arrivingModes[path] = nil
         shown.removeAll { $0 == path }
     }
 
     func openInWindow(_ path: String, at topLeft: NSPoint? = nil) {
         let source = sources[path] ?? (documents[path]?.document.diffSource ?? .none, false)
-        onOpenInWindow?(URL(fileURLWithPath: path), source.diff, source.hasChanges, topLeft)
+        onOpenInWindow?(URL(fileURLWithPath: path), source.diff, source.hasChanges,
+                        documents[path]?.document.mode, topLeft)
     }
 }
 
@@ -144,7 +156,7 @@ private struct PreviewTabHeader: View {
                 .help(document.requestedURL.path)
             Spacer(minLength: 8)
             // A binary file draws the same picture in every mode, so there is
-            // no choice to offer (the window disables its control likewise).
+            // no choice to offer (the window's row hides its switch likewise).
             if !document.isBinary, document.availableModes.count > 1 {
                 ModeSwitch(modes: document.availableModes, selection: $document.mode)
             }

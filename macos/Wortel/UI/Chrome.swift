@@ -218,3 +218,14 @@ final class ToolbarDivider: FilledView {
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 }
 
+extension NSView {
+    /// The view as it's drawn now: the ghost of a dragged tab, and the tab a
+    /// preview window dragged back in would become (SideTabStrip.picture).
+    func snapshot() -> NSImage? {
+        guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        cacheDisplay(in: bounds, to: rep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+}

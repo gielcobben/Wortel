@@ -271,10 +271,10 @@ final class MainSplitViewController: NSSplitViewController {
     /// A preview window dragged by its row, the pointer at `screenPoint`: over
     /// one of this window's tab rows, and with nothing else in between, it
     /// shows as the tab it would become (TabDragController.handleDock).
-    /// Returns whether it's over a row; on `.ended`, whether it became a tab.
+    /// Returns the row and place it's over; on `.ended`, where the tab goes.
     func dockWindowDrag(_ phase: TabDragController.DockPhase, url: URL,
-                        dragged: NSWindow, at screenPoint: NSPoint) -> Bool {
-        guard let window = view.window, let tabDrag else { return false }
+                        dragged: NSWindow, at screenPoint: NSPoint) -> (region: TabRegion, index: Int)? {
+        guard let window = view.window, let tabDrag else { return nil }
         // The window under the pointer, looking past the one being dragged,
         // which is under the pointer by definition.
         let under = NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: dragged.windowNumber)

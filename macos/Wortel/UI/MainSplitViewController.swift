@@ -247,6 +247,10 @@ final class MainSplitViewController: NSSplitViewController {
         drag.onFileDrop = { [weak self] urls, region, index in
             self?.openDroppedFiles(urls, region, index)
         }
+        drag.onTearOff = { [weak self] tab, topLeft in
+            guard case .file(let path) = tab else { return }
+            self?.previewTabs.openInWindow(path, at: topLeft)
+        }
         // A file dragged out of a list in this window gets the tab drag's
         // landing spots too.
         RowClickCatcher.onFileDrag = { [weak self, weak drag] phase, urls, window, point in

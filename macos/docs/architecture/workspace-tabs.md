@@ -62,5 +62,9 @@ Width: the column's is per session and the same for every tab, and it may grow
 until the terminal has 320pt; the strip's height is app-wide. Tab drags are
 resolved by `TabDragController` against the rows and a few drop zones (the
 main area, the column, the strip, the far edge for swapping), each only for
-tabs allowed there. Side terminals' processes count as the session's
-(`processRoots`); agent tracking, naming and resume follow the main shell only.
+tabs allowed there. A file tab can also leave the window: past its edge the
+ghost becomes a small window that follows the pointer (`TabTearOffGhost`, a
+borderless panel, since the overlay is clipped to the window), and letting go
+there opens the file in a preview window at that spot. Side terminals'
+processes count as the session's (`processRoots`); agent tracking, naming and
+resume follow the main shell only.

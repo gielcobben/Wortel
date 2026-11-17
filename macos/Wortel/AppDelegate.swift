@@ -231,9 +231,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.openPreview(url)
         }
         // A tab becoming a window: the window opens and the tab goes.
-        previewTabs.onOpenInWindow = { [weak self] url, diff, hasChanges in
+        previewTabs.onOpenInWindow = { [weak self] url, diff, hasChanges, topLeft in
             guard let self else { return }
-            self.previewWindows.open(url, diff: diff, hasChanges: hasChanges)
+            self.previewWindows.open(url, diff: diff, hasChanges: hasChanges, at: topLeft)
             self.gitPanel.close(.file(url.path))
         }
         // Browsers keep where they are on their session, so a relaunch or a

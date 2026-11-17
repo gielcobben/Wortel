@@ -299,6 +299,12 @@ struct BottomAreaPane: View {
 /// is drawn: a marker between tabs, or an overlay the size of the pane the
 /// drop would make, labelled with what will happen. All of it in one overlay
 /// view over the window that takes no clicks.
+///
+/// A file tab can also leave the window: past its edge, the ghost turns into
+/// a small window that follows the pointer (`TabTearOffGhost`), and letting go
+/// there opens the file in a preview window at that spot, as "Open in New
+/// Window" does. Only files: a terminal or a browser has no window of its own
+/// to go to.
 @MainActor
 final class TabDragController {
     struct StripTarget {
@@ -316,6 +322,8 @@ final class TabDragController {
         case zone(TabRegion, area: NSRect)
         /// The terminal's edge away from the column: the column moves there.
         case swap(leading: Bool, area: NSRect)
+        /// Outside the window: a window of its own.
+        case tearOff
     }
 
     var strips: [StripTarget] = []
@@ -334,8 +342,16 @@ final class TabDragController {
     var onSwap: (SideTab, Bool) -> Void = { _, _ in }
     /// Which row a tab is in now: dropped back on its own area, it stays put.
     var regionOf: (SideTab) -> TabRegion? = { _ in nil }
+    /// A file tab let go outside the window: open it in a window whose
+    /// top-left is at this point, in screen coordinates.
+    var onTearOff: (SideTab, NSPoint) -> Void = { _, _ in }
 
     private var overlay: TabDragOverlay?
+    /// The tab's picture, kept so the overlay can stop drawing it while the
+    /// tear-off ghost stands in for it, and draw it again on the way back.
+    private var tabPicture: NSImage?
+    private var tearOff: TabTearOffGhost?
+    private weak var dragWindow: NSWindow?
     private var target: Target?
     private weak var source: NSView?
 
@@ -345,11 +361,18 @@ final class TabDragController {
             guard let window = view.window, let content = window.contentView else { return }
             let overlay = TabDragOverlay(frame: content.bounds)
             overlay.autoresizingMask = [.width, .height]
-            overlay.ghost = Self.snapshot(of: view)
+            let picture = Self.snapshot(of: view)
+            overlay.ghost = picture
+            tabPicture = picture
             let grab = view.convert(point, from: nil)
             overlay.grabOffset = NSPoint(x: grab.x, y: view.bounds.height - grab.y)
             content.addSubview(overlay, positioned: .above, relativeTo: nil)
             self.overlay = overlay
+            dragWindow = window
+            if case .file = tab {
+                tearOff = TabTearOffGhost(tab: picture, grab: overlay.grabOffset,
+                                          appearance: window.effectiveAppearance)
+            }
             source = view
             view.alphaValue = 0.35
             update(tab: tab, point: point)
@@ -357,11 +380,15 @@ final class TabDragController {
             update(tab: tab, point: point)
         case .ended:
             let landing = target
+            let topLeft = view.window.flatMap { window in
+                tearOff?.windowTopLeft(for: window.convertPoint(toScreen: point))
+            }
             finish()
             switch landing {
             case .strip(let region, let index, _): onDrop(tab, region, index)
             case .zone(let region, _): onDrop(tab, region, .max)
             case .swap(let leading, _): onSwap(tab, leading)
+            case .tearOff: if let topLeft { onTearOff(tab, topLeft) }
             case nil: break
             }
         case .cancelled:
@@ -412,7 +439,7 @@ final class TabDragController {
             switch landing {
             case .strip(let region, let index, _): onFileDrop(files, region, index)
             case .zone(let region, _): onFileDrop(files, region, .max)
-            case .swap, nil: break
+            case .swap, .tearOff, nil: break
             }
         }
     }
@@ -431,11 +458,18 @@ final class TabDragController {
     private func update(tab: SideTab, point: NSPoint) {
         draggingSession = tab == .session
         target = resolve(tab: tab, point: point)
+        updateTearOff(point: point)
         if draggingFile {
             // Never "move the column" for a file, and nothing over a terminal:
             // that drop is the terminal's (it types the path).
             if case .swap? = target { target = nil }
             if case .zone? = target, Self.isOverTerminal(point, in: fileDragWindow) { target = nil }
+        }
+        if case .tearOff? = target {
+            overlay?.marker = nil
+            overlay?.zone = nil
+            overlay?.redraw()
+            return
         }
         guard let overlay else { return }
         overlay.pointer = overlay.convert(point, from: nil)
@@ -468,7 +502,7 @@ final class TabDragController {
                 overlay.zoneLabel = leading ? "Move Column to the Left" : "Move Column to the Right"
                 overlay.zoneEdge = leading ? .maxX : .minX
             }
-        case nil:
+        case .tearOff, nil:
             overlay.marker = nil
             overlay.zone = nil
         }
@@ -555,7 +589,27 @@ final class TabDragController {
         return nil
     }
 
+    /// Outside the window, a file tab becomes a window of its own: the
+    /// ghost in the overlay gives way to one that can leave the window.
+    private func updateTearOff(point: NSPoint) {
+        guard let tearOff, let window = dragWindow else { return }
+        let outside = !NSRect(origin: .zero, size: window.frame.size).contains(point)
+        if outside {
+            target = .tearOff
+            overlay?.ghost = nil
+            tearOff.move(to: window.convertPoint(toScreen: point))
+            tearOff.show()
+        } else if tearOff.isShown {
+            tearOff.hide()
+            overlay?.ghost = tabPicture
+        }
+    }
+
     private func finish() {
+        tearOff?.hide()
+        tearOff = nil
+        tabPicture = nil
+        dragWindow = nil
         draggingFile = false
         fileDragWindow = nil
         overlay?.removeFromSuperview()

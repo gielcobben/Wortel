@@ -36,8 +36,9 @@ final class PreviewTabs {
     private static let keptBehind = 3
     /// Open a file a document links to (a link in rendered Markdown).
     var onOpenFile: ((URL) -> Void)?
-    /// Turn a tab into a window.
-    var onOpenInWindow: ((URL, PreviewDiffSource, Bool) -> Void)?
+    /// Turn a tab into a window, its top-left at a point on screen when the
+    /// tab was dragged out to one.
+    var onOpenInWindow: ((URL, PreviewDiffSource, Bool, NSPoint?) -> Void)?
 
     private struct Entry {
         let document: PreviewDocument
@@ -96,9 +97,9 @@ final class PreviewTabs {
         shown.removeAll { $0 == path }
     }
 
-    func openInWindow(_ path: String) {
+    func openInWindow(_ path: String, at topLeft: NSPoint? = nil) {
         let source = sources[path] ?? (documents[path]?.document.diffSource ?? .none, false)
-        onOpenInWindow?(URL(fileURLWithPath: path), source.diff, source.hasChanges)
+        onOpenInWindow?(URL(fileURLWithPath: path), source.diff, source.hasChanges, topLeft)
     }
 }
 

@@ -45,7 +45,11 @@ final class PreviewWindows {
         return true
     }
 
-    func open(_ url: URL, diff: PreviewDiffSource = .none, hasChanges: Bool = false) {
+    /// `topLeft`, in screen coordinates, puts the window there rather than on
+    /// the cascade: a tab dragged out of the main window lands where it was
+    /// let go.
+    func open(_ url: URL, diff: PreviewDiffSource = .none, hasChanges: Bool = false,
+              at topLeft: NSPoint? = nil) {
         // Identity is the resolved path — two aliases to one file are one window
         // — but the document is handed the path as *asked for*, so it can say the
         // file lives somewhere else. It resolves for itself.
@@ -68,7 +72,9 @@ final class PreviewWindows {
         controller.onClose = { [weak self] closed in
             self?.windows.removeAll { $0 === closed }
         }
-        if let window = controller.window { place(window) }
+        if let window = controller.window {
+            if let topLeft { put(window, at: topLeft) } else { place(window) }
+        }
         windows.append(controller)
         controller.showWindow(nil)
     }
@@ -80,6 +86,19 @@ final class PreviewWindows {
         for window in windows { window.close() }
         windows.removeAll()
         nextTopLeft = nil
+    }
+
+    /// At a point the person chose, kept on the screen it's on: let go near
+    /// an edge, the window moves in until all of its row can be reached.
+    private func put(_ window: NSWindow, at topLeft: NSPoint) {
+        let screen = NSScreen.screens.first { $0.frame.contains(topLeft) } ?? NSScreen.main
+        var point = topLeft
+        if let visible = screen?.visibleFrame {
+            let size = window.frame.size
+            point.x = min(max(point.x, visible.minX), visible.maxX - size.width)
+            point.y = min(max(point.y, visible.minY + size.height), visible.maxY)
+        }
+        window.setFrameTopLeftPoint(point)
     }
 
     /// Step this window down-right of the last one, and start over from centre

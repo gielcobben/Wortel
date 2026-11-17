@@ -29,8 +29,10 @@ less travel when the file sits next to the terminal. The rules below still hold,
 tab for window: opening a file that already has a tab brings that tab forward,
 one tab per file, and no tab ever changes its file under you. A tab's header has
 the mode control and "Open in Window" for when a file deserves a window of its
-own. A tab restored after a relaunch opens on the file, not a diff: where the
-diff came from was a moment's state.
+own, and the tab can be dragged out of the main window to the same end: past
+the window's edge it turns into a small window that follows the pointer, and
+the preview window opens where it was let go. A tab restored after a relaunch
+opens on the file, not a diff: where the diff came from was a moment's state.
 
 ## Behaviour
 

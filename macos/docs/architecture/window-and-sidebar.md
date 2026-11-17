@@ -7,7 +7,11 @@ Paths are relative to `macos/`.
 hosting SwiftUI content, in an AppKit window (`AppDelegate`). The titlebar is
 Wortel's own (`TitleBars.swift`): the window keeps an *empty* toolbar only for
 its height and the centred traffic lights, the titlebar is transparent, and each
-pane draws its row of a flat grey band (the ChatGPT app's look). The reason is
+pane draws its row of a flat grey band (the ChatGPT app's look). The sidebar
+toggle and Back/Forward are the exception: one set laid over all the rows
+(`SidebarControls`, in `BackdropController`), placed on every split resize so
+the arrows ride the sidebar's edge as it opens and closes and the rows to the
+right clear them (`leadingClearance`). The reason for the own titlebar is
 that on macOS 26+ every toolbar item, custom views included, sits on a Liquid
 Glass capsule, and AppKit has no switch to stop that. The window's vibrancy is
 one behind-window material under everything (`BackdropController`); only the

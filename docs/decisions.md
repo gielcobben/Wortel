@@ -133,6 +133,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   press or hover in it belongs to no row. As room above the next header it had
   to change that header's height beside the fold, and the two animations made
   the title jump.
+- **2026-11-17. One sidebar toggle and one pair of arrows, over all the rows.**
+  There were three sets (the sidebar's row, and the main area's or the
+  column's once it was collapsed), swapped with `isHidden`: the arrows were
+  clipped by the closing sidebar's edge and the next row's set popped in at
+  the end. Now `SidebarControls` sits over the titlebar, the toggle never
+  moves, the arrows ride the sidebar's edge and stop beside the toggle, and
+  the rows to the right are pushed along by the same number every frame.
 
 ## Sessions
 

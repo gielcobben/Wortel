@@ -312,6 +312,9 @@ outline around the one that now has the keyboard.
   showing snaps; it never animates.
 - A terminal does not resize during an animation. It resizes once, when the
   pane lands.
+- A control that is there in both states moves; it is never hidden in one
+  place and shown in another. The sidebar toggle stays by the traffic lights
+  and Back and Forward ride the sidebar's edge.
 - The sidebar never re-sorts under the pointer.
 - A long name scrolls after resting a second, slowly, with faded edges.
 - Reduce Motion stills the dots and the wave. The flash around a session that

@@ -164,9 +164,13 @@ final class ChromePaneController: NSViewController {
 @MainActor
 final class BackdropController: NSViewController {
     private let child: NSViewController
+    /// Laid over the top of the window, the titlebar's height: the sidebar's
+    /// controls, which belong to no one pane.
+    private let overlay: NSView?
 
-    init(child: NSViewController) {
+    init(child: NSViewController, overlay: NSView? = nil) {
         self.child = child
+        self.overlay = overlay
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -186,6 +190,16 @@ final class BackdropController: NSViewController {
             content.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
             content.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
         ])
+        if let overlay {
+            overlay.translatesAutoresizingMaskIntoConstraints = false
+            backdrop.addSubview(overlay, positioned: .above, relativeTo: content)
+            NSLayoutConstraint.activate([
+                overlay.topAnchor.constraint(equalTo: backdrop.topAnchor),
+                overlay.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
+                overlay.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
+                overlay.heightAnchor.constraint(equalToConstant: Chrome.titlebarHeight),
+            ])
+        }
         view = backdrop
     }
 }
@@ -199,16 +213,14 @@ final class ChromeSplitView: NSSplitView {
 
 // MARK: - The three rows
 
-/// Over the sidebar: the traffic lights and, right beside them, the one
-/// control this row has, the sidebar toggle, where ChatGPT keeps its own. A new
-/// session is ⌘N or the sidebar's own "+".
+/// Over the sidebar: the traffic lights, and under the sidebar toggle and
+/// Back and Forward, which are not this row's but `SidebarControls`', laid
+/// over every row. A new session is ⌘N or the sidebar's own "+".
 @MainActor
 final class SidebarBar: ChromeBarView {
     /// Posted by the sidebar's list as it scrolls, with the window as its
     /// object and whether any of the list is under the row.
     static let scrolledNotification = Notification.Name("WortelSidebarScrolled")
-    /// Back and Forward, at the row's far end.
-    let history = HistoryButtons()
 
     override init() {
         super.init()
@@ -225,23 +237,76 @@ final class SidebarBar: ChromeBarView {
                 self.showsBottomLine = scrolled
             }
         }
-        let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar (⌘B)")
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+}
+
+/// The sidebar toggle and Back and Forward: one set, laid over the whole
+/// titlebar rather than a copy in each row, so opening and closing the sidebar
+/// moves them instead of swapping them.
+///
+/// There used to be three sets (the sidebar's row, and the main area's or the
+/// column's once the sidebar was collapsed), shown and hidden by `isHidden`.
+/// So the sidebar slid shut with its arrows clipped by its own edge, then the
+/// next row's set popped in at the end. Now the toggle never moves, beside the
+/// traffic lights in both states, and the arrows ride the sidebar's edge,
+/// against the main area they change as a browser keeps its arrows by the page,
+/// until the edge reaches the toggle and they stop beside it. The rows to the
+/// right make room by `leadingClearance`, so the title is pushed along with
+/// them rather than jumping.
+///
+/// Placed by MainSplitViewController on every resize of the split, which a
+/// collapse animation makes every frame, so it moves in step with the sidebar.
+@MainActor
+final class SidebarControls: NSView {
+    let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar (⌘B)")
+    let history = HistoryButtons()
+    private var historyLeading: NSLayoutConstraint!
+
+    /// Where the arrows start when the sidebar is shut: past the toggle.
+    private static let restingX = Chrome.trafficLightInset + Chrome.controlSize + 8
+    /// Their width: two buttons and the stack's spacing.
+    private static let historyWidth = Chrome.controlSize * 2 + 4
+
+    init() {
+        super.init(frame: .zero)
         toggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
-        addSubview(toggle)
-        // Back and Forward at the row's far end, against the main area they
-        // change, as a browser keeps its arrows by the page.
         history.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(toggle)
         addSubview(history)
+        historyLeading = history.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.restingX)
         NSLayoutConstraint.activate([
             toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-            history.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            historyLeading,
             history.centerYAnchor.constraint(equalTo: centerYAnchor),
-            // 78 + 28 + 2 + 60 + 8 = 176, inside the sidebar's 180pt minimum.
-            history.leadingAnchor.constraint(greaterThanOrEqualTo: toggle.trailingAnchor, constant: 2),
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    /// Follow the sidebar's right edge, `edge` points from this view's leading
+    /// edge (0 when it's shut). Returns where the arrows end, in the same
+    /// coordinates, for the rows to clear.
+    @discardableResult
+    func place(sidebarEdge edge: CGFloat, collapsed: Bool) -> CGFloat {
+        let x = max(Self.restingX, edge - 8 - Self.historyWidth)
+        if abs(historyLeading.constant - x) > 0.01 { historyLeading.constant = x }
+        let label = collapsed ? "Show Sidebar (⌘B)" : "Hide Sidebar (⌘B)"
+        if toggle.toolTip != label {
+            toggle.toolTip = label
+            toggle.setAccessibilityLabel(label)
+        }
+        return x + Self.historyWidth
+    }
+
+    /// Only the buttons take clicks: the rest is the rows' under it, which
+    /// move the window and zoom it.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
+
+    override var mouseDownCanMoveWindow: Bool { false }
 }
 
 /// Over the main area, laid out like the ChatGPT app's conversation header: the
@@ -249,8 +314,8 @@ final class SidebarBar: ChromeBarView {
 /// what it's running. Only once something else has been put in the main area's
 /// row does the title become that row's tabs. The column's toggle sits at the
 /// far end while the column is hidden, as ChatGPT's pane toggle does; with the
-/// sidebar collapsed the row also makes room for the traffic lights and the way
-/// back to the sidebar.
+/// sidebar collapsed the row also makes room for the traffic lights and the
+/// sidebar's controls (`leadingClearance`).
 ///
 /// Everything else (a new terminal here, the bottom strip) is in the "…" menu
 /// and on the keyboard, not on the row: a titlebar full of glyphs is a titlebar
@@ -263,11 +328,12 @@ final class MainBar: ChromeBarView {
     let running = RunningButton()
     let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column (⌥⌘B)")
     private let sideDivider = ToolbarDivider()
-    private let sidebarToggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar (⌘B)")
-    /// Back and Forward, which live on the sidebar's row: here only while
-    /// the sidebar is collapsed and this row carries its toggle.
-    let history = HistoryButtons()
     private var leading: NSLayoutConstraint!
+    /// How far from the row's leading edge its content has to start to clear
+    /// the sidebar's controls laid over it: 0 while they're over the sidebar.
+    var leadingClearance: CGFloat = 0 {
+        didSet { if leadingClearance != oldValue { updateLeading() } }
+    }
 
     /// While the row shows the title rather than tabs: the row, as a place to
     /// drop a tab, and where the marker goes, just after the title's text (the
@@ -281,7 +347,6 @@ final class MainBar: ChromeBarView {
 
     override init() {
         super.init()
-        sidebarToggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
 
         title.font = .systemFont(ofSize: 13, weight: .medium)
         title.textColor = .labelColor
@@ -296,7 +361,7 @@ final class MainBar: ChromeBarView {
 
         let trailing = NSStackView(views: [more, running, sideDivider, sideToggle])
         trailing.spacing = 4
-        let row = NSStackView(views: [sidebarToggle, history, title, strip, trailing])
+        let row = NSStackView(views: [title, strip, trailing])
         row.spacing = 8
         row.alignment = .centerY
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -314,14 +379,13 @@ final class MainBar: ChromeBarView {
             row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             row.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
-        setSidebarCollapsed(false)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    func setSidebarCollapsed(_ collapsed: Bool) {
-        sidebarToggle.isHidden = !collapsed
-        history.isHidden = !collapsed
-        leading.constant = collapsed ? Chrome.trafficLightInset : (strip.isHidden ? 16 : 8)
+    private func updateLeading() {
+        let own: CGFloat = strip.isHidden ? 16 : 8
+        let constant = max(own, leadingClearance)
+        if abs(leading.constant - constant) > 0.01 { leading.constant = constant }
     }
 
     /// The title, or the row's tabs once there's more than the terminal in it.
@@ -329,7 +393,7 @@ final class MainBar: ChromeBarView {
         guard strip.isHidden == shows else { return }
         strip.isHidden = !shows
         title.isHidden = shows
-        setSidebarCollapsed(!sidebarToggle.isHidden)
+        updateLeading()
     }
 
     /// The column's toggle, here only while the column is hidden.
@@ -346,33 +410,25 @@ final class SideColumnBar: ChromeBarView {
     let strip = SideTabStrip()
     let add = HoverFillButton.glyph("plus", "New Tab")
     let toggle = HoverFillButton.glyph("sidebar.right", "Hide Side Column (⌥⌘B)")
-    /// Shown when this row is the leftmost with the sidebar collapsed: the
-    /// way back to the sidebar, where the main area's row would carry it.
-    let sidebarToggle = HoverFillButton.glyph("sidebar.left", "Show Sidebar (⌘B)")
-    /// Back and Forward, beside the sidebar toggle and for the same reason.
-    let history = HistoryButtons()
     private var stripLeading: NSLayoutConstraint!
+    /// As the main area's row: room for the sidebar's controls when this row
+    /// is the leftmost with the sidebar collapsed.
+    var leadingClearance: CGFloat = 0 {
+        didSet {
+            let constant = max(8, leadingClearance)
+            if abs(stripLeading.constant - constant) > 0.01 { stripLeading.constant = constant }
+        }
+    }
 
     override init() {
         super.init()
         toggle.isSelected = true
-        sidebarToggle.action = #selector(AppDelegate.toggleSessionSidebar(_:))
-        sidebarToggle.isHidden = true
-        history.isHidden = true
-        sidebarToggle.translatesAutoresizingMaskIntoConstraints = false
-        history.translatesAutoresizingMaskIntoConstraints = false
         strip.translatesAutoresizingMaskIntoConstraints = false
         strip.trailingAccessory = add
-        addSubview(sidebarToggle)
-        addSubview(history)
         addSubview(strip)
         addSubview(toggle)
         stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         NSLayoutConstraint.activate([
-            sidebarToggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
-            sidebarToggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-            history.leadingAnchor.constraint(equalTo: sidebarToggle.trailingAnchor, constant: 8),
-            history.centerYAnchor.constraint(equalTo: centerYAnchor),
             stripLeading,
             // The full row, like the buttons' centre: a tab centred on a strip
             // that stopped short of the hairline sat half a point low.
@@ -384,22 +440,12 @@ final class SideColumnBar: ChromeBarView {
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-
-    func setSidebarCollapsed(_ collapsed: Bool) {
-        sidebarToggle.isHidden = !collapsed
-        history.isHidden = !collapsed
-        // Past the toggle (28 + 8) and the arrows (28 + 4 + 28 + 8).
-        stripLeading.constant = collapsed ? Chrome.trafficLightInset + 36 + 68 : 8
-    }
 }
 
 // MARK: - Back and Forward
 
 /// The two arrows that step through the places you've been: a session and
-/// the tab you had in front in it. A view of
-/// its own because up to three rows carry a pair, whichever one is leftmost
-/// with the sidebar collapsed; TitleBarController keeps them all enabled
-/// alike.
+/// the tab you had in front in it. Part of `SidebarControls`.
 @MainActor
 final class HistoryButtons: NSStackView {
     let back = HoverFillButton.glyph("chevron.left", "Back (⌃⌘[)")
@@ -587,6 +633,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     let sidebarBar = SidebarBar()
     let mainBar = MainBar()
     let sideBar = SideColumnBar()
+    /// The sidebar toggle and the arrows, over all three rows.
+    let sidebarControls = SidebarControls()
 
     private let manager: SessionManager
     private let git: GitPanelModel
@@ -635,9 +683,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     private func observeHistory() {
         withObservationTracking {
             let back = manager.canGoBack, forward = manager.canGoForward
-            for history in [sidebarBar.history, mainBar.history, sideBar.history] {
-                history.update(canGoBack: back, canGoForward: forward)
-            }
+            sidebarControls.history.update(canGoBack: back, canGoForward: forward)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeHistory() }
         }

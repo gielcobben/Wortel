@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.openPreview(url, placement: .dropped(region, index: index == .max ? .max : index + offset))
             }
         }
-        window.contentViewController = BackdropController(child: split)
+        window.contentViewController = BackdropController(child: split, overlay: titleBars.sidebarControls)
         movability = WindowMovability(window: window)
         titleBars.start()
         window.setFrameAutosaveName("main")

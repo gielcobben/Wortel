@@ -420,15 +420,32 @@ final class MainSplitViewController: NSSplitViewController {
         }
     }
 
-    /// Room for the traffic lights goes to whichever pane is leftmost once the
-    /// sidebar is collapsed: the terminal's row, or the column's when the
-    /// column is on the leading side (or has the window, in full view).
+    /// Move the sidebar's controls to the sidebar's edge, and have the rows to
+    /// its right clear them: the traffic lights, the toggle and the arrows go
+    /// over whichever pane is leftmost once the sidebar is collapsed (the
+    /// terminal's row, or the column's when the column is on the leading side).
+    ///
+    /// Run on every resize of the split, which an animated collapse makes
+    /// every frame, so all of it moves with the sidebar instead of jumping at
+    /// one end. The edge is read off the pane after the sidebar rather than the
+    /// sidebar's own frame, which a collapsed split item may keep at its old
+    /// width while hidden.
     private func updateLeadingInsets() {
-        let sidebarCollapsed = sidebarItem?.isCollapsed ?? false
-        let firstVisible = splitViewItems.dropFirst().first { !$0.isCollapsed }
-        let columnFirst = firstVisible === inspectorItem
-        titleBars.mainBar.setSidebarCollapsed(sidebarCollapsed && !columnFirst)
-        titleBars.sideBar.setSidebarCollapsed(sidebarCollapsed && columnFirst)
+        guard let sidebarItem else { return }
+        let controls = titleBars.sidebarControls
+        let panes = splitViewItems.dropFirst().filter { !$0.isCollapsed }
+        let edge = panes.first.map {
+            max(0, $0.viewController.view.frame.minX - splitView.dividerThickness)
+        } ?? splitView.bounds.width
+        // The split view and the controls both start at the window's leading
+        // edge (BackdropController), so these x's are the same in both.
+        let clearsTo = controls.place(sidebarEdge: edge, collapsed: sidebarItem.isCollapsed) + 8
+        func clearance(_ item: NSSplitViewItem?) -> CGFloat {
+            guard let item, !item.isCollapsed else { return 0 }
+            return max(0, clearsTo - item.viewController.view.frame.minX)
+        }
+        titleBars.mainBar.leadingClearance = clearance(contentItem)
+        titleBars.sideBar.leadingClearance = clearance(inspectorItem)
     }
 
     /// Show the column when either side wants it. Animate when the user asked —

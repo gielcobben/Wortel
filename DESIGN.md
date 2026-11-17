@@ -236,7 +236,8 @@ toolbar item on a glass capsule, and there is no switch for that.
 | | |
 | --- | --- |
 | Row | 30pt. With a line under the name (a worktree's branch, a reminder's time), 44pt |
-| Section header | 30pt, with 14pt above all but the first |
+| Section header | 30pt |
+| Between sections | 14pt under an open section's last row, part of that row. None under a folded section, so folded folders stack like rows |
 | Selection pill | 8pt corners |
 | Status | Centred in the last 34pt of the row. The dot and the close button share that slot, so nothing shifts on hover |
 | Session colour | A 3pt bar inside the pill's leading edge, in Finder's tag colours |

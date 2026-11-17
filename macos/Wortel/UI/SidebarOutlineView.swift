@@ -60,17 +60,17 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
         didSet { if showsMenuOpen != oldValue { needsDisplay = true } }
     }
 
-    /// Room above a section header, so sections stand apart while the rows
-    /// inside one sit close. Kept out of the pill, the hover and the "+".
-    var sectionGap: CGFloat = 0 {
-        didSet { if sectionGap != oldValue { needsLayout = true; needsDisplay = true } }
+    /// Room below the last row of a section, so sections stand apart while
+    /// the rows inside one sit close. Kept out of the pill and the hover.
+    var gapBelow: CGFloat = 0 {
+        didSet { if gapBelow != oldValue { needsLayout = true; needsDisplay = true } }
     }
 
     /// The pill, and the box the close button is laid out against.
     private var pillRect: NSRect {
         var rect = bounds
-        rect.size.height -= sectionGap
-        if isFlipped { rect.origin.y += sectionGap }
+        rect.size.height -= gapBelow
+        if !isFlipped { rect.origin.y += gapBelow }
         return rect.insetBy(dx: Self.pillInset.width, dy: Self.pillInset.height)
     }
 
@@ -383,17 +383,26 @@ final class SidebarCellView: NSTableCellView {
     var dragTitle = ""
     var dragIsHeader = false
 
+    private var bottom: NSLayoutConstraint!
+    /// The section gap under the last row of a section (see
+    /// `SidebarPillRowView.gapBelow`): part of the row, so it folds away with
+    /// the section's rows, but outside the content.
+    var gapBelow: CGFloat = 0 {
+        didSet { bottom.constant = -gapBelow }
+    }
+
     init(content: AnyView) {
         hosting = NSHostingView(rootView: content)
         super.init(frame: .zero)
         hosting.sizingOptions = []
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
+        bottom = hosting.bottomAnchor.constraint(equalTo: bottomAnchor)
         NSLayoutConstraint.activate([
             hosting.leadingAnchor.constraint(equalTo: leadingAnchor),
             hosting.trailingAnchor.constraint(equalTo: trailingAnchor),
             hosting.topAnchor.constraint(equalTo: topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: bottomAnchor),
+            bottom,
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -413,7 +422,7 @@ final class SidebarCellView: NSTableCellView {
     /// The pill is filled opaque because the sidebar behind it is vibrancy,
     /// which a drag image can't carry: the window's background stands in.
     override var draggingImageComponents: [NSDraggingImageComponent] {
-        let size = bounds.size
+        let size = hosting.frame.size
         guard size.width > 0, size.height > 0 else { return [] }
         let title = dragTitle, isHeader = dragIsHeader
         let appearance = effectiveAppearance
@@ -424,7 +433,7 @@ final class SidebarCellView: NSTableCellView {
         }
 
         let component = NSDraggingImageComponent(key: .icon)
-        component.frame = NSRect(origin: .zero, size: size)
+        component.frame = hosting.frame
         component.contents = NSImage(size: size, flipped: false) { rect in
             appearance.performAsCurrentDrawingAppearance {
                 if isHeader {
@@ -901,8 +910,13 @@ struct SidebarOutlineView: NSViewRepresentable {
             guard let outline else { return }
             let old = snapshot
             let changedTall = Set(new.flatMap(\.tallIDs)).symmetricDifference(old.flatMap(\.tallIDs))
+            let oldLast = lastRows
             snapshot = new
             rebuildItems(resetLoose: false)
+            let newLast = lastRows
+            let changedLast = (oldLast + newLast).filter { item in
+                !(oldLast.contains { $0 === item } && newLast.contains { $0 === item })
+            }
             var folded: [Any] = []
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = Motion.tabs
@@ -933,10 +947,11 @@ struct SidebarOutlineView: NSViewRepresentable {
                     }
                 }
                 outline.endUpdates()
-                if !changedTall.isEmpty {
-                    let rows = IndexSet(changedTall.compactMap { id in
+                if !changedTall.isEmpty || !changedLast.isEmpty {
+                    var rows = IndexSet(changedTall.compactMap { id in
                         sessionCache[id].map { outline.row(forItem: $0) }.flatMap { $0 >= 0 ? $0 : nil }
                     })
+                    rows.formUnion(refreshGaps(changedLast, in: outline))
                     outline.noteHeightOfRows(withIndexesChanged: rows)
                 }
             }
@@ -1071,14 +1086,13 @@ struct SidebarOutlineView: NSViewRepresentable {
                 content = AnyView(SidebarRowContent(manager: manager, session: session.session))
                 cell = SidebarCellView(content: content)
                 cell.dragTitle = session.session.leafName
+                cell.gapBelow = gapBelow(item)
             } else if item is PinnedItem || item is LooseHeaderItem {
-                content = AnyView(SidebarSectionHeaderContent(manager: manager, isPinned: item is PinnedItem)
-                    .padding(.top, sectionGap(item)))
+                content = AnyView(SidebarSectionHeaderContent(manager: manager, isPinned: item is PinnedItem))
                 cell = SidebarCellView(content: content)
                 return cell
             } else if let folder = item as? FolderItem {
-                content = AnyView(SidebarHeaderContent(manager: manager, folder: folder.name)
-                    .padding(.top, sectionGap(item)))
+                content = AnyView(SidebarHeaderContent(manager: manager, folder: folder.name))
                 cell = SidebarCellView(content: content)
                 cell.dragTitle = folder.name
                 cell.dragIsHeader = true
@@ -1089,29 +1103,50 @@ struct SidebarOutlineView: NSViewRepresentable {
         }
 
         func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-            // Header height includes the section's breathing room above the
-            // title (content bottom-aligns, see SidebarHeaderContent). A
-            // worktree session named for its task carries its branch on a
+            // A worktree session named for its task carries its branch on a
             // second line (see `Session.showsBranchLine`).
             // Roomier than a Finder list, as the ChatGPT app's is: a session
             // row is something you read and pick all day, not scan past.
             // Sections apart, rows close, as the ChatGPT app's are: the gap
-            // goes above a header, and a row's pill nearly touches the next.
+            // goes under a section's last row, and a row's pill nearly
+            // touches the next.
             let oneLine = SidebarPillRowView.oneLineRowHeight
-            if item is FolderItem || item is PinnedItem || item is LooseHeaderItem { return oneLine + sectionGap(item) }
-            if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 44 }
-            return oneLine
+            if let session = (item as? SessionItem)?.session, session.hasSecondLine { return 44 + gapBelow(item) }
+            return oneLine + gapBelow(item)
         }
 
-        /// The room above a section header: none for the first, which the
-        /// sidebar's own top margin already sets apart.
-        private func sectionGap(_ item: Any) -> CGFloat {
-            guard item is FolderItem || item is PinnedItem || item is LooseHeaderItem else { return 0 }
-            let first: AnyObject?
-            if !pinnedItems.isEmpty { first = pinnedItem }
-            else if !looseItems.isEmpty { first = looseHeader }
-            else { first = folderItems.first }
-            return first === (item as AnyObject) ? 0 : 14
+        /// The room under a section, carried by its last row: none under the
+        /// last section, and none under a folded or empty one, whose rows
+        /// aren't there to carry it. Folded sections stack as close as rows,
+        /// as the Claude app's do, and the gap folds in the same animation as
+        /// the rows. (It was the room above the next header, which then had
+        /// to change height beside the fold, and the two animations jumped.)
+        private func gapBelow(_ item: Any) -> CGFloat {
+            guard let session = item as? SessionItem else { return 0 }
+            let gap: CGFloat = 14
+            if session === pinnedItems.last { return looseItems.isEmpty && folderItems.isEmpty ? 0 : gap }
+            if session === looseItems.last { return folderItems.isEmpty ? 0 : gap }
+            return folderItems.dropLast().contains { childrenByFolder[$0.name]?.last === session } ? gap : 0
+        }
+
+        /// The last row of every section, which carries its gap.
+        private var lastRows: [SessionItem] {
+            [pinnedItems.last, looseItems.last].compactMap { $0 }
+                + folderItems.compactMap { childrenByFolder[$0.name]?.last }
+        }
+
+        /// Rows that keep their views through a move (`reorder`) and gained or
+        /// lost a section's last place: give them their gap, and their height.
+        private func refreshGaps(_ items: [SessionItem], in outline: NSOutlineView) -> IndexSet {
+            var rows = IndexSet()
+            for item in items {
+                let row = outline.row(forItem: item)
+                guard row >= 0 else { continue }
+                rows.insert(row)
+                (outline.rowView(atRow: row, makeIfNecessary: false) as? SidebarPillRowView)?.gapBelow = gapBelow(item)
+                (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCellView)?.gapBelow = gapBelow(item)
+            }
+            return rows
         }
 
         /// Row views draw the selection pill (full row width, across the
@@ -1123,7 +1158,7 @@ struct SidebarOutlineView: NSViewRepresentable {
             rowView.showsPill = showsPill(item)
             rowView.showsAlsoSelected = showsAlsoSelected(item)
             rowView.showsEditing = showsEditing(item)
-            rowView.sectionGap = sectionGap(item)
+            rowView.gapBelow = gapBelow(item)
             if item is PinnedItem || item is LooseHeaderItem { rowView.setFoldable() }
             if let folder = item as? FolderItem {
                 let manager = self.manager, name = folder.name

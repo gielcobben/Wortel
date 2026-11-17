@@ -688,7 +688,7 @@ final class SurfaceView: NSView {
         if ghostty_surface_read_text(surface, ghostty_selection_s(top_left: origin, bottom_right: origin,
                                                                   rectangle: false), &text) {
             paddingLeft = max(0, text.tl_px_x)
-            ghostty_surface_free_text(surface, &text)
+            ghosttyFreeText(&text)
         }
         let paddingTop = y.truncatingRemainder(dividingBy: cellHeight)
 
@@ -728,7 +728,7 @@ final class SurfaceView: NSView {
                 String(decoding: UnsafeRawBufferPointer(start: $0, count: Int(text.text_len)), as: UTF8.self)
                     .allSatisfy(\.isWhitespace)
             } ?? true)
-            ghostty_surface_free_text(surface, &text)
+            ghosttyFreeText(&text)
             guard empty else { break }
             blank += 1
         }
@@ -1539,7 +1539,7 @@ extension SurfaceView: NSTextInputClient {
         guard let surface else { return NSRange() }
         var text = ghostty_text_s()
         guard ghostty_surface_read_selection(surface, &text) else { return NSRange() }
-        defer { ghostty_surface_free_text(surface, &text) }
+        defer { ghosttyFreeText(&text) }
         return NSRange(location: Int(text.offset_start), length: Int(text.offset_len))
     }
 
@@ -1574,7 +1574,7 @@ extension SurfaceView: NSTextInputClient {
         guard let surface, range.length > 0 else { return nil }
         var text = ghostty_text_s()
         guard ghostty_surface_read_selection(surface, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
+        defer { ghosttyFreeText(&text) }
         return NSAttributedString(string: String(cString: text.text))
     }
 

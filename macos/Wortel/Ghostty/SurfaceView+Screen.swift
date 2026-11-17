@@ -48,7 +48,7 @@ extension SurfaceView {
         guard let surface else { return nil }
         var text = ghostty_text_s()
         guard ghostty_surface_read_text(surface, Self.activeScreen, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
+        defer { ghosttyFreeText(&text) }
         guard let ptr = text.text, text.text_len > 0 else { return nil }
         return body(UnsafeRawBufferPointer(start: ptr, count: Int(text.text_len)))
     }

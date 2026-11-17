@@ -24,7 +24,7 @@ extension SurfaceView {
             rectangle: false)
         var text = ghostty_text_s()
         guard ghostty_surface_read_text(surface, region, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
+        defer { ghosttyFreeText(&text) }
         guard text.text != nil else { return nil }
         return String(cString: text.text)
     }
@@ -46,7 +46,7 @@ extension SurfaceView {
             rectangle: false)
         var text = ghostty_text_s()
         guard ghostty_surface_read_text(surface, region, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
+        defer { ghosttyFreeText(&text) }
         guard let pointer = text.text else { return "" }
         return String(decoding: UnsafeRawBufferPointer(start: pointer, count: Int(text.text_len)),
                       as: UTF8.self)
@@ -115,5 +115,25 @@ extension SurfaceView {
             self.body = nil
             body?(ready)
         }
+    }
+}
+
+/// Give back text libghostty handed out (`ghostty_surface_read_text`,
+/// `ghostty_surface_read_selection`). Every read goes through this.
+///
+/// **Not `ghosttyFreeText(&text)`**, though that is what
+/// ghostty.h declares. In the libghostty this app links (Ghostty 1.2) the
+/// function takes one argument, the text, and reads the first one as it:
+/// handed the surface, it read the surface's own memory as the text and
+/// freed nothing. Every read leaked its text, and the agent screen tier reads
+/// every agent session's screen once a second: 564 MB of screens after four
+/// and a half hours with 13 sessions (measured 2026-11-17, `heap` and
+/// `malloc_history`). It also meant freeing whatever pointer the surface
+/// happened to hold at that offset. Ghostty fixed the declaration upstream
+/// (4803d58, the surface became a first, ignored argument), so the text goes
+/// in both places: right for the library linked now and for the fixed one.
+func ghosttyFreeText(_ text: inout ghostty_text_s) {
+    withUnsafeMutablePointer(to: &text) { pointer in
+        ghostty_surface_free_text(UnsafeMutableRawPointer(pointer), pointer)
     }
 }

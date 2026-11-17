@@ -77,7 +77,7 @@ extension SurfaceView {
         guard let surface else { return nil }
         var text = ghostty_text_s()
         guard ghostty_surface_read_selection(surface, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
+        defer { ghosttyFreeText(&text) }
         guard let pointer = text.text, text.text_len > 0 else { return nil }
         return String(decoding: UnsafeRawBufferPointer(start: pointer, count: Int(text.text_len)),
                       as: UTF8.self)
@@ -95,7 +95,7 @@ extension SurfaceView {
         var text = ghostty_text_s()
         guard ghostty_surface_read_selection(surface, &text) else { return none }
         let start = Int(text.offset_start), length = Int(text.offset_len), visible = text.tl_px_x >= 0
-        ghostty_surface_free_text(surface, &text)
+        ghosttyFreeText(&text)
         guard visible else { return none }
         let end = start + length
         let columns = snapshot.columns
@@ -219,7 +219,7 @@ extension SurfaceView {
         let region = ghostty_selection_s(top_left: point(start), bottom_right: point(end), rectangle: false)
         var text = ghostty_text_s()
         guard ghostty_surface_read_text(surface, region, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
+        defer { ghosttyFreeText(&text) }
         let string = text.text.map {
             String(decoding: UnsafeRawBufferPointer(start: $0, count: Int(text.text_len)), as: UTF8.self)
         } ?? ""
@@ -284,7 +284,7 @@ extension SurfaceView {
         guard let surface, ghostty_surface_has_selection(surface) else { return nil }
         var text = ghostty_text_s()
         guard ghostty_surface_read_selection(surface, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
+        defer { ghosttyFreeText(&text) }
         return .init(start: text.offset_start, length: text.offset_len,
                      visible: text.tl_px_x >= 0, textLength: Int(text.text_len))
     }

@@ -248,3 +248,31 @@ screen while you were looking, and raises nothing for it.
 
 **Rule:** where an agent keeps a record of its turns, a turn end is checked
 against it. The screen alone is the fallback, for agents that keep none.
+
+## 2026-11-17. Half a gigabyte of old screens
+
+**Seen:** the Mac ran out of memory. Wortel was 943 MB with 13 sessions, and
+1.2 GB two hours later with the same sessions. `footprint` put the growth in
+"Malloc Small" (307 MB, then 564 MB); `heap` showed it as ~110,000 untyped
+blocks of 3 and 5 KB.
+
+**Cause:** every `ghostty_surface_read_text` leaked the text it returned. A test
+copy under `MallocStackLogging=1` traced the live blocks to
+`activeScreenDigest` (the screen tier, once a second per agent session) inside
+libghostty's allocator, and `lldb` showed a leaked block holding the screen's
+text. Wortel did call `ghostty_surface_free_text(surface, &text)`, as ghostty.h
+declares it, but in the linked Ghostty 1.2 the function takes one argument:
+the disassembly reads the text from the first register. Given the surface, it
+read the surface's own memory as the text and freed nothing. Fixed upstream in
+Ghostty's 4803d58.
+
+**Changed:** every read is freed through `ghosttyFreeText`, which passes the
+text in both argument places, right for this library and the fixed one.
+Measured on a test copy: libghostty's live blocks went from +62 a minute to
+none, and stayed flat through 200 `wortel read`s.
+
+**Rule:** a C function whose declaration and implementation can disagree is
+checked against the binary (`lldb … disassemble -n`) before trusting the
+header. Memory that grows with time, not with sessions, is a leak: find it
+with `heap` on the running app and `malloc_history` on a test copy started
+with `MallocStackLogging=1`.

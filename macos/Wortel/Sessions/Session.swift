@@ -428,8 +428,10 @@ final class Session: Identifiable {
         }
         surfaceView = view
         onSurfaceCreated?(view)
-        // Made out of sight until a host shows it, which wakes it first.
-        HibernationPolicy.shared.hidden(view)
+        // Made out of sight until a host shows it, which wakes it first. Shown
+        // at once when it is the selected session; otherwise it was made at
+        // launch for its dots and resume, and goes back to sleep soon.
+        HibernationPolicy.shared.hidden(view, neverShown: true)
         return view
     }
 

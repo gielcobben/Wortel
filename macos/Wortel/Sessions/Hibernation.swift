@@ -27,6 +27,12 @@ final class HibernationPolicy {
         return 10 * 60
     }()
 
+    /// How long a terminal that has never been shown waits: one made at
+    /// launch so its session's dots and resume work. Nobody is flipping to
+    /// it, so nothing is lost by its going soon, and the minute leaves time
+    /// for the keeper's replay and an agent's resume to land first.
+    static let neverShownAfter: TimeInterval = min(after, 60)
+
     private var timers: [ObjectIdentifier: DispatchWorkItem] = [:]
     /// Hidden terminals, for memory pressure. Weak: a closed session's view
     /// must not be kept alive by this.
@@ -54,8 +60,9 @@ final class HibernationPolicy {
         pressure = source
     }
 
-    /// The terminal went out of sight, or was made without being shown.
-    func hidden(_ view: SurfaceView) {
+    /// The terminal went out of sight, or was made without being shown
+    /// (`neverShown`, which goes sooner).
+    func hidden(_ view: SurfaceView, neverShown: Bool = false) {
         guard !view.isHibernated else { return }
         hidden.add(view)
         let key = ObjectIdentifier(view)
@@ -71,7 +78,8 @@ final class HibernationPolicy {
             }
         }
         timers[key] = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.after, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (neverShown ? Self.neverShownAfter : Self.after),
+                                      execute: work)
     }
 
     /// The terminal is about to be shown (or read): no timer, and awake.

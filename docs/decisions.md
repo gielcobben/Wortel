@@ -72,7 +72,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   seen in the last ten minutes. A
   hibernated terminal's coloured scrollback keeps the theme it was saved in.
   Side terminals don't hibernate. Measured on a test copy: 252 to 128 MB with
-  seven of eight terminals hibernated.
+  seven of eight terminals hibernated. A terminal made at launch and not yet
+  shown (every session gets one, for its dots and resume) hibernates after a
+  minute instead, so a relaunch doesn't hold every session's frames for ten.
 - **2026-09-29. A terminal resizes once per pane animation and never while
   hidden.** Every resize re-wraps the screen and sends SIGWINCH to the agent
   (`2dfae43`, `c20f403`).

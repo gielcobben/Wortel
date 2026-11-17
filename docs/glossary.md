@@ -73,7 +73,7 @@ connection closing. Only one of the two reads at a time.
 the new terminal on attach. Bounded, and not scrollback.
 
 **Hibernated.** A session whose terminal was freed after ten minutes out of
-sight, or on a memory warning. Its shell runs on and the app still reads it;
+sight (a minute, for one not opened since launch), or on a memory warning. Its shell runs on and the app still reads it;
 the screen comes back when the session is shown. Never named in the UI.
 
 **Resume.** Typing an agent's own "continue this conversation" command back

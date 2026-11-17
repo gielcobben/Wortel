@@ -166,8 +166,9 @@ private struct PreviewTabHeader: View {
 /// Diff · Source · Rendered, drawn like the tab rows rather than as a system
 /// segmented control: the one in front is a raised pill with a hairline, the
 /// rest are quiet text. A blue segmented control was the only accent in the
-/// chrome, and it said "control" louder than anything around it.
-private struct ModeSwitch: View {
+/// chrome, and it said "control" louder than anything around it. A preview
+/// window's titlebar row uses it too (PreviewWindowBar).
+struct ModeSwitch: View {
     let modes: [PreviewMode]
     @Binding var selection: PreviewMode
 

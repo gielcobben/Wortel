@@ -4,10 +4,11 @@ import SwiftUI
 /// One preview window: one file, shown as syntax-highlighted source.
 ///
 /// An `NSWindowController` rather than anything SwiftUI offers a window, because
-/// the details that make this feel native are AppKit's: `representedURL` for the
-/// proxy icon (⌘-click it for the path hierarchy, drag it into the terminal —
-/// `SurfaceView` already accepts a `.fileURL` and inserts the escaped path) and
-/// a tabbing identifier so a second window merges into tabs on its own.
+/// the titlebar is the main window's kind (TitleBars.swift): transparent, no
+/// title, an empty toolbar for the height and the centred traffic lights, and a
+/// row of Wortel's own drawn across the top (`PreviewWindowBar`). The system's
+/// titlebar put the mode control on a Liquid Glass capsule over a grey bar, and
+/// read as another app's window.
 @MainActor
 final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     /// Named `file` rather than `document`: NSWindowController already has a
@@ -21,6 +22,9 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     private let find = PreviewFind()
     /// Shared with every other preview, so ⌘+ resizes the text in all of them.
     private let settings: PreviewSettings
+    /// The window server's own titlebar dragging, kept off while it would
+    /// take a press meant for the row (the main window's arrangement).
+    private var movability: WindowMovability?
 
     private static let defaultSize = NSSize(width: 720, height: 640)
     private static let sizeKey = "preview.size"
@@ -41,21 +45,26 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         self.file = document
         self.settings = settings
 
-        // No `.fullSizeContentView`: there's no toolbar to run the content under,
-        // and with an ordinary titlebar it would hide the file's first lines
-        // behind it.
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Self.defaultSize),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
-        // Previews tab with each other, but only if the *system* says so.
-        // `.preferred` forces tabbing regardless of System Settings, which on a
-        // default Mac ("tabs in full screen only") silently merged every preview
-        // into one window: three open files shared a frame and only the selected
-        // one was on screen, which looks exactly like opening a second file
-        // doing nothing.
-        window.tabbingIdentifier = "wortel.preview"
-        window.tabbingMode = .automatic
+        // Each preview is its own window, as the main window is. System tabs
+        // would put the system's tab bar under a titlebar that is no longer the
+        // system's, and files already have tabs of their own, in the column.
+        window.tabbingMode = .disallowed
+        // The main window's titlebar (AppDelegate): transparent so the row under
+        // it takes the clicks, no title (the row names the file), no separator
+        // (the row draws its own hairline), and an empty compact toolbar for the
+        // one thing only it does: the row's height, with the traffic lights
+        // centred in it.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.titlebarSeparatorStyle = .none
+        let toolbar = NSToolbar(identifier: "wortel.preview")
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
         // Where a window *lands* is as much a way to be invisible as how big it
         // is. A new window opens on the space the app was launched in, so with
         // the terminal full-screen it appears on another space entirely —
@@ -88,7 +97,11 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
             rootView: PreviewContent(document: document, find: find, settings: settings,
                                      onOpenFile: openFile))
         hosting.sizingOptions = []
-        window.contentViewController = hosting
+        // The main window's layers: one behind-window material, the row on it,
+        // and the file as an opaque page under the row's hairline.
+        let pane = ChromePaneController(bar: PreviewWindowBar(document: document),
+                                        content: hosting, bodyColor: Chrome.content)
+        window.contentViewController = BackdropController(child: pane)
         window.contentMinSize = NSSize(width: 360, height: 240)
         // Size is remembered, position is not — deliberately, and *not* through
         // `setFrameAutosaveName`. An autosave name belongs to one window: with
@@ -98,51 +111,14 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // cascading the position is what a document window does.
         window.setContentSize(Self.rememberedSize)
         window.center()
-        applyIdentity()
-        installToolbar()
-        observeBinary()
-    }
-
-    /// A file that turns out not to be text goes to Quick Look whatever the
-    /// segments say, so leaving them live is a control that does nothing —
-    /// double-click a PNG in a repo and you'd get Diff and Source segments that
-    /// change the window not at all. Whether a file is binary is only known once
-    /// it has been read, which is after the toolbar exists, so it's observed
-    /// rather than decided up front. `withObservationTracking` fires once; the
-    /// re-arm is what makes it a subscription.
-    private func observeBinary() {
-        withObservationTracking {
-            _ = file.isBinary
-        } onChange: { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.modeControl?.isEnabled = !self.file.isBinary
-                self.observeBinary()
-            }
-        }
+        // Not shown (the row names the file), but the Window menu and Mission
+        // Control still read it.
+        window.title = document.url.lastPathComponent
+        movability = WindowMovability(window: window)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not from a nib") }
-
-    // MARK: - Mode control
-    //
-    // A segmented control in the titlebar, and only when there's a choice to
-    // make: one mode is not a control, it's a decoration that costs a row of
-    // titlebar. Its look is borrowed from the inspector's pane control on
-    // purpose — the two answer the same kind of question and should read as one
-    // vocabulary.
-
-    private weak var modeControl: NSSegmentedControl?
-
-    private func installToolbar() {
-        guard file.availableModes.count > 1 else { return }
-        let toolbar = NSToolbar(identifier: "wortel.preview")
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        window?.toolbar = toolbar
-        window?.toolbarStyle = .unified
-    }
 
     // View ▸ Increase/Decrease/Reset Font Size (⌘+ ⌘− ⌘0). The menu already
     // routes those selectors through the responder chain to whatever implements
@@ -215,13 +191,13 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     @objc func showPreviewMode(_ sender: NSMenuItem) {
         guard let mode = PreviewMode.mode(menuTag: sender.tag),
               file.availableModes.contains(mode) else { return }
-        select(mode)
+        file.mode = mode
     }
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(showPreviewMode(_:)) {
             guard let mode = PreviewMode.mode(menuTag: menuItem.tag) else { return false }
-            // A checkmark on the mode you're in: the segmented control says the
+            // A checkmark on the mode you're in: the switch in the row says the
             // same thing, but only the menu can say it while it's open.
             menuItem.state = file.mode == mode ? .on : .off
             return !file.isBinary && file.availableModes.contains(mode)
@@ -233,37 +209,6 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         guard menuItem.action == #selector(showPreviewFind(_:)) else { return true }
         // Nothing to search in a rendered document or a Quick Look preview.
         return file.mode != .rendered && !file.isBinary
-    }
-
-    @objc private func modeChanged(_ sender: NSSegmentedControl) {
-        let modes = file.availableModes
-        guard modes.indices.contains(sender.selectedSegment) else { return }
-        file.mode = modes[sender.selectedSegment]
-    }
-
-    /// Change mode from anywhere that isn't the control itself, bringing the
-    /// control along — it's an AppKit view, so it doesn't hear about the model
-    /// the way the SwiftUI content does.
-    private func select(_ mode: PreviewMode) {
-        file.mode = mode
-        modeControl?.selectedSegment = file.availableModes.firstIndex(of: mode) ?? 0
-    }
-
-    /// Title and proxy icon, both from the file itself.
-    ///
-    /// **No subtitle**, though the path would be the obvious thing to put there.
-    /// Measured on this OS: with a toolbar installed, setting `subtitle` makes
-    /// the title stack reserve a 14pt row for it and then draws nothing in it —
-    /// the title field lands at y 57–73 in a 32–84 titlebar, sitting 7pt above
-    /// centre with a blank strip underneath. Clear the subtitle and the one line
-    /// there actually is centres exactly (48–67 of 32–84). The path isn't lost:
-    /// ⌘-click the proxy icon for the whole hierarchy, which is where a Mac user
-    /// looks for it anyway.
-    private func applyIdentity() {
-        guard let window else { return }
-        window.title = file.url.lastPathComponent
-        // The proxy icon. Set last: AppKit reads the title from it otherwise.
-        window.representedURL = file.url
     }
 
     /// One size for all previews rather than one per file: you size a preview
@@ -279,6 +224,8 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // Zoom and full-screen resize a window without ever ending a live
         // resize, so closing is the other place the final size is known.
         persistSize()
+        movability?.invalidate()
+        movability = nil
         onClose?(self)
     }
 
@@ -291,53 +238,5 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         guard size.width >= 360, size.height >= 240 else { return }
         UserDefaults.standard.set(Double(size.width), forKey: Self.sizeKey + ".width")
         UserDefaults.standard.set(Double(size.height), forKey: Self.sizeKey + ".height")
-    }
-}
-
-// MARK: - Toolbar
-
-extension PreviewWindowController: NSToolbarDelegate {
-    private static let modeIdentifier = NSToolbarItem.Identifier("wortel.preview.mode")
-
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, Self.modeIdentifier]
-    }
-
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar)
-    }
-
-    func toolbar(
-        _ toolbar: NSToolbar,
-        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
-        willBeInsertedIntoToolbar flag: Bool
-    ) -> NSToolbarItem? {
-        guard itemIdentifier == Self.modeIdentifier else { return nil }
-        let modes = file.availableModes
-        let control = NSSegmentedControl(
-            images: modes.map {
-                NSImage(systemSymbolName: $0.symbol, accessibilityDescription: $0.title) ?? NSImage()
-            },
-            trackingMode: .selectOne,
-            target: self,
-            action: #selector(modeChanged(_:)))
-        control.segmentStyle = .automatic
-        // Neutral grey rather than the accent tint AppKit gives a selected
-        // segment — the same choice the inspector's pane control makes, and for
-        // the same reason: this says "what you're looking at", not "this is
-        // selected".
-        control.selectedSegmentBezelColor = .unemphasizedSelectedContentBackgroundColor
-        for (index, mode) in modes.enumerated() {
-            control.setToolTip(mode.title, forSegment: index)
-        }
-        control.selectedSegment = modes.firstIndex(of: file.mode) ?? 0
-        control.isEnabled = !file.isBinary
-        modeControl = control
-
-        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-        item.view = control
-        item.label = "View"
-        item.visibilityPriority = .high
-        return item
     }
 }

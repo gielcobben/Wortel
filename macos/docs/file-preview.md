@@ -121,6 +121,24 @@ taking it from the shell.
 | A commit's file list in History | That commit's diff for that file |
 | An untracked file | The whole file as additions, as the Changes list already renders it |
 
+**The window wears the main window's chrome, not the system's** (2026-11-16).
+It kept the system titlebar for a long time, with the mode control as a toolbar
+item. On macOS 26 and later that put the control on a Liquid Glass capsule over
+a grey bar with a separator under it, and next to the main window it read as
+another app's. Now it is built the way the main window is: transparent
+titlebar, no title, an empty compact toolbar for the height and the centred
+traffic lights, one behind-window material, and a 40pt row of Wortel's own
+(`PreviewWindowBar`) over the file as an opaque page. The row is the file tab's
+header laid into a titlebar: the file's icon and name, and the same Diff ·
+Source · Rendered switch. The system's proxy icon went with the title, so the
+row's first button does its job, drawn like every other control in the chrome
+(a 14pt glyph, the hover fill) rather than as the Finder's full-colour icon:
+click it for the folders above the file, picking one shows it in the Finder,
+and drag it to drop the file (into a terminal, its path). Previews no longer
+merge into system window tabs: the system tab bar would sit under a titlebar
+that is no longer the system's, and files already have tabs of their own in
+the column.
+
 **Accessories, not peers.** They close when the main window closes, so quitting
 behaves exactly as it does today, and they are not restored on relaunch. A
 preview is a glance you took, not state worth resurrecting — and this app's
@@ -165,7 +183,8 @@ before touching `PreviewWindowController`:
 
 - **`tabbingMode = .preferred` overrides System Settings.** On a default Mac
   ("tabs in full screen only") it silently merged every preview into one window:
-  same frame, only the selected one on screen. `.automatic` respects the setting.
+  same frame, only the selected one on screen. `.automatic` respected the
+  setting; previews are `.disallowed` now (see above).
 - **One frame autosave name shared by several windows** means each new one
   restores the last one's frame, so they arrive stacked exactly. Size is
   remembered by hand instead; position cascades.

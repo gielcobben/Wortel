@@ -23,9 +23,12 @@ mid-run.
 
 ## Tabs
 
-Files now open as **tabs** beside the session, in the side column, rather than
-in windows: the job ("look at what an agent just did, and get back") is done with
-less travel when the file sits next to the terminal. The rules below still hold,
+Files now open as **tabs** rather than in windows: the job ("look at what an
+agent just did, and get back") is done with less travel in the same window.
+They first opened in the side column, beside the terminal; since 2026-11-17 they
+open in the main area, where there's room to read, until you drag one to
+another row (or onto one, out of a list or as a preview window docking), and
+then where you put it. The rules below still hold,
 tab for window: opening a file that already has a tab brings that tab forward,
 one tab per file, and no tab ever changes its file under you. A tab's header has
 the mode control and "Open in Window" for when a file deserves a window of its
@@ -140,7 +143,7 @@ click it for the folders above the file, picking one shows it in the Finder,
 and drag it to drop the file (into a terminal, its path). Previews no longer
 merge into system window tabs: the system tab bar would sit under a titlebar
 that is no longer the system's, and files already have tabs of their own in
-the column.
+the window's rows.
 
 **Accessories, not peers.** They close when the main window closes, so quitting
 behaves exactly as it does today, and they are not restored on relaunch. A

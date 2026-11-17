@@ -20,8 +20,10 @@ session (`browserAddresses`, persisted) and its live web view in
 `BrowserTabs`, not in the view, so moving the tab doesn't reload it.
 
 A file or browser opened without saying where goes where you last *moved* one
-of its kind in that session (`WorkspaceTabs.home(for:)`, the column until
-then); ⌥-click puts it in the main area once without teaching that.
+of its kind in that session, or dropped one from a list (`WorkspaceTabs.home(for:)`;
+until then the main area for a file, the column for a browser). ⌥-click puts
+it in the other place once (`elsewhere(for:)`: out of the main area, else into
+it) without teaching that.
 
 A tab is in exactly one row; the one in front fills its area. Any tab goes in
 any row, except the session's terminal, which never leaves the

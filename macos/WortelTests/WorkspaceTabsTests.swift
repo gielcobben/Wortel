@@ -112,11 +112,34 @@ final class WorkspaceTabsTests: XCTestCase {
 
     // MARK: - Habits
 
-    /// Files and browsers open in the column until you've moved one.
-    func testFilesAndBrowsersStartInTheColumn() {
+    /// Until you've moved one, a file opens in the main area and a browser in
+    /// the column; ⌥ sends each to the other.
+    func testFilesStartInTheMainAreaAndBrowsersInTheColumn() {
         let tabs = WorkspaceTabs()
-        XCTAssertEqual(tabs.home(for: .file("/tmp/a.md")), .side)
+        XCTAssertEqual(tabs.home(for: .file("/tmp/a.md")), .main)
         XCTAssertEqual(tabs.home(for: .browser(UUID())), .side)
+        XCTAssertEqual(tabs.elsewhere(for: .file("/tmp/a.md")), .side)
+        XCTAssertEqual(tabs.elsewhere(for: .browser(UUID())), .main)
+    }
+
+    /// ⌥ on a tab that's already open goes by where it is, not where its kind
+    /// goes: a file left in the column comes to the main area.
+    func testElsewhereForAnOpenTabGoesByWhereItIs() {
+        var tabs = WorkspaceTabs()
+        let file = SideTab.file("/tmp/a.md")
+        tabs.place(file, in: .side, at: 0)
+        XCTAssertEqual(tabs.elsewhere(for: file), .main)
+        tabs.move(file, to: .main, at: .max, recordsHabit: false)
+        XCTAssertEqual(tabs.elsewhere(for: file), .side)
+    }
+
+    /// A file dropped into a row from a list is a choice of where files go.
+    func testDroppingAFileFromAListMakesItsRowHome() {
+        var tabs = WorkspaceTabs()
+        tabs.placeDropped(.file("/tmp/a.md"), in: .side, at: 0)
+        XCTAssertEqual(tabs.region(of: .file("/tmp/a.md")), .side)
+        XCTAssertEqual(tabs.home(for: .file("/tmp/b.md")), .side)
+        XCTAssertEqual(tabs.elsewhere(for: .file("/tmp/b.md")), .main)
     }
 
     /// Moving one to another row is where the next of its kind opens, and
@@ -127,7 +150,7 @@ final class WorkspaceTabsTests: XCTestCase {
         tabs.place(browser, in: .side, at: 0)
         tabs.move(browser, to: .main, at: .max)
         XCTAssertEqual(tabs.home(for: .browser(UUID())), .main)
-        XCTAssertEqual(tabs.home(for: .file("/tmp/a.md")), .side, "files keep their own habit")
+        XCTAssertEqual(tabs.home(for: .file("/tmp/a.md")), .main, "files keep their own habit")
 
         tabs.move(browser, to: .bottom, at: 0)
         XCTAssertEqual(tabs.home(for: .browser(UUID())), .bottom, "the last move wins")
@@ -137,10 +160,10 @@ final class WorkspaceTabsTests: XCTestCase {
     func testAMoveThatRecordsNoHabitLeavesTheHabitAlone() {
         var tabs = WorkspaceTabs()
         let file = SideTab.file("/tmp/a.md")
-        tabs.place(file, in: .side, at: 0)
-        tabs.move(file, to: .main, at: .max, recordsHabit: false)
-        XCTAssertEqual(tabs.region(of: file), .main)
-        XCTAssertEqual(tabs.home(for: .file("/tmp/b.md")), .side)
+        tabs.place(file, in: .main, at: .max)
+        tabs.move(file, to: .side, at: 0, recordsHabit: false)
+        XCTAssertEqual(tabs.region(of: file), .side)
+        XCTAssertEqual(tabs.home(for: .file("/tmp/b.md")), .main)
     }
 
     /// Reordering says nothing about where things belong.

@@ -832,7 +832,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         let list = RunningJobsList(
             monitor: processes, session: session,
             openInTab: { [weak self] url in
-                self?.git.showInBrowser(url, inMain: NSApp.currentEvent?.modifierFlags.contains(.option) ?? false)
+                self?.git.showInBrowser(url, elsewhere: NSApp.currentEvent?.modifierFlags.contains(.option) ?? false)
             },
             dismiss: { [weak self] in self?.runningPopover?.performClose(nil) })
         let host = NSHostingController(rootView: list)

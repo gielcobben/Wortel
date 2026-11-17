@@ -141,12 +141,15 @@ else, so the keyboard is never stuck in a page.
 |---|---|---|
 | Find in the file tab in front | ⌘F | everyone |
 | Next / previous match | ⌘G / ⇧⌘G (also Return) | everyone |
-| Open a file or server in the main area, this once | ⌥-click | |
+| Open a file or server in the other place, this once | ⌥-click | |
 
 With no file tab showing, ⌘F is left to the terminal.
 
-Files and browsers open in the column until you move one somewhere else; after
-that, that kind opens where you last moved one, per session.
+A file opens in the main area and a browser in the column until you drag one
+somewhere else (between rows, or onto a row from a list or a preview window);
+after that, that kind opens where you last put one, per session. ⌥-click opens
+it in the other place: out of the main area if it's there or would go there,
+into the main area otherwise.
 
 ## Deliberately different
 

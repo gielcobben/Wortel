@@ -21,9 +21,11 @@ import Foundation
 ///   from Changes returns you to Changes), as a browser returns you to the tab
 ///   that opened one. Switching to another tab in that row ends it, and from
 ///   then on the neighbour rule applies.
-/// - Moving a file or a browser to another row makes that row where the next
-///   one of its kind opens (`home(for:)`): drag one browser to the main area
-///   and browsers open there. Until then, and for everything else, the column.
+/// - Moving a file or a browser to another row, or dropping one onto a row
+///   from outside the rows, makes that row where the next one of its kind
+///   opens (`home(for:)`): drag one browser to the main area and browsers
+///   open there. Until then a file opens in the main area and a browser in
+///   the column; everything else opens where it's asked to.
 /// - A closed tab is remembered, newest last, 25 at most, with where it was.
 ///   Reopening prefers the last one closed in the row you're in; a terminal
 ///   comes back as a new shell (a new id) in its old place.
@@ -58,9 +60,32 @@ struct WorkspaceTabs: Equatable, Sendable {
     }
 
     /// Where a new tab opens when nothing says where: the row you last moved
-    /// one of its kind to, or the column.
+    /// one of its kind to, or else where its kind starts. A file starts in
+    /// the main area, where there's room to read it; a browser starts in the
+    /// column, beside what it's showing you the result of.
     func home(for tab: SideTab) -> TabRegion {
-        tab.kind.flatMap { habits[$0] } ?? .side
+        guard let kind = tab.kind else { return .side }
+        return habits[kind] ?? (kind == .file ? .main : .side)
+    }
+
+    /// Where ⌥ sends a tab, just this once: away from the main area if it's
+    /// there (or, not open yet, would go there), into it otherwise.
+    func elsewhere(for tab: SideTab) -> TabRegion {
+        (region(of: tab) ?? home(for: tab)) == .main ? .side : .main
+    }
+
+    /// A tab of a habit kind dropped into a row from outside the rows (a file
+    /// dragged out of a list): opened there, and its kind's home is there now,
+    /// as if it had been dragged between rows.
+    mutating func placeDropped(_ tab: SideTab, in region: TabRegion, at index: Int) {
+        guard place(tab, in: region, at: index) else { return }
+        bringForward(opened: tab)
+        learnHome(of: tab, in: region)
+    }
+
+    /// `region` is where `tab`'s kind opens from now on, if it has a kind.
+    private mutating func learnHome(of tab: SideTab, in region: TabRegion) {
+        if let kind = tab.kind { habits[kind] = region }
     }
 
     func region(of tab: SideTab) -> TabRegion? {
@@ -187,7 +212,7 @@ struct WorkspaceTabs: Equatable, Sendable {
         bringForward(tab)
         // Taken to another row: that's where its kind lives now. A reorder
         // says nothing about where things belong.
-        if recordsHabit, from.region != region, let kind = tab.kind { habits[kind] = region }
+        if recordsHabit, from.region != region { learnHome(of: tab, in: region) }
         return true
     }
 

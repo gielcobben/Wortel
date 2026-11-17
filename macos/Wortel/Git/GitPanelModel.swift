@@ -922,10 +922,7 @@ final class GitPanelModel {
             return
         }
         reportOpened(tab, in: region)
-        change(session) {
-            $0.place(tab, in: region, at: index)
-            $0.bringForward(opened: tab)
-        }
+        change(session) { $0.placeDropped(tab, in: region, at: index) }
         settle(tab, in: session)
     }
 
@@ -958,13 +955,14 @@ final class GitPanelModel {
     }
 
     /// Open a file's or a browser's tab where it belongs: where it is if it's
-    /// open, else where you last moved one of its kind (the column until you
-    /// have). `inMain`, for ⌥-click, puts it in the main area either way,
-    /// without making that the habit.
-    func openAtHome(_ tab: SideTab, inMain: Bool = false) {
+    /// open, else where you last moved one of its kind (until you have, the
+    /// main area for a file and the column for a browser). `elsewhere`, for
+    /// ⌥-click, puts it in the other place (out of the main area, else into
+    /// it), without making that the habit.
+    func openAtHome(_ tab: SideTab, elsewhere: Bool = false) {
         guard let session else { return }
-        if inMain {
-            open(tab, in: .main)
+        if elsewhere {
+            open(tab, in: session.workspace.elsewhere(for: tab))
         } else if session.workspace.region(of: tab) != nil {
             open(tab)
         } else {
@@ -973,9 +971,9 @@ final class GitPanelModel {
     }
 
     /// Show what's at `url`: a browser already on that server comes forward
-    /// wherever it is, otherwise a new one opens where browsers go (`inMain`:
-    /// the main area, for ⌥-click).
-    func showInBrowser(_ url: URL, inMain: Bool = false) {
+    /// wherever it is, otherwise a new one opens where browsers go
+    /// (`elsewhere`: the other place, for ⌥-click).
+    func showInBrowser(_ url: URL, elsewhere: Bool = false) {
         guard let session else { return }
         let tabs = session.mainTabs + session.sideTabs + session.bottomTabs
         let existing = tabs.first { tab in
@@ -984,9 +982,11 @@ final class GitPanelModel {
             return address.host() == url.host() && address.port == url.port
         }
         if let existing {
-            openAtHome(existing, inMain: inMain)
+            openAtHome(existing, elsewhere: elsewhere)
         } else {
-            openBrowser(at: url, in: inMain ? .main : session.workspace.home(for: .browser(UUID())))
+            let tab = SideTab.browser(UUID())
+            openBrowser(at: url, in: elsewhere ? session.workspace.elsewhere(for: tab)
+                                               : session.workspace.home(for: tab))
         }
     }
 

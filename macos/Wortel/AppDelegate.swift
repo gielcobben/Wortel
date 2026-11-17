@@ -949,6 +949,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// don't need to spawn.
     private var repoRootCache: [String: String?] = [:]
 
+    /// Where a file being opened goes: where files go (⌥: the other place,
+    /// this once), or exactly where a dragged file was dropped.
+    private enum FilePlacement {
+        case home(elsewhere: Bool)
+        case dropped(TabRegion, index: Int)
+    }
+
     /// Open a file in a preview window, working out what its diff should be.
     ///
     /// A file the repo already knows is changed opens on *its* row's diff, which
@@ -963,17 +970,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the wrong one here: it meant a file opened with the inspector closed had
     /// no repo, so no diff source, so no Diff mode at all. When the panel
     /// happens to have the answer it's free; when it doesn't, we ask.
-    /// Where a file being opened goes: where files go (⌥: the main area this
-    /// once), or exactly where a dragged file was dropped.
-    private enum FilePlacement {
-        case home(inMain: Bool)
-        case dropped(TabRegion, index: Int)
-    }
-
     private func openPreview(_ requested: URL) {
         // ⌥ read now, at the click: the open can land after a git lookup, and
         // by then there's no event to ask.
-        openPreview(requested, placement: .home(inMain: Self.optionClicked))
+        openPreview(requested, placement: .home(elsewhere: Self.optionClicked))
     }
 
     private func openPreview(_ requested: URL, placement: FilePlacement) {
@@ -1031,16 +1031,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    /// Whether the click (or key) doing this held ⌥: open in the main area.
+    /// Whether the click (or key) doing this held ⌥: open in the other place.
     private static var optionClicked: Bool {
         NSApp.currentEvent?.modifierFlags.contains(.option) ?? false
     }
 
-    /// Show a file: as a tab beside the session (the column, or where it
-    /// already is), which is where the preview window's job, "look at what an
-    /// agent just did, and get back", is done with the least travel.
+    /// Show a file: as a tab where files go (the main area, where there's
+    /// room to read it, until you drag one somewhere else), or where it
+    /// already is.
     ///
-    /// ⌥-click puts it in the main area this once. Read off the event that's
+    /// ⌥-click puts it in the other place this once. Read off the event that's
     /// opening it, so every place a file opens from (the changes list,
     /// History, the file tree, a path in a terminal, a link in Markdown) gets
     /// it without each passing it along.
@@ -1048,12 +1048,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                                 hasChanges: Bool = false, mode: PreviewMode? = nil,
                                 placement: FilePlacement? = nil) {
         place(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges, mode: mode),
-              placement ?? .home(inMain: Self.optionClicked))
+              placement ?? .home(elsewhere: Self.optionClicked))
     }
 
     private func place(_ tab: SideTab, _ placement: FilePlacement) {
         switch placement {
-        case .home(let inMain): gitPanel.openAtHome(tab, inMain: inMain)
+        case .home(let elsewhere): gitPanel.openAtHome(tab, elsewhere: elsewhere)
         case .dropped(let region, let index): gitPanel.openDropped(tab, in: region, at: index)
         }
     }

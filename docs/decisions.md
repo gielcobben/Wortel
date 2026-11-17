@@ -299,6 +299,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the column to a window to a tab. The browser was a pane, was removed as
   unused after six days, and came back as a tab. The separate browser window
   was dropped (`0e13607`, `6ee3e30`, `09ce308`).
+- **2026-11-17. A file opens in the main area until you put one elsewhere.**
+  The column was the default, and the habit is per session, so every new
+  session sent files back to the narrow column. Now a file starts in the main
+  area, dragging one onto a row (between rows, out of a list, or a preview
+  window docking) teaches where files go, and ⌥ means "the other place"
+  rather than "the main area". The habit stays per session.
+  Browsers still start in the column, beside what they show.
 - **2026-11-16. A preview window has the main window's chrome**: its own 40pt
   row on the glass, the file tab's header in it, and a file button of its own
   in place of the system's proxy icon. No system window tabs for previews.

@@ -80,45 +80,11 @@ class ChromeBarView: FilledView {
 
     override var mouseDownCanMoveWindow: Bool { false }
 
-    // MARK: Window server dragging, off over the band only
+    // MARK: Moving the window
 
-    /// The window server drags the window from any press in the titlebar,
-    /// whatever view is under it, so a tab drag carried the whole window along
-    /// (e83bbd6). Turning that off for good (`isMovable = false`) also told
-    /// AppKit the window can't be moved, and it greys out the whole tiling
-    /// set in the Window menu: Fill, Center, Move & Resize, and their fn-⌃
-    /// shortcuts. So it's off only while the pointer is over the band. The
-    /// pointer gets there before any press does, so a tab is never grabbed
-    /// with it on; anywhere else the window is movable and tiles. Starts off
-    /// (AppDelegate), and `.assumeInside` turns it back on at the first move
-    /// if the pointer isn't up here.
-    private var bandTracking: NSTrackingArea?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let bandTracking { removeTrackingArea(bandTracking) }
-        let area = NSTrackingArea(rect: bounds,
-                                  options: [.mouseEnteredAndExited, .activeAlways, .assumeInside],
-                                  owner: self)
-        addTrackingArea(area)
-        bandTracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        window?.isMovable = false
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        guard let window else { return }
-        // The rows sit side by side, and leaving one for the next can arrive
-        // after entering it: only leaving the band itself turns dragging on.
-        let point = window.mouseLocationOutsideOfEventStream
-        let inBand = point.y >= window.contentLayoutRect.maxY
-            && point.y <= window.frame.height
-            && point.x >= 0 && point.x <= window.frame.width
-        if !inBand { window.isMovable = true }
-    }
-
+    /// The window server's own titlebar dragging is off (WindowMovability), so
+    /// a press on empty row moves the window from here.
+    ///
     /// Handled here rather than left to `mouseDownCanMoveWindow`, because a
     /// window-server drag never delivers the second click of a double-click.
     override func mouseDown(with event: NSEvent) {

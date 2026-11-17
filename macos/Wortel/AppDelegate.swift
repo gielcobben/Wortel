@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// The window's split: sessions, the main area, the side column. Held so
     /// the sidebar toggle and a click's area (`region(at:)`) reach it.
     private var splitController: MainSplitViewController!
+    private var movability: WindowMovability?
     /// Drives the trailing source-control panel. Whether it's up follows the
     /// selected session (see GitPanelModel); new sessions start hidden.
     private let gitPanel = GitPanelModel()
@@ -104,10 +105,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // tab never moved relative to anything. This is how Electron apps, the
         // ChatGPT app among them, give their titlebars draggable tabs. Moves
         // started this way still snap, tile and cross Spaces like any other.
-        // Off only while the pointer is over the titlebar band, though
-        // (ChromeBarView): a window that's never movable has its whole tiling
-        // set greyed out in the Window menu, fn-⌃C and the rest with it. It
-        // starts off here and comes on the first time the pointer is elsewhere.
+        // On only for the moments tiling needs it (WindowMovability, installed
+        // once the content is in): a window that's never movable has its whole
+        // tiling set greyed out in the Window menu, fn-⌃C and the rest with it.
         window.isMovable = false
         window.titleVisibility = .hidden
         let toolbar = NSToolbar(identifier: "wortel.main")
@@ -133,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
         window.contentViewController = BackdropController(child: split)
+        movability = WindowMovability(window: window)
         titleBars.start()
         window.setFrameAutosaveName("main")
         if window.frame.height < 320 {

@@ -449,6 +449,9 @@ targets:
       - path: Wortel/UI/Chrome.swift
       - path: Wortel/UI/SideTabStrip.swift
       - path: Wortel/UI/TabHoverCard.swift
+      # Whether a press on a titlebar tab drags the tab or the whole window.
+      # Wrong, the tabs still draw and select and the window moves instead.
+      - path: Wortel/UI/WindowMovability.swift
       - path: Wortel/Browser/BrowserAddress.swift
       - path: Wortel/Sessions/SessionSwitcherMatch.swift
       - path: Wortel/Git/GitService.swift

@@ -46,6 +46,10 @@ Things that look like detours and aren't:
   window server moves a window from any press in a transparent titlebar that
   isn't on a control, whatever `mouseDownCanMoveWindow` says; the rows start
   window drags themselves (`performWindowDrag`) from their empty space.
+  `WindowMovability` turns it on only while fn-⌃ is held, a menu is open
+  or the pointer is outside the window, so tiling still works. Not by where
+  the pointer is in the window: the app can hear that late or not at all, and
+  the window server doesn't wait for it (`WindowMovabilityTests`).
 - **Sidebar commands are Wortel's own** (`toggleSessionSidebar:`), not AppKit's
   `toggleSidebar:`: SwiftUI's hosting views answer that one on its way up the
   responder chain and swallow it.

@@ -64,6 +64,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-10-20. A reload of the config is applied synchronously on the main
   thread**, as Ghostty.app does. Applied a turn later, a program asking for the
   background colour got the old one. See `incidents.md` (`3d8e922`).
+- **2026-11-16. The main window is movable only while fn-⌃ is held, a menu
+  is open or the pointer is outside it** (`WindowMovability`). Not any
+  modifier: ⌃ and ⌘ are down half the time in a terminal. Replaces
+  "off only while the pointer is over the titlebar band" (`83f29e0`), which
+  hung on the band's `mouseEntered` arriving before the press: the first grab
+  of a tab just opened from the Files pane often moved the window. A busy main
+  thread after the open and tracking areas rebuilt with `.assumeInside` can
+  each lose it; neither was caught in the act. The pointer starts as inside:
+  read from the frame before the saved one was applied, it left the window
+  movable from launch (`e83bbd6` for why it's off at all).
 
 ## Sidebar
 

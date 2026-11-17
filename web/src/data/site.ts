@@ -236,6 +236,7 @@ export const DOCS_SECTIONS: Section[] = [
             ['wortel rename <name>', 'Renames the session it was run in'],
             ['wortel notify <text>', 'This session wants you'],
             ['wortel mark <colour>', 'Colours the session in the sidebar'],
+            ['wortel remind <when>', 'Brings the session back to you later'],
             ['wortel list', 'The open sessions, in sidebar order'],
             ['wortel read <session>', 'Prints the text on a session\'s screen'],
             ['wortel send <session> <text>', 'Types text into a session as a paste'],
@@ -316,6 +317,22 @@ export const DOCS_SECTIONS: Section[] = [
   },
 
   {
+    id: 'reminders',
+    title: 'Reminders',
+    blocks: [
+      {
+        p: 'Remind Me, in a session’s menu or the Session menu, brings a session back to you later: in 30 minutes, in 1 hour, in 3 hours, tomorrow at 09:00, on Monday at 09:00, or at a day and time you pick with Custom…. While it waits, the row says when on a small grey line under its name.',
+      },
+      {
+        p: 'When the time comes, the session gets the unread ring and you get a notification, or only a flash of the ring if you are already looking at it. A reminder that came due while Wortel was closed goes off when you open it. A session has one reminder, setting another replaces it, and closing the session ends it.',
+      },
+      {
+        p: 'From a terminal, wortel remind takes a duration (20m, 1h), a time on the clock (15:00, 3pm), a day (fri, friday 14:00, tomorrow 3pm) or a date (2026-12-03 10:00). wortel remind none cancels it. A day on its own means 09:00.',
+      },
+    ],
+  },
+
+  {
     id: 'worktree-behaviour',
     title: 'What a worktree session does',
     blocks: [
@@ -387,7 +404,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel have tabs or split panes?',
-    a: 'Tabs, yes; splits, no. Each session has three rows of tabs: the main area with its terminal, a side column, and a strip under the terminal, and any tab (a terminal, a browser, a file, the git panes) can be dragged between them. What Wortel does not do is split a terminal into a grid of panes: the sidebar of named sessions is where you switch work, and ⌘P finds any of them by name.',
+    a: 'Tabs, yes; splits, no. Each session has three rows of tabs: the main area with its terminal, a side column, and a strip under the terminal, and any tab (a terminal, a browser, a file, the git panes) can be dragged between them. A file tab can also be dragged out of the window into a preview window of its own, and back. What Wortel does not do is split a terminal into a grid of panes: the sidebar of named sessions is where you switch work, and ⌘P finds any of them by name.',
   },
   {
     q: 'Can I configure Wortel’s fonts, colours and keybinds?',

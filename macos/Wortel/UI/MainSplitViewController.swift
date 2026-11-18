@@ -425,6 +425,10 @@ final class MainSplitViewController: NSSplitViewController {
         // out here as well made a switch up to 130 ms slower (measured).
         workspace?.view.layoutSubtreeIfNeeded()
         host.show(session, runtime: runtime)
+        // The rest of the window lays out when the frame is drawn, after
+        // this returns and the hold with it. If that moves the terminal's
+        // area again, the terminal follows.
+        DispatchQueue.main.async { SurfaceView.reconcileAll("a session switch") }
     }
 
     /// Everything about the column's place in the window: which side it's on,

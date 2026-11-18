@@ -1,5 +1,13 @@
 import AppKit
 import GhosttyKit
+import os
+
+/// A terminal found at a size that is not its view's, and put right.
+///
+///     log show --last 1h --predicate 'subsystem == "com.gielcobben.Wortel" && category == "layout"'
+enum LayoutLog {
+    static let log = Logger(subsystem: "com.gielcobben.Wortel", category: "layout")
+}
 
 /// The NSView hosting one ghostty surface (one terminal). Ported from
 /// Ghostty.app's SurfaceView_AppKit.swift (v1.3.1), trimmed to Wortel's
@@ -126,7 +134,78 @@ final class SurfaceView: NSView {
     /// A size change arrived during a hold and still has to be applied.
     private var resizePending = false
 
-    static func holdResizes() { resizeHolds += 1 }
+    /// What the terminal was last told its size is, in pixels: the one fact
+    /// that says whether it is the size of its view. nil for a surface that
+    /// has not been told yet (a new one, after a wake or a restart).
+    private var toldSize: (width: UInt32, height: UInt32)?
+
+    /// Bumped on every hold and release, so the watchdog below can tell a
+    /// hold that is stuck from a later one.
+    private static var holdGeneration = 0
+    /// Longer than any pane animation (0.26 s) or wake (0.5 s) by a wide
+    /// margin. A hold older than this is one whose release never came.
+    private static let longestHold: TimeInterval = 2
+
+    static func holdResizes() {
+        resizeHolds += 1
+        holdGeneration += 1
+        let generation = holdGeneration
+        // A hold that is never released would freeze every terminal at the
+        // size it has, for good: each change of size would wait for a release
+        // that isn't coming. Nothing should hold this long, so one that does
+        // is let go, and said.
+        DispatchQueue.main.asyncAfter(deadline: .now() + longestHold) {
+            guard resizeHolds > 0, holdGeneration == generation else { return }
+            LayoutLog.log.fault("a resize hold was never released (\(resizeHolds) held): letting go")
+            resizeHolds = 0
+            NotificationCenter.default.post(name: resizeHoldReleased, object: nil)
+        }
+    }
+
+    /// Ask every terminal to check its size against its view, now and once
+    /// more when the layout has had time to land. For the moments after
+    /// which a size is most often stale: a launch, a session switch, a pane
+    /// opening or closing.
+    static func reconcileAll(_ why: String) {
+        NotificationCenter.default.post(name: reconcileRequested, object: why)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NotificationCenter.default.post(name: reconcileRequested, object: why + ", settled")
+        }
+    }
+
+    private static let reconcileRequested = Notification.Name("WortelSurfaceReconcile")
+
+    @objc private func reconcileWasRequested(_ notification: Notification) {
+        reconcileSize(notification.object as? String ?? "asked")
+    }
+
+    /// Give the terminal its view's size if it has another one.
+    ///
+    /// **The safety net under every path above.** A size reaches the terminal
+    /// when its view is resized, and is put off while a pane animates or the
+    /// view is hidden, to be applied by the event that ends that. Each of
+    /// those hand-offs is a place a size can be dropped, and a dropped one
+    /// stays dropped until the window happens to be resized: the terminal
+    /// drawn too wide and cut off by the column, or too narrow in a corner of
+    /// its page (2026-11-18, both). So what was last *told* is compared with
+    /// what the view *is*, at every moment things settle, whatever the flags
+    /// say. One comparison when they agree.
+    ///
+    /// Each catch is logged with the state it was found in, because a catch
+    /// is a hand-off that failed and should be found and fixed.
+    func reconcileSize(_ why: String) {
+        guard surface != nil, window != nil, !isHidden, Self.resizeHolds == 0 else { return }
+        let size = frame.size
+        guard size.width >= 40, size.height >= 20 else { return }
+        let scaled = convertToBacking(size)
+        let wanted = (width: UInt32(max(0, scaled.width)), height: UInt32(max(0, scaled.height)))
+        if let told = toldSize, told == wanted { return }
+        LayoutLog.log.notice("""
+            terminal at the wrong size (\(why, privacy: .public)): told             \(self.toldSize.map { "\($0.width)x\($0.height)" } ?? "nothing", privacy: .public),             view \(wanted.width)x\(wanted.height) px, pending \(self.resizePending)
+            """)
+        resizePending = false
+        sizeDidChange(size)
+    }
 
     /// Shown again: take the size it missed while hidden, a moment later
     /// rather than now, in case the layout around it hasn't landed yet. A
@@ -137,25 +216,34 @@ final class SurfaceView: NSView {
     /// shows pinned top left, as during a hold.
     override var isHidden: Bool {
         didSet {
-            guard oldValue, !isHidden, resizePending else { return }
+            guard oldValue, !isHidden else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                guard let self, self.resizePending, !self.isHidden, Self.resizeHolds == 0
-                else { return }
-                self.sizeDidChange(self.frame.size)
+                guard let self, !self.isHidden, Self.resizeHolds == 0 else { return }
+                if self.resizePending { self.sizeDidChange(self.frame.size) }
+                self.reconcileSize("shown")
             }
         }
     }
 
     static func releaseResizes() {
         resizeHolds = max(0, resizeHolds - 1)
+        holdGeneration += 1
         guard resizeHolds == 0 else { return }
         NotificationCenter.default.post(name: resizeHoldReleased, object: nil)
+        // And once more when what the hold was for has landed: the last
+        // frame of an animation can arrive after its completion.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NotificationCenter.default.post(name: reconcileRequested, object: "after a hold")
+        }
     }
 
     @objc private func resizeHoldDidRelease(_ notification: Notification) {
-        guard resizePending else { return }
-        resizePending = false
-        sizeDidChange(frame.size)
+        if resizePending {
+            resizePending = false
+            sizeDidChange(frame.size)
+        }
+        // Whether or not a change was noted as waiting.
+        reconcileSize("hold released")
     }
 
     /// The pty, when this surface's shell belongs to the keeper rather than to
@@ -250,6 +338,9 @@ final class SurfaceView: NSView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(resizeHoldDidRelease(_:)),
             name: Self.resizeHoldReleased, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reconcileWasRequested(_:)),
+            name: Self.reconcileRequested, object: nil)
 
         NotificationCenter.default.addObserver(
             self,
@@ -441,6 +532,7 @@ final class SurfaceView: NSView {
         surface = runtime.newSurface(view: self, workingDirectory: workingDirectory,
                                      sessionID: sessionID, initialInput: initialInput,
                                      environment: environment)
+        toldSize = nil
         guard let surface else { return }
         layerReplaced()
         // What `viewDidMoveToWindow` and the host told the old surface, told
@@ -647,6 +739,8 @@ final class SurfaceView: NSView {
         self.hibernation = nil
         isRestoring = true
         surface = new
+        // A new terminal: whatever the old one was told, this one wasn't.
+        toldSize = nil
         layerReplaced()
         if let window { ghostty_surface_set_display_id(new, window.screen?.displayID ?? 0) }
         viewDidChangeBackingProperties()
@@ -695,6 +789,10 @@ final class SurfaceView: NSView {
                 self.whenPasteReachesProgram(within: Self.restorePatience) { _ in
                     if self.surface == new { self.isRestoring = false }
                     onRestored?()
+                    // It came back at the size it went away with. If its
+                    // view changed meanwhile and nothing noted it (it joined
+                    // the window with no terminal to tell), this does.
+                    self.reconcileSize("woken")
                 }
             }
         }
@@ -916,6 +1014,10 @@ final class SurfaceView: NSView {
         viewDidChangeBackingProperties()
         sizeDidChange(frame.size)
         viewDidChangeEffectiveAppearance()
+        // The frame it arrives with is often not the one it ends up with
+        // (during launch the host is still zero-sized), and a size too small
+        // to be real is not passed on at all.
+        DispatchQueue.main.async { [weak self] in self?.reconcileSize("joined the window") }
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -964,6 +1066,7 @@ final class SurfaceView: NSView {
     private func setSurfaceSize(width: UInt32, height: UInt32) {
         guard let surface else { return }
         ghostty_surface_set_size(surface, width, height)
+        toldSize = (width, height)
     }
 
     override func viewDidChangeBackingProperties() {

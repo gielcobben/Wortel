@@ -117,6 +117,23 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the same clicks: unchanged when the column stays put; when it opens or
   closes, the first frame comes with the column (60 to 110 ms) instead of a
   wrong frame first. Opening or closing the column itself is that cost.
+- **2026-11-18. A terminal checks its size against its view whenever things
+  settle.** Seen three times in a day: the terminal drawn at an old size and
+  pinned top left, so either cut off by the side column (too wide) or sitting
+  in a corner of its page (too narrow, once at the 45 by 15 a terminal has
+  before it is told anything, for twelve minutes after a relaunch). A size
+  reaches a terminal when its view is resized, and is put off while a pane
+  animates or the view is hidden, to be applied by whatever ends that. Each
+  hand-off can drop one, and a dropped size stayed dropped until the window
+  was resized. So the terminal now remembers what it was last told
+  (`toldSize`) and compares it with its view (`reconcileSize`) after a hold
+  is released, after it is shown, woken or joins a window, when its area is
+  laid out, and after a session switch, and once more 0.3 s later. A hold
+  still held after two seconds is let go. **Which hand-off drops the size is
+  not known**: it was not reproduced in a test copy (three relaunches, right
+  size each time). Every catch is logged in the `layout` category with what
+  it found, so the next one names its cause; this entry should be replaced by
+  that fix.
 - **2026-11-18. A session switches on mouse-down**, as in Finder's sidebar.
   It switched on mouse-up, after AppKit had ruled out a drag, so the time the
   button was held (115 ms a click on average, sampled) came before every

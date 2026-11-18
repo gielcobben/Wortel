@@ -146,6 +146,15 @@ final class TerminalHostViewController: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
         if let currentView { focusTerminal(currentView) }
+        SurfaceView.reconcileAll("the window appeared")
+    }
+
+    /// The terminal's own area was laid out: the one on screen is checked
+    /// against it (`SurfaceView.reconcileSize`). One comparison when they
+    /// agree, and nothing while a pane is animating.
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        currentView?.reconcileSize("its area was laid out")
     }
 
     /// Make the terminal first responder so keystrokes land.

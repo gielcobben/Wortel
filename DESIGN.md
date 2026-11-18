@@ -332,8 +332,9 @@ outline around the one that now has the keyboard.
 - **Settings is one of Wortel's own windows, for now.** Its titlebar row on
   the glass holding its two tabs, drawn as every tab is, and the rows on a
   page: 13pt
-  names, a 12pt grey line under each saying what it does, hairlines between
-  groups, small switches, a 28pt field with 8pt corners for what is typed.
+  names, a 12pt grey line under each saying what it does, rows that belong
+  together in a box (a faint band, 10pt corners), small switches, a 28pt
+  field with 8pt corners for what is typed.
   The whole of a row's text is the switch's to click. A row that can do
   nothing on this build is absent. An experiment beside the system's
   preferences window (`macos/docs/architecture/settings.md`): this entry

@@ -1,8 +1,8 @@
 import SwiftUI
 
 // The Settings window's page, in Wortel's own drawing: the app's 13pt type,
-// its hairlines, its 28pt controls with 8pt corners, on an opaque page under
-// a titlebar row (`SettingsWindowController`). An experiment beside the
+// its hairlines, its 28pt controls with 8pt corners, in boxes on an opaque
+// page under a titlebar row (`SettingsWindowController`). An experiment beside the
 // system's preferences window that came before it (37b52e6), to see which
 // one the app should have.
 //
@@ -31,11 +31,12 @@ final class SettingsTabState {
 }
 
 enum SettingsMetrics {
-    /// The window's one width. It changes only its height between tabs.
-    static let width: CGFloat = 440
-    /// The page's inset from the window's edges: the terminal page's own
-    /// feel, a little roomier, since this is read and not worked in.
-    static let inset: CGFloat = 20
+    /// The window's one width. It changes only its height between tabs. As
+    /// narrow as the longest line under a row allows without wrapping.
+    static let width: CGFloat = 380
+    /// The page's inset from the window's edges, and the gap between boxes.
+    static let inset: CGFloat = 16
+    static let boxGap: CGFloat = 12
 }
 
 /// The page under the titlebar row: the rows of the tab in front, held to
@@ -72,14 +73,13 @@ struct SettingsRows: View {
     let updater: Updater
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: SettingsMetrics.boxGap) {
             switch state.tab {
             case .general: GeneralRows(settings: settings)
             case .updates: UpdatesRows(updater: updater)
             }
         }
-        .padding(.horizontal, SettingsMetrics.inset)
-        .padding(.vertical, 8)
+        .padding(SettingsMetrics.inset)
         .frame(width: SettingsMetrics.width, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -147,13 +147,17 @@ private struct GeneralRows: View {
     @State private var agentsFound: [String] = []
 
     var body: some View {
-        CommandRow(command: $settings.newSessionCommand, agents: agentsFound)
-            .task { agentsFound = await AgentDiscovery.find() }
-        Hairline()
-        SwitchRow(title: "Commit box", note: "The message field in Source Control.",
-                  isOn: $settings.showsCommitBox)
-        SwitchRow(title: "Open servers in your browser", note: "Instead of a tab beside the terminal.",
-                  isOn: $settings.opensServersInDefaultBrowser)
+        SettingsBox {
+            CommandRow(command: $settings.newSessionCommand, agents: agentsFound)
+        }
+        .task { agentsFound = await AgentDiscovery.find() }
+        SettingsBox {
+            SwitchRow(title: "Commit box", note: "The message field in Source Control.",
+                      isOn: $settings.showsCommitBox)
+            Hairline()
+            SwitchRow(title: "Open servers in your browser", note: "Instead of a tab beside the terminal.",
+                      isOn: $settings.opensServersInDefaultBrowser)
+        }
     }
 }
 
@@ -171,12 +175,13 @@ private struct UpdatesRows: View {
     @State private var sharesUsageData = TelemetrySettings.isEnabledByUser
 
     var body: some View {
-        Group {
+        SettingsBox {
             if updater.isAvailable {
                 SwitchRow(title: "Update automatically", note: "New versions install when you quit.",
                           isOn: Binding(get: { updater.updatesAutomatically },
                                         set: { updater.setUpdatesAutomatically($0) }))
             }
+            if updater.isAvailable, TelemetrySettings.isSwitchable { Hairline() }
             if TelemetrySettings.isSwitchable {
                 SwitchRow(title: "Share anonymous usage data",
                           note: "Which features are used, never your work.",
@@ -226,13 +231,27 @@ private struct RowLabel: View {
     }
 }
 
-/// The hairline between groups of rows.
+/// A group of rows in a box: a faint band on the page with rounded corners,
+/// as the system's own settings group theirs, in the app's tokens (the
+/// bottom strip's band, which is the page's quietest fill). Rows that belong
+/// together share one, with a hairline between them.
+private struct SettingsBox<Rows: View>: View {
+    @ViewBuilder let rows: Rows
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) { rows }
+            .padding(.horizontal, 12)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: Chrome.stripBand)))
+    }
+}
+
+/// The hairline between two rows of a box.
 private struct Hairline: View {
     var body: some View {
         Rectangle()
             .fill(Color(nsColor: Chrome.hairline))
             .frame(height: 1)
-            .padding(.vertical, 6)
     }
 }
 
@@ -287,9 +306,10 @@ private struct CommandRow: View {
         case .controlCharacter: return "A tab or a line break can't be typed into a shell."
         case .tooLong: return "Too long. A shell takes 1,024 bytes at once."
         case nil:
+            // Short enough for one line at the window's width.
             return command.isEmpty
-                ? "Any command, such as claude. Empty starts a plain terminal."
-                : "Any command. New Terminal (⌃⌘N) starts a session without it."
+                ? "Any command, like claude. Empty is a terminal."
+                : "Any command. ⌃⌘N starts a session without it."
         }
     }
 

@@ -103,8 +103,12 @@ plain terminal.
   one pane with no toolbar, which is what the guidelines say for five rows
   and read as a dialog rather than as settings.
 - **The page** (`SettingsPage` in `SettingsView.swift`) is the app's type and
-  numbers: 13pt names, 12pt grey lines, hairlines between groups, small
-  switches, and a 28pt field with 8pt corners. Each row is a name and one
+  numbers: 13pt names, 12pt grey lines, small switches, and a 28pt field
+  with 8pt corners, with the rows that belong together in a box
+  (`SettingsBox`: the bottom strip's faint band, 10pt corners, a hairline
+  between its rows), as the system groups its own. The page with hairlines
+  alone was tried and the boxes were missed. The window is 380pt wide, which
+  is as narrow as the longest grey line allows without wrapping. Each row is a name and one
   grey line saying what it does, and a click on either flips the switch
   (`SwitchRow`: the gesture is on the label only, since the switch takes its
   own clicks). A click on the command's name puts the cursor in its field.

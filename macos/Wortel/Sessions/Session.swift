@@ -247,6 +247,11 @@ final class Session: Identifiable {
     /// be quit before its shell starts, and losing the line then is the cost.
     @ObservationIgnored var startupInput: String?
 
+    /// Whether `startupInput` was Settings' command (New sessions start
+    /// with), for the one yes-or-no reported about a new session. Kept past
+    /// the typing, because a worktree session is reported once git is done.
+    @ObservationIgnored var startedWithSettingsCommand = false
+
     /// The shell came up without the keeper, which then can't vouch for not
     /// having typed `startupInput` already, so it wasn't typed (the rule
     /// `initialInputDropped` keeps for a resume). The CLI says so.

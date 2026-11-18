@@ -42,6 +42,22 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   setting (start the agent of the session you are on) could not be predicted
   by the person pressing ⌘N. A new row needs the same argument: who differs,
   and why can't the app know?
+- **2026-11-18. A new session starts what Settings says, and nothing unless
+  it says so.** Settings ▸ New sessions start with is one line, typed into
+  the new shell as its first command (the way `wortel new -- <command>` is):
+  `claude`, `claude --model opus`, anything. Empty, which is how it ships,
+  is a terminal. The field has a pull-down of the agents found on the Mac,
+  asked of the login shell when the window opens. All four ways in follow it.
+  `wortel new` does not (a script says `--` when it wants a command), and
+  neither does the session made at launch. Tried first and dropped before it
+  shipped: starting the agent of the session you are on, which nobody could
+  predict, and a menu of agents, which was more than the one line. Asking
+  once at first launch was put off until it is shown to be needed.
+- **2026-11-18. New Terminal (⌃⌘N) exists only while Settings names a
+  command.** It is ⌘N without that line, in the Session menu, the sidebar's
+  + and a folder's menu. With the field empty it would be a second New
+  Session, so it is absent. This is the answer the "four ways" entry below
+  asks for: not a fifth place to start, the same place minus one typed line.
 - **2026-09-29. "Wortel has no tabs" was reversed.** Tabs in three fixed places:
   the main area, a side column, a bottom strip. Still no splits and no free
   grid. The terminal engine's own tab and split actions still return

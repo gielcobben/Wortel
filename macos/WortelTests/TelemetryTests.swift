@@ -39,7 +39,7 @@ final class TelemetryTests: XCTestCase {
     /// should not be possible to add one without this failing.
     func testPropertyKeysAreTheDocumentedSet() throws {
         let documented: Set<String> = [
-            "sessions", "agents_resumed", "uptime", "via", "automatic",
+            "sessions", "agents_resumed", "uptime", "via", "command", "automatic",
             "pane", "mode", "kind", "verb", "jobs", "orphans", "orphan",
             "where", "area", "result", "message",
             "first", "previous_exit", "notifications", "agent",
@@ -212,9 +212,7 @@ final class TelemetryTests: XCTestCase {
     /// anything else, however it is spelled, to `other`: the name itself must
     /// never be what comes out.
     func testAgentNames() {
-        let detected = ["claude", "pi", "aider", "codex", "cursor-agent", "gemini", "opencode",
-                        "goose", "cline", "ollama", "llm", "crush", "amp"]
-        for command in detected {
+        for command in AgentCommands.detected {
             XCTAssertNotEqual(AgentName(command: command), .other, "\(command) is detected but unmapped")
         }
         XCTAssertEqual(AgentName(command: "cursor-agent"), .cursor)
@@ -382,9 +380,10 @@ final class TelemetryTests: XCTestCase {
         for uptime in DurationBucket.allCases {
             events.append(.appQuit(uptime: uptime))
         }
-        let origins: [SessionOrigin] = [.menu, .cli, .worktree, .restore, .openFolder, .home]
+        let origins: [SessionOrigin] = [.menu, .cli, .worktree, .restore, .openFolder, .home, .terminal]
         for origin in origins {
-            events.append(.sessionCreated(via: origin))
+            events.append(.sessionCreated(via: origin, command: true))
+            events.append(.sessionCreated(via: origin, command: false))
         }
         events.append(.sessionRenamed(automatic: true))
         events.append(.sessionRenamed(automatic: false))

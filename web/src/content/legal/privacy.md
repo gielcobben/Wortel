@@ -64,8 +64,10 @@ about the thing it happened to:
   in it, and nothing about other programs
 - the app quit, and roughly how long it ran
 - a session was created, and whether that was from the menu, the `wortel`
-  command, a worktree, opening a folder, or the shortcut that starts one in
-  your home directory (never which folder, or where it was opened)
+  command, a worktree, opening a folder, the shortcut that starts one in
+  your home directory, or New Terminal (never which folder, or where it was
+  opened), and a yes or no for whether it started with the command you set in
+  Settings (never the command itself)
 - a session was renamed
 - the git panel was opened, on which of the three panes, and whether from the
   toolbar or the keyboard

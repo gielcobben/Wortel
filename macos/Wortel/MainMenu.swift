@@ -249,8 +249,23 @@ enum MainMenu {
         // home), here on a branch of its own (⇧⌘N), or somewhere else (⌘O).
         // Fork, Open Branch and New Folder were cut: seven ways to start
         // something was more than anyone could keep apart. Archived sessions
-        // are found with ⌘P.
+        // are found with ⌘P. Each of the four starts the command Settings
+        // names for new sessions, if it names one (`SessionStart.preferred`).
         sessionMenu.addItem(withTitle: "New Session", action: #selector(AppDelegate.newSession(_:)), keyEquivalent: "n")
+        // ⌘N without the command Settings names for new sessions, and so only
+        // there while it names one: with the field empty this would be a
+        // second New Session. Not a fifth way in (see the note above): the
+        // same session, in the same place, minus one typed line. Shown and
+        // hidden as the setting changes, the way Restart to Update is, since
+        // `isHidden` from `validateMenuItem` doesn't reliably take. A hidden
+        // item gives up its key and is left out of ⌘P. ⌃⌘N is free in
+        // `wortel.conf`.
+        let plainSession = sessionMenu.addItem(withTitle: "New Terminal", action: #selector(AppDelegate.newTerminalSession(_:)), keyEquivalent: "n")
+        plainSession.keyEquivalentModifierMask = [.command, .control]
+        plainSession.isHidden = !AppSettings.shared.startsSessionsWithCommand
+        AppSettings.shared.onNewSessionCommandChange = { [weak plainSession] in
+            plainSession?.isHidden = !AppSettings.shared.startsSessionsWithCommand
+        }
         // ⌘N inherits the directory you're in, which is right until the moment
         // you want out of it. This is the way out, and it's a command rather
         // than a preference because both answers are wanted by the same person

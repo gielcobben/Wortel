@@ -593,6 +593,19 @@ enum WortelCommandParser {
     private static let plainCharacters = CharacterSet.alphanumerics
         .union(CharacterSet(charactersIn: "_./:@+=,-"))
 
+    /// Whether `scalar`, typed into a shell that is still in canonical mode,
+    /// is a key rather than a character: a tab completes, ^C interrupts, ^U
+    /// erases. C0 and DEL only: `CharacterSet.controlCharacters` also holds
+    /// format characters like the joiner inside every family emoji, which
+    /// type fine. Shared with `NewSessionCommand`, the line Settings types.
+    static func typesAsKey(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.value < 0x20 || scalar.value == 0x7F
+    }
+
+    /// The most bytes of one unfinished line the kernel holds, newline
+    /// included. Past it the whole line is thrown away.
+    static let typedLineLimit = Int(MAX_CANON)
+
     /// `argv` as the line a new session's shell is given, newline included,
     /// or why it can't be.
     ///
@@ -606,17 +619,15 @@ enum WortelCommandParser {
     /// session opens with nothing run and nothing said (measured: 1022 bytes
     /// ran, 1027 vanished). Refused with a reason instead.
     static func startupLine(_ argv: [String]) throws -> String {
-        // C0 and DEL only: `controlCharacters` also holds format characters
-        // like the joiner inside every family emoji, which type fine.
-        let isKey = { (scalar: Unicode.Scalar) in
-            (scalar.value < 0x20 && scalar != "\n") || scalar.value == 0x7F
-        }
+        // A newline is the one control character that reads back as itself
+        // inside the quotes `shellLine` writes.
+        let isKey = { (scalar: Unicode.Scalar) in scalar != "\n" && typesAsKey(scalar) }
         if argv.contains(where: { $0.unicodeScalars.contains(where: isKey) }) {
             throw ParseError.unrunnable(
                 "it has a tab or another control character in it, which a shell would take as a key")
         }
         let line = shellLine(argv) + "\n"
-        let limit = Int(MAX_CANON)
+        let limit = typedLineLimit
         guard line.utf8.count <= limit else {
             throw ParseError.unrunnable(
                 "it is \(line.utf8.count) bytes long, and at most \(limit) can be typed into a shell at once")

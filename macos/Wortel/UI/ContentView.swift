@@ -320,11 +320,16 @@ struct NewSessionButton: NSViewRepresentable {
                 item.setGlyph(symbol)
                 menu.addItem(item)
             }
-            add("New Session", "plus.square") { manager.newSession() }
+            add("New Session", "plus.square") { manager.newSession(starting: .preferred) }
+            // Only while Settings names a command for new sessions: the same
+            // session without it. Absent otherwise, as in the Session menu.
+            if AppSettings.shared.startsSessionsWithCommand {
+                add("New Terminal", "terminal") { manager.newSession(via: .terminal, starting: .plain) }
+            }
             // "New Session" here looks global but isn't: it lands in whichever
             // folder the selection is in. This is the way out of that, next to
             // the thing it's the exception to.
-            add("New Session at Home", "house") { manager.newHomeSession() }
+            add("New Session at Home", "house") { manager.newHomeSession(starting: .preferred) }
             add("New Worktree Session\u{2026}", "plus.square.dashed") { newWorktreeSessionFromSheet(manager) }
             menu.addItem(.separator())
             // The way to reach a project no session is standing in without
@@ -612,7 +617,7 @@ enum SessionActions {
 @MainActor
 func openFolderSession(_ manager: SessionManager) {
     guard let path = chooseDirectory(title: "Open a folder as a session") else { return }
-    manager.openFolder(path)
+    manager.openFolder(path, starting: .preferred)
 }
 
 /// Open a session on a branch, in its own worktree. Failures are shown as git
@@ -703,9 +708,11 @@ func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
         }
         switch answer.choice {
         case .branch(let branch, let base):
-            manager.newSession(onBranch: branch, base: base, from: from, inFolder: folder, after: fetch)
+            manager.newSession(onBranch: branch, base: base, from: from, inFolder: folder, after: fetch,
+                               starting: .preferred)
         case .pullRequest(let pr):
-            manager.newSession(onPullRequest: pr, from: from, inFolder: folder, after: fetch)
+            manager.newSession(onPullRequest: pr, from: from, inFolder: folder, after: fetch,
+                               starting: .preferred)
         }
     }
 }
@@ -719,7 +726,7 @@ func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
 func newWorktreeSessionFromSheet(_ manager: SessionManager, inFolder folder: String? = nil) {
     let from = manager.branchSource(inFolder: folder)
     guard let from, GitWorktree.repositoryHome(containing: from) != nil else {
-        manager.newWorktreeSession(from: from, inFolder: folder)
+        manager.newWorktreeSession(from: from, inFolder: folder, starting: .preferred)
         return
     }
     newSessionOnBranch(manager, inFolder: folder, name: manager.placeholderBranch(), from: from,
@@ -781,7 +788,12 @@ enum FolderActions {
         }
         // "New Session", as in the Session menu: the menu is the folder's, so
         // naming the folder again only made it the widest item.
-        item("New Session", "plus.square") { manager.newSession(inFolder: folder) }
+        item("New Session", "plus.square") { manager.newSession(inFolder: folder, starting: .preferred) }
+        if AppSettings.shared.startsSessionsWithCommand {
+            item("New Terminal", "terminal") {
+                manager.newSession(inFolder: folder, via: .terminal, starting: .plain)
+            }
+        }
         item("New Worktree Session\u{2026}", "plus.square.dashed") {
             newWorktreeSessionFromSheet(manager, inFolder: folder)
         }
@@ -1773,7 +1785,7 @@ struct EmptySessionsPage: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 300)
                 HStack(spacing: 8) {
-                    Button("New Session") { manager.newSession() }
+                    Button("New Session") { manager.newSession(starting: .preferred) }
                     Button("Open Folder\u{2026}") { openFolderSession(manager) }
                         .keyboardShortcut(.defaultAction)
                 }

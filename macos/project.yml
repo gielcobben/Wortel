@@ -512,6 +512,15 @@ targets:
       # The Settings window's stored rows: a key nobody has written must read
       # as the app before there was a switch.
       - path: Wortel/Settings/AppSettings.swift
+      # Settings' "New sessions start with": the line typed into a new shell,
+      # and which ways of making a session get it.
+      - path: Wortel/Sessions/NewSessionCommand.swift
+      # The agents known by name, checked against the shell integration's six
+      # copies of the same list.
+      - path: Wortel/Sessions/AgentCommands.swift
+      # Which of them the Mac has: reading the login shell's answer out of
+      # whatever its startup files print around it.
+      - path: Wortel/Settings/AgentDiscovery.swift
       # Sort Unread First: a drawn order over the stored one, and the rules that
       # hold the selected row and a pending click's row still. Every way it's
       # wrong is a row sliding out from under the pointer, which no build or

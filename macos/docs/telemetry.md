@@ -22,7 +22,7 @@ Seven files in `Wortel/Telemetry/`:
 Call sites are one line and never conditional:
 
 ```swift
-Telemetry.capture(.sessionCreated(via: .cli))
+Telemetry.capture(.sessionCreated(via: .cli, command: false))
 ```
 
 Every gate lives inside `capture`, so adding an event somewhere never involves

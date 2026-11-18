@@ -26,7 +26,8 @@ removes worktrees under them.
 ## Decisions
 
 - **Four ways in.** ⌘N here, ⌥⌘N at home, ⇧⌘N here on a branch of its own,
-  ⌘O somewhere else. Open Branch (⇧⌘O, one field for every branch, worktree and pull
+  ⌘O somewhere else. Each starts the command Settings names for new
+  sessions, if it names one; New Terminal (⌃⌘N) is ⌘N without it. Open Branch (⇧⌘O, one field for every branch, worktree and pull
   request), Fork Session and Change Directory (`wortel cd`) were built and
   cut: seven ways to start something was more than anyone kept apart. What
   only Open Branch did, finding an archived session or a worktree nobody's

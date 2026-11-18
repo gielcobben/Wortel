@@ -48,4 +48,34 @@ final class AppSettingsTests: XCTestCase {
         defaults.set(true, forKey: "browser.opensServersInDefaultBrowser")
         XCTAssertTrue(AppSettings(defaults: defaults).opensServersInDefaultBrowser)
     }
+
+    // MARK: - New sessions start with
+
+    func testNewSessionsStartAsATerminalUntilSomeoneSaysOtherwise() {
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertEqual(settings.newSessionCommand, "")
+        XCTAssertFalse(settings.startsSessionsWithCommand)
+    }
+
+    func testTheCommandIsKeptTrimmedAndRemembered() {
+        let settings = AppSettings(defaults: defaults)
+        settings.newSessionCommand = "  claude --model opus "
+        XCTAssertEqual(settings.newSessionCommand, "claude --model opus")
+        XCTAssertTrue(settings.startsSessionsWithCommand)
+        XCTAssertEqual(AppSettings(defaults: defaults).newSessionCommand, "claude --model opus")
+    }
+
+    /// The Session menu's New Terminal comes and goes on this.
+    func testTheMenuIsToldOncePerRealChange() {
+        let settings = AppSettings(defaults: defaults)
+        var told = 0
+        settings.onNewSessionCommandChange = { told += 1 }
+        settings.newSessionCommand = "claude"
+        settings.newSessionCommand = "claude"
+        settings.newSessionCommand = " claude "
+        XCTAssertEqual(told, 1)
+        settings.newSessionCommand = ""
+        XCTAssertEqual(told, 2)
+        XCTAssertFalse(settings.startsSessionsWithCommand)
+    }
 }

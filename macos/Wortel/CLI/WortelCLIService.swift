@@ -198,7 +198,7 @@ final class WortelCLIService {
                 return reply(.failure("No session to take a repository from."))
             }
             _ = manager.newWorktreeSession(
-                from: cwd, inFolder: manager.folder(covering: cwd), startupInput: input,
+                from: cwd, inFolder: manager.folder(covering: cwd), starting: input.map(SessionStart.line) ?? .plain,
                 completion: { [weak self] result, warnings in
                     self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
                 })
@@ -212,7 +212,7 @@ final class WortelCLIService {
             }
             _ = manager.newSession(
                 onPullRequest: pr, from: cwd, inFolder: manager.folder(covering: cwd),
-                startupInput: input,
+                starting: input.map(SessionStart.line) ?? .plain,
                 completion: { [weak self] result, warnings in
                     self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
                 })
@@ -242,7 +242,7 @@ final class WortelCLIService {
             // project must not land its session in whichever folder the
             // sidebar happens to be showing.
             let session = manager.newSession(cwd: cwd, inFolder: cwd.flatMap(manager.folder(covering:)),
-                                             via: .cli, startupInput: input)
+                                             via: .cli, starting: input.map(SessionStart.line) ?? .plain)
             if let name { manager.rename(session, to: name) }
             orderFront()
             if let refusal = commandDropped(session) { return reply(refusal) }
@@ -259,7 +259,7 @@ final class WortelCLIService {
         }
         let created = manager.newSession(
             onBranch: branch, base: base, from: cwd, inFolder: manager.folder(covering: cwd),
-            startupInput: input,
+            starting: input.map(SessionStart.line) ?? .plain,
             completion: { [weak self] result, warnings in
                 self?.replyStarted(result, warnings: warnings, name: name, reply: reply)
             })

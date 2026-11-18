@@ -432,7 +432,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.restore()
         // Folders handed over before the sessions were back (a folder dropped
         // on the Dock icon to launch the app).
-        pendingFolders.forEach { manager.openFolder($0) }
+        pendingFolders.forEach { manager.openFolder($0, starting: .preferred) }
         pendingFolders = []
         // Point the panel at the restored selection: it's what raises the panel
         // if that session had it up, and it seeds the cwd so the first toggle
@@ -809,7 +809,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !folders.isEmpty else { return }
         // At launch this can come before the sessions are restored.
         guard let manager, manager.hasRestored else { return pendingFolders += folders }
-        folders.forEach { manager.openFolder($0) }
+        folders.forEach { manager.openFolder($0, starting: .preferred) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
@@ -1089,12 +1089,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc func newSession(_ sender: Any?) {
         focusMainWindow()
-        manager.newSession()
+        manager.newSession(starting: .preferred)
+    }
+
+    /// ⌃⌘N, New Terminal: ⌘N without the command Settings names. The item is
+    /// only there while there is one (`MainMenu`).
+    @objc func newTerminalSession(_ sender: Any?) {
+        focusMainWindow()
+        manager.newSession(via: .terminal, starting: .plain)
     }
 
     @objc func newHomeSession(_ sender: Any?) {
         focusMainWindow()
-        manager.newHomeSession()
+        manager.newHomeSession(starting: .preferred)
     }
 
     @objc func newWorktreeSession(_ sender: Any?) {

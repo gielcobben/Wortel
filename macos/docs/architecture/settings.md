@@ -28,6 +28,7 @@ A row that survives gets a dated line in `docs/decisions.md`.
 
 | Row | Stored in | Read by |
 | --- | --- | --- |
+| New sessions start with | `AppSettings.newSessionCommand`, `sessions.newSessionCommand`, empty unless set | `SessionManager.makeSession`, through `SessionStart` |
 | Commit box in Source Control | `AppSettings.showsCommitBox`, `git.showsCommitBox`, on unless turned off | `SourceControlPanel` |
 | Open servers in default browser | `AppSettings.opensServersInDefaultBrowser`, `browser.opensServersInDefaultBrowser` | `RunningJobsPopover`, whose row menu has the same switch |
 | Update automatically | Sparkle's own preferences, through `Updater.updatesAutomatically` and `setUpdatesAutomatically` | Sparkle |
@@ -37,6 +38,38 @@ The last two are absent on a build where they can do nothing (a development
 build has no updater and never reports): absent, not greyed. The usage-data
 switch is also in the sidebar's ⓘ, which is where the first-run notice and
 the privacy page point.
+
+## New sessions start with
+
+One line, typed into a new session's shell as its first command. Empty is a
+plain terminal.
+
+- **Typed as written, never quoted** (`NewSessionCommand`): `claude --model
+  opus` is a command and two arguments. It goes into the person's own login
+  shell, so their PATH, aliases and functions apply. A control character
+  inside it, a second line, or more than `MAX_CANON` bytes is refused with a
+  reason under the field and never saved.
+- **Saved when editing ends** (Return, Tab, picking from the list, closing
+  the window), not per keystroke, so ⌘N pressed mid-word starts what was
+  last saved (`CommandComboBox`).
+- **One place decides who gets it**: `SessionStart`, which every way of
+  making a session must name, with no default. The app's own ways in pass
+  `.preferred`; `wortel new` passes its own line or `.plain`; the session
+  made at launch and New Terminal pass `.plain`. `makeSession` reads the
+  setting once, when the row is made, and uses the mechanism `wortel new --`
+  already had (`Session.startupInput`: the keeper types it before the shell
+  has read a byte; a worktree session gets it once git is done).
+- **New Terminal** (⌃⌘N) is hidden unless the field holds a command, in the
+  Session menu (shown and hidden from `AppSettings.onNewSessionCommandChange`,
+  as Restart to Update is by the updater), the sidebar's + menu and a
+  folder's menu.
+- **The pull-down** lists the known agents this Mac has (`AgentDiscovery`):
+  the login shell is run once when the window opens, off the main thread,
+  with `command -v` between two sentinel lines so nothing its startup files
+  print can get in, and three seconds to answer. If it doesn't, the usual
+  install folders are scanned instead. Nothing runs while the window is
+  closed. The names are `AgentCommands`, which a test holds against the
+  shell integration's six copies of the same list.
 
 ## How it is built
 

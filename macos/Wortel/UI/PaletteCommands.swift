@@ -61,6 +61,7 @@ enum PaletteCommands {
         "restartToUpdate:": "arrow.clockwise.circle",
         "showSettings:": "gearshape",
         "newSession:": "plus.square",
+        "newTerminalSession:": "terminal",
         "newHomeSession:": "house",
         "newWorktreeSession:": "plus.square.dashed",
         "showPromptHistory:": "clock.arrow.circlepath",

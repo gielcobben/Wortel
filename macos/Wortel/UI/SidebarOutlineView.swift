@@ -1247,7 +1247,7 @@ struct SidebarOutlineView: NSViewRepresentable {
             if let folder = item as? FolderItem {
                 let manager = self.manager, name = folder.name
                 let directory = manager.root(ofFolder: name).map { ($0 as NSString).abbreviatingWithTildeInPath }
-                rowView.setAddAction(directory: directory) { manager.newSession(inFolder: name) }
+                rowView.setAddAction(directory: directory) { manager.newSession(inFolder: name, starting: .preferred) }
                 rowView.setMoreMenu { FolderActions.menu(for: name, manager: manager) }
             }
             guard let session = item as? SessionItem else { return rowView }
@@ -1553,7 +1553,7 @@ struct SidebarOutlineView: NSViewRepresentable {
 
             let folders = Self.directories(on: pb)
             if !folders.isEmpty {
-                folders.forEach { manager.openFolder($0) }
+                folders.forEach { manager.openFolder($0, starting: .preferred) }
                 return true
             }
 

@@ -40,12 +40,43 @@ final class AppSettings {
         didSet { defaults.set(opensServersInDefaultBrowser, forKey: Self.serversKey) }
     }
 
+    /// What a new session's shell is given to run, as written in Settings
+    /// (New sessions start with): `claude`, `claude --model opus`, any
+    /// command. Empty for a plain terminal, which is how it starts out. Kept
+    /// trimmed; what can't be typed is never stored (`NewSessionCommand`).
+    var newSessionCommand: String {
+        didSet {
+            let trimmed = newSessionCommand.trimmingCharacters(in: .whitespaces)
+            if trimmed != newSessionCommand {
+                newSessionCommand = trimmed
+                return
+            }
+            // Against what was last saved, not `oldValue`: the trim above
+            // comes through here a second time, with the untrimmed text as
+            // its old value.
+            guard newSessionCommand != savedCommand else { return }
+            savedCommand = newSessionCommand
+            defaults.set(newSessionCommand, forKey: Self.newSessionCommandKey)
+            onNewSessionCommandChange?()
+        }
+    }
+
+    /// Whether new sessions start with a command at all, which is when New
+    /// Terminal exists.
+    var startsSessionsWithCommand: Bool { NewSessionCommand.line(for: newSessionCommand) != nil }
+
+    /// Set by the menu, so its New Terminal item comes and goes with the
+    /// command without being asked about on every keypress.
+    @ObservationIgnored var onNewSessionCommandChange: (() -> Void)?
+    @ObservationIgnored private var savedCommand = ""
+
     @ObservationIgnored private let defaults: UserDefaults
 
     static let commitBoxKey = "git.showsCommitBox"
     /// The key the View menu's checkmark wrote before there was a window, so
     /// the choice made there carries over.
     static let serversKey = "browser.opensServersInDefaultBrowser"
+    static let newSessionCommandKey = "sessions.newSessionCommand"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -53,5 +84,9 @@ final class AppSettings {
         // written as off.
         showsCommitBox = defaults.object(forKey: Self.commitBoxKey) as? Bool ?? true
         opensServersInDefaultBrowser = defaults.bool(forKey: Self.serversKey)
+        let command = (defaults.string(forKey: Self.newSessionCommandKey) ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        savedCommand = command
+        newSessionCommand = command
     }
 }

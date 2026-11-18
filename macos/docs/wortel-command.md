@@ -126,6 +126,10 @@ relaunch), and when it exits you're at a prompt in that directory instead of
 looking at a closed terminal. It works with every form of `new`; a worktree
 session runs it once the worktree is ready.
 
+Without `--`, the session is a plain shell, whatever Settings ▸ New sessions
+start with says. That setting is for the sessions you start by hand; a script
+says what it wants run.
+
 ```sh
 wortel new --cwd ~/code/x -- claude --resume 7f3c9a1e
 wortel new --worktree --name "login redirect" -- claude "fix the login redirect"

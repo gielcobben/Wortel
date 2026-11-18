@@ -22,16 +22,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let tabs = SettingsTabs(settings: settings, updater: updater)
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable, .miniaturizable]
-        // No title drawn: the tab in front is named right under its icon,
-        // and the same word a line above it said nothing. The window is
-        // still called Settings where a name is needed (the Window menu,
-        // Mission Control, VoiceOver).
-        window.titleVisibility = .hidden
-        // The tabs in line with the traffic lights, with their names. The
-        // preferences style keeps a row for the title whether or not one is
-        // drawn, which left an empty strip above the tabs; the compact style
-        // drops the tabs' names, and then nothing says what they are.
-        window.toolbarStyle = .unified
+        // Centred icons with their names under them, below a title row: a
+        // preferences toolbar, laid out by the system. The title is
+        // "Settings" for every tab, not the tab's own name as AppKit would
+        // have it: the tab in front is named right under its icon, and the
+        // same word a line above it said nothing.
+        //
+        // Without the title row (tried 2026-11-18) the system's tab bar has
+        // nowhere good to go: in the unified style the selected tab's
+        // highlight ran into the top edge of the window, and in this style
+        // with the title hidden an empty strip is left above the tabs.
+        window.toolbarStyle = .preference
         window.tabbingMode = .disallowed
         // Where you are, and over a full-screen terminal rather than on the
         // space the app was launched in (as the preview windows are).

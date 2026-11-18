@@ -83,10 +83,11 @@ plain terminal.
 - **The window is the Mac's own preferences window**
   (`SettingsWindowController`): an `NSTabViewController` in its toolbar
   style, so the tabs are the system's icon tabs, and it grows or shrinks to
-  the height of the tab in front. No title is drawn (the tab in front is
-  named under its icon), so the toolbar is the unified style, which puts the
-  tabs in line with the traffic lights; the preferences style kept an empty
-  row where the title was. Two tabs:
+  the height of the tab in front. The title row says "Settings" for every
+  tab, not the tab's own name: that is already under its icon. The row
+  itself has to stay: without it the selected tab's highlight ran into the
+  top of the window (unified style), or an empty strip was left above the
+  tabs (preferences style, title hidden). Two tabs:
   **General** (what a new session starts, the commit box, where servers
   open) and **Updates** (automatic updates, usage data). Made when asked for
   and released when closed, so nothing of it exists off screen.

@@ -28,8 +28,8 @@ supervisory authority, the Autoriteit Persoonsgegevens.
 
 Wortel reports which of its features are used, and nothing else. It is on by
 default, it says so the first time you open it, and it is one click to turn off:
-the **ⓘ** at the bottom of the sidebar, or **Wortel menu, Share Anonymous Usage
-Data**. Both are the same switch.
+the **ⓘ** at the bottom of the sidebar, or **Share anonymous usage data** in
+Settings (the Wortel menu, or ⌘,). Both are the same switch.
 
 ### What is never sent
 
@@ -147,7 +147,7 @@ Nothing is stored that identifies your machine, and none of it is linked to
 anything else.
 
 **This is the one part you cannot switch off from inside the app, and "Share
-Anonymous Usage Data" does not cover it.** An update check is how the app learns
+anonymous usage data" does not cover it.** An update check is how the app learns
 that a security fix exists, so it happens regardless of any other preference.
 Turning reporting off stops everything in the section above and does not stop
 this, and saying otherwise would be a lie. The only way to stop it is to turn

@@ -49,10 +49,11 @@ final class GlobalHotkey {
 
     private init() {}
 
-    /// Claim the chord. Idempotent, and silent on failure by design: there is no
-    /// settings UI to report into and nothing the user could do about a chord
-    /// another app already owns, so the fallback (the menu item's own key
-    /// equivalent) is left to speak for itself.
+    /// Claim the chord. Idempotent, and silent on failure by design: the chord
+    /// is not a setting, so there is nowhere to report into, and there is
+    /// nothing the user could do about a chord another app already owns, so
+    /// the fallback (the menu item's own key equivalent) is left to speak for
+    /// itself.
     func start(onFire: @escaping () -> Void) {
         guard hotKey == nil else { return }
         self.onFire = onFire

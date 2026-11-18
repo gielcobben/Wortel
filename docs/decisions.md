@@ -27,7 +27,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   which on macOS means Xcode's debug flags (`0197ac4`).
 - **2026-09-03. No settings window, ever, and `wortel.conf` cannot grow keys.**
   libghostty rejects keys it doesn't know. A preference becomes a command or a
-  checkmark menu item (`c770301`, `14764bd`).
+  checkmark menu item (`c770301`, `14764bd`). The window half was reversed on
+  2026-11-18, below; the `wortel.conf` half stands.
+- **2026-11-18. "No settings window, ever" was reversed.** There is one, on
+  ⌘,, and it is kept short. A row is for something **decided once that truly
+  differs per person**: the commit box in Source Control, where a server
+  opens, automatic updates, anonymous usage data. Their checkmarks left the
+  menus (the usage-data switch is still in the sidebar's ⓘ too). What is
+  flipped while working stays a checkmark in the View menu (Sort Unread
+  First, which side the column is on). What the app can know for itself gets
+  no switch. Fonts, colours, keys and scrollback are still decided once, and
+  font size is still ⌘+ and ⌘−. Why now: people who never file their sessions
+  needed to say what a new session starts, and the answer that needed no
+  setting (start the agent of the session you are on) could not be predicted
+  by the person pressing ⌘N. A new row needs the same argument: who differs,
+  and why can't the app know?
 - **2026-09-29. "Wortel has no tabs" was reversed.** Tabs in three fixed places:
   the main area, a side column, a bottom strip. Still no splits and no free
   grid. The terminal engine's own tab and split actions still return

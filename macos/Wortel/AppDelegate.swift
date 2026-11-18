@@ -46,6 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// background update checks start at launch; the "Check for Updates…" menu
     /// item drives manual checks through it.
     private let updater = Updater.shared
+    /// The Settings window while it is open (`showSettings`).
+    private var settingsWindow: SettingsWindowController?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Menu must exist before launch so key equivalents resolve immediately.
@@ -158,7 +160,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.previewWindows.closeAll() }
+            MainActor.assumeIsolated {
+                self?.previewWindows.closeAll()
+                // The same goes for Settings: left open, it would be the last
+                // window, and the app would stay up with nothing in it.
+                self?.settingsWindow?.close()
+            }
         }
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
@@ -1217,14 +1224,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    /// View ▸ Open Servers in Default Browser: a server from the running-jobs
-    /// popover opens in your browser, not a tab.
-    @objc func toggleServersInDefaultBrowser(_ sender: Any?) {
-        BrowserTabs.opensServersInDefaultBrowser.toggle()
-    }
-
     /// View ▸ Sort Unread First: sessions that want you drawn first in each
-    /// sidebar section. The menu is the switch; there is no settings window.
+    /// sidebar section. A checkmark in the menu, not a row in Settings: it
+    /// is flipped while working, as a Finder window's sorting is.
     @objc func toggleSortUnreadFirst(_ sender: Any?) {
         manager.sortUnreadFirst.toggle()
     }
@@ -1328,8 +1330,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         updater.restartToUpdate()
     }
 
-    @objc func toggleAutomaticUpdates(_ sender: Any?) {
-        updater.updatesAutomatically.toggle()
+    /// Wortel ▸ Settings… (⌘,). One window, made when asked for and let go
+    /// when it closes.
+    @objc func showSettings(_ sender: Any?) {
+        if let settingsWindow {
+            settingsWindow.show()
+            return
+        }
+        let controller = SettingsWindowController(settings: .shared, updater: updater)
+        controller.onClose = { [weak self] in self?.settingsWindow = nil }
+        settingsWindow = controller
+        controller.show()
     }
 
     /// ⌃⌘1 — open Changes, bring it forward, or close it, as ⌃⌘2 does History.
@@ -1656,23 +1667,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         updater.checkForUpdates()
     }
 
-    /// Turn anonymous reporting on or off. See `Wortel/Telemetry/` for what it
-    /// can send, which is a list short enough to read.
-    ///
-    /// Turning it OFF sends one last event and waits briefly for it, which is
-    /// the only time this feature makes anyone wait. It is worth the moment:
-    /// the opt-out rate is the single number that says whether opt-out was the
-    /// right default, and it is unknowable from any other source. Turning it
-    /// back ON says nothing, because an event announcing that someone opted in
-    /// would be the first event sent under a preference that was off when the
-    /// decision to send it was made.
+    /// Flip anonymous reporting: the action of the switch in the sidebar's
+    /// ⓘ, which reaches here through the responder chain. The Settings row
+    /// sets the same preference through the same funnel
+    /// (`Telemetry.setReporting`). See `Wortel/Telemetry/` for what it can
+    /// send, which is a list short enough to read.
     @objc func toggleTelemetry(_ sender: Any?) {
-        if TelemetrySettings.isEnabledByUser {
-            Telemetry.captureOptOutThenStop()
-            TelemetrySettings.isEnabledByUser = false
-        } else {
-            TelemetrySettings.isEnabledByUser = true
-        }
+        Telemetry.setReporting(!TelemetrySettings.isEnabledByUser)
     }
 
     /// Grey out "Check for Updates…" while a check is already in flight (Sparkle
@@ -1686,10 +1687,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Show/Hide titles, nothing greyed out, ⌘F never falling through to the
     /// terminal. Found 2026-10-07 from a missing checkmark.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleServersInDefaultBrowser(_:)) {
-            menuItem.state = BrowserTabs.opensServersInDefaultBrowser ? .on : .off
-            return true
-        }
         if menuItem.action == #selector(toggleSortUnreadFirst(_:)) {
             menuItem.state = manager.sortUnreadFirst ? .on : .off
             return true
@@ -1729,18 +1726,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(checkForUpdates(_:)) {
             return updater.canCheckForUpdates
-        }
-        if menuItem.action == #selector(toggleAutomaticUpdates(_:)) {
-            menuItem.state = updater.updatesAutomatically ? .on : .off
-            // Switchable any time, an update waiting or not.
-            return updater.isAvailable
-        }
-        if menuItem.action == #selector(toggleTelemetry(_:)) {
-            // Only the checkmark: on a build that cannot report, the item was
-            // never added (see MainMenu), because a switch that controls
-            // nothing is worse than no switch at all.
-            menuItem.state = TelemetrySettings.isEnabled ? .on : .off
-            return true
         }
         // Each pane command reads "Hide" only when *its* pane is the one on
         // screen — with Files up, ⌘⌥G swaps rather than closes, so calling it

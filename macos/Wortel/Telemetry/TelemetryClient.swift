@@ -271,6 +271,21 @@ enum Telemetry {
         }
     }
 
+    /// Turn anonymous reporting on or off: the one funnel, for the Settings
+    /// row and the switch in the sidebar's ⓘ.
+    ///
+    /// Turning it OFF sends one last event and waits briefly for it. It is
+    /// worth the moment: the opt-out rate is the single number that says
+    /// whether opt-out was the right default, and it is unknowable from any
+    /// other source. Turning it back ON says nothing, because an event
+    /// announcing that someone opted in would be the first event sent under a
+    /// preference that was off when the decision to send it was made.
+    @MainActor static func setReporting(_ on: Bool) {
+        guard on != TelemetrySettings.isEnabledByUser else { return }
+        if !on { captureOptOutThenStop() }
+        TelemetrySettings.isEnabledByUser = on
+    }
+
     /// Turning it off sends one final event and then nothing, ever.
     ///
     /// Fire and forget: this is reached from a menu item, and the old version

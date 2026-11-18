@@ -93,8 +93,9 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   render checks are manual side-by-side vs Ghostty.app — see `bench/BENCHMARKS.md`.
 
 To change terminal behavior, fonts, theme, or keybinds, edit
-`Resources/wortel.conf` and rebuild — do **not** add a settings UI or read user
-config files.
+`Resources/wortel.conf` and rebuild — do **not** read user config files, and
+do not add a row to the Settings window for them
+(`docs/architecture/settings.md` says what a row is for).
 
 ## Editing `wortel.conf`
 

@@ -52,9 +52,10 @@ before anyone else's (`macos/docs/shortcuts.md` records which app each one is
 borrowed from).
 
 **Decided once.** Fonts, colours, keys and scrollback were chosen carefully and
-then left alone. There is no settings window and no user config. When something
-looks like it needs a preference, the work is to find the right answer. If it
-truly varies per person, it becomes a command or a checkmark in a menu.
+then left alone. There is no user config. When something looks like it needs a
+preference, the work is to find the right answer. If it truly varies per
+person, it becomes a checkmark in a menu when it is flipped while working, or
+one of a handful of rows in Settings (⌘,) when it is decided once.
 
 **Calm by default.** Nothing moves unless something happened. A dot, not a
 siren. A notification only for a session you are not looking at, and never for
@@ -87,9 +88,10 @@ enforced.
 
 - **No splits.** A session has tabs in three fixed places (the main area, a
   side column, a strip under the terminal). Never a free grid of panes.
-- **No settings UI, no user config, no themes, no plugins.** The whole
-  configuration is the read-only `macos/Resources/wortel.conf` inside the app.
-  Font size is the one thing a user changes.
+- **No user config, no themes, no plugins.** Settings (⌘,) has a handful of
+  switches and none of them is about how the terminal looks. The terminal's
+  whole configuration is the read-only `macos/Resources/wortel.conf` inside
+  the app. Font size is the one thing about the look a user changes.
 - **Nothing installed into an agent:** no hooks, no plugins, no config
   written. And no AI chat box of its own.
 - **No search in the terminal's scrollback.** It was built and removed the same
@@ -107,7 +109,9 @@ Ask these before building, and say the answers when you propose it.
 1. **What does it cost when it is off screen?** Cost tracks the window on
    screen, never the size of the repository or the number of sessions. No git
    per row, no timers, no watch on something nobody is looking at.
-2. **Does it need a setting?** Then it isn't decided yet.
+2. **Does it need a setting?** Then it probably isn't decided yet. A row in
+   Settings is only for something decided once that truly differs per person,
+   and each one has to be argued for.
 3. **Does it need anything from the agent's side?** A hook, a config line, a
    wrapper. Then no.
 4. **Does anything about the user's work leave the machine?** Then no. See the

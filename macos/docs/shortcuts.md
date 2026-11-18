@@ -159,9 +159,9 @@ into the main area otherwise.
 - **⌘1 to ⌘9 are sessions, not tabs.** Sessions are what you switch between all
   day, which is also how Codex and cmux spend those keys. So the git apps' ⌘1
   and ⌘2 for Changes and History are ⌃⌘1 and ⌃⌘2 here.
-- **No settings (⌘,).** Wortel has none; `wortel.conf` is the settings. ⌘P
-  finds any session or command, ⇧⌘P commands only, and so does the Help
-  menu's search field.
+- **⌘, is Settings**, as in every Mac app: a short window of switches. Keys
+  are not among them; `wortel.conf` decides those. ⌘P finds any session or
+  command, ⇧⌘P commands only, and so does the Help menu's search field.
 
 ## Deliberately not used
 

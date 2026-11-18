@@ -114,8 +114,12 @@ private struct RepoView: View {
                         .frame(maxHeight: .infinity)
                 }
             }
-            Divider()
-            commitBar
+            // The commit box is a row in Settings; with it off the bar is
+            // only there while it has an error to show.
+            if showsCommitBar {
+                Divider()
+                commitBar
+            }
         }
         // ⌘⌥L focus request. Handle it both when it changes (panel already open)
         // and on appear (the request revealed a previously-hidden panel, so this
@@ -366,11 +370,28 @@ private struct RepoView: View {
 
     // MARK: Commit
 
+    /// Settings ▸ Commit box in Source Control. Read live, so the box comes
+    /// and goes as the switch is flipped.
+    private var showsCommitBox: Bool { AppSettings.shared.showsCommitBox }
+
+    /// The error notice is the only place a failed fetch, pull or push says
+    /// so, and those are in the header's menu whether or not there is a
+    /// commit box. So the bar stays for an error even with the box off.
+    private var showsCommitBar: Bool {
+        showsCommitBox || !(repo.lastError ?? "").isEmpty
+    }
+
     private var commitBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let error = repo.lastError, !error.isEmpty {
                 GitNotice(message: error, dismiss: { repo.dismissError() })
             }
+            if showsCommitBox { commitComposer }
+        }
+        .padding(12)
+    }
+
+    private var commitComposer: some View {
             // Message field with the commit action as a circular button tucked
             // into the bottom-trailing corner, like a chat composer's send. The
             // whole filled box focuses the field, not just the glyphs.
@@ -406,8 +427,6 @@ private struct RepoView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(messageFocused ? Color.accentColor.opacity(0.5) : Color(nsColor: .separatorColor)))
-        }
-        .padding(12)
     }
 
     /// On-device (Apple Intelligence) commit-message drafter. Only shown when

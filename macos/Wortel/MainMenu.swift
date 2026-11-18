@@ -192,29 +192,12 @@ enum MainMenu {
             restart?.isHidden = version == nil
             restart?.title = version.map { "Restart to Update to \($0)" } ?? "Restart to Update"
         }
-        // Checking and downloading in the background; on unless you turn it
-        // off. Not on a development build, which doesn't update at all: a
-        // switch that can't be turned on is worse than none (as the usage-data
-        // item below).
-        if !Updater.isDevelopmentBuild {
-            appMenu.addItem(withTitle: "Check for Updates Automatically", action: #selector(AppDelegate.toggleAutomaticUpdates(_:)), keyEquivalent: "")
-        }
-        // The same preference as the switch in the sidebar's ⓘ popover, in the
-        // place a Mac user looks for a setting in an app that has no settings
-        // window. AppDelegate carries the checkmark.
-        //
-        // Not added at all on a build that cannot report anyway (Debug, a 0.0.0
-        // dev build, DO_NOT_TRACK set), because a switch that controls nothing
-        // is worse than no switch. Decided here rather than hidden during
-        // validation because none of those three can change while the app runs,
-        // and `isHidden` set from `validateMenuItem` does not reliably take.
-        // The ⓘ stays on those builds and says so instead: "what does this app
-        // report" is worth an answer even when the answer is "nothing here".
-        if TelemetrySettings.isSwitchable {
-            appMenu.addItem(withTitle: "Share Anonymous Usage Data",
-                            action: #selector(AppDelegate.toggleTelemetry(_:)),
-                            keyEquivalent: "")
-        }
+        // The few things that differ per person (`AppSettings`): ⌘, where
+        // every Mac app has it. Automatic updates and anonymous usage data
+        // were checkmarks here until 2026-11-18; they are rows in that window
+        // now, and the usage-data switch is also in the sidebar's ⓘ.
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Settings\u{2026}", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         // What macOS lets Wortel do. The sidebar's icon for it only shows
         // while something is off, so this is the way in when nothing is.
         appMenu.addItem(withTitle: "Permissions\u{2026}", action: #selector(AppDelegate.showPermissions(_:)), keyEquivalent: "")
@@ -477,9 +460,10 @@ enum MainMenu {
         focusPrevious.keyEquivalentModifierMask = [.command]
 
         viewMenu.addItem(.separator())
-        // A checkmark, not a setting (Wortel has no settings window): in each
-        // sidebar section, the sessions that want you are drawn first. Only
-        // how they're drawn; the order you dragged is kept (SidebarSort).
+        // A checkmark here, not a row in Settings, because it is flipped
+        // while working: in each sidebar section, the sessions that want you
+        // are drawn first. Only how they're drawn; the order you dragged is
+        // kept (SidebarSort).
         viewMenu.addItem(withTitle: "Sort Unread First", action: #selector(AppDelegate.toggleSortUnreadFirst(_:)), keyEquivalent: "")
 
         viewMenu.addItem(.separator())
@@ -536,9 +520,6 @@ enum MainMenu {
         // browser in front, so it goes on to the terminal.
         let inspector = viewMenu.addItem(withTitle: "Show Web Inspector", action: #selector(AppDelegate.showWebInspector(_:)), keyEquivalent: "i")
         inspector.keyEquivalentModifierMask = [.command, .option]
-        // A checkmark, not a setting: where a server from the running-jobs
-        // popover opens (`BrowserTabs.opensServersInDefaultBrowser`).
-        viewMenu.addItem(withTitle: "Open Servers in Default Browser", action: #selector(AppDelegate.toggleServersInDefaultBrowser(_:)), keyEquivalent: "")
 
         viewMenu.addItem(.separator())
         // What a preview window is showing. A submenu rather than three more

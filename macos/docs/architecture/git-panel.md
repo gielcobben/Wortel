@@ -5,7 +5,10 @@ Paths are relative to `macos/`.
 
 **Git panel** (`Wortel/Git/`) — the trailing inspector: a Changes pane (status,
 diff, commit box) and a read-only History pane (commit list, graph gutter,
-diff), both driven by `GitRepoModel` off the `git` CLI (`GitService`). Its
+diff), both driven by `GitRepoModel` off the `git` CLI (`GitService`). The
+commit box can be turned off in Settings (`AppSettings.showsCommitBox`); the
+bar under the diff then appears only to show a git error, since that notice is
+the one place a failed fetch, pull or push is reported. Its
 design is dominated by one rule: **cost must track the window on screen, not the
 size of the repo**, because the terminal beside it has to stay smooth on a
 monorepo. Four things follow from that, each of which looks like a pointless

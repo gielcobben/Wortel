@@ -179,11 +179,11 @@ struct RunningJobsList: View {
     }
 
     /// Show the address as a tab, or in your browser if that's where servers
-    /// go (`BrowserTabs.opensServersInDefaultBrowser`), and get out of the
+    /// go (`AppSettings.shared.opensServersInDefaultBrowser`), and get out of the
     /// way: you clicked through to it, so the popover has done its job.
     private func open(_ job: RunningJob) {
         guard let url = job.localURL else { return }
-        if BrowserTabs.opensServersInDefaultBrowser {
+        if AppSettings.shared.opensServersInDefaultBrowser {
             NSWorkspace.shared.open(url)
         } else {
             openInTab(url)
@@ -259,7 +259,7 @@ private struct JobRow: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(spokenDescription)
             .accessibilityAddTraits(isOpenable ? .isButton : [])
-            .accessibilityHint(isOpenable ? (BrowserTabs.opensServersInDefaultBrowser
+            .accessibilityHint(isOpenable ? (AppSettings.shared.opensServersInDefaultBrowser
                                              ? "Opens in your browser" : "Opens in a tab") : "")
             .accessibilityAction { if isOpenable { open() } }
 
@@ -365,9 +365,9 @@ private struct JobRow: View {
             menu.addItem(ClosureMenuItem(title: "Open in Tab", handler: openInTab))
             menu.addItem(ClosureMenuItem(title: "Open in Browser", handler: openInBrowser))
             let always = ClosureMenuItem(title: "Always Open in Browser") {
-                BrowserTabs.opensServersInDefaultBrowser.toggle()
+                AppSettings.shared.opensServersInDefaultBrowser.toggle()
             }
-            always.state = BrowserTabs.opensServersInDefaultBrowser ? .on : .off
+            always.state = AppSettings.shared.opensServersInDefaultBrowser ? .on : .off
             menu.addItem(always)
         }
         if let address = job.localAddress {
@@ -410,7 +410,7 @@ private struct JobRow: View {
         if let cwd = job.workingDirectory { lines.append(cwd) }
         if let address = job.localAddress {
             lines.append("Click to open \(address) "
-                         + (BrowserTabs.opensServersInDefaultBrowser ? "in your browser" : "in a tab"))
+                         + (AppSettings.shared.opensServersInDefaultBrowser ? "in your browser" : "in a tab"))
         }
         return lines.joined(separator: "\n")
     }

@@ -36,11 +36,11 @@ keybind, check both files.
 app from any app on the machine, and it is the one binding the menu does *not*
 own. It is a Carbon `RegisterEventHotKey` rather than an
 `NSEvent` global monitor for two reasons: a monitor needs the Accessibility
-permission, which a zero-config terminal should never have to ask for, and it
+permission, which a terminal with nothing to set up should never have to ask for, and it
 only observes the chord instead of claiming it, so the keypress would also land
 in whatever app you were in. Registration is hardcoded and unconditional —
-there is no settings UI to put a switch in, and the chord is chosen to be one
-nothing else wants.
+it is not something that differs per person, so it has no row in Settings, and
+the chord is chosen to be one nothing else wants.
 
 The App menu carries a matching "Show/Hide Wortel" item, which is not a
 conflicting second binding: a registered hot key is consumed before AppKit scans

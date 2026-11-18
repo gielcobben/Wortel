@@ -251,10 +251,11 @@ feature is held to.
 - **No splits.** A session has tabs in three rows (the main area, a side
   column, a strip under the terminal), not a grid of panes; the sidebar of
   named sessions is where you switch work.
-- **No settings UI, and no user config.** Wortel is zero-config: the entire
-  configuration is the bundled read-only `macos/Resources/wortel.conf`, and your
-  real `~/.config/ghostty` is never read. To change fonts, theme or keybinds,
-  edit that file and rebuild.
+- **Almost nothing to configure, and no user config.** Settings (⌘,) holds
+  the few switches that differ per person. Everything about the terminal
+  itself is the bundled read-only `macos/Resources/wortel.conf`, and your real
+  `~/.config/ghostty` is never read. To change fonts, theme or keybinds, edit
+  that file and rebuild.
 - **No inspector, and no search UI in the terminal.**
 - **No per-agent integrations.** The `wortel` command is the whole interface, so
   anything that can run a command can drive the app.
@@ -362,8 +363,9 @@ the update through Wortel ▸ Check for Updates…, like any other user.
 
 ## Privacy
 
-Wortel reports anonymous feature usage, opt-out, off in one menu item
-(**Wortel ▸ Share Anonymous Usage Data**) and disclosed on first launch. It also
+Wortel reports anonymous feature usage, opt-out, off in one switch (the **ⓘ**
+at the bottom of the sidebar, or **Wortel ▸ Settings…**) and disclosed on first
+launch. It also
 honours `DO_NOT_TRACK`, never reports from a Debug build, and never reports from
 a locally built Release.
 

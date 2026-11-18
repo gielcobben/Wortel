@@ -18,9 +18,9 @@ sidebar of named terminal sessions, session persistence, input plumbing, and
 menu/keybind wiring. The design goal is "indistinguishable from Ghostty.app,
 faster to launch, instant session switch" (see `bench/BENCHMARKS.md`).
 
-Wortel is **zero-config by design**: its entire configuration is the bundled
-read-only `Resources/wortel.conf`. The user's real `~/.config/ghostty` is never
-loaded.
+The terminal's entire configuration is the bundled read-only
+`Resources/wortel.conf`. The user's real `~/.config/ghostty` is never loaded.
+What a person can change is a handful of switches in the Settings window (⌘,).
 
 ## Commands
 
@@ -51,6 +51,7 @@ xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # about 85s
 | `Wortel/Sessions/` | `docs/architecture/sessions.md`, `docs/session-naming.md` |
 | Busy state, dots, notifications | `docs/agent-signals.md` |
 | `Wortel/UI/`, the sidebar | `docs/architecture/window-and-sidebar.md`, and `../DESIGN.md` for anything that is drawn |
+| `Wortel/Settings/`, a new setting | `docs/architecture/settings.md` |
 | Tabs, the side column, the bottom strip, `Wortel/Browser/` | `docs/architecture/workspace-tabs.md` |
 | `Wortel/Git/` | `docs/architecture/git-panel.md` |
 | Anything about worktrees | `docs/worktrees.md` (the model), `docs/architecture/worktrees.md` (the code) |
@@ -118,7 +119,9 @@ Skills are in `../.agents/skills/` (Claude Code reads them through
   than one you have to audit. Adding a `String` parameter to any event is the
   change that breaks the promise on wortel.sh/privacy; if a question needs a
   value that is not a small closed set, the answer is a bucket or no event.
-- Deliberately **feature-minimal**: no settings UI, no user-config loading. The
+- Deliberately **feature-minimal**: a short Settings window (see
+  `docs/architecture/settings.md` before adding a row), no user-config
+  loading. The
   *terminal* has no tabs and no splits of its own: sessions are Wortel's tabs,
   and libghostty's tab/split actions still return `false`. The one split is the
   side column, and its tabs are Wortel's (see **Tabs and the workspace**), not

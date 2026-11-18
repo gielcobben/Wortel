@@ -120,7 +120,9 @@ of every shell Wortel starts. It exists inside a session and nowhere else.
 
 ## Configuration and releases
 
-**Zero-config.** There is nothing for a user to configure, on purpose.
+**Settings.** The one window (⌘,) with the few switches that differ per
+person. Everything else is decided once: there is no user config file, and
+`wortel.conf` is read-only inside the app. Older notes call this zero-config.
 
 **`wortel.conf`.** The bundled, read-only Ghostty config that is the whole
 configuration. No inline comments: a `#` after a value becomes part of it.

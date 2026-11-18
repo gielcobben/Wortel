@@ -10,7 +10,7 @@ import os
 /// of this directory: the events are a closed list you can read in one screen
 /// (`TelemetryEvent`), there is nothing in them that describes you or your work,
 /// the app says so on first launch without blocking the terminal, and turning it
-/// off is one menu item with no settings window to find.
+/// off is one switch, in the notice itself and again in Settings.
 ///
 /// **Four ways it stays quiet**, and the last two matter most to whoever is
 /// reading this in the repository:

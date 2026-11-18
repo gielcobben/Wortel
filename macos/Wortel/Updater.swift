@@ -35,6 +35,13 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     static let shared = Updater()
 
     private(set) var canCheckForUpdates = false
+    /// Settings ▸ Update automatically: checking and downloading together,
+    /// because one without the other is a window again. On only while both
+    /// are (Sparkle's own dialog can turn downloading off by itself). A
+    /// mirror of Sparkle's two preferences, kept by observing them, so the
+    /// Settings row follows a change made anywhere. False on a development
+    /// build, which has no updater.
+    private(set) var updatesAutomatically = false
     /// A downloaded update waiting for a restart, by its version.
     private(set) var readyVersion: String? {
         didSet { if readyVersion != oldValue { onReadyVersionChange?(readyVersion) } }
@@ -46,6 +53,7 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     /// nil on a development build (see `isDevelopmentBuild`).
     @ObservationIgnored private var controller: SPUStandardUpdaterController?
     @ObservationIgnored private var cancellable: AnyCancellable?
+    @ObservationIgnored private var automaticCancellables: Set<AnyCancellable> = []
     @ObservationIgnored private var installNow: (() -> Void)?
     /// The one nudge: when the waiting began, by the wall clock, and a timer
     /// that looks every half hour. Not a timer for the whole day: a run-loop
@@ -83,6 +91,14 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         cancellable = controller.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.canCheckForUpdates = $0 }
+        // Both are documented as KVO compliant (SPUUpdater.h).
+        let updater = controller.updater
+        updater.publisher(for: \.automaticallyChecksForUpdates)
+            .combineLatest(updater.publisher(for: \.automaticallyDownloadsUpdates))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] checks, downloads in self?.updatesAutomatically = checks && downloads }
+            .store(in: &automaticCancellables)
+        updatesAutomatically = updater.automaticallyChecksForUpdates && updater.automaticallyDownloadsUpdates
         noteVersionChange()
     }
 
@@ -104,19 +120,13 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     /// Whether this build updates itself at all (a development build doesn't).
     var isAvailable: Bool { controller != nil }
 
-    /// The Wortel menu's "Check for Updates Automatically": checking and
-    /// downloading together, because one without the other is a window again.
-    var updatesAutomatically: Bool {
-        // On only while both are: a check without the download is Sparkle's
-        // window again (its own dialog can turn downloading off on its own).
-        get {
-            guard let updater = controller?.updater else { return false }
-            return updater.automaticallyChecksForUpdates && updater.automaticallyDownloadsUpdates
-        }
-        set {
-            controller?.updater.automaticallyChecksForUpdates = newValue
-            controller?.updater.automaticallyDownloadsUpdates = newValue
-        }
+    /// Turn automatic updates on or off. Sparkle keeps the preference itself
+    /// (in the app's defaults), so there is no second copy of it here.
+    func setUpdatesAutomatically(_ on: Bool) {
+        guard let updater = controller?.updater else { return }
+        updater.automaticallyChecksForUpdates = on
+        updater.automaticallyDownloadsUpdates = on
+        updatesAutomatically = on
     }
 
     // MARK: - Sparkle
@@ -181,7 +191,7 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: Self.migratedKey) else { return }
         defaults.set(true, forKey: Self.migratedKey)
-        updatesAutomatically = true
+        setUpdatesAutomatically(true)
     }
 
     /// The first launch of a new version checks again soon.

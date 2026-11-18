@@ -86,8 +86,12 @@ how Wortel writes is in `docs/voice.md`.
 name" a question the compiler answers. Adding one is the change that breaks the
 promise on wortel.sh/privacy.
 
-**Zero-config.** No settings UI, no user config, no new keys in `wortel.conf`.
-When something seems to need a preference, find the right answer instead.
+**Next to nothing to configure.** No user config, no new keys in
+`wortel.conf`, and one Settings window (⌘,) that is kept short. When something
+seems to need a preference, find the right answer first. A row in Settings is
+only for something decided once that truly differs per person, and each one is
+argued for in `docs/decisions.md`. What is flipped while working is a checkmark
+in the View menu.
 
 **Cost tracks the window on screen**, not the size of the repository or the
 number of sessions.

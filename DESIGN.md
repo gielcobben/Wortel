@@ -87,10 +87,11 @@ canvas too, or the site will show an app that no longer exists.
 
 ## The idea
 
-Wortel has no settings, and it is not a small app. It holds sessions, tabs in
-three places, a git client, a file tree, previews, a browser, a process list
-and a command line of its own. The design problem is fitting all of that into
-something that still reads as a terminal, without one preference to lean on.
+Wortel has a handful of settings, and it is not a small app. It holds
+sessions, tabs in three places, a git client, a file tree, previews, a browser,
+a process list and a command line of its own. The design problem is fitting all
+of that into something that still reads as a terminal, with next to no
+preferences to lean on.
 These are the ideas that do it.
 
 **One window, a fixed frame.** There are four places and only four: sessions on
@@ -125,8 +126,9 @@ exists only while something waits. A status sits beside the thing it describes.
 **Power is in the keys, not in a window of switches.** Everything is a menu
 command with a shortcut, ⌘P finds any of them by name (it reads the menus, so
 it cannot drift), and the `wortel` command reaches the same things from a
-script. Where another app would add a setting, Wortel picks the answer, and
-where the answer truly differs per person it is a command or a checkmark.
+script. Where another app would add a setting, Wortel picks the answer. Where
+the answer truly differs per person, it is a checkmark in a menu if it is
+flipped while working, and a row in Settings (⌘,) if it is decided once.
 
 **Borrowed on purpose.** Each interaction comes from an app the user already
 knows, so there is nothing to learn. Selection and tag colours from Finder.
@@ -327,6 +329,10 @@ outline around the one that now has the keyboard.
   is for a decision that stops the window: a new worktree, cleaning up.
 - **A menu for commands.** Every command is in the menu bar; that is what ⌘P
   lists. The Session menu comes before Edit. There is no File menu.
+- **Settings is the system's own form.** A standard titled window with the
+  system's grouped form and switches, and none of Wortel's chrome: it is the
+  one place that should look like every other Mac app's. Sentence case for
+  its rows. A row that can do nothing on this build is absent.
 - **The same menu everywhere** for the same thing. A session's menu is one
   menu, in one order, wherever it opens.
 - **A tooltip says what the eye cannot see, and nothing cleverer:** a name
@@ -448,5 +454,6 @@ are in the comments in `SidebarOutlineView.swift` and `Chrome.swift`.
 - Add a border where a surface change already says it.
 - Animate a session switch, or resize a terminal mid-animation.
 - Grey out chrome that has nothing to say. Leave it out.
-- Add a setting. Decide.
+- Add a setting where an answer would do. Decide first; a row in Settings is
+  for what truly differs per person.
 - Scale, crop or redraw the app anywhere it is shown.

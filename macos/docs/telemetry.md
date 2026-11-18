@@ -56,15 +56,15 @@ launch without blocking the terminal, and turning it off is one switch.
 The disclosure is an `NSPopover` off the ⓘ beside the + in the sidebar's bottom
 bar — the same popover on first launch and every time after, so the notice comes
 from a control you can point at again rather than appearing out of the middle of
-the window. It holds the switch itself; the App menu item is the same preference
-through the same funnel (`AppDelegate.toggleTelemetry`). It never takes the
+the window. It holds the switch itself; the row in Settings is the same preference
+through the same funnel (`Telemetry.setReporting`). It never takes the
 keyboard: key goes straight back to the terminal, and typing or clicking away
 dismisses it.
 
 It reports nothing at all in four cases:
 
-- the user turned it off (the sidebar's ⓘ, or App menu → "Share Anonymous Usage
-  Data")
+- the user turned it off (the sidebar's ⓘ, or Settings ▸ Share anonymous usage
+  data)
 - `DO_NOT_TRACK` is set in the environment
 - `#if DEBUG`
 - the marketing version is `0.0.0`, `project.yml`'s dev-build placeholder

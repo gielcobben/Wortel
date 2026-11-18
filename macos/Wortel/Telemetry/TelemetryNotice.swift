@@ -15,8 +15,8 @@ import AppKit
 /// **The switch replaced the two buttons.** "No thanks" / "Fine" is a consent
 /// dialog, and consent dialogs are what people click through; an `NSSwitch`
 /// showing the state it is actually in says the same thing without pretending a
-/// decision is being taken here. The App menu item and this switch are the same
-/// preference through the same funnel (`AppDelegate.toggleTelemetry`).
+/// decision is being taken here. The row in Settings and this switch are the same
+/// preference through the same funnel (`Telemetry.setReporting`).
 ///
 /// **It never takes the keyboard**, on first run or on a click, which is the one
 /// rule carried over from the old panel: Wortel's pitch is that it is ready the

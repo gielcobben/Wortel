@@ -14,8 +14,8 @@ and why it does it that way. Never selling.
   two sentences.
 - **Concrete over general.** A number, a key, a filename. "870 ms against
   20 ms", not "much faster". If there is no measurement, don't imply one.
-- **Say what it does not do, and mean it.** "There is no settings window, and
-  there is no dotfile. This is the feature."
+- **Say what it does not do, and mean it.** "There are no themes, and there is
+  no dotfile. This is the feature."
 - **Name the cost.** When a choice gives something up, say what.
 - **Honest about not knowing.** "The cause was never found." "Unknown" is a
   real answer, never rounded down to "no".
@@ -134,5 +134,5 @@ Attention: no dot for a turn that never happened
 | We've added powerful worktree support | Each agent gets its own branch and its own files |
 | Seamlessly resume your work | An agent that was thinking when you quit is still thinking when you come back |
 | Oops! Something went wrong | The worktree has uncommitted changes, so it was kept |
-| Fully customisable | Nothing to configure, on purpose |
+| Fully customisable | Almost nothing to configure, on purpose |
 | Fixed a bug with notifications | A notification no longer arrives for an answer you already read |

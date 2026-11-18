@@ -50,10 +50,9 @@ plain terminal.
   shell, so their PATH, aliases and functions apply. A control character
   inside it, a second line, or more than `MAX_CANON` bytes is refused with a
   reason under the field and never saved.
-- **Saved when editing ends** (Return, Tab, picking from the list, closing
-  the window), not per keystroke, so ⌘N pressed mid-word starts what was
-  last saved (`CommandComboBox`, an `NSComboBox`: a bordered field with its
-  list inside it, the Mac's own control for "type anything, or pick one").
+- **Saved when editing ends** (Return, leaving the field, picking from the
+  menu, closing the window), not per keystroke, so ⌘N pressed mid-word
+  starts what was last saved (`CommandRow` in `SettingsView.swift`).
 - **One place decides who gets it**: `SessionStart`, which every way of
   making a session must name, with no default. The app's own ways in pass
   `.preferred`; `wortel new` passes its own line or `.plain`; the session
@@ -65,8 +64,9 @@ plain terminal.
   Session menu (shown and hidden from `AppSettings.onNewSessionCommandChange`,
   as Restart to Update is by the updater), the sidebar's + menu and a
   folder's menu.
-- **The field's list** holds the known agents this Mac has
-  (`AgentDiscovery`):
+- **The menu at the field's end** holds the known agents this Mac has, and
+  Terminal, which empties the field. It is absent until there is an agent to
+  offer (`AgentDiscovery`):
   the login shell is run once when the window opens, off the main thread,
   with `command -v` between two sentinel lines so nothing its startup files
   print can get in, and three seconds to answer. If it doesn't, the usual
@@ -80,29 +80,28 @@ plain terminal.
   so a view follows a change at once, and takes its `UserDefaults` in `init`
   so `AppSettingsTests` can run it on a throwaway suite. Sparkle's and
   telemetry's preferences each have one owner already and are not copied here.
-- **The window is the Mac's own preferences window**
-  (`SettingsWindowController`): an `NSTabViewController` in its toolbar
-  style, so the tabs are the system's icon tabs, and it grows or shrinks to
-  the height of the tab in front. The title row says "Settings" for every
-  tab, not the tab's own name: that is already under its icon. The row
-  itself has to stay: without it the selected tab's highlight ran into the
-  top of the window (unified style), or an empty strip was left above the
-  tabs (preferences style, title hidden). Two tabs:
-  **General** (what a new session starts, the commit box, where servers
-  open) and **Updates** (automatic updates, usage data). Made when asked for
-  and released when closed, so nothing of it exists off screen.
-- **The panes** (`GeneralSettingsPane`, `UpdatesSettingsPane` in
-  `SettingsView.swift`) are the system's grouped `Form` with its own
-  switches. Nothing in them is Wortel's chrome (`DESIGN.md`, "Which surface
-  for what"). Each row is a name and one grey line saying what it does, and
-  a click on either flips the switch (`SwitchRow`: the gesture is on the
-  label only, since the switch takes its own clicks). A click on the
-  command's name puts the cursor in its field.
-- **Tried first, the same day (2026-11-18):** one pane with no toolbar, which
-  is what the guidelines say for five rows and what Notes and Reminders do,
-  and which read as a dialog rather than as settings; a plain right-aligned
-  value for the command, which read as a label and not as somewhere to type;
-  and Wortel's own titlebar and page, turned down before it was built.
+- **The window is drawn as Wortel's own windows are**
+  (`SettingsWindowController`): the titlebar row on the window's glass, an
+  opaque page under its hairline (`BackdropController`,
+  `ChromePaneController`, as the main and preview windows). The row holds
+  the switch between the two tabs, **General** (what a new session starts,
+  the commit box, where servers open) and **Updates** (automatic updates,
+  usage data): the app's own `PillSwitch`, which the preview window uses for
+  Diff · Source · Rendered. The window keeps its width and takes the height
+  of the tab in front, on the app's motion curve. Made when asked for and
+  released when closed, so nothing of it exists off screen.
+- **This look is an experiment (2026-11-18)**, to be compared with the
+  system's preferences window it replaced: an `NSTabViewController` with
+  icon tabs and the system's grouped form, which is commit `37b52e6`.
+  Whichever stays, this entry should say only that one. Tried before both:
+  one pane with no toolbar, which is what the guidelines say for five rows
+  and read as a dialog rather than as settings.
+- **The page** (`SettingsPage` in `SettingsView.swift`) is the app's type and
+  numbers: 13pt names, 12pt grey lines, hairlines between groups, small
+  switches, and a 28pt field with 8pt corners. Each row is a name and one
+  grey line saying what it does, and a click on either flips the switch
+  (`SwitchRow`: the gesture is on the label only, since the switch takes its
+  own clicks). A click on the command's name puts the cursor in its field.
 - **On a development build the Updates tab stays**, with one line saying
   there is nothing to set, since its two rows are absent there: a window
   whose tabs come and go with the build is a different window to test.

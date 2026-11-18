@@ -255,8 +255,9 @@ final class SidebarBar: ChromeBarView {
 /// right make room by `leadingClearance`, so the title is pushed along with
 /// them rather than jumping.
 ///
-/// Placed by MainSplitViewController on every resize of the split, which a
-/// collapse animation makes every frame, so it moves in step with the sidebar.
+/// Placed by MainSplitViewController on every layout pass and every resize of
+/// the split, which a collapse animation makes every frame, so it moves in
+/// step with the sidebar.
 @MainActor
 final class SidebarControls: NSView {
     let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar (⌘B)")
@@ -265,8 +266,6 @@ final class SidebarControls: NSView {
 
     /// Where the arrows start when the sidebar is shut: past the toggle.
     private static let restingX = Chrome.trafficLightInset + Chrome.controlSize + 8
-    /// Their width: two buttons and the stack's spacing.
-    private static let historyWidth = Chrome.controlSize * 2 + 4
 
     init() {
         super.init(frame: .zero)
@@ -289,14 +288,16 @@ final class SidebarControls: NSView {
     /// coordinates, for the rows to clear.
     @discardableResult
     func place(sidebarEdge edge: CGFloat, collapsed: Bool) -> CGFloat {
-        let x = max(Self.restingX, edge - 8 - Self.historyWidth)
+        // Measured, not restated: whatever HistoryButtons holds and spaces.
+        let width = history.fittingSize.width
+        let x = max(Self.restingX, edge - 8 - width)
         if abs(historyLeading.constant - x) > 0.01 { historyLeading.constant = x }
         let label = collapsed ? "Show Sidebar (⌘B)" : "Hide Sidebar (⌘B)"
         if toggle.toolTip != label {
             toggle.toolTip = label
             toggle.setAccessibilityLabel(label)
         }
-        return x + Self.historyWidth
+        return x + width
     }
 
     /// Only the buttons take clicks: the rest is the rows' under it, which

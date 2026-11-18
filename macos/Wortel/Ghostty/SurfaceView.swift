@@ -271,7 +271,11 @@ final class SurfaceView: NSView {
     deinit {
         NotificationCenter.default.removeObserver(self)
         trackingAreas.forEach { removeTrackingArea($0) }
-        if let surface { ghostty_surface_free(surface) }
+        if let surface {
+            ghostty_surface_free(surface)
+            // The view's going takes the layer with it: held as `retireLayer` does.
+            if let layer { Self.holdRetiredLayer(layer) }
+        }
     }
 
     /// True when the surface still has a process running that ghostty thinks
@@ -321,6 +325,10 @@ final class SurfaceView: NSView {
         ptyHost = nil
         guard let surface else { return }
         self.surface = nil
+        // Off the view now, held past the free: see `retireLayer`. Taken here
+        // rather than at the free, so a restart in between can't replace it
+        // first and drop it unheld.
+        let oldLayer = detachLayer()
         // The pty's queue writes into this surface — the replay right after
         // it was created, then every read — so it is freed only once that
         // queue has nothing left to write. See `PtyHost.enqueue`.
@@ -330,15 +338,13 @@ final class SurfaceView: NSView {
         // that pointer until the surface is gone.
         guard let pty else {
             ghostty_surface_free(surface)
-            return retireLayer()
+            if let oldLayer { Self.holdRetiredLayer(oldLayer) }
+            return
         }
         pty.enqueue {
             DispatchQueue.main.async {
-                withExtendedLifetime((self, pty)) {
-                    ghostty_surface_free(surface)
-                    // Only if nothing has replaced the surface since.
-                    if self.surface == nil { self.retireLayer() }
-                }
+                withExtendedLifetime((self, pty)) { ghostty_surface_free(surface) }
+                if let oldLayer { Self.holdRetiredLayer(oldLayer) }
             }
         }
     }
@@ -360,11 +366,23 @@ final class SurfaceView: NSView {
     /// hands its IOSurface to the layer in a block on the main queue
     /// (`Frame.bufferCompleted`), which holds the layer unretained.
     private func retireLayer() {
-        guard let old = layer else { return }
+        if let old = detachLayer() { Self.holdRetiredLayer(old) }
+    }
+
+    /// Put a plain layer on the view in place of libghostty's, and hand back
+    /// libghostty's for the caller to hold until its surface is freed.
+    private func detachLayer() -> CALayer? {
+        guard let old = layer else { return nil }
         let blank = CALayer()
         blank.contentsScale = old.contentsScale
         layer = blank
-        Self.holdRetiredLayer(old)
+        return old
+    }
+
+    /// A new surface has just put its own layer on the view: pinned, as the
+    /// last one was, if a size is still waiting for it (`setFrameSize`).
+    private func layerReplaced() {
+        if resizePending { layer?.contentsGravity = .topLeft }
     }
 
     private static func holdRetiredLayer(_ layer: CALayer) {
@@ -401,9 +419,10 @@ final class SurfaceView: NSView {
         TerminalModeRecorder.shared.forget(session: sessionID)
         if let old = surface {
             surface = nil
-            // The new surface puts its own layer on this view; the old one is
-            // held past the old surface's free, as `retireLayer` explains.
-            let oldLayer = layer
+            // Off the view at once and held past the old surface's free, as
+            // `retireLayer` explains. The new surface puts its own on; if
+            // there is none, the view is left with a plain one.
+            let oldLayer = detachLayer()
             // Freed only once the old pty's queue has nothing left to write
             // into it, as in `close`.
             if let pty {
@@ -424,6 +443,7 @@ final class SurfaceView: NSView {
                                      sessionID: sessionID, initialInput: initialInput,
                                      environment: environment)
         guard let surface else { return }
+        layerReplaced()
         // What `viewDidMoveToWindow` and the host told the old surface, told
         // again: the screen, the scale and last real size, the appearance,
         // whether it is shown, and whether it has the keyboard.
@@ -628,6 +648,7 @@ final class SurfaceView: NSView {
         self.hibernation = nil
         isRestoring = true
         surface = new
+        layerReplaced()
         if let window { ghostty_surface_set_display_id(new, window.screen?.displayID ?? 0) }
         viewDidChangeBackingProperties()
         viewDidChangeEffectiveAppearance()

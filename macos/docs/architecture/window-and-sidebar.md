@@ -9,7 +9,8 @@ Wortel's own (`TitleBars.swift`): the window keeps an *empty* toolbar only for
 its height and the centred traffic lights, the titlebar is transparent, and each
 pane draws its row of a flat grey band (the ChatGPT app's look). The sidebar
 toggle and Back/Forward are the exception: one set laid over all the rows
-(`SidebarControls`, in `BackdropController`), placed on every split resize so
+(`SidebarControls`, in `BackdropController`), placed on every layout pass and
+split resize (the first real layout at launch sends no resize) so
 the arrows ride the sidebar's edge as it opens and closes and the rows to the
 right clear them (`leadingClearance`). The reason for the own titlebar is
 that on macOS 26+ every toolbar item, custom views included, sits on a Liquid

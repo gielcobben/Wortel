@@ -429,26 +429,41 @@ final class MainSplitViewController: NSSplitViewController {
     /// over whichever pane is leftmost once the sidebar is collapsed (the
     /// terminal's row, or the column's when the column is on the leading side).
     ///
-    /// Run on every resize of the split, which an animated collapse makes
-    /// every frame, so all of it moves with the sidebar instead of jumping at
-    /// one end. The edge is read off the pane after the sidebar rather than the
-    /// sidebar's own frame, which a collapsed split item may keep at its old
-    /// width while hidden.
+    /// Run on every layout pass and every resize of the split, which an
+    /// animated collapse makes every frame, so all of it moves with the
+    /// sidebar instead of jumping at one end. The layout pass is the one that
+    /// matters at launch: the split's first real layout sends no resize.
+    ///
+    /// The edge is read off the first pane after the sidebar that is on
+    /// screen rather than the sidebar's own frame, which a collapsed split
+    /// item may keep at its old width while hidden. "On screen" by its frame,
+    /// not `isCollapsed`: that flips as a collapse *starts*, and a column
+    /// sliding shut beside a shut sidebar would be skipped for the whole
+    /// animation (the arrows jumping to the terminal's edge, the column's
+    /// tabs left under the traffic lights).
     private func updateLeadingInsets() {
         guard let sidebarItem else { return }
         let controls = titleBars.sidebarControls
+        // Not before the controls and the panes share a window (viewDidLoad
+        // runs before BackdropController adds the controls): converting
+        // between unrelated views gives nothing meaningful.
+        guard let window = controls.window, window === splitView.window else { return }
         // In the controls' coordinates, through the window: what a pane's
         // frame is relative to is the split view's business.
         func minX(_ item: NSSplitViewItem) -> CGFloat {
             let view = item.viewController.view
             return controls.convert(view.bounds, from: view).minX
         }
-        let panes = splitViewItems.dropFirst().filter { !$0.isCollapsed }
+        func onScreen(_ item: NSSplitViewItem) -> Bool {
+            let view = item.viewController.view
+            return !view.isHidden && view.frame.width > 0.5
+        }
+        let panes = splitViewItems.dropFirst().filter(onScreen)
         let edge = panes.first.map { max(0, minX($0) - splitView.dividerThickness) }
             ?? controls.bounds.width
         let clearsTo = controls.place(sidebarEdge: edge, collapsed: sidebarItem.isCollapsed) + 8
         func clearance(_ item: NSSplitViewItem?) -> CGFloat {
-            guard let item, !item.isCollapsed else { return 0 }
+            guard let item, onScreen(item) else { return 0 }
             return max(0, clearsTo - minX(item))
         }
         titleBars.mainBar.leadingClearance = clearance(contentItem)

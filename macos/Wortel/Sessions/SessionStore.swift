@@ -109,13 +109,17 @@ struct PersistedSession: Codable {
     /// running agent held open at quit. Exact, where `cwd` alone can only guess —
     /// it's what lets a repo with two agent sessions resume each into the right
     /// conversation. nil when it couldn't be observed; the guess still applies.
+    let runningConversationID: String?
     /// Set when the agent named by `runningAgent` was asleep at the save
     /// (`AgentSleep`): "finished" or "waiting", for which clock it was on.
     /// The next launch then leaves it asleep, and resumes it when the session
     /// is selected instead of at once. A build from before this field reads
     /// `runningAgent` alone and resumes it at launch, which loses nothing.
     let agentAsleep: String?
-    let runningConversationID: String?
+    /// When keys last went into the session, for deep sleep's "typed and
+    /// not sent": an agent with a prompt half written gets the long clock,
+    /// and a relaunch must not forget that there may be one.
+    let lastTypedAt: Date?
     /// The last Claude conversation this session was seen writing to, kept
     /// **whether or not** that agent is still running.
     ///
@@ -143,7 +147,7 @@ struct PersistedSession: Codable {
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
         case runningAgent, runningModel, runningArgv, runningConversationID
-        case lastConversationID, portBase, remindAt, agentAsleep
+        case lastConversationID, portBase, remindAt, agentAsleep, lastTypedAt
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
     /// so the synthesised encoder never writes it again.
@@ -165,7 +169,8 @@ struct PersistedSession: Codable {
          tabHabits: [String: String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil, lastConversationID: String? = nil,
-         portBase: Int? = nil, remindAt: Date? = nil, agentAsleep: String? = nil) {
+         portBase: Int? = nil, remindAt: Date? = nil, agentAsleep: String? = nil,
+         lastTypedAt: Date? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
         self.originCwd = originCwd
         self.selected = selected; self.nameSource = nameSource
@@ -193,6 +198,7 @@ struct PersistedSession: Codable {
         self.portBase = portBase
         self.remindAt = remindAt
         self.agentAsleep = agentAsleep
+        self.lastTypedAt = lastTypedAt
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -262,6 +268,7 @@ struct PersistedSession: Codable {
             ?? runningConversationID
         portBase = try c.decodeIfPresent(Int.self, forKey: .portBase)
         agentAsleep = try c.decodeIfPresent(String.self, forKey: .agentAsleep)
+        lastTypedAt = try c.decodeIfPresent(Date.self, forKey: .lastTypedAt)
         remindAt = try c.decodeIfPresent(Date.self, forKey: .remindAt)
     }
 }

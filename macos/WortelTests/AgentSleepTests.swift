@@ -110,12 +110,6 @@ final class AgentSleepTests: XCTestCase {
         XCTAssertEqual(AgentSleep.decide(inputs), .never(.launchNotSimple))
     }
 
-    func testASessionWhosePtyTheAppDoesNotHoldIsLeftAlone() {
-        var inputs = finished(hour * 10)
-        inputs.hasTerminal = false
-        XCTAssertEqual(AgentSleep.decide(inputs), .never(.noTerminal))
-    }
-
     // MARK: - Memory pressure
 
     func testPressureShortensTheFinishedClockToItsFloor() {

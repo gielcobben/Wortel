@@ -865,6 +865,7 @@ final class SessionManager {
         session.colour = entry.colour.flatMap(SessionColour.init(rawValue:))
         // One already past is due now: `syncReminders` fires it once launch is done.
         session.remindAt = entry.remindAt
+        if let typed = entry.lastTypedAt { lastTypedAt[session.id] = typed }
         // An earlier build named these "<folder>/<branch>" with the branch
         // whole, which read back as a folder of their own. The rename that
         // gave them their real names kept that folder half, so stopping it
@@ -984,7 +985,7 @@ final class SessionManager {
                let cwd = agent.cwd, AgentConversation.exists(agent: agent.agent, id: conversationID, cwd: cwd) {
                 session.sleep = .asleep(SleepingAgent(
                     marker: agent, conversationID: conversationID, input: input,
-                    waiting: entry.agentAsleep == "waiting", since: Date()))
+                    waiting: entry.agentAsleep == "waiting"))
             } else {
                 session.owedResume = OwedResume(agent: agent, conversationID: conversationID, input: input)
             }
@@ -2562,6 +2563,7 @@ final class SessionManager {
         lastTypedAt.removeValue(forKey: session.id)
         sleptAt.removeValue(forKey: session.id)
         sleepSurvivors.removeValue(forKey: session.id)
+        wantsWake.remove(session.id)
         busyTimers.removeValue(forKey: session.id)?.cancel()
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
         unreadDwellTimers.removeValue(forKey: session.id)?.cancel()
@@ -3302,6 +3304,10 @@ final class SessionManager {
     /// What an agent being ended had started, to stop once it has gone.
     @ObservationIgnored private var sleepSurvivors: [Session.ID: [(pid: pid_t, startedAt: Date)]] = [:]
     @ObservationIgnored private var wakeTimer: DispatchWorkItem?
+    /// Sessions asked for while their agent was still on its way out (the
+    /// seconds between the signal and the agent being seen to go): brought
+    /// straight back once it has gone.
+    @ObservationIgnored private var wantsWake: Set<Session.ID> = []
 
     /// Start the clock for `session`'s agent, unless one is running already.
     /// The earliest timer is kept, so an agent that is asked about often is
@@ -3348,7 +3354,8 @@ final class SessionManager {
     /// terminal itself says and the process table agrees; its leader is a
     /// child of the very shell the marker names; and a process in it has
     /// written Claude's own record of itself, naming its conversation.
-    private func sleepCandidate(for session: Session) -> SleepCandidate? {
+    private func sleepCandidate(for session: Session, table shared: [ProcessEntry]? = nil,
+                                markers: [UUID: AgentMarker]? = nil) -> SleepCandidate? {
         // Each way out says which, at info: "why is this agent still awake"
         // has to be answerable from the log, since nothing on screen says.
         func unsure(_ why: String) -> SleepCandidate? {
@@ -3362,10 +3369,10 @@ final class SessionManager {
         guard let view = session.surfaceView, let pty = view.ptyHost, view.keeperSession != nil
         else { return unsure("no terminal of the keeper's") }
         // The marker on disk is still this run's.
-        guard let onDisk = AgentResumeStore.currentMarkers()[session.id], onDisk.agent == agent,
+        guard let onDisk = (markers ?? AgentResumeStore.currentMarkers())[session.id], onDisk.agent == agent,
               onDisk.shellPID == shellPID, onDisk.startedAt == startedAt
         else { return unsure("the marker on disk is another run's") }
-        let table = ProcessTable.snapshot()
+        let table = shared ?? ProcessTable.snapshot()
         guard let shell = table.first(where: { $0.pid == shellPID }),
               ProcessTable.isShell(shell.name), !shell.isExiting
         else { return unsure("the marker's shell is not a live shell") }
@@ -3387,9 +3394,24 @@ final class SessionManager {
 
         // The agent's own word for what it is doing and which conversation
         // it is in. Claude Code only, so far (`AgentSleep.enabledAgents`).
-        guard agent == "claude",
-              let state = members.lazy.compactMap({ AgentResumeStore.claudeProcessState(pid: $0.pid) }).first
-        else { return unsure("no process in it has the agent's own record") }
+        //
+        // The record of the process that has the terminal, when it has one.
+        // Started through a wrapper (`devx claude`), the leader is the
+        // wrapper and has none: then the group must hold exactly one, since
+        // a second Claude in the group (a hook running `claude -p`) keeps a
+        // record too, and its conversation and status are not this agent's.
+        guard agent == "claude" else { return unsure("not an agent whose record is read") }
+        let state: AgentResumeStore.ClaudeProcessState
+        if let own = AgentResumeStore.claudeProcessState(pid: leader.pid) {
+            state = own
+        } else {
+            let records = members.compactMap { AgentResumeStore.claudeProcessState(pid: $0.pid) }
+            guard records.count == 1 else {
+                return unsure(records.isEmpty ? "no process in it has the agent's own record"
+                                              : "more than one process in it has an agent's record")
+            }
+            state = records[0]
+        }
         let rest = AgentRest(claudeStatus: state.status, since: state.statusChangedAt)
 
         let marker = AgentMarker(agent: agent, model: session.runningModel,
@@ -3412,7 +3434,6 @@ final class SessionManager {
             agent: agent,
             launchIsSimple: AgentCommandLine.isSimple(session.runningArgv ?? agent),
             resumable: resumable,
-            hasTerminal: true,
             selected: id == selectedID,
             busy: session.isBusy || busyTimers[id] != nil || quiesceTimers[id] != nil
                 || titleShowsWorking.contains(id),
@@ -3470,18 +3491,30 @@ final class SessionManager {
     /// a shell's). Never SIGKILL: an agent killed mid-screen leaves the
     /// terminal in its modes. One that doesn't go is simply still awake.
     private func beginSleep(_ session: Session, _ candidate: SleepCandidate, waiting: Bool, pressure: Bool) {
+        markEnding(session, candidate, waiting: waiting)
+        saveNow()
+        signalSleep(session, candidate, waiting: waiting, pressure: pressure)
+    }
+
+    /// The first half: `session` is recorded as on its way to sleep. Nothing
+    /// is signalled until that has been saved.
+    private func markEnding(_ session: Session, _ candidate: SleepCandidate, waiting: Bool) {
+        let sleeper = SleepingAgent(marker: candidate.marker, conversationID: candidate.conversationID,
+                                    input: candidate.input, waiting: waiting)
+        session.sleep = .ending(sleeper, group: candidate.group)
+        sleepSurvivors[session.id] = candidate.started
+    }
+
+    /// The second half, after the save: one last look, and the signal.
+    private func signalSleep(_ session: Session, _ candidate: SleepCandidate, waiting: Bool, pressure: Bool) {
         let id = session.id
         let group = candidate.group
-        let sleeper = SleepingAgent(marker: candidate.marker, conversationID: candidate.conversationID,
-                                    input: candidate.input, waiting: waiting, since: Date())
-        session.sleep = .ending(sleeper, signalledAt: Date(), group: group)
-        sleepSurvivors[id] = candidate.started
-        saveNow()
+        guard case .ending(let sleeper, _) = session.sleep else { return }
         guard session.surfaceView?.ptyHost?.foregroundProcessGroup() == group,
               !session.isBusy, id != selectedID else {
             session.sleep = .awake
             sleepSurvivors[id] = nil
-            saveNow()
+            scheduleSave()
             return
         }
         AgentSleepLog.log.notice("""
@@ -3495,13 +3528,47 @@ final class SessionManager {
                                       cause: pressure ? .pressure : .clock))
         DispatchQueue.main.asyncAfter(deadline: .now() + AgentSleep.exitGrace) { [weak self] in
             guard let self, let session = self.sessions.first(where: { $0.id == id }),
-                  case .ending(_, _, let ending) = session.sleep, ending == group else { return }
-            // It didn't go. Awake as it was, and nothing else is touched.
-            session.sleep = .awake
-            self.sleepSurvivors[id] = nil
-            AgentSleepLog.log.notice("session \(id.uuidString, privacy: .public): the agent did not exit, still awake")
-            self.scheduleSave()
-            self.armSleep(session)
+                  case .ending(let sleeper, let ending) = session.sleep, ending == group else { return }
+            // Its marker is still there. That is the shell's to remove, at
+            // its next prompt, and a slow prompt (a `precmd` running git on
+            // a large repository) can take longer than this. So the process
+            // is asked, not the marker: with nothing left of the group the
+            // agent has gone, and counting it as awake would leave a session
+            // with no agent and nothing to bring it back.
+            if ProcessTable.snapshot().contains(where: { $0.pgid == group && !$0.isExiting }) {
+                // It didn't go. Awake as it was, and nothing else is touched.
+                session.sleep = .awake
+                self.sleepSurvivors[id] = nil
+                self.wantsWake.remove(id)
+                AgentSleepLog.log.notice(
+                    "session \(id.uuidString, privacy: .public): the agent did not exit, still awake")
+                self.scheduleSave()
+                self.armSleep(session)
+            } else {
+                self.commitSleep(session, sleeper)
+            }
+        }
+    }
+
+    /// The agent has gone, as asked: the session is asleep from here.
+    private func commitSleep(_ session: Session, _ sleeper: SleepingAgent) {
+        let id = session.id
+        // Not an agent that ended: nothing is owed for it at a quit beyond
+        // what `sleep` already says.
+        session.sleep = .asleep(sleeper)
+        session.endedAgent = nil
+        sleptAt[id] = Date()
+        stopWhatItStarted(in: session)
+        AgentSleepLog.log.notice("session \(id.uuidString, privacy: .public): asleep")
+        scheduleSave()
+        // Asked for while it was going (selected, or sent to): it comes
+        // straight back. Without this the session someone is looking at sat
+        // on a bare shell until they left it and returned.
+        if wantsWake.remove(id) != nil || id == selectedID {
+            DispatchQueue.main.asyncAfter(deadline: .now() + AgentSleep.wakeDwell) { [weak self, weak session] in
+                guard let self, let session else { return }
+                self.wake(session)
+            }
         }
     }
 
@@ -3509,15 +3576,8 @@ final class SessionManager {
     private func agentRunChanged(_ session: Session, marker: AgentMarker?, wasResume: Bool) {
         let id = session.id
         switch (session.sleep, marker) {
-        case (.ending(let sleeper, _, _), nil):
-            // Gone, as asked. Not an agent that ended: nothing is owed for
-            // it at a quit beyond what `sleep` already says.
-            session.sleep = .asleep(sleeper)
-            session.endedAgent = nil
-            sleptAt[id] = Date()
-            stopWhatItStarted(in: session)
-            AgentSleepLog.log.notice("session \(id.uuidString, privacy: .public): asleep")
-            scheduleSave()
+        case (.ending(let sleeper, _), nil):
+            commitSleep(session, sleeper)
         case (.awake, .some):
             armSleep(session)
         case (.ending, .some), (.asleep, .some):
@@ -3526,13 +3586,18 @@ final class SessionManager {
             let woke = session.sleep.agent
             session.sleep = .awake
             sleepSurvivors[id] = nil
+            wantsWake.remove(id)
             if wasResume, let woke {
                 AgentSleepLog.log.notice("session \(id.uuidString, privacy: .public): awake again")
                 Telemetry.capture(.agentWoke(agent: AgentName(command: woke.marker.agent)))
             }
             scheduleSave()
             armSleep(session)
-        case (.awake, nil), (.asleep, nil):
+        case (.asleep, nil):
+            // The marker of an agent already counted as gone (a slow prompt
+            // removed it after the grace was up): still not one that ended.
+            session.endedAgent = nil
+        case (.awake, nil):
             break
         }
     }
@@ -3577,6 +3642,8 @@ final class SessionManager {
         sleepTimers.removeValue(forKey: arrived.id)?.cancel()
         wakeTimer?.cancel()
         wakeTimer = nil
+        // Still on its way out: it is brought back when it has gone.
+        if arrived.sleep.isEnding { wantsWake.insert(arrived.id) }
         guard arrived.sleep.sleeper != nil else { return }
         let id = arrived.id
         let work = DispatchWorkItem { [weak self] in
@@ -3591,14 +3658,32 @@ final class SessionManager {
     /// Bring back the agent of a sleeping session: type its exact resume
     /// into the shell, once the terminal is back and the shell is sitting at
     /// a prompt with nothing running. The session stays asleep until the
-    /// agent is seen running, so a resume that never starts is offered again
-    /// the next time the session is selected, a few times at most.
-    func wake(_ session: Session, retries: Int = 20) {
-        guard case .asleep(var sleeper) = session.sleep else { return }
+    /// agent is seen running, so a resume that never starts is typed again
+    /// the next time the session is asked for, a few times at most. After
+    /// that it is a plain shell with the command in its history: a session
+    /// that says it is bringing an agent back, for ever, is worse.
+    @discardableResult
+    func wake(_ session: Session, retries: Int = 20) -> AgentWake {
+        // Signalled and not yet seen to go: remembered, and done then.
+        if session.sleep.isEnding {
+            wantsWake.insert(session.id)
+            return .starting
+        }
+        guard case .asleep(var sleeper) = session.sleep else { return .notAsleep }
         let now = Date()
-        if let typed = sleeper.typedAt, now.timeIntervalSince(typed) < OwedResume.answerWithin { return }
-        guard sleeper.attempts < AgentSleep.maxWakeAttempts,
-              let view = warmSurface(of: session) else { return }
+        if let typed = sleeper.typedAt, now.timeIntervalSince(typed) < OwedResume.answerWithin {
+            return .starting
+        }
+        guard sleeper.attempts < AgentSleep.maxWakeAttempts else {
+            session.sleep = .awake
+            AgentSleepLog.log.notice("""
+                session \(session.id.uuidString, privacy: .public): the resume never started, \
+                given up after \(sleeper.attempts) tries
+                """)
+            scheduleSave()
+            return .gaveUp
+        }
+        guard let view = warmSurface(of: session) else { return .shellBusy }
         let again = { [weak self, weak session] in
             guard retries > 0 else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
@@ -3606,19 +3691,34 @@ final class SessionManager {
                 self.wake(session, retries: retries - 1)
             }
         }
-        guard !view.isHibernated, !view.isRestoring, let pty = view.ptyHost, let root = view.shellPID
-        else { return again() }
+        // Its terminal is still coming back (hibernated, or just made):
+        // asked again in a moment, and that is "on its way", not "busy".
+        guard !view.isHibernated, !view.isRestoring, let pty = view.ptyHost, let root = view.shellPID else {
+            again()
+            return .starting
+        }
         let table = ProcessTable.snapshot()
         let shellPID = ProcessTable.shell(of: root, in: table)
         guard let shell = table.first(where: { $0.pid == shellPID }),
-              ProcessTable.isShell(shell.name), !shell.isExiting else { return again() }
-        // The shell has its terminal and nothing under it: a prompt. If not
-        // (something was started by hand meanwhile), nothing is typed.
+              ProcessTable.isShell(shell.name), !shell.isExiting else {
+            again()
+            return .shellBusy
+        }
+        // An agent is already running here: started by hand, or the resume
+        // typed a moment ago and not yet mirrored. Nothing to type.
+        guard AgentResumeStore.currentMarkers()[session.id] == nil else { return .starting }
+        // The shell has its terminal and nothing under it: a prompt. A shell
+        // made a moment ago for a restored session is still reading its
+        // startup files (`path_helper`, `brew shellenv`), which looks the
+        // same as one busy with something typed by hand, so it is asked
+        // again for a few seconds before being left alone.
         guard pty.foregroundProcessGroup() == shell.pgid,
-              ProcessTable.work(under: shellPID, in: table).isEmpty,
-              AgentResumeStore.currentMarkers()[session.id] == nil else { return }
+              ProcessTable.work(under: shellPID, in: table).isEmpty else {
+            again()
+            return .shellBusy
+        }
         let line = sleeper.input.hasSuffix("\n") ? String(sleeper.input.dropLast()) : sleeper.input
-        guard view.typeCommand(line) else { return }
+        guard view.typeCommand(line) else { return .shellBusy }
         sleeper.typedAt = now
         sleeper.attempts += 1
         session.sleep = .asleep(sleeper)
@@ -3630,12 +3730,31 @@ final class SessionManager {
             session \(session.id.uuidString, privacy: .public): resume typed \
             (attempt \(sleeper.attempts))
             """)
+        return .starting
     }
 
     /// macOS says memory is short: every agent at rest long enough goes now.
+    ///
+    /// One look at the process table and the markers for all of them, and
+    /// one save before the first signal: this runs on the main thread at the
+    /// moment the Mac has least to spare.
     private func sleepUnderPressure() {
+        let table = ProcessTable.snapshot()
+        let markers = AgentResumeStore.currentMarkers()
+        var going: [(Session, SleepCandidate, Bool)] = []
         for session in sessions where session.runningAgent != nil {
-            considerSleep(session, pressure: true)
+            guard case .awake = session.sleep else { continue }
+            if let owed = session.owedResume, owed.isOwed(at: Date()) { continue }
+            guard let candidate = sleepCandidate(for: session, table: table, markers: markers),
+                  case .sleep(let waiting) = AgentSleep.decide(candidate.inputs, pressure: true)
+            else { continue }
+            going.append((session, candidate, waiting))
+        }
+        guard !going.isEmpty else { return }
+        for (session, candidate, waiting) in going { markEnding(session, candidate, waiting: waiting) }
+        saveNow()
+        for (session, candidate, waiting) in going {
+            signalSleep(session, candidate, waiting: waiting, pressure: true)
         }
     }
 
@@ -4951,7 +5070,8 @@ final class SessionManager {
             lastConversationID: session.lastConversationID,
             portBase: session.portBase,
             remindAt: session.remindAt,
-            agentAsleep: session.sleep.agent.map { $0.waiting ? "waiting" : "finished" })
+            agentAsleep: session.sleep.agent.map { $0.waiting ? "waiting" : "finished" },
+            lastTypedAt: lastTypedAt[session.id])
     }
 
     /// The agent the next launch should bring back in `session`, and its

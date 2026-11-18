@@ -114,12 +114,31 @@ it is built:
   makes them all. It is not observed, so no view can draw it. Saved as
   `agentAsleep` beside `runningAgent`, before the signal is sent; a build
   from before the field resumes at launch instead.
-- **Waking** (`wake`): the selection staying 0.3 s, then the terminal back,
-  the shell holding its own terminal with nothing under it and no marker, and
-  the resume typed with `SurfaceView.typeCommand`. It becomes an `owedResume`
-  with `typedAt`, so the agent starting is confirmed as any typed resume is,
-  and the session stays `asleep` until then: a resume that never starts is
-  typed again on a later selection, three times at most.
+- **Waking** (`wake`, which says what it came to: `AgentWake`): the selection
+  staying 0.3 s, then the terminal back, the shell holding its own terminal
+  with nothing under it and no marker, and the resume typed with
+  `SurfaceView.typeCommand`. A shell not yet at a prompt is asked again for
+  five seconds, because one made a moment ago for a restored session is
+  still reading its startup files. The typed resume is an `owedResume` with
+  `typedAt`, so the agent starting is confirmed as any typed resume is, and
+  the session stays `asleep` until then. A resume that never starts is typed
+  again when the session is next asked for, three times at most; after that
+  the session is a plain shell, since one that says it is bringing an agent
+  back for ever is worse.
+- **The seconds between the signal and the agent going** are a state of
+  their own (`.ending`). A session selected or sent to in them is remembered
+  (`wantsWake`) and brought straight back once the agent has gone, and
+  `wortel send` types nothing, as for one asleep. Whether it went is asked
+  of the process, not of the marker, which is the shell's to remove at its
+  next prompt and can lag by more than the ten seconds given.
+- **Whose record.** The agent's own word comes from the process that has the
+  terminal; through a wrapper, from the one process in its group that has a
+  record, and from none if there are two.
+- **Typed and not sent** is `lastTypedAt`, saved with the session, so a
+  relaunch (the agent lives on in the keeper) does not move a half-written
+  prompt from the long clock to the short one.
+- **A memory warning** looks at the process table and the markers once for
+  every agent and saves once before the first signal.
 
 **Prompt history** (⌘Y, `PromptHistory`, `PromptHistoryStore`,
 `PromptHistoryModel` in `SessionSwitcher.swift`) is ⌘P's panel in a fourth

@@ -76,6 +76,19 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertEqual(decoded.runningConversationID, "4d98c3d5-653b-4915-8fa3-8db43f551ea7")
     }
 
+    /// "Typed and not sent" is what gives an agent the long clock, and an
+    /// update relaunches the app: the half-written prompt is still there in
+    /// the agent, so the note that there may be one has to be too.
+    func testWhenTheSessionWasLastTypedIntoSurvivesTheFile() throws {
+        let typed = Date(timeIntervalSince1970: 1_795_000_000)
+        let original = PersistedSession(
+            id: UUID(), name: "fix login", title: "shell", cwd: "/tmp", selected: false, nameSource: "user",
+            gitPanelVisible: nil, lastTypedAt: typed)
+        let data = try JSONEncoder().encode([original])
+        XCTAssertEqual(try JSONDecoder().decode([PersistedSession].self, from: data).first?.lastTypedAt, typed)
+        XCTAssertNil(try decode(#"{"id":"\#(UUID())"}"#).lastTypedAt)
+    }
+
     // MARK: - Port block
 
     /// A file from before port blocks has none, and must read as none rather

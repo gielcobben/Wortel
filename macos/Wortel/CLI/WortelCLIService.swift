@@ -470,13 +470,26 @@ final class WortelCLIService {
         case .found(let found): session = found
         case .refused(let refusal): return reply(refusal)
         }
-        // Its agent is asleep (`AgentSleep`): what is being sent is for the
-        // agent, and typed now it would land in the bare shell and run as a
-        // command. So the agent is brought back, and nothing is typed.
-        if session.sleep.sleeper != nil {
-            manager.wake(session)
-            return reply(.failure("\u{201c}\(session.name)\u{201d} had its agent put to sleep and is "
-                + "bringing it back now, so nothing was typed. Send it again in a few seconds."))
+        // Its agent is asleep, or on its way there (`AgentSleep`): what is
+        // being sent is for the agent, and typed now it would land in the
+        // bare shell and run as a command. So the agent is asked back, and
+        // nothing is typed. What is said is what is actually happening: a
+        // script that is told to try again must not be told so for ever.
+        if session.sleep.agent != nil {
+            let quoted = "\u{201c}\(session.name)\u{201d}"
+            switch manager.wake(session) {
+            case .starting:
+                return reply(.failure("\(quoted) had its agent put to sleep and is bringing it back now, "
+                    + "so nothing was typed. Send it again in a few seconds."))
+            case .shellBusy:
+                return reply(.failure("\(quoted) had its agent put to sleep, and its shell isn't at a prompt "
+                    + "yet to bring it back from, so nothing was typed. Send it again in a few seconds."))
+            case .gaveUp:
+                return reply(.failure("\(quoted) had its agent put to sleep, and it didn't start again when "
+                    + "resumed. Nothing was typed. The session is a plain shell now."))
+            case .notAsleep:
+                break
+            }
         }
         let (view, refusal) = terminal(of: session)
         guard let view else { return reply(refusal ?? .failure("That session has closed.")) }

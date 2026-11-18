@@ -20,9 +20,9 @@ struct SleepingAgent: Equatable {
     /// The line that resumes it, as `AgentResumeStore.resumeInput` built it.
     let input: String
     /// It was waiting on the person, or had something running, when it went:
-    /// the long clock. Kept so a relaunch says the same.
+    /// the long clock. Only what a save says of it (`agentAsleep`), and the
+    /// log.
     let waiting: Bool
-    let since: Date
     /// When the resume was last typed, while waiting to see the agent start.
     var typedAt: Date?
     /// How many times the resume has been typed without the agent starting.
@@ -33,7 +33,7 @@ struct SleepingAgent: Equatable {
 enum AgentSleepState: Equatable {
     case awake
     /// The signal is sent and the agent has not been seen to go yet.
-    case ending(SleepingAgent, signalledAt: Date, group: pid_t)
+    case ending(SleepingAgent, group: pid_t)
     case asleep(SleepingAgent)
 
     var sleeper: SleepingAgent? {
@@ -51,7 +51,7 @@ enum AgentSleepState: Equatable {
     var agent: SleepingAgent? {
         switch self {
         case .awake: return nil
-        case .ending(let agent, _, _), .asleep(let agent): return agent
+        case .ending(let agent, _), .asleep(let agent): return agent
         }
     }
 }
@@ -81,6 +81,21 @@ enum AgentRest: Equatable {
         default: self = .unknown
         }
     }
+}
+
+/// What asking for a sleeping agent back came to (`SessionManager.wake`).
+enum AgentWake: Equatable {
+    /// There is nothing asleep here.
+    case notAsleep
+    /// The resume has been typed, now or a moment ago, or the agent is still
+    /// on its way out and will be brought straight back.
+    case starting
+    /// The shell is not at a prompt: still starting, or busy with something
+    /// else. Nothing was typed.
+    case shellBusy
+    /// The resume was typed as often as it will be and never started. The
+    /// session is a plain shell from here on.
+    case gaveUp
 }
 
 /// Deep sleep: when an idle agent is ended, and what makes it wait.
@@ -134,8 +149,6 @@ enum AgentSleep {
         var launchIsSimple = true
         /// An exact conversation is known, is on disk, and has a resume line.
         var resumable = false
-        /// The app holds the session's pty (a keeper session).
-        var hasTerminal = true
         var selected = false
         /// Working, by any of Wortel's own signals.
         var busy = false
@@ -154,7 +167,7 @@ enum AgentSleep {
     }
 
     enum Reason: Equatable {
-        case notAnAgent, notEnabled, launchNotSimple, notResumable, noTerminal, selected, busy, restUnknown
+        case notAnAgent, notEnabled, launchNotSimple, notResumable, selected, busy, restUnknown
     }
 
     enum Verdict: Equatable {
@@ -172,7 +185,6 @@ enum AgentSleep {
         guard enabledAgents.contains(agent) else { return .never(.notEnabled) }
         guard inputs.launchIsSimple else { return .never(.launchNotSimple) }
         guard inputs.resumable else { return .never(.notResumable) }
-        guard inputs.hasTerminal else { return .never(.noTerminal) }
         guard !inputs.selected else { return .never(.selected) }
         guard !inputs.busy else { return .never(.busy) }
 

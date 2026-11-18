@@ -2,9 +2,9 @@ import SwiftUI
 
 // The Settings window's page, in Wortel's own drawing: the app's 13pt type,
 // its hairlines, its 28pt controls with 8pt corners, in boxes on an opaque
-// page under a titlebar row (`SettingsWindowController`). An experiment beside the
-// system's preferences window that came before it (37b52e6), to see which
-// one the app should have.
+// page under a titlebar row (`SettingsWindowController`). The system's
+// preferences window came before it (37b52e6) and was used for an afternoon;
+// this is the one that stayed.
 //
 // Every row is a name and one short grey line saying what it does, and the
 // whole of that text is the switch's to click.
@@ -22,12 +22,58 @@ enum SettingsTab: String, CaseIterable {
     }
 }
 
-/// Which tab is in front: shared by the switch in the titlebar row and the
-/// page under it.
+/// What the window is showing, shared by the titlebar row and the page under
+/// it: which tab is in front, the command as it stands in its field, and the
+/// agents found on this Mac.
+///
+/// The command being typed lives here and not in the field's own view,
+/// because the field goes away with its tab: typed and not yet saved, it was
+/// lost by a click on Updates, and by closing the window. Whoever takes the
+/// field away saves it first (`commitCommand`).
 @Observable
 @MainActor
 final class SettingsTabState {
     var tab: SettingsTab = .general
+    /// The field's text. Saved when you are done with it, never per
+    /// keystroke: ⌘N pressed while it still says `cla` must start what was
+    /// last saved, not half a word.
+    var commandDraft: String
+    /// Asked of the login shell once, when the window opens
+    /// (`AgentDiscovery`). Empty until it answers: the field works without.
+    var agentsFound: [String] = []
+
+    @ObservationIgnored private let settings: AppSettings
+
+    init(settings: AppSettings) {
+        self.settings = settings
+        commandDraft = settings.newSessionCommand
+    }
+
+    /// What is wrong with the text in the field, if anything.
+    var commandProblem: NewSessionCommand.Problem? {
+        if case .failure(let problem) = NewSessionCommand.check(commandDraft) { return problem }
+        return nil
+    }
+
+    /// Save the field: on Return, on leaving it, on leaving its tab, on the
+    /// window closing. A line that can't be typed into a shell is never
+    /// saved; the field keeps it and the grey line says why.
+    func commitCommand() {
+        guard commandProblem == nil else { return }
+        let trimmed = commandDraft.trimmingCharacters(in: .whitespaces)
+        if settings.newSessionCommand != trimmed { settings.newSessionCommand = trimmed }
+    }
+
+    /// Picked from the field's menu.
+    func pickCommand(_ value: String) {
+        commandDraft = value
+        settings.newSessionCommand = value
+    }
+
+    func show(_ tab: SettingsTab) {
+        commitCommand()
+        self.tab = tab
+    }
 }
 
 enum SettingsMetrics {
@@ -75,7 +121,7 @@ struct SettingsRows: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.boxGap) {
             switch state.tab {
-            case .general: GeneralRows(settings: settings)
+            case .general: GeneralRows(state: state, settings: settings)
             case .updates: UpdatesRows(updater: updater)
             }
         }
@@ -96,7 +142,7 @@ struct SettingsTabStrip: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(SettingsTab.allCases, id: \.self) { tab in
-                SettingsTabButton(tab: tab, isActive: state.tab == tab) { state.tab = tab }
+                SettingsTabButton(tab: tab, isActive: state.tab == tab) { state.show(tab) }
             }
         }
     }
@@ -140,17 +186,13 @@ private struct SettingsTabButton: View {
 
 /// General: what a new session starts, and what the window shows.
 private struct GeneralRows: View {
+    let state: SettingsTabState
     @Bindable var settings: AppSettings
-    /// The agents this Mac has, asked of the login shell once the page is up
-    /// (`AgentDiscovery`). Empty until it answers: the field works without
-    /// the list.
-    @State private var agentsFound: [String] = []
 
     var body: some View {
         SettingsBox {
-            CommandRow(command: $settings.newSessionCommand, agents: agentsFound)
+            CommandRow(state: state, command: settings.newSessionCommand)
         }
-        .task { agentsFound = await AgentDiscovery.find() }
         SettingsBox {
             SwitchRow(title: "Commit box", note: "The message field in Source Control.",
                       isOn: $settings.showsCommitBox)
@@ -280,30 +322,21 @@ private struct SwitchRow: View {
 /// corners as every control here is, and a menu at its end of the agents
 /// found on this Mac.
 ///
-/// **Saved when you are done, never per keystroke**: on Return, on leaving
-/// the field, on picking from the menu, and when the window closes (which
-/// ends editing). ⌘N pressed while the field still says `cla` must start what
-/// was last saved, not half a word. A line that can't be typed into a shell
-/// is never saved: the field keeps the text and the grey line says why.
+/// The text and its saving are `SettingsTabState`'s, which outlives this
+/// view. This is the field's drawing, and the two moments it can see for
+/// itself: Return, and the keyboard leaving it.
 private struct CommandRow: View {
+    @Bindable var state: SettingsTabState
     /// The saved command (`AppSettings.newSessionCommand`).
-    @Binding var command: String
-    let agents: [String]
+    let command: String
 
-    /// What the field shows while it is being typed in.
-    @State private var draft = ""
     @FocusState private var editing: Bool
     @State private var menuAnchor = MenuAnchor()
-
-    private var problem: NewSessionCommand.Problem? {
-        if case .failure(let problem) = NewSessionCommand.check(draft) { return problem }
-        return nil
-    }
 
     /// It is any command, not a choice of agent, and the line has to say so:
     /// the menu only holds the agents found.
     private var note: String {
-        switch problem {
+        switch state.commandProblem {
         case .controlCharacter: return "A tab or a line break can't be typed into a shell."
         case .tooLong: return "Too long. A shell takes 1,024 bytes at once."
         case nil:
@@ -316,20 +349,20 @@ private struct CommandRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            RowLabel(title: "New sessions start with", note: note, isProblem: problem != nil)
+            RowLabel(title: "New sessions start with", note: note, isProblem: state.commandProblem != nil)
                 // The name of a field puts the cursor in it.
                 .onTapGesture { editing = true }
             HStack(spacing: 0) {
-                TextField("New sessions start with", text: $draft, prompt: Text("Command"))
+                TextField("New sessions start with", text: $state.commandDraft, prompt: Text("Command"))
                     .labelsHidden()
                     .textFieldStyle(.plain)
                     // Something typed into a shell, so in the font of one.
                     .font(.system(size: 12, design: .monospaced))
                     .focused($editing)
-                    .onSubmit(save)
+                    .onSubmit { state.commitCommand() }
                     .padding(.leading, 10)
                 // Only once there is something to offer: absent, not greyed.
-                if !agents.isEmpty {
+                if !state.agentsFound.isEmpty {
                     Button(action: showAgents) {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .medium))
@@ -352,11 +385,8 @@ private struct CommandRow: View {
                 .strokeBorder(editing ? Color.accentColor.opacity(0.5) : Color(nsColor: Chrome.hairlineStrong)))
         }
         .padding(.vertical, SettingRow.padding)
-        .onAppear { draft = command }
-        // Changed from outside the field: the menu, or another window.
-        .onChange(of: command) { _, new in if !editing { draft = new } }
         // Leaving the field is being done with it.
-        .onChange(of: editing) { _, now in if !now { save() } }
+        .onChange(of: editing) { _, now in if !now { state.commitCommand() } }
     }
 
     /// The agents found, and Terminal, as a menu under the field and as wide
@@ -364,28 +394,18 @@ private struct CommandRow: View {
     /// its arrow. (SwiftUI's own `Menu` hung from the arrow at the field's
     /// end and stuck out past the window.)
     private func showAgents() {
+        let state = self.state
         let menu = NSMenu()
-        for agent in agents {
-            let item = ClosureMenuItem(title: agent) { pick(agent) }
+        for agent in state.agentsFound {
+            let item = ClosureMenuItem(title: agent) { state.pickCommand(agent) }
             item.state = command == agent ? .on : .off
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        let terminal = ClosureMenuItem(title: "Terminal") { pick("") }
+        let terminal = ClosureMenuItem(title: "Terminal") { state.pickCommand("") }
         terminal.state = command.isEmpty ? .on : .off
         menu.addItem(terminal)
         menuAnchor.pop(menu)
-    }
-
-    private func pick(_ value: String) {
-        draft = value
-        command = value
-    }
-
-    private func save() {
-        guard problem == nil else { return }
-        let trimmed = draft.trimmingCharacters(in: .whitespaces)
-        if command != trimmed { command = trimmed }
     }
 }
 

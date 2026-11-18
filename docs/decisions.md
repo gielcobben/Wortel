@@ -41,7 +41,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   needed to say what a new session starts, and the answer that needed no
   setting (start the agent of the session you are on) could not be predicted
   by the person pressing ⌘N. A new row needs the same argument: who differs,
-  and why can't the app know?
+  and why can't the app know? The window is drawn as Wortel's own are (its
+  titlebar row with two tabs, rows in boxes on a page), chosen the same day
+  over the system's preferences window, which was built and used first
+  (`macos/docs/architecture/settings.md`).
 - **2026-11-18. A new session starts what Settings says, and nothing unless
   it says so.** Settings ▸ New sessions start with is one line, typed into
   the new shell as its first command (the way `wortel new -- <command>` is):
@@ -127,9 +130,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   hand-off can drop one, and a dropped size stayed dropped until the window
   was resized. So the terminal now remembers what it was last told
   (`toldSize`) and compares it with its view (`reconcileSize`) after a hold
-  is released, after it is shown, woken or joins a window, when its area is
-  laid out, and after a session switch, and once more 0.3 s later. A hold
-  still held after two seconds is let go. **Which hand-off drops the size is
+  is released, after it is shown, woken or joins a window, and when its area
+  is laid out, and once more 0.3 s after things settle (one check for
+  however many of those come together). A stretch of holding that lasts two
+  seconds is let go, whatever holds and releases happened inside it. **Which hand-off drops the size is
   not known**: it was not reproduced in a test copy (three relaunches, right
   size each time). Every catch is logged in the `layout` category with what
   it found, so the next one names its cause; this entry should be replaced by

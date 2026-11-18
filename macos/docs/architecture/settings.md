@@ -51,8 +51,11 @@ plain terminal.
   inside it, a second line, or more than `MAX_CANON` bytes is refused with a
   reason under the field and never saved.
 - **Saved when editing ends** (Return, leaving the field, picking from the
-  menu, closing the window), not per keystroke, so ⌘N pressed mid-word
-  starts what was last saved (`CommandRow` in `SettingsView.swift`).
+  menu, switching tab, closing the window), not per keystroke, so ⌘N pressed
+  mid-word starts what was last saved. The text being typed lives in
+  `SettingsTabState`, not in the field's view, because the field goes away
+  with its tab and with the window: whoever takes it away saves it first
+  (`commitCommand`).
 - **One place decides who gets it**: `SessionStart`, which every way of
   making a session must name, with no default. The app's own ways in pass
   `.preferred`; `wortel new` passes its own line or `.plain`; the session
@@ -65,14 +68,18 @@ plain terminal.
   as Restart to Update is by the updater), the sidebar's + menu and a
   folder's menu.
 - **The menu at the field's end** holds the known agents this Mac has, and
-  Terminal, which empties the field. It is absent until there is an agent to
-  offer (`AgentDiscovery`):
-  the login shell is run once when the window opens, off the main thread,
-  with `command -v` between two sentinel lines so nothing its startup files
-  print can get in, and three seconds to answer. If it doesn't, the usual
-  install folders are scanned instead. Nothing runs while the window is
-  closed. The names are `AgentCommands`, which a test holds against the
-  shell integration's six copies of the same list.
+  Terminal, which empties the field. It opens under the field at the field's
+  width (`MenuAnchor`), and is absent until there is an agent to offer
+  (`AgentDiscovery`): the login shell is run once when the window opens,
+  whichever tab is in front and however often they are switched, off the
+  main thread, with `command -v` between two sentinel lines so nothing its
+  startup files print can get in. It has four seconds, counted by the
+  discovery itself: the command runner waits for the shell's output to
+  close, and a startup file that leaves something running keeps it open. If
+  no answer comes, the usual install folders are scanned instead, and while
+  one shell is still out no second one is started. Nothing runs while the
+  window is closed. The names are `AgentCommands`, which a test holds
+  against the shell integration's six copies of the same list.
 
 ## How it is built
 
@@ -96,12 +103,12 @@ plain terminal.
   than a window still growing were centred on it and ran up over the
   titlebar row. Made when asked for and released when closed, so nothing of
   it exists off screen.
-- **This look is an experiment (2026-11-18)**, to be compared with the
-  system's preferences window it replaced: an `NSTabViewController` with
-  icon tabs and the system's grouped form, which is commit `37b52e6`.
-  Whichever stays, this entry should say only that one. Tried before both:
-  one pane with no toolbar, which is what the guidelines say for five rows
-  and read as a dialog rather than as settings.
+- **Why not the system's preferences window.** It was built first and run
+  for an afternoon (2026-11-18, commit `37b52e6`): an `NSTabViewController`
+  with icon tabs and the system's grouped form. It was correct and felt like
+  another app's window beside this one. Before that, one pane with no
+  toolbar, which is what the guidelines say for five rows and read as a
+  dialog. The owner chose this one after using all three.
 - **The page** (`SettingsPage` in `SettingsView.swift`) is the app's type and
   numbers: 13pt names, 12pt grey lines, small switches, and a 28pt field
   with 8pt corners, with the rows that belong together in a box

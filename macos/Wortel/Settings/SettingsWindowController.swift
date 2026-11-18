@@ -8,14 +8,15 @@ import SwiftUI
 /// layers are the main window's and the preview window's
 /// (`BackdropController`, `ChromePaneController`).
 ///
-/// An experiment (2026-11-18) beside the system's preferences window, which
-/// is the commit before this one. One at a time, made when asked for and let
-/// go when closed, so nothing of it exists while it is off screen.
+/// The system's preferences window (icon tabs, a grouped form) was built and
+/// used first, on 2026-11-18, and this one was chosen over it. One at a
+/// time, made when asked for and let go when closed, so nothing of it exists
+/// while it is off screen.
 @MainActor
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
 
-    private let state = SettingsTabState()
+    private let state: SettingsTabState
     private var movability: WindowMovability?
 
     init(settings: AppSettings, updater: Updater) {
@@ -44,6 +45,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         // Mission Control and VoiceOver still read it.
         window.title = "Settings"
 
+        state = SettingsTabState(settings: settings)
         // What the rows need, before anything is on screen: the window opens
         // at its size, not at a guess that it then grows out of.
         let rows = NSHostingController(
@@ -63,6 +65,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let pane = ChromePaneController(bar: bar, content: page, bodyColor: Chrome.content)
         window.contentViewController = BackdropController(child: pane)
         movability = WindowMovability(window: window)
+
+        // Once for the window, whichever tab is in front and however often
+        // they are switched: this runs the login shell.
+        Task { [state] in state.agentsFound = await AgentDiscovery.find() }
 
         fit(rows: height, animated: false)
         window.center()
@@ -85,8 +91,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        // A field still being edited commits before the window goes.
+        // A command still being typed is saved before the window goes. Said
+        // outright: ending the field's editing does it too, but only if the
+        // view gets one more update, and a window on its way out may not.
+        state.commitCommand()
         window?.makeFirstResponder(nil)
+        // Its event monitor outlives it otherwise, one per window opened.
+        movability?.invalidate()
+        movability = nil
         onClose?()
     }
 

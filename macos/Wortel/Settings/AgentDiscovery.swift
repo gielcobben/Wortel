@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Which known agents this Mac has, for the pull-down in Settings.
 ///
@@ -58,16 +59,45 @@ enum AgentDiscovery {
 
     /// The agents found: the shell's answer, or the folder scan when the
     /// shell gave none in time.
+    ///
+    /// The shell gets four seconds, counted here and not left to the command
+    /// runner: that waits for the shell's output to close, and a startup
+    /// file that leaves something running in the background keeps it open
+    /// long after the shell itself has gone. An answer that comes later is
+    /// dropped, and while one is still outstanding no second shell is
+    /// started behind it.
+    @MainActor
     static func find(names: [String] = AgentCommands.offered) async -> [String] {
         let path = ShellSpawn.loginShell()
-        if let script = script(for: ShellSpawn.Shell(path: path), names: names) {
-            // Login and interactive, so the files that set PATH and define
-            // aliases are read, as they are for a session's shell.
-            let result = await GitService.runTool(
-                [path, "-l", "-i", "-c", script], environment: ProcessInfo.processInfo.environment,
-                in: NSHomeDirectory(), timeout: 3)
-            if let found = parse(result.stdout, names: names) { return found }
+        guard !probing, let script = script(for: ShellSpawn.Shell(path: path), names: names) else {
+            return scan(names: names)
         }
-        return scan(names: names)
+        probing = true
+        let answer: [String]? = await withCheckedContinuation { continuation in
+            let once = OSAllocatedUnfairLock<CheckedContinuation<[String]?, Never>?>(initialState: continuation)
+            let finish = { @Sendable (found: [String]?) in
+                once.withLock { waiting in
+                    waiting?.resume(returning: found)
+                    waiting = nil
+                }
+            }
+            Task.detached {
+                // Login and interactive, so the files that set PATH and
+                // define aliases are read, as they are for a session's shell.
+                let result = await GitService.runTool(
+                    [path, "-l", "-i", "-c", script], environment: ProcessInfo.processInfo.environment,
+                    in: NSHomeDirectory(), timeout: 3)
+                await MainActor.run { probing = false }
+                finish(parse(result.stdout, names: names))
+            }
+            Task.detached {
+                try? await Task.sleep(for: .seconds(4))
+                finish(nil)
+            }
+        }
+        return answer ?? scan(names: names)
     }
+
+    /// A shell is out answering. Main thread only.
+    @MainActor private static var probing = false
 }

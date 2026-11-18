@@ -329,16 +329,16 @@ outline around the one that now has the keyboard.
   is for a decision that stops the window: a new worktree, cleaning up.
 - **A menu for commands.** Every command is in the menu bar; that is what ⌘P
   lists. The Session menu comes before Edit. There is no File menu.
-- **Settings is one of Wortel's own windows, for now.** Its titlebar row on
+- **Settings is one of Wortel's own windows.** Its titlebar row on
   the glass holding its two tabs, drawn as every tab is, and the rows on a
   page: 13pt
   names, a 12pt grey line under each saying what it does, rows that belong
   together in a box (a faint band, 10pt corners), small switches, a 28pt
   field with 8pt corners for what is typed.
   The whole of a row's text is the switch's to click. A row that can do
-  nothing on this build is absent. An experiment beside the system's
-  preferences window (`macos/docs/architecture/settings.md`): this entry
-  follows whichever one stays.
+  nothing on this build is absent. The system's preferences window was
+  built and used first (`macos/docs/architecture/settings.md` has why it
+  went).
 - **The same menu everywhere** for the same thing. A session's menu is one
   menu, in one order, wherever it opens.
 - **A tooltip says what the eye cannot see, and nothing cleverer:** a name

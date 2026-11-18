@@ -541,14 +541,6 @@ final class MainSplitViewController: NSSplitViewController {
                 if show { self.applyInspectorWidth() }
             }
         } else {
-            // Opening: at this session's width from the start. A collapsed
-            // item comes back at the thickness it went away with, the last
-            // session's, and the split view lays the column's whole content
-            // out at that width before `applyInspectorWidth` moves it, a
-            // second full layout for nothing (23 ms of a switch's 80,
-            // measured 2026-11-18).
-            if show { inspectorItem.viewController.view.setFrameSize(
-                NSSize(width: target, height: inspectorItem.viewController.view.frame.height)) }
             inspectorItem.isCollapsed = !show
             if show {
                 // Lay the opening out now, while capture is still held, and

@@ -91,9 +91,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   It switched on mouse-up, after AppKit had ruled out a drag, so the time the
   button was held (115 ms a click on average, sampled) came before every
   switch. ⌘ and ⇧ still act on mouse-up, and so does a press inside a
-  selection of several, which may be the start of dragging them. The column
-  also opens at the session's width now rather than the last one's: it was
-  laid out twice, 23 ms of a switch.
+  selection of several, which may be the start of dragging them.
+- **2026-11-18. Tried and dropped: opening the column at the session's width
+  by setting its frame before uncollapsing.** It saved the second layout of
+  the column's content (23 ms), but the frame no longer matched the split
+  view's own layout: the main pane was seen running under the column until
+  the window was resized. Done properly it has to go through the split view.
 - **2026-10-07. ⇧⌘[ and ⇧⌘] are tabs**, the system's convention. Sessions are
   ⌥⌘↑ and ⌥⌘↓ (`c87fd17`).
 - **2026-10-20. A reload of the config is applied synchronously on the main

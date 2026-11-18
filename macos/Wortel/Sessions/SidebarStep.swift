@@ -27,8 +27,17 @@ enum SidebarStep {
 
     /// What to select when `closing` goes: the row above it, or the row
     /// below when it is the top one. nil when it isn't drawn or is alone.
-    static func afterClosing<ID: Equatable>(_ closing: ID, in rows: [ID]) -> ID? {
+    ///
+    /// `opener` is the session `closing` was made from, given only while the
+    /// selection has not left `closing` since: then that row is the answer,
+    /// as closing a browser tab you just opened goes back to the tab it came
+    /// from. ⌘N, do the thing, ⌘W is a round trip wherever the new row was
+    /// put, and at the top level that is the top of the list, far from where
+    /// ⌘N was pressed. An opener with no row (closed, or folded away) is no
+    /// answer, and the row above is.
+    static func afterClosing<ID: Equatable>(_ closing: ID, in rows: [ID], madeFrom opener: ID? = nil) -> ID? {
         guard let index = rows.firstIndex(of: closing), rows.count > 1 else { return nil }
+        if let opener, opener != closing, rows.contains(opener) { return opener }
         return index > 0 ? rows[index - 1] : rows[index + 1]
     }
 }

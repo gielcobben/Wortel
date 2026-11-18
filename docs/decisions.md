@@ -159,6 +159,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the end. Now `SidebarControls` sits over the titlebar, the toggle never
   moves, the arrows ride the sidebar's edge and stop beside the toggle, and
   the rows to the right are pushed along by the same number every frame.
+- **2026-11-18. A new session at the top level goes on top.** It went after
+  the selected row, so in a list nobody arranges a new row turned up in the
+  middle. Now that list reads newest first, as a list of chats does. In a
+  folder nothing changed: after the selected row, or at the folder's end.
+  ⌘N, do the thing, ⌘W still lands where it started, by a rule of its own:
+  closing a session you just made and never left selects the one it was made
+  from, as a browser tab does. Otherwise the row above, as before.
 
 ## Sessions
 

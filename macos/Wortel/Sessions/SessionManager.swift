@@ -39,6 +39,9 @@ final class SessionManager {
             if currentTabs[session.id] == nil {
                 currentTabs[session.id] = session.workspace.front(of: .main) ?? .session
             }
+            // Gone to another session: the one just made is one among the
+            // rest now, and closing it later is not a way back.
+            if justMade?.session != session.id { justMade = nil }
             // Most recent first, for ⌘P's list.
             recentSessionIDs.removeAll { $0 == session.id }
             recentSessionIDs.insert(session.id, at: 0)
@@ -73,6 +76,10 @@ final class SessionManager {
     /// Sessions in the order they were last selected, most recent first: what
     /// ⌘P lists before you type (SessionSwitcherMatch).
     @ObservationIgnored private(set) var recentSessionIDs: [Session.ID] = []
+    /// The session just made and the one it was made from, for as long as the
+    /// selection has not left the new one: closing it then goes back there
+    /// (`SidebarStep.afterClosing`), wherever in the sidebar the new row went.
+    @ObservationIgnored private var justMade: (session: Session.ID, from: Session.ID)?
 
     // MARK: Back and Forward
 
@@ -1757,19 +1764,23 @@ final class SessionManager {
         // no directory yet came up in the keeper's, `/`, and the worktree it
         // was waiting for arrived too late to move it.
         prepare?(session)
-        // Right after the selected row when that row is in the same section,
-        // so the round trip in `close` (⌘N, do the thing, ⌘W) lands back where
-        // it started; otherwise at the end of its folder. A pinned row is
-        // drawn in Pinned, not in its folder, so it is no anchor for one.
-        if let index = selectedIndex, sessions[index].folderPath == dir, !isPinned(sessions[index]) {
-            sessions.insert(session, at: index + 1)
-        } else {
-            sessions.append(session)
-        }
+        // At the top level, on top: a list nobody arranges then reads newest
+        // first, as a list of chats does. In a folder, right after the selected
+        // row when that row is in the same folder, otherwise at the folder's
+        // end: a folder is arranged by hand, and the new row belongs beside
+        // the one it came from. A pinned row is drawn in Pinned, not in its
+        // folder, so it is no anchor for one.
+        let index = SidebarLayout.indexForNew(
+            inFolder: dir, rows: sessions.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
+            selected: selectedID, pinned: pinnedIDs)
+        sessions.insert(session, at: index)
+        let madeFrom = selectedID
         normalizeOrder() // slot the new row into its folder's contiguous block
         // Never select into a hidden row.
         if let dir { collapsedFolders.remove(dir) } else { setLooseCollapsed(false) }
         selectedID = session.id
+        // After the selection moved, which forgot the last one.
+        justMade = madeFrom.map { (session: session.id, from: $0) }
         scheduleSave()
         if reported { Telemetry.capture(.sessionCreated(via: origin)) }
         return session
@@ -2514,8 +2525,11 @@ final class SessionManager {
             """)
         let wasSelected = session.id == selectedID
         // Over the rows as drawn, so it is the row above on screen, sorted
-        // or not, and never one inside a folded section.
-        let drawnNeighbour = SidebarStep.afterClosing(session.id, in: drawnRows)
+        // or not, and never one inside a folded section. Or the session this
+        // one was made from, when you never left it.
+        let drawnNeighbour = SidebarStep.afterClosing(
+            session.id, in: drawnRows, madeFrom: justMade?.session == session.id ? justMade?.from : nil)
+        if justMade?.session == session.id || justMade?.from == session.id { justMade = nil }
         let hadAttention = session.needsAttention
         busyTimers.removeValue(forKey: session.id)?.cancel()
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
@@ -2581,11 +2595,11 @@ final class SessionManager {
             return
         }
 
-        // The row *above*, not the one that slid into the closed row's slot.
-        // ⌘N files the new session right after the selected one, so the round
-        // trip — ⌘N, do the thing, ⌘W — should land back where it started,
-        // not one row further down. Only the topmost row has nothing above
-        // it, and there the row below is the only answer.
+        // The round trip (⌘N, do the thing, ⌘W) lands back where it started:
+        // on the session the closed one was made from, if you never left it.
+        // Otherwise the row *above*, not the one that slid into the closed
+        // row's slot. Only the topmost row has nothing above it, and there
+        // the row below is the only answer.
         if wasSelected {
             selectedID = drawnNeighbour ?? sessions[max(index - 1, 0)].id
         }

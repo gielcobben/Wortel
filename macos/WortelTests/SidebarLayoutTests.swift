@@ -240,4 +240,59 @@ final class SidebarLayoutTests: XCTestCase {
         let rest = [row(1, "a"), row(2, "a"), row(3, "b")]
         XCTAssertEqual(index(rest, folder: "a", before: 2, pinned: [2]), 1)
     }
+
+    // MARK: - A new session
+
+    /// The stored order with the new row put where `indexForNew` says, then
+    /// drawn: the test reads the sidebar, not an index.
+    private func drawn(adding new: Int, inFolder folder: String?, to rows: [Row], selected: Int?,
+                       pinned: [Int] = [], folderOrder: [String] = []) -> [Group] {
+        var rows = rows
+        rows.insert(row(new, folder), at: SidebarLayout.indexForNew(
+            inFolder: folder, rows: rows, selected: selected, pinned: pinned))
+        return groups(rows, pinned: pinned, folderOrder: folderOrder)
+    }
+
+    func testANewTopLevelSessionGoesOnTop() {
+        let result = drawn(adding: 9, inFolder: nil, to: [row(1), row(2), row(3)], selected: 2)
+        XCTAssertEqual(result, [Group(folder: nil, ids: [9, 1, 2, 3])],
+                       "newest first, wherever the selection was")
+    }
+
+    func testANewTopLevelSessionGoesUnderPinnedAndAboveTheFolders() {
+        let result = drawn(adding: 9, inFolder: nil, to: [row(1), row(2), row(3, "a")], selected: 3,
+                           pinned: [1], folderOrder: ["a"])
+        XCTAssertEqual(result, [
+            Group(folder: nil, ids: [1], isPinned: true),
+            Group(folder: nil, ids: [9, 2]),
+            Group(folder: "a", ids: [3]),
+        ])
+    }
+
+    func testANewSessionInAFolderGoesAfterTheSelectedRow() {
+        let result = drawn(adding: 9, inFolder: "a", to: [row(1, "a"), row(2, "a"), row(3, "a")],
+                           selected: 2, folderOrder: ["a"])
+        XCTAssertEqual(result, [Group(folder: "a", ids: [1, 2, 9, 3])],
+                       "a folder is arranged by hand: the new row sits beside the one it came from")
+    }
+
+    func testANewSessionInAnotherFolderGoesAtItsEnd() {
+        let result = drawn(adding: 9, inFolder: "b", to: [row(1, "a"), row(2, "b"), row(3, "b")],
+                           selected: 1, folderOrder: ["a", "b"])
+        XCTAssertEqual(result, [Group(folder: "a", ids: [1]), Group(folder: "b", ids: [2, 3, 9])])
+    }
+
+    func testAPinnedSelectionIsNoAnchorInItsFolder() {
+        let result = drawn(adding: 9, inFolder: "a", to: [row(1, "a"), row(2, "a"), row(3, "a")],
+                           selected: 1, pinned: [1], folderOrder: ["a"])
+        XCTAssertEqual(result, [
+            Group(folder: nil, ids: [1], isPinned: true),
+            Group(folder: "a", ids: [2, 3, 9]),
+        ])
+    }
+
+    func testTheFirstSessionOfAll() {
+        XCTAssertEqual(SidebarLayout.indexForNew(inFolder: nil, rows: [Row](), selected: nil, pinned: []), 0)
+        XCTAssertEqual(SidebarLayout.indexForNew(inFolder: "a", rows: [Row](), selected: nil, pinned: []), 0)
+    }
 }

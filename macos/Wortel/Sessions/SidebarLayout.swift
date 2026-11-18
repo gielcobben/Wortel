@@ -27,6 +27,28 @@ enum SidebarLayout {
         var isPinned = false
     }
 
+    /// Where a new session goes in the stored order `rows`.
+    ///
+    /// **At the top level, first.** A list nobody arranges is then newest
+    /// first, which is how every list of chats reads, and the new row is in
+    /// the same place every time instead of wherever the selection was.
+    /// (Index 0 is in front of Pinned and the folders in the stored order;
+    /// the sections are drawn by group, so it is the top level's first row.)
+    ///
+    /// **In a folder, right after the selected row** when that row is drawn
+    /// in the same folder, otherwise at the end. A folder is arranged by
+    /// hand, so the new row goes beside the one it came from. A pinned row is
+    /// drawn in Pinned, not in its folder, so it is no anchor.
+    static func indexForNew<ID: Hashable>(
+        inFolder folder: String?, rows: [Row<ID>], selected: ID?, pinned: [ID]
+    ) -> Int {
+        guard folder != nil else { return 0 }
+        guard let selected, !pinned.contains(selected),
+              let index = rows.firstIndex(where: { $0.id == selected }), rows[index].folder == folder
+        else { return rows.count }
+        return index + 1
+    }
+
     /// The sections in the order they are drawn. Pinned rows are shown in
     /// their own section, first, in `pinned` order, and not in their folders
     /// as well. Folders follow `folderOrder`; any not tracked there fall back

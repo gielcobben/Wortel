@@ -94,4 +94,25 @@ final class SidebarStepTests: XCTestCase {
         let sorted = ["c", "a", "b", "d"]
         XCTAssertEqual(SidebarStep.afterClosing("a", in: sorted), "c")
     }
+
+    // MARK: - After closing a session you just made
+
+    /// ⌘N on "c" at the top level puts "n" on top. ⌘W there goes back to "c",
+    /// not to "a", the row that happens to be under the new one.
+    func testClosingASessionJustMadeLandsOnTheOneItWasMadeFrom() {
+        let made = ["n", "a", "b", "c", "d"]
+        XCTAssertEqual(SidebarStep.afterClosing("n", in: made, madeFrom: "c"), "c")
+    }
+
+    func testAnOpenerWithNoRowIsNoAnswer() {
+        let made = ["n", "a", "b"]
+        XCTAssertEqual(SidebarStep.afterClosing("n", in: made, madeFrom: "z"), "a",
+                       "closed or folded away: the row below the top one, as ever")
+        XCTAssertEqual(SidebarStep.afterClosing("b", in: made, madeFrom: "z"), "a")
+    }
+
+    func testAnOpenerDoesNotBringARowBackThatIsNotDrawn() {
+        XCTAssertNil(SidebarStep.afterClosing("z", in: rows, madeFrom: "a"))
+        XCTAssertNil(SidebarStep.afterClosing("a", in: ["a"], madeFrom: "a"))
+    }
 }

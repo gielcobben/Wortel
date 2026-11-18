@@ -296,6 +296,39 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the marker it wrote** (`1f5f80b`, `7e715c7`).
 - **Never signal a process found by matching its command line.** Take the
   agent from the terminal's foreground process group.
+- **2026-11-18. An idle agent is put to sleep, and resumed when its session
+  is selected.** Fourteen idle Claude Code processes on one Mac held 3.1 GB
+  (130 to 395 MB each); hibernation frees only the terminal's 70 MB. So an
+  agent that has finished its turn, in a session that is not the selected
+  one, is ended after an hour, and its exact conversation is typed back into
+  the shell when the session is selected. One waiting on you (a question, a
+  plan, a permission prompt), or with a command of its own still running, or
+  with keys typed and not sent, gets eight hours. A working agent and the
+  selected session never sleep. A memory warning shortens only the first
+  clock, to ten minutes. No switch, never named in the UI, and the row looks
+  as it did. This is the chosen exception to two rules, and it was chosen
+  knowing both: "the agent is never killable" (running-processes.md) and
+  "nothing destructive without you choosing it". What it costs is what the
+  agent had started (it is ended with it), a pending question after its eight
+  hours, and a second or two when you come back. What it keeps is the
+  conversation, the shell, its directory and its environment.
+  How it stays honest: which clock comes from the agent's own word
+  (`~/.claude/sessions/<pid>.json`: `idle`, `waiting`, `shell`; anything
+  else never sleeps), the agent is the terminal's foreground group and never
+  a command line, every doubt leaves it awake, SIGTERM and never SIGKILL, and
+  an agent that does not go is simply still awake. Claude Code only until
+  another agent has been checked the same way (`AgentSleep.enabledAgents`).
+  Seen with Claude Code 2.1.327 in a test copy, clocks at 30 and 90 s: asleep
+  32 s after its session was left; gone in 0.13 s with status 143 and the
+  terminal a shell's again; kept awake while selected; held to the long clock
+  with `python3 -m http.server` running under it, and that server ended with
+  it; resumed on the same conversation by selection and by `wortel send`;
+  still asleep after a quit and relaunch; no dot raised by any of it. Not
+  seen: the memory-warning path, and a wake by a click in a window (only by
+  the selection a launch makes). Known limits: an agent on a scheduled loop
+  with nothing running looks finished and sleeps at its hour; a server that
+  had already detached itself from the agent is left running; nothing sleeps
+  while Wortel is quit.
 
 ## Keeper
 

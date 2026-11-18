@@ -38,6 +38,9 @@ final class HibernationPolicy {
     /// must not be kept alive by this.
     private var hidden = NSHashTable<SurfaceView>.weakObjects()
     private var pressure: DispatchSourceMemoryPressure?
+    /// Set by `SessionManager`: macOS said memory is short, after the hidden
+    /// terminals have been hibernated.
+    var onMemoryPressure: (() -> Void)?
 
     /// Agents that may hibernate while they run. Their work shows in what
     /// they write (a title spinner, OSC 9;4, notifications), which
@@ -104,5 +107,8 @@ final class HibernationPolicy {
             timers.removeValue(forKey: ObjectIdentifier(view))?.cancel()
             view.hibernate()
         }
+        // The terminals were Wortel's share. The agents are the larger one
+        // (`AgentSleep`).
+        onMemoryPressure?()
     }
 }

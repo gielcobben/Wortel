@@ -53,6 +53,29 @@ final class PersistedSessionTests: XCTestCase {
         }
     }
 
+    // MARK: - An agent asleep
+
+    /// A file from before deep sleep has no such agent, and nothing may read
+    /// one into it: a session wrongly restored as asleep would sit with no
+    /// agent until someone clicked it.
+    func testAbsentSleepStaysUnrecorded() throws {
+        XCTAssertNil(try decode(#"{"id":"\#(UUID())","runningAgent":"claude"}"#).agentAsleep)
+    }
+
+    /// The flag rides beside the agent it is about. An older build drops the
+    /// flag and keeps the agent, so it resumes at launch and nothing is lost.
+    func testSleepRoundTripsBesideItsAgent() throws {
+        let original = PersistedSession(
+            id: UUID(), name: "fix login", title: "shell", cwd: "/tmp", selected: false, nameSource: "user",
+            gitPanelVisible: nil, runningAgent: "claude", runningArgv: "claude --model opus",
+            runningConversationID: "4d98c3d5-653b-4915-8fa3-8db43f551ea7", agentAsleep: "waiting")
+        let data = try JSONEncoder().encode([original])
+        let decoded = try XCTUnwrap(JSONDecoder().decode([PersistedSession].self, from: data).first)
+        XCTAssertEqual(decoded.agentAsleep, "waiting")
+        XCTAssertEqual(decoded.runningAgent, "claude")
+        XCTAssertEqual(decoded.runningConversationID, "4d98c3d5-653b-4915-8fa3-8db43f551ea7")
+    }
+
     // MARK: - Port block
 
     /// A file from before port blocks has none, and must read as none rather

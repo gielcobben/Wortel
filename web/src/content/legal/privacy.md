@@ -91,6 +91,9 @@ about the thing it happened to:
   of agents Wortel recognises (Claude Code, Codex, Pi, Gemini, OpenCode, Goose,
   Aider, Amp, Crush, Cline, Ollama, llm, Cursor). Anything else is reported as
   "other", never by its name, and never what it was asked or where it ran
+- an idle agent was put to sleep to free memory, which one from that same
+  list, and whether it was its time or the Mac running short of memory; and
+  that one was brought back when its session was selected
 - a background session asked for attention, which kind of signal raised it,
   and which of those agents (if any) it came from
 - the background process that keeps your terminals running stopped

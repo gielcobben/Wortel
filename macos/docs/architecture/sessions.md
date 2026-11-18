@@ -90,6 +90,37 @@ the branch for a worktree session). Worktree sessions are named for their task
 and carry the branch on a second row line. See `docs/session-naming.md` for
 the reasoning, the privacy scoping of the tap, and what the other tools do.
 
+**Deep sleep** (`AgentSleep`, and the "Deep sleep" section of `SessionManager`)
+ends an idle agent and resumes it when its session is selected. The rule and
+what was seen with a real agent are in `docs/decisions.md` (2026-11-18); how
+it is built:
+
+- **`AgentSleep.decide`** is the whole decision as values, tested alone. The
+  two clocks are constants, shortened for a test by `WORTEL_SLEEP_AFTER` and
+  `WORTEL_SLEEP_WAITING_AFTER`, which `main.swift` reads before the launch
+  environment is scrubbed (read later, a test's thirty seconds is the hour).
+- **No polling.** One timer per session with a resting agent, armed when it
+  stops working (`clearBusy`) or its session is left, cancelled when it works
+  or is selected. The process table is read when the timer fires.
+- **`sleepCandidate`** establishes the agent from one process table: the
+  marker on disk is this run's, its shell is this terminal's, the group in the
+  terminal's foreground (the table and `PtyHost.foregroundProcessGroup` must
+  agree) is led by a child of that shell, and a process in it has Claude's own
+  record (`AgentResumeStore.claudeProcessState`), which gives the conversation
+  and the status that picks the clock. Any miss leaves the agent alone and
+  says why in the `sleep` log.
+- **`Session.sleep`** (`awake`, `ending`, `asleep`) is apart from `owedResume`
+  on purpose: an owed resume is typed when a terminal is made, and launch
+  makes them all. It is not observed, so no view can draw it. Saved as
+  `agentAsleep` beside `runningAgent`, before the signal is sent; a build
+  from before the field resumes at launch instead.
+- **Waking** (`wake`): the selection staying 0.3 s, then the terminal back,
+  the shell holding its own terminal with nothing under it and no marker, and
+  the resume typed with `SurfaceView.typeCommand`. It becomes an `owedResume`
+  with `typedAt`, so the agent starting is confirmed as any typed resume is,
+  and the session stays `asleep` until then: a resume that never starts is
+  typed again on a later selection, three times at most.
+
 **Prompt history** (⌘Y, `PromptHistory`, `PromptHistoryStore`,
 `PromptHistoryModel` in `SessionSwitcher.swift`) is ⌘P's panel in a fourth
 mode: everything typed to Claude Code, Codex or Pi, the session's project

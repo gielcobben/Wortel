@@ -309,6 +309,12 @@ trailing newline, as `$(...)` does. The session is not selected and nothing
 takes focus, so you can keep typing where you are. Sending to the session you're
 in works too. Up to 256 KB at a time.
 
+A session whose agent has been idle for an hour may have had it put to sleep.
+`list` still names the agent, and selecting the session brings it back. `send`
+to such a session types nothing (the text is for the agent, and would land in
+the bare shell): it starts the resume and fails with a message saying so. Send
+again a few seconds later.
+
 ### `wortel wait <session> [--for <text> [--from-start]] [--idle] [--exit] [--timeout <dur>]`
 
 Waits until something happens in a session, then exits 0:

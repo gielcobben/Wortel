@@ -74,7 +74,10 @@ that can run a command can drive the app.
 **Your work outlives the window.** Quit, crash, update: the shells keep running
 and come back with what they printed. And nothing destructive happens without
 you choosing it. Closing archives. Removing goes to the Trash. When Wortel is
-not sure, it keeps the thing.
+not sure, it keeps the thing. The one thing it ends by itself is an agent that
+has sat idle and out of sight for an hour: the conversation is kept and comes
+back when you select the session, the process and its memory do not
+(`decisions.md`, 2026-11-18).
 
 **Less, until it is right.** Every feature has to earn its place in the window,
 and most of the work is taking things out. Several features were built, shipped

@@ -272,7 +272,14 @@ belong to something else, and `kill(-pgid, SIGKILL)` would take it out. It kills
 the individual processes it originally asked to stop, and only those still in the
 same group.
 
-The agent and the session shell are never killable, at any layer.
+The agent and the session shell are never killable, at any layer, by anything
+in this list or by the person through it. One thing outside it does end an
+agent: deep sleep (`AgentSleep`, `docs/decisions.md` 2026-11-18), which ends an
+idle agent to resume it later, takes it from the terminal's foreground group
+and not from a command line, and then stops what that agent had started
+outside its own group, each by the pid and start time recorded before the
+signal. A server already detached from the agent is not in that record and is
+left to this list.
 
 ## Where the code is
 

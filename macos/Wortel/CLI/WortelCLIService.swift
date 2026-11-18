@@ -367,7 +367,9 @@ final class WortelCLIService {
                 directory: session.cwd ?? session.originCwd,
                 branch: session.worktreeBranch ?? session.linkedCheckout.flatMap { Self.branch(atGitDir: $0.gitDir) },
                 worktree: session.linkedCheckout?.root,
-                agent: session.runningAgent, state: state(of: session),
+                // An agent asleep is still this session's agent: sleep is
+                // Wortel's business, and a script should not have to know.
+                agent: session.runningAgent ?? session.sleep.agent?.marker.agent, state: state(of: session),
                 selected: session === selected, caller: session === you)
         }
         guard let data = try? JSONEncoder().encode(sessions) else {
@@ -467,6 +469,14 @@ final class WortelCLIService {
         switch lookUp(query) {
         case .found(let found): session = found
         case .refused(let refusal): return reply(refusal)
+        }
+        // Its agent is asleep (`AgentSleep`): what is being sent is for the
+        // agent, and typed now it would land in the bare shell and run as a
+        // command. So the agent is brought back, and nothing is typed.
+        if session.sleep.sleeper != nil {
+            manager.wake(session)
+            return reply(.failure("\u{201c}\(session.name)\u{201d} had its agent put to sleep and is "
+                + "bringing it back now, so nothing was typed. Send it again in a few seconds."))
         }
         let (view, refusal) = terminal(of: session)
         guard let view else { return reply(refusal ?? .failure("That session has closed.")) }

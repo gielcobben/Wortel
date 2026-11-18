@@ -145,7 +145,9 @@ final class AgentSleepTests: XCTestCase {
         XCTAssertEqual(AgentRest(claudeStatus: "idle", since: since), .finished(since: since))
         XCTAssertEqual(AgentRest(claudeStatus: "waiting", since: since), .waiting(since: since))
         XCTAssertEqual(AgentRest(claudeStatus: "busy", since: since), .unknown)
-        XCTAssertEqual(AgentRest(claudeStatus: "shell", since: since), .unknown)
+        XCTAssertEqual(AgentRest(claudeStatus: "shell", since: since), .waiting(since: since),
+                       "a background command of its own is running: the long clock")
+        XCTAssertEqual(AgentRest(claudeStatus: "compacting", since: since), .unknown)
         XCTAssertEqual(AgentRest(claudeStatus: nil, since: since), .unknown)
         XCTAssertEqual(AgentRest(claudeStatus: "idle", since: nil), .unknown, "idle since when?")
     }

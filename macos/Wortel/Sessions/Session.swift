@@ -240,6 +240,13 @@ final class Session: Identifiable {
         owedResume?.typedAt == nil ? owedResume?.input : nil
     }
 
+    /// Whether this session's agent was ended to give its memory back, and
+    /// what resumes it when the session is next selected (`AgentSleep`).
+    /// Not observed, on purpose: sleep is never drawn, so nothing in a view
+    /// may depend on it. Apart from `owedResume`, which is typed the moment
+    /// a terminal is made, and launch makes them all.
+    @ObservationIgnored var sleep: AgentSleepState = .awake
+
     /// A line for this session's first shell to run: `wortel new -- <command>`.
     /// Typed in, not exec'd, so the shell sees it start like anything you type
     /// (an agent is tracked, named and resumed) and is still there when it

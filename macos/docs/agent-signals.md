@@ -105,6 +105,22 @@ queries while there is none: a session running an agent outside
 `HibernationPolicy.watchableAgents` (only claude so far) is not hibernated
 while that agent runs.
 
+## While an agent is asleep
+
+A sleeping session (`docs/glossary.md`) has no agent and no marker, only its
+shell. Its dot, ring and unread state are whatever they were: nothing about
+going to sleep or waking raises or clears attention. The agent's exit when it
+is ended (status 143) is not read as a command that failed
+(`SessionManager.sleepIsSettling`), and the resume typed on waking is confirmed
+as Wortel's own (`AgentConversation.confirms`), so it is not counted as an
+agent someone started. Which clock an agent is on comes from its own record,
+not from these signals: Wortel's signals only say "working", which keeps it
+awake. To see why an agent is still awake, or that one went:
+
+```sh
+log stream --level info --predicate 'subsystem == "com.gielcobben.Wortel" && category == "sleep"'
+```
+
 ## Per-agent status (out-of-the-box defaults, terminal = ghostty)
 
 | Agent | Busy | Attention (needs you) |

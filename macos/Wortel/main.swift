@@ -16,6 +16,12 @@ InstanceLock.acquireOrHandOff()
 // Same reason: WORTEL_HIBERNATE_AFTER shortens hibernation for a test.
 _ = HibernationPolicy.after
 
+// And the two clocks of deep sleep (WORTEL_SLEEP_AFTER,
+// WORTEL_SLEEP_WAITING_AFTER). Read later, a test's thirty seconds is the
+// real hour, and the test waits for an agent that is not going anywhere.
+_ = AgentSleep.finishedAfter
+_ = AgentSleep.waitingAfter
+
 // How the last run ended, read and re-armed now that this copy is the one that
 // stays: a crash during launch is exactly the one worth seeing. One stat and
 // one empty file, nothing on the network. See ExitMarker.

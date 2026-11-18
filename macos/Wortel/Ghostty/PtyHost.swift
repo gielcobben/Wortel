@@ -111,6 +111,17 @@ final class PtyHost: @unchecked Sendable {
     /// The pty master. Reading it gives what the program wrote; writing it is
     /// what the user typed. -1 once the descriptor has been closed.
     var master: Int32 { shared.withLock { $0.master } }
+
+    /// The process group in the foreground of this terminal, asked of the
+    /// terminal itself: a shell at its prompt, or whatever it handed the
+    /// terminal to. nil when there is no terminal to ask or it won't say.
+    /// Asking changes nothing.
+    func foregroundProcessGroup() -> pid_t? {
+        let master = self.master
+        guard master >= 0 else { return nil }
+        let group = tcgetpgrp(master)
+        return group > 0 ? group : nil
+    }
     private(set) var pid: pid_t = -1
 
     /// Output from the program. Called on `queue`, never on main — it's the hot

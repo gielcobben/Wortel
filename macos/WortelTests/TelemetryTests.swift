@@ -42,7 +42,7 @@ final class TelemetryTests: XCTestCase {
             "sessions", "agents_resumed", "uptime", "via", "command", "automatic",
             "pane", "mode", "kind", "verb", "jobs", "orphans", "orphan",
             "where", "area", "result", "message",
-            "first", "previous_exit", "notifications", "agent",
+            "first", "previous_exit", "notifications", "agent", "cause",
             "signal", "exception", "site", "signature", "crashed_version", "crashed_arch",
         ]
         for event in Self.everyEvent {
@@ -427,6 +427,8 @@ final class TelemetryTests: XCTestCase {
         }
         for agent in AgentName.allCases {
             events.append(.agentStarted(kind: agent))
+            events.append(.agentWoke(agent: agent))
+            for cause in SleepCause.allCases { events.append(.agentSlept(agent: agent, cause: cause)) }
         }
         for count in CountBucket.allCases {
             events.append(.keeperLost(sessions: count))

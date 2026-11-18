@@ -102,6 +102,17 @@ enum TelemetryEvent: Equatable {
     /// asked or where: it says which integrations deserve the work first.
     case agentStarted(kind: AgentName)
 
+    /// An idle agent was ended to give its memory back (`AgentSleep`), which
+    /// one from the fixed list, and whether its hour was up or macOS said
+    /// memory was short. Whether the feature does anything at all, and
+    /// whether pressure ever reaches it, are both this one count.
+    case agentSlept(agent: AgentName, cause: SleepCause)
+
+    /// A sleeping agent was resumed because its session was selected, and
+    /// started. Against `agent_slept`, how much of what goes to sleep is
+    /// ever wanted again.
+    case agentWoke(agent: AgentName)
+
     /// The process that keeps every shell alive went away underneath us, with
     /// roughly how many sessions it took. After a crash, the one failure that
     /// costs people the most work, and until now visible only to the person it
@@ -170,6 +181,8 @@ enum TelemetryEvent: Equatable {
         case .agentAttention: return "agent_attention"
         case .agentJumpUsed: return "agent_jump_used"
         case .agentStarted: return "agent_started"
+        case .agentSlept: return "agent_slept"
+        case .agentWoke: return "agent_woke"
         case .keeperLost: return "keeper_lost"
         case .sessionArchived: return "session_archived"
         case .sessionUnarchived: return "session_unarchived"
@@ -213,6 +226,10 @@ enum TelemetryEvent: Equatable {
             return ["kind": kind.rawValue, "agent": agent.rawValue]
         case let .agentStarted(kind):
             return ["kind": kind.rawValue]
+        case let .agentSlept(agent, cause):
+            return ["agent": agent.rawValue, "cause": cause.rawValue]
+        case let .agentWoke(agent):
+            return ["agent": agent.rawValue]
         case let .keeperLost(sessions):
             return ["sessions": sessions.rawValue]
         case let .appCrashed(signal, exception, site, signature, version, arch):
@@ -269,6 +286,14 @@ enum DurationBucket: String, CaseIterable {
         default: self = .dayOrMore
         }
     }
+}
+
+/// Why an idle agent was put to sleep.
+enum SleepCause: String, CaseIterable {
+    /// Its time at rest was up.
+    case clock
+    /// macOS said memory was short.
+    case pressure
 }
 
 /// Where a new session came from.

@@ -1,4 +1,12 @@
 import Foundation
+import os
+
+/// What deep sleep did and why not.
+///
+///     log stream --level info --predicate 'subsystem == "com.gielcobben.Wortel" && category == "sleep"'
+enum AgentSleepLog {
+    static let log = Logger(subsystem: "com.gielcobben.Wortel", category: "sleep")
+}
 
 /// An agent Wortel ended to give its memory back, and what brings it back.
 ///
@@ -37,13 +45,24 @@ enum AgentSleepState: Equatable {
         if case .ending = self { return true }
         return false
     }
+
+    /// The agent that is asleep or on its way there: what a save records, so
+    /// a crash between the signal and the agent going still knows of it.
+    var agent: SleepingAgent? {
+        switch self {
+        case .awake: return nil
+        case .ending(let agent, _, _), .asleep(let agent): return agent
+        }
+    }
 }
 
 /// What the agent's own record says it is doing, when it is not working.
 enum AgentRest: Equatable {
     /// Its turn is done and it is at its prompt.
     case finished(since: Date)
-    /// It is waiting on the person: a question, a plan, a permission prompt.
+    /// It is waiting on the person (a question, a plan, a permission
+    /// prompt), or at its prompt with a shell of its own still running: the
+    /// long clock either way.
     case waiting(since: Date)
     /// Working, or nothing Wortel can read. Never slept on.
     case unknown
@@ -51,12 +70,14 @@ enum AgentRest: Equatable {
     /// From Claude Code's own word for it (`~/.claude/sessions/<pid>.json`,
     /// `status`). Seen on 2.1.327, 2026-11-18: `idle` at its prompt, `busy`
     /// in a turn, `waiting` at an AskUserQuestion and at a permission prompt
-    /// (`waitingFor` says which). Anything else, `busy` included, is unknown.
+    /// (`waitingFor` says which), and `shell` at its prompt after a turn
+    /// that left a background command running (`python3 -m http.server`).
+    /// Anything else, `busy` included, is unknown.
     init(claudeStatus status: String?, since: Date?) {
         guard let since else { self = .unknown; return }
         switch status {
         case "idle": self = .finished(since: since)
-        case "waiting": self = .waiting(since: since)
+        case "waiting", "shell": self = .waiting(since: since)
         default: self = .unknown
         }
     }

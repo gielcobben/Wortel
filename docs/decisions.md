@@ -78,6 +78,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-09-29. A terminal resizes once per pane animation and never while
   hidden.** Every resize re-wraps the screen and sends SIGWINCH to the agent
   (`2dfae43`, `c20f403`).
+- **2026-11-18. A session switch lays out the column and strip before it shows
+  the terminal.** SwiftUI showed the terminal first, in the previous session's
+  layout, and the column followed 10 to 85 ms later: the terminal was drawn
+  too small, then grew, sometimes resized twice. Now the switch runs in the
+  same turn as the selection, with resizes held, and the terminal is shown
+  once at its final size. Measured with the old and new paths alternating on
+  the same clicks: unchanged when the column stays put; when it opens or
+  closes, the first frame comes with the column (60 to 110 ms) instead of a
+  wrong frame first. Opening or closing the column itself is that cost.
 - **2026-10-07. ⇧⌘[ and ⇧⌘] are tabs**, the system's convention. Sessions are
   ⌥⌘↑ and ⌥⌘↓ (`c87fd17`).
 - **2026-10-20. A reload of the config is applied synchronously on the main

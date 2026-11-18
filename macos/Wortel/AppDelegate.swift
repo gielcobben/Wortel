@@ -125,6 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             runtime: runtime, manager: manager, git: gitPanel, files: fileTree,
             titleBars: titleBars, previewTabs: previewTabs)
         self.splitController = split
+        manager.onSwitch = { [weak split] session in split?.show(session) }
         // A file dragged out of a list onto a tab row or an area opens there,
         // through the same opener as a double-click, so it shows the same diff.
         split.openDroppedFiles = { [weak self] urls, region, index in

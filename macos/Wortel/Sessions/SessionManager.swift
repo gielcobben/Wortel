@@ -61,8 +61,14 @@ final class SessionManager {
             // for the shell to start in yet (see `prepareWorktree`).
             if session.preparation == nil { session.ensureSurfaceView(runtime: runtime) }
             scheduleSave()
+            onSwitch?(session)
         }
     }
+
+    /// Run at the end of every change of the selected session, in the same
+    /// turn: the window lays the whole switch out at once (`MainSplitViewController.show`)
+    /// instead of leaving it to observers that each run a turn later.
+    @ObservationIgnored var onSwitch: ((Session) -> Void)?
 
     /// Sessions in the order they were last selected, most recent first: what
     /// ⌘P lists before you type (SessionSwitcherMatch).

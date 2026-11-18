@@ -93,6 +93,10 @@ final class TerminalWorkspaceController: NSSplitViewController {
         }
     }
 
+    /// The strip as the selected session has it, applied now rather than a
+    /// turn later by the observer (see `MainSplitViewController.show`).
+    func applyNow() { applyVisibility() }
+
     /// Open when the user opened it, animated; snap when a session switch did,
     /// for the same reason the side column does.
     private func applyVisibility() {

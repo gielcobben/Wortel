@@ -91,6 +91,7 @@ final class MainSplitViewController: NSSplitViewController {
     /// The main area above the strip, and the column's content: with the
     /// strip, what `blink` draws around.
     private weak var terminalAreaView: NSView?
+    private weak var workspace: TerminalWorkspaceController?
     private weak var columnContentView: NSView?
     private weak var blinkView: NSView?
 
@@ -164,6 +165,7 @@ final class MainSplitViewController: NSSplitViewController {
         let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
         bottomAreaView = bottomPane.view
         terminalAreaView = workspace.terminalView
+        self.workspace = workspace
         let detail = ChromePaneController(
             bar: titleBars.mainBar, content: workspace, bodyColor: Chrome.content)
         let contentItem = NSSplitViewItem(viewController: detail)
@@ -393,6 +395,36 @@ final class MainSplitViewController: NSSplitViewController {
             setColumnWidth(width)
         }
         DispatchQueue.main.async { [weak self] in self?.suspendWidthCapture = false }
+    }
+
+    /// A session switch, laid out in one go: the session's column and strip
+    /// first, then its terminal shown at the size that leaves it.
+    ///
+    /// Left to the observers, the terminal came first: SwiftUI showed it in
+    /// the previous session's layout, and the column and strip followed 10 to
+    /// 85 ms later (measured 2026-11-18), each a resize of the terminal now on
+    /// screen. You saw it drawn at the wrong size and then jump, sometimes
+    /// twice (722, 787, back to 722), and its program redrew for each.
+    ///
+    /// Resizes are held for all of it, so the terminal being left keeps its
+    /// size while the layout moves under it and the one arriving takes its
+    /// new size once, when the hold is released. The observers still run a
+    /// turn later and find nothing left to do.
+    func show(_ session: Session) {
+        guard isViewLoaded, view.window != nil, session.preparation == nil,
+              let host = TerminalHostViewController.main, host.view.window === view.window
+        else { return }
+        SurfaceView.holdResizes()
+        defer { SurfaceView.releaseResizes() }
+        git.focus(session: session)
+        files.focus(session: session)
+        applyLayout()
+        workspace?.applyNow()
+        // The terminal's own area only. The sidebar and the column lay out
+        // with everything else when the frame is drawn; the whole window laid
+        // out here as well made a switch up to 130 ms slower (measured).
+        workspace?.view.layoutSubtreeIfNeeded()
+        host.show(session, runtime: runtime)
     }
 
     /// Everything about the column's place in the window: which side it's on,

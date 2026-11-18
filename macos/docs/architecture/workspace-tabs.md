@@ -58,7 +58,9 @@ Things that look like detours and aren't:
 - **Terminals don't resize during pane animations** (`Motion.pane`,
   `SurfaceView.holdResizes`): one resize when it lands instead of one a frame,
   each of which made the program inside redraw. Collapsing panes never resize a
-  terminal below 40×20pt for the same reason.
+  terminal below 40×20pt for the same reason. A session switch holds them too,
+  while the column and strip take the new session's layout
+  (`MainSplitViewController.show`).
 
 Width: the column's is per session and the same for every tab, and it may grow
 until the terminal has 320pt; the strip's height is app-wide. Tab drags are

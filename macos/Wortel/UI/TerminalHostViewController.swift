@@ -12,6 +12,11 @@ import AppKit
 /// a few milliseconds late instead of on an empty terminal.
 final class TerminalHostViewController: NSViewController {
     private(set) weak var currentView: SurfaceView?
+    /// The main window's, for a session switch laid out in one go
+    /// (`MainSplitViewController.show`), which runs outside SwiftUI's update.
+    static weak var main: TerminalHostViewController?
+    /// Resizes are held while a terminal wakes (`holdForWake`).
+    private var holdsForWake = false
     /// Waking, to be shown as soon as its screen has been written back.
     private weak var wakingView: SurfaceView?
 
@@ -43,7 +48,7 @@ final class TerminalHostViewController: NSViewController {
             HibernationPolicy.shared.hidden(waking)
         }
 
-        guard surfaceView !== currentView else { return }
+        guard surfaceView !== currentView else { return releaseWakeHold() }
 
         guard surfaceView.isHibernated else {
             HibernationPolicy.shared.shown(surfaceView)
@@ -51,6 +56,7 @@ final class TerminalHostViewController: NSViewController {
             return
         }
         wakingView = surfaceView
+        holdForWake()
         var done = false
         let swapWhenReady = { [weak self, weak surfaceView] in
             guard !done, let self, let surfaceView, self.wakingView === surfaceView else { return }
@@ -59,10 +65,36 @@ final class TerminalHostViewController: NSViewController {
             self.swap(to: surfaceView)
         }
         HibernationPolicy.shared.shown(surfaceView, onRestored: swapWhenReady)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.wakePatience, execute: swapWhenReady)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.wakePatience) { [weak self] in
+            swapWhenReady()
+            // Nothing is waking any more (its session closed meanwhile, say):
+            // the hold must not outlive it.
+            if let self, self.wakingView == nil { self.releaseWakeHold() }
+        }
+    }
+
+    /// The new session's column and strip are laid out as soon as it's
+    /// chosen, but a hibernated terminal takes 10 to 100 ms to come back, and
+    /// until then the one being left is still on screen. Held, it keeps its
+    /// size while the layout moves under it, instead of reflowing (and its
+    /// program redrawing) for a layout that isn't its own. Released once the
+    /// woken one is in front, which then takes its size.
+    private func holdForWake() {
+        guard !holdsForWake else { return }
+        holdsForWake = true
+        SurfaceView.holdResizes()
+    }
+
+    private func releaseWakeHold() {
+        guard holdsForWake else { return }
+        holdsForWake = false
+        SurfaceView.releaseResizes()
     }
 
     private func swap(to surfaceView: SurfaceView) {
+        // After the swap: the terminal being left is hidden by then, so only
+        // the one arriving takes a size when the hold lets go.
+        defer { releaseWakeHold() }
         guard surfaceView !== currentView else { return }
         Signposts.interval("session-switch") {
             if let currentView {
@@ -92,6 +124,7 @@ final class TerminalHostViewController: NSViewController {
     /// worktree is still being made). The last one shown is hidden, not
     /// removed, and comes back instantly as usual.
     func showNothing() {
+        defer { releaseWakeHold() }
         if let waking = wakingView {
             wakingView = nil
             HibernationPolicy.shared.hidden(waking)

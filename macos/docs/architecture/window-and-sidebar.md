@@ -23,7 +23,13 @@ session's `SurfaceView` in the hierarchy and switches via
 `isHidden`/occlusion/first-responder — never `removeFromSuperview`, never a
 rebuild — so switching back is instant with no flash. `updateNSViewController`
 fires on any observable change, so `show()` early-returns when already showing
-the surface (otherwise it would steal focus from the rename field).
+the surface (otherwise it would steal focus from the rename field). A session
+switch doesn't wait for SwiftUI, though: `SessionManager.onSwitch` runs
+`MainSplitViewController.show` in the same turn as the selection, which lays
+out the session's column and strip first and only then shows its terminal,
+with resizes held throughout, so the terminal is shown at its final size and
+the one being left is never resized. Waking a hibernated terminal holds
+resizes until it is swapped in, for the same reason.
 
 **Sidebar selection and order** (`SidebarOutlineView`, `SessionSelection`,
 `SidebarSort`, both pure and in `WortelTests`). ⌘-click and ⇧-click select

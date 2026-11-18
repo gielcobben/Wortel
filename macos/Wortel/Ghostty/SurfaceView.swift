@@ -129,12 +129,11 @@ final class SurfaceView: NSView {
     static func holdResizes() { resizeHolds += 1 }
 
     /// Shown again: take the size it missed while hidden, a moment later
-    /// rather than now. A session switch unhides this before the new session's
-    /// column has been applied, so the container is still the *previous*
-    /// session's width at this instant; taken now, a terminal coming back to
-    /// the width it left at would be resized to the other session's and back
-    /// again, two redraws for nothing. A moment later the layout has landed,
-    /// and usually it's the size it already had. Until then its last frame
+    /// rather than now, in case the layout around it hasn't landed yet. A
+    /// session switch doesn't rely on this: it lays the new session out first
+    /// and shows the terminal inside a hold, whose release gives it its size
+    /// (`MainSplitViewController.show`). This is for whatever else unhides a
+    /// terminal (SwiftUI's own update, a side tab). Until then its last frame
     /// shows pinned top left, as during a hold.
     override var isHidden: Bool {
         didSet {

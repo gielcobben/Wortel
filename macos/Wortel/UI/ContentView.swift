@@ -1605,7 +1605,9 @@ private struct TerminalContainer: NSViewControllerRepresentable {
     let preparing: Bool
 
     func makeNSViewController(context: Context) -> TerminalHostViewController {
-        TerminalHostViewController()
+        let host = TerminalHostViewController()
+        TerminalHostViewController.main = host
+        return host
     }
 
     func updateNSViewController(_ controller: TerminalHostViewController, context: Context) {

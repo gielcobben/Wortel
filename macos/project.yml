@@ -536,6 +536,10 @@ targets:
       # wrong entry doesn't throw, it silently leaves a session cold or types the
       # wrong command. Foundation only.
       - path: Wortel/Sessions/AgentResumeStore.swift
+      # Deep sleep's decision: when an idle agent may be ended. Every rule
+      # is a reason to stay awake, and each one wrong is an agent killed
+      # that should not have been.
+      - path: Wortel/Sessions/AgentSleep.swift
       # Which conversation Claude, Pi or Codex is in, read from each agent's
       # own files. Three layouts nobody documents; a drift resumes the wrong
       # conversation without a sound. Foundation only.

@@ -5,7 +5,7 @@ import Foundation
 /// and removed at the next prompt (when it exits), so a marker on disk means
 /// "this agent is running right now"; a marker that *outlives an app quit* means
 /// "it was still running at quit" — which is when we resume it.
-struct AgentMarker {
+struct AgentMarker: Equatable {
     /// The agent's command basename, e.g. `claude`, `codex`, `aider`.
     let agent: String
     /// The `--model`/`-m` value if the launch command carried one, for the
@@ -416,6 +416,36 @@ enum AgentResumeStore {
             .appendingPathComponent(".claude/sessions/\(pid).json")
         guard let data = try? Data(contentsOf: url) else { return nil }
         return claudeConversationID(sessionFile: data, pid: pid)
+    }
+
+    /// What a running Claude process says about itself in that same file:
+    /// its conversation, and whether it is idle, busy or waiting on the
+    /// person, with when that last changed. nil when there is no such file,
+    /// or it is another process's.
+    struct ClaudeProcessState: Equatable {
+        let conversationID: String
+        /// `idle`, `busy`, `waiting`, or whatever a later Claude writes.
+        let status: String?
+        let statusChangedAt: Date?
+    }
+
+    static func claudeProcessState(pid: pid_t) -> ClaudeProcessState? {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/sessions/\(pid).json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return claudeProcessState(sessionFile: data, pid: pid)
+    }
+
+    static func claudeProcessState(sessionFile data: Data, pid: pid_t) -> ClaudeProcessState? {
+        guard let id = claudeConversationID(sessionFile: data, pid: pid),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        // Milliseconds since 1970, as Claude writes its times.
+        let changed = (object["statusUpdatedAt"] as? NSNumber).map {
+            Date(timeIntervalSince1970: $0.doubleValue / 1000)
+        }
+        return ClaudeProcessState(conversationID: id, status: object["status"] as? String,
+                                  statusChangedAt: changed)
     }
 
     /// The `sessionId` of a `~/.claude/sessions/<pid>.json`, if it is a

@@ -87,6 +87,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the same clicks: unchanged when the column stays put; when it opens or
   closes, the first frame comes with the column (60 to 110 ms) instead of a
   wrong frame first. Opening or closing the column itself is that cost.
+- **2026-11-18. A session switches on mouse-down**, as in Finder's sidebar.
+  It switched on mouse-up, after AppKit had ruled out a drag, so the time the
+  button was held (115 ms a click on average, sampled) came before every
+  switch. ⌘ and ⇧ still act on mouse-up, and so does a press inside a
+  selection of several, which may be the start of dragging them. The column
+  also opens at the session's width now rather than the last one's: it was
+  laid out twice, 23 ms of a switch.
 - **2026-10-07. ⇧⌘[ and ⇧⌘] are tabs**, the system's convention. Sessions are
   ⌥⌘↑ and ⌥⌘↓ (`c87fd17`).
 - **2026-10-20. A reload of the config is applied synchronously on the main

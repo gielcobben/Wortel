@@ -520,6 +520,9 @@ final class SidebarOutline: NSOutlineView {
     var onDragEnd: (() -> Void)?
     /// Mouse-*down* on a folder header, outside the disclosure chevron.
     var onHeaderPressed: ((Any) -> Void)?
+    /// Mouse-*down* on a session's row, a plain press: the switch happens
+    /// here rather than on mouse-up (see `mouseDown`).
+    var onSessionPressed: ((Any) -> Void)?
 
     /// Headers toggle on mouse-down, like the chevron beside them — which
     /// NSOutlineView drives from its own mouse-down tracking. The table's
@@ -550,6 +553,19 @@ final class SidebarOutline: NSOutlineView {
         if row >= 0, !onButton, let item = item(atRow: row),
            !frameOfOutlineCell(atRow: row).contains(point) {
             onHeaderPressed?(item)
+        }
+        // A plain press on a session switches to it now, as a click in
+        // Finder's sidebar does. The table's `action` only fires on mouse-up,
+        // once AppKit has ruled out a drag, which put however long the button
+        // was held (115 ms a click on average, measured 2026-11-18) in front
+        // of every switch. Dragging still works: the press selected the
+        // session, and the drag takes it. ⌘ and ⇧ stay on mouse-up, as does
+        // a second press, and so does editing a name in the list.
+        let plain = event.modifierFlags.intersection([.command, .shift, .control]).isEmpty
+        let editing = (window?.firstResponder as? NSView)?.isDescendant(of: self) == true
+            && window?.firstResponder !== self
+        if row >= 0, !onButton, plain, event.clickCount == 1, !editing, let item = item(atRow: row) {
+            onSessionPressed?(item)
         }
         super.mouseDown(with: event)
     }
@@ -650,6 +666,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         outline.onHeaderPressed = { [weak coordinator = context.coordinator, weak outline] item in
             guard let outline else { return }
             coordinator?.headerPressed(item, in: outline)
+        }
+        outline.onSessionPressed = { [weak coordinator = context.coordinator] item in
+            coordinator?.sessionPressed(item)
         }
         outline.headerView = nil
         outline.focusRingType = .none
@@ -1316,6 +1335,16 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// manager, and the hosted row draws the accent pill from that state.
         func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
             false
+        }
+
+        /// A plain press on a session's row: switch now, on mouse-down. Not
+        /// when the row is part of a selection of several, as in Finder: the
+        /// press may be the start of dragging them all, and mouse-up
+        /// (`rowClicked`) narrows it to the one if it wasn't.
+        func sessionPressed(_ item: Any) {
+            guard let item = item as? SessionItem,
+                  !manager.isInMultipleSelection(item.session) else { return }
+            manager.clickSidebarRow(item.id, .plain)
         }
 
         @objc func rowClicked(_ sender: NSOutlineView) {

@@ -32,7 +32,11 @@ the one being left is never resized. Waking a hibernated terminal holds
 resizes until it is swapped in, for the same reason.
 
 **Sidebar selection and order** (`SidebarOutlineView`, `SessionSelection`,
-`SidebarSort`, both pure and in `WortelTests`). ⌘-click and ⇧-click select
+`SidebarSort`, both pure and in `WortelTests`). A plain press on a session
+switches to it on mouse-down, as Finder's sidebar does (`SidebarOutline.mouseDown`
+→ `sessionPressed`); the table's action only fires on mouse-up, after AppKit
+has ruled out a drag. A press on a row inside a selection of several waits for
+mouse-up, so the selection can still be dragged. ⌘-click and ⇧-click select
 several sessions (the range runs over rows as drawn, across sections); the
 **lead is always `selectedID`**, the session on screen, and a modifier click
 never moves it, so selecting four unread sessions doesn't start four shells or

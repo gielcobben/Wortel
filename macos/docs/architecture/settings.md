@@ -82,8 +82,11 @@ plain terminal.
   telemetry's preferences each have one owner already and are not copied here.
 - **The window is the Mac's own preferences window**
   (`SettingsWindowController`): an `NSTabViewController` in its toolbar
-  style, so the tabs are the system's icon tabs, the window is named for the
-  tab in front, and it grows or shrinks to that tab's height. Two tabs:
+  style, so the tabs are the system's icon tabs, and it grows or shrinks to
+  the height of the tab in front. No title is drawn (the tab in front is
+  named under its icon), so the toolbar is the unified style, which puts the
+  tabs in line with the traffic lights; the preferences style kept an empty
+  row where the title was. Two tabs:
   **General** (what a new session starts, the commit box, where servers
   open) and **Updates** (automatic updates, usage data). Made when asked for
   and released when closed, so nothing of it exists off screen.

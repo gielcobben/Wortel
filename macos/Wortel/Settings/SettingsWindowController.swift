@@ -3,8 +3,8 @@ import SwiftUI
 
 /// The Settings window (Wortel ▸ Settings…, ⌘,).
 ///
-/// The Mac's own preferences window: icon tabs in the toolbar, the window
-/// named for the tab in front and growing or shrinking to fit it. Built from
+/// The Mac's own preferences window: icon tabs in the toolbar, and the
+/// window growing or shrinking to fit the tab in front. Built from
 /// `NSTabViewController` in its toolbar style, which is what gives the tabs
 /// their system look and their keyboard and accessibility behaviour. One at
 /// a time, made when asked for and let go when closed, so nothing of it
@@ -22,8 +22,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let tabs = SettingsTabs(settings: settings, updater: updater)
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable, .miniaturizable]
-        // Centred icons with their names under them: a preferences toolbar.
-        window.toolbarStyle = .preference
+        // No title drawn: the tab in front is named right under its icon,
+        // and the same word a line above it said nothing. The window is
+        // still called Settings where a name is needed (the Window menu,
+        // Mission Control, VoiceOver).
+        window.titleVisibility = .hidden
+        // The tabs in line with the traffic lights, with their names. The
+        // preferences style keeps a row for the title whether or not one is
+        // drawn, which left an empty strip above the tabs; the compact style
+        // drops the tabs' names, and then nothing says what they are.
+        window.toolbarStyle = .unified
         window.tabbingMode = .disallowed
         // Where you are, and over a full-screen terminal rather than on the
         // space the app was launched in (as the preview windows are).
@@ -83,7 +91,7 @@ private final class SettingsTabs: NSTabViewController {
         hosting.sizingOptions = [.preferredContentSize]
         // AppKit names the window for the controller in front, and one with
         // no title made it "Untitled" on the first switch of tabs.
-        hosting.title = name
+        hosting.title = Self.windowTitle
         let item = NSTabViewItem(viewController: hosting)
         item.label = name
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: name)
@@ -95,12 +103,14 @@ private final class SettingsTabs: NSTabViewController {
         fitWindow(animated: true)
     }
 
-    /// Name the window for the tab in front and make it that tab's height,
-    /// keeping its top edge where it is, as a preferences window does.
+    static let windowTitle = "Settings"
+
+    /// Make the window the height of the tab in front, keeping its top edge
+    /// where it is, as a preferences window does.
     func fitWindow(animated: Bool) {
         guard let window = view.window, selectedTabViewItemIndex >= 0 else { return }
         let item = tabViewItems[selectedTabViewItemIndex]
-        window.title = item.label
+        window.title = Self.windowTitle
         guard let pane = item.viewController?.view else { return }
         let size = pane.fittingSize
         guard size.width > 0, size.height > 0 else { return }

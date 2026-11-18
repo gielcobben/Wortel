@@ -34,8 +34,9 @@ A row that survives gets a dated line in `docs/decisions.md`.
 | Update automatically | Sparkle's own preferences, through `Updater.updatesAutomatically` and `setUpdatesAutomatically` | Sparkle |
 | Share anonymous usage data | `TelemetrySettings.isEnabledByUser`, through `Telemetry.setReporting` | `TelemetrySettings.isEnabled` |
 
-The last two are absent on a build where they can do nothing (a development
-build has no updater and never reports): absent, not greyed. The usage-data
+The last two are the Updates tab, and are absent on a build where they can do
+nothing (a development build has no updater and never reports): absent, not
+greyed. The usage-data
 switch is also in the sidebar's ⓘ, which is where the first-run notice and
 the privacy page point.
 
@@ -49,9 +50,10 @@ plain terminal.
   shell, so their PATH, aliases and functions apply. A control character
   inside it, a second line, or more than `MAX_CANON` bytes is refused with a
   reason under the field and never saved.
-- **Saved when editing ends** (Return, leaving the field, picking from the
-  menu, closing the window), not per keystroke, so ⌘N pressed mid-word
-  starts what was last saved (`CommandField` in `SettingsView.swift`).
+- **Saved when editing ends** (Return, Tab, picking from the list, closing
+  the window), not per keystroke, so ⌘N pressed mid-word starts what was
+  last saved (`CommandComboBox`, an `NSComboBox`: a bordered field with its
+  list inside it, the Mac's own control for "type anything, or pick one").
 - **One place decides who gets it**: `SessionStart`, which every way of
   making a session must name, with no default. The app's own ways in pass
   `.preferred`; `wortel new` passes its own line or `.plain`; the session
@@ -63,9 +65,8 @@ plain terminal.
   Session menu (shown and hidden from `AppSettings.onNewSessionCommandChange`,
   as Restart to Update is by the updater), the sidebar's + menu and a
   folder's menu.
-- **The menu at the field's end** lists the known agents this Mac has, and
-  Terminal, which empties the field. It is absent until there is an agent to
-  offer (`AgentDiscovery`):
+- **The field's list** holds the known agents this Mac has
+  (`AgentDiscovery`):
   the login shell is run once when the window opens, off the main thread,
   with `command -v` between two sentinel lines so nothing its startup files
   print can get in, and three seconds to answer. If it doesn't, the usual
@@ -79,16 +80,28 @@ plain terminal.
   so a view follows a change at once, and takes its `UserDefaults` in `init`
   so `AppSettingsTests` can run it on a throwaway suite. Sparkle's and
   telemetry's preferences each have one owner already and are not copied here.
-- **`SettingsView`** is the system's grouped `Form` with its own switches.
-  Nothing in it is Wortel's chrome (`DESIGN.md`, "Which surface for what").
-  One pane and no toolbar of icon tabs, as Notes and Reminders have it: tabs
-  are for an app with several panes. Wortel's own look for this window was
-  weighed and turned down (2026-11-18): it would be the one window on a Mac
-  where settings don't look like settings. Each row is a name and one grey
-  line saying what it does (a `Toggle` whose label is two `Text`s).
-- **`SettingsWindowController`** is a standard titled window, not resizable,
-  made when asked for and released when closed, so nothing of it exists off
-  screen. The form sets its height, since rows come and go with the build.
+- **The window is the Mac's own preferences window**
+  (`SettingsWindowController`): an `NSTabViewController` in its toolbar
+  style, so the tabs are the system's icon tabs, the window is named for the
+  tab in front, and it grows or shrinks to that tab's height. Two tabs:
+  **General** (what a new session starts, the commit box, where servers
+  open) and **Updates** (automatic updates, usage data). Made when asked for
+  and released when closed, so nothing of it exists off screen.
+- **The panes** (`GeneralSettingsPane`, `UpdatesSettingsPane` in
+  `SettingsView.swift`) are the system's grouped `Form` with its own
+  switches. Nothing in them is Wortel's chrome (`DESIGN.md`, "Which surface
+  for what"). Each row is a name and one grey line saying what it does, and
+  a click on either flips the switch (`SwitchRow`: the gesture is on the
+  label only, since the switch takes its own clicks). A click on the
+  command's name puts the cursor in its field.
+- **Tried first, the same day (2026-11-18):** one pane with no toolbar, which
+  is what the guidelines say for five rows and what Notes and Reminders do,
+  and which read as a dialog rather than as settings; a plain right-aligned
+  value for the command, which read as a label and not as somewhere to type;
+  and Wortel's own titlebar and page, turned down before it was built.
+- **On a development build the Updates tab stays**, with one line saying
+  there is nothing to set, since its two rows are absent there: a window
+  whose tabs come and go with the build is a different window to test.
 - **It closes with the main window** (`AppDelegate`, the observer that closes
   previews). Otherwise it would be the last window and keep the app up.
 - **⌘,** is the menu item's. Ghostty binds the same key to opening its config

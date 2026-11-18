@@ -329,10 +329,12 @@ outline around the one that now has the keyboard.
   is for a decision that stops the window: a new worktree, cleaning up.
 - **A menu for commands.** Every command is in the menu bar; that is what ⌘P
   lists. The Session menu comes before Edit. There is no File menu.
-- **Settings is the system's own form.** A standard titled window with the
-  system's grouped form and switches, and none of Wortel's chrome: it is the
-  one place that should look like every other Mac app's. Sentence case for
-  its rows. A row that can do nothing on this build is absent.
+- **Settings is the system's own preferences window.** Icon tabs in the
+  toolbar, the system's grouped form and switches under them, and none of
+  Wortel's chrome: it is the one place that should look like every other Mac
+  app's. Each row is a name in sentence case and one grey line saying what it
+  does, and the whole of that text is the switch's to click. Something typed
+  gets a bordered field. A row that can do nothing on this build is absent.
 - **The same menu everywhere** for the same thing. A session's menu is one
   menu, in one order, wherever it opens.
 - **A tooltip says what the eye cannot see, and nothing cleverer:** a name

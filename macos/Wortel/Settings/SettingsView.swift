@@ -293,6 +293,7 @@ private struct CommandRow: View {
     /// What the field shows while it is being typed in.
     @State private var draft = ""
     @FocusState private var editing: Bool
+    @State private var menuAnchor = MenuAnchor()
 
     private var problem: NewSessionCommand.Problem? {
         if case .failure(let problem) = NewSessionCommand.check(draft) { return problem }
@@ -329,31 +330,22 @@ private struct CommandRow: View {
                     .padding(.leading, 10)
                 // Only once there is something to offer: absent, not greyed.
                 if !agents.isEmpty {
-                    Menu {
-                        ForEach(agents, id: \.self) { agent in
-                            Toggle(agent, isOn: Binding(get: { command == agent },
-                                                        set: { _ in pick(agent) }))
-                        }
-                        Divider()
-                        Toggle("Terminal", isOn: Binding(get: { command.isEmpty },
-                                                         set: { _ in pick("") }))
-                    } label: {
+                    Button(action: showAgents) {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                             .frame(width: Chrome.controlSize, height: Chrome.controlSize)
                             .contentShape(Rectangle())
                     }
-                    .menuStyle(.button)
                     .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
                     .accessibilityLabel("Agents found on this Mac")
                 }
             }
             .frame(height: Chrome.controlSize)
             .background(RoundedRectangle(cornerRadius: Chrome.controlRadius, style: .continuous)
                 .fill(Color(nsColor: .textBackgroundColor)))
+            // The field itself, for the menu to hang from.
+            .background(MenuAnchorView(anchor: menuAnchor))
             // The commit box's outline: a field's line, and the accent while
             // it has the keyboard.
             .overlay(RoundedRectangle(cornerRadius: Chrome.controlRadius, style: .continuous)
@@ -367,6 +359,24 @@ private struct CommandRow: View {
         .onChange(of: editing) { _, now in if !now { save() } }
     }
 
+    /// The agents found, and Terminal, as a menu under the field and as wide
+    /// as it: the list of a field, not a menu that happens to open beside
+    /// its arrow. (SwiftUI's own `Menu` hung from the arrow at the field's
+    /// end and stuck out past the window.)
+    private func showAgents() {
+        let menu = NSMenu()
+        for agent in agents {
+            let item = ClosureMenuItem(title: agent) { pick(agent) }
+            item.state = command == agent ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let terminal = ClosureMenuItem(title: "Terminal") { pick("") }
+        terminal.state = command.isEmpty ? .on : .off
+        menu.addItem(terminal)
+        menuAnchor.pop(menu)
+    }
+
     private func pick(_ value: String) {
         draft = value
         command = value
@@ -376,5 +386,37 @@ private struct CommandRow: View {
         guard problem == nil else { return }
         let trimmed = draft.trimmingCharacters(in: .whitespaces)
         if command != trimmed { command = trimmed }
+    }
+}
+
+/// Where a menu hangs from: a view the size of whatever it is the background
+/// of, kept so a button elsewhere in the row can open a menu under it.
+@MainActor
+private final class MenuAnchor {
+    weak var view: NSView?
+
+    /// Open `menu` just under the anchor, from its leading edge and at least
+    /// as wide as it.
+    func pop(_ menu: NSMenu) {
+        guard let view else { return }
+        menu.minimumWidth = view.bounds.width
+        // The point is the menu's top left. The view isn't flipped, so its
+        // bottom edge is zero and "under it" is below that.
+        let under = view.isFlipped ? view.bounds.maxY + 4 : -4
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: under), in: view)
+    }
+}
+
+private struct MenuAnchorView: NSViewRepresentable {
+    let anchor: MenuAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        anchor.view = view
     }
 }

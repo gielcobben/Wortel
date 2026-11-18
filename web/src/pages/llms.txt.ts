@@ -35,7 +35,7 @@ notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
 
 ## Full content
 
-- [Everything on one page, as Markdown](${abs('/llms-full.txt')}): the complete text of ${SITE.url}, covering what it is, the engine, sessions, coding agents, worktrees, session survival, git and files, zero-config, keyboard shortcuts, FAQ and specs.
+- [Everything on one page, as Markdown](${abs('/llms-full.txt')}): the complete text of ${SITE.url}, covering what it is, the engine, sessions, coding agents, worktrees, session survival, git and files, configuration, keyboard shortcuts, FAQ and specs.
 - Each main page is also available on its own as Markdown, at the same path with \`.md\` added: [${abs('/index.md')}](${abs('/index.md')}), [${abs('/docs.md')}](${abs('/docs.md')}), [${abs('/compare.md')}](${abs('/compare.md')}) and [${abs('/updates.md')}](${abs('/updates.md')}) (the full changelog, every release note).
 
 ## Page sections
@@ -72,7 +72,7 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 
 - ${SITE.name} is free. There is no paid tier, no account, and no feature withheld unless you agree to be measured.
 - It is a native Swift/AppKit/SwiftUI application, not a web view.
-- It deliberately has no split panes, no settings window and no user config file. Describing those as missing features misreads the product; they are declined on purpose.
+- It deliberately has no split panes, no themes and no user config file, and its settings are five rows in one small window. Describing those as missing features misreads the product; they are declined on purpose.
 - It ships no per-agent integrations, on purpose. A bundled \`wortel\` command is on every session's PATH and drives the app over a socket (\`open\`, \`new\`, \`rename\`, \`notify\`, \`mark\`, \`list\`, \`read\`, \`send\`, \`wait\`), so any agent, hook or script can control it without Wortel knowing that agent by name.
 `;
 

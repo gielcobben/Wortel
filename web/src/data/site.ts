@@ -29,7 +29,7 @@ export const SITE = {
   title: 'Wortel: a native macOS terminal for coding agents',
   /** ~151 chars, inside the ~155-160 shown in a result snippet. */
   description:
-    'A zero-config macOS terminal on Ghostty’s real engine. Named sessions instead of tabs, a worktree per agent, and shells that keep running when you quit.',
+    'A native macOS terminal on Ghostty’s real engine. Named sessions instead of tabs, a worktree per agent, and shells that keep running when you quit.',
   tagline: 'A native macOS terminal your agents can live in.',
   author: 'Giel Cobben',
   authorUrl: 'https://gielcobben.com',
@@ -189,12 +189,15 @@ export const SECTIONS: Section[] = [
 
   {
     id: 'zero-config',
-    title: 'Nothing to configure, on purpose',
+    title: 'Almost nothing to configure, on purpose',
     lead:
-      'Wortel’s entire configuration is one read-only file inside the app. There is no settings window, and there is no dotfile.',
+      'The terminal’s whole configuration is one read-only file inside the app. Settings has five things in it, for what differs per person. There is no dotfile.',
     blocks: [
       {
-        p: 'This is the feature. A terminal you can spend an afternoon tuning is a terminal you will. Wortel chooses the font, the theme, the keybinds and the scrollback once, and treats them as finished. Font size is the one thing you can change.',
+        p: 'This is the feature. A terminal you can spend an afternoon tuning is a terminal you will. Wortel chooses the font, the theme, the keybinds and the scrollback once, and treats them as finished. Font size is the one thing about the look you can change.',
+      },
+      {
+        p: 'Settings (⌘,) is two short tabs: what a new session starts with, whether Source Control shows its commit box, where a local server opens, automatic updates, and anonymous usage data. A setting is only added for something you decide once and that really differs from one person to the next.',
       },
     ],
   },
@@ -392,7 +395,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'How is Wortel different from iTerm2, Warp, Kitty or Alacritty?',
-    a: 'Wortel has no settings UI, no plugin system, no AI chat box and no splits. What it has instead is built around running coding agents: named shells that survive a restart and switch in one frame, a git worktree per session so several agents can work one repository at once, shells that keep running after you quit the app, a git and files inspector beside the terminal, and detection of which background agent has stopped and is waiting on you.',
+    a: 'Wortel has no themes, no plugin system, no AI chat box and no splits, and its settings are five rows. What it has instead is built around running coding agents: named shells that survive a restart and switch in one frame, a git worktree per session so several agents can work one repository at once, shells that keep running after you quit the app, a git and files inspector beside the terminal, and detection of which background agent has stopped and is waiting on you.',
   },
   {
     q: 'How is Wortel different from Conductor, Emdash or Superset?',
@@ -408,7 +411,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Can I configure Wortel’s fonts, colours and keybinds?',
-    a: 'Only font size, which is adjustable per session with ⌘+ and ⌘−. Everything else is fixed: the whole configuration is a read-only file inside the app bundle, and your ~/.config/ghostty is never read. Zero configuration is the design goal, not a missing feature.',
+    a: 'Only font size, which is adjustable per session with ⌘+ and ⌘−. Everything else about how the terminal looks and types is fixed: its whole configuration is a read-only file inside the app bundle, and your ~/.config/ghostty is never read. Settings (⌘,) holds five things that differ per person, such as what a new session starts with, and none of them is about the look. Next to nothing to configure is the design goal, not a missing feature.',
   },
   {
     q: 'How does Wortel know when a coding agent is waiting for me?',
@@ -464,5 +467,5 @@ export const SPECS: [string, string][] = [
   ['Scripting', 'A bundled wortel command, no installer'],
   ['Price', 'Free'],
   ['Updates', 'Sparkle, signed and notarized'],
-  ['Configuration', 'None: read-only and bundled'],
+  ['Configuration', 'Five settings. The terminal’s own is read-only and bundled'],
 ];

@@ -229,10 +229,10 @@ export const AXES: Axis[] = [
   },
   {
     id: 'noconfig',
-    q: 'Nothing to configure',
-    short: 'nothing to configure',
+    q: 'Next to nothing to configure',
+    short: 'next to nothing to configure',
     cells: {
-      wortel: { v: 'yes', note: 'None. One read-only file in the bundle' },
+      wortel: { v: 'yes', note: 'Five settings. No config file' },
       ghostty: { v: 'no', note: 'A config file, often a large one' },
       iterm2: { v: 'no', note: 'A large settings window' },
       warp: { v: 'no', note: 'Settings, themes and agent profiles' },

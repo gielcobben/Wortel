@@ -54,7 +54,7 @@ export function homeSchema(LATEST: Release | null) {
       'Project file tree with drag-to-terminal path insertion',
       'Preview windows for source, diffs, rendered Markdown and Quick Look',
       'A bundled wortel command that scripts the app over a socket, with no installer',
-      'Zero configuration: no settings UI and no dotfile',
+      'Almost nothing to configure: five settings and no dotfile',
     ],
   };
 

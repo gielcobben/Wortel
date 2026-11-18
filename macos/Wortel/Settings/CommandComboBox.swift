@@ -28,7 +28,7 @@ struct CommandComboBox: NSViewRepresentable {
         box.usesDataSource = false
         // Offering `claude` for `c` would be this field deciding for you.
         box.completes = false
-        box.placeholderString = "A command, like claude"
+        box.placeholderString = "Command"
         // Something typed into a shell, so in the font of one.
         box.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         box.stringValue = command

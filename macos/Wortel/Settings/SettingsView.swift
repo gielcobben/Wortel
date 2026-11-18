@@ -58,9 +58,11 @@ struct GeneralSettingsPane: View {
         case .controlCharacter: return "A tab or a line break can't be typed into a shell."
         case .tooLong: return "Too long. A shell takes 1,024 bytes at once."
         case nil:
+            // It is any command, not a choice of agent, and the line has to
+            // say so: the list in the field only holds the agents found.
             return settings.startsSessionsWithCommand
-                ? "Typed into each new session. New Terminal (⌃⌘N) starts one without it."
-                : "A command typed into each new session. Empty starts a plain terminal."
+                ? "Any command. New Terminal (⌃⌘N) starts a session without it."
+                : "Any command, such as claude. Empty starts a plain terminal."
         }
     }
 }

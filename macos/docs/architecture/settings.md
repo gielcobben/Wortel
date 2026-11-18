@@ -49,9 +49,9 @@ plain terminal.
   shell, so their PATH, aliases and functions apply. A control character
   inside it, a second line, or more than `MAX_CANON` bytes is refused with a
   reason under the field and never saved.
-- **Saved when editing ends** (Return, Tab, picking from the list, closing
-  the window), not per keystroke, so ⌘N pressed mid-word starts what was
-  last saved (`CommandComboBox`).
+- **Saved when editing ends** (Return, leaving the field, picking from the
+  menu, closing the window), not per keystroke, so ⌘N pressed mid-word
+  starts what was last saved (`CommandField` in `SettingsView.swift`).
 - **One place decides who gets it**: `SessionStart`, which every way of
   making a session must name, with no default. The app's own ways in pass
   `.preferred`; `wortel new` passes its own line or `.plain`; the session
@@ -63,7 +63,9 @@ plain terminal.
   Session menu (shown and hidden from `AppSettings.onNewSessionCommandChange`,
   as Restart to Update is by the updater), the sidebar's + menu and a
   folder's menu.
-- **The pull-down** lists the known agents this Mac has (`AgentDiscovery`):
+- **The menu at the field's end** lists the known agents this Mac has, and
+  Terminal, which empties the field. It is absent until there is an agent to
+  offer (`AgentDiscovery`):
   the login shell is run once when the window opens, off the main thread,
   with `command -v` between two sentinel lines so nothing its startup files
   print can get in, and three seconds to answer. If it doesn't, the usual
@@ -79,6 +81,11 @@ plain terminal.
   telemetry's preferences each have one owner already and are not copied here.
 - **`SettingsView`** is the system's grouped `Form` with its own switches.
   Nothing in it is Wortel's chrome (`DESIGN.md`, "Which surface for what").
+  One pane and no toolbar of icon tabs, as Notes and Reminders have it: tabs
+  are for an app with several panes. Wortel's own look for this window was
+  weighed and turned down (2026-11-18): it would be the one window on a Mac
+  where settings don't look like settings. Each row is a name and one grey
+  line saying what it does (a `Toggle` whose label is two `Text`s).
 - **`SettingsWindowController`** is a standard titled window, not resizable,
   made when asked for and released when closed, so nothing of it exists off
   screen. The form sets its height, since rows come and go with the build.

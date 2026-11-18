@@ -49,6 +49,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     func show() {
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
+        // Nothing focused as it opens: AppKit would put the caret in the
+        // command field, the one text field here, as if it were asking to be
+        // filled in.
+        DispatchQueue.main.async { [weak self] in self?.window?.makeFirstResponder(nil) }
     }
 
     func windowWillClose(_ notification: Notification) {

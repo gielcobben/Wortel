@@ -146,7 +146,7 @@ final class TerminalHostViewController: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
         if let currentView { focusTerminal(currentView) }
-        SurfaceView.reconcileAll("the window appeared")
+        SurfaceView.settleSoon("the window appeared")
     }
 
     /// The terminal's own area was laid out: the one on screen is checked

@@ -427,8 +427,9 @@ final class MainSplitViewController: NSSplitViewController {
         host.show(session, runtime: runtime)
         // The rest of the window lays out when the frame is drawn, after
         // this returns and the hold with it. If that moves the terminal's
-        // area again, the terminal follows.
-        DispatchQueue.main.async { SurfaceView.reconcileAll("a session switch") }
+        // area again, the terminal follows: by its own area being laid out
+        // (`TerminalHostViewController.viewDidLayout`), and by the one check
+        // the hold's release has already asked for.
     }
 
     /// Everything about the column's place in the window: which side it's on,

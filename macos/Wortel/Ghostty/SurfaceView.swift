@@ -139,39 +139,51 @@ final class SurfaceView: NSView {
     /// has not been told yet (a new one, after a wake or a restart).
     private var toldSize: (width: UInt32, height: UInt32)?
 
-    /// Bumped on every hold and release, so the watchdog below can tell a
-    /// hold that is stuck from a later one.
-    private static var holdGeneration = 0
+    /// When the hold count last left zero: the hold now in force began then,
+    /// however many holds and releases have come and gone inside it. nil
+    /// while nothing is held.
+    private static var heldSince: Date?
     /// Longer than any pane animation (0.26 s) or wake (0.5 s) by a wide
     /// margin. A hold older than this is one whose release never came.
     private static let longestHold: TimeInterval = 2
 
     static func holdResizes() {
         resizeHolds += 1
-        holdGeneration += 1
-        let generation = holdGeneration
+        guard resizeHolds == 1 else { return }
+        let began = Date()
+        heldSince = began
         // A hold that is never released would freeze every terminal at the
         // size it has, for good: each change of size would wait for a release
         // that isn't coming. Nothing should hold this long, so one that does
-        // is let go, and said.
+        // is let go, and said. Asked of *this* stretch of holding, whatever
+        // other holds and releases happen inside it: a count that went 1, 2,
+        // 1 and stuck there is the leak this is for, and a check that any
+        // later hold or release cancelled never caught it.
         DispatchQueue.main.asyncAfter(deadline: .now() + longestHold) {
-            guard resizeHolds > 0, holdGeneration == generation else { return }
+            guard resizeHolds > 0, heldSince == began else { return }
             LayoutLog.log.fault("a resize hold was never released (\(resizeHolds) held): letting go")
             resizeHolds = 0
+            heldSince = nil
             NotificationCenter.default.post(name: resizeHoldReleased, object: nil)
+            settleSoon("a hold let go")
         }
     }
 
-    /// Ask every terminal to check its size against its view, now and once
-    /// more when the layout has had time to land. For the moments after
-    /// which a size is most often stale: a launch, a session switch, a pane
-    /// opening or closing.
-    static func reconcileAll(_ why: String) {
-        NotificationCenter.default.post(name: reconcileRequested, object: why)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            NotificationCenter.default.post(name: reconcileRequested, object: why + ", settled")
+    /// Ask the terminals on screen to check their size against their view
+    /// once the layout has had time to land. For the moments after which a
+    /// size is most often stale: a launch, a session switch, a pane opening
+    /// or closing. One check for however many of those come together.
+    static func settleSoon(_ why: String) {
+        settleWork?.cancel()
+        let work = DispatchWorkItem {
+            settleWork = nil
+            NotificationCenter.default.post(name: reconcileRequested, object: why)
         }
+        settleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
+
+    private static var settleWork: DispatchWorkItem?
 
     private static let reconcileRequested = Notification.Name("WortelSurfaceReconcile")
 
@@ -227,14 +239,12 @@ final class SurfaceView: NSView {
 
     static func releaseResizes() {
         resizeHolds = max(0, resizeHolds - 1)
-        holdGeneration += 1
         guard resizeHolds == 0 else { return }
+        heldSince = nil
         NotificationCenter.default.post(name: resizeHoldReleased, object: nil)
         // And once more when what the hold was for has landed: the last
         // frame of an animation can arrive after its completion.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            NotificationCenter.default.post(name: reconcileRequested, object: "after a hold")
-        }
+        settleSoon("after a hold")
     }
 
     @objc private func resizeHoldDidRelease(_ notification: Notification) {

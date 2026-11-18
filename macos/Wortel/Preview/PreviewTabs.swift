@@ -186,25 +186,13 @@ struct ModeSwitch: View {
     @Binding var selection: PreviewMode
 
     var body: some View {
-        PillSwitch(items: modes, title: \.title, selection: $selection)
-    }
-}
-
-/// The switch itself, for any short list of names: the preview's modes, and
-/// the Settings window's two tabs.
-struct PillSwitch<Item: Hashable>: View {
-    let items: [Item]
-    let title: (Item) -> String
-    @Binding var selection: Item
-
-    var body: some View {
         HStack(spacing: 2) {
-            ForEach(items, id: \.self) { item in
-                let selected = item == selection
+            ForEach(modes, id: \.self) { mode in
+                let selected = mode == selection
                 Button {
-                    selection = item
+                    selection = mode
                 } label: {
-                    Text(title(item))
+                    Text(mode.title)
                         .font(.system(size: 12, weight: selected ? .medium : .regular))
                         .foregroundStyle(selected ? .primary : .secondary)
                         .padding(.horizontal, 10)

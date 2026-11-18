@@ -9,10 +9,17 @@ import SwiftUI
 // Every row is a name and one short grey line saying what it does, and the
 // whole of that text is the switch's to click.
 
-/// The two tabs, as the titlebar row's switch names them.
+/// The two tabs of the titlebar row.
 enum SettingsTab: String, CaseIterable {
     case general = "General"
     case updates = "Updates"
+
+    var symbol: String {
+        switch self {
+        case .general: return "gearshape"
+        case .updates: return "arrow.down.circle"
+        }
+    }
 }
 
 /// Which tab is in front: shared by the switch in the titlebar row and the
@@ -31,8 +38,35 @@ enum SettingsMetrics {
     static let inset: CGFloat = 20
 }
 
-/// The page under the titlebar row: the rows of the tab in front.
+/// The page under the titlebar row: the rows of the tab in front, held to
+/// the top of the page and clipped to it.
+///
+/// The rows are laid over the page, not laid out in it, so the page is
+/// whatever size the window gives it and the rows keep their own. While the
+/// window's height is still on its way to a taller tab's, the rows are simply
+/// cut off at the bottom. Sized by the window instead, rows taller than the
+/// page were centred on it, and their top ran up over the titlebar row for
+/// the length of the animation.
 struct SettingsPage: View {
+    let state: SettingsTabState
+    @Bindable var settings: AppSettings
+    let updater: Updater
+    /// The rows' height, whenever it changes: the window follows it.
+    let onHeight: (CGFloat) -> Void
+
+    var body: some View {
+        Color.clear
+            .overlay(alignment: .top) {
+                SettingsRows(state: state, settings: settings, updater: updater)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }, action: { onHeight($0) })
+            }
+            .clipped()
+    }
+}
+
+/// The rows themselves, at the window's width and their own height: what the
+/// window is measured from before it is first shown.
+struct SettingsRows: View {
     let state: SettingsTabState
     @Bindable var settings: AppSettings
     let updater: Updater
@@ -47,7 +81,60 @@ struct SettingsPage: View {
         .padding(.horizontal, SettingsMetrics.inset)
         .padding(.vertical, 8)
         .frame(width: SettingsMetrics.width, alignment: .topLeading)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// The titlebar row's tabs, drawn as every tab in the app is
+/// (`SideTabStrip`): 28pt high with 8pt corners, a glyph and the name, the
+/// one in front on the band's own selection fill with a hairline, the other
+/// quiet until the pointer is over it. No close button, so the name has the
+/// same 10pt after it as before the glyph.
+struct SettingsTabStrip: View {
+    @Bindable var state: SettingsTabState
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(SettingsTab.allCases, id: \.self) { tab in
+                SettingsTabButton(tab: tab, isActive: state.tab == tab) { state.tab = tab }
+            }
+        }
+    }
+}
+
+private struct SettingsTabButton: View {
+    let tab: SettingsTab
+    let isActive: Bool
+    let select: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 8) {
+                Image(systemName: tab.symbol)
+                    .font(.system(size: 14))
+                    .frame(width: 16, height: 16)
+                Text(tab.rawValue)
+                    .font(.system(size: 13))
+            }
+            .foregroundStyle(Color(nsColor: isActive ? .labelColor : .secondaryLabelColor))
+            .padding(.horizontal, 10)
+            .frame(height: Chrome.controlSize)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: Chrome.controlRadius, style: .continuous)
+                if isActive {
+                    shape.fill(Color(nsColor: Chrome.raisedOnBand))
+                        .overlay(shape.strokeBorder(Color(nsColor: Chrome.hairlineStrong), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
+                } else if hovering {
+                    shape.fill(Color(nsColor: Chrome.hoverFill))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }
 

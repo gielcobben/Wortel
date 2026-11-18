@@ -330,7 +330,8 @@ outline around the one that now has the keyboard.
 - **A menu for commands.** Every command is in the menu bar; that is what ⌘P
   lists. The Session menu comes before Edit. There is no File menu.
 - **Settings is one of Wortel's own windows, for now.** Its titlebar row on
-  the glass with the tabs as the row's switch, and the rows on a page: 13pt
+  the glass holding its two tabs, drawn as every tab is, and the rows on a
+  page: 13pt
   names, a 12pt grey line under each saying what it does, hairlines between
   groups, small switches, a 28pt field with 8pt corners for what is typed.
   The whole of a row's text is the switch's to click. A row that can do

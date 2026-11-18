@@ -84,12 +84,18 @@ plain terminal.
   (`SettingsWindowController`): the titlebar row on the window's glass, an
   opaque page under its hairline (`BackdropController`,
   `ChromePaneController`, as the main and preview windows). The row holds
-  the switch between the two tabs, **General** (what a new session starts,
-  the commit box, where servers open) and **Updates** (automatic updates,
-  usage data): the app's own `PillSwitch`, which the preview window uses for
-  Diff · Source · Rendered. The window keeps its width and takes the height
-  of the tab in front, on the app's motion curve. Made when asked for and
-  released when closed, so nothing of it exists off screen.
+  the two tabs after the traffic lights, **General** (what a new session
+  starts, the commit box, where servers open) and **Updates** (automatic
+  updates, usage data), drawn as every tab in the app is (`SettingsTabStrip`,
+  to `SideTabStrip`'s numbers: 28pt, 8pt corners, a glyph and the name, the
+  one in front on the band's selection fill). A pill switch like the
+  preview's Diff · Source · Rendered was there for an hour and read as a
+  control, not as tabs. The window keeps its width and follows the height of
+  its rows on the app's motion curve (`SettingsPage.onHeight`). The rows are
+  laid over the page from its top and clipped to it, because rows taller
+  than a window still growing were centred on it and ran up over the
+  titlebar row. Made when asked for and released when closed, so nothing of
+  it exists off screen.
 - **This look is an experiment (2026-11-18)**, to be compared with the
   system's preferences window it replaced: an `NSTabViewController` with
   icon tabs and the system's grouped form, which is commit `37b52e6`.

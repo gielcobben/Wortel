@@ -84,7 +84,7 @@ plain terminal.
   (`SettingsWindowController`): the titlebar row on the window's glass, an
   opaque page under its hairline (`BackdropController`,
   `ChromePaneController`, as the main and preview windows). The row holds
-  the two tabs after the traffic lights, **General** (what a new session
+  the two tabs in its middle, **General** (what a new session
   starts, the commit box, where servers open) and **Updates** (automatic
   updates, usage data), drawn as every tab in the app is (`SettingsTabStrip`,
   to `SideTabStrip`'s numbers: 28pt, 8pt corners, a glyph and the name, the

@@ -117,9 +117,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// The window's titlebar row: one of the app's rows, holding the two tabs
-/// where the main window's rows hold theirs, after the traffic lights. Empty
-/// space moves the window and double-click zooms it (`ChromeBarView`).
+/// The window's titlebar row: one of the app's rows, holding the two tabs in
+/// its middle. Empty space moves the window and double-click zooms it
+/// (`ChromeBarView`).
 @MainActor
 private final class SettingsBar: ChromeBarView {
     init(state: SettingsTabState) {
@@ -130,7 +130,11 @@ private final class SettingsBar: ChromeBarView {
         tabs.translatesAutoresizingMaskIntoConstraints = false
         addSubview(tabs)
         NSLayoutConstraint.activate([
-            tabs.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
+            // Centred in the row. In a window this narrow the two tabs are
+            // the whole row, and started after the traffic lights they left
+            // the right half of it empty.
+            tabs.centerXAnchor.constraint(equalTo: centerXAnchor),
+            tabs.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: Chrome.trafficLightInset),
             tabs.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }

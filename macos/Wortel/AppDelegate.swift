@@ -425,6 +425,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let window = self?.window, window.firstResponder is SurfaceView else { return }
             window.makeFirstResponder(nil)
         }
+        manager.onReturnKeyboard = { [weak self] in
+            guard let self, let window = self.window, let session = self.manager.selected else { return }
+            if session.workspace.showsSessionTerminal, let view = session.surfaceView,
+               view.window === window, !view.isHiddenOrHasHiddenAncestor {
+                window.makeFirstResponder(view)
+            } else {
+                // A file, a page or a pane in front of its terminal: that,
+                // as for any return to the main area.
+                self.gitPanel.focusFront(of: .main)
+            }
+        }
         gitPanel.onFocusMainTerminal = { [weak self] in
             // Not while a tab in the main area's row covers the terminal.
             guard let self, self.gitPanel.activeMainTab == nil,

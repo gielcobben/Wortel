@@ -4576,7 +4576,23 @@ final class SessionManager {
             selection.extend(to: id, lead: lead, in: sidebarRowOrder)
         }
         if selection != sidebarSelection { sidebarSelection = selection }
-        if lead != selectedID { selectedID = lead }
+        if lead != selectedID {
+            selectedID = lead
+        } else if click == .plain {
+            // The session already on screen, pressed again: that is asking
+            // to be back in it, typing. Nothing switches, so nothing else
+            // would give its terminal the keyboard.
+            returnKeyboardToSession()
+        }
+    }
+
+    /// Give the keyboard back to the selected session: its terminal, when that
+    /// is in front of its row; otherwise what is in front of the main area,
+    /// as a switch to it would. Set by the app layer, which owns the window.
+    @ObservationIgnored var onReturnKeyboard: (() -> Void)?
+
+    func returnKeyboardToSession() {
+        onReturnKeyboard?()
     }
 
     /// Esc, or typing in the terminal: back to the session on screen alone.

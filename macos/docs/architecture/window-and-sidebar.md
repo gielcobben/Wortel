@@ -18,7 +18,16 @@ Glass capsule, and AppKit has no switch to stop that. The window's vibrancy is
 one behind-window material under everything (`BackdropController`); only the
 pages (terminal, column) are opaque. Sidebar selection is a custom neutral
 pill rather than `List(selection:)` because the sidebar never holds keyboard
-focus (the terminal does). `TerminalHostViewController` is the key trick: it keeps **every**
+focus (the terminal does). That is enforced, not assumed: `SidebarOutline`
+refuses first responder. A table takes the keyboard on any press its own code
+handles, and until 2026-11-19 only a press that switched sessions kept it
+with the terminal (the switch handed it there first); the session already on
+screen, a folder's header, ⌘- and ⇧-click all left it in the list, which draws
+no focus, so typing went nowhere until the terminal was clicked. Pressing the
+session already on screen gives its terminal the keyboard
+(`SessionManager.returnKeyboardToSession`, or what is in front of the main
+area if a tab covers it), and so does ending a rename with Return or Esc, or
+by a press elsewhere in the list. `TerminalHostViewController` is the key trick: it keeps **every**
 session's `SurfaceView` in the hierarchy and switches via
 `isHidden`/occlusion/first-responder — never `removeFromSuperview`, never a
 rebuild — so switching back is instant with no flash. `updateNSViewController`

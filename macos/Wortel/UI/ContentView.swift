@@ -62,7 +62,8 @@ struct SidebarPane: View {
                 SidebarSnapshotGroup(
                     folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
                     tallIDs: Set($0.sessions.filter(\.hasSecondLine).map(\.id)),
-                    isPinned: $0.isPinned)
+                    isPinned: $0.isPinned,
+                    sortedIDs: manager.sortedOrder(of: $0))
             },
             folding: SidebarFolding(folders: manager.collapsedFolders,
                                     pinned: manager.pinnedCollapsed,
@@ -74,7 +75,12 @@ struct SidebarPane: View {
                     manager.sidebarSortKey(for: session).map { (session.id, $0) }
                 })
                 : nil)
-            .safeAreaInset(edge: .bottom) {
+            // The list runs on into the bar's own top padding, so it ends
+            // (and fades out, `SidebarScrollView`) level with the tops of the
+            // buttons rather than 20pt above them: SwiftUI's default spacing
+            // here measured 8pt, on top of the 12pt padding. The padding has
+            // nothing to hit, so a click there still reaches the row.
+            .safeAreaInset(edge: .bottom, spacing: -12) {
                 HStack(spacing: 2) {
                     // AppKit, as the ⓘ and the update icon are, so all three
                     // light up under the pointer the same way (HoverFillButton,
@@ -488,7 +494,8 @@ struct SidebarSectionLabel: View {
 }
 
 /// A fixed section's header (Pinned, Sessions): a press anywhere folds it, as a
-/// folder header's does; never dragged, no menu.
+/// folder header's does; never dragged. Pinned has no menu; Sessions' "…" and
+/// right-click are its Sort By (`SectionSortMenu`).
 struct SidebarSectionHeaderContent: View {
     let manager: SessionManager
     /// Pinned, or the folderless "Sessions".
@@ -502,6 +509,15 @@ struct SidebarSectionHeaderContent: View {
         .padding(.leading, 20)
         .padding(.trailing, 36)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        // Sessions' right-click is its "…": Sort By. Pinned has neither.
+        .overlay {
+            if !isPinned {
+                RightClickCatcher(onRightClick: {}, makeMenu: {
+                    SectionSortMenu.menu(forFolder: nil, manager: manager)
+                })
+            }
+        }
     }
 }
 
@@ -787,6 +803,40 @@ struct SidebarHeaderContent: View {
     }
 }
 
+@MainActor
+/// Sort By: how one sidebar section orders its sessions (`SectionSort`), a
+/// checkmark on the current choice. In a folder's "…" as a submenu, and in
+/// the Sessions header's "…" as the whole menu.
+enum SectionSortMenu {
+    /// Both places the choices are listed are this wide: a folder's "…" menu
+    /// (173pt, measured offscreen with the same items). Sized to "Created"
+    /// alone they were 95pt, a sliver.
+    static let width: CGFloat = 173
+
+    static func add(to menu: NSMenu, folder: String?, manager: SessionManager) {
+        let current = manager.sectionSort(ofFolder: folder)
+        for mode in SectionSort.Mode.allCases {
+            // The three a section keeps by itself, then by hand, set apart
+            // as Finder's Sort By sets None apart.
+            if mode == .manual { menu.addItem(.separator()) }
+            let item = ClosureMenuItem(title: mode.title) {
+                manager.setSectionSort(mode, ofFolder: folder)
+            }
+            item.state = mode == current ? .on : .off
+            menu.addItem(item)
+        }
+    }
+
+    /// The Sessions header's "…": nothing else to show but its sort.
+    static func menu(forFolder folder: String?, manager: SessionManager) -> NSMenu {
+        let menu = NSMenu()
+        menu.minimumWidth = width
+        menu.addItem(.sectionHeader(title: "Sort By"))
+        add(to: menu, folder: folder, manager: manager)
+        return menu
+    }
+}
+
 /// What can be done to a folder: its header's right-click menu and its hover
 /// "…". Named and drawn as the session menus are (SessionActions), so "Rename…"
 /// is one thing wherever it appears.
@@ -807,14 +857,27 @@ enum FolderActions {
                 manager.newSession(inFolder: folder, via: .terminal, starting: .plain)
             }
         }
-        item("New Worktree Session\u{2026}", "plus.square.dashed") {
+        // "New Worktree…" for the same reason: here "Session" only made it
+        // the item that set the menu's width. The Session menu keeps the
+        // full name, where it stands among other kinds of session.
+        item("New Worktree\u{2026}", "plus.square.dashed") {
             newWorktreeSessionFromSheet(manager, inFolder: folder)
         }
+        // Three groups, as the session menu has: make something in it, the
+        // folder itself, then letting it go.
+        menu.addItem(.separator())
         item("Rename\u{2026}", "pencil") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
                 manager.renameFolder(folder, to: name)
             }
         }
+        let sort = NSMenuItem(title: "Sort By", action: nil, keyEquivalent: "")
+        sort.setGlyph("arrow.up.arrow.down")
+        let choices = NSMenu()
+        choices.minimumWidth = SectionSortMenu.width
+        SectionSortMenu.add(to: choices, folder: folder, manager: manager)
+        sort.submenu = choices
+        menu.addItem(sort)
         menu.addItem(.separator())
         // Non-destructive: the sessions drop to the top level, they're not
         // closed, and nothing on disk is touched. Named for what happens, since

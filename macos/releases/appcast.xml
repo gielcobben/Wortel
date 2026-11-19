@@ -3,6 +3,44 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.47.2</title>
+            <pubDate>Wed, 18 Nov 2026 20:10:11 -0500</pubDate>
+            <sparkle:version>2026.47.2</sparkle:version>
+            <sparkle:shortVersionString>2026.47.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>New sessions can start your agent, and Wortel has Settings</h1>
+<p class="date">Wortel 2026.47.2 &middot; 2026-11-18</p>
+<p><strong>New sessions start your agent.</strong> In Settings, type any command into “New sessions start with”, or pick one of the agents Wortel finds on your Mac from the menu beside the field. Every new session then starts it: ⌘N, ⌥⌘N, ⇧⌘N, ⌘O, a folder’s + and a folder dropped on the sidebar. Session ▸ New Terminal (⌃⌘N) opens one without it, and is there only while the field is filled. Left empty, a new session is a plain terminal, as before. <code>wortel new</code> and the sessions Wortel brings back at launch don’t use it.</p>
+<p><strong>Settings.</strong> Wortel ▸ Settings… (⌘,) opens a small window with two tabs. General has what new sessions start with, whether Source Control shows its commit box, and whether local servers open in your browser. Updates has automatic updates and anonymous usage data. The menu items Check for Updates Automatically, Share Anonymous Usage Data and Open Servers in Default Browser are gone; their switches are here now. The ⓘ at the bottom of the sidebar still has its usage data switch.</p>
+<p><strong>New sessions go on top.</strong> A new session outside a folder now goes to the top of the sidebar, so the newest is first. In a folder it goes under the session you’re on.</p>
+<p><strong>Idle agents give their memory back.</strong> An idle Claude Code holds 130 to 400 MB. When one has finished its turn and its session hasn’t been on screen for an hour, Wortel now ends it and keeps the shell. Select the session and the same conversation is resumed, in a second or two. One waiting on your answer, with something still running under it, with a prompt typed and not sent, or with Remote Control on, gets eight hours instead, and what it started ends with it. A working agent and the session in front of you are never touched. Other agents are left alone for now.</p>
+<p><strong>Terminals use less memory.</strong> A terminal you haven’t looked at for ten minutes gives back its screen’s memory, about 70 MB each, and has it back when you select it. A leak that grew Wortel by over 100 MB an hour is fixed.</p>
+<p><strong>Faster switching.</strong> A click on a session switches on mouse-down, as Finder’s sidebar does, and its terminal appears at its final size instead of growing into place.</p>
+<p><strong>Smaller things.</strong> The sidebar’s toggle and arrows move with it when it opens or closes. A terminal drawn under the side column or in a corner of its pane is now put right as soon as the layout settles. Usage data now counts whether a new session started with a command and which agent was ended or resumed this way, with nothing about the command you typed, the session or the conversation.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.47.2.zip" length="24122517" type="application/octet-stream" sparkle:edSignature="N/0MufNHs+ZTMSROIA25cLjVcQhahClfAJidl3q3QCvsDabA+RedL5IOMOTcEl4aW/vMofUyztoH6ozjAnLLDg=="/>
+        </item>
+        <item>
             <title>2026.47.1</title>
             <pubDate>Tue, 17 Nov 2026 09:10:18 -0500</pubDate>
             <sparkle:version>2026.47.1</sparkle:version>
@@ -70,40 +108,6 @@
 <p><strong>⌘C copies what Codex selected.</strong> With a selection Codex drew itself, ⌘C did nothing: Wortel’s Copy command took the key and found nothing selected in the terminal. The key now goes on to the program when the terminal has no selection of its own. Copying text you selected in the terminal works as before.</p>
 <p><strong>Smaller things.</strong> An image smaller than the side column no longer pulls its tab’s header down to the middle of the column; the picture is centred at its own size. A file that isn’t text no longer offers Diff and Source in its tab, where both showed the same picture.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.46.6.zip" length="23358397" type="application/octet-stream" sparkle:edSignature="R1bEeK1EwbKORiJ/P3GhxwoozBZeLIEz1V4bYFQVbtIZpMbaNWRBAMm0kPqEzrwPbgf25gAf+MVwAgtBEKm/Cw=="/>
-        </item>
-        <item>
-            <title>2026.46.5</title>
-            <pubDate>Thu, 12 Nov 2026 00:12:34 -0500</pubDate>
-            <sparkle:version>2026.46.5</sparkle:version>
-            <sparkle:shortVersionString>2026.46.5</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Screen readers can read the terminal</h1>
-<p class="date">Wortel 2026.46.5 &middot; 2026-11-12</p>
-<p><strong>Screen readers can read the terminal.</strong> Apps that read text aloud or describe the screen, like VoiceOver, ask macOS what an app is showing. Until now Wortel’s terminal told them nothing. It now answers as a text area: they get the text on screen (also after you scroll back), the text you’ve selected with a drag, and where every word sits, so a read-aloud app can highlight each word as it speaks it. They’re told when the screen changes, a few times a second at most, and none of this costs anything until an app asks.</p>
-<p><strong>Send Feedback.</strong> Help ▸ Send Feedback… opens an email to <a href="mailto:hello@wortel.sh">hello@wortel.sh</a> with your Wortel version, macOS version and your Mac’s chip already filled in, so you can see everything in it before you send.</p>
-<p><strong>Better crash reports, less location.</strong> If you share anonymous usage data, Wortel now notes whether its last run ended cleanly or crashed, and after a crash it sends where in Wortel’s own code that happened, as numbers only, with no file paths or names. It also counts which agents you start, from a fixed list, and how often sessions are archived. Usage data no longer includes a location looked up from your internet address.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.46.5.zip" length="23327771" type="application/octet-stream" sparkle:edSignature="ICCUg6wkC1+3vMsw5XG78K/0isBnA31FKeBZ90AIVlsqE/0Lypcc63iOF0oTgBklizjdz+ttfPY+aF4ur3l3AA=="/>
         </item>
     </channel>
 </rss>

@@ -30,6 +30,9 @@ final class PreviewTabs {
     /// The view a file arrived in, when it came from a window dragged back
     /// in: it opens on that rather than on the inferred one.
     private var arrivingModes: [String: PreviewMode] = [:]
+    /// A line asked for before the file's document was made (its tab is
+    /// made when it is first shown), handed to the document then.
+    private var pendingLines: [String: Int] = [:]
     /// Files by when their tab was last in front, newest first: which ones a
     /// row keeps built behind the one in front (`keptBuilt(of:)`).
     private var shown: [String] = []
@@ -79,7 +82,19 @@ final class PreviewTabs {
                                       highlighter: highlighter),
             find: PreviewFind())
         documents[path] = entry
+        if let line = pendingLines.removeValue(forKey: path) { entry.document.reveal(line: line) }
         return (entry.document, entry.find)
+    }
+
+    /// Show `line` in a file's tab: now if its document exists, else when it
+    /// is made.
+    func reveal(line: Int, in url: URL) {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        if let entry = documents[path] {
+            entry.document.reveal(line: line)
+        } else {
+            pendingLines[path] = line
+        }
     }
 
     func hasDocument(for path: String) -> Bool { documents[path] != nil }
@@ -105,6 +120,7 @@ final class PreviewTabs {
         documents[path] = nil
         sources[path] = nil
         arrivingModes[path] = nil
+        pendingLines[path] = nil
         shown.removeAll { $0 == path }
     }
 
@@ -160,6 +176,7 @@ private struct PreviewTabHeader: View {
             if !document.isBinary, document.availableModes.count > 1 {
                 ModeSwitch(modes: document.availableModes, selection: $document.mode)
             }
+            OpenInEditorButton(document: document)
             Button(action: openInWindow) {
                 Image(systemName: "macwindow.badge.plus")
                     .font(.system(size: 13))
@@ -214,6 +231,31 @@ struct ModeSwitch: View {
         .padding(2)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(Color(nsColor: Chrome.hoverFill)))
+    }
+}
+
+/// Open the file in its default app, at the line you're on
+/// (`ExternalEditor`). Absent when the file has no app to offer, or its app
+/// would act on it rather than show it.
+struct OpenInEditorButton: View {
+    let document: PreviewDocument
+    var size: CGFloat = 24
+
+    var body: some View {
+        if let app = ExternalEditor.app(for: document.url) {
+            Button {
+                ExternalEditor.open(document.url, line: document.lineForEditor, in: app)
+            } label: {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 13))
+                    .frame(width: size, height: size)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(HoverFillStyle())
+            .foregroundStyle(.secondary)
+            .help("Open in \(app.name)")
+            .accessibilityLabel("Open in \(app.name)")
+        }
     }
 }
 

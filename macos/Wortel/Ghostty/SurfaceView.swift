@@ -44,10 +44,20 @@ final class SurfaceView: NSView {
     /// `replayed`: read from what it wrote while nobody was attached, so it is
     /// what is true now, not something that just happened.
     var onProgramStatus: ((_ report: ProgramStatusReport, _ replayed: Bool) -> Void)?
-    /// A clicked link resolved to a local markdown file (decided in the runtime's
-    /// OPEN_URL handler). The owner opens it in the right-hand preview. Non-markdown
-    /// links never reach here — libghostty handles those itself.
-    var onOpenMarkdown: ((_ url: URL) -> Void)?
+    /// A ⌘-clicked link that is a path, a `file:` URL or a server on this Mac,
+    /// as libghostty matched it (`GhosttyRuntime`'s OPEN_URL handler). The
+    /// owner resolves a path against this terminal's folders (`TerminalLink`)
+    /// and opens it. Other web links never reach here: libghostty opens those.
+    var onOpenLink: ((_ link: String) -> Void)?
+    /// The folder the shell last reported (OSC 7), for resolving a relative
+    /// path clicked in this terminal. A side terminal's own: the session's
+    /// `cwd` follows its main shell only.
+    private(set) var reportedPwd: String?
+
+    func reportPwd(_ pwd: String) {
+        reportedPwd = pwd
+        onPwdChange?(pwd)
+    }
     /// The surface was resized, so its content re-wrapped. Fires for every
     /// session, not just the visible one — they all autoresize with the window.
     /// The agent-activity sampler listens so a reflow isn't read as work.
@@ -74,6 +84,22 @@ final class SurfaceView: NSView {
     /// When a script last sent something here, for `wortel wait --idle`,
     /// whose quiet after a `send` means "not started yet".
     private(set) var lastScriptedInputAt: Date?
+    /// The user pressed Return here: a prompt or a command sent, as far as a
+    /// key can say. Return or keypad Enter with no ⇧ ⌥ ⌃ ⌘ (⇧↩ is a new
+    /// line in an agent's prompt), not a repeat, and not the Return that
+    /// confirms an input method's composition. Pastes and a script's Return
+    /// (`pressReturn(scripted:)`) don't come through here. Only that it
+    /// happened is passed on, never what was typed: it is the sidebar's
+    /// "recent activity" (`SectionSort`).
+    var onSubmit: (() -> Void)?
+
+    /// Whether `event` is a Return that `onSubmit` counts, given whether an
+    /// input method was composing before or after it.
+    static func isSubmit(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, isRepeat: Bool,
+                         composing: Bool) -> Bool {
+        guard !isRepeat, !composing, keyCode == 0x24 || keyCode == 0x4C else { return false }
+        return modifiers.intersection([.shift, .option, .control, .command]).isEmpty
+    }
 
     /// Every input path reports here, so the time and the hook can't drift apart.
     private func noteUserInput() {
@@ -841,7 +867,7 @@ final class SurfaceView: NSView {
         for signal in signals {
             switch signal {
             case .title(let title): onTitleChange?(title)
-            case .pwd(let pwd): onPwdChange?(pwd)
+            case .pwd(let pwd): reportPwd(pwd)
             case .bell: onBell?()
             case .progress(let active, let errored): onProgress?(active, errored)
             case .commandFinished(let exitCode, let durationNs):
@@ -1547,6 +1573,10 @@ final class SurfaceView: NSView {
                 // canceled composition and must not be encoded (e.g. backspace
                 // during Japanese composition).
                 composing: markedText.length > 0 || markedTextBefore)
+        }
+        if Self.isSubmit(keyCode: event.keyCode, modifiers: event.modifierFlags, isRepeat: event.isARepeat,
+                         composing: markedTextBefore || markedText.length > 0) {
+            onSubmit?()
         }
     }
 

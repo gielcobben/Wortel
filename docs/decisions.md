@@ -217,6 +217,33 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   ⌘N, do the thing, ⌘W still lands where it started, by a rule of its own:
   closing a session you just made and never left selects the one it was made
   from, as a browser tab does. Otherwise the row above, as before.
+- **2026-11-19. The folders come before the sessions in no folder.** Pinned,
+  then the folders, then Sessions, as ChatGPT, Claude and Codex put projects
+  above the loose chats. Someone who never files a session sees no change;
+  someone with many open folders folds them to reach the loose list. With no
+  folderless session yet, a session is taken out of its folder by a drop in
+  the empty space under the list, or, since that space is gone once the list
+  overflows, at the top: the gap under Pinned's last row, or the top edge of
+  the first folder's header (found in review the same day, after the top
+  zones had been taken out with the section above them).
+- **2026-11-19. Each section sorts itself, Recent unless you say
+  otherwise.** Sort By in a folder's "…", and in the Sessions header's:
+  Recent, Created, Name, Manual (one word each, as the
+  submenu of Sort By needs no more; "Recent Activity" and "Date Created"
+  were tried first). Every section starts on
+  Recent, the ones that existed too; Manual is the order you dragged, kept
+  underneath all along, so it comes back exactly. Pinned stays by hand.
+  **Activity is a Return of yours** (or the session being made): not a click,
+  not a scroll, not `wortel send`, and not the agent working, because rows
+  that move while you aim at them is what the "Needs You" section was
+  dropped for. A sorted order still waits while the pointer is on a row.
+  **A drop into a sorted section goes into it**, as in a sorted Finder
+  window: its header lights up, there is no line between rows, and the
+  session takes its sorted place. A place in a list only exists in Manual.
+  This narrows 2026-11-18's "goes on top" to Manual sections; in a sorted one
+  a new session is on top by Recent or Created anyway. Sort
+  Unread First still puts its band over whichever order a section has. The
+  choice is view state, like a fold, not a setting.
 
 ## Sessions
 
@@ -400,6 +427,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   with nothing running looks finished and sleeps at its hour; a server that
   had already detached itself from the agent is left running; nothing sleeps
   while Wortel is quit.
+- **2026-11-18. An agent with Remote Control on gets the long clock.** Remote
+  Control lives in the agent's process, so a sleeping agent is offline on the
+  phone, and nothing there can wake it: only a click on the Mac does. A
+  session in use from the phone never sleeps (each message is a turn, which
+  restarts the clock); the loss was the one left an hour and then picked up
+  from somewhere else. So `bridgeSessionId` in Claude's own record, which it
+  writes when Remote Control links and sets to `null` when it goes (read in
+  2.1.327's code), puts the agent on the eight-hour clock, the same one as a
+  question waiting on you, and a memory warning does not shorten it. Not
+  "never": with Remote Control on at launch for every session, deep sleep
+  would never run for exactly the people with the most sessions open. Seen on
+  this Mac the same day: a slept session woken by a click had its Remote
+  Control link again. Not yet seen: the link going to `null` when Remote
+  Control is turned off by hand. Turning it off doesn't shorten a clock
+  already armed for eight hours; the agent sleeps then, which errs awake.
 
 ## Keeper
 
@@ -479,6 +521,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   selection across blocks and lost everything else (`5681398`).
 - **2026-08-10. Remote images in Markdown are not fetched, and links go
   through a scheme allowlist** (`6717464`).
+- **2026-11-19. A ⌘-clicked path in a terminal is resolved by the app and
+  opens in the preview**, at its line: against the terminal's folder, the
+  session's, their repository roots and one folder below (only when a single
+  folder has it, never a guess between two), with sentence punctuation and
+  `:line` taken off. Relative paths from agents opened nothing before, and
+  any other file went to its default app, where a click could run a script.
+  A `localhost` address opens in a tab beside the terminal unless servers
+  go to the browser (Settings). "Open in" a file's editor uses its default
+  app, so there is no editor setting. Tried and dropped the same day: a menu
+  on a right-clicked link. libghostty finds links only for ⌘-click, so the
+  app had to read the cell under the pointer itself, the menu didn't appear
+  when tried, and ⌘-click plus the editor button already cover it.
 - **2026-11-09. A page or a document never opens another app without a yes**
   (`fd2d45c`).
 - **2026-09-29. Files and browsers are tabs.** The Markdown preview moved from

@@ -743,7 +743,7 @@ final class GhosttyRuntime {
             guard let view = surfaceView(fromTarget: target),
                   let pwdPtr = action.action.pwd.pwd else { return false }
             let pwd = String(cString: pwdPtr)
-            DispatchQueue.main.async { view.onPwdChange?(pwd) }
+            DispatchQueue.main.async { view.reportPwd(pwd) }
             return true
 
         case GHOSTTY_ACTION_RING_BELL:
@@ -886,25 +886,24 @@ final class GhosttyRuntime {
             return true
 
         case GHOSTTY_ACTION_OPEN_URL:
-            // A ⌘-clicked link — a URL, an OSC 8 hyperlink, or a matched path. We
-            // intercept one kind: a local markdown file (→ the in-app preview).
-            // Everything else — web links, other files, mailto:, custom schemes —
-            // returns false so libghostty performs its own default open (web
-            // links land in the system browser). The decision is synchronous and
-            // cwd-free (see MarkdownLink) because the return value gates
-            // libghostty right here — we can't defer to the main actor and still
-            // answer "did you handle it?". So Wortel never becomes the thing
-            // that launches an arbitrary file on a single click.
+            // A ⌘-clicked link: a URL, an OSC 8 hyperlink, or a matched path.
+            // Two kinds are ours. A path (or a `file:` URL): only the app knows
+            // what a relative one is relative to, and libghostty's own open
+            // runs from the app's working directory, `/`, where `docs/x.md` is
+            // nothing. And a server on this Mac, which opens beside the
+            // terminal unless servers go to the browser. Both are taken here
+            // and handled on the main actor (`TerminalLink`). Other web links,
+            // mailto: and other schemes return false, and libghostty opens
+            // them itself (web links land in the system browser). The test is
+            // pure string work because its answer is this return value.
             guard let view = surfaceView(fromTarget: target) else { return false }
             let open = action.action.open_url
             guard let ptr = open.url else { return false }
             // The bytes aren't guaranteed NUL-terminated; `len` is authoritative.
             let link = String(decoding: Data(bytes: ptr, count: Int(open.len)), as: UTF8.self)
-            if let fileURL = MarkdownLink.fileURL(from: link) {
-                DispatchQueue.main.async { view.onOpenMarkdown?(fileURL) }
-                return true
-            }
-            return false
+            guard TerminalLink.isPath(link) || TerminalLink.localServer(link) != nil else { return false }
+            DispatchQueue.main.async { view.onOpenLink?(link) }
+            return true
 
         default:
             // Tabs, splits, inspector, command palette, search UI, etc.

@@ -61,13 +61,18 @@ final class PreviewWindowBar: ChromeBarView {
     }
 }
 
-/// The mode switch, or nothing when there's no choice to make.
+/// The mode switch, or nothing when there's no choice to make, and the way
+/// out to the file's editor.
 private struct PreviewWindowModeSwitch: View {
     @Bindable var document: PreviewDocument
 
     var body: some View {
-        if !document.isBinary, document.availableModes.count > 1 {
-            ModeSwitch(modes: document.availableModes, selection: $document.mode)
+        HStack(spacing: 8) {
+            if !document.isBinary, document.availableModes.count > 1 {
+                ModeSwitch(modes: document.availableModes, selection: $document.mode)
+            }
+            // The row's controls are 28pt, as its FileButton is (DESIGN.md).
+            OpenInEditorButton(document: document, size: Chrome.controlSize)
         }
     }
 }

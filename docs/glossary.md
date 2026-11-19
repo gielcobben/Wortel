@@ -77,10 +77,10 @@ sight (a minute, for one not opened since launch), or on a memory warning. Its s
 the screen comes back when the session is shown. Never named in the UI.
 
 **Asleep.** A session whose agent was ended to give its memory back, after an
-hour at rest out of sight (eight, if it was waiting on you or had something
-running). Its shell stays, and the agent's exact conversation is resumed when
-the session is selected. Deeper than hibernated, which only frees the
-terminal. Never named in the UI.
+hour at rest out of sight (eight, if it was waiting on you, had something
+running, or could be reached by Remote Control). Its shell stays, and the
+agent's exact conversation is resumed when the session is selected. Deeper
+than hibernated, which only frees the terminal. Never named in the UI.
 
 **Resume.** Typing an agent's own "continue this conversation" command back
 into a session after a relaunch or a recovery, or when a session whose agent

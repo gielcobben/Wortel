@@ -50,6 +50,15 @@ final class PreviewWindows {
         return true
     }
 
+    /// Show `line` in the file's window, if it has one.
+    @discardableResult
+    func reveal(line: Int, in url: URL) -> Bool {
+        let url = url.resolvingSymlinksInPath().standardizedFileURL
+        guard let existing = windows.first(where: { $0.file.url == url }) else { return false }
+        existing.file.reveal(line: line)
+        return true
+    }
+
     /// `topLeft`, in screen coordinates, puts the window there rather than on
     /// the cascade: a tab dragged out of the main window lands where it was
     /// let go.

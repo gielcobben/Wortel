@@ -53,6 +53,22 @@ final class AgentSleepTests: XCTestCase {
         guard case .notBefore = AgentSleep.decide(inputs) else { return XCTFail("a draft would be lost") }
     }
 
+    /// Remote Control on: you may come back to it from your phone, which
+    /// can't wake a sleeping agent. The long clock, not never, and a memory
+    /// warning doesn't shorten it.
+    func testRemoteControlGetsTheLongClock() {
+        var inputs = finished(hour + 1)
+        inputs.remoteControl = true
+        let eightHoursFromRest = now.addingTimeInterval(-hour - 1 + day)
+        XCTAssertEqual(AgentSleep.decide(inputs), .notBefore(eightHoursFromRest),
+                       "the session you were going to answer from your phone")
+        XCTAssertEqual(AgentSleep.decide(inputs, pressure: true), .notBefore(eightHoursFromRest),
+                       "a memory warning is no reason to cut off your phone")
+        inputs = finished(day + 1)
+        inputs.remoteControl = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .sleep(waiting: true))
+    }
+
     // MARK: - What restarts the clock
 
     func testLookingAtTheSessionRestartsTheClock() {
@@ -159,6 +175,21 @@ final class AgentSleepTests: XCTestCase {
         XCTAssertEqual(state?.statusChangedAt, Date(timeIntervalSince1970: 1_795_019_450))
         XCTAssertNil(AgentResumeStore.claudeProcessState(sessionFile: file, pid: 1),
                      "a stale file for a pid since reused is nobody's")
+    }
+
+    /// Claude Code 2.1.327 writes the Remote Control session's id while it is
+    /// linked and `null` once it is not.
+    func testRemoteControlIsReadFromClaudesProcessFile() {
+        func state(_ bridge: String) -> AgentResumeStore.ClaudeProcessState? {
+            AgentResumeStore.claudeProcessState(sessionFile: Data("""
+                {"pid":7,"sessionId":"4d98c3d5-653b-4915-8fa3-8db43f551ea7","status":"idle",
+                 "statusUpdatedAt":1795019450000\(bridge)}
+                """.utf8), pid: 7)
+        }
+        XCTAssertEqual(state(#","bridgeSessionId":"session_01ABCDEFGHJKMNPQRSTVWXYZ""#)?.remoteControl, true)
+        XCTAssertEqual(state(#","bridgeSessionId":null"#)?.remoteControl, false)
+        XCTAssertEqual(state(#","bridgeSessionId":"""#)?.remoteControl, false)
+        XCTAssertEqual(state("")?.remoteControl, false)
     }
 
     func testAnOlderClaudeWithoutAStatusIsUnknown() {

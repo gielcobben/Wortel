@@ -140,7 +140,8 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     var onRemoved: () -> Void = {}
     /// Whether this row is a folder header with a "+".
     private var addable = false
-    /// Pinned and Sessions: no "+" or "…", but a press folds them.
+    /// Pinned and Sessions: no "+", but a press folds them. Sessions has a
+    /// "…" (its Sort By), in the slot "+" has on a folder.
     private var foldable = false
     func setFoldable() { foldable = true }
     /// The status dot / spinner, hosted here rather than in the row's SwiftUI
@@ -173,7 +174,10 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     }
 
     /// The menu "…" opens: the session's, or a folder header's.
-    func setMoreMenu(_ make: @escaping () -> NSMenu) { makeMoreMenu = make }
+    func setMoreMenu(_ make: @escaping () -> NSMenu) {
+        makeMoreMenu = make
+        needsLayout = true
+    }
 
     /// What "+" does, and where it starts the session. Folder headers set this.
     func setAddAction(directory: String?, _ handler: @escaping () -> Void) {
@@ -185,8 +189,12 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     private func showMoreMenu() {
         guard let menu = makeMoreMenu?() else { return }
         // Its right edge on the button's, opening into the sidebar rather than
-        // off across the terminal, as the titlebar's menus do.
-        let x = moreButton.bounds.width - menu.size.width
+        // off across the terminal, as the titlebar's menus do. But never past
+        // the row's leading edge: wider than the room to the button's left,
+        // it hung off the window, so then it starts where the row does and
+        // reaches past the button instead.
+        let leading = moreButton.convert(NSPoint(x: pillRect.minX, y: 0), from: self).x
+        let x = max(leading, moreButton.bounds.width - menu.size.width)
         contextMenu(isOpen: true)
         menu.popUp(positioning: nil, at: NSPoint(x: x, y: moreButton.bounds.maxY + 4), in: moreButton)
         contextMenu(isOpen: false)
@@ -227,7 +235,8 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
         // the dots, wider together than the button. It reaches toward the
         // title, which keeps clear of this slot anyway.
         statusHost.frame = slot.insetBy(dx: -6, dy: 0)
-        moreButton.frame = slot.offsetBy(dx: -(size + 2), dy: 0)
+        // Beside × or "+"; in their slot on a row that has neither (Sessions).
+        moreButton.frame = closable || addable ? slot.offsetBy(dx: -(size + 2), dy: 0) : slot
         addButton.frame = slot
     }
 
@@ -271,6 +280,21 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     override func mouseExited(with event: NSEvent) { setRowHovered(false) }
 
     private var isRowHovered = false
+
+    /// Settle the hover on where the pointer is now. A scroll slides rows
+    /// under a pointer that hasn't moved, and AppKit doesn't reliably tell a
+    /// row it left then: rows the pointer passed over stayed lit (and, being
+    /// hovered, held the sidebar's sort still). The scroller calls this on
+    /// every row it shows, each time it scrolls.
+    /// `pointerOverWindow`: no other window is between the pointer and this
+    /// one, so a row under a covering window isn't counted as hovered.
+    func settleHover(pointerOverWindow: Bool) {
+        guard let window else { return }
+        let inside = NSApp.isActive && pointerOverWindow
+            && contentRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        if inside != isRowHovered { setRowHovered(inside) }
+    }
+
     private func pointerMoved(_ event: NSEvent) {
         let hovered = contentRect.contains(convert(event.locationInWindow, from: nil))
         // Most rows have no gap, and a move within one changes nothing.
@@ -290,7 +314,7 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
         addButton.isHidden = !(hovered && addable)
         if !hovered { addButton.setHovering(false) }
         let shows = hovered && closable
-        moreButton.isHidden = !(hovered && (closable || addable)) || makeMoreMenu == nil
+        moreButton.isHidden = !(hovered && (closable || addable || foldable)) || makeMoreMenu == nil
         if moreButton.isHidden { moreButton.setHovering(false) }
         guard closeButton.isHidden == shows else { return }
         closeButton.isHidden = !shows
@@ -597,9 +621,72 @@ final class SidebarOutline: NSOutlineView {
         onDragEnd?()
     }
 
+    /// No `super`: the SDK lets this compile as an override, but neither
+    /// NSOutlineView, NSTableView nor NSView implements `draggingEnded:`
+    /// (checked with `instancesRespond(to:)` on macOS 27, 2026-11-18). Calling
+    /// up raised "unrecognized selector" at the end of every drag here, before
+    /// `onDragEnd` could run.
     override func draggingEnded(_ sender: NSDraggingInfo) {
-        super.draggingEnded(sender)
         onDragEnd?()
+    }
+}
+
+/// The sidebar's scroller. While rows go on below its bottom edge, that edge
+/// fades over 20pt into the bar under it (+ and ⓘ), as an overflowing tab row
+/// fades (`SideTabStrip`): a row cut off hard there read as one drawn wrong,
+/// a faded one as "more below". A list that fits keeps a crisp last row.
+///
+/// Kept current from the two places every change passes: `tile` (a resize,
+/// rows added, folded or grown) and `reflectScrolledClipView` (a scroll),
+/// which also settles each row's hover.
+final class SidebarScrollView: NSScrollView {
+    static let fade: CGFloat = 20
+
+    override func tile() {
+        super.tile()
+        updateFade()
+    }
+
+    override func reflectScrolledClipView(_ clip: NSClipView) {
+        super.reflectScrolledClipView(clip)
+        updateFade()
+        // Rows slid under a pointer that didn't move: see `settleHover`.
+        guard let window, let outline = documentView as? NSOutlineView else { return }
+        let over = NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0)
+            == window.windowNumber
+        outline.enumerateAvailableRowViews { rowView, _ in
+            (rowView as? SidebarPillRowView)?.settleHover(pointerOverWindow: over)
+        }
+    }
+
+    private func updateFade() {
+        guard let document = documentView else { return }
+        wantsLayer = true
+        guard let layer else { return }
+        let visible = contentView.documentVisibleRect
+        // The outline is flipped: rows go on below while the visible rect
+        // ends short of the document's height.
+        let more = visible.maxY < document.frame.height - 0.5
+        guard more, bounds.height > Self.fade * 2 else {
+            if layer.mask != nil { layer.mask = nil }
+            return
+        }
+        let mask = (layer.mask as? CAGradientLayer) ?? CAGradientLayer()
+        let edge = NSNumber(value: Double(Self.fade / bounds.height))
+        let solid = NSColor.black.cgColor, clear = NSColor.clear.cgColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        // The bottom edge. AppKit lays a view's sublayers out in the view's
+        // own coordinates (it sets the layer's `isGeometryFlipped` to undo
+        // whatever its ancestors are), so this view's `isFlipped` decides.
+        let bottom: CGFloat = isFlipped ? 1 : 0
+        mask.startPoint = CGPoint(x: 0.5, y: bottom)
+        mask.endPoint = CGPoint(x: 0.5, y: 1 - bottom)
+        mask.colors = [clear, solid, solid]
+        mask.locations = [0, edge, 1]
+        mask.frame = layer.bounds
+        layer.mask = mask
+        CATransaction.commit()
     }
 }
 
@@ -619,6 +706,11 @@ struct SidebarSnapshotGroup: Equatable {
     let tallIDs: Set<UUID>
     /// The Pinned section (see `SidebarGroup.isPinned`).
     var isPinned = false
+    /// `sessionIDs` in the section's Sort By order (`SessionManager.sortedOrder`),
+    /// nil for Pinned and a Manual section. Only on the stored snapshot SwiftUI
+    /// hands over: the coordinator draws by it, and the groups it draws carry
+    /// none.
+    var sortedIDs: [UUID]? = nil
 }
 
 /// The sidebar's session list as a native `NSOutlineView` — the same machinery
@@ -645,8 +737,9 @@ struct SidebarFolding: Equatable {
 
 struct SidebarOutlineView: NSViewRepresentable {
     let manager: SessionManager
-    /// The sections in their stored (manual) order. The coordinator decides
-    /// the order they're drawn in (`sortKeys`).
+    /// The sections in their stored (manual) order, each with its Sort By
+    /// order. The coordinator decides the order they're drawn in (that, and
+    /// `sortKeys` over it).
     let snapshot: [SidebarSnapshotGroup]
     let folding: SidebarFolding
     /// Where each unread session sorts while View ▸ Sort Unread First is on;
@@ -656,7 +749,7 @@ struct SidebarOutlineView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(manager: manager) }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> SidebarScrollView {
         let outline = SidebarOutline()
         outline.onDragEnd = { [weak coordinator = context.coordinator] in
             coordinator?.clearDropHighlight()
@@ -720,7 +813,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         context.coordinator.observeSelection()
         context.coordinator.observeHover()
 
-        let scroll = NSScrollView()
+        let scroll = SidebarScrollView()
         scroll.documentView = outline
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -742,7 +835,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ nsView: NSScrollView, context: Context) {
+    func updateNSView(_ nsView: SidebarScrollView, context: Context) {
         context.coordinator.apply(snapshot, sortKeys: sortKeys)
     }
 
@@ -763,8 +856,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// pinned. Folds like a folder; never dragged, no menu.
         final class PinnedItem {}
         /// The header over the sessions in no folder, so they read as a
-        /// section of their own rather than stray rows between Pinned and the
-        /// folders. There while any such session is. Never dragged, no menu.
+        /// section of their own rather than stray rows under the last folder.
+        /// There while any such session is, below the folders. Never dragged;
+        /// its "…" holds its Sort By.
         /// It folds too, but its sessions are root rows rather than its
         /// children (every drop index at the root counts on that), so folding
         /// takes them out of the outline (`looseShown`) instead of collapsing.
@@ -785,10 +879,13 @@ struct SidebarOutlineView: NSViewRepresentable {
         private let pinnedItem = PinnedItem()
         private var pinnedItems: [SessionItem] = []
         private let looseHeader = LooseHeaderItem()
-        /// The root starts with the Pinned header (while anything is pinned)
-        /// and the Sessions header (while any session is in no folder), and
-        /// every root index (a drop's, an insertion line's) is past them.
-        private var rootOffset: Int { (pinnedItems.isEmpty ? 0 : 1) + (looseItems.isEmpty ? 0 : 1) }
+        /// The root level by index: Pinned's header, the folders, the
+        /// Sessions header, the folderless rows (`SidebarRoot`). Every root
+        /// index (a row's, a drop's, an insertion line's) goes through it.
+        private var root: SidebarRoot {
+            SidebarRoot(pinned: !pinnedItems.isEmpty, folders: folderItems.count,
+                        loose: !looseItems.isEmpty, looseShown: shownLoose.count)
+        }
         private var looseItems: [SessionItem] = []
         /// Whether the folderless sessions are in the outline: false while
         /// their section is folded. Every root index (rows, drops, the
@@ -830,12 +927,13 @@ struct SidebarOutlineView: NSViewRepresentable {
         private var manualSnapshot: [SidebarSnapshotGroup] = []
         /// Sort Unread First's keys, nil while it's off.
         private var sortKeys: [UUID: SidebarSort.Key]?
-        /// What each section was last drawn as under the sort, keyed by
-        /// `drawnKey`: what holds the selected row still, and the whole
-        /// section while a click may be coming. Emptied while the sort is off,
+        /// What each section was last drawn as, keyed by `drawnKey`: what
+        /// holds the selected row still, and the whole section while a click
+        /// may be coming. Emptied when Sort Unread First is turned on or off,
         /// so turning it on sorts afresh rather than holding a row in a place
         /// it never had.
         private var drawnBefore: [String: SidebarSort.Drawn] = [:]
+        private var unreadFirstWasOn = false
         /// The order was held (`isFrozen`) and may be behind: draw again once
         /// the pointer has gone.
         private var pendingThaw = false
@@ -859,18 +957,26 @@ struct SidebarOutlineView: NSViewRepresentable {
             group.isPinned ? "\u{1}pinned" : group.folder.map { "folder/" + $0 } ?? "\u{1}loose"
         }
 
-        /// The sections in the order they're drawn: as stored, or sorted.
+        /// The sections in the order they're drawn: each by its Sort By
+        /// choice, with Sort Unread First's band over it while that's on.
         private func drawnGroups() -> [SidebarSnapshotGroup] {
-            guard let keys = sortKeys else {
+            if (sortKeys != nil) != unreadFirstWasOn {
+                unreadFirstWasOn = sortKeys != nil
+                drawnBefore = [:]
+            }
+            // Nothing sorted and no band: as stored, and nothing to hold.
+            if sortKeys == nil, manualSnapshot.allSatisfy({ $0.sortedIDs == nil }) {
                 drawnBefore = [:]
                 return manualSnapshot
             }
+            let keys = sortKeys ?? [:]
             let frozen = isFrozen
             if frozen { pendingThaw = true }
             var next: [String: SidebarSort.Drawn] = [:]
             let groups = manualSnapshot.map { group in
                 let key = Self.drawnKey(group)
-                let drawn = SidebarSort.draw(manual: group.sessionIDs, keys: keys, previous: drawnBefore[key],
+                let drawn = SidebarSort.draw(manual: group.sessionIDs, base: group.sortedIDs, keys: keys,
+                                             previous: drawnBefore[key],
                                              holding: manager.selectedID, frozen: frozen)
                 next[key] = drawn
                 return SidebarSnapshotGroup(folder: group.folder, sessionIDs: drawn.drawn,
@@ -996,7 +1102,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                         // Folded Sessions: its rows aren't in the outline.
                         guard looseShown else { continue }
                         parent = nil
-                        offset = rootOffset
+                        offset = root.firstLoose
                     }
                     var working = before.sessionIDs
                     for (i, id) in after.sessionIDs.enumerated() {
@@ -1084,8 +1190,9 @@ struct SidebarOutlineView: NSViewRepresentable {
                     looseItems = items
                 }
             }
-            let sections = (pinnedItems.isEmpty ? [] : [pinnedItems]) + (looseItems.isEmpty ? [] : [looseItems])
+            let sections = (pinnedItems.isEmpty ? [] : [pinnedItems])
                 + folderItems.map { childrenByFolder[$0.name] ?? [] }
+                + (looseItems.isEmpty ? [] : [looseItems])
             gapIDs = Set(sections.dropLast().compactMap { $0.last?.id })
             if resetLoose { looseShown = !manager.looseCollapsed }
             let liveIDs = Set(snapshot.flatMap(\.sessionIDs))
@@ -1120,7 +1227,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         // MARK: Data source
 
         func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-            if item == nil { return rootOffset + shownLoose.count + folderItems.count }
+            if item == nil { return root.count }
             if item is PinnedItem { return pinnedItems.count }
             if let folder = item as? FolderItem { return childrenByFolder[folder.name]?.count ?? 0 }
             return 0
@@ -1128,11 +1235,13 @@ struct SidebarOutlineView: NSViewRepresentable {
 
         func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
             if item == nil {
-                if index < rootOffset { return index == 0 && !pinnedItems.isEmpty ? pinnedItem : looseHeader }
-                let index = index - rootOffset
-                return index < shownLoose.count
-                    ? shownLoose[index]
-                    : folderItems[index - shownLoose.count]
+                switch root.slot(at: index) {
+                case .pinnedHeader: return pinnedItem
+                case .folder(let i): return folderItems[i]
+                case .looseHeader: return looseHeader
+                case .loose(let i): return shownLoose[i]
+                case nil: preconditionFailure("root index \(index) past \(root.count)")
+                }
             }
             if item is PinnedItem { return pinnedItems[index] }
             let folder = item as! FolderItem
@@ -1244,6 +1353,10 @@ struct SidebarOutlineView: NSViewRepresentable {
             rowView.showsEditing = showsEditing(item)
             rowView.gapBelow = gapBelow(item)
             if item is PinnedItem || item is LooseHeaderItem { rowView.setFoldable() }
+            if item is LooseHeaderItem {
+                let manager = self.manager
+                rowView.setMoreMenu { SectionSortMenu.menu(forFolder: nil, manager: manager) }
+            }
             if let folder = item as? FolderItem {
                 let manager = self.manager, name = folder.name
                 let directory = manager.root(ofFolder: name).map { ($0 as NSString).abbreviatingWithTildeInPath }
@@ -1407,8 +1520,9 @@ struct SidebarOutlineView: NSViewRepresentable {
             guard looseShown != show else { return }
             looseShown = show
             guard let outline, !looseItems.isEmpty else { return }
-            // Right after the Pinned header (if any) and the Sessions header.
-            let rows = IndexSet(integersIn: rootOffset..<(rootOffset + looseItems.count))
+            // Right after the Sessions header, the last thing at the root.
+            let first = root.firstLoose
+            let rows = IndexSet(integersIn: first..<(first + looseItems.count))
             if show {
                 outline.insertItems(at: rows, inParent: nil, withAnimation: animated ? .slideDown : [])
             } else {
@@ -1520,13 +1634,32 @@ struct SidebarOutlineView: NSViewRepresentable {
             }
 
             // Move / refile a session.
-            if pb.string(forType: Self.sessionDragType) != nil {
+            if let dragged = pb.string(forType: Self.sessionDragType) {
                 let drop = sessionDropTarget(at: point)
+                // Into a section that sorts itself, from inside it: there is
+                // no place to put it but the one it has.
+                if drop.index == NSOutlineViewDropOnItemIndex || drop.onFolder != nil,
+                   drop.parent == nil, sortsItself(drop.onFolder?.name),
+                   Self.ids(dragged).allSatisfy({ id in
+                       manager.sessions.first { $0.id == id }.map {
+                           $0.folderPath == drop.onFolder?.name && !manager.isPinned($0)
+                       } ?? true
+                   }) {
+                    hideInsertion()
+                    clearDropHighlight()
+                    return []
+                }
                 if let folder = drop.onFolder {
                     // Drop *onto* a folder header → first in it + highlight the row.
                     hideInsertion()
                     setDropHighlight(folder)
                     outline.setDropItem(folder, dropChildIndex: NSOutlineViewDropOnItemIndex)
+                } else if drop.parent == nil, drop.index == NSOutlineViewDropOnItemIndex {
+                    // Into Sessions while it sorts itself: the header lights
+                    // up as a folder's does, and there's no line.
+                    hideInsertion()
+                    setDropHighlight(looseHeader)
+                    outline.setDropItem(nil, dropChildIndex: NSOutlineViewDropOnItemIndex)
                 } else if drop.parent is PinnedItem, drop.index == NSOutlineViewDropOnItemIndex {
                     // Onto a folded Pinned's header: AppKit marks the header.
                     hideInsertion()
@@ -1549,7 +1682,6 @@ struct SidebarOutlineView: NSViewRepresentable {
             clearDropHighlight()
             hideInsertion()
             let pb = info.draggingPasteboard
-            let loose = shownLoose.count
 
             let folders = Self.directories(on: pb)
             if !folders.isEmpty {
@@ -1559,11 +1691,10 @@ struct SidebarOutlineView: NSViewRepresentable {
 
             if let folder = pb.string(forType: Self.folderDragType) {
                 guard item == nil else { return false }
-                manager.moveFolder(folder, toFolderIndex: max(0, index - rootOffset - loose))
+                manager.moveFolder(folder, toFolderIndex: root.folderIndex(forDrop: index))
                 return true
             }
-            if let ids = pb.string(forType: Self.sessionDragType)?
-                .split(separator: "\n").compactMap({ UUID(uuidString: String($0)) }) {
+            if let ids = pb.string(forType: Self.sessionDragType).map(Self.ids) {
                 let byID = Dictionary(uniqueKeysWithValues: manager.sessions.map { ($0.id, $0) })
                 let moving = ids.compactMap { byID[$0] }
                 guard !moving.isEmpty else { return false }
@@ -1601,9 +1732,10 @@ struct SidebarOutlineView: NSViewRepresentable {
                                          before: before, unpin: true)
                 } else if item == nil {
                     // Onto the Sessions header, folded or open: at the top,
-                    // as a drop on a folder header lands.
-                    let before = looseShown && !overSectionHeader
-                        ? below(index - rootOffset, in: shownLoose) : top(pinned: false)
+                    // as a drop on a folder header lands. Into it while it
+                    // sorts itself, the same: it is drawn by its sort anyway.
+                    let before = looseShown && !overSectionHeader && index != NSOutlineViewDropOnItemIndex
+                        ? below(root.looseIndex(forDrop: index), in: shownLoose) : top(pinned: false)
                     manager.moveSessions(moving.map(\.id), toFolder: nil, before: before, unpin: true)
                 } else {
                     return false
@@ -1613,26 +1745,45 @@ struct SidebarOutlineView: NSViewRepresentable {
             return false
         }
 
-        /// Nearest gap between folder sections, as a root child index in
-        /// `[loose, loose+folders]`. Folders always render after the loose band.
+        /// The session ids a drag carries.
+        static func ids(_ dragged: String) -> [UUID] {
+            dragged.split(separator: "\n").compactMap { UUID(uuidString: String($0)) }
+        }
+
+        /// The section of `folder` (nil: Sessions) is drawn by its own sort,
+        /// so a drop goes into it, not to a place in it.
+        private func sortsItself(_ folder: String?) -> Bool {
+            manager.sectionSort(ofFolder: folder) != .manual
+        }
+
+        /// Nearest gap between folder sections, as a root child index from
+        /// the first folder's to just past the last one's. Folders sit between
+        /// Pinned and Sessions, and a folder never goes above or below them.
         private func folderDropTarget(at point: NSPoint) -> Int {
             guard let outline else { return 0 }
-            // Root indices, past the Pinned header when there is one: a folder
-            // never goes above Pinned.
-            let loose = rootOffset + shownLoose.count, folders = folderItems.count
-            guard folders > 0 else { return loose }
+            let root = self.root, folders = folderItems.count
+            let end = root.rootIndex(ofFolder: folders)
+            guard folders > 0 else { return end }
             var boundaries: [(y: CGFloat, target: Int)] = []
             for (i, item) in folderItems.enumerated() {
                 let row = outline.row(forItem: item)
-                if row >= 0 { boundaries.append((sectionTop(ofRow: row), loose + i)) }
+                if row >= 0 { boundaries.append((sectionTop(ofRow: row), root.rootIndex(ofFolder: i))) }
             }
-            let lastRow = outline.numberOfRows - 1
-            if lastRow >= 0 { boundaries.append((outline.rect(ofRow: lastRow).maxY, loose + folders)) }
-            return boundaries.min { abs($0.y - point.y) < abs($1.y - point.y) }?.target ?? loose
+            // Past the last folder: over the Sessions header, or under the
+            // last row when there is none.
+            let headerRow = root.looseHeader != nil ? outline.row(forItem: looseHeader) : -1
+            if headerRow >= 0 {
+                boundaries.append((sectionTop(ofRow: headerRow), end))
+            } else if outline.numberOfRows > 0 {
+                boundaries.append((outline.rect(ofRow: outline.numberOfRows - 1).maxY, end))
+            }
+            return boundaries.min { abs($0.y - point.y) < abs($1.y - point.y) }?.target ?? end
         }
 
         /// Where a dragged session should land. `onFolder` non-nil = drop onto
         /// that folder header (append); otherwise insert at (`parent`, `index`).
+        /// Into Sessions while it sorts itself is (nil, `NSOutlineViewDropOnItemIndex`):
+        /// a section with its own order has no places, only itself.
         /// Whether the drag is over the open Pinned or Sessions header, where a
         /// drop goes first as stored, as on a folder's. Their drop index is the
         /// same as above their first row, which goes by the row drawn below it.
@@ -1642,20 +1793,35 @@ struct SidebarOutlineView: NSViewRepresentable {
             overSectionHeader = false
             guard let outline, outline.numberOfRows > 0 else { return (nil, 0, nil) }
             let hovered = outline.row(at: point)
-            // Below the last row → append after the last row's context.
+            let root = self.root
+            let topLevelEnd = root.count
+            // Below every row, with no folderless sessions yet: the empty
+            // space under the list is where the Sessions section will be, so
+            // a drop there takes the session out of its folder.
+            if hovered < 0, looseItems.isEmpty, point.y > outline.rect(ofRow: outline.numberOfRows - 1).maxY {
+                return (nil, topLevelEnd, nil)
+            }
+            // Otherwise below the last row → append after the last row's context.
             let row = hovered >= 0 ? hovered : outline.numberOfRows - 1
-            let topLevelEnd = rootOffset + shownLoose.count
             guard let item = outline.item(atRow: row) else { return (nil, topLevelEnd, nil) }
-            let rect = outline.rect(ofRow: row)
             let content = contentRect(ofRow: row)
             let topHalf = hovered >= 0 && point.y < content.midY
 
-            // With no folderless sessions, the gap under Pinned's last row is
-            // the only place above the folders: out of any folder, as the top
-            // of the first folder's header is when nothing is above it.
-            if hovered >= 0, looseItems.isEmpty, point.y >= content.maxY,
-               let session = item as? SessionItem, session === pinnedItems.last {
-                return (nil, rootOffset, nil)
+            // With no folderless sessions, two more places take a session out
+            // of its folder, both at the top, so they're there however long
+            // the list is (the space under it is gone once it overflows): the
+            // gap under Pinned's last row, and the top edge of the first
+            // folder's header when nothing is open above it. The line is
+            // drawn there, over the first folder (`root.firstFolder`).
+            if looseItems.isEmpty, hovered >= 0 {
+                if point.y >= content.maxY, let session = item as? SessionItem, session === pinnedItems.last {
+                    return (nil, root.firstFolder, nil)
+                }
+                let rowsAbove = row > 0 && outline.item(atRow: row - 1) is SessionItem
+                if let folder = item as? FolderItem, folder === folderItems.first, !rowsAbove,
+                   point.y < outline.rect(ofRow: row).minY + outline.rect(ofRow: row).height * 0.34 {
+                    return (nil, root.firstFolder, nil)
+                }
             }
 
             // Onto a section's header: first in it, as onto a folder's. Pinned
@@ -1670,19 +1836,10 @@ struct SidebarOutlineView: NSViewRepresentable {
             // Onto the Sessions header: out of any folder, first.
             if item is LooseHeaderItem {
                 overSectionHeader = true
-                return (nil, rootOffset, nil)
+                if sortsItself(nil) { return (nil, NSOutlineViewDropOnItemIndex, nil) }
+                return (nil, root.firstLoose, nil)
             }
             if let folder = item as? FolderItem {
-                // The top edge of the very first section is the "move to top
-                // level" zone — the top-level band renders above the folders but
-                // has no row to aim at when it's empty. Dropping here inserts
-                // the session above the first folder (at top level). With open
-                // rows above, the gap over this header is theirs, and their
-                // own drop handles it (Pinned's, above).
-                let rowsAbove = row > 0 && outline.item(atRow: row - 1) is SessionItem
-                if folder === folderItems.first, !rowsAbove, point.y < rect.minY + rect.height * 0.34 {
-                    return (nil, topLevelEnd, nil)
-                }
                 return (nil, 0, folder) // onto the header → first in the folder
             }
             if let session = item as? SessionItem,
@@ -1691,25 +1848,30 @@ struct SidebarOutlineView: NSViewRepresentable {
             }
             if let session = item as? SessionItem {
                 if let parent = session.session.folderPath, let parentItem = folderCache[parent] {
+                    // A folder that sorts itself takes the drop as its header would.
+                    if sortsItself(parent) { return (nil, 0, parentItem) }
                     let i = childrenByFolder[parent]?.firstIndex { $0 === session } ?? 0
                     return (parentItem, topHalf ? i : i + 1, nil)
                 }
+                if sortsItself(nil) { return (nil, NSOutlineViewDropOnItemIndex, nil) }
                 let i = shownLoose.firstIndex { $0 === session } ?? 0
-                return (nil, rootOffset + (topHalf ? i : i + 1), nil)
+                return (nil, root.rootIndex(ofLoose: topHalf ? i : i + 1), nil)
             }
             return (nil, topLevelEnd, nil)
         }
 
         // MARK: Drop highlight
 
-        private var dropHighlight: FolderItem?
+        /// The header lit up under a drag: a folder's, or Sessions' while it
+        /// sorts itself.
+        private var dropHighlight: AnyObject?
 
-        private func setDropHighlight(_ folder: FolderItem?) {
-            guard dropHighlight !== folder else { return }
+        private func setDropHighlight(_ header: AnyObject?) {
+            guard dropHighlight !== header else { return }
             let previous = dropHighlight
-            dropHighlight = folder
+            dropHighlight = header
             applyDropHighlight(previous)
-            applyDropHighlight(folder)
+            applyDropHighlight(header)
         }
 
         func clearDropHighlight() { setDropHighlight(nil) }
@@ -1760,27 +1922,27 @@ struct SidebarOutlineView: NSViewRepresentable {
                 return bottomOfRow(outline.row(forItem: folder)) // empty folder
             }
             // Top-level: root children are the Pinned header (when there is
-            // one), then loose items, then folders.
-            let index = index - rootOffset
-            let loose = shownLoose.count
-            if index < loose, index >= 0 {
-                return topOfRow(outline.row(forItem: shownLoose[index]))
-            }
-            let folderIdx = index - loose
-            if folderIdx >= 0, folderIdx < folderItems.count {
-                return sectionTop(ofRow: outline.row(forItem: folderItems[folderIdx]))
-            }
+            // one), the folders, the Sessions header, then the loose rows.
             let lastRow = outline.numberOfRows - 1
-            return lastRow >= 0 ? bottomOfRow(lastRow) : 0
+            switch root.slot(at: index) {
+            case .folder(let i):
+                return sectionTop(ofRow: outline.row(forItem: folderItems[i]))
+            case .looseHeader:
+                return sectionTop(ofRow: outline.row(forItem: looseHeader))
+            case .loose(let i):
+                return topOfRow(outline.row(forItem: shownLoose[i]))
+            case .pinnedHeader, nil:
+                return lastRow >= 0 ? bottomOfRow(lastRow) : 0
+            }
         }
 
-        private func applyDropHighlight(_ folder: FolderItem?) {
-            guard let outline, let folder else { return }
-            let row = outline.row(forItem: folder)
+        private func applyDropHighlight(_ header: AnyObject?) {
+            guard let outline, let header else { return }
+            let row = outline.row(forItem: header)
             guard row >= 0,
                   let rowView = outline.rowView(atRow: row, makeIfNecessary: false) as? SidebarPillRowView
             else { return }
-            rowView.showsDropHighlight = (folder === dropHighlight)
+            rowView.showsDropHighlight = (header === dropHighlight)
         }
     }
 }

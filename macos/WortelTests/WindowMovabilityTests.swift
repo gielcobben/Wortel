@@ -44,6 +44,18 @@ final class WindowMovabilityTests: XCTestCase {
                                eventNumber: 0, trackingNumber: 0, userData: nil)!
     }
 
+    /// Crossings go the way the tracking area sends them, by Objective-C
+    /// selector. Calling the Swift methods passed while the selectors they
+    /// were exported under were `mouseEnteredWith:` and `mouseExitedWith:`,
+    /// and every real crossing raised "unrecognized selector".
+    private func pointerExits() {
+        movability.perform(#selector(NSResponder.mouseExited(with:)), with: crossing(.mouseExited))
+    }
+
+    private func pointerEnters() {
+        movability.perform(#selector(NSResponder.mouseEntered(with:)), with: crossing(.mouseEntered))
+    }
+
     /// Worked out from where the pointer was, this read "outside" before the
     /// window had its saved frame, and a tab grabbed in it moved the window
     /// until the pointer happened to leave and come back.
@@ -52,9 +64,9 @@ final class WindowMovabilityTests: XCTestCase {
     }
 
     func testMovableOnlyWhileThePointerIsOutsideTheWindow() {
-        movability.mouseExited(with: crossing(.mouseExited))
+        pointerExits()
         XCTAssertTrue(window.isMovable, "the menu bar and the Dock are outside: tiling from there works")
-        movability.mouseEntered(with: crossing(.mouseEntered))
+        pointerEnters()
         XCTAssertFalse(window.isMovable, "back inside, a press on a tab must drag the tab")
     }
 
@@ -106,8 +118,8 @@ final class WindowMovabilityTests: XCTestCase {
     /// is still open doesn't turn it off under the menu.
     func testReasonsAreIndependent() {
         NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: NSMenu())
-        movability.mouseExited(with: crossing(.mouseExited))
-        movability.mouseEntered(with: crossing(.mouseEntered))
+        pointerExits()
+        pointerEnters()
         XCTAssertTrue(window.isMovable)
         NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: NSMenu())
         XCTAssertFalse(window.isMovable)

@@ -120,6 +120,11 @@ struct PersistedSession: Codable {
     /// not sent": an agent with a prompt half written gets the long clock,
     /// and a relaunch must not forget that there may be one.
     let lastTypedAt: Date?
+    /// `Session.createdAt` and `Session.lastSentAt`, for the sidebar's
+    /// order. Absent in older files, and an older build drops them on its
+    /// next save; either way the order falls back (`SectionSort`).
+    let createdAt: Date?
+    let lastSentAt: Date?
     /// The last Claude conversation this session was seen writing to, kept
     /// **whether or not** that agent is still running.
     ///
@@ -154,6 +159,7 @@ struct PersistedSession: Codable {
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
         case runningAgent, runningModel, runningArgv, runningConversationID
         case lastConversationID, portBase, remindAt, agentAsleep, lastTypedAt
+        case createdAt, lastSentAt
         case reportedState
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
@@ -177,7 +183,8 @@ struct PersistedSession: Codable {
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil, lastConversationID: String? = nil,
          portBase: Int? = nil, remindAt: Date? = nil, agentAsleep: String? = nil,
-         lastTypedAt: Date? = nil, reportedState: String? = nil) {
+         lastTypedAt: Date? = nil, createdAt: Date? = nil, lastSentAt: Date? = nil,
+         reportedState: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
         self.originCwd = originCwd
         self.selected = selected; self.nameSource = nameSource
@@ -206,6 +213,8 @@ struct PersistedSession: Codable {
         self.remindAt = remindAt
         self.agentAsleep = agentAsleep
         self.lastTypedAt = lastTypedAt
+        self.createdAt = createdAt
+        self.lastSentAt = lastSentAt
         self.reportedState = reportedState
     }
     init(from decoder: Decoder) throws {
@@ -277,6 +286,8 @@ struct PersistedSession: Codable {
         portBase = try c.decodeIfPresent(Int.self, forKey: .portBase)
         agentAsleep = try c.decodeIfPresent(String.self, forKey: .agentAsleep)
         lastTypedAt = try c.decodeIfPresent(Date.self, forKey: .lastTypedAt)
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
+        lastSentAt = try c.decodeIfPresent(Date.self, forKey: .lastSentAt)
         remindAt = try c.decodeIfPresent(Date.self, forKey: .remindAt)
         reportedState = try c.decodeIfPresent(String.self, forKey: .reportedState)
     }

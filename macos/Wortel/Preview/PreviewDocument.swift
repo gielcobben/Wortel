@@ -55,6 +55,7 @@ final class PreviewDocument {
             anchorLine = visibleLine
             anchorOffset = 0
             visibleOffset = 0
+            selectedLine = nil
             selectsAll = false
             loadCurrentMode()
         }
@@ -76,6 +77,48 @@ final class PreviewDocument {
     @ObservationIgnored var anchorLine: Int?
     /// How far past the anchor line's top to land; see `visibleOffset`.
     @ObservationIgnored var anchorOffset: CGFloat = 0
+
+    /// A line someone asked to see: a ⌘-clicked `App.swift:42` in a terminal.
+    /// Unlike the anchor, which a view takes once on arriving, this is for the
+    /// view already on screen too, so it is observed, carries a serial (the
+    /// same line asked for twice is two requests), and the view that shows it
+    /// hands it back (`revealDone`), so a view rebuilt later (a session
+    /// switch) opens where the reader is rather than on an old request.
+    struct LineReveal: Equatable {
+        let line: Int
+        let serial: Int
+    }
+    private(set) var lineReveal: LineReveal?
+    @ObservationIgnored private var revealSerial = 0
+
+    /// Show `line`: scrolled to and selected. A diff shows only the lines
+    /// that changed, so the line asked for is usually not in it: a diff gives
+    /// way to the file. Rendered Markdown stays rendered and lands on the
+    /// block holding the line, which is the same place, readable.
+    func reveal(line: Int) {
+        if mode == .diff, availableModes.contains(.source) { mode = .source }
+        // Also the place a view built from now on opens at: the tab copies
+        // its last place into the anchor when it is built.
+        visibleLine = line
+        visibleOffset = 0
+        anchorLine = line
+        anchorOffset = 0
+        revealSerial += 1
+        lineReveal = LineReveal(line: line, serial: revealSerial)
+    }
+
+    /// The line selected in Source or Diff, reported by the view; nil when
+    /// none is, and in Rendered, which has no lines to select.
+    @ObservationIgnored var selectedLine: Int?
+
+    /// The line "Open in <editor>" opens at: the one you selected, else the
+    /// one at the top of what you're reading.
+    var lineForEditor: Int { selectedLine ?? visibleLine }
+
+    /// The view has shown `reveal`. A later request is left alone.
+    func revealDone(_ reveal: LineReveal) {
+        if lineReveal == reveal { lineReveal = nil }
+    }
 
     /// Select All, for the one mode that can't do it itself. Source and Diff are
     /// a table: they select rows natively and copy them. A rendered document is a

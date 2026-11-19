@@ -31,7 +31,8 @@ final class AppSettings {
         didSet { defaults.set(showsCommitBox, forKey: Self.commitBoxKey) }
     }
 
-    /// Servers picked from the running-jobs popover open in the Mac's default
+    /// Servers picked from the running-jobs popover, and a ⌘-clicked address
+    /// on this Mac in a terminal (`localhost:3000`), open in the Mac's default
     /// browser instead of a tab. The same choice as the checkmark on a
     /// server's right-click menu. App-wide, because which browser you test in
     /// is a habit, not a property of a session. "+" and ⇧⌘L still make a tab;

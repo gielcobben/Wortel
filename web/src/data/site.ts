@@ -137,10 +137,10 @@ export const SECTIONS: Section[] = [
       'Hand one repository to Claude Code, another to Codex, a third to Aider, and the terminal stops being the hard part. Knowing which one needs you becomes the hard part.',
     blocks: [
       {
-        p: 'Wortel reads that off the screen. Output that keeps moving is an agent working; a screen gone still is one waiting on you. Where an agent announces itself Wortel takes its word for it, and where it says nothing, which is most of them, Wortel still knows.',
+        p: 'The agent tells Wortel itself. Claude Code, Codex, Pi, opencode and others report what they are doing as they do it: working, waiting for your approval, asking a question, finished, failed. Wortel takes them at their word and guesses nothing, so a dot in the sidebar means what the agent said, not what its screen looked like.',
       },
       {
-        p: 'The sidebar marks what is working and what is waiting, a notification arrives when a background agent goes quiet, and ⌥⇧⌘↓ jumps to the next one waiting. Anything still running when you quit is picked back up on the next launch.',
+        p: 'The sidebar marks what is working and what is waiting, a notification arrives when a background agent finishes or needs you, and ⌥⇧⌘↓ jumps to the next one waiting. Anything still running when you quit is picked back up on the next launch.',
       },
       {
         p: 'It ships no per-agent integrations on purpose: a terminal that adapts to six agents by name is a terminal that is wrong about the seventh. A bundled wortel command sits on every session’s PATH instead, so anything that can run a command can drive the app.',
@@ -311,10 +311,10 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'How the agent detection works',
     blocks: [
       {
-        p: 'Where an agent announces itself, with OSC 9;4 progress, OSC 133 command marks or a spinner in the title, Wortel uses that. None of it is required: the fallback is the screen itself, so an agent that emits nothing is still read correctly, including one that does not exist yet.',
+        p: 'Agents report their own state through the Program Status Protocol, an open standard a program uses to tell its terminal that it is working, blocked on you, done or failed. Claude Code, Codex, Pi, opencode, crush, Qwen Code, GitHub Copilot CLI and Amp speak it. Wortel listens for the protocol and not for a list of names, so the next agent that speaks it works the day it ships.',
       },
       {
-        p: 'Nothing is written into any agent’s configuration to make this work, and detection only runs on sessions you are not currently looking at. A notification never arrives for the session in front of you.',
+        p: 'An agent that does not report shows no spinner and no turn end. Wortel used to guess those from the title and the screen, and stopped: a guess that is right most of the time is a false alarm the rest of it. A version too old to report is marked in the sidebar with the version it needs. Nothing is written into any agent’s configuration, and a notification never arrives for the session in front of you.',
       },
     ],
   },
@@ -415,7 +415,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'How does Wortel know when a coding agent is waiting for me?',
-    a: 'By watching what the session draws. A screen that keeps changing means the agent is still working; a screen that has held still past a threshold means it is waiting on you. Precise signals (OSC 9;4 progress, OSC 133 command marks, a title spinner) are used where an agent emits them, but none are required, so the rule covers Claude Code, Codex, Aider and agents that do not exist yet. Nothing is written into any agent’s configuration to make this work, and detection only runs on sessions you are not currently looking at.',
+    a: 'The agent says so. Claude Code, Codex, Pi, opencode and others report their own state through the Program Status Protocol: working, waiting for your approval, asking a question, done or failed. Wortel shows what they report and guesses nothing from the screen. An agent that does not report yet shows no status, and one in a version too old to report is marked with the version it needs. Nothing is written into any agent’s configuration to make this work.',
   },
   {
     q: 'Can I run several coding agents on one repository at once?',
@@ -431,7 +431,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel work with Claude Code, Codex and Aider?',
-    a: 'Yes. They run as ordinary shell commands in any session, with no per-agent setup and no changes to their configuration files. Beyond that, Wortel marks in the sidebar which agents are working and which are waiting, notifies you when a background agent goes quiet, jumps to the next waiting session with ⌥⇧⌘↓, gives each one its own worktree so they can share a repository, keeps them running when the app is closed, and resumes agents that were still running when you last quit.',
+    a: 'Yes. They run as ordinary shell commands in any session, with no per-agent setup and no changes to their configuration files. Beyond that, Wortel marks in the sidebar which agents are working and which are waiting, notifies you when a background agent finishes or needs you, jumps to the next waiting session with ⌥⇧⌘↓, gives each one its own worktree so they can share a repository, keeps them running when the app is closed, and resumes agents that were still running when you last quit.',
   },
   {
     q: 'What are the system requirements?',

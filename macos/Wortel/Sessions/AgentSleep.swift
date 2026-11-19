@@ -27,6 +27,9 @@ struct SleepingAgent: Equatable {
     var typedAt: Date?
     /// How many times the resume has been typed without the agent starting.
     var attempts = 0
+    /// Ended to be moved (`wortel cd`): the shell `cd`s here before the
+    /// resume is typed, and the resume was built for this directory.
+    var moveTo: String? = nil
 }
 
 /// Where a session's agent is, as far as sleep goes.
@@ -174,6 +177,15 @@ enum AgentSleep {
     /// A resume is typed at most this many times without the agent starting.
     static let maxWakeAttempts = 3
 
+    /// Whether `path` is the home folder, links and a trailing slash aside.
+    /// Claude Code keys trust by the folder's real path.
+    static func isHomeFolder(_ path: String, home: String = NSHomeDirectory()) -> Bool {
+        func real(_ p: String) -> String {
+            URL(fileURLWithPath: p).standardizedFileURL.resolvingSymlinksInPath().path
+        }
+        return real(path) == real(home)
+    }
+
     private static func seconds(_ name: String, _ fallback: TimeInterval) -> TimeInterval {
         if let value = ProcessInfo.processInfo.environment[name],
            let seconds = TimeInterval(value), seconds > 0 { return seconds }
@@ -188,6 +200,12 @@ enum AgentSleep {
         var launchIsSimple = true
         /// An exact conversation is known, is on disk, and has a resume line.
         var resumable = false
+        /// It runs in the home folder, where Claude Code asks whether to trust
+        /// the folder at every start: it never records that answer for home
+        /// ("Yes lasts for this session only"). A resume there stops at that
+        /// question instead of coming back. Any other folder an agent already
+        /// ran in had its answer recorded, so this is the one place it bites.
+        var inHomeFolder = false
         var selected = false
         /// Working, by any of Wortel's own signals.
         var busy = false
@@ -221,7 +239,7 @@ enum AgentSleep {
     }
 
     enum Reason: Equatable {
-        case notAnAgent, notEnabled, launchNotSimple, notResumable, selected, busy, restUnknown
+        case notAnAgent, notEnabled, launchNotSimple, notResumable, homeFolder, selected, busy, restUnknown
         /// Painted for the other appearance, and not ended for it: text was
         /// typed, something runs under it, it waits on an answer, or Remote
         /// Control is on. For an agent with no clock of its own.
@@ -246,6 +264,9 @@ enum AgentSleep {
         guard enabledAgents.contains(agent) || repaints else { return .never(.notEnabled) }
         guard inputs.launchIsSimple else { return .never(.launchNotSimple) }
         guard inputs.resumable else { return .never(.notResumable) }
+        // A restart there stops at Claude's trust question: neither a sleep
+        // nor a repaint.
+        guard !inputs.inHomeFolder else { return .never(.homeFolder) }
         // In front it is only ever restarted where it stands, and only the
         // one that was in front at the change itself.
         let inPlace = repaints && inputs.selected && inputs.inPlace

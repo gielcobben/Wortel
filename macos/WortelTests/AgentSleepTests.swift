@@ -119,6 +119,23 @@ final class AgentSleepTests: XCTestCase {
         XCTAssertEqual(AgentSleep.decide(inputs), .never(.notResumable))
     }
 
+    /// Claude Code never records its trust answer for the home folder, so a
+    /// resume there would stop at "Is this a project you trust?" instead of
+    /// coming back. Seen 2026-11-19 with 2.1.328.
+    func testAnAgentInTheHomeFolderIsLeftAlone() {
+        var inputs = finished(hour * 10)
+        inputs.inHomeFolder = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.homeFolder))
+    }
+
+    func testTheHomeFolderIsKnownByItsRealPath() {
+        XCTAssertTrue(AgentSleep.isHomeFolder("/Users/someone", home: "/Users/someone"))
+        XCTAssertTrue(AgentSleep.isHomeFolder("/Users/someone/", home: "/Users/someone"))
+        XCTAssertTrue(AgentSleep.isHomeFolder("/Users/someone/Developer/..", home: "/Users/someone"))
+        XCTAssertFalse(AgentSleep.isHomeFolder("/Users/someone/Developer", home: "/Users/someone"))
+        XCTAssertFalse(AgentSleep.isHomeFolder("/Users", home: "/Users/someone"))
+    }
+
     /// After `claude; make`, ending the agent would let the shell run `make`.
     func testAnAgentWithMoreOnItsCommandLineIsLeftAlone() {
         var inputs = finished(hour * 10)
@@ -142,6 +159,17 @@ final class AgentSleepTests: XCTestCase {
         XCTAssertEqual(AgentSleep.decide(painted(soon + 1)), .repaint)
         XCTAssertEqual(AgentSleep.decide(painted(soon + 1, "claude")), .repaint)
         XCTAssertEqual(AgentSleep.decide(painted(soon - 5)), .notBefore(now.addingTimeInterval(5)))
+    }
+
+    /// Restarted to repaint, an agent in the home folder would come back at
+    /// Claude's trust question, in front of you or not.
+    func testAnAgentInTheHomeFolderIsNotRestartedToRepaint() {
+        var inputs = painted(soon + 1, "claude")
+        inputs.inHomeFolder = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.homeFolder))
+        inputs.selected = true
+        inputs.inPlace = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.homeFolder))
     }
 
     /// Stepping away from a session for a moment must not end its agent.

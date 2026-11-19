@@ -63,6 +63,27 @@ plain terminal.
   setting once, when the row is made, and uses the mechanism `wortel new --`
   already had (`Session.startupInput`: the keeper types it before the shell
   has read a byte; a worktree session gets it once git is done).
+- **An agent headed for the home folder gets a folder of its own**
+  (`ChatFolder`): `~/Wortel/<day>/<n>`, numbered from 1 each day, made when
+  the row is made. Only for `.preferred` with a command set, and only when
+  the session would otherwise start in `~`, in `~/Wortel` or in a folder
+  under it (so ⌘N beside one makes another); ⌥⌘N included. A plain terminal,
+  `wortel new` and anything given a directory are untouched. The reason is
+  Claude's trust question, which it never saves for `~`: until
+  `~/.claude.json` records `~/Wortel` (or a folder above it) as trusted, a
+  Claude session starts in `~/Wortel` itself and Claude asks there once;
+  after that every one gets its own folder and is never asked. The session
+  is called by its command ("Claude") until the agent names it. Nothing
+  made there is ever removed. Only a `~/Wortel` that Wortel made is used (a
+  `.made-by-wortel` file in it; one holding only day folders and the
+  unedited guide, from the first build, is recognised and marked): a folder
+  of someone's own at that path, or at `~/wortel`, is never written to, and
+  an agent then starts at home as before. Until `~/Wortel` is trusted, only
+  one session waits in it at a time; another gets its own folder.
+  `~/Wortel/CLAUDE.md` (written when missing,
+  `ChatFolder.guide`) tells the agent to offer `wortel cd` when the work
+  turns to a project elsewhere. A test copy keeps its own under its data
+  folder.
 - **New Terminal** (⌃⌘N) is hidden unless the field holds a command, in the
   Session menu (shown and hidden from `AppSettings.onNewSessionCommandChange`,
   as Restart to Update is by the updater), the sidebar's + menu and a

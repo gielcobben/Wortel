@@ -144,6 +144,9 @@ targets:
         buildPhase: resources
       - path: Resources/wortel.conf
         buildPhase: resources
+      # The Claude Code skill installed at launch (`AgentSkill`).
+      - path: Resources/wortel-skill.md
+        buildPhase: resources
     dependencies:
       # The `wortel` command, copied into Contents/Resources/bin. There is no
       # install step: GhosttyRuntime puts that directory on the PATH of every
@@ -552,6 +555,13 @@ targets:
       # is a reason to stay awake, and each one wrong is an agent killed
       # that should not have been.
       - path: Wortel/Sessions/AgentSleep.swift
+      # Where an agent session that would start in the home folder starts
+      # instead, and when Claude already trusts it. Foundation only.
+      - path: Wortel/Sessions/ChatFolder.swift
+      # What `wortel cd` types and tells the agent that asked.
+      - path: Wortel/Sessions/SessionMove.swift
+      # When the Claude Code skill is installed, updated, or left alone.
+      - path: Wortel/Sessions/AgentSkill.swift
       # Which conversation Claude, Pi or Codex is in, read from each agent's
       # own files. Three layouts nobody documents; a drift resumes the wrong
       # conversation without a sound. Foundation only.

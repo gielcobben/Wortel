@@ -49,6 +49,11 @@ enum WortelCommand: Codable, Equatable {
     /// its reminder (nil). Resolved to a moment by the CLI (`ReminderTime`),
     /// so "tomorrow" means the same thing here as in the app's menu.
     case remind(session: String?, at: Double?)
+    /// Move a session (by default the caller's) to another directory: its
+    /// agent quits at the end of its turn, the shell `cd`s there, and the
+    /// same conversation continues there. `path` is absolute by the time it's
+    /// sent; the app checks it exists.
+    case changeDirectory(session: String?, path: String)
     /// Every open session, described (`WortelSessionInfo`, as JSON in the
     /// reply's `value`). `caller` is the asking shell's `$WORTEL_SESSION_ID`,
     /// so the list can say which row is "you".
@@ -85,6 +90,7 @@ enum WortelCommand: Codable, Equatable {
         case .notify: return "notify"
         case .mark: return "mark"
         case .remind: return "remind"
+        case .changeDirectory: return "cd"
         case .list: return "list"
         case .read: return "read"
         case .send: return "send"
@@ -296,6 +302,9 @@ enum WortelCommandParser {
                                    bring this session back to you, as the unread
                                    ring and a notification: 20m, 1h, 15:00, 3pm,
                                    tomorrow, fri 9am, next-week, or none to cancel
+          cd <dir>                 move this session to another directory: its
+                                   agent quits when its turn ends and continues
+                                   the same conversation there
 
           list [--json]            the open sessions: id, name, state, agent,
                                    branch and directory
@@ -524,6 +533,17 @@ enum WortelCommandParser {
                                          "a time ahead like 20m, 1h, 15:00, 3pm, tomorrow, fri 9am or next-week, or none")
             }
             return .remind(session: session, at: date.timeIntervalSince1970)
+
+        case "cd":
+            guard let path = rest.first, !path.isEmpty else {
+                throw ParseError.missing("a directory", verb)
+            }
+            // A second word is nearly always the rest of an unquoted path with
+            // a space in it; moving to its first half would be a surprise.
+            guard rest.count == 1 else { throw ParseError.unexpected(rest[1], verb) }
+            // Against the caller's directory, which for an agent is where its
+            // own shell tool stands: `cd ../site && wortel cd .` means the site.
+            return .changeDirectory(session: session, path: absolute(path, from: currentDirectory))
 
         default:
             throw ParseError.unknown(verb)

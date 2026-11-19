@@ -375,7 +375,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   home, ⇧⌘N on a branch, ⌘O somewhere else. Cut that day: Fork Session, Open
   Branch (⇧⌘O), New Folder, Move To, Change Directory, `wortel fork` and
   `wortel cd`. Seven ways in was more than anyone kept apart. Don't add a fifth
-  without answering that (`b447405`).
+  without answering that (`b447405`). `wortel cd` came back on 2026-11-19
+  for agents only, with no menu item (below).
 - **2026-11-16. Remind Me, as Slack has it.** Row menu, Session menu, ⌘P and
   `wortel remind`: Slack's own choices, In 30 Minutes, In 1 Hour, In 3 Hours,
   Tomorrow at 09:00, Monday at 09:00 (the next one), Custom…. A row's menu
@@ -558,6 +559,95 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Control link again. Not yet seen: the link going to `null` when Remote
   Control is turned off by hand. Turning it off doesn't shorten a clock
   already armed for eight hours; the agent sleeps then, which errs awake.
+- **2026-11-19. An agent in the home folder never sleeps.** Claude Code
+  never records its trust answer for the home folder ("Yes lasts for this
+  session only"; `hasTrustDialogAccepted` stays `false` for `~` in
+  `~/.claude.json`, and 2.1.328's own messages say home trust is
+  session-only). So a resume there stopped at "Is this a project you
+  trust?" instead of coming back. Seen on this Mac: a session slept and
+  woken by a click came up at that question for `~`. Any other folder an
+  agent already ran in had its answer recorded when it started, so the home
+  folder is the one case, and the rule is that one path (by its real path),
+  not a copy of Claude's trust lookup, which also walks up to a git root and
+  maps a worktree to its main checkout. Answering the question for the
+  person was not considered: it is a safety prompt. A home-folder session
+  that was already asleep before this still asks once when woken. Nor is it
+  restarted to repaint after a light or dark change: that is the same
+  restart, and would stop at the same question.
+- **2026-11-19. An agent session headed for the home folder gets a folder
+  of its own, `~/Wortel/<day>/<n>`.** The other half of the entry above:
+  on this Mac 7 of 21 sessions were Claude in `~` (⌘N with Settings'
+  command, people using the list as chats), so never sleeping there would
+  have kept most of what deep sleep was for. The Codex app does the same for
+  a thread with no project (`~/Documents/Codex/<date>/<slug>`, per its
+  issue tracker). Decided with the user: agents only (a plain terminal
+  still opens at `~`), ⌥⌘N included; `~/Wortel`, not `~/Documents` (a macOS
+  permission prompt, and iCloud syncs it) and not hidden (it is where the
+  agent's files are); day and number, since Claude files a conversation
+  under its folder's path and the folder can never be renamed after the
+  session. Trust: a trusted folder covers every folder under it (Claude's
+  own lookup outside git, and seen in this Mac's config: twenty folders
+  under one trusted `~/Developer`, none asked). So until `~/Wortel` is
+  trusted, a Claude session starts in `~/Wortel` itself and Claude asks its
+  own question once; Wortel only reads `~/.claude.json`. Rejected: Wortel
+  writing the trust record (another app's security setting, in a file every
+  running Claude rewrites), and Claude asking in each new folder. Existing
+  home sessions were left where they are.
+- **2026-11-19. `wortel cd` is back, for the agent only.** Cut on 11-09 with
+  Change Directory; back because agent sessions now start in a folder of
+  their own on purpose (above), so moving to the project the chat turned
+  into is the expected next step, and without it the git panel showed the
+  chat folder while the agent worked in Opmaak. No menu item, so the four
+  ways in stay four. The agent asks first: `~/Wortel/CLAUDE.md`, written by
+  Wortel when missing, tells it to offer the move and run `wortel cd` once
+  the person agrees. Built on deep sleep's road rather than restoring the
+  old `SessionMove` (about a thousand lines, written before sleep existed):
+  wait for the turn to end, end the agent as a sleep does (the selected
+  session included), type `cd` and the exact resume, file the row as ⌘O
+  would. Claude only. Seen 2026-11-19 with Claude Code 2.1.328 in a test
+  copy: told "move this session to b", the agent ran `wortel cd`, was told
+  "Not moved yet", finished its reply, quit, and came back in `b` on the
+  same conversation (it remembered a word from before), the row filed under
+  a new folder "b". In a second session, asked only to work on a README in
+  `b`, it offered "Should I move this session to b first?" on its own, the
+  guide read from the folder above where it started. Not seen: the hour's
+  give-up, a move of a session made by ⌘N in `~/Wortel` itself. The guide
+  only reaches agents started under `~/Wortel`: one in a project folder
+  told the person a move was impossible and suggested `/add-dir`. Wortel
+  doesn't write into a person's own `~/.claude/CLAUDE.md`; a paragraph there
+  (when `$WORTEL_SESSION_ID` is set, offer the move, run `wortel cd`) is what
+  reaches every session, and it is theirs to add. The guide is also written
+  at launch when `~/Wortel` exists, for a folder an earlier build made.
+- **2026-11-19. Wortel installs a Claude Code skill, `wortel`.** What the
+  `wortel` command can do, for the agent running in a session
+  (`Resources/wortel-skill.md`, `AgentSkill`). A skill and not CLAUDE.md:
+  only its description is in every conversation, the rest is read when it
+  applies. A Mac app has no install step, so it goes in at launch, when
+  `~/.claude` exists: once, then kept up to date with each update for as
+  long as the file is exactly what Wortel last wrote (a digest in the
+  defaults). Edited, it is left alone; deleted, it stays deleted. No menu
+  item: deleting the folder is the way to say no. The user's call, against
+  "Wortel doesn't write into an agent's own folders" above: a skill is a
+  file of Wortel's own in a folder made for them, not a change to the
+  person's instructions or settings. Claude Code only; other agents that
+  read the same format are not checked yet.
+- **2026-11-19. From the review of the four above.** `~/Wortel` is used
+  only when Wortel made it (a `.made-by-wortel` file): someone's own
+  `~/Wortel`, or `~/wortel` on a case-insensitive disk, was about to get a
+  guide saying "it is not a project" and day folders inside it. A move has
+  a deadline once the agent is ended (two minutes to arrive), is called off
+  when the resume gives up or the session closes, and `wortel cd .` cancels
+  a waiting one instead of quitting and resuming the agent in place. A move
+  waits on the same "working" sleep does, pending debounce included. Smaller:
+  Claude's trust is remembered once given instead of `~/.claude.json` read on
+  every ⌘N, a second session made while the first is at the trust question
+  gets its own folder, `devx claude` counts as Claude, a skill file
+  identical to Wortel's but unrecorded (a synced `~/.claude`) is adopted so
+  updates still reach it, and a moved row's name is made unique in its new
+  folder. Seen again in a test copy with a real Claude: `wortel cd b` then
+  `wortel cd .` from the agent left it in `a` ("Move cancelled"); a move of
+  the idle agent from outside landed in `b`; a second ask said "Already
+  in".
 
 ## Keeper
 

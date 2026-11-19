@@ -23,8 +23,20 @@ final class SidebarLayoutTests: XCTestCase {
                             pinned: [3, 1], folderOrder: ["a"])
         XCTAssertEqual(result, [
             Group(folder: nil, ids: [3, 1], isPinned: true),
-            Group(folder: nil, ids: [4]),
             Group(folder: "a", ids: [2]),
+            Group(folder: nil, ids: [4]),
+        ])
+    }
+
+    /// As a list of chats sits under the projects: the sessions in no folder
+    /// come after every folder, the empty declared ones too.
+    func testTheTopLevelComesAfterEveryFolder() {
+        XCTAssertEqual(groups([row(1), row(2, "b"), row(3), row(4, "a")],
+                              folderOrder: ["a", "b"], declared: ["e"]), [
+            Group(folder: "a", ids: [4]),
+            Group(folder: "b", ids: [2]),
+            Group(folder: "e", ids: []),
+            Group(folder: nil, ids: [1, 3]),
         ])
     }
 
@@ -118,8 +130,8 @@ final class SidebarLayoutTests: XCTestCase {
     func testRowsKeepTheirArrayOrderWithinAGroup() {
         let result = groups([row(3, "a"), row(1), row(2, "a"), row(5), row(4, "a")])
         XCTAssertEqual(result, [
-            Group(folder: nil, ids: [1, 5]),
             Group(folder: "a", ids: [3, 2, 4]),
+            Group(folder: nil, ids: [1, 5]),
         ])
     }
 
@@ -259,13 +271,13 @@ final class SidebarLayoutTests: XCTestCase {
                        "newest first, wherever the selection was")
     }
 
-    func testANewTopLevelSessionGoesUnderPinnedAndAboveTheFolders() {
+    func testANewTopLevelSessionGoesFirstUnderTheFolders() {
         let result = drawn(adding: 9, inFolder: nil, to: [row(1), row(2), row(3, "a")], selected: 3,
                            pinned: [1], folderOrder: ["a"])
         XCTAssertEqual(result, [
             Group(folder: nil, ids: [1], isPinned: true),
-            Group(folder: nil, ids: [9, 2]),
             Group(folder: "a", ids: [3]),
+            Group(folder: nil, ids: [9, 2]),
         ])
     }
 

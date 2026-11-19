@@ -217,6 +217,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   ⌘N, do the thing, ⌘W still lands where it started, by a rule of its own:
   closing a session you just made and never left selects the one it was made
   from, as a browser tab does. Otherwise the row above, as before.
+- **2026-11-19. The folders come before the sessions in no folder.** Pinned,
+  then the folders, then Sessions, as ChatGPT, Claude and Codex put projects
+  above the loose chats. Someone who never files a session sees no change;
+  someone with many open folders folds them to reach the loose list. With no
+  folderless session yet, the empty space under the list is where a session
+  is dropped to take it out of its folder. The zone at the first folder's top
+  edge that did that went with the section that used to sit above it.
 
 ## Sessions
 

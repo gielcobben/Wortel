@@ -546,8 +546,8 @@ final class SessionManager {
 
     // MARK: - Sidebar folders (derived from session names)
 
-    /// The sidebar's rows, grouped into folders. A `nil` folder is the top-level
-    /// (headerless) group, always pinned to the root. Folder sections follow the
+    /// The sidebar's rows, grouped into folders: Pinned, the folders, then the
+    /// top level (`nil` folder, under its "Sessions" header). Folder sections follow the
     /// user's `folderOrder`; any folder not yet tracked there falls back to
     /// first-appearance (populated) / declaration (empty) order so nothing is
     /// ever dropped. Sessions keep their array order within a group. Purely a

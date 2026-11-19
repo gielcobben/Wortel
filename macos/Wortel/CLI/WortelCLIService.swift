@@ -357,7 +357,8 @@ final class WortelCLIService {
         }
     }
 
-    /// `wortel list`: every open session in sidebar order, pinned first.
+    /// `wortel list`: every open session in sidebar order: pinned, the folders, then
+    /// the sessions in no folder.
     private func list(caller: String?) -> WortelResponse {
         let you = caller.flatMap(UUID.init(uuidString:)).flatMap(manager.session(id:))
         let selected = manager.selected

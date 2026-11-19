@@ -1,7 +1,7 @@
 import Foundation
 
-/// How the sidebar groups sessions and in what order: Pinned first, then the
-/// top level, then one section per folder in the user's `folderOrder`; how
+/// How the sidebar groups sessions and in what order: Pinned first, then one
+/// section per folder in the user's `folderOrder`, then the top level; how
 /// that order is kept in step with the folders that exist; and where a
 /// dragged folder or session lands.
 ///
@@ -51,7 +51,8 @@ enum SidebarLayout {
 
     /// The sections in the order they are drawn. Pinned rows are shown in
     /// their own section, first, in `pinned` order, and not in their folders
-    /// as well. Folders follow `folderOrder`; any not tracked there fall back
+    /// as well. Then the folders, and the top level last, as a list of chats
+    /// sits under the projects. Folders follow `folderOrder`; any not tracked there fall back
     /// to first appearance among `rows`, then declaration order, so nothing is
     /// ever dropped. Rows keep their array order within a group.
     static func groups<ID: Hashable>(
@@ -72,9 +73,6 @@ enum SidebarLayout {
         if !pinnedRows.isEmpty {
             groups.append(Group(folder: nil, ids: pinnedRows.map(\.id), isPinned: true))
         }
-        if let top = byKey[""], !top.isEmpty {
-            groups.append(Group(folder: nil, ids: top))
-        }
         var emitted = Set<String>()
         func emit(_ folder: String) {
             guard !emitted.contains(folder),
@@ -86,6 +84,9 @@ enum SidebarLayout {
         for folder in folderOrder { emit(folder) }
         for row in rows { if let f = row.folder { emit(f) } }
         for folder in declaredFolders { emit(folder) }
+        if let top = byKey[""], !top.isEmpty {
+            groups.append(Group(folder: nil, ids: top))
+        }
         return groups
     }
 

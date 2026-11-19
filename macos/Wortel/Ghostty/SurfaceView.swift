@@ -179,6 +179,54 @@ final class SurfaceView: NSView {
     /// animations the frame may lag the target size).
     private var contentSize: NSSize = .zero
 
+    /// A session's own terminal, not one in its side column: the one whose
+    /// size on screen is what a new one starts at (`firstSize`). A side
+    /// terminal's page is the column's, a different size, and it is told
+    /// nothing until it is shown.
+    private let isSessionTerminal: Bool
+
+    private static let firstSizeKey = "terminal.lastShownSize"
+
+    /// The size, in points, a session's terminal last had on screen, kept
+    /// across launches. A new terminal starts at it rather than at
+    /// libghostty's placeholder of 45 columns by 15 rows, because most are
+    /// made out of sight (every session's at launch, a hibernated one when it
+    /// wakes, a new session made from the command line) and an agent in one
+    /// works at whatever width it is given. A terminal is never resized while
+    /// hidden, so this first size is the one it works at until it is shown.
+    private static var firstSize: NSSize? = {
+        guard let stored = UserDefaults.standard.array(forKey: firstSizeKey) as? [Double],
+              stored.count == 2, stored[0] >= 40, stored[1] >= 20 else { return nil }
+        return NSSize(width: stored[0], height: stored[1])
+    }()
+
+    /// Held in memory as it changes, which during a window drag is every
+    /// frame, and written to defaults once it has settled for a second.
+    private static func rememberShownSize(_ size: NSSize) {
+        guard size != firstSize else { return }
+        firstSize = size
+        saveFirstSize?.cancel()
+        let work = DispatchWorkItem {
+            saveFirstSize = nil
+            UserDefaults.standard.set([Double(size.width), Double(size.height)], forKey: firstSizeKey)
+        }
+        saveFirstSize = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+    }
+
+    private static var saveFirstSize: DispatchWorkItem?
+
+    /// A new surface that nothing has told a size yet (made out of sight, or
+    /// woken without ever having been shown) is told `firstSize`. One that has
+    /// been on screen was told its own last size by
+    /// `viewDidChangeBackingProperties` already. With neither, it is told
+    /// nothing, and its pty keeps the size it has (`PtyHost.ignoreSizesUntilTold`).
+    private func tellFirstSize() {
+        guard isSessionTerminal, surface != nil, toldSize == nil, let size = Self.firstSize else { return }
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        setSurfaceSize(width: UInt32(size.width * scale), height: UInt32(size.height * scale))
+    }
+
     // MARK: Holding resizes while a pane animates
 
     /// How many pane animations are running. While any is, terminals keep the
@@ -390,9 +438,11 @@ final class SurfaceView: NSView {
 
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
          sessionID: UUID? = nil, initialInput: String? = nil,
-         environment: [String: String] = [:], fontSize: Float = 0) {
+         environment: [String: String] = [:], fontSize: Float = 0,
+         isSessionTerminal: Bool = false) {
         self.runtime = runtime
         self.environment = environment
+        self.isSessionTerminal = isSessionTerminal
 
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -414,6 +464,7 @@ final class SurfaceView: NSView {
             initialInput: initialInput,
             environment: environment,
             fontSize: fontSize)
+        tellFirstSize()
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(resizeHoldDidRelease(_:)),
@@ -620,6 +671,7 @@ final class SurfaceView: NSView {
         // whether it is shown, and whether it has the keyboard.
         if let window { ghostty_surface_set_display_id(surface, window.screen?.displayID ?? 0) }
         viewDidChangeBackingProperties()
+        tellFirstSize()
         runtime.syncColorScheme(because: "a shell was restarted")
         ghostty_surface_set_occlusion(surface, !isHidden)
         focused = false
@@ -838,6 +890,7 @@ final class SurfaceView: NSView {
         layerReplaced()
         if let window { ghostty_surface_set_display_id(new, window.screen?.displayID ?? 0) }
         viewDidChangeBackingProperties()
+        tellFirstSize()
         runtime.syncColorScheme(because: "a terminal woke")
         ghostty_surface_set_occlusion(new, !isHidden)
         updateFocus()
@@ -1158,6 +1211,7 @@ final class SurfaceView: NSView {
         if reflowed {
             onSizeChange?()
             accessibilityWatch.outputArrived()
+            if isSessionTerminal, window != nil { Self.rememberShownSize(size) }
         }
         let scaled = convertToBacking(size)
         setSurfaceSize(width: UInt32(max(0, scaled.width)), height: UInt32(max(0, scaled.height)))
@@ -1165,6 +1219,8 @@ final class SurfaceView: NSView {
 
     private func setSurfaceSize(width: UInt32, height: UInt32) {
         guard let surface else { return }
+        // Before the size, so the grid it makes of it reaches the program.
+        ptyHost?.sizeWasTold()
         ghostty_surface_set_size(surface, width, height)
         toldSize = (width, height)
     }

@@ -76,8 +76,15 @@ final class PtyHost: @unchecked Sendable {
         var hasExited = false
         var reader: DispatchSourceRead?
         /// Owed a forced repaint once the real window size has been applied.
-        /// See `requestRedrawAfterNextResize`.
+        /// See `ignoreSizesUntilTold`.
         var needsRedraw = false
+        /// The terminal reading this pty has not been given a size yet, so
+        /// what it reports is libghostty's own placeholder. See
+        /// `ignoreSizesUntilTold`.
+        var awaitingSize = false
+        /// Set one column narrow for a forced repaint, owing the true size
+        /// (`checkRepaint`). Cleared by any newer size.
+        var narrowed: Narrowing?
     }
     /// `uncheckedState` only because `DispatchSourceRead` is not Sendable; it
     /// never leaves the lock except to be cancelled by the one caller that took
@@ -330,6 +337,7 @@ final class PtyHost: @unchecked Sendable {
                         self.onOutput?(base, count)
                     }
                     self.outputReads.withLock { $0 &+= 1 }
+                    self.noteOutputWhileNarrowed()
                     // A short read means the pty had nothing more; going round
                     // again would just return EAGAIN.
                     if count < buffer.count { return }
@@ -567,51 +575,149 @@ final class PtyHost: @unchecked Sendable {
 
     /// The window changed shape. This is what sends SIGWINCH, which is how every
     /// full-screen program learns to redraw.
+    ///
+    /// Each write to the pty's size is made under the lock that decides it,
+    /// so a resize and a forced repaint's return to the true size (on the
+    /// read queue) can't land in the other's order: the pty is always at the
+    /// last size decided.
     func resize(columns: UInt16, rows: UInt16, widthPx: UInt32, heightPx: UInt32) {
-        let master = shared.withLock { $0.master }
-        guard master >= 0 else { return }
-        var size = winsize(
+        let size = winsize(
             ws_row: rows, ws_col: columns,
             ws_xpixel: UInt16(truncatingIfNeeded: widthPx),
             ws_ypixel: UInt16(truncatingIfNeeded: heightPx))
-        _ = ioctl(master, TIOCSWINSZ, &size)
-
-        let owed = shared.withLock { state -> Bool in
-            defer { state.needsRedraw = false }
-            return state.needsRedraw
+        let narrowed = shared.withLock { state -> Bool in
+            guard !state.awaitingSize, state.master >= 0 else { return false }
+            // A newer size: any repaint still waiting to put the old one back
+            // is over.
+            state.narrowed = nil
+            var told = size
+            _ = ioctl(state.master, TIOCSWINSZ, &told)
+            guard state.needsRedraw, columns > 1 else { return false }
+            state.needsRedraw = false
+            // Report one column fewer, and the true size again once the
+            // program has finished answering it. Each is a real change, so
+            // the program cannot dismiss either as a resize that wasn't one,
+            // and it lands on the size it started from. Claude Code answers a
+            // change of width by printing its whole conversation again, which
+            // is what fills a new terminal; a change of height only redraws
+            // the part still live.
+            //
+            // **Not back to back, and not cut short.** Written one after the
+            // other, the two reached a program as one SIGWINCH that read the
+            // final size: no change, nothing repainted (measured 2026-11-19
+            // with a program logging each SIGWINCH and the size it read).
+            // Brought back after a fixed 150 ms, or at the program's first
+            // output, the true size landed in the middle of a reprint: of six
+            // idle Claude Codes relaunched out of sight four came back blank,
+            // and a screen on show was left with only its coloured words.
+            var narrower = size
+            narrower.ws_col = columns - 1
+            _ = ioctl(state.master, TIOCSWINSZ, &narrower)
+            let now = DispatchTime.now()
+            state.narrowed = Narrowing(trueSize: size, since: now, lastOutput: nil)
+            return true
         }
-        guard owed, rows > 1 else { return }
-        // Report one row fewer and then the true size again. Both writes are a
-        // real change, so both raise SIGWINCH, and the program cannot dismiss
-        // either as a resize that wasn't one. It lands on the size it started
-        // from, so nothing about the terminal is left altered.
-        var smaller = size
-        smaller.ws_row = rows - 1
-        _ = ioctl(master, TIOCSWINSZ, &smaller)
-        _ = ioctl(master, TIOCSWINSZ, &size)
+        if narrowed { checkRepaint(after: Self.repaintQuiet) }
     }
 
-    /// Make whatever is running paint itself again, once the real window size
-    /// has been applied.
+    /// A pty set one column narrow to make its program repaint, and what is
+    /// needed to know when to put the true size back.
+    struct Narrowing {
+        var trueSize: winsize
+        var since: DispatchTime
+        /// When the program last wrote, nil until it has: its answer.
+        var lastOutput: DispatchTime?
+    }
+
+    /// Output read while narrowed is the program answering. One lock take
+    /// per read, and nothing more: the decision is `checkRepaint`'s.
+    private func noteOutputWhileNarrowed() {
+        shared.withLock { state in
+            if state.narrowed != nil { state.narrowed?.lastOutput = .now() }
+        }
+    }
+
+    /// Put the true size back once the program has been quiet for
+    /// `repaintQuiet` after answering, after `repaintPatience` if it never
+    /// writes at all, or after `repaintLongest` whatever it is doing;
+    /// otherwise look again when that could next be true. One timer at a
+    /// time, on the read queue, re-armed by itself.
+    private func checkRepaint(after delay: TimeInterval) {
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            let next = self.shared.withLock { state -> TimeInterval? in
+                guard let narrowing = state.narrowed, state.master >= 0 else { return nil }
+                let now = DispatchTime.now()
+                func seconds(since time: DispatchTime) -> TimeInterval {
+                    Double(now.uptimeNanoseconds - time.uptimeNanoseconds) / 1e9
+                }
+                let narrowedFor = seconds(since: narrowing.since)
+                let wait: TimeInterval
+                if narrowedFor >= Self.repaintLongest {
+                    wait = 0
+                } else if let last = narrowing.lastOutput {
+                    wait = Self.repaintQuiet - seconds(since: last)
+                } else {
+                    wait = Self.repaintPatience - narrowedFor
+                }
+                guard wait <= 0 else { return wait }
+                var size = narrowing.trueSize
+                _ = ioctl(state.master, TIOCSWINSZ, &size)
+                state.narrowed = nil
+                return nil
+            }
+            if let next { self.checkRepaint(after: next) }
+        }
+    }
+
+    /// How long a program must have written nothing before a forced repaint's
+    /// true size comes back: it has finished answering the narrower one.
+    private static let repaintQuiet: TimeInterval = 0.3
+    /// The longest the narrower size stands for a program that writes
+    /// nothing in answer to it.
+    private static let repaintPatience: TimeInterval = 1.5
+    /// The longest it stands at all, for a program that never stops writing.
+    private static let repaintLongest: TimeInterval = 5
+
+    /// A new terminal is about to be put on this pty (a launch, a wake, a
+    /// restarted shell): pass on none of its sizes until it has been told one,
+    /// and with `repaint`, make the program repaint once it has.
     ///
-    /// For a session that survived an app restart with nothing to replay. The
-    /// keeper only buffers while detached and hands that buffer over by
-    /// draining it, so a session whose program sat idle while the app was gone
-    /// comes back with **no bytes at all** — and a program at rest does not
-    /// reprint itself unasked. The window is blank until you touch it.
+    /// A surface reports its grid as soon as it exists, before anyone has
+    /// told it a size, and that grid is libghostty's placeholder: 45 columns
+    /// by 15 rows. Passed on, every session not yet looked at since a
+    /// relaunch had its pty set to 45x15, and its agent went on working at
+    /// that width. What an agent prints is wrapped by the agent, so its
+    /// output stayed 45 columns wide in a full-width page for good
+    /// (2026-11-19: eight of twelve Claude Code ptys at 45x15). Until it is
+    /// told, the pty keeps the size it has, which for a session that
+    /// survived a relaunch is the one it was last shown at. The report has
+    /// been seen to come during `ghostty_surface_new` only: in every test of
+    /// this, no program was ever told 15x45.
     ///
-    /// Why this is a size change and not a signal: a bare `SIGWINCH` does not
-    /// work. Measured across nine real sessions, exactly one produced any
-    /// output from one, because a TUI that tracks its own dimensions treats a
-    /// resize that isn't one as nothing to do. Forcing a genuine change made
-    /// the same session repaint immediately.
-    ///
-    /// Deferred to the next resize rather than done here because the size that
-    /// matters is the window's, which libghostty reports a moment later. A
-    /// repaint sent before that would be drawn for whatever the pty was last
-    /// set to.
-    func requestRedrawAfterNextResize() {
-        shared.withLock { $0.needsRedraw = true }
+    /// **A repaint, for a terminal that starts empty** (a session that
+    /// survived a relaunch, a woken one). The keeper only buffers while
+    /// detached, so a program that sat idle while the app was gone comes back
+    /// with no bytes at all, and a program at rest does not reprint itself
+    /// unasked. It used to be the placeholder that made it: 45x15 and then the
+    /// real size were two changes of width. Without it the pty is set to the
+    /// size it already has and nothing is sent (blank screens, 2026-11-19, the
+    /// first build of this). Why a size change and not a bare `SIGWINCH`:
+    /// measured across nine real sessions, exactly one answered a bare one,
+    /// because a TUI that tracks its own size treats a resize that isn't one
+    /// as nothing to do. So the first size passed on goes one column narrow
+    /// and back (`resize`). A new session has nothing to repaint.
+    func ignoreSizesUntilTold(repaint: Bool) {
+        shared.withLock {
+            $0.awaitingSize = true
+            if repaint { $0.needsRedraw = true }
+        }
+    }
+
+    /// The terminal has been given a real size: what it reports from now on
+    /// is that, and goes to the program.
+    func sizeWasTold() {
+        shared.withLock { $0.awaitingSize = false }
     }
 
     /// Stop reading without giving up the pty.

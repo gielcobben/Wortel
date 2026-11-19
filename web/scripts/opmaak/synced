@@ -5,6 +5,6 @@
 #   canvas  the working canvas's revision after that check (the last line of
 #           `opmaak log`)
 #   date    the day of that check
-app 61761752c371fecbeb8a486eb4947c066e842f4d
-canvas 1371
-date 2026-11-10
+app c2f50fddabdfd9f06916525ac4c70d027d7ddb37
+canvas 1465
+date 2026-11-19

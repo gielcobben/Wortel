@@ -38,14 +38,40 @@ export function fitTerminal(root: HTMLElement) {
   while (i < body.length && (!body[i].textContent?.trim() || body[i].dataset.name === 'Result')) drop(body[i++]);
 }
 
-/** Hide the last rows of a sidebar until the list fits, and no folder is left without its rows. */
+/**
+ * Hide the last rows of a sidebar until the list fits, and no folder is left
+ * without its rows. The selected row and its section's header stay: the app
+ * lists the sessions in no folder last, so the session a window is showing is
+ * often at the end, and a window whose own session is cut reads as wrong.
+ */
 export function fitSidebar(nav: HTMLElement) {
   unfit(nav);
   const rows = (Array.from(nav.children) as HTMLElement[]).filter(shown);
-  let i = rows.length - 1;
-  while (i > 0 && nav.scrollHeight > nav.clientHeight) drop(rows[i--]);
-  // A folder header whose first row was just cut goes with it.
-  while (i > 0 && i < rows.length - 1 && rows[i].dataset.name?.startsWith('Section ') && 'fit' in rows[i + 1].dataset && !rows[i + 1].dataset.name?.startsWith('Section ')) drop(rows[i--]);
+  const head = (r: HTMLElement) => !!r.dataset.name?.startsWith('Section ');
+  const keep = new Set<HTMLElement>();
+  const sel = rows.findIndex((r) => r.querySelector(':scope > [data-name="Pill"]'));
+  if (sel >= 0) {
+    keep.add(rows[sel]);
+    for (let k = sel; k >= 0; k--) if (head(rows[k])) { keep.add(rows[k]); break; }
+  }
+  for (let i = rows.length - 1; i > 0 && nav.scrollHeight > nav.clientHeight; i--) if (!keep.has(rows[i])) drop(rows[i]);
+  // A folder header whose rows were all cut goes with them. A folded one had none to cut.
+  rows.forEach((r, i) => {
+    if (!head(r) || keep.has(r) || 'fit' in r.dataset) return;
+    const mine: HTMLElement[] = [];
+    for (let k = i + 1; k < rows.length && !head(rows[k]); k++) mine.push(rows[k]);
+    if (mine.length && mine.every((m) => 'fit' in m.dataset)) drop(r);
+  });
+  // The 14pt between sections belongs to the last row of an open section, so
+  // a header after a folded or cut one sits close (as in the app since
+  // 82992ca). The canvas writes it as the header's height, fixed for the
+  // order it drew; after cutting or folding, work it out again.
+  let prev: HTMLElement | null = null;
+  for (const r of Array.from(nav.children) as HTMLElement[]) {
+    if (!shown(r)) continue;
+    if (head(r)) r.style.height = `${prev && !head(prev) ? 44 : 30}px`;
+    prev = r;
+  }
 }
 
 /** Keep every terminal and sidebar inside `root` to whole rows, now and as it resizes. */

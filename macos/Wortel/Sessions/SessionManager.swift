@@ -4576,14 +4576,7 @@ final class SessionManager {
             selection.extend(to: id, lead: lead, in: sidebarRowOrder)
         }
         if selection != sidebarSelection { sidebarSelection = selection }
-        if lead != selectedID {
-            selectedID = lead
-        } else if click == .plain {
-            // The session already on screen, pressed again: that is asking
-            // to be back in it, typing. Nothing switches, so nothing else
-            // would give its terminal the keyboard.
-            returnKeyboardToSession()
-        }
+        if lead != selectedID { selectedID = lead }
     }
 
     /// Give the keyboard back to the selected session: its terminal, when that

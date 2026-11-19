@@ -134,8 +134,16 @@ moment (the session selected between the markers going in and the dump), since
 
 ## Readable, whatever was painted
 
-`minimum-contrast = 2` in `wortel.conf`. Where text and what is behind it are
-closer than that, libghostty draws the text black or white, whichever reads.
+**Not done: `minimum-contrast` cannot be used.** It was set to 2 for a few
+hours on 2026-11-19 and turned all plain text white on the light theme: the
+shell's own output, Claude Code's answers, everything in the default
+foreground, invisible on the white page. The terminal draws no background of
+its own (`background-opacity = 0`, the window behind it is the page), and
+libghostty measures the contrast against that transparent background as if
+it were black, so the light theme's near-black text read as unreadable and was
+redrawn white. Confirmed in a test copy: the same build with only that line
+removed draws correctly. The paragraphs below are what it was for, and remain
+the open problem.
 
 It is for the programs in the "no" rows below. Codex blends its input box from
 the background it read at startup; after a change that band is the old theme's

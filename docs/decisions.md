@@ -200,7 +200,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   change, and Codex's input box became near-white text on a near-white band.
   Below a ratio of 2 the renderer draws the text black or white. Not higher:
   the faintest colours anyone chose measure 2.28 and up, the unreadable pairs
-  1.1 (`macos/docs/appearance.md`).
+  1.1 (`macos/docs/appearance.md`). **Taken out the same day:** with
+  `background-opacity = 0` libghostty measures against a transparent, so
+  black, background, and every default-foreground character on the light
+  theme was drawn white on the white page. Seen in the running app, then
+  reproduced in a test copy and gone with only that line removed.
 - **2026-11-19. An idle agent is restarted into its conversation when the
   appearance changes.** Codex reads the colours once, at startup, and keeps
   them for the life of its process; Claude Code can leave what it already

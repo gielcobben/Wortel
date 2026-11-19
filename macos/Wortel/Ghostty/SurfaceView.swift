@@ -1059,11 +1059,27 @@ final class SurfaceView: NSView {
         let live = GhosttyRuntime.liveOutput(surface: new, session: session, view: self)
         let dark = GhosttyRuntime.systemIsDark
         let created = DispatchTime.now()
+        // The grid it has just been told, which is the one it went away with:
+        // what was kept for it was drawn for that grid and no other.
+        let told = toldSize == nil ? nil : Optional(ghostty_surface_size(new))
         // On the pty queue, as every write into a terminal is: the parser
         // waits on the main thread for room, so the main thread must not be
         // the one writing (the beach ball of 2026-10-07).
         pty.enqueue { [weak self] in
             let missed = hibernation.missed
+            // Nothing goes in before the terminal is that size. See `waitForGrid`.
+            var gridMs = 0.0
+            if let told {
+                let wait = Self.waitForGrid(new, columns: Int(told.columns), rows: Int(told.rows))
+                gridMs = wait.ms
+                if !wait.reached {
+                    HibernationLog.log.notice("""
+                        \(session.uuidString, privacy: .public) is written back at \
+                        \(wait.grid.map { "\($0.columns)x\($0.rows)" } ?? "an unknown grid", privacy: .public), \
+                        not the \(told.columns)x\(told.rows) it was told: what it missed may land wrong
+                        """)
+                }
+            }
             var paletteColours = 0
             let snapshot = SnapshotPalette.restoringIndices(
                 Self.withoutColourSettings((try? Data(contentsOf: hibernation.snapshot)) ?? Data()),
@@ -1087,7 +1103,8 @@ final class SurfaceView: NSView {
             let writeMs = Double(done.uptimeNanoseconds - created.uptimeNanoseconds) / 1e6
             HibernationLog.log.notice("""
                 woke \(session.uuidString, privacy: .public): surface \(createMs, format: .fixed(precision: 1)) ms, \
-                restore \(snapshot.count) + \(held.count) bytes in \(writeMs, format: .fixed(precision: 1)) ms, \
+                its size after \(gridMs, format: .fixed(precision: 1)) ms, \
+                restore \(snapshot.count) + \(held.count) bytes in \(writeMs - gridMs, format: .fixed(precision: 1)) ms, \
                 \(paletteColours) palette colours
                 """)
 
@@ -1107,6 +1124,65 @@ final class SurfaceView: NSView {
                     self.reconcileSize("woken")
                 }
             }
+        }
+    }
+
+    /// The grid a terminal has, asked of the terminal: where its cursor ends
+    /// up when sent to the far corner, counted in cells by sending it one
+    /// cell from home first. `ghostty_surface_size` is no answer to this: it
+    /// is worked out from the size the surface was last *told*, at once,
+    /// while the terminal takes that size on libghostty's IO thread some 25 ms
+    /// later (it gathers resizes for that long). On a terminal nothing has
+    /// been written into, which it leaves as it found it, cursor at home.
+    private static func actualGrid(of surface: ghostty_surface_t) -> (columns: Int, rows: Int)? {
+        func cursor(after sequence: String) -> (x: Double, y: Double) {
+            Array(sequence.utf8).withUnsafeBufferPointer { raw in
+                guard let base = raw.baseAddress else { return }
+                ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+            }
+            var x = 0.0, y = 0.0, width = 0.0, height = 0.0
+            ghostty_surface_ime_point(surface, &x, &y, &width, &height)
+            return (x, y)
+        }
+        let home = cursor(after: "\u{1B}[1;1H")
+        let step = cursor(after: "\u{1B}[2;2H")
+        let far = cursor(after: "\u{1B}[999;999H")
+        _ = cursor(after: "\u{1B}[1;1H")
+        let cell = (width: step.x - home.x, height: step.y - home.y)
+        guard cell.width > 0, cell.height > 0 else { return nil }
+        return (Int(((far.x - home.x) / cell.width).rounded()) + 1,
+                Int(((far.y - home.y) / cell.height).rounded()) + 1)
+    }
+
+    /// Hold the pty's queue until a new terminal has the grid it was told.
+    ///
+    /// A new surface is 45 columns by 15 rows, libghostty's own, whatever it
+    /// is told the moment it exists: the size is taken a little later, on
+    /// another thread. A wake wrote the saved screen and what had been missed
+    /// into it about 6 ms after making it, so into those 45 columns. A saved
+    /// screen survives that, because its lines are re-wrapped when the real
+    /// size lands. What the program wrote meanwhile does not: an agent draws
+    /// in place, each piece from where the last ended, and at 45 columns a
+    /// line of 78 is two rows, so "up three and clear" clears a line and a
+    /// half. Found with `scripts/try-hibernate-screen.sh` on 2026-11-19: an
+    /// agent woken as it began to write had 3 lines of 120 missing and 18
+    /// left over, with nothing lost, and its status line cut at exactly
+    /// column 45. It is also what a session looked like when it was shown
+    /// mid-turn after a hibernation.
+    ///
+    /// Asked every millisecond, for a quarter of a second at the most: the
+    /// size lands after about 25 ms. Only this session's queue waits.
+    private static func waitForGrid(
+        _ surface: ghostty_surface_t, columns: Int, rows: Int, patience: TimeInterval = 0.25
+    ) -> (ms: Double, reached: Bool, grid: (columns: Int, rows: Int)?) {
+        let started = DispatchTime.now().uptimeNanoseconds
+        var grid = actualGrid(of: surface)
+        while true {
+            let waited = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e6
+            if let grid, grid.columns == columns, grid.rows == rows { return (waited, true, grid) }
+            if waited > patience * 1000 { return (waited, false, grid) }
+            usleep(1000)
+            grid = actualGrid(of: surface)
         }
     }
 

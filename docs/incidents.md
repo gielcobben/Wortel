@@ -365,15 +365,25 @@ that shows "sometimes" wants a script that does it seventy times
 **Seen:** a Claude Code session, looked at mid-turn, was scattered words and
 rules across the page. It read correctly once the turn ended.
 
-**Cause:** its terminal had been hibernated on a memory warning while the
-agent was working, and was away nine and a half minutes. A hibernated
-terminal keeps 512 KB of what it misses; the agent wrote more, the start was
-dropped, and what came back was the end of a drawing on an old screen.
+**Cause:** two, and the second was found only by testing the fix for the
+first. Its terminal had been hibernated on a memory warning while the agent
+was working, and was away nine and a half minutes. A hibernated terminal
+keeps 512 KB of what it misses; the agent wrote more, the start was dropped,
+and what came back was the end of a drawing on an old screen. And whatever
+is kept was written back into a terminal that did not have its size yet: a
+new surface is 45 columns wide for its first 25 ms, and an agent's drawing
+in place lands wrong at any width but its own. The second alone scatters a
+screen, with nothing lost, and had done so at every wake of a session whose
+agent had written anything meanwhile.
 
-**Changed:** a terminal whose agent is at work is not hibernated, and a
-hibernated one is woken out of sight before what it misses stops fitting.
+**Changed:** a terminal whose agent is at work is not hibernated, a
+hibernated one is woken out of sight before what it misses stops fitting,
+and a wake writes nothing until the terminal has the grid it was told.
 `docs/decisions.md`, 2026-11-19.
 
 **Rule:** a bounded buffer is a promise about what is in it. Output that is
 drawing rather than lines cannot lose its start, so either it all fits or
-the thing it is drawn on must still be there.
+the thing it is drawn on must still be there. And a check that reads back a
+screen nothing was drawn on since proves the screen, not the drawing: the
+test has to have a program that draws the way the ones that matter do
+(`macos/scripts/try-hibernate-screen.sh`).

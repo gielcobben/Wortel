@@ -207,6 +207,31 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   pane to no height: the page's hosting view was pinned to the column, and
   with a terminal in front the page is empty and asked for none. A hosting
   view that fills a pane takes `sizingOptions = []`.
+- **2026-11-19. A woken terminal is written into only once it has its
+  size.** A new surface is 45 columns by 15 rows, libghostty's own, whatever
+  it is told as it is made: libghostty gathers resizes for 25 ms and takes
+  the size on its IO thread, while what the host writes is parsed at once.
+  A wake wrote the saved screen and what had been missed about 6 ms after
+  making the surface, so into 45 columns. A saved screen survives that (its
+  lines re-wrap when the size lands), which is why this passed every check
+  that read a woken screen back. What a program wrote meanwhile does not:
+  an agent draws in place, and at 45 columns a line of 78 is two rows, so
+  "up three and clear" clears a line and a half. Found by
+  `macos/scripts/try-hibernate-screen.sh`, a stand-in agent whose screen is
+  compared with what it drew: woken as it began to write, with nothing lost
+  (422 + 3167 bytes), it had 3 lines of 120 missing and 18 left over, its
+  status line cut at exactly column 45. That is the picture of the session
+  seen mid-turn on 2026-11-19, more than the 512 KB below: its second wake
+  that day replayed 17 KB, well inside what is kept. Now the wake asks the
+  terminal itself for its grid (the cursor sent to the far corner, read
+  back with `ghostty_surface_ime_point`; `ghostty_surface_size` only knows
+  what was told) every millisecond and writes nothing until it is the grid
+  it was told, a quarter of a second at the most
+  (`SurfaceView.waitForGrid`). Same script after: every line, once, in
+  order, and "its size after 26.6 ms" in the log. The cost is those 26 ms
+  on every wake, on that session's queue only. **Not changed:** a relaunch
+  writes the keeper's replay into a new surface the same way; there the
+  program is made to repaint once it is quiet (above).
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
   keeps what its program writes meanwhile, up to 512 KB. An agent's output
   is drawing, each piece placed from where the last ended, so with the start

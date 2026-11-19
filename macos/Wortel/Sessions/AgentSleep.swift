@@ -19,9 +19,9 @@ struct SleepingAgent: Equatable {
     let conversationID: String
     /// The line that resumes it, as `AgentResumeStore.resumeInput` built it.
     let input: String
-    /// It was waiting on the person, or had something running, when it went:
-    /// the long clock. Only what a save says of it (`agentAsleep`), and the
-    /// log.
+    /// It was waiting on the person, had something running, or could be
+    /// reached by Remote Control, when it went: the long clock. Only what a
+    /// save says of it (`agentAsleep`), and the log.
     let waiting: Bool
     /// When the resume was last typed, while waiting to see the agent start.
     var typedAt: Date?
@@ -121,8 +121,10 @@ enum AgentSleep {
 
     /// A finished agent, out of sight this long, sleeps.
     static let finishedAfter = seconds("WORTEL_SLEEP_AFTER", 60 * 60)
-    /// One waiting on the person, or with something still running under it,
-    /// gets this long: a question left overnight, not one left over lunch.
+    /// One waiting on the person, with something still running under it, or
+    /// with Remote Control on, gets this long: a question left overnight, not
+    /// one left over lunch, and a session you may pick up from your phone
+    /// during the day. Nothing on the phone can wake one that is asleep.
     static let waitingAfter = seconds("WORTEL_SLEEP_WAITING_AFTER", 8 * 60 * 60)
     /// Under memory pressure a finished agent needs only this much rest.
     static let pressureFloor: TimeInterval = min(finishedAfter, 10 * 60)
@@ -163,6 +165,10 @@ enum AgentSleep {
         /// Keys went into the session since the agent came to rest: maybe a
         /// prompt half written.
         var typedSinceRest = false
+        /// Remote Control is on, so it may be used from somewhere other than
+        /// this Mac. Not never: someone with Remote Control on for every
+        /// session would never get deep sleep at all.
+        var remoteControl = false
         var now: Date
     }
 
@@ -189,7 +195,7 @@ enum AgentSleep {
         guard !inputs.busy else { return .never(.busy) }
 
         let restSince: Date
-        var waiting = inputs.hasWorkUnder || inputs.typedSinceRest
+        var waiting = inputs.hasWorkUnder || inputs.typedSinceRest || inputs.remoteControl
         switch inputs.rest {
         case .unknown: return .never(.restUnknown)
         case .finished(let since): restSince = since

@@ -134,6 +134,8 @@ it is built:
 - **Whose record.** The agent's own word comes from the process that has the
   terminal; through a wrapper, from the one process in its group that has a
   record, and from none if there are two.
+- **Remote Control** on (`bridgeSessionId` in the agent's record) is the
+  long clock too, under a memory warning as well: a phone can't wake it.
 - **Typed and not sent** is `lastTypedAt`, saved with the session, so a
   relaunch (the agent lives on in the keeper) does not move a half-written
   prompt from the long clock to the short one.

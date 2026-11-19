@@ -3442,6 +3442,7 @@ final class SessionManager {
             hiddenSince: hiddenSince[id] ?? launchedAt,
             hasWorkUnder: !started.isEmpty,
             typedSinceRest: lastTypedAt[id].map { $0 > restSince } ?? false,
+            remoteControl: state.remoteControl,
             now: Date())
         return SleepCandidate(inputs: inputs, marker: marker, conversationID: state.conversationID,
                               input: input ?? "", group: group,
@@ -3467,7 +3468,8 @@ final class SessionManager {
             beginSleep(session, candidate, waiting: waiting, pressure: pressure)
         case .notBefore(let date):
             AgentSleepLog.log.info("""
-                session \(session.id.uuidString, privacy: .public) not yet:                 \(Int(date.timeIntervalSinceNow)) s to go
+                session \(session.id.uuidString, privacy: .public) not yet: \
+                \(Int(date.timeIntervalSinceNow)) s to go
                 """)
             armSleep(session, after: date.timeIntervalSinceNow + 1, replacing: true)
         case .never(let reason):

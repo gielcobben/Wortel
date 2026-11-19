@@ -427,6 +427,11 @@ enum AgentResumeStore {
         /// `idle`, `busy`, `waiting`, or whatever a later Claude writes.
         let status: String?
         let statusChangedAt: Date?
+        /// Remote Control is on: the conversation can be reached from a
+        /// phone or claude.ai, which a sleeping agent can't be. Claude Code
+        /// writes `bridgeSessionId` when Remote Control links and `null` when
+        /// it goes (read in 2.1.327's code, 2026-11-18).
+        var remoteControl = false
     }
 
     static func claudeProcessState(pid: pid_t) -> ClaudeProcessState? {
@@ -444,8 +449,9 @@ enum AgentResumeStore {
         let changed = (object["statusUpdatedAt"] as? NSNumber).map {
             Date(timeIntervalSince1970: $0.doubleValue / 1000)
         }
+        let bridge = (object["bridgeSessionId"] as? String).map { !$0.isEmpty } ?? false
         return ClaudeProcessState(conversationID: id, status: object["status"] as? String,
-                                  statusChangedAt: changed)
+                                  statusChangedAt: changed, remoteControl: bridge)
     }
 
     /// The `sessionId` of a `~/.claude/sessions/<pid>.json`, if it is a

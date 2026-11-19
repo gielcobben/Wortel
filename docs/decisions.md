@@ -350,6 +350,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   with nothing running looks finished and sleeps at its hour; a server that
   had already detached itself from the agent is left running; nothing sleeps
   while Wortel is quit.
+- **2026-11-18. An agent with Remote Control on gets the long clock.** Remote
+  Control lives in the agent's process, so a sleeping agent is offline on the
+  phone, and nothing there can wake it: only a click on the Mac does. A
+  session in use from the phone never sleeps (each message is a turn, which
+  restarts the clock); the loss was the one left an hour and then picked up
+  from somewhere else. So `bridgeSessionId` in Claude's own record, which it
+  writes when Remote Control links and sets to `null` when it goes (read in
+  2.1.327's code), puts the agent on the eight-hour clock, the same one as a
+  question waiting on you, and a memory warning does not shorten it. Not
+  "never": with Remote Control on at launch for every session, deep sleep
+  would never run for exactly the people with the most sessions open. Seen on
+  this Mac the same day: a slept session woken by a click had its Remote
+  Control link again. Not yet seen: the link going to `null` when Remote
+  Control is turned off by hand. Turning it off doesn't shorten a clock
+  already armed for eight hours; the agent sleeps then, which errs awake.
 
 ## Keeper
 

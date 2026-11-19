@@ -865,6 +865,10 @@ final class SessionManager {
         session.colour = entry.colour.flatMap(SessionColour.init(rawValue:))
         // One already past is due now: `syncReminders` fires it once launch is done.
         session.remindAt = entry.remindAt
+        session.createdAt = entry.createdAt
+        // Saved before Returns were kept: when keys last went in is the
+        // nearest thing, read once here so a click later never moves it.
+        session.lastSentAt = entry.lastSentAt ?? entry.lastTypedAt
         if let typed = entry.lastTypedAt { lastTypedAt[session.id] = typed }
         // An earlier build named these "<folder>/<branch>" with the branch
         // whole, which read back as a folder of their own. The rename that
@@ -1789,6 +1793,7 @@ final class SessionManager {
         // was waiting for arrived too late to move it.
         session.startupInput = start.input(preferred: preferred)
         session.startedWithSettingsCommand = usesCommand
+        session.createdAt = Date()
         prepare?(session)
         // At the top level, on top: a list nobody arranges then reads newest
         // first, as a list of chats does. In a folder, right after the selected
@@ -5071,7 +5076,8 @@ final class SessionManager {
             portBase: session.portBase,
             remindAt: session.remindAt,
             agentAsleep: session.sleep.agent.map { $0.waiting ? "waiting" : "finished" },
-            lastTypedAt: lastTypedAt[session.id])
+            lastTypedAt: lastTypedAt[session.id],
+            createdAt: session.createdAt, lastSentAt: session.lastSentAt)
     }
 
     /// The agent the next launch should bring back in `session`, and its
@@ -5311,6 +5317,13 @@ final class SessionManager {
             }
             // A script's `wortel send` repaints too, but it is not you back
             // at the keyboard: an attention raised while you were away stays.
+            // A Return of yours: the sidebar's Recent Activity. Saved, so
+            // the order survives a relaunch; the save is debounced.
+            view.onSubmit = { [weak self, weak session] in
+                guard let self, let session else { return }
+                session.lastSentAt = Date()
+                self.scheduleSave()
+            }
             view.onScriptedInput = { [weak self, weak session] in
                 guard let self, let session else { return }
                 self.agentScreenTrackers[session.id]?.rebaseline(now: Date())

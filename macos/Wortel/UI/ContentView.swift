@@ -812,6 +812,9 @@ enum SectionSortMenu {
     /// The Sessions header's "…": nothing else to show but its sort.
     static func menu(forFolder folder: String?, manager: SessionManager) -> NSMenu {
         let menu = NSMenu()
+        // As wide as a folder's "…" menu (173pt, measured), so the two header
+        // menus match: sized to "Created" alone it was 95pt, a sliver.
+        menu.minimumWidth = 173
         menu.addItem(.sectionHeader(title: "Sort By"))
         add(to: menu, folder: folder, manager: manager)
         return menu

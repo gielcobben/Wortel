@@ -393,7 +393,8 @@ struct SidebarRowContent: View {
                 manager.rename(session, to: newName)
                 if manager.editingID == session.id { manager.editingID = nil }
             },
-            cancel: { if manager.editingID == session.id { manager.editingID = nil } })
+            cancel: { if manager.editingID == session.id { manager.editingID = nil } },
+            returnKeyboard: { manager.returnKeyboardToSession() })
             // The selection pill is drawn by the row view (SidebarPillRowView),
             // full row width — this content just sits on top of it. 10pt into
             // the pill, which is 10pt in from the row (its inset).
@@ -920,6 +921,8 @@ struct SessionRow: View {
     let reminder: Date?
     let commit: (String) -> Void
     let cancel: () -> Void
+    /// The rename was ended with Return or Esc: back to typing in the session.
+    let returnKeyboard: () -> Void
 
     struct Waiting {
         let kind: AttentionKind
@@ -943,7 +946,8 @@ struct SessionRow: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
-                    SidebarRenameField(name: session.name, commit: commit, cancel: cancel)
+                    SidebarRenameField(name: session.name, commit: commit, cancel: cancel,
+                                       finished: returnKeyboard)
                         // The editor sets its text 2pt in (its line padding),
                         // measured: back by that, the text is where the name was.
                         .padding(.leading, -2)
@@ -1736,6 +1740,9 @@ private struct SidebarRenameField: NSViewRepresentable {
     let name: String
     let commit: (String) -> Void
     let cancel: () -> Void
+    /// Ended with Return or Esc. Not when it ended because something else
+    /// was clicked: that took the keyboard, and keeps it.
+    let finished: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -1826,11 +1833,15 @@ private struct SidebarRenameField: NSViewRepresentable {
         func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             switch selector {
             case #selector(NSResponder.insertNewline(_:)):
+                // To nobody, which ends the edit, then back to the session.
+                // It used to stay with nobody, and typing went nowhere.
                 control.window?.makeFirstResponder(nil)
+                parent.finished()
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
                 cancelling = true
                 control.window?.makeFirstResponder(nil)
+                parent.finished()
                 return true
             default:
                 return false

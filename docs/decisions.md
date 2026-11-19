@@ -446,6 +446,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   neither does an older Codex, Claude Code, Pi, opencode or crush. Those five
   get a mark that says to update. A notification or a bell of a program's own
   still arrives, sorted by how it opens, never by a word somewhere in it.
+- **2026-11-19. The sidebar never takes the keyboard, and pressing the
+  session you are in puts you back in its terminal.** Any press in the list
+  that didn't switch sessions left the keyboard in it, invisibly. Ending a
+  rename hands it back to the terminal too, not to nobody.
 - **2026-11-19. A program's notifications are read by Wortel, not by the
   terminal core.** The core allows one a second for the whole app and drops a
   repeat inside five seconds, so two sessions notifying in the same second

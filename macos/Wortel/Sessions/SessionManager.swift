@@ -4801,6 +4801,15 @@ final class SessionManager {
         if lead != selectedID { selectedID = lead }
     }
 
+    /// Give the keyboard back to the selected session: its terminal, when that
+    /// is in front of its row; otherwise what is in front of the main area,
+    /// as a switch to it would. Set by the app layer, which owns the window.
+    @ObservationIgnored var onReturnKeyboard: (() -> Void)?
+
+    func returnKeyboardToSession() {
+        onReturnKeyboard?()
+    }
+
     /// Esc, or typing in the terminal: back to the session on screen alone.
     func collapseSidebarSelection() {
         guard sidebarSelection.isMultiple else { return }

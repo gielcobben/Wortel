@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.runtime = runtime
         #if DEBUG
         AppearanceTestHook.install()
+        ResizeBench.install()
         #endif
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {

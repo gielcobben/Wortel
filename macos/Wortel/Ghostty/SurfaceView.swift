@@ -1,5 +1,6 @@
 import AppKit
 import GhosttyKit
+import IOSurface
 import os
 
 /// A terminal found at a size that is not its view's, and put right.
@@ -222,6 +223,10 @@ final class SurfaceView: NSView {
     /// `viewDidChangeBackingProperties` already. With neither, it is told
     /// nothing, and its pty keeps the size it has (`PtyHost.ignoreSizesUntilTold`).
     private func tellFirstSize() {
+        // What a new surface is told as it is set up is not the first step
+        // of a drag: the size its view gives it next, however soon, gets its
+        // frame in the same commit (`frameForNewSize`).
+        defer { sizedAt = nil }
         guard isSessionTerminal, surface != nil, toldSize == nil, let size = Self.firstSize else { return }
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         setSurfaceSize(width: UInt32(size.width * scale), height: UInt32(size.height * scale))
@@ -247,6 +252,12 @@ final class SurfaceView: NSView {
     /// that says whether it is the size of its view. nil for a surface that
     /// has not been told yet (a new one, after a wake or a restart).
     private var toldSize: (width: UInt32, height: UInt32)?
+
+    /// When the terminal was last given a size, and since when the frame on
+    /// its layer has been one of an older size (`frameForNewSize`).
+    private var sizedAt: CFTimeInterval?
+    private var staleSince: CFTimeInterval?
+    private var frameCheck: DispatchWorkItem?
 
     /// When the hold count last left zero: the hold now in force began then,
     /// however many holds and releases have come and gone inside it. nil
@@ -464,6 +475,8 @@ final class SurfaceView: NSView {
             initialInput: initialInput,
             environment: environment,
             fontSize: fontSize)
+        // The layer first: the size is what asks it for a frame.
+        layerReplaced()
         tellFirstSize()
 
         NotificationCenter.default.addObserver(
@@ -604,6 +617,110 @@ final class SurfaceView: NSView {
     /// last one was, if a size is still waiting for it (`setFrameSize`).
     private func layerReplaced() {
         if resizePending { layer?.contentsGravity = .topLeft }
+        sizedAt = nil
+        staleSince = nil
+        // libghostty's layer draws a frame on the main thread every time its
+        // bounds change. We ask for that frame ourselves, when it is worth
+        // stopping for: see `frameForNewSize`.
+        layer?.needsDisplayOnBoundsChange = Self.frameOnEveryResize
+        // A frame of an older size is shown at its own size, pinned to the
+        // top left, until the next one arrives. Never over what is beside it.
+        layer?.masksToBounds = true
+    }
+
+    /// The pixel size of the frame the layer is showing, if it has one.
+    private var shownFrameSize: (width: UInt32, height: UInt32)? {
+        guard let contents = layer?.contents,
+              CFGetTypeID(contents as CFTypeRef) == IOSurfaceGetTypeID() else { return nil }
+        let frame = contents as! IOSurfaceRef
+        return (UInt32(IOSurfaceGetWidth(frame)), UInt32(IOSurfaceGetHeight(frame)))
+    }
+
+    /// How long ago the last size must be for this one to count as part of
+    /// the same drag, and how long a frame of an older size may stay up.
+    private static let dragGap: CFTimeInterval = 0.05
+    private static let longestStale: CFTimeInterval = 0.03
+
+    /// Whether the terminal's new size gets a frame now, on the main thread,
+    /// or the one the renderer draws on its own thread a moment later.
+    ///
+    /// A frame now is what libghostty does for every change of size. It puts
+    /// the frame in the same commit as the new size, so nothing is seen in
+    /// between, and it stops the main thread until the GPU has finished it.
+    /// For one change of size that is the right trade: a session switch, a
+    /// pane landing. Under a drag it is paid at every step. Measured over
+    /// 480 steps of a window resize at 120 Hz (`scripts/bench-resize.sh`,
+    /// 2026-11-19), a step cost 7.4 ms with it and 5.0 without, and with a
+    /// pane open beside the terminal most steps took longer than the 8.3 ms
+    /// a frame lasts: the edge stood still.
+    ///
+    /// The frame it buys is rarely a new picture. The terminal re-wraps on
+    /// its own thread after the size is told, so the frame drawn in the same
+    /// commit mostly shows the screen as it was, which the layer does without
+    /// being asked: it pins the frame it has to the top left at its own size
+    /// (the padding does not move, `window-padding-balance` is off, and the
+    /// background is not drawn at all, `background-opacity = 0`).
+    ///
+    /// So a size that follows another within `dragGap` skips the frame, and
+    /// the renderer's own one shows the new screen a frame later. One thing
+    /// can go wrong with that: libghostty throws the renderer's frame away
+    /// if the layer has another size by the time it arrives, and a drag that
+    /// stays in step with the renderer loses them all. So a frame of an
+    /// older size stays up for `longestStale` at most, and then this size
+    /// gets its frame now; and one is asked for when the drag ends on a
+    /// frame that never came (`checkFrameAfterDrag`).
+    private func frameForNewSize(sizeBefore: (width: UInt32, height: UInt32)?) {
+        guard !Self.frameOnEveryResize else { return }
+        let now = CACurrentMediaTime()
+        let inDrag = sizedAt.map { now - $0 < Self.dragGap } ?? false
+        sizedAt = now
+        guard inDrag, let sizeBefore, let shown = shownFrameSize else {
+            staleSince = nil
+            layer?.setNeedsDisplay()
+            return
+        }
+        checkFrameAfterDrag()
+        guard shown != sizeBefore else {
+            staleSince = nil
+            return
+        }
+        guard let since = staleSince else {
+            staleSince = now
+            return
+        }
+        if now - since >= Self.longestStale {
+            staleSince = nil
+            layer?.setNeedsDisplay()
+        }
+    }
+
+    /// The drag's last size, a moment after it: if its frame never came, it
+    /// gets one now. One check for however many steps the drag had.
+    private func checkFrameAfterDrag() {
+        frameCheck?.cancel()
+        let check = DispatchWorkItem { [weak self] in
+            guard let self, self.surface != nil, let told = self.toldSize else { return }
+            self.frameCheck = nil
+            self.staleSince = nil
+            if let shown = self.shownFrameSize, shown == told { return }
+            self.layer?.setNeedsDisplay()
+        }
+        frameCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.dragGap * 2, execute: check)
+    }
+
+    /// A frame on every change of size, as libghostty has it. Never set by
+    /// the app: `ResizeBench` flips it to measure the two against each other.
+    nonisolated(unsafe) static var frameOnEveryResize = false {
+        didSet {
+            for window in NSApp.windows {
+                func visit(_ view: NSView) {
+                    if let terminal = view as? SurfaceView, terminal.surface != nil { terminal.layerReplaced() }
+                    view.subviews.forEach(visit)
+                }
+                window.contentView.map(visit)
+            }
+        }
     }
 
     private static func holdRetiredLayer(_ layer: CALayer) {
@@ -1221,8 +1338,10 @@ final class SurfaceView: NSView {
         guard let surface else { return }
         // Before the size, so the grid it makes of it reaches the program.
         ptyHost?.sizeWasTold()
+        let before = toldSize
         ghostty_surface_set_size(surface, width, height)
         toldSize = (width, height)
+        frameForNewSize(sizeBefore: before)
     }
 
     override func viewDidChangeBackingProperties() {

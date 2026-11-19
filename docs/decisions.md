@@ -172,6 +172,36 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   screen. Verified in a copy: seven idle Claude Codes, six out of sight, came
   back after a relaunch with the same text at the same width, and the one on
   screen was screenshotted correct.
+- **2026-11-19. A terminal's new size waits for its frame only when it is
+  one change, not a drag.** libghostty's layer draws a frame on the main
+  thread at every change of its bounds and waits for the GPU to finish it.
+  That is right for one change (a session switch, a pane landing): the frame
+  is in the same commit as the size. Under a drag it is paid at every step,
+  and a step has 8.3 ms at 120 Hz. Measured with `macos/scripts/bench-resize.sh`
+  (a Debug build resizing its own window 480 times at 120 Hz, the time the
+  run loop is awake per step, old and new turn about in one app): 7.4 ms a
+  step with the column shut and one step in ten too late; 12.7 ms dragging
+  the divider beside an open column, six in seven too late. Now a size that
+  follows another within 50 ms skips the frame and takes the renderer's own
+  a frame later, a frame of an older size stays up for 30 ms at most, and
+  the drag's last size is checked once it ends
+  (`SurfaceView.frameForNewSize`). Same benchmark: 5.0 ms and one step in
+  thirty with the column shut, 7.9 ms and two in five on the divider. The
+  frame that was dropped rarely showed anything new: the terminal re-wraps
+  on its own thread after it is told, so the frame in the same commit was
+  mostly the old screen at the new size, which the layer shows anyway by
+  pinning what it has to the top left. **Tried and dropped the same day:**
+  a frame only when a row or a column is gained (the average fell, the late
+  steps did not: they are the ones with a new column); never a frame (a drag
+  in step with the renderer loses every one of its frames to libghostty's
+  size check, 391 of 480 steps began on an old one); a `GeometryReader`
+  around the changes list and the diff replaced by a height reading (no
+  change measured, taken out). And a guess that did not hold: a change of
+  pixels alone does not reach the program, SIGWINCH came only with a new
+  grid (125 for 123 changes over 480 steps). **What is left** with the
+  column open is not the terminal: over half of a step is SwiftUI, in the
+  column's panel and in the view the terminal sits in. A new terminal
+  engine would not touch that either.
 - **2026-11-18. A session switches on mouse-down**, as in Finder's sidebar.
   It switched on mouse-up, after AppKit had ruled out a drag, so the time the
   button was held (115 ms a click on average, sampled) came before every

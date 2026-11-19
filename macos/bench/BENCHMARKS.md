@@ -65,6 +65,18 @@ Clone `github.com/const-void/DOOM-fire-zig`, run it in both terminals side by
 side (needs Zig). Equal FPS/smoothness by eye; confirm with Instruments →
 Core Animation FPS.
 
+## Resizing
+
+`./scripts/bench-resize.sh` (a Debug build, in a throwaway copy): the window
+resized 480 times at 120 Hz, then with `--column` the divider beside the side
+column. It prints what a step cost the main thread and how many steps took
+longer than the 8.3 ms a frame lasts. `--compare` runs each round twice in
+the same app, with libghostty's frame at every step and with Wortel's rule,
+because two runs minutes apart differ by more than most changes do. On
+2026-11-19 (Debug, a 120 Hz built-in display): 5.0 ms a step with the column
+shut, 9.0 ms with it open, 7.9 ms on the divider. With the column open most
+of a step is SwiftUI, not the terminal.
+
 ## Typing latency
 
 [Typometer](https://pavelfatin.com/typometer/): run ≥5 passes in Wortel and in

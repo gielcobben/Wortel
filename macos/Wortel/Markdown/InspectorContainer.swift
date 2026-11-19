@@ -10,28 +10,98 @@ import SwiftUI
 /// terminal's host refuses to do (see TerminalHostViewController), and a tab
 /// switch should cost what a session switch costs, which is nothing.
 ///
-/// What a tab that isn't a terminal shows is `TabContent`'s, the same as in
-/// the main area and the strip. A hidden column builds no browser page or file
-/// document it doesn't already have: they're made when first on screen.
-struct InspectorContainer: View {
-    let runtime: GhosttyRuntime
-    @Bindable var manager: SessionManager
+/// AppKit, like the strip (`BottomPaneController`) and the main area: the
+/// host of the terminals fills this view by its own constraints, and the page
+/// that is not a terminal is SwiftUI's in a view on top, hidden while a
+/// terminal is in front. It was one SwiftUI view with the host inside it as a
+/// representable, which leaves it to SwiftUI where a terminal is; the main
+/// terminal's pane was the same, and SwiftUI fell a layout behind there
+/// (`TerminalPaneController`, 2026-11-19). This one was never caught at it
+/// (`scripts/try-switch.sh --side`, 0 of 72 before and after), and no longer
+/// can be.
+@MainActor
+final class SideColumnController: NSViewController {
+    private let host = SideTerminalHostController()
+    private let pageHost: NSHostingController<SideColumnPage>
+    private let runtime: GhosttyRuntime
+    private let manager: SessionManager
+    private let git: GitPanelModel
+
+    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
+         files: FileTreeModel, previewTabs: PreviewTabs) {
+        self.runtime = runtime
+        self.manager = manager
+        self.git = git
+        pageHost = NSHostingController(rootView: SideColumnPage(git: git, files: files,
+                                                                previewTabs: previewTabs))
+        // The page has no say in how big the column is. With a terminal in
+        // front it is empty, and an empty SwiftUI view left to size its
+        // hosting view asks for no height at all: pinned to this view's
+        // edges, that took the whole row of panes down to nothing.
+        pageHost.sizingOptions = []
+        super.init(nibName: nil, bundle: nil)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
+        let root = NSView()
+        addChild(host)
+        addChild(pageHost)
+        for body in [host.view, pageHost.view] {
+            body.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(body)
+            NSLayoutConstraint.activate([
+                body.topAnchor.constraint(equalTo: root.topAnchor),
+                body.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+                body.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+                body.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            ])
+        }
+        view = root
+        observe()
+    }
+
+    /// The column as the selected session has it, applied now rather than a
+    /// turn later by the observer (see `MainSplitViewController.show`).
+    func applyNow() { sync() }
+
+    private func observe() {
+        withObservationTracking {
+            sync()
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observe() }
+        }
+    }
+
+    private func sync() {
+        let tab = git.activeTab
+        // A hidden column shows no terminal: it would keep the keyboard.
+        let terminal = git.isVisible ? tab?.terminalID : nil
+        let surface = terminal.flatMap { id in manager.selected?.ensureSideSurface(id, runtime: runtime) }
+        host.show(surface, focusRequest: git.terminalFocusRequest,
+                  handBack: { [weak git] in git?.focusFront(of: .main) })
+        // In front of the terminals, so out of the way of one: it would take
+        // every click meant for it.
+        pageHost.view.isHidden = !(tab?.isPage ?? false)
+    }
+}
+
+/// A pane, a file or a web page in the column. What it shows is `TabContent`'s,
+/// the same as in the main area and the strip. A hidden column builds no
+/// browser page or file document it doesn't already have: they're made when
+/// first on screen.
+struct SideColumnPage: View {
     @Bindable var git: GitPanelModel
     @Bindable var files: FileTreeModel
     let previewTabs: PreviewTabs
 
     var body: some View {
         ZStack {
-            SideTerminalContainer(
-                runtime: runtime,
-                session: manager.selected,
-                terminalID: git.isVisible ? git.activeTab?.terminalID : nil,
-                focusRequest: git.terminalFocusRequest,
-                handBack: { [weak git] in git?.focusFront(of: .main) })
             if let tab = git.activeTab, tab.isPage, git.isVisible || isBuilt(tab) {
                 TabContent(tab: tab, region: .side, git: git, files: files, previewTabs: previewTabs)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Whether a page or document for this tab exists already. A hidden
@@ -44,26 +114,6 @@ struct InspectorContainer: View {
         case .file(let path): return previewTabs.hasDocument(for: path)
         default: return true
         }
-    }
-}
-
-/// Hosts the side terminals. One controller for the life of the column; the
-/// surface on screen is swapped by hiding, never by removing.
-private struct SideTerminalContainer: NSViewControllerRepresentable {
-    let runtime: GhosttyRuntime
-    let session: Session?
-    let terminalID: UUID?
-    let focusRequest: Int
-    /// Where the keyboard goes when the side terminal that had it is hidden.
-    let handBack: () -> Void
-
-    func makeNSViewController(context: Context) -> SideTerminalHostController {
-        SideTerminalHostController()
-    }
-
-    func updateNSViewController(_ controller: SideTerminalHostController, context: Context) {
-        let surface = terminalID.flatMap { id in session?.ensureSideSurface(id, runtime: runtime) }
-        controller.show(surface, focusRequest: focusRequest, handBack: handBack)
     }
 }
 

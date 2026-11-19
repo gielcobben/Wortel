@@ -2,7 +2,7 @@
 # What a window resize costs the main thread per step, and how often the
 # program in the terminal is told about it.
 #
-#   scripts/bench-resize.sh [path/to/Wortel.app] [--column] [--file] [--compare] [--runs N] [--keep]
+#   scripts/bench-resize.sh [path/to/Wortel.app] [--column] [--file] [--panes] [--compare] [--runs N] [--keep]
 #
 # Runs a copy beside yours, never your Wortel. A Debug build resizes its own
 # window 480 times at 120 Hz when asked by a notification addressed to its pid
@@ -20,19 +20,26 @@
 # a frame drawn on the main thread at every step, as libghostty has it
 # ("before"), and with Wortel's rule (`SurfaceView.frameForNewSize`, "now").
 # Turn about because two runs of the same code minutes apart differ by more
-# than most changes do. Needs the screen unlocked. --keep leaves the copy open.
+# than most changes do. Needs the display awake. --keep leaves the copy open.
+#
+# --panes measures something else instead: the side column and the sidebar
+# sliding open and shut, six times each. It prints the turns of the run loop
+# while a pane slides (how many, the worst, how many over 8.3 ms), how long
+# the main thread was busy in a slide, and any slide that left the terminal at
+# a size that is not its view's.
 #
 # The last columns: steps that began on a frame of an older size, steps where
 # the terminal's view had not been resized with the window, and SIGWINCHes
 # against the times the grid had really changed.
 set -u
 
-app="" keep=0 column=0 file=0 runs=3 modes=(now)
+app="" keep=0 column=0 file=0 panes=0 runs=3 modes=(now)
 while (( $# )); do
   case $1 in
     --keep) keep=1 ;;
     --column) column=1 ;;
     --file) file=1 ;;
+    --panes) panes=1 ;;
     --compare) modes=(before now) ;;
     --runs) shift; runs=$1 ;;
     *) app=$1 ;;
@@ -46,8 +53,11 @@ if [[ -z $app ]]; then
 fi
 [[ -d $app ]] || { print -u2 "no app at $app"; exit 2; }
 
-locked=$(swift -e 'import CoreGraphics; let d = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]; print((d["CGSSessionScreenIsLocked"] as? Int) ?? 0)' 2>/dev/null)
-[[ $locked == 1 ]] && { print -u2 "the screen is locked; unlock it and run again"; exit 2; }
+# A display that is asleep gives a terminal nothing to draw on. A locked
+# screen with the display awake does (measured 2026-11-19), so it is the
+# display that is asked about: `caffeinate -u -t 5` wakes it.
+displays=$(swift -e 'import CoreGraphics; var n: UInt32 = 0; CGGetActiveDisplayList(0, nil, &n); print(n)' 2>/dev/null)
+[[ $displays == 0 ]] && { print -u2 "the display is asleep; wake it and run again"; exit 2; }
 
 work=$(mktemp -d /tmp/wortel-rb.XXXXXX)
 data=$HOME/.wrb-$$                       # short: the sockets live here
@@ -127,12 +137,19 @@ for run in $(seq 1 $runs); do
  for mode in $modes; do
   : > "$data/winch.log"
   rm -f "$data/result.json"
-  osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('sh.wortel.test.resize.$apppid', '$data/result.json|$mode$([[ $column == 1 ]] && print "|column")', \$(), true)" >/dev/null
+  osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('sh.wortel.test.resize.$apppid', '$data/result.json|$mode$([[ $column == 1 ]] && print "|column")$([[ $panes == 1 ]] && print "|panes")', \$(), true)" >/dev/null
   wait_for 30 test -s "$data/result.json" || { print -u2 "no result: is this a Debug build?"; cleanup; exit 2; }
   pause 0.5
   /usr/bin/python3 - "$data/result.json" "$data/winch.log" $run <<'EOF'
 import json, sys
 result = json.load(open(sys.argv[1]))
+if "faults" in result:
+    for name in ("column", "sidebar"):
+        r = result[name]
+        print(f"run {sys.argv[3]} {result['mode']:6s} {name:8s} {r['slides']} slides: {r['turns']} turns, worst {r['worstMs']:6.2f} ms,"
+              f" over 8.3 ms: {r['over']}, main thread busy a slide: mean {r['meanSlideMs']:6.2f} ms, most {r['busiestSlideMs']:6.2f} ms")
+    print(f"run {sys.argv[3]} {result['mode']:6s} terminal wrong after a slide: {len(result['faults'])}" + "".join("\n     " + f for f in result["faults"][:6]))
+    sys.exit(0)
 signals = [line.split()[1:] for line in open(sys.argv[2]) if line.startswith("winch")]
 grids = sum(1 for a, b in zip([None] + signals, signals) if a is None or a[:2] != b[:2])
 def cell(label, r):

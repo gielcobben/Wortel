@@ -56,6 +56,12 @@ enum ResizeBench {
         let path = parts[0]
         let before = parts.contains("before")
         if SurfaceView.frameOnEveryResize != before { SurfaceView.frameOnEveryResize = before }
+        // "panes": the side column and the sidebar sliding open and shut,
+        // instead of the resizing below.
+        if parts.contains("panes") {
+            Task { @MainActor in await panes(writingTo: path) }
+            return
+        }
         if parts.contains("column"), columnIsShut() {
             NSApp.sendAction(#selector(AppDelegate.toggleSideColumn(_:)), to: nil, from: nil)
             // Again once it has opened: everything below reads the layout.
@@ -189,6 +195,91 @@ enum ResizeBench {
         }
         timer = source
         source.resume()
+    }
+
+    /// The side column and the sidebar opened and shut six times each, the
+    /// way their menu items do it: every turn of the run loop while one
+    /// slides (a turn over 8.3 ms is a frame of the slide lost), and where
+    /// the terminal is once it has landed. A terminal is held at its size
+    /// while a pane moves and takes the new one once (`SurfaceView.holdResizes`),
+    /// so what is checked at the end is that it did.
+    @MainActor
+    private static func panes(writingTo path: String) async {
+        guard let window = NSApp.windows
+            .filter({ $0.isVisible && $0.styleMask.contains(.resizable) })
+            .max(by: { $0.frame.width < $1.frame.width }),
+              let terminal = shownTerminal(in: window.contentView) else { return }
+        var turns: [Double] = []
+        var awakeSince: CFTimeInterval? = CACurrentMediaTime()
+        let observer = CFRunLoopObserverCreateWithHandler(
+            nil, CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.afterWaiting.rawValue,
+            true, CFIndex.max
+        ) { _, activity in
+            let now = CACurrentMediaTime()
+            if activity == .afterWaiting {
+                awakeSince = now
+            } else if let since = awakeSince {
+                turns.append((now - since) * 1000)
+                awakeSince = nil
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        defer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        func pause(_ seconds: Double) async { try? await Task.sleep(nanoseconds: UInt64(seconds * 1e9)) }
+
+        var split: MainSplitViewController?
+        var up: NSView? = terminal
+        while let current = up, split == nil {
+            split = (current as? NSSplitView)?.delegate as? MainSplitViewController
+            up = current.superview
+        }
+
+        var result: [String: Any] = [:]
+        var faults: [String] = []
+        let moves: [(String, () -> Void)] = [
+            ("column", { NSApp.sendAction(#selector(AppDelegate.toggleSideColumn(_:)), to: nil, from: nil) }),
+            ("sidebar", { split?.toggleSidebar(nil) }),
+        ]
+        for (name, move) in moves {
+            var slides: [[Double]] = []
+            for round in 0..<6 {
+                await pause(0.5)
+                turns.removeAll()
+                move()
+                await pause(0.4)
+                slides.append(turns)
+                // Landed, and the one size it was owed taken.
+                await pause(0.5)
+                let state = terminal.debugState
+                let px = terminal.convertToBacking(terminal.bounds.size)
+                let view = (UInt32(max(0, px.width)), UInt32(max(0, px.height)))
+                if state.told.map({ $0 != view }) ?? true {
+                    faults.append("\(name) \(round): told \(state.told.map { "\($0.0)x\($0.1)" } ?? "nothing"), view \(view.0)x\(view.1)")
+                }
+                if state.shown.map({ $0 != (UInt32(state.layerPx.0), UInt32(state.layerPx.1)) }) ?? true {
+                    faults.append("\(name) \(round): frame \(state.shown.map { "\($0.0)x\($0.1)" } ?? "none") on a layer of \(state.layerPx.0)x\(state.layerPx.1)")
+                }
+                if state.pending || state.holds != 0 {
+                    faults.append("\(name) \(round): pending \(state.pending), holds \(state.holds)")
+                }
+            }
+            let all: [Double] = slides.flatMap { $0 }
+            let perSlide: [Double] = slides.map { $0.reduce(0, +) }
+            let budget = interval * 1000
+            func rounded(_ value: Double) -> Double { (value * 100).rounded() / 100 }
+            var stats: [String: Any] = [:]
+            stats["slides"] = slides.count
+            stats["turns"] = all.count
+            stats["worstMs"] = rounded(all.max() ?? 0)
+            stats["over"] = all.filter { $0 > budget }.count
+            // How long the main thread was busy in a slide: the most, and the mean.
+            stats["busiestSlideMs"] = rounded(perSlide.max() ?? 0)
+            stats["meanSlideMs"] = rounded(perSlide.reduce(0, +) / Double(max(1, perSlide.count)))
+            result[name] = stats
+        }
+        result["faults"] = faults
+        result["mode"] = SurfaceView.frameOnEveryResize ? "before" : "now"
+        write(result, to: path)
     }
 
     @MainActor

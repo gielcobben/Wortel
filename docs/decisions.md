@@ -198,9 +198,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   in the same place to the point (221,0 438x660 with the column, 879x660
   without), and the keyboard on it after a relaunch. It also took SwiftUI
   out of every step of a resize: 5.0 to 3.8 ms a step with the column shut,
-  7.9 to 6.6 ms on the divider. **Not changed:** the side column's own
-  terminals are still placed by SwiftUI (`InspectorContainer`), and could
-  fall behind the same way.
+  7.9 to 6.6 ms on the divider. **The side column followed the same day**
+  (`SideColumnController`, built as the strip's `BottomPaneController`
+  already was): its terminals were the last ones a SwiftUI view placed. It
+  was never caught a layout behind (`try-switch.sh --side`, 0 of 72 before
+  and after, with the divider moving on the switch as well), so this is the
+  rule being kept, not a fault being fixed. The first try at it took every
+  pane to no height: the page's hosting view was pinned to the column, and
+  with a terminal in front the page is empty and asked for none. A hosting
+  view that fills a pane takes `sizingOptions = []`.
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
   keeps what its program writes meanwhile, up to 512 KB. An agent's output
   is drawing, each piece placed from where the last ended, so with the start

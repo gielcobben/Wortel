@@ -2,7 +2,7 @@
 # Switch between sessions quickly, many times, and say how often the terminal
 # came back at the wrong size or running under the side column.
 #
-#   scripts/try-switch.sh [path/to/Wortel.app] [--compare] [--keep]
+#   scripts/try-switch.sh [path/to/Wortel.app] [--side] [--widths] [--pages] [--compare] [--keep]
 #
 # Runs a copy beside yours, never your Wortel. A Debug build does the
 # switching itself when asked by a notification addressed to its pid
@@ -12,15 +12,31 @@
 # again 0.75 s on, where the terminal's view is against the column, what the
 # terminal was told, its grid, and the size of the frame on its layer.
 #
+# --side opens a terminal in the side column and holds that one to the same
+# things. --widths gives one of the other sessions a column 120 points wider,
+# so a switch moves the divider instead of opening and shutting the column.
+#
+# --pages asks something else instead: what a click in the middle of the
+# terminal's pane lands on, with a session and after every session is closed,
+# when the page for no sessions is up in front of where the terminal was. It
+# leaves a picture of the window with that page in $TMPDIR/wortel-pages.png.
+#
+# HIBERNATE_AFTER=0.3 in the environment gives the copy a hibernation clock
+# that short, so the session switched back to has usually been hibernated and
+# every return is a wake as well.
+#
 # --compare runs it twice: with libghostty's frame at every change of size
-# ("before") and with Wortel's rule ("now"). Needs the screen unlocked.
+# ("before") and with Wortel's rule ("now"). Needs the display awake.
 set -u
 
-app="" keep=0 modes=(now)
+app="" keep=0 pages=0 modes=(now) extra=""
 while (( $# )); do
   case $1 in
     --keep) keep=1 ;;
     --compare) modes=(before now) ;;
+    --side) extra="$extra|side" ;;
+    --widths) extra="$extra|widths" ;;
+    --pages) pages=1 ;;
     *) app=$1 ;;
   esac
   shift
@@ -32,8 +48,11 @@ if [[ -z $app ]]; then
 fi
 [[ -d $app ]] || { print -u2 "no app at $app"; exit 2; }
 
-locked=$(swift -e 'import CoreGraphics; let d = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]; print((d["CGSSessionScreenIsLocked"] as? Int) ?? 0)' 2>/dev/null)
-[[ $locked == 1 ]] && { print -u2 "the screen is locked; unlock it and run again"; exit 2; }
+# A display that is asleep gives a terminal nothing to draw on. A locked
+# screen with the display awake does (measured 2026-11-19), so it is the
+# display that is asked about: `caffeinate -u -t 5` wakes it.
+displays=$(swift -e 'import CoreGraphics; var n: UInt32 = 0; CGGetActiveDisplayList(0, nil, &n); print(n)' 2>/dev/null)
+[[ $displays == 0 ]] && { print -u2 "the display is asleep; wake it and run again"; exit 2; }
 
 work=$(mktemp -d /tmp/wortel-sw.XXXXXX)
 data=$HOME/.wsw-$$                       # short: the sockets live here
@@ -88,7 +107,7 @@ PY
 ( cd "$work/repo" && git init -q && seq 1 400 > f1.txt && git add -A . \
   && git -c user.name=probe -c user.email=probe@example.com commit -qm init && print changed >> f1.txt )
 
-open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 "$copy"
+open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 ${HIBERNATE_AFTER:+--env} ${HIBERNATE_AFTER:+WORTEL_HIBERNATE_AFTER=$HIBERNATE_AFTER} "$copy"
 wait_for 20 test -s "$data/instance.lock" || { print -u2 "the copy did not start"; cleanup; exit 2; }
 apppid=$(cat "$data/instance.lock")
 wait_for 20 w list || { print -u2 "the copy does not answer"; cleanup; exit 2; }
@@ -99,9 +118,21 @@ w new --cwd "$work/repo" --name home -- /usr/bin/python3 "$data/tui.py" >/dev/nu
 pause 2
 
 print "app: $app"
+if (( pages )); then
+  osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('sh.wortel.test.switch.$apppid', '$data/pages.json|pages', \$(), true)" >/dev/null
+  wait_for 20 test -s "$data/pages.json" || { print -u2 "no result: is this a Debug build?"; cleanup; exit 2; }
+  /usr/bin/python3 -c "
+import json; r = json.load(open('$data/pages.json'))
+print('with a session, a click lands on:', r['withSession'])
+print('with', r['sessionsLeft'], 'sessions, a click lands on:', r['withNone'])"
+  window=$(swift -e "import CoreGraphics; let l = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as! [[String: Any]]; for w in l where (w[\"kCGWindowOwnerPID\"] as? Int) == $apppid && (w[\"kCGWindowLayer\"] as? Int) == 0 { let b = w[\"kCGWindowBounds\"] as! [String: Any]; if (b[\"Width\"] as! Double) > 500 && (b[\"Height\"] as! Double) > 300 { print(w[\"kCGWindowNumber\"] as! Int) } }" 2>/dev/null | head -1)
+  [[ -n $window ]] && screencapture -x -o -l "$window" "${TMPDIR:-/tmp}/wortel-pages.png" && print "picture: ${TMPDIR:-/tmp}/wortel-pages.png"
+  (( keep )) && print "left open: pid $apppid, data $data, copy $copy" || cleanup
+  exit 0
+fi
 for mode in $modes; do
   rm -f "$data/result.json"
-  osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('sh.wortel.test.switch.$apppid', '$data/result.json|$mode', \$(), true)" >/dev/null
+  osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('sh.wortel.test.switch.$apppid', '$data/result.json|$mode$extra', \$(), true)" >/dev/null
   wait_for 240 test -s "$data/result.json" || { print -u2 "no result: is this a Debug build?"; cleanup; exit 2; }
   /usr/bin/python3 - "$data/result.json" <<'PY'
 import json, sys, collections
@@ -115,9 +146,17 @@ def wrong(s):
     if s.get("shown") != s.get("layer"): faults.append("frame %s on a layer of %s" % (s.get("shown"), s.get("layer")))
     if s.get("columnShut"): faults.append("column shut")
     if s.get("frame") != result["start"]["frame"]: faults.append("at %s, started at %s" % (s.get("frame"), result["start"]["frame"]))
+    side, first = s.get("side"), result["start"].get("side")
+    if first and not side: faults.append("side terminal gone")
+    if side:
+        if first and side["frame"] != first["frame"]: faults.append("side terminal at %s, started at %s" % (side["frame"], first["frame"]))
+        if side.get("inPane") is False: faults.append("side terminal %s not filling its pane %s" % (side["frame"], side.get("pane")))
+        if side["told"] != side["view"]: faults.append("side terminal told %s, view %s" % (side["told"], side["view"]))
+        if side["shown"] != side["layer"]: faults.append("side terminal frame %s on a layer of %s" % (side["shown"], side["layer"]))
     return faults
 print(f"{result['mode']:6s} with the column: terminal at {result['start']['frame']}, grid {result['start'].get('grid')};"
-      f" without: {result['startOther']['frame']}, grid {result['startOther'].get('grid')}")
+      f" on the other session: {result['startOther']['frame']}, grid {result['startOther'].get('grid')}"
+      + (f"; side terminal at {result['start']['side']['frame']}, grid {result['start']['side']['grid']}" if result['start'].get('side') else ""))
 for when in ("soon", "settled"):
     bad = [(r["gap"], r["stops"], wrong(r[when])) for r in rows if wrong(r[when])]
     print(f"{result['mode']:6s} {when:8s}: {len(bad)} of {len(rows)} returns wrong")

@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let manager = SessionManager(runtime: runtime)
         self.manager = manager
         #if DEBUG
-        SwitchProbe.install(manager: manager)
+        SwitchProbe.install(manager: manager, git: gitPanel)
         #endif
 
         // AppKit window hosting a SwiftUI NavigationSplitView (the Opslan

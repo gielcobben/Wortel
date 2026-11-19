@@ -101,8 +101,15 @@ final class WindowMovability: NSObject {
         apply()
     }
 
-    @objc func mouseEntered(with event: NSEvent) { pointerOutside = false; apply() }
-    @objc func mouseExited(with event: NSEvent) { pointerOutside = true; apply() }
+    // The tracking area's owner is sent `mouseEntered:` and `mouseExited:`.
+    // Spelled out, because this is an NSObject, not an NSResponder: a plain
+    // `@objc func mouseExited(with:)` is exported as `mouseExitedWith:`, so
+    // every exit raised "unrecognized selector". AppKit swallowed that in the
+    // event loop, but under ⌘O's open panel `runModal` caught it and showed
+    // "The open file operation failed to connect to the open and save panel
+    // service" (2026-11-18). And the pointer-outside rule never once fired.
+    @objc(mouseEntered:) func mouseEntered(with event: NSEvent) { pointerOutside = false; apply() }
+    @objc(mouseExited:) func mouseExited(with event: NSEvent) { pointerOutside = true; apply() }
     @objc private func menuBegan(_ note: Notification) { menusOpen += 1; apply() }
 
     /// Keys let go while a menu was up never reached the monitor (a menu

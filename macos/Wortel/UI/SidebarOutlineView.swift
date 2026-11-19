@@ -597,8 +597,12 @@ final class SidebarOutline: NSOutlineView {
         onDragEnd?()
     }
 
+    /// No `super`: the SDK lets this compile as an override, but neither
+    /// NSOutlineView, NSTableView nor NSView implements `draggingEnded:`
+    /// (checked with `instancesRespond(to:)` on macOS 27, 2026-11-18). Calling
+    /// up raised "unrecognized selector" at the end of every drag here, before
+    /// `onDragEnd` could run.
     override func draggingEnded(_ sender: NSDraggingInfo) {
-        super.draggingEnded(sender)
         onDragEnd?()
     }
 }

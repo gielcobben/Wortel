@@ -832,7 +832,10 @@ enum FolderActions {
                 manager.newSession(inFolder: folder, via: .terminal, starting: .plain)
             }
         }
-        item("New Worktree Session\u{2026}", "plus.square.dashed") {
+        // "New Worktree…" for the same reason: here "Session" only made it
+        // the item that set the menu's width. The Session menu keeps the
+        // full name, where it stands among other kinds of session.
+        item("New Worktree\u{2026}", "plus.square.dashed") {
             newWorktreeSessionFromSheet(manager, inFolder: folder)
         }
         // Three groups, as the session menu has: make something in it, the

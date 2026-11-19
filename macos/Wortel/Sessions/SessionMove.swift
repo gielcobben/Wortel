@@ -45,6 +45,15 @@ enum SessionMove {
         return parts.joined(separator: " ")
     }
 
+    /// Whether two paths are one folder: links resolved, as the shell's
+    /// report of where it is may give the link and the request the target.
+    static func samePath(_ a: String, _ b: String) -> Bool {
+        func real(_ p: String) -> String {
+            URL(fileURLWithPath: p).standardizedFileURL.resolvingSymlinksInPath().path
+        }
+        return real(a) == real(b)
+    }
+
     /// A path as a person reads it: under home, with `~`.
     static func display(_ path: String) -> String {
         (path as NSString).abbreviatingWithTildeInPath
@@ -65,4 +74,7 @@ struct PendingMove {
 
     /// A move still waiting this long is given up, and the person told.
     static let patience: TimeInterval = 60 * 60
+    /// Once the agent is ended, how long the shell has to report the new
+    /// folder before the move is called off.
+    static let arrivalGrace: TimeInterval = 2 * 60
 }

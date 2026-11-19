@@ -17,6 +17,10 @@ enum AgentSkill {
     enum Action: Equatable {
         case install
         case update
+        /// Already what Wortel ships, but not recorded as written by it
+        /// (`~/.claude` synced from another Mac, defaults reset): recorded
+        /// now, so the next update still reaches it.
+        case adopt
         case leave
     }
 
@@ -26,7 +30,7 @@ enum AgentSkill {
     static func decide(claudeInstalled: Bool, onDisk: Data?, bundled: Data, written: String?) -> Action {
         guard claudeInstalled else { return .leave }
         guard let onDisk else { return written == nil ? .install : .leave }
-        if onDisk == bundled { return .leave }
+        if onDisk == bundled { return written == digest(bundled) ? .leave : .adopt }
         // Untouched since Wortel wrote it: Wortel's to bring up to date.
         return digest(onDisk) == written ? .update : .leave
     }
@@ -52,7 +56,13 @@ enum AgentSkill {
             && isDirectory.boolValue
         let action = decide(claudeInstalled: installed, onDisk: try? Data(contentsOf: file),
                             bundled: bundled, written: defaults.string(forKey: writtenKey))
-        guard action != .leave else { return }
+        switch action {
+        case .leave: return
+        case .adopt:
+            defaults.set(digest(bundled), forKey: writtenKey)
+            return
+        case .install, .update: break
+        }
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try bundled.write(to: file, options: .atomic)

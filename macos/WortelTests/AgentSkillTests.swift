@@ -22,6 +22,13 @@ final class AgentSkillTests: XCTestCase {
         XCTAssertEqual(AgentSkill.decide(claudeInstalled: true, onDisk: v1, bundled: v1, written: wroteV1), .leave)
     }
 
+    /// The same file arriving another way (a synced `~/.claude`) is taken as
+    /// Wortel's, so a later update still reaches it.
+    func testTheSameFileUnrecordedIsAdopted() {
+        XCTAssertEqual(AgentSkill.decide(claudeInstalled: true, onDisk: v1, bundled: v1, written: nil), .adopt)
+        XCTAssertEqual(AgentSkill.decide(claudeInstalled: true, onDisk: v1, bundled: v1, written: "older"), .adopt)
+    }
+
     func testEditedIsThePersonsAndLeftAlone() {
         let edited = Data("version one, with my own line".utf8)
         XCTAssertEqual(AgentSkill.decide(claudeInstalled: true, onDisk: edited, bundled: v2, written: wroteV1), .leave)

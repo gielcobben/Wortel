@@ -23,6 +23,18 @@ final class SessionMoveTests: XCTestCase {
         XCTAssertNil(SessionMove.cdLine("/Users/x/\u{1B}[31m"))
     }
 
+    /// The shell may report a link where the request named its target.
+    func testTheSameFolderThroughALink() throws {
+        let base = NSTemporaryDirectory() + "move-\(UUID().uuidString)"
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: base + "/real", withIntermediateDirectories: true)
+        try fm.createSymbolicLink(atPath: base + "/link", withDestinationPath: base + "/real")
+        defer { try? fm.removeItem(atPath: base) }
+        XCTAssertTrue(SessionMove.samePath(base + "/link", base + "/real"))
+        XCTAssertTrue(SessionMove.samePath(base + "/real/", base + "/real"))
+        XCTAssertFalse(SessionMove.samePath(base + "/real", base))
+    }
+
     /// The agent that asked reads this: it must not think it has moved.
     func testWaitingForTheTurnSaysNothingHasMovedYet() {
         let text = SessionMove.acceptedMessage(to: NSHomeDirectory() + "/Developer/opmaak", waitsForTurn: true)

@@ -1591,8 +1591,9 @@ final class SessionManager {
     private func agentFolder(for directory: String?,
                              starting start: SessionStart) -> (path: String, name: String)? {
         let command = AppSettings.shared.newSessionCommand
+        let rootInUse = sessions.contains { $0.originCwd.map { SessionMove.samePath($0, ChatFolder.root) } ?? false }
         guard start.usesPreferredCommand(stored: command), ChatFolder.wantsOwnFolder(directory),
-              let path = ChatFolder.make(for: command) else { return nil }
+              let path = ChatFolder.make(for: command, rootInUse: rootInUse) else { return nil }
         return (path, ChatFolder.sessionName(for: command))
     }
 
@@ -2427,6 +2428,7 @@ final class SessionManager {
         sleepTimers.removeValue(forKey: session.id)?.cancel()
         hiddenSince.removeValue(forKey: session.id)
         lastTypedAt.removeValue(forKey: session.id)
+        cancelMove(session)
         sleptAt.removeValue(forKey: session.id)
         sleepSurvivors.removeValue(forKey: session.id)
         wantsWake.remove(session.id)
@@ -3560,6 +3562,7 @@ final class SessionManager {
             return .starting
         }
         guard sleeper.attempts < AgentSleep.maxWakeAttempts else {
+            failMove(session, because: "the agent didn't start again")
             session.sleep = .awake
             AgentSleepLog.log.notice("""
                 session \(session.id.uuidString, privacy: .public): the resume never started, \
@@ -3645,6 +3648,17 @@ final class SessionManager {
         guard SessionMove.cdLine(path) != nil else {
             return .failure("Wortel can't type \(shown) into a shell safely.")
         }
+        // Under way: the agent is going or gone, and nothing can change that.
+        if let move = pendingMoves[session.id], move.ending {
+            return .failure("This session is already being moved to \(SessionMove.display(move.path)).")
+        }
+        // Where it already is: a waiting move is called off, which is how an
+        // agent takes one back (`wortel cd .`).
+        if let current = session.cwd, SessionMove.samePath(current, path) {
+            guard pendingMoves[session.id] != nil else { return .failure("Already in \(shown).") }
+            cancelMove(session)
+            return .success("Move cancelled. This session stays in \(shown).", value: path)
+        }
         guard let agent = session.runningAgent else {
             return .failure("No agent is running in this session. In a shell, use cd.")
         }
@@ -3653,9 +3667,6 @@ final class SessionManager {
         }
         guard case .awake = session.sleep else {
             return .failure("This session's agent is asleep. Select the session, then try again.")
-        }
-        if let current = session.cwd, FolderRoot.normalize(current) == path, pendingMoves[session.id] == nil {
-            return .failure("Already in \(shown).")
         }
         guard let candidate = sleepCandidate(for: session) else {
             return .failure("Wortel can't stop and resume this agent safely right now.")
@@ -3668,10 +3679,7 @@ final class SessionManager {
         }
         let idle: Bool
         if case .finished = candidate.inputs.rest, !session.isBusy { idle = true } else { idle = false }
-        let previous = pendingMoves[session.id].map(\.path)
-        if let move = pendingMoves[session.id], move.ending {
-            return .failure("This session is already being moved to \(SessionMove.display(move.path)).")
-        }
+        let previous = pendingMoves[session.id].map(\.path).flatMap { SessionMove.samePath($0, path) ? nil : $0 }
         pendingMoves[session.id] = PendingMove(path: path, requestedAt: Date(), idleWhenAsked: idle)
         AgentSleepLog.log.notice("""
             session \(session.id.uuidString, privacy: .public): move asked\
@@ -3712,12 +3720,20 @@ final class SessionManager {
         // Asked again in a moment for anything that may pass: still working,
         // a draft typed and not sent, a question waiting, a command running.
         guard case .awake = session.sleep, !session.isBusy,
-              let candidate = sleepCandidate(for: session),
+              let candidate = sleepCandidate(for: session), !candidate.inputs.busy,
               case .finished(let since) = candidate.inputs.rest,
               move.idleWhenAsked || since > move.requestedAt,
               !candidate.inputs.typedSinceRest
         else { return scheduleMoveCheck(session) }
         pendingMoves[id]?.ending = true
+        // From here only the shell reporting the new folder ends it. If that
+        // never comes (the resume never starts, the `cd` fails, the folder
+        // went), the move is called off rather than left pending for good.
+        let requested = move.requestedAt
+        DispatchQueue.main.asyncAfter(deadline: .now() + PendingMove.arrivalGrace) { [weak self, weak session] in
+            guard let self, let session, self.pendingMoves[id]?.requestedAt == requested else { return }
+            self.failMove(session, because: "it didn't arrive there")
+        }
         AgentSleepLog.log.notice("session \(id.uuidString, privacy: .public): ending the agent to move it")
         markEnding(session, candidate, waiting: false)
         saveNow()
@@ -3750,9 +3766,22 @@ final class SessionManager {
         moveChecks.removeValue(forKey: session.id)?.cancel()
         session.originCwd = path
         let folder = folder(forDirectory: path)
-        if folder != session.folderPath { moveSessions([session.id], toFolder: folder) }
+        if folder != session.folderPath {
+            // Not a second "Claude" beside one already there.
+            let leaf = uniqueLeaf(session.leafName, in: folder)
+            if leaf != session.leafName {
+                session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
+            }
+            moveSessions([session.id], toFolder: folder)
+        }
         AgentSleepLog.log.notice("session \(session.id.uuidString, privacy: .public): moved")
         scheduleSave()
+    }
+
+    /// A waiting move forgotten: asked for, or the session closed.
+    private func cancelMove(_ session: Session) {
+        pendingMoves[session.id] = nil
+        moveChecks.removeValue(forKey: session.id)?.cancel()
     }
 
     /// The move is off: the session stays (or is resumed) where it was, and
@@ -5431,8 +5460,7 @@ final class SessionManager {
                 guard let self, let session else { return }
                 let previous = session.linkedCheckout?.root
                 session.cwd = pwd // observed → sidebar row + navigation subtitle update
-                if let move = self.pendingMoves[session.id], move.typed,
-                   FolderRoot.normalize(pwd) == FolderRoot.normalize(move.path) {
+                if let move = self.pendingMoves[session.id], move.typed, SessionMove.samePath(pwd, move.path) {
                     self.finishMove(session, to: move.path)
                 }
                 self.noteCheckout(session)

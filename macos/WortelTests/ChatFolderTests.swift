@@ -106,12 +106,62 @@ final class ChatFolderTests: XCTestCase {
         XCTAssertFalse(ChatFolder.claudeTrusts("/Users/someone/Developer-old", config: config))
     }
 
+    /// A second session made while the first is still at Claude's question
+    /// gets a folder of its own: two conversations never share one.
+    func testOnlyOneSessionWaitsInTheParent() throws {
+        let path = try XCTUnwrap(ChatFolder.make(for: "claude", root: root, rootInUse: true,
+                                                 claudeConfig: { self.config([:]) }))
+        XCTAssertEqual((path as NSString).lastPathComponent, "1")
+    }
+
+    // MARK: - Someone else's ~/Wortel
+
+    /// A folder of the person's own at that path is never written to or
+    /// filled with day folders, and an agent there starts where it would.
+    func testAFolderWortelDidNotMakeIsLeftAlone() throws {
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: root, withIntermediateDirectories: true)
+        try "my project".write(toFile: root + "/README.md", atomically: true, encoding: .utf8)
+        XCTAssertFalse(ChatFolder.isOurs(root))
+        XCTAssertNil(ChatFolder.make(for: "claude", root: root, claudeConfig: { nil }))
+        XCTAssertFalse(ChatFolder.wantsOwnFolder(root + "/src", home: home, root: root),
+                       "a session in it keeps its folder")
+        ChatFolder.writeGuide(in: root)
+        XCTAssertFalse(fm.fileExists(atPath: root + "/CLAUDE.md"))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root), ["README.md"])
+    }
+
+    func testAFolderWortelMakesIsMarked() throws {
+        _ = ChatFolder.make(for: "codex", root: root, claudeConfig: { nil })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root + "/" + ChatFolder.markerName))
+        XCTAssertTrue(ChatFolder.isOurs(root))
+    }
+
+    /// The first build of this made the folder without a marker: holding
+    /// only what Wortel puts there, it is recognised and marked.
+    func testAnEarlierBuildsFolderIsRecognised() throws {
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: root + "/2026-11-19/1", withIntermediateDirectories: true)
+        try ChatFolder.guide.write(toFile: root + "/CLAUDE.md", atomically: true, encoding: .utf8)
+        XCTAssertTrue(ChatFolder.isOurs(root))
+        XCTAssertTrue(fm.fileExists(atPath: root + "/" + ChatFolder.markerName))
+    }
+
+    func testAnEarlierBuildsFolderWithAnEditedGuideIsNotTaken() throws {
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: root + "/2026-11-19", withIntermediateDirectories: true)
+        try "# Mine".write(toFile: root + "/CLAUDE.md", atomically: true, encoding: .utf8)
+        XCTAssertFalse(ChatFolder.isOurs(root))
+    }
+
     // MARK: - The command
 
     func testWhichCommandIsClaude() {
         XCTAssertTrue(ChatFolder.isClaude("claude"))
         XCTAssertTrue(ChatFolder.isClaude("claude --model opus"))
         XCTAssertTrue(ChatFolder.isClaude("/opt/homebrew/bin/claude"))
+        XCTAssertTrue(ChatFolder.isClaude("devx claude"), "through a wrapper")
+        XCTAssertTrue(ChatFolder.isClaude("env FOO=1 claude --model opus"))
         XCTAssertFalse(ChatFolder.isClaude("codex"))
         XCTAssertFalse(ChatFolder.isClaude(""))
     }
@@ -119,6 +169,8 @@ final class ChatFolderTests: XCTestCase {
     func testTheSessionIsNamedForItsAgent() {
         XCTAssertEqual(ChatFolder.sessionName(for: "claude --model opus"), "Claude")
         XCTAssertEqual(ChatFolder.sessionName(for: "/usr/local/bin/codex"), "Codex")
+        XCTAssertEqual(ChatFolder.sessionName(for: "devx claude"), "Claude")
+        XCTAssertEqual(ChatFolder.sessionName(for: "FOO=1 codex"), "Codex")
     }
 
     /// `root` with links resolved: `/var` is `/private/var`, and Claude keys

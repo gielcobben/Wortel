@@ -15,6 +15,11 @@ import Foundation
 /// Never in `~/Documents`, which macOS guards with a permission prompt and
 /// iCloud may sync. A folder made here is never removed: an archived session
 /// is resumed in it, and Claude files its conversation under its path.
+///
+/// **Only a folder Wortel made is used** (`isOurs`): someone may already
+/// have a `~/Wortel`, or a `~/wortel`, which is the same folder on a Mac's
+/// usual disk. Then nothing here touches it, and an agent starts at home as
+/// before.
 enum ChatFolder {
     /// The parent of every agent's folder. A test copy (`WORTEL_DATA_DIR`)
     /// keeps its own, inside its data folder.
@@ -29,22 +34,83 @@ enum ChatFolder {
                                root: String = root) -> Bool {
         guard let directory else { return true }
         let path = standard(directory)
-        return path == standard(home) || FolderRoot.root(standard(root), contains: path)
+        if path == standard(home) { return true }
+        return FolderRoot.root(standard(root), contains: path) && isOurs(root)
+    }
+
+    /// The file that says `root` is Wortel's.
+    static let markerName = ".made-by-wortel"
+
+    /// Whether `root` is Wortel's to use: it has the marker, or it doesn't
+    /// exist yet. A folder made by the first build of this, before the
+    /// marker, is recognised by holding nothing but what Wortel puts there
+    /// (day folders and the guide), and is marked then.
+    static func isOurs(_ root: String) -> Bool {
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: root, isDirectory: &isDirectory) else { return true }
+        guard isDirectory.boolValue else { return false }
+        if fm.fileExists(atPath: (root as NSString).appendingPathComponent(markerName)) { return true }
+        guard let entries = try? fm.contentsOfDirectory(atPath: root),
+              entries.allSatisfy({ isDayName($0) || $0 == "CLAUDE.md" || $0 == ".DS_Store" }),
+              (try? String(contentsOfFile: (root as NSString).appendingPathComponent("CLAUDE.md"),
+                           encoding: .utf8)).map({ $0 == guide }) ?? true
+        else { return false }
+        mark(root)
+        return true
+    }
+
+    private static func mark(_ root: String) {
+        let text = "Wortel made this folder for agent sessions with no project of their own.\n"
+        try? text.write(toFile: (root as NSString).appendingPathComponent(markerName),
+                        atomically: true, encoding: .utf8)
+    }
+
+    /// `2026-11-19`, as `dayName` writes them.
+    static func isDayName(_ name: String) -> Bool {
+        name.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
     }
 
     /// The folder to start an agent session in, made on disk, or nil when it
     /// could not be made (the session then starts where it would have).
     /// `command` is the line Settings types: only Claude's trust is read,
     /// and only Claude is started in the parent until it is trusted.
-    static func make(for command: String, root: String = root, now: Date = Date(),
+    ///
+    /// `rootInUse`: a session already started in the parent and may still be
+    /// at the question. Only that one asks there; another made meanwhile goes
+    /// to a folder of its own (and is asked there), so two conversations
+    /// never share a folder.
+    static func make(for command: String, root: String = root, now: Date = Date(), rootInUse: Bool = false,
                      claudeConfig: () -> Data? = readClaudeConfig) -> String? {
         let fm = FileManager.default
+        guard isOurs(root) else { return nil }
+        let isNew = !fm.fileExists(atPath: root)
         guard (try? fm.createDirectory(atPath: root, withIntermediateDirectories: true)) != nil else {
             return nil
         }
+        if isNew { mark(root) }
         writeGuide(in: root)
-        if isClaude(command), !claudeTrusts(root, config: claudeConfig()) { return root }
+        if isClaude(command), !rootInUse, !trusted(root, claudeConfig: claudeConfig) { return root }
         return nextFolder(in: root, now: now)
+    }
+
+    /// Claude's trust in `root`, remembered once it is given: it is never
+    /// taken back, and `~/.claude.json` can be megabytes, read on the main
+    /// thread as a session is made.
+    private static func trusted(_ root: String, claudeConfig: () -> Data?) -> Bool {
+        if trustMemo.contains(root) { return true }
+        guard claudeTrusts(root, config: claudeConfig()) else { return false }
+        trustMemo.insert(root)
+        return true
+    }
+
+    private static let trustMemo = TrustMemo()
+
+    private final class TrustMemo: @unchecked Sendable {
+        private let lock = NSLock()
+        private var roots: Set<String> = []
+        func contains(_ root: String) -> Bool { lock.withLock { roots.contains(root) } }
+        func insert(_ root: String) { _ = lock.withLock { roots.insert(root) } }
     }
 
     /// The next free `<day>/<n>` under `root`, made: one more than the highest
@@ -92,6 +158,7 @@ enum ChatFolder {
         """
 
     static func writeGuide(in root: String) {
+        guard isOurs(root) else { return }
         let path = (root as NSString).appendingPathComponent("CLAUDE.md")
         guard !FileManager.default.fileExists(atPath: path) else { return }
         try? guide.write(toFile: path, atomically: true, encoding: .utf8)
@@ -106,16 +173,19 @@ enum ChatFolder {
         return formatter.string(from: date)
     }
 
-    /// Whether the command starts Claude Code: its first word, by name.
+    /// Whether the command starts Claude Code: any of its words, by name, so
+    /// `env FOO=1 claude` and a wrapper's `devx claude` count.
     static func isClaude(_ command: String) -> Bool {
-        guard let first = AgentCommandLine.words(command).first else { return false }
-        return (first as NSString).lastPathComponent == "claude"
+        AgentCommandLine.words(command).contains { ($0 as NSString).lastPathComponent == "claude" }
     }
 
-    /// What a new agent session is called before the agent names it: the
-    /// command's name, "Claude". The folder's own name, "1", says nothing.
+    /// What a new agent session is called before the agent names it:
+    /// "Claude", or the command's own name. The folder's name, "1", says
+    /// nothing.
     static func sessionName(for command: String) -> String {
-        let first = AgentCommandLine.words(command).first.map { ($0 as NSString).lastPathComponent }
+        if isClaude(command) { return "Claude" }
+        let first = AgentCommandLine.words(command).first { !$0.contains("=") }
+            .map { ($0 as NSString).lastPathComponent }
         guard let first, !first.isEmpty else { return "Agent" }
         return first.prefix(1).uppercased() + first.dropFirst()
     }

@@ -513,6 +513,23 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   file of Wortel's own in a folder made for them, not a change to the
   person's instructions or settings. Claude Code only; other agents that
   read the same format are not checked yet.
+- **2026-11-19. From the review of the four above.** `~/Wortel` is used
+  only when Wortel made it (a `.made-by-wortel` file): someone's own
+  `~/Wortel`, or `~/wortel` on a case-insensitive disk, was about to get a
+  guide saying "it is not a project" and day folders inside it. A move has
+  a deadline once the agent is ended (two minutes to arrive), is called off
+  when the resume gives up or the session closes, and `wortel cd .` cancels
+  a waiting one instead of quitting and resuming the agent in place. A move
+  waits on the same "working" sleep does, pending debounce included. Smaller:
+  Claude's trust is remembered once given instead of `~/.claude.json` read on
+  every ⌘N, a second session made while the first is at the trust question
+  gets its own folder, `devx claude` counts as Claude, a skill file
+  identical to Wortel's but unrecorded (a synced `~/.claude`) is adopted so
+  updates still reach it, and a moved row's name is made unique in its new
+  folder. Seen again in a test copy with a real Claude: `wortel cd b` then
+  `wortel cd .` from the agent left it in `a` ("Move cancelled"); a move of
+  the idle agent from outside landed in `b`; a second ask said "Already
+  in".
 
 ## Keeper
 

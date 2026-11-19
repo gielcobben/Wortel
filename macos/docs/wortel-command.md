@@ -242,7 +242,8 @@ waiting on you, something the agent started is still running, or you have
 typed and not sent. If it can't happen within an hour, the session gets a red
 dot and a notification and stays where it was. Anything the agent started that
 is still running when it quits stops. A relative `<dir>` is read from where the
-command was run.
+command was run. `wortel cd .` (the folder it is in) calls off a move that is
+still waiting.
 
 ## Reaching other sessions
 

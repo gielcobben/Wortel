@@ -74,7 +74,13 @@ plain terminal.
   Claude session starts in `~/Wortel` itself and Claude asks there once;
   after that every one gets its own folder and is never asked. The session
   is called by its command ("Claude") until the agent names it. Nothing
-  made there is ever removed. `~/Wortel/CLAUDE.md` (written when missing,
+  made there is ever removed. Only a `~/Wortel` that Wortel made is used (a
+  `.made-by-wortel` file in it; one holding only day folders and the
+  unedited guide, from the first build, is recognised and marked): a folder
+  of someone's own at that path, or at `~/wortel`, is never written to, and
+  an agent then starts at home as before. Until `~/Wortel` is trusted, only
+  one session waits in it at a time; another gets its own folder.
+  `~/Wortel/CLAUDE.md` (written when missing,
   `ChatFolder.guide`) tells the agent to offer `wortel cd` when the work
   turns to a project elsewhere. A test copy keeps its own under its data
   folder.

@@ -435,8 +435,8 @@ final class WorkspaceTabsTests: XCTestCase {
 
     // MARK: - Is the session's terminal on screen
 
-    /// What `SeenLedger` counts as the session being read: its terminal in
-    /// front, not a file or page in front of it.
+    /// What counts as the session's terminal being on screen: it in front,
+    /// not a file or page in front of it.
     func testTheTerminalIsShownUntilSomethingIsInFrontOfIt() {
         var tabs = WorkspaceTabs()
         XCTAssertTrue(tabs.showsSessionTerminal)

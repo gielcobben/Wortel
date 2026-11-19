@@ -60,6 +60,13 @@ on disk. `log show` returns nothing afterwards. Stream it live:
 - For a turn long enough to watch, ask the agent to run `sleep 40 && echo done`.
 - `agents/exits.log` records how agents ended. A status of 129 or more is a
   signal. Claude exits 0 on SIGHUP.
+- What to read, in order, for "no notification": `status …` (what the agent
+  reported), `attention … kind=` (what that came to), `attention raised …
+  banner= sound=` or `attention not raised` (whether it went out), and
+  `banner handed to Notification Center … allowed= banners=` (what macOS made
+  of it). A program's own words are never in these lines.
+- `scripts/verify-agent-status.py` runs all of this against stand-in agents in
+  a throwaway copy, and reads these lines to judge it.
 
 The full map of signals per agent is `docs/agent-signals.md`.
 

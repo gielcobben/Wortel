@@ -125,8 +125,8 @@ extension SurfaceView {
 /// ghostty.h declares. In the libghostty this app links (Ghostty 1.2) the
 /// function takes one argument, the text, and reads the first one as it:
 /// handed the surface, it read the surface's own memory as the text and
-/// freed nothing. Every read leaked its text, and the agent screen tier reads
-/// every agent session's screen once a second: 564 MB of screens after four
+/// freed nothing. Every read leaked its text, and the agent screen tier (gone
+/// since) read every agent session's screen once a second: 564 MB of screens after four
 /// and a half hours with 13 sessions (measured 2026-11-17, `heap` and
 /// `malloc_history`). It also meant freeing whatever pointer the surface
 /// happened to hold at that offset. Ghostty fixed the declaration upstream

@@ -1,10 +1,10 @@
 import Foundation
 import GhosttyKit
 
-/// Reading what a surface is currently *drawing*, for agent activity detection
-/// (see AgentActivity). Deliberately narrow: this is not a scraping API, it
-/// answers "did this screen change" and, once it stops changing, "does it look
-/// like a prompt".
+/// Reading what a surface is currently *drawing*: the end of its active
+/// screen, as text, for a tab's preview. Deliberately narrow. It used to be
+/// hashed once a second per agent to guess whether the agent was working;
+/// nothing is guessed from a screen any more (`docs/agent-signals.md`).
 extension SurfaceView {
     /// The selection covering the active screen — the program's live output,
     /// not the scrollback. Using the active area rather than the viewport means
@@ -17,13 +17,6 @@ extension SurfaceView {
             bottom_right: ghostty_point_s(
                 tag: GHOSTTY_POINT_ACTIVE, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
             rectangle: false)
-    }
-
-    /// Hash of the active screen, or nil if there is nothing to read. Runs once
-    /// a second per watched session, so it never materialises a Swift String —
-    /// the bytes are hashed in place and handed straight back to libghostty.
-    func activeScreenDigest() -> UInt64? {
-        withActiveScreen { bytes in agentScreenDigest(bytes) }
     }
 
     /// The last `maxBytes` of the active screen as text. Only called at the

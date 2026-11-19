@@ -91,6 +91,7 @@ struct SidebarPane: View {
                         .frame(width: 24, height: 24)
                     UpdateIndicator()
                     PermissionsIndicator()
+                    AgentUpdateIndicator(agents: manager.silentAgents)
                     Spacer()
                 }
                 // Equal on all four sides, so the 24pt hit box's centre sits on
@@ -370,6 +371,7 @@ struct SidebarRowContent: View {
         return manager.shortcutNumber(for: session.id) != nil
             || session.attention != nil || session.isBusy
             || (session.unread != nil && (!selected || session.markedUnread))
+            || session.silentAgent != nil || session.preparation != nil
     }
 
     var body: some View {
@@ -554,6 +556,17 @@ enum SessionActions {
             }
             menu.addItem(item)
             return item
+        }
+
+        // First, and only on a session whose row carries the warning: its
+        // agent is a version too old to say what it is doing. The row's
+        // triangle says so and can't be clicked, so this is the way from the
+        // row to what to do about it (`AgentUpdateNotice`).
+        if let reporter = session.silentAgent.flatMap({ ReportedStatus.knownReporters[$0] }) {
+            _ = item(AgentUpdateWords.menuItem(for: reporter), AgentUpdateWords.menuGlyph) {
+                AgentUpdateNotice.shared.showFromMenu(for: reporter)
+            }
+            menu.addItem(.separator())
         }
 
         // The items with shortcuts first, then Colour and Remind Me, which
@@ -1313,6 +1326,16 @@ struct SessionStatusIndicator: View {
                 // *the app* is loading, and several turning at once was the
                 // busiest thing on screen for the least urgent news in it.
                 WorkingIndicator()
+            } else if let reporter = session.silentAgent.flatMap({ ReportedStatus.knownReporters[$0] }) {
+                // Nothing to show for this session, and why: its agent is a
+                // version too old to say what it is doing. The triangle a
+                // worktree that failed has, in the slot where its status
+                // would be; the bar's icon has the rest (`AgentUpdateIndicator`).
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                    .help(AgentUpdateWords.row(for: reporter))
+                    .accessibilityLabel(AgentUpdateWords.row(for: reporter))
             }
         }
     }

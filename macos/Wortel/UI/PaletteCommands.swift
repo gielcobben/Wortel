@@ -102,6 +102,7 @@ enum PaletteCommands {
         "moveTabUp:": "arrow.up.to.line",
         "showPreviewFind:": "magnifyingglass",
         "markSessionUnread:": "circle.dashed",
+        "updateSessionAgent:": "exclamationmark.triangle",
         "togglePinSession:": "pin",
         "cleanUpWorktrees:": "folder.badge.minus",
     ]

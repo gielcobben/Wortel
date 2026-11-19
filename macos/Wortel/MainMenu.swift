@@ -345,6 +345,12 @@ enum MainMenu {
         // sidebar, not a dialog. Also on its row's "…" and right-click
         // (SessionActions), and so in the ⇧⌘P palette.
         sessionMenu.addItem(.separator())
+        // Only while the selected session's agent is a version too old to say
+        // what it is doing: hidden otherwise, and named for the agent
+        // ("Update Pi…") in AppDelegate.validateMenuItem. First, as on the
+        // session's own menu (SessionActions).
+        let updateAgent = sessionMenu.addItem(withTitle: "Update Agent\u{2026}", action: #selector(AppDelegate.updateSessionAgent(_:)), keyEquivalent: "")
+        updateAgent.isHidden = true
         // ⌥⌘R, as Codex renames a chat. Plain ⌘R is a browser's Reload; with
         // no browser in front it still renames (`syncReload`), as it always did.
         let rename = sessionMenu.addItem(withTitle: "Rename Session", action: #selector(AppDelegate.renameSession(_:)), keyEquivalent: "r")

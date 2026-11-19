@@ -439,13 +439,8 @@ enum AgentConversation {
         /// Whether a turn wrote to the rollout at or after `since`, from its
         /// tail (newest last; it may start mid-line).
         ///
-        /// What Codex draws can't say this. Its title spins the same braille
-        /// spinner while it starts its MCP servers (measured, 0.142: "Starting
-        /// MCP servers (0/3)", a second or more, at every launch and resume)
-        /// as it does through a turn, and the screen tier takes anything that
-        /// repaints an idle session for a few seconds for a short turn. Neither
-        /// is a turn, and neither writes one: a turn opens with `task_started`
-        /// and the user's message, and every step of it is a `response_item`.
+        /// A turn opens with `task_started` and the user's message, and every
+        /// step of it is a `response_item`.
         ///
         /// Only those count. A rollout also takes lines that belong to no turn
         /// (`thread_settings_applied`, measured three months after its
@@ -456,9 +451,7 @@ enum AgentConversation {
         }
 
         /// When a turn last wrote to the rollout, if it did at or after
-        /// `since`: its `task_complete`, once the turn is over. What the
-        /// screen showed at the end of the turn was on it from then on, which
-        /// is what decides whether someone already read it (`SeenLedger`).
+        /// `since`: its `task_complete`, once the turn is over.
         static func lastTurnWrite(_ data: Data, since: Date) -> Date? {
             for entry in AgentAnswer.entries(data) {
                 guard let date = AgentFiles.date(entry["timestamp"]) else { continue }

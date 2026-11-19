@@ -164,7 +164,7 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// Whether the session's own terminal is the tab in front of its row, and
     /// that row is up: what's on screen when the session is. A file or a page
     /// in front of it means the terminal, and what the agent wrote there,
-    /// isn't (`SeenLedger`).
+    /// isn't.
     var showsSessionTerminal: Bool {
         switch region(of: .session) {
         case .main?: return front(of: .main) == .session

@@ -144,6 +144,12 @@ struct PersistedSession: Codable {
     /// `Session.remindAt`. nil in older files, and for a session with no
     /// reminder. A var: an archived session keeps none (`archivedEntry`).
     var remindAt: Date?
+    /// What the session's agent last said it was doing (`ProgramStatus.State`,
+    /// by its name), when it is one that reports its own state. nil for one
+    /// that does not, and in older files. Kept so that an agent still running
+    /// at the next launch is taken at its word from the start, instead of
+    /// being guessed at until it next says something.
+    let reportedState: String?
 
     // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
@@ -154,6 +160,7 @@ struct PersistedSession: Codable {
         case runningAgent, runningModel, runningArgv, runningConversationID
         case lastConversationID, portBase, remindAt, agentAsleep, lastTypedAt
         case createdAt, lastSentAt
+        case reportedState
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
     /// so the synthesised encoder never writes it again.
@@ -176,7 +183,8 @@ struct PersistedSession: Codable {
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil, lastConversationID: String? = nil,
          portBase: Int? = nil, remindAt: Date? = nil, agentAsleep: String? = nil,
-         lastTypedAt: Date? = nil, createdAt: Date? = nil, lastSentAt: Date? = nil) {
+         lastTypedAt: Date? = nil, createdAt: Date? = nil, lastSentAt: Date? = nil,
+         reportedState: String? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
         self.originCwd = originCwd
         self.selected = selected; self.nameSource = nameSource
@@ -207,6 +215,7 @@ struct PersistedSession: Codable {
         self.lastTypedAt = lastTypedAt
         self.createdAt = createdAt
         self.lastSentAt = lastSentAt
+        self.reportedState = reportedState
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -280,6 +289,7 @@ struct PersistedSession: Codable {
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
         lastSentAt = try c.decodeIfPresent(Date.self, forKey: .lastSentAt)
         remindAt = try c.decodeIfPresent(Date.self, forKey: .remindAt)
+        reportedState = try c.decodeIfPresent(String.self, forKey: .reportedState)
     }
 }
 

@@ -285,6 +285,7 @@ footer with the keys. The selected row is the accent with white text.
 | Mint dot, breathing | The agent's turn is done |
 | Blue dot, steady | Finished: a long command or a job ended |
 | Hollow ring | Unread: you have not been there since |
+| Small orange triangle | No status: the agent is a version too old to say what it is doing. The sidebar's bar has the same triangle, and its popover says which version it needs |
 | Number in place of the status | ⌘ is held: ⌘1 to ⌘9 |
 
 A louder state is never replaced by a quieter one, and a collapsed folder shows

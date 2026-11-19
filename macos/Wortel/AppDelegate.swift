@@ -223,8 +223,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // double-clicked row in the tree, a Changes row, a file in a commit —
         // goes through one opener, so which diff a window shows is decided in
         // one place rather than four.
-        manager.onOpenMarkdown = { [weak self] url in
-            self?.openPreview(url)
+        manager.onOpenTerminalLink = { [weak self] target in
+            self?.openTerminalLink(target)
+        }
+        // A ⌘-clicked localhost link goes where a server picked from the
+        // running-jobs popover goes: a tab beside the terminal (one already
+        // on that server comes forward), or the browser when Settings says
+        // servers go there, or when there is no session to hold a tab.
+        manager.onOpenLocalServer = { [weak self] url in
+            if let self, !AppSettings.shared.opensServersInDefaultBrowser, self.gitPanel.session != nil {
+                self.gitPanel.showInBrowser(url, elsewhere: Self.optionClicked)
+            } else {
+                NSWorkspace.shared.open(url)
+            }
         }
         manager.onKeeperLost = { [weak self] loss in
             self?.reportKeeperLoss(loss)
@@ -978,13 +989,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the wrong one here: it meant a file opened with the inspector closed had
     /// no repo, so no diff source, so no Diff mode at all. When the panel
     /// happens to have the answer it's free; when it doesn't, we ask.
-    private func openPreview(_ requested: URL) {
-        // ⌥ read now, at the click: the open can land after a git lookup, and
-        // by then there's no event to ask.
-        openPreview(requested, placement: .home(elsewhere: Self.optionClicked))
+    /// A path ⌘-clicked in a terminal, already found on disk. Every file
+    /// opens here, in the preview, at the line its `:42` named: a click looks
+    /// at what an agent did and never launches anything (a `.command` file in
+    /// its default app runs). A folder is the one thing the preview can't
+    /// show, so it goes to Finder; a package is only revealed there, since
+    /// opening an app runs it (`MarkdownLinkTarget.package`).
+    private func openTerminalLink(_ target: TerminalLink.Target) {
+        switch target.kind {
+        case .markdown, .file: openPreview(target.url, line: target.line)
+        case .folder: NSWorkspace.shared.open(target.url)
+        case .package: NSWorkspace.shared.activateFileViewerSelecting([target.url])
+        }
     }
 
-    private func openPreview(_ requested: URL, placement: FilePlacement) {
+    private func openPreview(_ requested: URL, line: Int? = nil) {
+        // ⌥ read now, at the click: the open can land after a git lookup, and
+        // by then there's no event to ask.
+        openPreview(requested, placement: .home(elsewhere: Self.optionClicked), line: line)
+    }
+
+    private func openPreview(_ requested: URL, placement: FilePlacement, line: Int? = nil) {
         // Two paths, deliberately: git and the window registry work on the real
         // file, while the window is opened with the path you actually clicked so
         // it can tell you when that was an alias.
@@ -993,9 +1018,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // move it there) and do no git work whatsoever.
         if manager.selected?.workspace.region(of: .file(url.path)) != nil {
             place(.file(url.path), placement)
+            if let line { previewTabs.reveal(line: line, in: url) }
             return
         }
-        if case .home = placement, previewWindows.focus(url) { return }
+        if case .home = placement, previewWindows.focus(url) {
+            if let line { previewWindows.reveal(line: line, in: url) }
+            return
+        }
 
         // The panel already knows this repo and its status — free, and it also
         // knows *which side* of a change the file is on.
@@ -1004,12 +1033,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 ?? repo.status.stagedChanges.first { $0.path == relative }
             if let change {
                 presentPreview(requested, diff: .change(root: repo.root, change: change),
-                               hasChanges: true, placement: placement)
+                               hasChanges: true, placement: placement, line: line)
             } else {
                 presentPreview(
                     requested,
                     diff: .workingTree(root: repo.root, path: relative, untracked: false),
-                    placement: placement)
+                    placement: placement, line: line)
             }
             return
         }
@@ -1025,7 +1054,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 repoRootCache[directory] = root
             }
             guard let root, let relative = Self.relativePath(of: url, in: root) else {
-                presentPreview(requested, placement: placement)
+                presentPreview(requested, placement: placement, line: line)
                 return
             }
             // One line of porcelain, not a patch: it decides whether the window
@@ -1035,7 +1064,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             presentPreview(
                 requested,
                 diff: .workingTree(root: root, path: relative, untracked: state == .untracked),
-                hasChanges: state.hasChanges, placement: placement)
+                hasChanges: state.hasChanges, placement: placement, line: line)
         }
     }
 
@@ -1054,9 +1083,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// it without each passing it along.
     private func presentPreview(_ url: URL, diff: PreviewDiffSource = .none,
                                 hasChanges: Bool = false, mode: PreviewMode? = nil,
-                                placement: FilePlacement? = nil) {
-        place(previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges, mode: mode),
-              placement ?? .home(elsewhere: Self.optionClicked))
+                                placement: FilePlacement? = nil, line: Int? = nil) {
+        let tab = previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges, mode: mode)
+        place(tab, placement ?? .home(elsewhere: Self.optionClicked))
+        // Only for a tab that is there: a line kept for one that never opened
+        // would land on the next, unrelated open of the file.
+        if let line, manager.selected?.workspace.region(of: tab) != nil {
+            previewTabs.reveal(line: line, in: url)
+        }
     }
 
     private func place(_ tab: SideTab, _ placement: FilePlacement) {

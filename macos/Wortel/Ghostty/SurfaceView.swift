@@ -38,10 +38,20 @@ final class SurfaceView: NSView {
     var onCommandFinished: ((_ exitCode: Int, _ durationNs: UInt64) -> Void)?
     /// The program asked for a desktop notification (OSC 9 / 777 / 99).
     var onNotification: ((_ title: String, _ body: String) -> Void)?
-    /// A clicked link resolved to a local markdown file (decided in the runtime's
-    /// OPEN_URL handler). The owner opens it in the right-hand preview. Non-markdown
-    /// links never reach here — libghostty handles those itself.
-    var onOpenMarkdown: ((_ url: URL) -> Void)?
+    /// A ⌘-clicked link that is a path, a `file:` URL or a server on this Mac,
+    /// as libghostty matched it (`GhosttyRuntime`'s OPEN_URL handler). The
+    /// owner resolves a path against this terminal's folders (`TerminalLink`)
+    /// and opens it. Other web links never reach here: libghostty opens those.
+    var onOpenLink: ((_ link: String) -> Void)?
+    /// The folder the shell last reported (OSC 7), for resolving a relative
+    /// path clicked in this terminal. A side terminal's own: the session's
+    /// `cwd` follows its main shell only.
+    private(set) var reportedPwd: String?
+
+    func reportPwd(_ pwd: String) {
+        reportedPwd = pwd
+        onPwdChange?(pwd)
+    }
     /// The surface was resized, so its content re-wrapped. Fires for every
     /// session, not just the visible one — they all autoresize with the window.
     /// The agent-activity sampler listens so a reflow isn't read as work.
@@ -837,7 +847,7 @@ final class SurfaceView: NSView {
         for signal in signals {
             switch signal {
             case .title(let title): onTitleChange?(title)
-            case .pwd(let pwd): onPwdChange?(pwd)
+            case .pwd(let pwd): reportPwd(pwd)
             case .bell: onBell?()
             case .progress(let active, let errored): onProgress?(active, errored)
             case .commandFinished(let exitCode, let durationNs):

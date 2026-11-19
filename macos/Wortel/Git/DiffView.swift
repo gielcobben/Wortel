@@ -33,6 +33,14 @@ struct DiffView: NSViewRepresentable {
     /// far past the top of its row the view is, so the mode you switch to can
     /// open there and a tab you come back to opens exactly there.
     var onTopLine: ((Int, CGFloat) -> Void)?
+    /// A line asked for while this view may already be on screen (a
+    /// ⌘-clicked `App.swift:42`): selected and scrolled to, once per request,
+    /// then handed back through `onRevealed`.
+    var reveal: PreviewDocument.LineReveal?
+    var onRevealed: ((PreviewDocument.LineReveal) -> Void)?
+    /// Reports the line of the selected row (the first, for several), or nil
+    /// when nothing is selected.
+    var onSelectLine: ((Int?) -> Void)?
 
     enum Gutter { case patch, file }
 
@@ -119,6 +127,7 @@ struct DiffView: NSViewRepresentable {
         // the model and nothing on screen moves, which reads as a dead menu item.
         let resized = context.coordinator.setStyle(fontSize: fontSize, gutter: gutter)
         context.coordinator.onTopLine = onTopLine
+        context.coordinator.onSelectLine = onSelectLine
         // A preview tab kept built behind the one in front is disabled, and
         // it mustn't keep the keyboard: ⌘C would copy lines nobody can see.
         if !context.environment.isEnabled, let table = scroll.documentView,
@@ -131,6 +140,11 @@ struct DiffView: NSViewRepresentable {
             // Last, so it wins over the scroll-to-top a new file otherwise gets:
             // arriving in a mode with a place to be is not arriving at a new file.
             context.coordinator.applyAnchor(anchorLine, offset: anchorOffset, in: table, scroll: scroll)
+            if let reveal, context.coordinator.reveal(reveal, in: table, scroll: scroll) {
+                // After this update: the document is observed, and changing it
+                // while SwiftUI is updating this view is a change it warns about.
+                DispatchQueue.main.async { onRevealed?(reveal) }
+            }
         }
         // Always re-fit the column to the viewport (the panel may have resized).
         context.coordinator.applyColumnWidth()
@@ -298,6 +312,45 @@ struct DiffView: NSViewRepresentable {
         /// actual change, or every unrelated re-render would yank the reader
         /// back to the last match.
         private var focusedLine: Int?
+
+        var onSelectLine: ((Int?) -> Void)?
+
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard let onSelectLine, let table = notification.object as? NSTableView else { return }
+            let row = table.selectedRowIndexes.first
+            onSelectLine(row.flatMap { $0 < lines.count ? fileLine(atRow: $0) : nil })
+        }
+
+        /// A row's line in the file as it is now, which is the file an editor
+        /// opens: a deleted row has only the old one, so it takes the next
+        /// row that exists now (where the deletion was), else the last.
+        private func fileLine(atRow row: Int) -> Int? {
+            if let line = lines[row...].lazy.compactMap(\.newLine).first { return line }
+            return lines[..<row].reversed().lazy.compactMap(\.newLine).first
+        }
+
+        /// The last request shown, so an update for anything else (the
+        /// highlighter landing) doesn't show it again.
+        private var revealed: PreviewDocument.LineReveal?
+
+        /// Select the row for a requested line and put it a third of the way
+        /// down, where the eye lands, with what leads up to it above. True when
+        /// it was shown, false while there are no rows to show it in yet.
+        func reveal(_ request: PreviewDocument.LineReveal, in table: NSTableView,
+                    scroll: NSScrollView) -> Bool {
+            guard request != revealed else { return false }
+            guard !lines.isEmpty, let row = row(forSourceLine: request.line),
+                  row < table.numberOfRows else { return false }
+            revealed = request
+            // The anchor is this request too; it mustn't be applied again over it.
+            anchored = true
+            table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            let viewport = scroll.contentView.bounds.height
+            let top = max(table.rect(ofRow: row).minY - viewport / 3, 0)
+            scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: top))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            return true
+        }
 
         func focus(_ line: Int?, in table: NSTableView, force: Bool = false) {
             guard force || line != focusedLine else { return }

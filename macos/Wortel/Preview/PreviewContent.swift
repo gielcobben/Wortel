@@ -118,7 +118,10 @@ struct PreviewContent: View {
                      gutter: .file,
                      anchorLine: document.anchorLine,
                      anchorOffset: document.anchorOffset,
-                     onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 })
+                     onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 },
+                     reveal: document.lineReveal,
+                     onRevealed: { document.revealDone($0) },
+                     onSelectLine: { document.selectedLine = $0 })
         }
     }
 
@@ -140,7 +143,10 @@ struct PreviewContent: View {
                      fontSize: settings.fontSize,
                      anchorLine: document.anchorLine,
                      anchorOffset: document.anchorOffset,
-                     onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 })
+                     onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 },
+                     reveal: document.lineReveal,
+                     onRevealed: { document.revealDone($0) },
+                     onSelectLine: { document.selectedLine = $0 })
         }
     }
 
@@ -163,6 +169,8 @@ struct PreviewContent: View {
                          anchorLine: document.anchorLine,
                          anchorOffset: document.anchorOffset,
                          onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 },
+                         reveal: document.lineReveal,
+                         onRevealed: { document.revealDone($0) },
                          // A document's links and images are relative to where
                          // the file *is*, and this is the only view that knows.
                          baseURL: document.url,

@@ -673,6 +673,13 @@ targets:
       # relative link handed to the system comes back as a LaunchServices error
       # dialog, so the classification has to be right *before* anything opens.
       - path: Wortel/Markdown/MarkdownLinkTarget.swift
+      # Where a ⌘-clicked path in a terminal goes. Pure, and every case is a
+      # string an agent printed: relative to the repo, with a full stop or a
+      # `:42` stuck to it. Each one opened nothing before it was a type.
+      - path: Wortel/Ghostty/TerminalLink.swift
+      # How each editor is told a line: pure string shapes, each one a
+      # file opened at the top when it's wrong.
+      - path: Wortel/Preview/ExternalEditor.swift
       # Agent activity inference: a state machine over screen digests plus the
       # blocked-prompt reading. It decides when the app makes a sound at you,
       # and its failure modes are all timing-shaped — a transition emitted twice

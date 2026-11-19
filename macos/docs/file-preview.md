@@ -31,7 +31,9 @@ another row (or onto one, out of a list or as a preview window docking), and
 then where you put it. The rules below still hold,
 tab for window: opening a file that already has a tab brings that tab forward,
 one tab per file, and no tab ever changes its file under you. A tab's header has
-the mode control and "Open in Window" for when a file deserves a window of its
+the mode control, "Open in <the file's app>" (at the selected line, else the
+top of the view; editing stays out of the preview, so this is the way to it)
+and "Open in Window" for when a file deserves a window of its
 own, and the tab can be dragged out of the main window to the same end: past
 the window's edge it turns into a small window that follows the pointer, and
 the preview window opens where it was let go. Dragged by its row back onto a
@@ -136,7 +138,7 @@ titlebar, no title, an empty compact toolbar for the height and the centred
 traffic lights, one behind-window material, and a 40pt row of Wortel's own
 (`PreviewWindowBar`) over the file as an opaque page. The row is the file tab's
 header laid into a titlebar: the file's icon and name, and the same Diff ·
-Source · Rendered switch. The system's proxy icon went with the title, so the
+Source · Rendered switch and Open in button. The system's proxy icon went with the title, so the
 row's first button does its job, drawn like every other control in the chrome
 (a 14pt glyph, the hover fill) rather than as the Finder's full-colour icon:
 click it for the folders above the file, picking one shows it in the Finder,

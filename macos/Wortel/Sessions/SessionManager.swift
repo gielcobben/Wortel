@@ -267,9 +267,13 @@ final class SessionManager {
     /// changed. The app layer uses this to refresh the source-control panel.
     @ObservationIgnored var onCommandFinished: ((Session) -> Void)?
 
-    /// A markdown file was clicked in a session's terminal (already resolved to
-    /// an absolute file URL). The app layer opens it in the right-hand preview.
-    @ObservationIgnored var onOpenMarkdown: ((URL) -> Void)?
+    /// A path ⌘-clicked in a session's terminal, resolved to something on disk
+    /// (`TerminalLink`). The app layer decides where it opens.
+    @ObservationIgnored var onOpenTerminalLink: ((TerminalLink.Target) -> Void)?
+    /// A server on this Mac ⌘-clicked in a session's terminal
+    /// (`http://localhost:3000`). The app layer opens it beside the terminal,
+    /// or in the browser if that's where servers go.
+    @ObservationIgnored var onOpenLocalServer: ((URL) -> Void)?
     /// A side terminal's shell exited (`exit`, or the program it was running
     /// ended the session). Its tab goes with it; the column model decides what
     /// takes its place. Set by AppDelegate.
@@ -5274,6 +5278,21 @@ final class SessionManager {
         store.saveNow(persistedSessions(vouching: true))
     }
 
+    /// A link ⌘-clicked in one of `session`'s terminals. A server on this Mac
+    /// goes to the app layer as it is. A path is tried relative to that
+    /// terminal's own folder first, then the session's, then where it was
+    /// born, then the repository each is in. A path that resolves nowhere is
+    /// dropped: there is nothing to open and nothing worth a dialog.
+    private func openLink(_ link: String, from view: SurfaceView, in session: Session) {
+        if let server = TerminalLink.localServer(link) {
+            onOpenLocalServer?(server)
+            return
+        }
+        let bases = TerminalLink.bases([view.reportedPwd, session.cwd, session.originCwd])
+        guard let target = TerminalLink.resolve(link, bases: bases) else { return }
+        onOpenTerminalLink?(target)
+    }
+
     // MARK: - Wiring
 
     private func wire(_ session: Session) {
@@ -5304,7 +5323,10 @@ final class SessionManager {
                 self.raiseAttention(session, kind: .needsInput, title: session.name, body: "Bell",
                                     source: "bell")
             }
-            view.onOpenMarkdown = { [weak self] url in self?.onOpenMarkdown?(url) }
+            view.onOpenLink = { [weak self, weak session, weak view] link in
+                guard let self, let session, let view else { return }
+                self.openLink(link, from: view, in: session)
+            }
         }
         session.onSurfaceCreated = { [weak self, weak session] view in
             guard let self, let session else { return }
@@ -5466,10 +5488,9 @@ final class SessionManager {
                 guard let self, let session, let view else { return }
                 self.shellEnded(view, in: session, tab: nil)
             }
-            // The runtime already resolved this to a local markdown file; just
-            // hand it up to the app layer, which opens the preview.
-            view.onOpenMarkdown = { [weak self] url in
-                self?.onOpenMarkdown?(url)
+            view.onOpenLink = { [weak self, weak session, weak view] link in
+                guard let self, let session, let view else { return }
+                self.openLink(link, from: view, in: session)
             }
         }
     }

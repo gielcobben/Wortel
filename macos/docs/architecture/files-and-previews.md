@@ -63,6 +63,44 @@ stays where it is. One opened into the column still takes the **whole** column
 tree there hides the tree until the preview is closed or the Files segment
 reclaims it, the same rule as clicking a `.md` path in the terminal.
 
+**A ⌘-clicked link in a terminal** (`Wortel/Ghostty/TerminalLink.swift`).
+libghostty finds the link and calls OPEN_URL. Two kinds are taken and handled
+on the main actor; everything else (web links, `mailto:`) is left to
+libghostty, which hands it to the system.
+
+- **A path or `file:` URL.** libghostty's own open ran `open` from the app's
+  working directory, `/`, so a relative path an agent printed
+  (`docs/decisions.md`) opened nothing. It is tried against the terminal's
+  last OSC 7 folder (`SurfaceView.reportedPwd`, a side terminal's own), the
+  session's `cwd`, its `originCwd`, then the repository root of each (a walk
+  up for `.git`, no git), and last one folder below each repository root (never
+`~` or `/`), when exactly one folder has it (an agent that went into `macos/` names `scripts/x.sh` from
+there, in a shell of its own that never reports a cwd). The regex keeps a sentence's full stop and a
+  location (`docs/decisions.md.`, `App.swift:42:7`, `README.md#L12`), so each
+  spelling is tried until one exists; `a/` and `b/` from a diff come off
+  last. **Every file opens in the preview**, never in its default app, so a
+  click can't run a `.command`; at the line, when there was one
+  (`PreviewDocument.reveal(line:)`: Diff gives way to Source, the row is
+  selected a third of the way down; Rendered lands on the line's block). A
+  folder goes to Finder, a package is only revealed. A path found nowhere is
+  dropped silently.
+- **A server on this Mac** (`localhost`, `127.x`, `[::1]`, `0.0.0.0`,
+  `*.localhost`) opens beside the terminal as the running-jobs popover's
+  servers do (`GitPanelModel.showInBrowser`: a tab on that server comes
+  forward), or in the browser when Settings says servers go there.
+
+**Open in the file's app** (`Wortel/Preview/ExternalEditor.swift`), the
+header button of a preview tab and window. No setting: the
+app is the file's default, and Wortel adds the line (the selected one, else
+the top of the view), each editor its own way: `vscode://` and `cursor://`
+URLs, Zed's and Sublime's bundled command with `path:line`, Xcode's `xed
+--line`. Others open the file without it. The button is there when the app is
+a known editor (`ExternalEditor.editors`), or the file is text, an image or a
+PDF and not a script: an allowlist, because a list of apps to avoid (a
+terminal, Python Launcher, the Installer) is only as good as the apps
+somebody thought of. A deleted row's line is
+taken from the row after it: the editor opens the file as it is now.
+
 **Previews** (`Wortel/Preview/`) — double-click a file (the tree, a Changes
 row, a file in a commit) or ⌘-click a path in the terminal and it opens as a
 **tab** (`SideTab.file`, `PreviewTabs`) in the main area (or wherever you

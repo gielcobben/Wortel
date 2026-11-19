@@ -28,6 +28,10 @@ struct MarkdownView: View {
     /// past that block's top the view is scrolled, so the mode you switch to
     /// can open there and a tab you come back to opens exactly there.
     var onTopLine: ((Int, CGFloat) -> Void)?
+    /// A line asked for while this view may already be on screen: the block
+    /// holding it goes to the top, once per request, then it is handed back.
+    var reveal: PreviewDocument.LineReveal?
+    var onRevealed: ((PreviewDocument.LineReveal) -> Void)?
     /// The file being rendered. A document's links are mostly relative to the
     /// directory it sits in, so without this there is nothing for `../CLAUDE.md`
     /// to be relative *to* and those links go nowhere (see `MarkdownLinkTarget`).
@@ -77,12 +81,17 @@ struct MarkdownView: View {
                 // README links to — arrives with no scheme and comes back as an
                 // error dialog. See `MarkdownLinkTarget`.
                 .environment(\.openURL, OpenURLAction { follow($0, with: proxy) })
-                .onAppear { scroll(to: anchorLine, with: proxy) }
+                .onAppear {
+                    scroll(to: anchorLine, with: proxy)
+                    show(reveal, with: proxy)
+                }
                 // The document arrives after the view does, so the anchor has to
                 // be applied again once there is something to scroll.
                 .onChange(of: blocks.count) { _, _ in
                     if !anchored { scroll(to: anchorLine, with: proxy) }
+                    show(reveal, with: proxy)
                 }
+                .onChange(of: reveal) { _, request in show(request, with: proxy) }
         }
     }
 
@@ -127,6 +136,20 @@ struct MarkdownView: View {
             return true
         case .heading, .none:
             return false
+        }
+    }
+
+    /// Bring the block holding a requested line to the top. Not before there
+    /// are blocks: the request stays with the document until then.
+    private func show(_ request: PreviewDocument.LineReveal?, with proxy: ScrollViewProxy) {
+        guard let request, !blocks.isEmpty,
+              let target = blocks.last(where: { $0.line <= request.line }) ?? blocks.first
+        else { return }
+        anchored = true
+        landing = nil
+        DispatchQueue.main.async {
+            proxy.scrollTo(target.id, anchor: .top)
+            onRevealed?(request)
         }
     }
 

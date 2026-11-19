@@ -30,7 +30,7 @@ A row that survives gets a dated line in `docs/decisions.md`.
 | --- | --- | --- |
 | New sessions start with | `AppSettings.newSessionCommand`, `sessions.newSessionCommand`, empty unless set | `SessionManager.makeSession`, through `SessionStart` |
 | Commit box in Source Control | `AppSettings.showsCommitBox`, `git.showsCommitBox`, on unless turned off | `SourceControlPanel` |
-| Open servers in default browser | `AppSettings.opensServersInDefaultBrowser`, `browser.opensServersInDefaultBrowser` | `RunningJobsPopover`, whose row menu has the same switch |
+| Open servers in default browser | `AppSettings.opensServersInDefaultBrowser`, `browser.opensServersInDefaultBrowser` | `RunningJobsPopover`, whose row menu has the same switch, and a ⌘-clicked `localhost` link (`AppDelegate`, `onOpenLocalServer`) |
 | Update automatically | Sparkle's own preferences, through `Updater.updatesAutomatically` and `setUpdatesAutomatically` | Sparkle |
 | Share anonymous usage data | `TelemetrySettings.isEnabledByUser`, through `Telemetry.setReporting` | `TelemetrySettings.isEnabled` |
 

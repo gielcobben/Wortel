@@ -471,6 +471,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   selection across blocks and lost everything else (`5681398`).
 - **2026-08-10. Remote images in Markdown are not fetched, and links go
   through a scheme allowlist** (`6717464`).
+- **2026-11-19. A ⌘-clicked path in a terminal is resolved by the app and
+  opens in the preview**, at its line: against the terminal's folder, the
+  session's, their repository roots and one folder below (only when a single
+  folder has it, never a guess between two), with sentence punctuation and
+  `:line` taken off. Relative paths from agents opened nothing before, and
+  any other file went to its default app, where a click could run a script.
+  A `localhost` address opens in a tab beside the terminal unless servers
+  go to the browser (Settings). "Open in" a file's editor uses its default
+  app, so there is no editor setting. Tried and dropped the same day: a menu
+  on a right-clicked link. libghostty finds links only for ⌘-click, so the
+  app had to read the cell under the pointer itself, the menu didn't appear
+  when tried, and ⌘-click plus the editor button already cover it.
 - **2026-11-09. A page or a document never opens another app without a yes**
   (`fd2d45c`).
 - **2026-09-29. Files and browsers are tabs.** The Markdown preview moved from

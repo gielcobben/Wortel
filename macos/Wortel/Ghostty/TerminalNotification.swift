@@ -19,7 +19,19 @@ struct TerminalNotification: Equatable {
 /// requested: npm test" a second apart, one arrival.
 struct TerminalNotificationReader {
     /// Kitty notifications arrive in chunks keyed by id until one says done.
+    /// Bounded both ways (`maximumParts`, `maximumPartLength`): whatever runs
+    /// in a terminal can send chunks that never say done, and an unbounded
+    /// store would let it grow Wortel's memory for as long as it liked.
     private var kittyParts: [String: (title: String, body: String)] = [:]
+    /// The ids being put together, oldest first, for evicting.
+    private var kittyOrder: [String] = []
+
+    /// How many kitty notifications may be half-built at once. Past it, the
+    /// one started longest ago is dropped.
+    static let maximumParts = 8
+    /// How long one may grow, title and body together: libghostty's limit
+    /// on a whole notification. One that outgrows it is dropped.
+    static let maximumPartLength = 2048
 
     /// The notification an OSC `number` with `text` after it comes to. nil
     /// when it is something else (OSC 9 is also ConEmu's, whose subcommands
@@ -64,11 +76,19 @@ struct TerminalNotificationReader {
         case "body": parts.body += payload
         default: return nil // icons, buttons, queries: nothing to show
         }
+        forget(id)
+        guard parts.title.utf8.count + parts.body.utf8.count <= Self.maximumPartLength else { return nil }
         if fields["d"] == "0" {
             kittyParts[id] = parts
+            kittyOrder.append(id)
+            if kittyOrder.count > Self.maximumParts { forget(kittyOrder[0]) }
             return nil
         }
-        kittyParts[id] = nil
         return TerminalNotification(title: parts.title, body: parts.body)
+    }
+
+    private mutating func forget(_ id: String) {
+        kittyParts[id] = nil
+        kittyOrder.removeAll { $0 == id }
     }
 }

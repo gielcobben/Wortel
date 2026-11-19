@@ -354,6 +354,23 @@ final class ProgramStatusTests: XCTestCase {
              .notification(TerminalNotification(title: "", body: "Approval requested: ls"))])
     }
 
+    /// Chunks that never say done cannot grow without end: one notification
+    /// is dropped once it outgrows libghostty's limit, and past eight at once
+    /// the oldest goes.
+    func testKittyChunksAreBounded() {
+        var reader = TerminalNotificationReader()
+        let chunk = String(repeating: "a", count: 1000)
+        XCTAssertNil(reader.read(number: 99, text: "i=1:d=0;\(chunk)"))
+        XCTAssertNil(reader.read(number: 99, text: "i=1:d=0;\(chunk)"))
+        XCTAssertNil(reader.read(number: 99, text: "i=1:d=0;\(chunk)"), "past 2048 bytes")
+        XCTAssertEqual(reader.read(number: 99, text: "i=1;end"), TerminalNotification(title: "end", body: ""),
+                       "the outgrown one was dropped, not kept")
+        for id in 0..<9 { XCTAssertNil(reader.read(number: 99, text: "i=\(id):d=0;part \(id)")) }
+        XCTAssertEqual(reader.read(number: 99, text: "i=0;!"), TerminalNotification(title: "!", body: ""),
+                       "the oldest was evicted")
+        XCTAssertEqual(reader.read(number: 99, text: "i=8;!"), TerminalNotification(title: "part 8!", body: ""))
+    }
+
     /// A notification longer than libghostty would take is dropped whole.
     func testAnOversizedNotificationIsDropped() {
         let long = String(repeating: "a", count: 2049)

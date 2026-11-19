@@ -26,6 +26,9 @@ final class MainAreaController: NSViewController {
         self.git = git
         paneHost = NSHostingController(rootView: MainAreaPane(git: git, files: files,
                                                               previewTabs: previewTabs))
+        // No safe area to follow, so none worked out at every move: see
+        // `SideColumnController`.
+        paneHost.safeAreaRegions = []
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }

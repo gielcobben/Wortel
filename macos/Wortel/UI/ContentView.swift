@@ -1682,6 +1682,8 @@ final class TerminalPaneController: NSViewController {
         // The pages size themselves to nothing in particular: this view's
         // size is the pane's, not theirs to have a say in.
         pages.sizingOptions = []
+        // And no safe area to follow: see `SideColumnController`'s page.
+        pages.safeAreaRegions = []
         for filling in [host.view, pages] as [NSView] {
             filling.frame = root.bounds
             filling.autoresizingMask = [.width, .height]

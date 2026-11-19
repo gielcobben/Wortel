@@ -29,8 +29,9 @@
 # a size that is not its view's.
 #
 # The last columns: steps that began on a frame of an older size, steps where
-# the terminal's view had not been resized with the window, and SIGWINCHes
-# against the times the grid had really changed.
+# the terminal's view had not been resized with the window, steps of a window
+# round in which the pane beside the terminal changed width (it should only
+# move), and SIGWINCHes against the times the grid had really changed.
 set -u
 
 app="" keep=0 column=0 file=0 panes=0 runs=3 modes=(now)
@@ -157,7 +158,7 @@ def cell(label, r):
     return f" | {label}: mean {r['meanMs']:5.2f} p95 {r['p95Ms']:5.2f} over {r['overBudget']:3d}/{r['steps']}"
 print(f"run {sys.argv[3]} {result.get('mode',''):6s}" + cell("width", result["widthOnly"])
       + cell("width+height", result["widthAndHeight"]) + cell("divider", result.get("divider"))
-      + f" | stale {result.get('staleFrames','?')} late {result.get('lateTerminal','?')} winch {len(signals)}/{grids}")
+      + f" | stale {result.get('staleFrames','?')} late {result.get('lateTerminal','?')} beside {result.get('besideResized','?')} winch {len(signals)}/{grids}")
 EOF
  done
 done

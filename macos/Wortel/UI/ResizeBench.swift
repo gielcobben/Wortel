@@ -75,11 +75,13 @@ enum ResizeBench {
                 .max(by: { $0.frame.width < $1.frame.width })
         else { return }
         let original = window.frame
-        // Room for the terminal to give up `reach` steps and stay a terminal:
-        // squeezed to nothing, its pane stops shrinking and the one beside
-        // it folds away, and the round measures that instead.
+        // Room for the terminal to give up `reach` steps and still be wider
+        // than the least the side column leaves it (320 points,
+        // `ColumnWidth.terminalMinimum`): below that it is the column that
+        // gives, and the round measures the column's panel being laid out at
+        // every step instead of a window following the pointer.
         if let terminal = shownTerminal(in: window.contentView) {
-            let short = stepWidth * CGFloat(reach) + 240 - terminal.frame.width
+            let short = stepWidth * CGFloat(reach) + 360 - terminal.frame.width
             if short > 0 {
                 var wider = original
                 wider.size.width += short
@@ -98,6 +100,9 @@ enum ResizeBench {
         // older size: the one for the step before had not landed.
         var stale = 0
         var late = 0
+        // Steps of the two window rounds in which the pane beside the
+        // terminal changed its width: it should only move.
+        var besideResized = 0
         let terminal = shownTerminal(in: window.contentView)
         // A third round when there is a pane beside the terminal: the
         // divider between the two, dragged. The window keeps its size and
@@ -159,6 +164,7 @@ enum ResizeBench {
                     write(["widthOnly": summary(widthOnly), "widthAndHeight": summary(both),
                            "divider": summary(divider),
                            "budgetMs": interval * 1000, "staleFrames": stale, "lateTerminal": late,
+                           "besideResized": besideResized,
                            "mode": SurfaceView.frameOnEveryResize ? "before" : "now"], to: path)
                     return
                 }
@@ -167,6 +173,8 @@ enum ResizeBench {
                 let within = step % (reach * 2)
                 let distance = CGFloat(within < reach ? within + 1 : reach * 2 - within - 1)
                 let before = terminal?.frame.size
+                let beside = split.map { $0.view.arrangedSubviews[$0.divider + ($0.towardsTerminal > 0 ? 1 : 0)] }
+                let besideBefore = beside?.frame.width
                 if phase == 2, let split {
                     // Towards the terminal: the pane beside it grows.
                     // A third as far, three times: the pane has a widest.
@@ -190,6 +198,9 @@ enum ResizeBench {
                 // The terminal's own view had not taken its new size by the
                 // time the window's frame was committed.
                 if terminal?.frame.size == before { late += 1 }
+                if phase < 2, let besideBefore, let now = beside?.frame.width, abs(now - besideBefore) > 0.01 {
+                    besideResized += 1
+                }
                 step += 1
             }
         }

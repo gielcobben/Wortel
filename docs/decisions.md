@@ -207,6 +207,25 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   pane to no height: the page's hosting view was pinned to the column, and
   with a terminal in front the page is empty and asked for none. A hosting
   view that fills a pane takes `sizingOptions = []`.
+- **2026-11-19. A pane's SwiftUI page follows no safe area.** With the side
+  column open, a plain window resize cost 8.7 ms a step and with it shut
+  5.2, though the column's width was not changing (counted: 0 of 480
+  steps). A hosting view works out its safe area again whenever it moves in
+  the window and lays its whole content out for the answer, so the
+  source-control panel was laid out at every step for having been moved
+  three points. The answer was always nothing: read from a running copy,
+  every pane's page has insets of 0 on all four sides, because each sits
+  below its own row. So the four of them (the column's, the main area's,
+  the strip's, the pages over the terminal) take `safeAreaRegions = []`.
+  Same benchmark, old and new frame rule turn about: 8.7 to 5.4 ms a step
+  with the column open, and from about 110 steps in 240 over 8.3 ms to
+  about 8. A capture of the copy's window before and after is the same to
+  the pixel but for a status dot in the sidebar's footer. The sidebar's own
+  hosting views are left as they are: it runs under the title bar.
+  **Before that was found** the benchmark was squeezing the terminal below
+  the 320 points the column leaves it, so for 52 steps of a round it was
+  the column that gave, and the figure was partly the panel's layout; it
+  now leaves the terminal room.
 - **2026-11-19. A woken terminal is written into only once it has its
   size.** A new surface is 45 columns by 15 rows, libghostty's own, whatever
   it is told as it is made: libghostty gathers resizes for 25 ms and takes

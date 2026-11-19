@@ -41,7 +41,25 @@ enum SwitchProbe {
         // "report": where the terminal in front is now, and who has the
         // keyboard, with nothing switched.
         if parts.contains("report") {
-            if let data = try? JSONSerialization.data(withJSONObject: state(of: home).json, options: [.sortedKeys]) {
+            var report = state(of: home).json
+            // Every SwiftUI hosting view in the window, where it is and the
+            // safe area it is given: one with none to keep clear of can stop
+            // following it (`safeAreaRegions = []`) and nothing moves.
+            var hosts: [String] = []
+            func visit(_ view: NSView) {
+                let name = String(describing: type(of: view))
+                if name.contains("NSHostingView") || name.contains("PagesView") {
+                    let insets = view.safeAreaInsets
+                    let frame = view.convert(view.bounds, to: nil)
+                    hosts.append("\(name.prefix(44)) at \(Int(frame.minX)),\(Int(frame.minY)) \(Int(frame.width))x\(Int(frame.height))"
+                        + " insets t\(Int(insets.top)) l\(Int(insets.left)) b\(Int(insets.bottom)) r\(Int(insets.right))"
+                        + (view.isHiddenOrHasHiddenAncestor ? " hidden" : ""))
+                }
+                view.subviews.forEach(visit)
+            }
+            home.surfaceView?.window?.contentView.map(visit)
+            report["hosts"] = hosts
+            if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) {
                 try? data.write(to: URL(fileURLWithPath: path))
             }
             return

@@ -73,9 +73,13 @@ column. It prints what a step cost the main thread and how many steps took
 longer than the 8.3 ms a frame lasts. `--compare` runs each round twice in
 the same app, with libghostty's frame at every step and with Wortel's rule,
 because two runs minutes apart differ by more than most changes do. On
-2026-11-19 (Debug, a 120 Hz built-in display): 3.8 ms a step with the column
-shut, 7.5 ms with it open, 6.6 ms on the divider. With the column open most
-of a step is SwiftUI in the column's panel, not the terminal.
+2026-11-19 (Debug, a 120 Hz built-in display, the screen unlocked): 5.2 ms a
+step with the column shut, 5.4 ms with it open, 4.9 ms on the divider, and 1
+to 5 steps in 100 over 8.3 ms. That morning the three were 7.4, 10.4 and
+12.7 ms, with up to 9 steps in 10 over. `--panes`: a pane sliding open or
+shut has 1 or 2 turns of the run loop over 8.3 ms, where it had 7 to 15.
+Numbers taken behind a lock screen come out about a fifth lower; don't
+compare across the two.
 
 `./scripts/try-switch.sh` is the same idea for a session switch: 72 returns
 to a session with the side column open, at six paces, and where its terminal

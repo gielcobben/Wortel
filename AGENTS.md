@@ -135,6 +135,7 @@ Procedures live in `.agents/skills/` (Claude Code reads the same files through
 | `test-copy` | A throwaway copy of the app, for a test of your own |
 | `release` | Cutting and publishing a release |
 | `release-note` | Writing the changelog entry for a version |
+| `sync-visuals` | Bringing the design canvas and the site's app windows up to date with the app |
 
 ## Distribution & Cloudflare
 

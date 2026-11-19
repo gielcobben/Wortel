@@ -61,7 +61,8 @@ public/
   app/                     glyphs and images the generated panes use
   img/*.jpg                the four photos the windows stand on (see Photos)
   icon-*.png, favicon-*    the app icon, exported from macos/Wortel/AppIcon.icon
-scripts/opmaak/            jsx2astro.mjs: canvas markup -> src/app/gen
+scripts/opmaak/            regen.sh: the canvas -> src/app/gen (through jsx2astro.mjs);
+                           drift.sh and synced: how far the app is ahead of the canvas
 scripts/og/                render.mjs: the inner pages' social cards -> public/og
 ```
 
@@ -72,11 +73,15 @@ Every window on the site is built from the Opmaak canvas "Wortel"
 app's measured tokens. To pick up a change made on the canvas:
 
 ```sh
-OPMAAK_CANVAS=2v3opz6osv opmaak tree "Pane · Changes · Dark" > /tmp/changes.jsx
-node scripts/opmaak/jsx2astro.mjs /tmp/changes.jsx src/app/gen/Changes.astro \
-  --select "Changes pane" --assets /tmp/ids.txt
-# then fetch any new ids into public/app/<id>.png from https://opmaak.dev/a/<id>
+scripts/opmaak/regen.sh --check    # what differs, changing nothing
+scripts/opmaak/regen.sh            # write src/app/gen, fetch new images into public/app
 ```
+
+The table at the top of that script is the whole mapping: which frame and which
+layer each file in src/app/gen comes from. It needs the `opmaak` command,
+signed in. A new pane is a new row there. The canvas itself is drawn by hand
+from the app; `scripts/opmaak/drift.sh` says how far the app has moved since,
+and the `sync-visuals` skill (`../.agents/skills/`) is how it is caught up.
 
 The hero window is the `Window` of the "Foggy Lake" frame. Don't hand-edit
 files in src/app/gen; scripts can find nodes by their `data-name`. The canvas
@@ -160,7 +165,9 @@ Rules for motion, so a new piece moves like the rest:
   the older layout, where the box follows the last line.
 - `wholeRows()` hides terminal and sidebar rows that do not fit, so a window
   never shows half a row. Call it on any window whose height is not the
-  canvas's.
+  canvas's. A sidebar is cut from the end but keeps the selected row and its
+  header (the sessions in no folder come last, so the one a window shows is
+  often there), and its section gaps are worked out again for what is left.
 - Traffic lights are drawn in CSS as true 14pt circles in the captures'
   colours, so they are crisp at 1x, 2x and 3x.
 - Headings step in size with whole-pixel line-heights, so every window sits on

@@ -854,3 +854,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (`1c68eca`, `3d2a7e3`, `bdbabd3`).
 - **The app on the site is 1:1 and generated from the canvas.** Never scaled,
   never hand-edited.
+- **2026-11-19. The canvas is brought level in batches, not at every
+  release.** Redrawing it from the app is hours of capturing and comparing,
+  and releases go out several times a week, so a standing step would be
+  skipped or done badly. A marker names the commit the canvas shows, the
+  release skill reports how many drawing commits have landed since, and the
+  `sync-visuals` skill does the work. That day the site matched the canvas
+  byte for byte and the canvas was 52 such commits behind the app.

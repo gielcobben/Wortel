@@ -437,7 +437,7 @@ final class SessionManager {
     }
 
     /// How each section sorts (Sort By in its "…" menu), by folder name, ""
-    /// for Sessions. Only the sections not on Recent Activity have an entry:
+    /// for Sessions. Only the sections not on Recent have an entry:
     /// that is the default, for every section that existed before there was
     /// a choice too. View state, kept beside the folds. Pinned has none: it
     /// is arranged by hand.
@@ -1839,8 +1839,8 @@ final class SessionManager {
         session.createdAt = Date()
         prepare?(session)
         // Where it goes in the stored order, which is what a Manual section
-        // draws (a sorted one puts it by its sort: on top, for Recent
-        // Activity and Date Created). At the top level, on top: a list nobody
+        // draws (a sorted one puts it by its sort: on top, for Recent and
+        // Created). At the top level, on top: a list nobody
         // arranges then reads newest first, as a list of chats does. In a folder, right after the selected
         // row when that row is in the same folder, otherwise at the folder's
         // end: a folder is arranged by hand, and the new row belongs beside
@@ -5362,7 +5362,7 @@ final class SessionManager {
             }
             // A script's `wortel send` repaints too, but it is not you back
             // at the keyboard: an attention raised while you were away stays.
-            // A Return of yours: the sidebar's Recent Activity. Saved, so
+            // A Return of yours: the sidebar's Recent. Saved, so
             // the order survives a relaunch; the save is debounced.
             view.onSubmit = { [weak self, weak session] in
                 guard let self, let session else { return }

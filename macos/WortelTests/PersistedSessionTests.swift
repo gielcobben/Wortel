@@ -89,7 +89,7 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertNil(try decode(#"{"id":"\#(UUID())"}"#).lastTypedAt)
     }
 
-    /// The sidebar's Date Created and Recent Activity orders read these, and
+    /// The sidebar's Created and Recent orders read these, and
     /// an update relaunches the app: the order must come back as it was.
     func testWhenTheSessionWasMadeAndLastSentSurviveTheFile() throws {
         let made = Date(timeIntervalSince1970: 1_795_000_000)

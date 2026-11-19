@@ -10,7 +10,7 @@ import Foundation
 /// saving and `normalizeOrder` never see a sorted list. Sort Unread First, when
 /// it's on, puts its unread band over the order this returns (`SidebarSort`).
 ///
-/// Recent Activity is the default and means **you pressed Return in it**
+/// Recent is the default and means **you pressed Return in it**
 /// (`Session.lastSentAt`), or it was made: what moves a chat up in a list of
 /// chats. Not the agent working, which would move rows while you aim at them
 /// (the "Needs You" section was dropped for that, `docs/decisions.md`).
@@ -21,8 +21,8 @@ enum SectionSort {
         /// As the Sort By menu says it.
         var title: String {
             switch self {
-            case .recent: "Recent Activity"
-            case .created: "Date Created"
+            case .recent: "Recent"
+            case .created: "Created"
             case .name: "Name"
             case .manual: "Manual"
             }

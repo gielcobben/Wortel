@@ -65,10 +65,10 @@ folders, then Sessions (the folderless ones, under their own header), as a
 list of chats sits under its projects. In the outline Sessions' rows are root
 rows after its header, not its children, and every root index (a row, a drop,
 the insertion line, a fold's slide) goes through `SidebarRoot`. Each section
-but Pinned has a **Sort By** in its "…" (`SectionSortMenu`): Recent Activity,
-the default, Date Created, Name, or Manual. It is stored per folder name, ""
+but Pinned has a **Sort By** in its "…" (`SectionSortMenu`): Recent,
+the default, Created, Name, or Manual. It is stored per folder name, ""
 for Sessions, only when it isn't the default (`SessionManager.sectionSorts`,
-UserDefaults, carried over a folder rename). Recent Activity is
+UserDefaults, carried over a folder rename). Recent is
 `Session.lastSentAt`, set by `SurfaceView.onSubmit` on a Return of the user's
 own, else `createdAt`; both are saved with the session. Like Sort Unread
 First, a section's sort is a view over the stored order: `SidebarPane` hands

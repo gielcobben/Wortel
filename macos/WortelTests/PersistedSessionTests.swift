@@ -89,6 +89,23 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertNil(try decode(#"{"id":"\#(UUID())"}"#).lastTypedAt)
     }
 
+    /// The sidebar's Created and Recent orders read these, and
+    /// an update relaunches the app: the order must come back as it was.
+    func testWhenTheSessionWasMadeAndLastSentSurviveTheFile() throws {
+        let made = Date(timeIntervalSince1970: 1_795_000_000)
+        let sent = Date(timeIntervalSince1970: 1_795_000_600)
+        let original = PersistedSession(
+            id: UUID(), name: "fix login", title: "shell", cwd: "/tmp", selected: false, nameSource: "user",
+            gitPanelVisible: nil, createdAt: made, lastSentAt: sent)
+        let data = try JSONEncoder().encode([original])
+        let decoded = try XCTUnwrap(try JSONDecoder().decode([PersistedSession].self, from: data).first)
+        XCTAssertEqual(decoded.createdAt, made)
+        XCTAssertEqual(decoded.lastSentAt, sent)
+        let old = try decode(#"{"id":"\#(UUID())"}"#)
+        XCTAssertNil(old.createdAt, "a file from before reads as unknown, not as now")
+        XCTAssertNil(old.lastSentAt)
+    }
+
     // MARK: - Port block
 
     /// A file from before port blocks has none, and must read as none rather

@@ -26,7 +26,7 @@ final class AttentionStatusItem: NSObject, NSMenuDelegate {
 
     /// Waiting sessions, loudest first, then in sidebar order.
     private var waiting: [Session] {
-        manager.sessions.enumerated()
+        manager.sessionsInSidebarOrder.enumerated()
             .filter { $0.element.attention != nil }
             .sorted { a, b in
                 let pa = a.element.attention?.priority ?? 0, pb = b.element.attention?.priority ?? 0

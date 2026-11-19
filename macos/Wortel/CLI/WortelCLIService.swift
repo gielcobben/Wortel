@@ -357,11 +357,12 @@ final class WortelCLIService {
         }
     }
 
-    /// `wortel list`: every open session in sidebar order, pinned first.
+    /// `wortel list`: every open session in sidebar order: pinned, the folders, then
+    /// the sessions in no folder, each section by its Sort By.
     private func list(caller: String?) -> WortelResponse {
         let you = caller.flatMap(UUID.init(uuidString:)).flatMap(manager.session(id:))
         let selected = manager.selected
-        let sessions = manager.sidebarGroups.flatMap(\.sessions).map { session in
+        let sessions = manager.sessionsInSidebarOrder.map { session in
             WortelSessionInfo(
                 id: session.id.uuidString, name: session.name, folder: session.folderPath,
                 directory: session.cwd ?? session.originCwd,

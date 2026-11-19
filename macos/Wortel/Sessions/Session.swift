@@ -194,6 +194,15 @@ final class Session: Identifiable {
     /// When this session's reminder is due (Remind Me, `wortel remind`), or
     /// nil. Saved; the manager keeps one timer for the earliest of them.
     var remindAt: Date?
+    /// When this session was made. Saved; nil for one saved before it was
+    /// kept. The sidebar's Created order, and Recent's until
+    /// the first Return (`SectionSort`).
+    var createdAt: Date?
+    /// When you last pressed Return in it (`SurfaceView.onSubmit`). Saved.
+    /// The sidebar's Recent order. Your keys only: an agent's
+    /// output, a click, a scroll or `wortel send` never move it, so a row
+    /// moves when you did something there and not while an agent works.
+    var lastSentAt: Date?
     /// Convenience for the count-based Dock badge and close bookkeeping.
     var needsAttention: Bool { attention != nil }
     /// A foreground command is currently running in this session. Debounced by

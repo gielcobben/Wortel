@@ -217,6 +217,33 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   ⌘N, do the thing, ⌘W still lands where it started, by a rule of its own:
   closing a session you just made and never left selects the one it was made
   from, as a browser tab does. Otherwise the row above, as before.
+- **2026-11-19. The folders come before the sessions in no folder.** Pinned,
+  then the folders, then Sessions, as ChatGPT, Claude and Codex put projects
+  above the loose chats. Someone who never files a session sees no change;
+  someone with many open folders folds them to reach the loose list. With no
+  folderless session yet, a session is taken out of its folder by a drop in
+  the empty space under the list, or, since that space is gone once the list
+  overflows, at the top: the gap under Pinned's last row, or the top edge of
+  the first folder's header (found in review the same day, after the top
+  zones had been taken out with the section above them).
+- **2026-11-19. Each section sorts itself, Recent unless you say
+  otherwise.** Sort By in a folder's "…", and in the Sessions header's:
+  Recent, Created, Name, Manual (one word each, as the
+  submenu of Sort By needs no more; "Recent Activity" and "Date Created"
+  were tried first). Every section starts on
+  Recent, the ones that existed too; Manual is the order you dragged, kept
+  underneath all along, so it comes back exactly. Pinned stays by hand.
+  **Activity is a Return of yours** (or the session being made): not a click,
+  not a scroll, not `wortel send`, and not the agent working, because rows
+  that move while you aim at them is what the "Needs You" section was
+  dropped for. A sorted order still waits while the pointer is on a row.
+  **A drop into a sorted section goes into it**, as in a sorted Finder
+  window: its header lights up, there is no line between rows, and the
+  session takes its sorted place. A place in a list only exists in Manual.
+  This narrows 2026-11-18's "goes on top" to Manual sections; in a sorted one
+  a new session is on top by Recent or Created anyway. Sort
+  Unread First still puts its band over whichever order a section has. The
+  choice is view state, like a fold, not a setting.
 
 ## Sessions
 

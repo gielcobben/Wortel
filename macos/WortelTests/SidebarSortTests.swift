@@ -146,4 +146,47 @@ final class SidebarSortTests: XCTestCase {
         let thawed = SidebarSort.order(manual: [a, b, c], keys: [:], previous: frozen, holding: c, frozen: false)
         XCTAssertEqual(thawed, [c, a, b])
     }
+
+    // MARK: - A section's own order beneath the band
+
+    func testTheBandSitsOverTheSectionsOwnOrder() {
+        let drawn = SidebarSort.draw(manual: [a, b, c, d], base: [d, c, b, a], keys: [b: key(.finished, 0)],
+                                     previous: nil, holding: nil, frozen: false)
+        XCTAssertEqual(drawn.drawn, [b, d, c, a])
+    }
+
+    func testWithNoBandTheSectionsOwnOrderIsDrawn() {
+        let drawn = SidebarSort.draw(manual: [a, b, c], base: [c, a, b], keys: [:],
+                                     previous: nil, holding: nil, frozen: false)
+        XCTAssertEqual(drawn.drawn, [c, a, b])
+    }
+
+    /// A Return in another session moved it up while the pointer rests on a
+    /// row: nothing slides under the pointer, and it catches up after.
+    func testASectionsOwnOrderWaitsWhileAClickMayBeComing() {
+        let before = SidebarSort.draw(manual: [a, b, c], base: [a, b, c], keys: [:],
+                                      previous: nil, holding: b, frozen: false)
+        let held = SidebarSort.draw(manual: [a, b, c], base: [c, a, b], keys: [:],
+                                    previous: before, holding: b, frozen: true)
+        XCTAssertEqual(held.drawn, [a, b, c])
+        let thawed = SidebarSort.order(manual: [a, b, c], base: [c, a, b], keys: [:],
+                                       previous: held, holding: b, frozen: false)
+        XCTAssertEqual(thawed, [c, a, b])
+    }
+
+    /// The selected row isn't held in its own order: a Return in it moves it
+    /// to the top, as sending a message moves a chat up.
+    func testTheSelectedRowFollowsItsSectionsOwnOrder() {
+        let before = SidebarSort.draw(manual: [a, b, c], base: [a, b, c], keys: [:],
+                                      previous: nil, holding: c, frozen: false)
+        let after = SidebarSort.order(manual: [a, b, c], base: [c, a, b], keys: [:],
+                                      previous: before, holding: c, frozen: false)
+        XCTAssertEqual(after, [c, a, b])
+    }
+
+    func testADragInAManualSectionIsDrawnAtOnceEvenFrozen() {
+        let before = SidebarSort.draw(manual: [a, b, c], keys: [:], previous: nil, holding: nil, frozen: false)
+        let after = SidebarSort.draw(manual: [c, a, b], keys: [:], previous: before, holding: nil, frozen: true)
+        XCTAssertEqual(after.drawn, [c, a, b])
+    }
 }

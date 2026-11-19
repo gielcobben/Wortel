@@ -436,6 +436,55 @@ final class SessionManager {
         if looseCollapsed != collapsed { looseCollapsed = collapsed }
     }
 
+    /// How each section sorts (Sort By in its "…" menu), by folder name, ""
+    /// for Sessions. Only the sections not on Recent have an entry:
+    /// that is the default, for every section that existed before there was
+    /// a choice too. View state, kept beside the folds. Pinned has none: it
+    /// is arranged by hand.
+    private(set) var sectionSorts: [String: SectionSort.Mode] = [:] {
+        didSet {
+            UserDefaults.standard.set(sectionSorts.mapValues(\.rawValue), forKey: Self.sectionSortsKey)
+        }
+    }
+    @ObservationIgnored private static let sectionSortsKey = "WortelSectionSort"
+
+    /// How the section of `folder` (nil: Sessions) sorts.
+    func sectionSort(ofFolder folder: String?) -> SectionSort.Mode {
+        sectionSorts[folder ?? ""] ?? .recent
+    }
+
+    func setSectionSort(_ mode: SectionSort.Mode, ofFolder folder: String?) {
+        let value: SectionSort.Mode? = mode == .recent ? nil : mode
+        if sectionSorts[folder ?? ""] != value { sectionSorts[folder ?? ""] = value }
+    }
+
+    /// Every session in the order the sidebar has them: Pinned, the folders,
+    /// Sessions, each section by its Sort By. Folded sections included, and
+    /// without Sort Unread First's band, which only moves rows while it's on.
+    /// For what walks "the sidebar" without drawing it: `wortel list`, the
+    /// jump to the next waiting session, the menu bar's list.
+    var sessionsInSidebarOrder: [Session] {
+        sidebarGroups.flatMap { group -> [Session] in
+            guard let order = sortedOrder(of: group) else { return group.sessions }
+            let byID = Dictionary(group.sessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            return order.compactMap { byID[$0] }
+        }
+    }
+
+    /// The order `group` is drawn in by its Sort By choice, beneath Sort
+    /// Unread First; nil for Pinned and a Manual section, which are drawn as
+    /// stored. Reads each row's times and name, so a Return in a sorted
+    /// section redraws the sidebar, and nothing else's does.
+    func sortedOrder(of group: SidebarGroup) -> [UUID]? {
+        guard !group.isPinned else { return nil }
+        let mode = sectionSort(ofFolder: group.folder)
+        guard mode != .manual else { return nil }
+        let facts = Dictionary(group.sessions.map {
+            ($0.id, SectionSort.Facts(created: $0.createdAt, sent: $0.lastSentAt, name: $0.leafName))
+        }, uniquingKeysWith: { first, _ in first })
+        return SectionSort.order(group.sessions.map(\.id), mode: mode, facts: facts)
+    }
+
     /// Unfold whichever section a session is drawn in now (Pinned, its folder,
     /// or Sessions), so it has a row: after it was selected, pinned, unpinned,
     /// or renamed into another place.
@@ -531,6 +580,8 @@ final class SessionManager {
         collapsedFolders = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedFoldersKey) ?? [])
         pinnedCollapsed = UserDefaults.standard.bool(forKey: Self.pinnedCollapsedKey)
         looseCollapsed = UserDefaults.standard.bool(forKey: Self.looseCollapsedKey)
+        sectionSorts = (UserDefaults.standard.dictionary(forKey: Self.sectionSortsKey) as? [String: String] ?? [:])
+            .compactMapValues(SectionSort.Mode.init(rawValue:))
         declaredFolders = UserDefaults.standard.stringArray(forKey: Self.declaredFoldersKey) ?? []
         folderOrder = UserDefaults.standard.stringArray(forKey: Self.folderOrderKey) ?? []
         folderRoots = UserDefaults.standard.dictionary(forKey: Self.folderRootsKey)
@@ -546,8 +597,8 @@ final class SessionManager {
 
     // MARK: - Sidebar folders (derived from session names)
 
-    /// The sidebar's rows, grouped into folders. A `nil` folder is the top-level
-    /// (headerless) group, always pinned to the root. Folder sections follow the
+    /// The sidebar's rows, grouped into folders: Pinned, the folders, then the
+    /// top level (`nil` folder, under its "Sessions" header). Folder sections follow the
     /// user's `folderOrder`; any folder not yet tracked there falls back to
     /// first-appearance (populated) / declaration (empty) order so nothing is
     /// ever dropped. Sessions keep their array order within a group. Purely a
@@ -666,6 +717,10 @@ final class SessionManager {
     func renameFolder(_ folder: String, to newName: String) {
         guard let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
               trimmed != folder else { return }
+        // Its sort goes with it, as its fold does. Onto a folder that is
+        // there already is a merge, and the destination keeps its own.
+        let merging = folderOrder.contains(trimmed)
+        if let sort = sectionSorts.removeValue(forKey: folder), !merging { sectionSorts[trimmed] = sort }
         for session in sessions where session.folderPath == folder {
             session.name = "\(trimmed)/\(session.leafName)"
         }
@@ -714,6 +769,7 @@ final class SessionManager {
         if released { setLooseCollapsed(false) }
         declaredFolders.removeAll { $0 == folder }
         collapsedFolders.remove(folder)
+        sectionSorts.removeValue(forKey: folder)
         folderRoots.removeValue(forKey: folder)
         normalizeOrder()
         scheduleSave()
@@ -830,6 +886,7 @@ final class SessionManager {
         for entry in persisted {
             appendRestored(restoredSession(from: entry, marker: resume[entry.id], table: { table }))
         }
+        renameOldHomePlaceholders()
         syncFolderOrder() // seed/prune the persisted folder order for the restored set
         adoptFolderRoots() // give folders that predate directories one, from where they already are
         assignPortBlocks() // before any surface: the first shell is spawned with its ports
@@ -865,6 +922,10 @@ final class SessionManager {
         session.colour = entry.colour.flatMap(SessionColour.init(rawValue:))
         // One already past is due now: `syncReminders` fires it once launch is done.
         session.remindAt = entry.remindAt
+        session.createdAt = entry.createdAt
+        // Saved before Returns were kept: when keys last went in is the
+        // nearest thing, read once here so a click later never moves it.
+        session.lastSentAt = entry.lastSentAt ?? entry.lastTypedAt
         if let typed = entry.lastTypedAt { lastTypedAt[session.id] = typed }
         // An earlier build named these "<folder>/<branch>" with the branch
         // whole, which read back as a folder of their own. The rename that
@@ -1776,7 +1837,7 @@ final class SessionManager {
         // forever. The directory is known at creation and is nearly always the
         // answer you'd have typed. Auto-naming still overrides it later: a
         // directory name isn't user-set.
-        let leaf = uniqueLeaf(Self.defaultTitle(forCwd: directory), in: dir)
+        let leaf = uniqueLeaf(Self.defaultName(forCwd: directory), in: dir)
         let session = Session(name: dir.map { "\($0)/\(leaf)" } ?? leaf, cwd: directory)
         session.title = Self.defaultTitle(forCwd: session.cwd)
         noteCheckout(session)
@@ -1789,9 +1850,12 @@ final class SessionManager {
         // was waiting for arrived too late to move it.
         session.startupInput = start.input(preferred: preferred)
         session.startedWithSettingsCommand = usesCommand
+        session.createdAt = Date()
         prepare?(session)
-        // At the top level, on top: a list nobody arranges then reads newest
-        // first, as a list of chats does. In a folder, right after the selected
+        // Where it goes in the stored order, which is what a Manual section
+        // draws (a sorted one puts it by its sort: on top, for Recent and
+        // Created). At the top level, on top: a list nobody
+        // arranges then reads newest first, as a list of chats does. In a folder, right after the selected
         // row when that row is in the same folder, otherwise at the folder's
         // end: a folder is arranged by hand, and the new row belongs beside
         // the one it came from. A pinned row is drawn in Pinned, not in its
@@ -2494,6 +2558,10 @@ final class SessionManager {
             // A placeholder: the agent's own title, when it pushes one, is a
             // better name than ours.
             session.nameSource = .placeholder
+            // New to the sidebar now, so it sorts as new: at the top of a
+            // Recent or Created section, where whoever is looking for the
+            // shell that survived will look, not under everything dated.
+            session.createdAt = Date()
             appendRestored(session)
             recovered = true
         }
@@ -3212,9 +3280,11 @@ final class SessionManager {
         guard !sessions.isEmpty,
               let loudest = sessions.compactMap(\.attention).max(by: { $0.priority < $1.priority })
         else { return }
-        let start = selectedIndex ?? -1
-        for offset in 1...sessions.count {
-            let candidate = sessions[(start + offset) % sessions.count]
+        // In the order the sidebar shows them, so the jump goes down the rows.
+        let ordered = sessionsInSidebarOrder
+        let start = ordered.firstIndex { $0.id == selectedID } ?? -1
+        for offset in 1...ordered.count {
+            let candidate = ordered[(start + offset) % ordered.count]
             if candidate.attention == loudest {
                 selectedID = candidate.id
                 // Only when it actually lands. Counting the misses would report
@@ -3261,10 +3331,6 @@ final class SessionManager {
         let live = Set(sessions.map(\.id))
         let drawn = sidebarRowOrder.filter(live.contains)
         return drawn.isEmpty ? sessions.filter(isVisibleInSidebar).map(\.id) : drawn
-    }
-
-    private var selectedIndex: Int? {
-        sessions.firstIndex { $0.id == selectedID }
     }
 
     /// Create surfaces for restored sessions that don't have one yet, one per
@@ -5073,7 +5139,8 @@ final class SessionManager {
             portBase: session.portBase,
             remindAt: session.remindAt,
             agentAsleep: session.sleep.agent.map { $0.waiting ? "waiting" : "finished" },
-            lastTypedAt: lastTypedAt[session.id])
+            lastTypedAt: lastTypedAt[session.id],
+            createdAt: session.createdAt, lastSentAt: session.lastSentAt)
     }
 
     /// The agent the next launch should bring back in `session`, and its
@@ -5311,6 +5378,13 @@ final class SessionManager {
                 self.lastTypedAt[session.id] = Date()
                 self.noteUserInput(session)
             }
+            // A Return of yours: the sidebar's Recent. Saved, so
+            // the order survives a relaunch; the save is debounced.
+            view.onSubmit = { [weak self, weak session] in
+                guard let self, let session else { return }
+                session.lastSentAt = Date()
+                self.scheduleSave()
+            }
             // A script's `wortel send` repaints too, but it is not you back
             // at the keyboard: an attention raised while you were away stays.
             view.onScriptedInput = { [weak self, weak session] in
@@ -5398,6 +5472,42 @@ final class SessionManager {
                 self?.onOpenMarkdown?(url)
             }
         }
+    }
+
+    /// What a new session is called before anything better is known: its
+    /// directory's name, and "Home" for the home folder. A row reading "~",
+    /// and "~ 2" to "~ 6" beside it, looked like a path cut short rather than
+    /// a name. Only the name: the title stays "~" (`defaultTitle`), since
+    /// that is also what an agent title echoing the directory is checked
+    /// against, and in the home folder that echo is "~".
+    static func defaultName(forCwd cwd: String?) -> String {
+        guard let cwd, !cwd.isEmpty, cwd != NSHomeDirectory() else { return "Home" }
+        return (cwd as NSString).lastPathComponent
+    }
+
+    /// Home sessions were named "~", "~ 2"… before they were "Home". Each
+    /// still on that placeholder takes the new one, in its own folder, once
+    /// every saved session is back so the name can't clash with one restored
+    /// later: "Home 3" for "~ 3" while that's free, else the next free "Home".
+    /// A name anyone gave is left alone.
+    private func renameOldHomePlaceholders() {
+        var renamed = false
+        defer { if renamed { scheduleSave() } }
+        for session in sessions where session.nameSource == .placeholder {
+            guard let leaf = Self.homeName(forOldPlaceholder: session.leafName) else { continue }
+            let folder = session.folderPath
+            let taken = sessions.contains { $0 !== session && $0.folderPath == folder && $0.leafName == leaf }
+            let name = taken ? uniqueLeaf("Home", in: folder) : leaf
+            session.name = folder.map { "\($0)/\(name)" } ?? name
+            renamed = true
+        }
+    }
+
+    /// "Home" for a leaf "~", "Home 2" for "~ 2"; nil for any other leaf.
+    static func homeName(forOldPlaceholder name: String) -> String? {
+        if name == "~" { return "Home" }
+        guard name.hasPrefix("~ "), let n = Int(name.dropFirst(2)), n > 1 else { return nil }
+        return "Home \(n)"
     }
 
     static func defaultTitle(forCwd cwd: String?) -> String {

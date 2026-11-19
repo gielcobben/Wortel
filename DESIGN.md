@@ -243,6 +243,7 @@ toolbar item on a glass capsule, and there is no switch for that.
 | Selection pill | 8pt corners |
 | Status | Centred in the last 34pt of the row. The dot and the close button share that slot, so nothing shifts on hover |
 | Session colour | A 3pt bar inside the pill's leading edge, in Finder's tag colours |
+| Bottom edge | The list ends level with the tops of the + and ⓘ. While rows go on below, it fades out over the last 20pt, as an overflowing tab row does |
 
 A row is one line. Two things add a second, small and grey, under the name: a
 worktree's branch, with a small branch glyph, and a reminder's time

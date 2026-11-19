@@ -138,6 +138,32 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   size each time). Every catch is logged in the `layout` category with what
   it found, so the next one names its cause; this entry should be replaced by
   that fix.
+- **2026-11-19. A new terminal starts at the size a session's terminal last
+  had on screen, and its pty ignores it until it is told one.** Agents in
+  sessions not looked at since a relaunch printed everything 45 columns wide,
+  in a full-width page, for good (an agent wraps its own output, so nothing
+  reflows it). Measured: eight of twelve Claude Code ptys at 15x45. A surface
+  reports libghostty's placeholder grid (45 by 15) as soon as it exists, the
+  pty passed it on, and a hidden terminal is never resized, so the agent
+  worked at that width until shown. Reproduced in a test copy: after a
+  relaunch the two sessions not on screen were sent 15x45. Now
+  `PtyHost.ignoreSizesUntilTold` drops a new surface's reports until
+  `setSurfaceSize`, and a surface made or woken out of sight is told the last
+  size a session's terminal was shown at (kept in defaults,
+  `terminal.lastShownSize`). Same test after: every pty kept 34x102, and no
+  program was ever told 15x45. It may also be the "too narrow" case above.
+  **The placeholder was also what repainted a relaunched terminal**, which
+  starts empty: 45 then the real width was a change of width, and Claude Code
+  answers one by printing its whole conversation again. Without it the first
+  builds left idle agents blank (in the running app, and 4 of 6 in a copy).
+  So a new terminal's first size is a forced repaint
+  (`PtyHost.resize`): one column narrower, and the true width back once the
+  program has been quiet for 0.3 s. Back to back the two reached a program as
+  one SIGWINCH at the old size; back after a fixed 150 ms, or at the first
+  output, they cut a reprint short and left only the coloured words on
+  screen. Verified in a copy: seven idle Claude Codes, six out of sight, came
+  back after a relaunch with the same text at the same width, and the one on
+  screen was screenshotted correct.
 - **2026-11-18. A session switches on mouse-down**, as in Finder's sidebar.
   It switched on mouse-up, after AppKit had ruled out a drag, so the time the
   button was held (115 ms a click on average, sampled) came before every

@@ -655,8 +655,11 @@ final class GhosttyRuntime {
                 .writeFromTerminal(bytes, count: length)
         }
         // The grid changed shape. Nobody sends SIGWINCH for us any more — and
-        // this is also what corrects the 80x24 the pty was opened at, since the
-        // surface had no size to give until now.
+        // this is also what corrects the 80x24 the pty was opened at, once
+        // the surface has a size to give. Its first report, made before
+        // anyone told it one, is libghostty's placeholder and is dropped
+        // (`ignoreSizesUntilTold`); `SurfaceView.setSurfaceSize` opens it.
+        pty.ignoreSizesUntilTold()
         cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
             guard let userdata else { return }
             Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()

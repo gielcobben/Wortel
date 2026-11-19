@@ -280,6 +280,19 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     override func mouseExited(with event: NSEvent) { setRowHovered(false) }
 
     private var isRowHovered = false
+
+    /// Settle the hover on where the pointer is now. A scroll slides rows
+    /// under a pointer that hasn't moved, and AppKit doesn't reliably tell a
+    /// row it left then: rows the pointer passed over stayed lit (and, being
+    /// hovered, held the sidebar's sort still). The scroller calls this on
+    /// every row it shows, each time it scrolls.
+    func settleHover() {
+        guard let window else { return }
+        let inside = NSApp.isActive
+            && contentRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        if inside != isRowHovered { setRowHovered(inside) }
+    }
+
     private func pointerMoved(_ event: NSEvent) {
         let hovered = contentRect.contains(convert(event.locationInWindow, from: nil))
         // Most rows have no gap, and a move within one changes nothing.
@@ -618,7 +631,8 @@ final class SidebarOutline: NSOutlineView {
 /// a faded one as "more below". A list that fits keeps a crisp last row.
 ///
 /// Kept current from the two places every change passes: `tile` (a resize,
-/// rows added, folded or grown) and `reflectScrolledClipView` (a scroll).
+/// rows added, folded or grown) and `reflectScrolledClipView` (a scroll),
+/// which also settles each row's hover.
 final class SidebarScrollView: NSScrollView {
     static let fade: CGFloat = 20
 
@@ -630,6 +644,10 @@ final class SidebarScrollView: NSScrollView {
     override func reflectScrolledClipView(_ clip: NSClipView) {
         super.reflectScrolledClipView(clip)
         updateFade()
+        // Rows slid under a pointer that didn't move: see `settleHover`.
+        (documentView as? NSOutlineView)?.enumerateAvailableRowViews { rowView, _ in
+            (rowView as? SidebarPillRowView)?.settleHover()
+        }
     }
 
     private func updateFade() {

@@ -612,6 +612,57 @@ final class SidebarOutline: NSOutlineView {
     }
 }
 
+/// The sidebar's scroller. While rows go on below its bottom edge, that edge
+/// fades over 20pt into the bar under it (+ and ⓘ), as an overflowing tab row
+/// fades (`SideTabStrip`): a row cut off hard there read as one drawn wrong,
+/// a faded one as "more below". A list that fits keeps a crisp last row.
+///
+/// Kept current from the two places every change passes: `tile` (a resize,
+/// rows added, folded or grown) and `reflectScrolledClipView` (a scroll).
+final class SidebarScrollView: NSScrollView {
+    static let fade: CGFloat = 20
+
+    override func tile() {
+        super.tile()
+        updateFade()
+    }
+
+    override func reflectScrolledClipView(_ clip: NSClipView) {
+        super.reflectScrolledClipView(clip)
+        updateFade()
+    }
+
+    private func updateFade() {
+        guard let document = documentView else { return }
+        wantsLayer = true
+        guard let layer else { return }
+        let visible = contentView.documentVisibleRect
+        // The outline is flipped: rows go on below while the visible rect
+        // ends short of the document's height.
+        let more = visible.maxY < document.frame.height - 0.5
+        guard more, bounds.height > Self.fade * 2 else {
+            if layer.mask != nil { layer.mask = nil }
+            return
+        }
+        let mask = (layer.mask as? CAGradientLayer) ?? CAGradientLayer()
+        let edge = NSNumber(value: Double(Self.fade / bounds.height))
+        let solid = NSColor.black.cgColor, clear = NSColor.clear.cgColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        // The bottom edge. AppKit lays a view's sublayers out in the view's
+        // own coordinates (it sets the layer's `isGeometryFlipped` to undo
+        // whatever its ancestors are), so this view's `isFlipped` decides.
+        let bottom: CGFloat = isFlipped ? 1 : 0
+        mask.startPoint = CGPoint(x: 0.5, y: bottom)
+        mask.endPoint = CGPoint(x: 0.5, y: 1 - bottom)
+        mask.colors = [clear, solid, solid]
+        mask.locations = [0, edge, 1]
+        mask.frame = layer.bounds
+        layer.mask = mask
+        CATransaction.commit()
+    }
+}
+
 /// Identity snapshot of the sidebar's structure — which groups exist, in what
 /// order, holding which sessions, and which of those are two lines tall. The
 /// outline reloads only when this changes; everything visual (names, selection
@@ -671,7 +722,7 @@ struct SidebarOutlineView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(manager: manager) }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> SidebarScrollView {
         let outline = SidebarOutline()
         outline.onDragEnd = { [weak coordinator = context.coordinator] in
             coordinator?.clearDropHighlight()
@@ -735,7 +786,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         context.coordinator.observeSelection()
         context.coordinator.observeHover()
 
-        let scroll = NSScrollView()
+        let scroll = SidebarScrollView()
         scroll.documentView = outline
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -757,7 +808,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ nsView: NSScrollView, context: Context) {
+    func updateNSView(_ nsView: SidebarScrollView, context: Context) {
         context.coordinator.apply(snapshot, sortKeys: sortKeys)
     }
 

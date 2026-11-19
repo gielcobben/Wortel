@@ -63,10 +63,12 @@ an answer you have already read. False alarms are treated as bugs of the first
 rank, because one of them teaches you to ignore the rest.
 
 **The agent is a guest.** Nothing is installed into an agent and nothing is
-written into its configuration. Wortel reads the screen, as you do, takes an
-agent's word where it gives one, and may read the files an agent keeps for
-itself (its conversation, to resume it exactly). It never asks an agent to
-change. Detection has to work for an agent Wortel has never heard of: a
+written into its configuration. Wortel takes an agent's word for what it is
+doing: an agent reports its own state (the Program Status Protocol), and
+Wortel does not guess at one that says nothing. It may read the files an agent
+keeps for itself (its conversation, to resume it exactly and to quote its
+answer). It never asks an agent to change. This works for an agent Wortel has
+never heard of, because what is listened for is a protocol and not a name: a
 terminal that only understands six agents by name is wrong about the seventh.
 Going the other way, the `wortel` command is the whole interface, so anything
 that can run a command can drive the app.

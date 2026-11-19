@@ -68,22 +68,58 @@ enum AttentionKind {
         }
     }
 
-    /// Classify a program-authored desktop notification (OSC 9 / 777 / 99). An
-    /// explicit notification usually means the program wants you *now*, so the
-    /// default is the blocking `.needsInput`; it's only softened to `.turnDone`
-    /// when the text clearly reads as a completion with nothing left to approve.
-    /// Keyword matching only has to break the tie for this one ambiguous source —
-    /// every other signal is classified by where it comes from.
+    /// Sort a notification a program wrote itself (OSC 9 / 777 / 99), or a
+    /// `wortel notify`: is it asking for something, or saying it is done?
+    ///
+    /// By how it opens, never by a word somewhere in it. Codex's turn-end
+    /// notification is the start of its answer, with no fixed wording, and an
+    /// answer says "review", "continue" and "confirm" all the time: sorted by
+    /// keyword, with "needs input" as the fallback, four in five Codex turns
+    /// arrived as the loudest kind (measured 2026-11-19). A request leads with
+    /// its request ("Approval requested: …", "Waiting for Approval"), so only
+    /// the title and the first words of the body are read, and anything that
+    /// does not open as one is a turn that ended.
+    ///
+    /// Only for programs that do not report their own state: one that does
+    /// (`ProgramStatus`) is never sorted by its words.
     static func classify(notificationTitle title: String, body: String) -> AttentionKind {
-        let text = (title + " " + body).lowercased()
-        let blocking = ["permission", "approve", "allow", "confirm", "authoriz",
-                        "waiting", "input", "action required", "review",
-                        "continue", "proceed", "respond", "y/n", "question"]
-        if blocking.contains(where: text.contains) { return .needsInput }
-        let completion = ["completed", "complete", "finished", "done", "success"]
-        if completion.contains(where: text.contains) { return .turnDone }
-        return .needsInput
+        if namesAFailure(title) { return .failed }
+        let opening = title.lowercased() + " " + body.prefix(requestOpeningLength).lowercased()
+        return requestOpenings.contains(where: opening.contains) ? .needsInput : .turnDone
     }
+
+    /// Whether a title says something failed: "Tests failed", "Build error",
+    /// "Failure: lint". A failure is only ever named in a title, which an
+    /// agent's answer never is (`wortel notify "Tests failed"`). By whole
+    /// word, and not one counted as none: "0 errors", "no failures" and
+    /// "Tests: 0 failed" are a run that passed.
+    static func namesAFailure(_ title: String) -> Bool {
+        let words = title.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        for (index, word) in words.enumerated() where failureWords.contains(word) {
+            let before = index > 0 ? words[index - 1] : ""
+            if !["0", "no", "zero", "without", "not"].contains(before) { return true }
+        }
+        return false
+    }
+
+    private static let failureWords: Set<String> = [
+        "failed", "fails", "failure", "failures", "error", "errors", "errored", "crashed",
+    ]
+
+    /// How much of a notification's body can be its request. Codex's longest
+    /// opening is "Approval requested: " (20); an answer's first sentence is
+    /// past it before it gets to asking for anything.
+    static let requestOpeningLength = 40
+
+    /// How programs open a notification that asks for something. Codex before
+    /// it reported its state ("Approval requested", "Codex wants to edit",
+    /// "Plan mode prompt:", "Question:"), Amp ("Waiting for Approval"), Gemini
+    /// ("Action Required"), Claude Code's own channel ("needs your permission",
+    /// "waiting for your input").
+    private static let requestOpenings = [
+        "approval", "permission", "wants to edit", "action required",
+        "plan mode prompt", "question:", "waiting for", "needs your",
+    ]
 }
 
 extension AttentionKind {
@@ -137,68 +173,5 @@ enum AttentionRaise: Equatable {
         return .raise(alert: current.map { kind.priority > $0.priority } ?? true,
                       startsEpisode: current == nil,
                       whileAway: onScreen)
-    }
-}
-
-/// What each session has had in front of someone, and for how long: whether a
-/// turn's end was already read before anything announced it.
-///
-/// It is not the same question as `AttentionRaise`'s "is anyone looking right
-/// now". The screen tier decides a turn is over once the screen has held
-/// still for a few seconds, and your own scrolling restarts that wait (so it
-/// never reads as the agent working). Reading a long answer to its end and
-/// ⌘-tabbing away therefore ended the turn, as far as Wortel knew, a few
-/// seconds *after* you left, and you got a banner quoting the answer you had
-/// just read. What settles it is when the conversation was last written: if
-/// that was on screen, with you there, for `dwell` before you left, you saw
-/// how the turn ended.
-///
-/// Pure, so its arithmetic is pinned by tests: off one way it hides a turn
-/// that finished behind your back, off the other it is the banner it exists
-/// to stop.
-struct SeenLedger: Equatable {
-    /// How long something has to be in front of you to count as read: the
-    /// same second the quieter unread ring takes to clear.
-    static let dwell: TimeInterval = 1
-
-    /// The session on screen now, with someone there, and since when.
-    private(set) var showing: UUID?
-    private var showingSince: Date?
-    /// Per session: everything written at or before this was on screen for
-    /// `dwell` while someone was there.
-    private var seenThrough: [UUID: Date] = [:]
-
-    /// What is on screen changed: `id`, or nothing (Wortel in the background,
-    /// the window covered). `present` says whether anyone was at the Mac as
-    /// the last stretch ended; a window left on screen for an empty room
-    /// showed nobody anything.
-    mutating func show(_ id: UUID?, at now: Date, present: Bool) {
-        guard id != showing else { return }
-        if let old = showing, let since = showingSince, present,
-           now.timeIntervalSince(since) >= Self.dwell {
-            let through = now.addingTimeInterval(-Self.dwell)
-            seenThrough[old] = max(seenThrough[old] ?? through, through)
-        }
-        showing = id
-        showingSince = id == nil ? nil : now
-    }
-
-    /// Whether what `id`'s conversation looked like once it was written at
-    /// `written` has been in front of someone for `dwell`, now or before.
-    /// `present`: whether anyone is at the Mac now, which the stretch still
-    /// on screen needs to count: a window in front of an empty room is the
-    /// turn that finished while you were getting coffee, and that one is news.
-    func saw(_ id: UUID, writtenAt written: Date, now: Date, present: Bool) -> Bool {
-        if id == showing, present, let since = showingSince,
-           now.timeIntervalSince(max(since, written)) >= Self.dwell {
-            return true
-        }
-        return seenThrough[id].map { written <= $0 } ?? false
-    }
-
-    /// A closed session's history goes with it.
-    mutating func forget(_ id: UUID) {
-        seenThrough[id] = nil
-        if showing == id { showing = nil; showingSince = nil }
     }
 }

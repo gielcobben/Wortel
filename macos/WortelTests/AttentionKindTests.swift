@@ -16,6 +16,58 @@ final class AttentionKindTests: XCTestCase {
         XCTAssertEqual(AttentionKind.loudest(of: [.finished, .failed]), .failed)
     }
 
+    // MARK: - A program's own notification
+
+    private func kind(_ body: String, title: String = "") -> AttentionKind {
+        AttentionKind.classify(notificationTitle: title, body: body)
+    }
+
+    /// Codex's turn-end notification is the start of its answer. Whatever the
+    /// answer goes on to say, it is a turn that ended. Each of these was the
+    /// loudest kind while notifications were sorted by keyword.
+    func testAnAnswerIsATurnThatEndedWhateverItSays() {
+        XCTAssertEqual(kind("I reviewed the diff and the change looks right. Do you want me to continue with the tests?"),
+                       .turnDone)
+        XCTAssertEqual(kind("The login flow now asks you to confirm the address before it saves."), .turnDone)
+        XCTAssertEqual(kind("Here is the plan. Let me know how you would like to proceed and I will respond."), .turnDone)
+        XCTAssertEqual(kind("Agent turn complete"), .turnDone)
+        XCTAssertEqual(kind("Done"), .turnDone)
+    }
+
+    /// What Codex sent before it reported its own state (0.162 and older).
+    func testARequestOpensWithItsRequest() {
+        XCTAssertEqual(kind("Approval requested: npm test"), .needsInput)
+        XCTAssertEqual(kind("Codex wants to edit src/login.ts"), .needsInput)
+        XCTAssertEqual(kind("Plan mode prompt: Which database?"), .needsInput)
+        XCTAssertEqual(kind("Question: Keep the old endpoint?"), .needsInput)
+        XCTAssertEqual(kind("Approval requested by github"), .needsInput)
+    }
+
+    func testARequestInATitle() {
+        XCTAssertEqual(kind("", title: "Waiting for Approval"), .needsInput)
+        XCTAssertEqual(kind("Bash", title: "Claude needs your permission"), .needsInput)
+        XCTAssertEqual(kind("", title: "Agent is ready"), .turnDone)
+    }
+
+    /// `wortel notify "Tests failed"`. An answer that opens with the word is
+    /// still an answer: a failure is named in a title or not at all.
+    func testAFailureIsNamedInTheTitle() {
+        XCTAssertEqual(kind("main", title: "Tests failed"), .failed)
+        XCTAssertEqual(kind("", title: "Build error"), .failed)
+        XCTAssertEqual(kind("", title: "Failure: lint"), .failed)
+        XCTAssertEqual(kind("", title: "Build done"), .turnDone)
+        XCTAssertEqual(kind("The error was in the reducer: it dropped the last report."), .turnDone)
+    }
+
+    /// A run that passed, counted in the words a failure uses.
+    func testANoneCountedIsNotAFailure() {
+        XCTAssertEqual(kind("", title: "Build passed, 0 errors"), .turnDone)
+        XCTAssertEqual(kind("", title: "No failures"), .turnDone)
+        XCTAssertEqual(kind("", title: "Tests: 0 failed"), .turnDone)
+        XCTAssertEqual(kind("", title: "Lint finished, no errors"), .turnDone)
+        XCTAssertEqual(kind("", title: "Errorless"), .turnDone)
+    }
+
     /// Order must not matter — a calmer signal arriving later cannot displace a
     /// louder one, which is exactly what "latest wins" would do.
     func testOrderDoesNotMatter() {
@@ -109,116 +161,5 @@ final class AttentionKindTests: XCTestCase {
     func testEqualPriorityIsNotAnEscalation() {
         XCTAssertEqual(decide(.failed, body: "other", current: .failed),
                        .raise(alert: false, startsEpisode: false, whileAway: false))
-    }
-}
-
-/// Whether a turn's end was already read before anything announced it.
-///
-/// Reported 2026-11-10 from a Codex user: read the answer to the end in
-/// Wortel, ⌘-tab away, and a banner with that same answer arrives anyway. The
-/// screen tier only calls a turn over once the screen holds still, and the
-/// scrolling that reading takes kept restarting that wait until she left.
-final class SeenLedgerTests: XCTestCase {
-    private let a = UUID()
-    private let b = UUID()
-    private let t0 = Date(timeIntervalSince1970: 1_000_000)
-    private func at(_ seconds: TimeInterval) -> Date { t0.addingTimeInterval(seconds) }
-
-    /// The report: the turn ended while she was on it, she read for a while
-    /// and left; the announcement that comes after is about something seen.
-    func testATurnThatEndedWhileYouReadWasSeen() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        ledger.show(nil, at: at(60), present: true) // ⌘-tab away
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(64), present: true))
-    }
-
-    /// A turn that finished after you left was not on screen with you.
-    func testATurnThatEndedAfterYouLeftWasNot() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        ledger.show(nil, at: at(60), present: true)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(61), now: at(65), present: true))
-    }
-
-    /// Ending a moment before you left is a glimpse, not a read.
-    func testLessThanTheDwellIsNotARead() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        ledger.show(nil, at: at(60), present: true)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(59.5), now: at(65), present: true))
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(59), now: at(65), present: true))
-    }
-
-    /// Clicking through a session on the way to another isn't reading it,
-    /// even when what it shows is old.
-    func testFlickingPastIsNotARead() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(10), present: true)
-        ledger.show(b, at: at(10.3), present: true)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(0), now: at(20), present: true))
-    }
-
-    /// Only the session on screen is read; the one beside it in the sidebar
-    /// finishing meanwhile was not.
-    func testOnlyTheSessionOnScreenIsRead() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        ledger.show(nil, at: at(60), present: true)
-        XCTAssertFalse(ledger.saw(b, writtenAt: at(30), now: at(64), present: true))
-    }
-
-    /// A window left on screen for an empty room showed nobody anything.
-    func testAStretchThatEndedWithNobodyThereCountsForNothing() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        ledger.show(nil, at: at(600), present: false)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(700), present: true))
-    }
-
-    /// Still on it: it counts once it has been there for the dwell.
-    func testTheSessionOnScreenNow() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(31), present: true))
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(30.5), present: true))
-    }
-
-    /// Wortel in front of an empty room is not a read: the turn that ends
-    /// while you're getting coffee is news when you get back.
-    func testTheSessionOnScreenWithNobodyThereIsNotRead() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(300), now: at(305), present: false))
-    }
-
-    /// A closed session's reads go with it.
-    func testForgettingASession() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        ledger.show(nil, at: at(60), present: true)
-        ledger.forget(a)
-        XCTAssertFalse(ledger.saw(a, writtenAt: at(30), now: at(64), present: true))
-    }
-
-    /// An earlier read still counts after a later glimpse: coming back for a
-    /// moment doesn't unread what you read before.
-    func testAnEarlierReadSurvivesALaterGlimpse() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        ledger.show(b, at: at(60), present: true)
-        ledger.show(a, at: at(70), present: true)
-        ledger.show(nil, at: at(70.2), present: true)
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(80), present: true))
-    }
-
-    /// Showing the same session again (a redundant activate) doesn't restart
-    /// the stretch.
-    func testShowingTheSameSessionAgainKeepsTheStretch() {
-        var ledger = SeenLedger()
-        ledger.show(a, at: at(0), present: true)
-        ledger.show(a, at: at(59.9), present: true)
-        ledger.show(nil, at: at(60), present: true)
-        XCTAssertTrue(ledger.saw(a, writtenAt: at(30), now: at(64), present: true))
     }
 }

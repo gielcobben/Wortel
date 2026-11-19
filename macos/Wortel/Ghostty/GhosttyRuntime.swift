@@ -338,6 +338,7 @@ final class GhosttyRuntime {
         let session = attachment.session
         let pty = PtyHost(adopting: attachment.descriptor)
         view.ptyHost = pty // the view's lifetime is the session's
+        view.programStatusWatch.reset()
         view.keeperSession = attachment.session
         view.keeperPID = keeperPID
         // The keeper forked the shell, so it is the only one that knows the pid.
@@ -399,6 +400,7 @@ final class GhosttyRuntime {
         let resumed = attachment.resumed
         let replay = attachment.replay
         let dark = Self.systemIsDark
+        let status = view.programStatusWatch
         // The agent running there, by its marker: what it switched on at its
         // own startup may never have been recorded (`TerminalModes.assuming`).
         // Only one seen in the process table: a marker outlives its agent
@@ -421,7 +423,8 @@ final class GhosttyRuntime {
         pty.enqueue {
             Self.restore(surface: surface, pty: pty, session: session, prelude: prelude,
                          replay: replay, recordReplay: true, muteAnswers: muteAnswers,
-                         colorScheme: resumed ? (dark: dark, agent: agent) : nil)
+                         colorScheme: resumed ? (dark: dark, agent: agent) : nil,
+                         status: status)
             // Last, so the shell's prompt and whatever preceded it are on
             // screen before the command appears under them. See `newSurface`.
             if let resumeAgain {
@@ -446,7 +449,8 @@ final class GhosttyRuntime {
     /// for why none of it may run on the main thread.
     static func restore(surface: ghostty_surface_t, pty: PtyHost, session: UUID, prelude: [UInt8],
                         replay: Data, recordReplay: Bool, muteAnswers: Bool,
-                        colorScheme: (dark: Bool, agent: String?)?) {
+                        colorScheme: (dark: Bool, agent: String?)?,
+                        status: ProgramStatusWatch? = nil) {
         if muteAnswers { pty.muteReplayAnswers() }
         if !prelude.isEmpty {
             prelude.withUnsafeBufferPointer { raw in
@@ -459,6 +463,19 @@ final class GhosttyRuntime {
         // screen ends up out of order.
         if !replay.isEmpty {
             if recordReplay { TerminalModeRecorder.shared.feed(session: session, replay: replay) }
+            // What the program last said it was doing, if it said so in here.
+            // A fresh shell's few bytes are not a replay: whatever asked a
+            // question in them is still waiting for the answer.
+            if let status {
+                if muteAnswers {
+                    status.replay(replay)
+                } else {
+                    replay.withUnsafeBytes { raw in
+                        guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                        status.output(base, count: raw.count, pty: pty)
+                    }
+                }
+            }
             replay.withUnsafeBytes { raw in
                 guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
                 ghostty_surface_write_buffer(surface, base, UInt(raw.count))
@@ -540,10 +557,16 @@ final class GhosttyRuntime {
     static func liveOutput(surface: ghostty_surface_t, session: UUID,
                            view: SurfaceView) -> (UnsafePointer<UInt8>, Int) -> Void {
         let accessibility = view.accessibilityWatch
-        return { bytes, count in
+        let status = view.programStatusWatch
+        // Weak below: the pty holds this closure.
+        let pty = view.ptyHost
+        return { [weak pty] bytes, count in
             // Watched on the way past, so a relaunch can tell the new terminal
             // what this one has been told. See `TerminalModes`.
             TerminalModeRecorder.shared.feed(session: session, bytes: bytes, count: count)
+            // And listened to for what the program says it is doing, which
+            // libghostty has no ears for (`ProgramStatusWatch`).
+            status.output(bytes, count: count, pty: pty)
             ghostty_surface_write_buffer(surface, bytes, UInt(count))
             // A lock take, and nothing more until a screen reader has asked.
             accessibility.outputArrived()
@@ -851,7 +874,15 @@ final class GhosttyRuntime {
             let note = action.action.desktop_notification
             let title = note.title.map { String(cString: $0) } ?? ""
             let body = note.body.map { String(cString: $0) } ?? ""
-            DispatchQueue.main.async { view.onNotification?(title, body) }
+            DispatchQueue.main.async {
+                // Only for a terminal whose pty libghostty owns (no keeper).
+                // Everywhere else Wortel has read the notification off the
+                // output itself (`ProgramStatusWatch`), and this arrival is
+                // the same one again, after the core's one-a-second limit for
+                // the whole app has dropped some.
+                guard view.ptyHost == nil else { return }
+                view.onNotification?(title, body, false)
+            }
             return true
 
         case GHOSTTY_ACTION_OPEN_URL:

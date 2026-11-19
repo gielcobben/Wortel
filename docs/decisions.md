@@ -303,6 +303,56 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-11-02. A minute without input counts as away**, and scripted input
   from `wortel send` is not the user coming back (`38fd58b`, `61aab5e`).
 - **2026-11-10. No notification for an answer already read** (`bfab785`).
+- **2026-11-19. A program that reports its own state is taken at its word.**
+  Codex, Claude Code and Pi now say `working`, `blocked`, `done` and `error`
+  themselves (the Program Status Protocol, OSC 7501). For a session that
+  reports, nothing is guessed: no title, no screen, no word in a notification.
+  Wortel answers the protocol's question, which is all Claude Code and Pi wait
+  for. Reported 2026-11-19 by a Codex user who had gone back to another
+  terminal: four in five Codex turn ends were arriving as "needs input".
+- **2026-11-19. Still nothing installed into an agent.** Hooks were weighed
+  for this and left out. Since Codex 0.157 its hooks run in a shared
+  background process with the environment of whichever terminal started it
+  first, and the trackers of the terminals that install hooks are a list of
+  the ways they fail: a stop hook that never arrives, a banner per approved
+  tool call, a user's own hooks overwritten.
+- **2026-11-19. For a program that never says `done`, going idle ends the
+  turn.** opencode reports `working`, `blocked` and `idle` only. Read
+  literally, its finished turns would be silent, and nothing else listens to
+  a session that reports. Not for the agents read to say `done` (Codex, Claude
+  Code, Pi, crush), whose `idle` is an interrupt or servers starting.
+- **2026-11-19. Nothing is guessed any more.** An agent says what it is doing
+  in a status report, or Wortel does not claim to know. Taken out: reading a
+  title for a spinner or "Action Required", hashing every agent's screen once
+  a second, reading the end of progress as the end of a turn, and asking the
+  agent's conversation file whether any of that had been a turn. Each was
+  right most of the time, and each incident about a dot in `incidents.md` is
+  one of them being wrong. About 1,500 lines and a once-a-second timer went
+  with them. For a few hours the same day they were kept as a fallback for
+  agents that don't report, and then cut: the product is for where agents are
+  going, eight of them report already, and in three weeks of usage data
+  nobody had started one that doesn't. This replaces the lines above from
+  2026-08-05 to 2026-11-10 about the screen tier, liveness in that tier, the
+  conversation-file check and the answer already read.
+- **2026-11-19. What that costs, on purpose.** Gemini CLI, goose, aider, cline
+  and cursor-agent show no spinner and no turn end until they report, and
+  neither does an older Codex, Claude Code, Pi, opencode or crush. Those five
+  get a mark that says to update. A notification or a bell of a program's own
+  still arrives, sorted by how it opens, never by a word somewhere in it.
+- **2026-11-19. A program's notifications are read by Wortel, not by the
+  terminal core.** The core allows one a second for the whole app and drops a
+  repeat inside five seconds, so two sessions notifying in the same second
+  were one notification. Wortel holds the pty and reads them there, one banner
+  a second per session.
+- **2026-11-19. An agent too old to report gets a warning triangle, on its
+  row and in the sidebar's bar, with a popover.** Its session shows nothing
+  otherwise, and nothing else says why. The row's triangle sits where the
+  status would be; the bar's opens a popover with the version needed and a
+  Release Notes button. A grey line under the session's name was built first
+  and taken out: it read as disabled and was cut off. The session's menu
+  starts with "Update Pi…", which opens the popover, so the row's triangle is
+  not a dead end. No button that runs the update: Wortel can't know whether
+  the agent came from npm, Homebrew or its own installer.
 - **2026-09-10. The screen fallback stays for Pi.** An upstream request for it
   to report progress was declined.
 

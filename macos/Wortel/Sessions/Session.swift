@@ -327,6 +327,13 @@ final class Session: Identifiable {
     /// and what the session said is on the row's tooltip.
     var hasSecondLine: Bool { showsBranchLine || folderIsGone || remindAt != nil }
 
+    /// The agent running here is one that can say what it is doing, and this
+    /// copy of it does not: an old version, by its marker's name ("codex").
+    /// The sidebar's bar says so while it runs (`AgentUpdateIndicator`),
+    /// because nothing else tells someone why their notifications are the
+    /// guessed kind. Set by `SessionManager.watchForSilence`. Not stored.
+    var silentAgent: String?
+
     /// The folder this session stands in has been deleted (a removed worktree,
     /// a demo repo, a branch's folder cleaned up by an agent). Said on the row
     /// rather than acted on: the shell is still there, and so is what it

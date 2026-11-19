@@ -684,7 +684,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         content.userInfo = [Self.sessionKey: session.id.uuidString]
         let request = UNNotificationRequest(
             identifier: session.id.uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+        // What Notification Center made of it, said in the same log as the
+        // decision to raise it. Without this the last step is invisible: an
+        // ad-hoc build is told `granted` and posts without an error, and
+        // nothing is shown, so "no banner" could be the detection or the
+        // system and nothing told them apart.
+        let id = session.id.uuidString
+        let sound = content.sound != nil ? "alert" : (alert && kind.chime == .soft ? "chime" : "none")
+        UNUserNotificationCenter.current().add(request) { error in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                AgentStatusLog.log.debug("""
+                    banner \(error == nil ? "handed to Notification Center" : "refused", privacy: .public) \
+                    sound=\(sound, privacy: .public) \
+                    allowed=\(settings.authorizationStatus == .authorized, privacy: .public) \
+                    banners=\(settings.alertSetting == .enabled, privacy: .public) \
+                    \(error.map { "error=\($0.localizedDescription)" } ?? "", privacy: .public) \
+                    id=\(id, privacy: .public)
+                    """)
+            }
+        }
     }
 
     // MARK: - Reminders
@@ -1670,6 +1688,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         PermissionsNotice.shared.showFromMenu()
     }
 
+    /// Session ▸ Update Pi…: the selected session's agent is a version too
+    /// old to say what it is doing. Opens what the sidebar's warning icon
+    /// opens.
+    @objc func updateSessionAgent(_ sender: Any?) {
+        guard let reporter = manager.selected?.silentAgent.flatMap({ ReportedStatus.knownReporters[$0] })
+        else { return }
+        AgentUpdateNotice.shared.showFromMenu(for: reporter)
+    }
+
     @objc func checkForUpdates(_ sender: Any?) {
         updater.checkForUpdates()
     }
@@ -1715,6 +1742,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(markSessionUnread(_:)) {
             return manager.selected != nil
+        }
+        if menuItem.action == #selector(updateSessionAgent(_:)) {
+            let reporter = manager.selected?.silentAgent.flatMap { ReportedStatus.knownReporters[$0] }
+            menuItem.isHidden = reporter == nil
+            if let reporter { menuItem.title = AgentUpdateWords.menuItem(for: reporter) }
+            return reporter != nil
         }
         if menuItem.action == #selector(remindSession(_:)) || menuItem.action == #selector(remindSessionCustom(_:)) {
             return manager.selected != nil

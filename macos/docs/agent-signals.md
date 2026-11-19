@@ -1,107 +1,332 @@
 # Agent busy/attention signals
 
 How Wortel knows a terminal agent is working (sidebar spinner) or wants you
-(attention dot + Dock badge + notification). All agent behavior below was
-verified against source or live byte captures on 2026-07-10; versions move,
-re-verify before relying on details.
+(attention dot + Dock badge + notification). Written 2026-11-19, when the
+guessing was taken out. `docs/incidents.md` has what it cost while it was in.
 
-## Wortel's detection channels (SessionManager)
+**A program says what it is doing, or Wortel does not claim to know.** An
+agent reports its state itself, in a status report, and is taken at its word.
+Nothing is read off a title or a screen to work it out. Beside the reports,
+three older things a program can say are still heard, because they are said
+and not inferred: a notification of its own, the bell, and progress.
 
-1. **OSC 9;4 progress (ConEmu)** — `9;4;3` (or any non-remove state) = busy;
-   `9;4;0` after ≥2s of busy = "stopped working" → attention ~1s later unless
-   progress resumes ("progress-quiesce"). This is the emerging cross-tool
-   standard (Ghostty 1.2+, Windows Terminal, ConEmu; emitted by Claude Code,
-   crush, cargo ≥1.87, systemd v257, mise, winget…).
-2. **Title markers** — fallback for agents that only signal via the window
-   title. Braille spinner prefix (U+2800–U+28FF; Claude Code, Codex, Amp) or
-   `✦`/`⏲` (Gemini) = busy; marker disappearing = same quiesce path;
-   `✋` prefix or "Action Required" (Gemini, Codex) = attention immediately.
-3. **Desktop-notification escapes** — OSC 9 (non-progress payload), OSC 777,
-   OSC 99 are parsed by the libghostty core and forwarded; Wortel relays them
-   as attention + macOS notification. Emitted by Codex (default), crush
-   (default), Amp (default), Gemini/opencode (opt-in), Pi's official notify
-   extension.
-4. **Bell** and **command-finished ≥10s while unselected** — classic paths for
-   non-agent commands.
-5. **Screen activity** (`AgentActivity`) — the backstop under all of the above.
-   A watched session's active screen is hashed once a second; a screen that keeps
-   changing is an agent working, one that then holds still for 3s is a turn
-   ending. For agents that emit nothing (opencode, goose, aider, Pi by default)
-   it is the only signal there is; for the rest it is what covers a channel that
-   goes quiet when it shouldn't. It is the only *guessing* tier, so it is fenced
-   in hard:
-   - **It claims busy only when nothing else has, and only ever ends a busy it
-     claimed.** Authority is ownership, not identity. It used to stand down
-     entirely for any session that had proved it has a channel of its own, and
-     that proof was a one-way door: `onProgress` cannot tell an agent's OSC 9;4
-     from one emitted by something the agent *ran* (cargo, mise, systemd and
-     winget all report progress), so one `cargo build` through a silent agent's
-     shell tool retired its only busy signal for the rest of the session. Now
-     the tier watches every session with a live marker, stays silent while the
-     program owns its own state (`SessionManager.screenInferredBusy` records who
-     claimed), and picks the spinner back up the moment nobody does.
-   - **The claim reads the working *level*, not the start edge**
-     (`AgentActivityTracker.isWorking`). An edge that arrives while the program
-     still owns its busy is spent, and a screen that keeps moving produces no
-     second edge until it has first gone still — so an edge-triggered claim
-     could never recover a turn whose signal dropped halfway, which is the whole
-     case this exists for.
-   - **A busy it only corroborated is announced late, or not at all.** On a
-     session with a channel of its own, the tier's quiesce needs the busy to
-     have lasted `minBusyForCorroboratedQuiesce` (10s) rather than 2s before it
-     raises anything. Watching those sessions re-exposes the old "two stray
-     repaints on an idle TUI look like a short turn" bug for them, and ten
-     seconds is past anything a repaint pair produces and short of any turn
-     worth a badge. Real work that lost its signal mid-turn is unaffected: the
-     re-claim lands inside `busyContinuationWindow`, so the episode keeps its
-     original start.
-   - **A settle window checks the session is still quiet before it fires.** A
-     subprocess's `9;4;0` clears the spinner, the tier re-claims the still-moving
-     screen on its next sample (up to a full interval later), and that can land
-     after the 1s settle. A session busy again by then, or a debounce away from
-     it, did not finish, and the phantom "Finished, your move" is dropped.
-   - `speaksForItself` now decides **cost, not authority**. The App Nap
-     assertion is held for a session with no channel of its own, for any
-     session whose busy this tier *claimed* (a subprocess's progress can make a
-     silent agent look like a speaking one; the assertion must not be fooled
-     with it), and while a settle window is ticking towards a notification.
-     Everyone else gets a spinner, and a spinner nobody is awake to see is not
-     worth a wakeup.
-   - It never watches a session with no agent marker. It *does* watch the one
-     you're looking at (it didn't, once, and a silent agent had no spinner in
-     the session you were watching it work in); your own keys, pastes, clicks
-     and scrolls re-baseline that tracker (`SurfaceView.onUserInput`) so typing
-     a prompt is never read as the agent working.
-   - **Two changed samples within 5s** make a working agent; one does not. A
-     terminal repaints for reasons that aren't the agent — a window/inspector
-     resize re-wraps every session at once, and a focus report makes every agent
-     TUI redraw when you ⌘-tab — and each of those is a single frame.
-   - Those two events (`SurfaceView.onSizeChange`, app activate/resign, window
-     occlusion) also re-baseline every tracker, so the repaint they cause is
-     thrown away rather than counted.
-   - `AgentPrompt.looksBlocked` decides how loud a turn-end is. "esc to
-     interrupt" is a *working* marker and vetoes the blocked reading — it is not
-     a prompt affordance, however much it looks like one.
+## A program's own report (OSC 7501)
 
-Focus matters: Codex, crush, Amp, and Gemini only notify while the terminal
-reports *unfocused* (DECSET 1004). Wortel reports per-surface focus =
-first-responder **and** key window (`SurfaceView.updateFocus`), so switching
-sessions, ⌘-tabbing away, or minimizing all propagate to the agent.
+The [Program Status Protocol](https://www.superlogical.com/rex/docs/build/program-status)
+is a program telling its terminal what it is doing:
 
-The bundled shell integration suppresses its synthetic per-command `9;4;3`
-for known interactive programs (agents, editors, pagers, REPLs — see
-`_ghostty_wortel_interactive` in the zsh/bash/fish integrations), because they
-never return to the prompt; the agent's own signals take over.
+```
+ESC ] 7501 ; state=blocked:kind=permission:app=codex ESC \
+```
+
+`state` is `idle`, `working`, `blocked`, `done`, `error` or `clear`; `kind`
+(with `blocked`) is `permission`, `question` or `auth`; `msg` is one line of
+base64 text. It is what Wortel used to reconstruct from a title, a screen and
+a conversation file: every dot incident in `docs/incidents.md` is one piece of
+that evidence overruling another.
+
+Which agents report, each read in its own latest source or release on
+2026-11-19 (searched by the protocol's name as well as its number: opencode's
+own code never spells `7501`, and a search for the number alone called it a
+no):
+
+| Agent | Reports | Since | Asks first | Says `done` |
+|---|---|---|---|---|
+| Codex | yes | 0.163 (2026-10-09); `done`, `error`, `kind` from 0.164 | no | yes |
+| Claude Code | yes | 2.1.295; child records and the compaction fix in 2.1.326 | yes | yes |
+| Pi | yes | 1.1.0 (2026-10-07) | yes (`PI_PROGRAM_STATUS=1` skips it) | yes |
+| OpenCode V2 (`@opencode/cli`) | yes | 2.0.29 (2026-10-14) | no | **no**: `working`, `blocked`, `idle` only |
+| opencode 1.x (`opencode-ai`, what `npm i -g opencode-ai` still installs) | no (1.19.6, run here: silent) | | | |
+| crush | yes | 2026-10-08 (in 0.101.0) | no | yes |
+| Qwen Code | yes | design dated 2026-11-06, in 0.28.0 | no | yes |
+| GitHub Copilot CLI | yes, by its changelog and tracker | 1.0.107 | not read (closed binary) | not read |
+| Amp | yes, in its binary: the question and a `state=`/`kind=`/`app=`/`msg=` writer | not known | yes | not read |
+| Gemini CLI | no (0.69.0); asked for in its #29710, open | | | |
+| Kilo | no (7.8.27); asked for in its #14973, open | | | |
+| goose, aider, cline, Auggie, Kimi, ollama, llm | no | | | |
+| cursor-agent | not checked | | | |
+
+So Gemini CLI, goose, aider, cline and cursor-agent show no spinner and no
+turn end, and neither does an agent in a version older than the column above
+("What else a program can say", below, is what they still have).
+
+**A program that never says `done`.** opencode reports only `working`,
+`blocked` and `idle`, so its turns end by going idle. Taken literally that is
+"at rest, no news", and every opencode turn would end in silence. So `idle`
+straight after
+`working` counts as a turn that ended, after at least 2s of work, for any
+program that has not shown it tells a finish from a stop: one not in
+`ReportedStatus.saysDone` (codex, claude-code, pi, crush, each read to say
+`done`) that has not yet said `done` or `error` in its run
+(`SessionManager.saidDone`). The list is what keeps Codex quiet while it
+starts its MCP servers, `working` then `idle`, before any first turn. What it
+costs: Codex 0.163 exactly, which had no `done` yet, ends its turns silently.
+
+Measured with Claude Code 2.1.328 in a pty that answered the question: `idle`
+at start, `working` as the prompt was sent, `done` 1.7s later, `clear` on
+exit, and at the trust dialog of an untrusted folder
+`blocked:kind=permission:msg=` "trust this folder".
+
+Run for real in a copy of the app on 2026-11-19, each agent's reports read
+from the app's log:
+
+- **Codex 0.170**: `idle`, `working` then `idle` as its MCP servers started
+  (four seconds once, and nothing was raised), a turn as `working` then `done`
+  (announced with its answer), an approval as `blocked/permission` (announced,
+  and cleared when it was answered with Enter), `idle` on the next key after
+  `done`. Three sessions finishing within a second were three announcements.
+  Left idle for 33 minutes after three turns each, past its 30-minute recap:
+  see "Tested how".
+- **Claude Code 2.1.328**: the above, and its `done` heard from a terminal
+  hibernated four seconds earlier, and after being put to sleep and woken.
+- **Pi 1.5.2**: answered, then `idle`, `working`, and `error` with its own
+  words when its login had expired (announced as failed).
+- **OpenCode V2 2.3.2**: `idle` at start; a turn as `working` with a child
+  record for its session, that record cleared, then `idle`, announced as a
+  finished turn 0.4s later by the rule below.
+
+**What each one sends**, read from its own code on 2026-11-19:
+
+| | Codex 0.170 | Claude Code 2.1.328 | Pi (current) |
+|---|---|---|---|
+| `working` | a turn, a review, MCP servers starting | busy, or idle with a message queued, or a finished turn still waiting on background work | a run or a compaction |
+| `blocked` | approval (`permission`), a question or MCP form (`question`), sign-in (`auth`) | a permission, sandbox or worker request and a goal proposal (`permission`), input needed (`question`), an open dialog (no kind), a failed sign-in (`auth`); `msg` says which | an extension dialog or login; `msg` is its title |
+| `done` | a turn completed, until a key or click | a turn completed with nothing awaited | a run finished |
+| `error` | a turn that failed | a turn that failed, with the failure as `msg` | an error that is not retried |
+| `idle` | at rest, an interrupt, a replayed conversation | no turn yet, or one that was stopped | started, or cancelled |
+| child records (`id=`) | none | background commands, monitors and remote agents, each `working` or `blocked`, cleared one by one | none |
+| `clear` | exit, suspend, handing the terminal on | exit | |
+
+So three things no title or screen could tell are said outright: a turn that
+failed, a finished turn that is still waiting on its own background work, and
+why a program is blocked.
+
+**How it is read.** libghostty ignores the sequence, and Wortel owns the pty,
+so `ProgramStatusWatch` reads it off the output on its way to the terminal
+(`ProgramSignalScanner`: outside a match it only looks for the next ESC). It
+answers the question with the same body. A hibernated session is heard the
+same way, since the output is read with or without a terminal. A replay (what
+the program wrote while Wortel was closed) is old news twice over: a question
+in it is not answered, because the program stopped waiting long ago and the
+answer would be typed into it. Of the rest, only what it leaves standing is
+passed on, marked as replayed: a `clear` if there was one, the last root
+report, each child record still there, and the last notification. Not heard
+at all: a session on the exec backend (no keeper), where libghostty owns the
+pty, and whose notifications libghostty still forwards.
+
+**Records.** A report with no `id` is about the program itself (the root
+record); one with an `id` is about a piece of its work. `ProgramRecords` holds
+them as the spec has a terminal hold them (64 besides the root, the one
+updated longest ago making room). Two things are read from them, apart. The
+root says whether the program is working or has finished. The `block` says
+whether it wants an answer: the root when that is `blocked`, else a piece of
+its work that is, which is the program waiting on you whatever the root says
+meanwhile (Claude Code's root reads `done` while a remote agent it started
+waits for an answer). They are kept apart so that one changing never looks
+like the other: a background task's question, once answered, must not
+announce the finished turn behind it a second time. Other child states change
+nothing, because a program waiting on its own work says `working` at the root
+itself.
+
+**What a report comes to** is `ReportedStatus.effects`, pure and tested:
+
+| Report | What happens |
+|---|---|
+| `working` | the spinner; a turn's end still settling is dropped; and the "finished" or "failed" dot of the turn before goes, since it is working again and that is no longer the news |
+| `idle` | no spinner, nothing said (an interrupt, or `done` once the user touched the program) |
+| `blocked` | "needs input", the loud kind, with the program's `msg`, else "Waiting for your approval", "Asking you a question", "Waiting for you to sign in" |
+| `done` | "turn done", the soft kind, quoting the agent's last answer (below) |
+| `error` | "failed", with its `msg` |
+| a block that ends (`working`, `idle`, `done`, `clear` after `blocked`) | the dot that block raised is cleared, whoever answered it |
+| the same report again | nothing |
+| replayed `blocked`, `done`, `error` | the dot, no banner, no sound |
+
+`blocked`, `done` and `error` are announced once they have stood for 0.4s
+(`ReportedStatus.settle`), on the timer the App Nap assertion already covers.
+A program can change state as fast as it can write, so a banner that is not
+louder than the last one the session put on screen is held to one per 3s
+(`reportIsTooSoon`, counted from `lastBanner`, which outlives the attention:
+a program that blocks and is answered every second still gets one banner in
+three). The dot and the note still change; no banner slides in, and a rename
+does not post one later either (`refreshAttentionNotification` only rewrites
+a banner that was shown).
+A program's line is cut to 180 characters for a banner, and loses direction
+overrides and invisible characters before it leaves the terminal.
+
+**Against the spec** (revision 0.4, 2026-10-10), checked line by line on
+2026-11-19. Followed: both terminators, the pair grammar, skipped malformed
+pairs, the last of a repeated key, base64 with or without padding, every
+limit as "discard the whole report", an unknown state ignoring its report, a
+bad `id` ignoring its report rather than landing on the root, `kind` only
+with `blocked`, `app` outside its character set treated as absent, the reply
+to the question written before the terminal's own answers to anything asked
+after it, working and blocked records dropped when the program exits or the
+shell is back. Not followed, on purpose: a full reset (RIS) does not remove
+the records (a reset in the middle of an agent's run would leave the session
+with no state until its state next changed), `progress` is not shown, and
+the reply does not list states and kinds, which without a list means exactly
+the ones read here.
+
+**What a reporting session's other signals come to**
+(`SessionManager.reports`): OSC 9;4 from it is ignored (it is a build the
+agent ran, not the agent), a bell raises nothing, and a notification of its
+own (OSC 9, 777, 99) is never the news. Codex's turn-end OSC 9 is the start of
+its answer with no fixed wording, which is how four in five Codex turns
+arrived as "needs input" while notifications were sorted by keyword (measured
+2026-11-19). Its approval OSC 9 ("Approval requested: npm test") is good
+words, so one arriving within 2s of a reported block becomes that banner's
+text.
+
+**Its conversation is read for words only.** A finished turn is announced
+with the start of the agent's last answer (`announceFinishedTurn`, below). The
+file used to be asked for a verdict too: was there a turn at all, was it an
+error, a question, an idle compaction. A program that says `done` is not
+second-guessed, and a file that can't be found (another `CODEX_HOME`) costs
+the quote, never the announcement. What that gives up: Codex says `working`
+while it restarts an MCP server and then falls back to a `done` nobody
+acknowledged, which is one turn announced twice, and Claude Code 2.1.295 to
+2.1.325 said `done` after an idle compaction (fixed in 2.1.326).
+
+**When it ends.** `clear` (the program exited, was suspended, or handed the
+terminal on), the agent's marker going, or the shell back at its prompt. A
+block goes with the program; what `done` or `error` raised stays, because the
+result is still there to look at. Across a relaunch the last state is kept in
+`sessions.json` (`reportedState`) and restored for an agent still running,
+since it says nothing new until its state changes.
+
+**An agent too old to report.** Codex, Claude Code, Pi, opencode and crush are
+known to report (`ReportedStatus.knownReporters`, with the version each needs
+and where its release notes are). One of them seen starting, with its
+interface up (it turned on bracketed paste, so not `codex exec` or
+`claude -p`), that has said nothing after 20s is an old version
+(`SessionManager.watchForSilence`). With nothing guessed, such a session shows
+no spinner and no dot, so it says why, in two places while the agent runs. Its
+row has a small orange triangle in the slot where its status would be, the one
+a worktree that failed has. And the sidebar's bar shows an orange warning
+triangle beside the update and permissions icons (`AgentUpdateIndicator`); a
+click opens a popover with which agent, the version it needs, a Release Notes
+button, and that the agent has to be started again after updating. The row's
+triangle can't be clicked, so the session's menu (its "…", a right-click, the
+titlebar's "…") starts with "Update Pi…", which opens that popover, and so
+does Session ▸ Update Pi… for the selected session, which puts it in ⌘P. With
+the sidebar hidden there is no icon to hang the popover off, and the item
+opens the agent's release notes instead. It was a grey line under the
+session's name first, which read as disabled and was cut off at the sidebar's
+width. An agent that does not report in any version
+(Gemini CLI, goose, aider, cline) gets neither: there is nothing to update to.
+
+**Known limits.** Codex's own (openai/codex issues, read 2026-11-19):
+approvals inside background subagent threads are not reported (#61124), a
+stalled subagent can hold `working` (#60325), and startup dialogs are not
+covered (#61778). A crashed agent leaves `working` until the marker sweep
+finds it gone, within about two minutes. And Wortel's: Claude Code and Pi ask
+their question once, at startup. One that was already running when a Wortel
+that answers was installed asked a Wortel that did not, and says nothing
+until it is next started. So does one started while Wortel was closed. Neither
+gets the "out of date" triangle, which is only for an agent seen starting.
+
+**Tested how.** `ProgramStatusTests` (the grammar and the records),
+`ReportedStatusTests` (every effect), and `ProgramStatusWatchTests`, which
+runs a script on a real pty that asks the question, checks the reply byte for
+byte, and reports only if it was right. What `SessionManager` does with an
+effect is not in the test target, so that half is checked in a running copy
+of the app: `scripts/verify-agent-status.py` starts stand-in agents that say
+what a script tells them to, under the names the shell integration knows
+(`codex`, `claude`, `pi`, `opencode`, `gemini`), and reads the app's log for
+what it decided. Forty-four cases: a turn, a block and its answer, timing,
+rubbish, programs that never say `done`, old versions, plain programs,
+hibernated terminals, and the app closed and reopened around five sessions.
+`--real` adds the real Claude Code being put to sleep and woken. `--soak`
+is the nearest thing to a day of use: twenty stand-ins, forty random changes
+of state each, some standing and some flickering past faster than an
+announcement settles, held against the log three ways (every report sent was
+heard, in order; everything announced has a state that stood behind it; every
+state that stood was announced, and taken back when it ended). Three seeds,
+2,400 changes, on 2026-11-19: all held. Run both before a change here ships.
+
+The last step, the banner itself, is not something a log can see. On
+2026-11-19 a copy signed with a development certificate (an ad-hoc one is
+never shown a banner) posted the three kinds to a person watching: the banner
+each time, the soft chime for a finished turn, the alert sound for "needs
+input" and "failed". Each post is logged now (`banner handed to Notification
+Center … allowed= banners=`), so "the dot came and the banner didn't" can be
+told from "nothing was raised".
+
+Writing the script found five things no unit test had:
+the terminal core's limit on notifications (below), a finished turn announced
+twice after a background task's question, a "finished" dot left on a session
+that was working again, a stale "needs you" in `wortel list` after an agent
+died while blocked, and the selected session of a Wortel never brought to the
+front counting as watched ("Away from the Mac").
+
+To watch it: every report is logged as `status …` in the `agent-status`
+category (`docs/debugging.md`).
+
+## What else a program can say
+
+Heard for any session, agent or not, and each of them said outright.
+
+1. **A notification of its own** (OSC 9 with text, OSC 777, OSC 99). It
+   raises attention and a banner. Wortel reads it off the pty itself
+   (`ProgramSignalScanner`, `TerminalNotificationReader`), where libghostty's
+   core would have: the core allows one desktop notification a second for the
+   whole app and drops one that says the same as the last inside five seconds
+   (`showDesktopNotification` in Ghostty's `Surface.zig`). Right for one
+   terminal; in a window of agents, two that finish in the same second were
+   one notification, and the other was lost without a trace. Measured
+   2026-11-19: three sessions sending the same approval text a second apart,
+   one arrival. What the core forwards is now ignored for a terminal whose pty
+   Wortel holds, and the limit is kept per session instead: one banner a
+   second, the rest changing the dot quietly. One sent while Wortel was
+   closed is the dot and no banner.
+   This is what a Codex older than 0.163 still sends for a turn end and an
+   approval, while it believes its terminal is unfocused. Sorted by how the
+   text *opens* (`AttentionKind.classify`): a request leads with its request
+   ("Approval requested: …", "Waiting for Approval"), so only the title and
+   the first 40 characters of the body are read, and anything else is a turn
+   that ended. A word somewhere in the text decides nothing. `wortel notify`
+   takes the same path.
+2. **The bell** is "needs input".
+3. **Progress** (OSC 9;4) is the spinner and nothing more. The bundled shell
+   integration sends it as a command starts, except for programs known to stay
+   open (agents, editors, pagers, REPLs: `_ghostty_wortel_interactive` in the
+   zsh, bash and fish integrations), and tools like cargo send their own. Its
+   end clears the spinner. It is not read as a turn that finished.
+4. **A command ending** (OSC 133;D) clears the spinner, and after 10s or more
+   in a session you are not looking at raises "finished", or "failed" on a
+   non-zero exit. Ignored while an agent's marker is live: Pi wraps every
+   message it draws in 133 marks, and the core closes a "command" for each.
+
+Focus still matters to an old Codex: it sends its own notification only while
+its terminal reports unfocused (DECSET 1004). Wortel reports per-surface focus
+as first responder **and** key window (`SurfaceView.updateFocus`), so
+switching sessions, ⌘-tabbing away and minimising all reach the agent.
+
+**What is not read, and was.** A title was read for a spinner glyph and for
+"Action Required". A screen was hashed once a second per agent, and one that
+kept changing and then held still was a turn ending. Progress ending was a
+turn ending. A stopped screen was searched for the wording of a prompt. The
+agent's conversation file was asked whether any of those guesses had been a
+turn. Each was right most of the time, and each incident about a dot in
+`docs/incidents.md` is one of them being wrong: a recap read as a turn, a
+repaint read as work, "would you like" read as a prompt. They are gone, and
+with them the timer that read every agent's screen.
+
+**What that costs.** An agent that reports nothing has no spinner and no
+turn-end notification: Gemini CLI, goose, aider, cline, cursor-agent, and any
+agent in a version from before it reported. A notification or a bell of its
+own still arrives.
 
 ## While a terminal is hibernated
 
 A hibernated session (`docs/glossary.md`) has no libghostty surface, so
-nothing above is parsed by the core. `SignalScanner` reads channels 1 to 4
-off the pty instead (OSC 0/2, 7, 9, 9;4, 99, 133;D, 777 and BEL) and raises
-the same `SurfaceView` callbacks, then takes those sequences out of what is
-written back into the terminal on wake, so nothing is raised twice. Channel 5,
-the screen tier, needs a screen, and nothing answers a program's terminal
-queries while there is none: a session running an agent outside
+nothing is parsed by the core. Status reports are heard as always, since
+`ProgramStatusWatch` listens to the pty and not the terminal. For the rest,
+`SignalScanner` reads the pty instead (OSC 0/2, 7, 9, 9;4, 99, 133;D, 777 and
+BEL) and raises the same `SurfaceView` callbacks, then takes those sequences
+out of what is written back into the terminal on wake, so nothing is raised
+twice. Nothing answers a program's terminal queries while there is no
+terminal, so a session running an agent outside
 `HibernationPolicy.watchableAgents` (only claude so far) is not hibernated
 while that agent runs.
 
@@ -121,149 +346,27 @@ awake. To see why an agent is still awake, or that one went:
 log stream --level info --predicate 'subsystem == "com.gielcobben.Wortel" && category == "sleep"'
 ```
 
-## Per-agent status (out-of-the-box defaults, terminal = ghostty)
+## Still true, and learned the hard way
 
-| Agent | Busy | Attention (needs you) |
-|---|---|---|
-| Claude Code | ✅ OSC 9;4 + braille title | ✅ quiesce on 9;4;0 (permission prompt + turn end) |
-| Pi | ⚠️ screen-activity fallback by default — for OSC 9;4 enable `terminal.showTerminalProgress` (`/settings` → Terminal progress, or `~/.pi/agent/settings.json`; off by default since pi 0.7x, [#3588](https://github.com/badlogic/pi-mono/issues/3588)) | ⚠️ same switch → quiesce at turn end; official `notify.ts` example extension adds OSC 777 |
-| Codex | ✅ braille title spinner | ✅ OSC 9 notification (turn end + approvals, unfocused only) + "Action Required" title |
-| Gemini CLI | ✅ `✦`/`⏲` title | ✅ `✋ Action Required` / `◇ Ready` title edges; opt-in `general.enableNotifications` adds OSC 777 |
-| crush | ✅ OSC 9;4 (gated on ghostty XTVERSION) | ✅ OSC 99/777 (permission + turn end, unfocused only) |
-| Amp | ✅ braille title spinner | ✅ OSC 777 ("Waiting for Approval" / "Agent is ready", unfocused only) |
-| opencode | ❌ nothing (title has no marker) | ⚠️ opt-in `attention.enabled` → OSC 777 |
-| aider | ❌ | ⚠️ opt-in `--notifications` (spawns terminal-notifier/osascript itself) |
-| goose | ❌ | ❌ (static 🪿 title only) |
-
-## Gotchas learned the hard way
-
-- Claude Code compacts a long conversation on its own while it sits idle (over
-  200k tokens, 54 minutes after its last activity, so the summary is written
-  before the 1h prompt cache expires; `"idleCompaction": false` turns it off).
-  It looks exactly like a turn for 20 to 70 seconds, so every waiting session
-  used to get a "Finished, your move" an hour after you left it, and again
-  after the next one. The terminal can't tell, the transcript can: an
-  `isCompactSummary` entry, or an `informational` system entry starting
-  "Compacted while idle", with no assistant entry after it
-  (`ClaudeTranscriptTail.Verdict.noTurn`). It takes both, because the note can
-  arrive after the settle window, and up to ~950 KB of restored files sit
-  between the two, past the tail read. Its sibling, "Compacted using a summary
-  written while you were away", is written inside a real turn and means nothing
-  here.
-- A screen-tier quiesce on a Claude session is checked against the transcript
-  too: a turn writes to it, so a guess with no entry since the busy began was
-  a repaint, and raises nothing. Seen on 2026-10-30: three sessions idle for
-  hours were claimed at 16:02:00 and dotted at 16:02:05. After a relaunch an
-  idle session hasn't spoken, so it isn't `speaksForItself`, and the guess
-  needed 2s of busy rather than the corroborated 10s. What repainted them is
-  unknown. Codex is checked the same way against its rollout (below); Pi and
-  the agents with no conversation file still get these. The
-  session recap
-  (`away_summary`, ~3 minutes after a turn while unfocused) raised nothing in
-  two live captures.
-
-- A turn you read to the end was announced after you left (reported from a
-  Codex user, 2026-11-10). When Codex's title spinner stops, the screen tier
-  re-claims the still-moving screen at once, as a continuation of the same
-  turn, and only calls it over after 3s of stillness. Every scroll re-baselines
-  that tracker (so reading never counts as the agent working), and so does
-  ⌘-tabbing away: reading a long answer kept the turn "running" until you
-  left, and the banner quoting it arrived 3 to 4 seconds later. The fix is
-  not in the tracker but in what a turn end is checked against: when the
-  conversation file was last written (Codex's `task_complete`, Claude's last
-  answer or tool result), and whether the session was on screen, with you
-  there, for a second after that (`SeenLedger`). If so, nothing is raised.
-- Claude Code's OSC 9;4 is gated on `TERM_PROGRAM=ghostty` — captures under
-  `xterm-256color` show nothing. Its "auto" notification channel sends **no
-  bell and no OSC 9/777** under Ghostty; the 9;4;0 edge is the only signal.
-- Pi emits OSC 133;A/B/C zone marks around every message. The libghostty core
-  synthesizes a `COMMAND_FINISHED` (small duration) from a mid-session `133;A`,
-  which used to clear busy: with progress on, Pi's 1s keepalive re-armed it
-  (SessionManager treats a re-arm within 3s as a continuation of the same run
-  so the ≥2s attention gate stays honest); with progress off, nothing did, so
-  the screen-inferred spinner vanished mid-turn and the turn-end went
-  unannounced. `onCommandFinished` now ignores the event entirely while an
-  agent marker is live (the shell hasn't come back; the marker vanishing at
-  its next prompt is what clears busy instead), and deliberately does *not*
-  cancel a pending quiesce raise.
-- Ghostty's GTK apprt drops progress not refreshed within 15s ("bad actor"
-  protection). Wortel must NOT copy that: Claude Code emits a single `9;4;3`
-  per turn with no keepalive. Stuck-busy safety comes from `COMMAND_FINISHED`
-  firing at the next shell prompt instead.
 - macOS notification banners require a signed `/Applications` build
   (`./scripts/release.sh`); ad-hoc Debug builds only get the sidebar dot and
   Dock badge.
-- **Codex blinks its action-required title.** While blocked on the user its
-  title alternates "[ ! ] Action Required" and "[ . ] Action Required", a
-  retitle per blink for as long as the question stands. `titleChanged` used to
-  raise attention on every arrival, and the app layer re-posts the session's
-  notification on every raise; a `UNNotificationRequest` with the same id
-  *replaces* the delivered one, but each replacement slides a banner in again.
-  One pending question was a waterfall of banners (reported from a Codex
-  session with a queued mid-turn question, 2026-10-19). Two guards now:
-  `titleShowsActionRequired` makes the marker an edge rather than a level, and
-  `raiseAttention` drops any signal that says exactly what the standing
-  attention already says (same kind, title and body), whichever channel it
-  came in on, so a bell every few seconds is one banner too.
-- **Codex's title spins for things that aren't turns.** At every launch and
-  resume Codex 0.142 shows "Starting MCP servers (0/3)" with `esc to
-  interrupt` and animates the braille title spinner, exactly as through a
-  turn (measured in a pty: 1.3s with three local servers). One slow server
-  takes it past the 2s gate, and then it ends in "Finished, your move" with
-  no turn at all, on every session a relaunch types `codex resume` into
-  (not seen live; it follows from the code). And the
-  screen tier's repaint guesses hit Codex as they hit Claude: reported as a
-  banner on every Codex session at once (2026-11-09, screenshots of nearly
-  every row dotted), after Claude's had been fixed. One cause is Codex's
-  own: **auto-recap** (`tui.auto_recap`, on by default; `tui/src/app/recap.rs`)
-  writes a "↳ Recap:" under a conversation with 3+ finished turns once its
-  terminal has been unfocused for 30 minutes, and every background session in
-  Wortel is unfocused, so they recap in a wave. It runs on an `ephemeral`
-  thread: no rollout line, and no Codex OSC 9 (that is only sent for the
-  main thread's turns). It isn't the only cause; dots also came with nothing
-  visible changed, and an idle Codex 0.142 drew nothing on its own in ten
-  minutes in a pty (only cursor-shape refreshes, no text). So the fix
-  doesn't depend on the trigger:
-  every Codex quiet that ends in a turn end is checked against the rollout,
-  title and screen alike (`AgentConversation.Codex.tookTurn`): a turn writes
-  `task_started` and its user message at once and a `response_item` per
-  step, and with none of those since the busy began nothing is raised. Only
-  turn lines count: a rollout also takes bookkeeping that belongs to no turn
-  (`thread_settings_applied`, seen three months after a conversation's last
-  turn; the list follows Codex's own `rollout/src/policy.rs`). Any other
-  rollout of the folder written to since the busy began is asked too, since
-  a `/new` or `/resume` inside Codex leaves the session's known id behind,
-  but never one another session is in: two Codex sessions in one repo would
-  otherwise answer for each other. Only rollouts modified since then are
-  opened, so a wave of quiet sessions costs a listing each. A Codex with no
-  conversation and nothing written has taken no turn (the rollout is
-  written at the first prompt), so that raises nothing either; a known
-  conversation whose rollout can't be read raises as before. What a
-  wrong "no turn" costs is the guess only: unfocused, Codex still sends its
-  own OSC 9 for a real turn end.
+- Ghostty's GTK apprt drops progress not refreshed within 15s. Wortel must not
+  copy that: a spinner that is still true must not go out. Stuck-busy safety
+  comes from the command ending at the next shell prompt instead.
 - **A failed `KERN_PROCARGS2` read is not an absent agent.** `AgentLiveness`
   finds most agents only by their arguments, because the cheap `p_comm` pass
   misses them: pi, gemini and amp are `node`, aider is `python3`, and Claude
-  Code renames itself to its version (`p_comm` reads `2.1.272`, measured). Only
-  codex, crush, goose, opencode and cursor-agent ship a binary under their own
-  name and skip the read. That read is a size probe followed by a read,
-  and a live process can grow its argv in between, so it fails routinely on a
-  healthy one. `ProcessTable.arguments` flattened that to `[]`, which looks
-  exactly like a process that was searched and didn't match, so the minute
-  sweep declared a running Pi gone and deleted its marker — and nothing writes
-  a marker again until the shell reaches a prompt the agent is holding. The
-  session lost its spinner mid-turn (`refreshAgentActivity` reads a vanished
-  marker as the shell returning and clears busy) and never got it back.
-  Intermittent and total, but only *visible* on agents with no other channel:
-  `markBusy` from OSC 9;4 or a title marker never consults the agent marker, so
-  Claude and Codex kept their spinners and lost only resume, the agent badge and
-  the `onCommandFinished` suppression. Pi, aider, opencode and goose have
-  nothing but the marker-gated screen tier, so they lost everything. Fixed by
-  `ProcessTable.argumentsIfReadable` returning nil for "couldn't read", which
-  `locate` turns into `.unknown`, plus `sweepsBeforeDroppingMarker` so no single
-  reading can delete a marker. Anything else that decides an agent is gone owes
-  the same two guarantees.
-
+  Code renames itself to its version (`p_comm` reads `2.1.272`, measured).
+  That read is a size probe followed by a read, and a live process can grow
+  its argv in between, so it fails routinely on a healthy one. Flattened to
+  "no arguments" it looks exactly like a process that was searched and didn't
+  match, and the minute sweep once declared a running Pi gone and deleted its
+  marker. `ProcessTable.argumentsIfReadable` returns nil for "couldn't read",
+  `locate` turns that into `.unknown`, and `sweepsBeforeDroppingMarker` means
+  no single reading can delete a marker. Anything else that decides an agent
+  is gone owes the same two guarantees. The sweep runs on its own timer, once
+  a minute while any agent is running (`updateMarkerSweep`).
 
 ## Away from the Mac
 
@@ -280,6 +383,12 @@ for any input type, which needs no permission, and it is read only when a
 signal arrives: no timer. The selected session then raises its dot and banner
 exactly like one in the background. Using another app was already "away".
 
+"Frontmost" is AppKit's word (`NSApp.isActive`), not only the flag the app
+layer sets on activate and resign. The flag starts out true, so a Wortel that
+was never in front (opened in the background, as a login item is, or relaunched
+behind another app) took its selected session for watched and raised nothing
+for it. Found 2026-11-19, in a copy opened in the background.
+
 What clears it differs on purpose. A background session's attention is
 answered by Wortel coming forward with it selected, or by selecting it. An
 attention raised while its session was *already on screen* can't be answered
@@ -295,7 +404,7 @@ agent while you're gone is not you coming back.
 
 ## What the banner says
 
-A turn that went quiet (`announceTurnEnd`) is announced with the start of the
+A finished turn (`announceFinishedTurn`) is announced with the start of the
 agent's last answer, not a fixed "Finished, your move": with three agents
 going, the fixed text said a turn ended and not which one or how it went.
 `AgentAnswer` makes the first paragraph of prose of the final message into
@@ -307,26 +416,27 @@ collapsed, cut to 180 characters at a word with an ellipsis.
 Where it is read from, each found the way resume finds the conversation
 (`liveConversationID`), only the last 256 KB, off the main thread:
 
-- **Claude**: the transcript (`ClaudeTranscriptTail.lastAnswer`), in the same
-  read as the verdict. A pending `AskUserQuestion` gives its first question, an
-  `ExitPlanMode` the plan's first paragraph.
-- **Codex**: the rollout (`AgentConversation.Codex.file`, by the day its UUIDv7
-  id was made): `task_complete`'s `last_agent_message`, else the last assistant
-  `message`.
+- **Claude**: the transcript (`ClaudeTranscriptTail.lastAnswer`).
+- **Codex**: the rollout (`AgentConversation.Codex.turnReading`, which also
+  finds the one a `/new` or `/resume` inside Codex moved to):
+  `task_complete`'s `last_agent_message`, else the last assistant `message`.
 - **Pi**: the session file (`AgentConversation.Pi.file`): the last assistant
   `message`'s text.
 
 The fixed text stays for everything else: another agent, no conversation id,
-an answer that is only code, nothing written since the turn began, a tool call
-still waiting (Claude's "I'll run the tests" before a permission prompt is not
-an answer), an interrupted turn, and errors, whose words are the error's. The
-text is the agent's own, so it is quoted as written, dashes and all.
+an answer that is only code, nothing written since the turn began. The text is
+the agent's own, so it is quoted as written, dashes and all.
+
+A block is announced in the program's own words where it gave any (`msg`, or
+its notification), else "Waiting for your approval", "Asking you a question",
+"Waiting for you to sign in". An error is its `msg`, else "Stopped with an
+error".
 
 ## The name on the banner
 
 A notification is posted with the session's name, and the session is very
-often renamed moments later: `progressEnded` raises the attention and then
-calls `considerAutoName` on the next line, which runs the on-device model
+often renamed moments later: `announceFinishedTurn` raises the attention and
+then calls `considerAutoName` on the next line, which runs the on-device model
 off-main and comes back seconds afterwards. The agent-title path
 (`adoptAgentTitle`) renames on the same terms.
 

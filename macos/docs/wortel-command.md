@@ -248,6 +248,10 @@ command in. The state is what the sidebar's dots say:
 | `idle` | nothing running, nothing said since |
 | `preparing` | its worktree is still being made |
 
+For an agent, `working`, `needs-you`, `finished` and `failed` are what the
+agent itself reports. One that reports nothing (Gemini CLI, goose, aider, or
+an old version of one that does) reads as `idle` whatever it is doing.
+
 `--json` prints the same as an array of objects with the fields `id`, `name`,
 `folder`, `directory`, `branch`, `worktree`, `agent`, `state`, `selected` and
 `caller`. A field with nothing to say is left out rather than `null`. The field
@@ -326,7 +330,9 @@ Waits until something happens in a session, then exits 0:
 - `--idle`: the agent in it has finished its turn or is waiting on you (a
   question, a permission), or a plain shell is back at its prompt. A wait that
   starts right after a `send` waits for the agent to start first, so it can't
-  end before the work does. A session nobody has touched is idle at once.
+  end before the work does. A session nobody has touched is idle at once,
+  and so is one whose agent doesn't report its state: for those, wait on
+  `--for <text>` instead.
 - `--exit`: the session closes, or its shell exits.
 
 With none of these, it waits for `--idle`. With several, the first to happen

@@ -37,7 +37,13 @@ final class SurfaceView: NSView {
     /// `durationNs` is how long it ran, in nanoseconds. Authoritative "idle".
     var onCommandFinished: ((_ exitCode: Int, _ durationNs: UInt64) -> Void)?
     /// The program asked for a desktop notification (OSC 9 / 777 / 99).
-    var onNotification: ((_ title: String, _ body: String) -> Void)?
+    /// `replayed`: it asked while nobody was attached, so it is old news.
+    var onNotification: ((_ title: String, _ body: String, _ replayed: Bool) -> Void)?
+    /// The program reported what it is doing (OSC 7501, `ProgramStatus`): the
+    /// one signal that is its own word and not a reading of its screen.
+    /// `replayed`: read from what it wrote while nobody was attached, so it is
+    /// what is true now, not something that just happened.
+    var onProgramStatus: ((_ report: ProgramStatusReport, _ replayed: Bool) -> Void)?
     /// A clicked link resolved to a local markdown file (decided in the runtime's
     /// OPEN_URL handler). The owner opens it in the right-hand preview. Non-markdown
     /// links never reach here — libghostty handles those itself.
@@ -113,6 +119,9 @@ final class SurfaceView: NSView {
     /// Accessibility state (`SurfaceView+Accessibility`). Made before the
     /// surface, so the pty's output handler can hold it.
     let accessibilityWatch = SurfaceAccessibilityWatch()
+    /// Reads the program's own status reports off its output, terminal or no
+    /// terminal. See `ProgramStatusWatch`.
+    let programStatusWatch = ProgramStatusWatch()
 
     /// Cached content size in points for backing-property changes (during
     /// animations the frame may lag the target size).
@@ -336,6 +345,12 @@ final class SurfaceView: NSView {
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         accessibilityWatch.onChange = { [weak self] in self?.accessibilityScreenChanged() }
+        programStatusWatch.onHeard = { [weak self] heard, replayed in
+            switch heard {
+            case .status(let report): self?.onProgramStatus?(report, replayed)
+            case .notification(let said): self?.onNotification?(said.title, said.body, replayed)
+            }
+        }
 
         self.surface = runtime.newSurface(
             view: self,
@@ -641,8 +656,13 @@ final class SurfaceView: NSView {
         // went into the terminal and the buffer everything after.
         pty.enqueue { [weak self] in
             missed.prelude = TerminalModeRecorder.shared.modes(for: session).prelude
-            pty.onOutput = { [weak self] bytes, count in
+            let status = self?.programStatusWatch
+            pty.onOutput = { [weak self, weak pty] bytes, count in
                 TerminalModeRecorder.shared.feed(session: session, bytes: bytes, count: count)
+                // Heard here as it is with a terminal. It stays in what is
+                // kept: the terminal that comes back ignores it, and the
+                // replay into that terminal is not listened to again.
+                status?.output(bytes, count: count, pty: pty)
                 var kept: [UInt8] = []
                 kept.reserveCapacity(count)
                 let signals = missed.scanner.scan(UnsafeBufferPointer(start: bytes, count: count),
@@ -827,7 +847,9 @@ final class SurfaceView: NSView {
             case .commandFinished(let exitCode, let durationNs):
                 confirmCloseWhileHibernated = false
                 onCommandFinished?(exitCode, durationNs)
-            case .notification(let title, let body): onNotification?(title, body)
+            // Heard by the terminal's own listener, hibernated or not
+            // (`ProgramStatusWatch`): raised here as well it would be twice.
+            case .notification: break
             }
         }
     }

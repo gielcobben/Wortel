@@ -66,8 +66,9 @@ struct SignalScanner {
     private var overflowed = false
     private var number: Int?
     private var commandStartedAt: UInt64?
-    /// Kitty notifications arrive in chunks keyed by id until one says done.
-    private var kittyParts: [String: (title: String, body: String)] = [:]
+    /// Reads the notification sequences, as the terminal's listener does
+    /// (`TerminalNotificationReader`): one set of rules for both.
+    private var notifications = TerminalNotificationReader()
 
     private static let signalNumbers: Set<Int> = [0, 1, 2, 7, 9, 99, 133, 777]
 
@@ -244,13 +245,9 @@ struct SignalScanner {
         case 7:
             return Self.pwd(from: text).map(Signal.pwd)
         case 9:
-            return conEmu(text)
-        case 777:
-            let parts = text.split(separator: ";", maxSplits: 2, omittingEmptySubsequences: false)
-            guard parts.count >= 2, parts[0] == "notify" else { return nil }
-            return .notification(title: String(parts[1]), body: parts.count > 2 ? String(parts[2]) : "")
-        case 99:
-            return kitty(text)
+            return Self.progress(text) ?? notification(number: number, text: text)
+        case 777, 99:
+            return notification(number: number, text: text)
         case 133:
             return semanticPrompt(text, now: now)
         default:
@@ -258,14 +255,15 @@ struct SignalScanner {
         }
     }
 
-    /// OSC 9: ConEmu's subcommands, of which only 4 (progress) means anything
-    /// here, or else plain text to show as a notification.
-    private func conEmu(_ text: String) -> Signal? {
+    private mutating func notification(number: Int, text: String) -> Signal? {
+        notifications.read(number: number, text: text).map { .notification(title: $0.title, body: $0.body) }
+    }
+
+    /// OSC 9;4: ConEmu's progress, the one of its subcommands that means
+    /// anything here. nil for anything else.
+    private static func progress(_ text: String) -> Signal? {
         let parts = text.split(separator: ";", omittingEmptySubsequences: false)
-        guard let first = parts.first, !first.isEmpty, first.allSatisfy(\.isASCIIDigit) else {
-            return .notification(title: "", body: text)
-        }
-        guard first == "4", parts.count >= 2, let state = Int(parts[1]) else { return nil }
+        guard parts.first == "4", parts.count >= 2, let state = Int(parts[1]) else { return nil }
         switch state {
         case 0, 4: return .progress(active: false, errored: false) // remove, pause
         case 1, 3: return .progress(active: true, errored: false)  // set, indeterminate
@@ -292,37 +290,6 @@ struct SignalScanner {
         }
     }
 
-    /// Kitty's OSC 99: `key=value:key=value;payload`. `p` says whether the
-    /// payload is the title (the default) or the body, `e=1` that it is
-    /// base64, `d=0` that more is coming for the same `i`.
-    private mutating func kitty(_ text: String) -> Signal? {
-        guard let split = text.firstIndex(of: ";") else { return nil }
-        var fields: [String: String] = [:]
-        for pair in text[..<split].split(separator: ":") {
-            let kv = pair.split(separator: "=", maxSplits: 1)
-            if kv.count == 2 { fields[String(kv[0])] = String(kv[1]) }
-        }
-        var payload = String(text[text.index(after: split)...])
-        if fields["e"] == "1" {
-            guard let data = Data(base64Encoded: payload),
-                  let decoded = String(data: data, encoding: .utf8) else { return nil }
-            payload = decoded
-        }
-        let id = fields["i"] ?? ""
-        var parts = kittyParts[id] ?? (title: "", body: "")
-        switch fields["p"] ?? "title" {
-        case "title": parts.title += payload
-        case "body": parts.body += payload
-        default: return nil // icons, buttons, queries: nothing to show
-        }
-        if fields["d"] == "0" {
-            kittyParts[id] = parts
-            return nil
-        }
-        kittyParts[id] = nil
-        return .notification(title: parts.title, body: parts.body)
-    }
-
     /// OSC 7's URL as a path, when it names a directory on this Mac.
     static func pwd(from text: String) -> String? {
         guard let components = URLComponents(string: text),
@@ -342,8 +309,4 @@ struct SignalScanner {
         return lowered == name || lowered == name.split(separator: ".").first.map(String.init)
             || name.split(separator: ".").first.map(String.init) == lowered
     }
-}
-
-private extension Character {
-    var isASCIIDigit: Bool { isASCII && isNumber }
 }

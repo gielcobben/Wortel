@@ -101,15 +101,17 @@ run.
 has a kind, loudest first: **needs input**, **failed**, **turn done**,
 **finished**. A louder kind is never downgraded to a quieter one.
 
-**Turn.** One prompt and the agent's whole answer to it. For Claude Code and
-Codex a turn end counts only when the agent's own conversation file shows one.
-For other agents it comes from their signals or the screen.
+**Turn.** One prompt and the agent's whole answer to it. The agent says when
+one ends, in a report.
 
-**Signal.** Something a program says about itself through the terminal: OSC 9;4
-progress, a title spinner, a notification escape, a bell.
+**Report.** A program saying what it is doing, itself: working, blocked on
+you, done, failed (the Program Status Protocol, OSC 7501). Codex, Claude Code,
+Pi, opencode and others send them. It is the only way Wortel knows what an
+agent is doing: one that sends none shows no spinner and no turn end.
 
-**Screen tier.** The fallback when a program says nothing: watching whether its
-screen keeps changing.
+**Signal.** Something a program says about itself through the terminal: a
+report, a notification escape, a bell, OSC 9;4 progress. Wortel acts on what
+is said and infers nothing from a title or a screen.
 
 **Away.** The Mac has not been touched for a minute. Changes what an attention
 signal does.

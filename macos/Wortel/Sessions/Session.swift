@@ -449,8 +449,7 @@ final class Session: Identifiable {
         if let surfaceView { return surfaceView }
         let view = SurfaceView(runtime: runtime, workingDirectory: cwd,
                                sessionID: id, initialInput: pendingResumeInput ?? startupInput,
-                               environment: shellEnvironment)
-        view.isSessionTerminal = true
+                               environment: shellEnvironment, isSessionTerminal: true)
         if startupInput != nil, pendingResumeInput == nil { startupInputDropped = view.initialInputDropped }
         startupInput = nil
         // Typed, not settled: still owed until the agent shows up running,

@@ -156,9 +156,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   starts empty: 45 then the real width was a change of width, and Claude Code
   answers one by printing its whole conversation again. Without it the first
   builds left idle agents blank (in the running app, and 4 of 6 in a copy).
-  So a new terminal's first size is a forced repaint
+  So a relaunched or woken terminal's first size is a forced repaint
   (`PtyHost.resize`): one column narrower, and the true width back once the
-  program has been quiet for 0.3 s. Back to back the two reached a program as
+  program has been quiet for 0.3 s. A brand-new session is not asked; it has
+  nothing to repaint. Side terminals are told no first size: their page is
+  the column's. Back to back the two reached a program as
   one SIGWINCH at the old size; back after a fixed 150 ms, or at the first
   output, they cut a reprint short and left only the coloured words on
   screen. Verified in a copy: seven idle Claude Codes, six out of sight, came

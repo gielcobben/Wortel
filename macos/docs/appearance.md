@@ -145,11 +145,12 @@ redrawn white. Confirmed in a test copy: the same build with only that line
 removed draws correctly. The paragraphs below are what it was for, and remain
 the open problem.
 
-It is for the programs in the "no" rows below. Codex blends its input box from
+It was for the programs in the "no" rows below. Codex blends its input box from
 the background it read at startup; after a change that band is the old theme's
 and what you type in it is the new theme's text, near-white on near-white
-(seen in a test copy, 2026-11-19). With the floor the band is still the wrong
-colour and the text can be read.
+(seen in a test copy, 2026-11-19). With the floor gone, that text is
+unreadable again until Codex is restarted, which an idle one is (next
+section).
 
 Two and no higher, measured the same day: the faintest colours meant to be
 seen are the dark theme's black on its page (2.28), Codex's orange on white
@@ -178,8 +179,8 @@ into it). Codex keeps the colours it read at startup for the life of the
 process.
 
 So Wortel gives an agent a new process, when that costs nothing: see the
-next section. Anything else in the "no" rows stays readable (above) and is put
-right by restarting it by hand.
+next section. Anything else in the "no" rows can be left unreadable, with no
+floor under it any more (above), and is put right by restarting it by hand.
 
 Also not Wortel's: a colour a program set with `OSC 10` or `OSC 11` stays
 until the program resets it, across a change of theme.

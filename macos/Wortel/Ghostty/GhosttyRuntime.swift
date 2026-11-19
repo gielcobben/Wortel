@@ -454,18 +454,13 @@ final class GhosttyRuntime {
         // The keeper forked the shell, so it is the only one that knows the pid.
         // Everything the session goes on to run hangs off it.
         view.shellPID = attachment.pid > 0 ? attachment.pid : nil
-        // A session that survived with nothing to replay: the keeper only
-        // buffers while detached and drains that buffer when it hands it over,
-        // so a program that sat idle while the app was gone has written nothing
-        // at all. Left alone the window is simply blank until you touch it,
-        // which is the "sometimes the app looks empty" this fixes. Asked for
-        // before the surface exists, because libghostty can report the window's
-        // size during `ghostty_surface_new` and the repaint has to follow it.
-        if attachment.resumed, attachment.replay.isEmpty {
-            pty.requestRedrawAfterNextResize()
-        }
-
-        Self.hostManaged(&cfg, pty: pty)
+        // A session that survived a relaunch: this terminal is new and holds
+        // nothing but what the keeper buffered while the app was gone, which
+        // for a program that sat idle is nothing at all. Left alone the window
+        // is blank until you touch it, so the program is made to repaint once
+        // it has a size (`PtyHost.ignoreSizesUntilTold`). A new session has
+        // nothing to repaint and isn't asked.
+        Self.hostManaged(&cfg, pty: pty, repaint: attachment.resumed)
 
         guard let surface = ghostty_surface_new(app, &cfg) else {
             NSLog("wortel: host-managed surface could not be created")
@@ -642,7 +637,7 @@ final class GhosttyRuntime {
 
     /// Point a surface config at a pty the app holds: the terminal's bytes
     /// for the program and its size go there instead of to a child of its own.
-    private static func hostManaged(_ cfg: inout ghostty_surface_config_s, pty: PtyHost) {
+    private static func hostManaged(_ cfg: inout ghostty_surface_config_s, pty: PtyHost, repaint: Bool) {
         cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
         cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
         // The terminal has bytes for the program: the user typed, or it is
@@ -659,7 +654,7 @@ final class GhosttyRuntime {
         // the surface has a size to give. Its first report, made before
         // anyone told it one, is libghostty's placeholder and is dropped
         // (`ignoreSizesUntilTold`); `SurfaceView.setSurfaceSize` opens it.
-        pty.ignoreSizesUntilTold()
+        pty.ignoreSizesUntilTold(repaint: repaint)
         cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
             guard let userdata else { return }
             Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
@@ -700,7 +695,9 @@ final class GhosttyRuntime {
         cfg.scale_factor = Double(view.window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 2.0))
         cfg.font_size = fontSize
         cfg.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
-        Self.hostManaged(&cfg, pty: pty)
+        // Woken: the screen comes back from the snapshot, but not what had
+        // scrolled off it, and the program repaints that.
+        Self.hostManaged(&cfg, pty: pty, repaint: true)
         return ghostty_surface_new(app, &cfg)
     }
 

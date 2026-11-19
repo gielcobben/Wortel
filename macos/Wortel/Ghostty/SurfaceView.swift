@@ -180,8 +180,10 @@ final class SurfaceView: NSView {
     private var contentSize: NSSize = .zero
 
     /// A session's own terminal, not one in its side column: the one whose
-    /// size on screen is what a new terminal starts at (`firstSize`).
-    var isSessionTerminal = false
+    /// size on screen is what a new one starts at (`firstSize`). A side
+    /// terminal's page is the column's, a different size, and it is told
+    /// nothing until it is shown.
+    private let isSessionTerminal: Bool
 
     private static let firstSizeKey = "terminal.lastShownSize"
 
@@ -192,17 +194,27 @@ final class SurfaceView: NSView {
     /// wakes, a new session made from the command line) and an agent in one
     /// works at whatever width it is given. A terminal is never resized while
     /// hidden, so this first size is the one it works at until it is shown.
-    private static var firstSize: NSSize? {
-        get {
-            guard let stored = UserDefaults.standard.array(forKey: firstSizeKey) as? [Double],
-                  stored.count == 2, stored[0] >= 40, stored[1] >= 20 else { return nil }
-            return NSSize(width: stored[0], height: stored[1])
+    private static var firstSize: NSSize? = {
+        guard let stored = UserDefaults.standard.array(forKey: firstSizeKey) as? [Double],
+              stored.count == 2, stored[0] >= 40, stored[1] >= 20 else { return nil }
+        return NSSize(width: stored[0], height: stored[1])
+    }()
+
+    /// Held in memory as it changes, which during a window drag is every
+    /// frame, and written to defaults once it has settled for a second.
+    private static func rememberShownSize(_ size: NSSize) {
+        guard size != firstSize else { return }
+        firstSize = size
+        saveFirstSize?.cancel()
+        let work = DispatchWorkItem {
+            saveFirstSize = nil
+            UserDefaults.standard.set([Double(size.width), Double(size.height)], forKey: firstSizeKey)
         }
-        set {
-            guard let newValue else { return }
-            UserDefaults.standard.set([Double(newValue.width), Double(newValue.height)], forKey: firstSizeKey)
-        }
+        saveFirstSize = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
     }
+
+    private static var saveFirstSize: DispatchWorkItem?
 
     /// A new surface that nothing has told a size yet (made out of sight, or
     /// woken without ever having been shown) is told `firstSize`. One that has
@@ -210,7 +222,7 @@ final class SurfaceView: NSView {
     /// `viewDidChangeBackingProperties` already. With neither, it is told
     /// nothing, and its pty keeps the size it has (`PtyHost.ignoreSizesUntilTold`).
     private func tellFirstSize() {
-        guard surface != nil, toldSize == nil, let size = Self.firstSize else { return }
+        guard isSessionTerminal, surface != nil, toldSize == nil, let size = Self.firstSize else { return }
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         setSurfaceSize(width: UInt32(size.width * scale), height: UInt32(size.height * scale))
     }
@@ -426,9 +438,11 @@ final class SurfaceView: NSView {
 
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
          sessionID: UUID? = nil, initialInput: String? = nil,
-         environment: [String: String] = [:], fontSize: Float = 0) {
+         environment: [String: String] = [:], fontSize: Float = 0,
+         isSessionTerminal: Bool = false) {
         self.runtime = runtime
         self.environment = environment
+        self.isSessionTerminal = isSessionTerminal
 
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -1197,7 +1211,7 @@ final class SurfaceView: NSView {
         if reflowed {
             onSizeChange?()
             accessibilityWatch.outputArrived()
-            if isSessionTerminal, window != nil { Self.firstSize = size }
+            if isSessionTerminal, window != nil { Self.rememberShownSize(size) }
         }
         let scaled = convertToBacking(size)
         setSurfaceSize(width: UInt32(max(0, scaled.width)), height: UInt32(max(0, scaled.height)))

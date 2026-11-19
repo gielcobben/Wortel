@@ -834,6 +834,8 @@ final class SessionManager {
         // The agents' folder, made by an earlier build, has no guide yet, and
         // its sessions are resumed from it (a move, a wake): one stat.
         if FileManager.default.fileExists(atPath: ChatFolder.root) { ChatFolder.writeGuide(in: ChatFolder.root) }
+        // What an agent here can ask Wortel for, as a Claude Code skill.
+        DispatchQueue.global(qos: .utility).async { AgentSkill.sync() }
         // Every marker read until restore is done belongs to an agent that was
         // already running (it survived the last quit), so none is "started".
         // Set on every way out, the first launch's early return included.

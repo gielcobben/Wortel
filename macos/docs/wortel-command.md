@@ -215,6 +215,10 @@ wortel remind none
 A session has one reminder; setting another replaces it. Opening the session
 before then leaves it set, and closing the session ends it.
 
+Claude Code learns all of this from a skill Wortel installs at launch,
+`~/.claude/skills/wortel/SKILL.md`, kept up to date while you leave it as it
+is. Edit it and Wortel stops touching it; delete it and it stays gone.
+
 ### `wortel cd <dir>`
 
 Moves the session it was run in to another directory, with its agent's

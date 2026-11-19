@@ -500,6 +500,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (when `$WORTEL_SESSION_ID` is set, offer the move, run `wortel cd`) is what
   reaches every session, and it is theirs to add. The guide is also written
   at launch when `~/Wortel` exists, for a folder an earlier build made.
+- **2026-11-19. Wortel installs a Claude Code skill, `wortel`.** What the
+  `wortel` command can do, for the agent running in a session
+  (`Resources/wortel-skill.md`, `AgentSkill`). A skill and not CLAUDE.md:
+  only its description is in every conversation, the rest is read when it
+  applies. A Mac app has no install step, so it goes in at launch, when
+  `~/.claude` exists: once, then kept up to date with each update for as
+  long as the file is exactly what Wortel last wrote (a digest in the
+  defaults). Edited, it is left alone; deleted, it stays deleted. No menu
+  item: deleting the folder is the way to say no. The user's call, against
+  "Wortel doesn't write into an agent's own folders" above: a skill is a
+  file of Wortel's own in a folder made for them, not a change to the
+  person's instructions or settings. Claude Code only; other agents that
+  read the same format are not checked yet.
 
 ## Keeper
 

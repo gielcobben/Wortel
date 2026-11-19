@@ -34,7 +34,8 @@ draws=$(commits "${DRAWS[@]}")
 count=$(printf '%s' "$draws" | grep -c . || true)
 if [ "${1:-}" = "--count" ]; then echo "$count"; exit 0; fi
 
-rest=$(commits "${APP[@]}" | grep -vFf <(printf '%s\n' "$draws" | awk 'NF {print $1}') || true)
+# By the hash in the first field only: a subject can quote another commit's hash.
+rest=$(commits "${APP[@]}" | awk 'NR == FNR { if (NF) seen[$1]; next } !($1 in seen)' <(printf '%s\n' "$draws") -)
 [ -n "$draws" ] || rest=$(commits "${APP[@]}")
 
 echo "The canvas shows the app at $(git rev-parse --short "$app") ($date)."

@@ -83,7 +83,9 @@ ID=com.gielcobben.Wortel.shots
 mkdir -p "$DATA" && cp -Rc "$SRC" "$COPY"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $ID" "$COPY/Contents/Info.plist"
 codesign --force --deep --sign - "$COPY"
-defaults write $ID "NSWindow Frame main" "100 80 1310 815 0 0 1512 949 "   # x y w h, then the screen
+# x y w h of the window, then the screen it was on, less the menu bar and Dock
+screen=$(swift -e 'import AppKit; let f = NSScreen.main!.visibleFrame; print(Int(f.minX), Int(f.minY), Int(f.width), Int(f.height))')
+defaults write $ID "NSWindow Frame main" "100 80 1310 815 $screen "
 open -g -n --env WORTEL_DATA_DIR="$DATA" --env DO_NOT_TRACK=1 "$COPY"
 ```
 

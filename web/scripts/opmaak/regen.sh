@@ -64,6 +64,7 @@ dump() {
 no_pictures() { sed -E 's#/app/[0-9a-f]{32}\.png##g' "$1"; }
 
 changed=0 notes=0
+: > "$work/to-write"
 while IFS='|' read -r file frame layer light; do
   [ -n "$file" ] || continue
   dump "$frame" "$work/$file.jsx"
@@ -74,12 +75,8 @@ while IFS='|' read -r file frame layer light; do
     echo "  same     $file"
   else
     changed=$((changed + 1))
-    if [ $check = 1 ]; then
-      echo "  differs  $file   ($frame)"
-    else
-      cp "$work/gen/$file.astro" "src/app/gen/$file.astro"
-      echo "  written  $file   ($frame)"
-    fi
+    echo "$file" >> "$work/to-write"
+    if [ $check = 1 ]; then echo "  differs  $file   ($frame)"; fi
   fi
 
   [ "$light" = - ] && continue
@@ -111,10 +108,21 @@ while read -r id; do
   if [ $check = 1 ]; then
     echo "  new      public/app/$id.png"
   else
-    curl -fsS "https://opmaak.dev/a/$id" -o "public/app/$id.png"
+    # Into a temporary file first: a cut-off download must not leave a file
+    # that the next run takes for the finished one.
+    curl -fsS "https://opmaak.dev/a/$id" -o "$work/$id.png"
+    mv "$work/$id.png" "public/app/$id.png"
     echo "  fetched  public/app/$id.png"
   fi
 done < "$work/need"
+# Every frame converted and every image fetched: only now does the site change,
+# so a run that fails part way leaves it as it was.
+if [ $check = 0 ]; then
+  while read -r file; do
+    cp "$work/gen/$file.astro" "src/app/gen/$file.astro"
+    echo "  written  $file"
+  done < "$work/to-write"
+fi
 for f in public/app/*.png; do
   id=$(basename "$f" .png)
   grep -qx "$id" "$work/need" || { notes=$((notes + 1)); echo "  note     $f is not used by any generated file. Remove it in the same commit."; }
@@ -125,13 +133,13 @@ done
 gen_dir=src/app/gen
 [ $check = 1 ] && gen_dir="$work/gen"
 {
-  grep -rhoE '\[data-name="[^"$]+"\]' src/scripts src/components src/pages src/styles | sed -E 's/^\[data-name="//; s/"\]$//'
-  grep -rhoE "named\([^,()]+, '[^']+'" src/scripts src/components | sed -E "s/.*, '//; s/'\$//"
+  grep -rhoE '\[data-name="[^"$]+"\]' src/scripts src/components src/pages src/styles | sed -E 's/^\[data-name="//; s/"\]$//' || true
+  grep -rhoE "named\([^,()]+, '[^']+'" src/scripts src/components | sed -E "s/.*, '//; s/'\$//" || true
 } | sort -u > "$work/looked-up"
 {
-  grep -hoE 'data-name="[^"]+"' "$gen_dir"/*.astro | sed -E 's/^data-name="//; s/"$//'
-  grep -rhoE '[^[]data-name="[^"$]+"' src/components src/pages | sed -E 's/^.data-name="//; s/"$//'
-  grep -rhoE "dataset\.name = '[^']+'" src/scripts | sed -E "s/.*= '//; s/'\$//"
+  grep -hoE 'data-name="[^"]+"' "$gen_dir"/*.astro | sed -E 's/^data-name="//; s/"$//' || true
+  grep -rhoE '[^[]data-name="[^"$]+"' src/components src/pages | sed -E 's/^.data-name="//; s/"$//' || true
+  grep -rhoE "dataset\.name = '[^']+'" src/scripts | sed -E "s/.*= '//; s/'\$//" || true
 } | sort -u > "$work/defined"
 while read -r name; do
   notes=$((notes + 1))

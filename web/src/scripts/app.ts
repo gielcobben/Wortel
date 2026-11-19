@@ -16,7 +16,11 @@ export const named = (root: ParentNode, name: string) =>
 // when there is room. They mark what they hid, so they never undo a scene's
 // own `hidden`.
 
-const unfit = (root: Element) => root.querySelectorAll<HTMLElement>('[data-fit]').forEach((el) => { el.style.display = ''; delete el.dataset.fit; });
+const unfit = (root: Element) => {
+  root.querySelectorAll<HTMLElement>('[data-fit]').forEach((el) => { el.style.display = ''; delete el.dataset.fit; });
+  // A sidebar header's worked-out height (fitSidebar) goes back to the canvas's.
+  root.querySelectorAll<HTMLElement>(':scope > [data-name^="Section "]').forEach((el) => { el.style.height = ''; });
+};
 const drop = (el: HTMLElement) => { el.style.display = 'none'; el.dataset.fit = ''; };
 const shown = (el: Element) => !(el as HTMLElement).hidden && (el as HTMLElement).style.display !== 'none';
 
@@ -44,33 +48,45 @@ export function fitTerminal(root: HTMLElement) {
  * lists the sessions in no folder last, so the session a window is showing is
  * often at the end, and a window whose own session is cut reads as wrong.
  */
-export function fitSidebar(nav: HTMLElement) {
+export function fitSidebar(nav: HTMLElement, also?: HTMLElement) {
   unfit(nav);
-  const rows = (Array.from(nav.children) as HTMLElement[]).filter(shown);
+  const all = Array.from(nav.children) as HTMLElement[];
   const head = (r: HTMLElement) => !!r.dataset.name?.startsWith('Section ');
+  // The 14pt between sections belongs to the last row of an open section, so
+  // a header after a folded or cut one sits close (as in the app since
+  // 82992ca). The canvas writes it as the header's height, fixed for the
+  // order it drew, so it is worked out again for what is shown, before every
+  // measurement: a fit measured with the old heights can still overflow.
+  const gaps = () => {
+    let prev: HTMLElement | null = null;
+    for (const r of all) {
+      if (!shown(r)) continue;
+      if (head(r)) r.style.height = `${prev && !head(prev) ? 44 : 30}px`;
+      prev = r;
+    }
+  };
+  const rows = all.filter(shown);
+  // The selected row, and a row a scene is about to point at or select.
   const keep = new Set<HTMLElement>();
-  const sel = rows.findIndex((r) => r.querySelector(':scope > [data-name="Pill"]'));
-  if (sel >= 0) {
-    keep.add(rows[sel]);
-    for (let k = sel; k >= 0; k--) if (head(rows[k])) { keep.add(rows[k]); break; }
+  for (const at of [rows.findIndex((r) => r.querySelector(':scope > [data-name="Pill"]')), also ? rows.indexOf(also) : -1]) {
+    if (at < 0) continue;
+    keep.add(rows[at]);
+    for (let k = at; k >= 0; k--) if (head(rows[k])) { keep.add(rows[k]); break; }
   }
-  for (let i = rows.length - 1; i > 0 && nav.scrollHeight > nav.clientHeight; i--) if (!keep.has(rows[i])) drop(rows[i]);
-  // A folder header whose rows were all cut goes with them. A folded one had none to cut.
-  rows.forEach((r, i) => {
+  // A folder header whose rows were all cut goes with them, at once, so the
+  // room it frees counts. A folded one had no rows to cut.
+  const orphans = () => rows.forEach((r, i) => {
     if (!head(r) || keep.has(r) || 'fit' in r.dataset) return;
     const mine: HTMLElement[] = [];
     for (let k = i + 1; k < rows.length && !head(rows[k]); k++) mine.push(rows[k]);
     if (mine.length && mine.every((m) => 'fit' in m.dataset)) drop(r);
   });
-  // The 14pt between sections belongs to the last row of an open section, so
-  // a header after a folded or cut one sits close (as in the app since
-  // 82992ca). The canvas writes it as the header's height, fixed for the
-  // order it drew; after cutting or folding, work it out again.
-  let prev: HTMLElement | null = null;
-  for (const r of Array.from(nav.children) as HTMLElement[]) {
-    if (!shown(r)) continue;
-    if (head(r)) r.style.height = `${prev && !head(prev) ? 44 : 30}px`;
-    prev = r;
+  gaps();
+  for (let i = rows.length - 1; i > 0 && nav.scrollHeight > nav.clientHeight; i--) {
+    if (keep.has(rows[i]) || 'fit' in rows[i].dataset) continue;
+    drop(rows[i]);
+    orphans();
+    gaps();
   }
 }
 
@@ -79,7 +95,7 @@ export function wholeRows(root: ParentNode) {
   const terms = Array.from(root.querySelectorAll<HTMLElement>('[data-name="Terminal"], [data-name="Strip terminal"]'));
   const navs = Array.from(root.querySelectorAll<HTMLElement>('[data-name="Sessions"]'));
   terms.forEach((t) => { if (t.dataset.name === 'Terminal') withHeader(t); });
-  const run = () => { terms.forEach(fitTerminal); navs.forEach(fitSidebar); };
+  const run = () => { terms.forEach(fitTerminal); navs.forEach((n) => fitSidebar(n)); };
   run();
   const ro = new ResizeObserver(run);
   [...terms, ...navs].forEach((el) => ro.observe(el));
@@ -151,7 +167,15 @@ export class Sidebar {
     this.attention = named(root, 'Attention')!.parentElement!.cloneNode(true) as HTMLElement;
   }
 
-  row(name: string) { return named(this.nav, name)!; }
+  /**
+   * A session's row. One that fitSidebar cut is put back first (something else
+   * goes instead), since a scene asks for a row to point at it or select it.
+   */
+  row(name: string) {
+    const row = named(this.nav, name)!;
+    if (row && 'fit' in row.dataset) fitSidebar(this.nav, row);
+    return row;
+  }
 
   /** The session rows, top to bottom (not the folder headers). */
   rows() {

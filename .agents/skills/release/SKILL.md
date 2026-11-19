@@ -27,7 +27,7 @@ All commands run from `macos/`.
    untrue, in its own commit before the release, since `--publish` redeploys
    the site. A new verb also belongs in `macos/docs/wortel-command.md`.
    2026.47.1 shipped Remind Me with no word of it on /docs.
-4. **How far behind the pictures are.** `web/scripts/opmaak/drift.sh --count`
+4. **How far behind the pictures are.** `../web/scripts/opmaak/drift.sh --count`
    prints how many commits have touched code that draws since the design
    canvas, and so the app windows on wortel.sh, last showed the app. It never
    holds a release up. Say the number when you hand over, and when it is

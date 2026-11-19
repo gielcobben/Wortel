@@ -3266,6 +3266,7 @@ final class SessionManager {
             agent: agent,
             launchIsSimple: AgentCommandLine.isSimple(session.runningArgv ?? agent),
             resumable: resumable,
+            inHomeFolder: marker.cwd.map { AgentSleep.isHomeFolder($0) } ?? false,
             selected: id == selectedID,
             busy: session.isBusy || busyTimers[id] != nil || quiesceTimers[id] != nil,
             rest: rest,

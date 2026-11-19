@@ -442,6 +442,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Control link again. Not yet seen: the link going to `null` when Remote
   Control is turned off by hand. Turning it off doesn't shorten a clock
   already armed for eight hours; the agent sleeps then, which errs awake.
+- **2026-11-19. An agent in the home folder never sleeps.** Claude Code
+  never records its trust answer for the home folder ("Yes lasts for this
+  session only"; `hasTrustDialogAccepted` stays `false` for `~` in
+  `~/.claude.json`, and 2.1.328's own messages say home trust is
+  session-only). So a resume there stopped at "Is this a project you
+  trust?" instead of coming back. Seen on this Mac: a session slept and
+  woken by a click came up at that question for `~`. Any other folder an
+  agent already ran in had its answer recorded when it started, so the home
+  folder is the one case, and the rule is that one path (by its real path),
+  not a copy of Claude's trust lookup, which also walks up to a git root and
+  maps a worktree to its main checkout. Answering the question for the
+  person was not considered: it is a safety prompt. A home-folder session
+  that was already asleep before this still asks once when woken.
 
 ## Keeper
 

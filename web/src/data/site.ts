@@ -329,7 +329,7 @@ export const DOCS_SECTIONS: Section[] = [
         p: 'In Settings (⌘,), “New sessions start with” takes any command. Type one, like claude or codex, or pick one of the agents Wortel finds on your Mac from the menu beside it, and every new session starts with it: ⌘N, ⌥⌘N, ⇧⌘N, ⌘O, a folder’s + and a folder dropped on the sidebar. Session ▸ New Terminal (⌃⌘N) opens one without it, and only exists while the field is filled. Left empty, a new session is a plain terminal. wortel new and the sessions brought back at launch never use it.',
       },
       {
-        p: 'A Claude Code agent that has finished its turn, in a session that has not been on screen for an hour, is ended to give its memory back (130 to 400 MB each), and the shell stays. Select the session and the same conversation is resumed. One waiting on your answer, with something still running under it, with a prompt typed and not sent, or with Remote Control on, gets eight hours instead. A working agent and the session in front of you are never touched.',
+        p: 'A Claude Code agent that has finished its turn, in a session that has not been on screen for an hour, is ended to give its memory back (130 to 400 MB each), and the shell stays. Select the session and the same conversation is resumed. One waiting on your answer, with something still running under it, with a prompt typed and not sent, or with Remote Control on, gets eight hours instead. A working agent and the session in front of you are never touched, and neither is an agent in your home folder, where Claude Code would ask again whether to trust it.',
       },
     ],
   },

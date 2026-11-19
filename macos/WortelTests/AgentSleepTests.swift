@@ -119,6 +119,23 @@ final class AgentSleepTests: XCTestCase {
         XCTAssertEqual(AgentSleep.decide(inputs), .never(.notResumable))
     }
 
+    /// Claude Code never records its trust answer for the home folder, so a
+    /// resume there would stop at "Is this a project you trust?" instead of
+    /// coming back. Seen 2026-11-19 with 2.1.328.
+    func testAnAgentInTheHomeFolderIsLeftAlone() {
+        var inputs = finished(hour * 10)
+        inputs.inHomeFolder = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.homeFolder))
+    }
+
+    func testTheHomeFolderIsKnownByItsRealPath() {
+        XCTAssertTrue(AgentSleep.isHomeFolder("/Users/someone", home: "/Users/someone"))
+        XCTAssertTrue(AgentSleep.isHomeFolder("/Users/someone/", home: "/Users/someone"))
+        XCTAssertTrue(AgentSleep.isHomeFolder("/Users/someone/Developer/..", home: "/Users/someone"))
+        XCTAssertFalse(AgentSleep.isHomeFolder("/Users/someone/Developer", home: "/Users/someone"))
+        XCTAssertFalse(AgentSleep.isHomeFolder("/Users", home: "/Users/someone"))
+    }
+
     /// After `claude; make`, ending the agent would let the shell run `make`.
     func testAnAgentWithMoreOnItsCommandLineIsLeftAlone() {
         var inputs = finished(hour * 10)

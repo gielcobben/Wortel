@@ -201,6 +201,26 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   7.9 to 6.6 ms on the divider. **Not changed:** the side column's own
   terminals are still placed by SwiftUI (`InspectorContainer`), and could
   fall behind the same way.
+- **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
+  keeps what its program writes meanwhile, up to 512 KB. An agent's output
+  is drawing, each piece placed from where the last ended, so with the start
+  gone the rest lands on an old screen in pieces. Seen: a Claude Code
+  hibernated mid-turn by a memory warning, away nine and a half minutes,
+  woken with exactly 512 KB of the more it had written, its screen scattered
+  words until the turn ended and the repaint of 2026-11-19 put it right. So
+  a terminal whose agent is at work is not hibernated, by the clock or by a
+  memory warning, and hibernates when the turn is over. And a hibernated one
+  whose agent starts a turn by itself (a task of its own finishing, a
+  wake-up, another session writing to it) is woken out of sight once half
+  of what can be kept is used, while nothing is lost yet, and goes back on
+  the clock (`HibernationPolicy.outrunning`). A shell printing a log is left
+  asleep: what it loses is the oldest lines. Verified in a test copy with a
+  six second clock: a Claude Code at work for 45 s stayed awake and
+  hibernated 7 s after it finished; a hibernated one stayed asleep through
+  5.8 KB written while resting, was woken on reporting work and writing
+  more (the limit set to 6 KB), stayed awake while working and hibernated
+  again when it rested. The cost is the terminals of agents at work, about
+  70 MB each, for as long as they work.
 - **2026-11-19. A terminal's new size waits for its frame only when it is
   one change, not a drag.** libghostty's layer draws a frame on the main
   thread at every change of its bounds and waits for the GPU to finish it.

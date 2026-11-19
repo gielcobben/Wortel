@@ -359,3 +359,21 @@ as wide as its pane the moment the pane is. `docs/decisions.md`, 2026-11-19.
 two things that share a cause passes when the cause is wrong. And a fault
 that shows "sometimes" wants a script that does it seventy times
 (`macos/scripts/try-switch.sh`), not a second look.
+
+## 2026-11-19. An agent's screen in pieces
+
+**Seen:** a Claude Code session, looked at mid-turn, was scattered words and
+rules across the page. It read correctly once the turn ended.
+
+**Cause:** its terminal had been hibernated on a memory warning while the
+agent was working, and was away nine and a half minutes. A hibernated
+terminal keeps 512 KB of what it misses; the agent wrote more, the start was
+dropped, and what came back was the end of a drawing on an old screen.
+
+**Changed:** a terminal whose agent is at work is not hibernated, and a
+hibernated one is woken out of sight before what it misses stops fitting.
+`docs/decisions.md`, 2026-11-19.
+
+**Rule:** a bounded buffer is a promise about what is in it. Output that is
+drawing rather than lines cannot lose its start, so either it all fits or
+the thing it is drawn on must still be there.

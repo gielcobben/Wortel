@@ -52,6 +52,15 @@ final class HibernationPolicy {
     /// agent keeps its terminal while it runs. See `macos/docs/agent-signals.md`.
     static let watchableAgents: Set<String> = ["claude"]
 
+    /// How much of what a program writes is kept for a terminal that is away:
+    /// as much as the keeper keeps for a session nobody is attached to.
+    /// `WORTEL_MISSED_OUTPUT_LIMIT` (bytes) shortens it for a test.
+    static let missedOutputLimit: Int = {
+        if let value = ProcessInfo.processInfo.environment["WORTEL_MISSED_OUTPUT_LIMIT"],
+           let bytes = Int(value), bytes > 0 { return bytes }
+        return Keeper.replayLimit
+    }()
+
     private init() {
         // Snapshots of terminals that were hibernated when the app last quit.
         // Their sessions came back through the keeper's replay, as every
@@ -92,6 +101,27 @@ final class HibernationPolicy {
         hidden.remove(view)
         timers.removeValue(forKey: ObjectIdentifier(view))?.cancel()
         view.wake(onRestored: onRestored)
+    }
+
+    /// A hibernated terminal's program has written half of what is kept for
+    /// it, or another sixteenth since this was last asked
+    /// (`SurfaceView.hibernate`).
+    ///
+    /// An agent that was resting when its terminal went can start a turn
+    /// while it is away: a task of its own finishing, a wake-up it scheduled,
+    /// another session sending it something. Left alone it writes past what
+    /// is kept, and the terminal that comes back is an old screen with the
+    /// end of a drawing on it. So a terminal that would not be hibernated
+    /// now is given back while everything it missed is still there, out of
+    /// sight, and goes on the clock again for when its program rests.
+    /// One that may hibernate as it is (a shell printing a log) is left: what
+    /// it loses is the oldest lines, and they are lines.
+    func outrunning(_ view: SurfaceView) {
+        guard view.isHibernated, !(view.mayHibernate?() ?? true) else { return }
+        HibernationLog.log.notice("waking a terminal out of sight: its program is writing more than is kept for it")
+        timers.removeValue(forKey: ObjectIdentifier(view))?.cancel()
+        view.wake()
+        if view.isHidden || view.superview == nil { hidden(view) }
     }
 
     private func memoryIsShort() {

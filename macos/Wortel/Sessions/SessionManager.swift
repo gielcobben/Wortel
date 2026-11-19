@@ -5683,9 +5683,16 @@ final class SessionManager {
             // Out of sight long enough, a terminal hibernates. Not one
             // running an agent that has not been seen to cope with it: with no
             // terminal nothing answers the questions a program asks of one.
+            // And not one whose agent is at work, whichever agent it is: what
+            // it writes is drawing, each piece placed from where the last one
+            // ended, and only so much of it is kept for a terminal that is
+            // away (`HibernationPolicy.missedOutputLimit`). Past that the
+            // start is gone and the rest lands on an old screen, in pieces
+            // (2026-11-19: a Claude Code hibernated mid-turn for nine minutes
+            // wrote more than was kept). It hibernates when the turn is over.
             view.mayHibernate = { [weak session] in
-                guard let agent = session?.runningAgent else { return true }
-                return HibernationPolicy.watchableAgents.contains(agent)
+                guard let session, let agent = session.runningAgent else { return true }
+                return !session.isBusy && HibernationPolicy.watchableAgents.contains(agent)
             }
 
             view.onTitleChange = { [weak self, weak session] title in

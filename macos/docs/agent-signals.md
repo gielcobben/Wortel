@@ -328,7 +328,11 @@ out of what is written back into the terminal on wake, so nothing is raised
 twice. Nothing answers a program's terminal queries while there is no
 terminal, so a session running an agent outside
 `HibernationPolicy.watchableAgents` (only claude so far) is not hibernated
-while that agent runs.
+while that agent runs. And no agent's terminal is hibernated while the agent
+is at work (`Session.isBusy`): what it writes then is drawing, and only
+512 KB of it is kept for a terminal that is away. One that starts a turn
+while hibernated is woken out of sight once half of that is used
+(`HibernationPolicy.outrunning`). `../../docs/decisions.md`, 2026-11-19.
 
 ## While an agent is asleep
 

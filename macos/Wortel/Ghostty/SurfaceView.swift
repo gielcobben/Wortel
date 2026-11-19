@@ -862,7 +862,12 @@ final class SurfaceView: NSView {
     /// The pty queue's buffer for a session with no terminal. A class so the
     /// output closure and the hibernation share one; confined to that queue.
     final class MissedOutput: @unchecked Sendable {
-        var buffer = ReplayBuffer()
+        var buffer = ReplayBuffer(limit: HibernationPolicy.missedOutputLimit)
+        /// Bytes kept since the terminal was last asked back
+        /// (`HibernationPolicy.outrunning`). Asked once `buffer` is half
+        /// full, and again at every sixteenth of it written after that: the
+        /// answer changes when an agent that was resting starts a turn.
+        var sinceAsked = 0
         /// The modes the program believed in at the moment its output turned
         /// away from the terminal: the ones that go with the snapshot. What
         /// it changed after is in `buffer`. Read on the pty queue at the
@@ -925,6 +930,14 @@ final class SurfaceView: NSView {
                 kept.withUnsafeBufferPointer { raw in
                     guard let base = raw.baseAddress, raw.count > 0 else { return }
                     missed.buffer.append(base, count: raw.count)
+                }
+                missed.sinceAsked += kept.count
+                if missed.buffer.count >= missed.buffer.limit / 2,
+                   missed.sinceAsked >= max(1, missed.buffer.limit / 16) {
+                    missed.sinceAsked = 0
+                    DispatchQueue.main.async {
+                        if let self { HibernationPolicy.shared.outrunning(self) }
+                    }
                 }
                 guard !signals.isEmpty else { return }
                 DispatchQueue.main.async { self?.raise(signals) }

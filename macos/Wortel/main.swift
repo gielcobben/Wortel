@@ -13,8 +13,10 @@ PtyHost.readEnableFlag()
 _ = DataDirectory.url
 InstanceLock.acquireOrHandOff()
 
-// Same reason: WORTEL_HIBERNATE_AFTER shortens hibernation for a test.
+// Same reason: WORTEL_HIBERNATE_AFTER shortens hibernation for a test, and
+// WORTEL_MISSED_OUTPUT_LIMIT what is kept for a terminal while it is away.
 _ = HibernationPolicy.after
+_ = HibernationPolicy.missedOutputLimit
 
 // And the two clocks of deep sleep (WORTEL_SLEEP_AFTER,
 // WORTEL_SLEEP_WAITING_AFTER). Read later, a test's thirty seconds is the

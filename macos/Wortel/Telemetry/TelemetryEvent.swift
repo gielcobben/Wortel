@@ -544,6 +544,7 @@ enum CommandVerb: String {
     case notify
     case mark
     case remind
+    case cd
     case list
     case read
     case send

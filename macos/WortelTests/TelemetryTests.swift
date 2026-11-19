@@ -189,6 +189,7 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CommandVerb(.notify(session: nil, title: "t", body: nil)).rawValue, "notify")
         XCTAssertEqual(CommandVerb(.mark(session: nil, colour: "red")).rawValue, "mark")
         XCTAssertEqual(CommandVerb(.remind(session: nil, at: 0)).rawValue, "remind")
+        XCTAssertEqual(CommandVerb(.changeDirectory(session: nil, path: "/secret/repo")).rawValue, "cd")
         XCTAssertEqual(CommandVerb(.list(caller: nil)).rawValue, "list")
         XCTAssertEqual(CommandVerb(.read(session: "x", lines: nil)).rawValue, "read")
         XCTAssertEqual(CommandVerb(.send(session: "x", text: "secret prompt", enter: true)).rawValue, "send")
@@ -448,7 +449,7 @@ final class TelemetryTests: XCTestCase {
         }
         events.append(.appCrashed(signal: .other, exception: .other, site: nil, signature: nil,
                                   version: nil, arch: .other))
-        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .remind, .list, .read, .send,
+        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .remind, .cd, .list, .read, .send,
                                     .wait, .version]
         for verb in verbs {
             events.append(.commandRun(verb: verb))

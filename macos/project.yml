@@ -551,6 +551,8 @@ targets:
       # Where an agent session that would start in the home folder starts
       # instead, and when Claude already trusts it. Foundation only.
       - path: Wortel/Sessions/ChatFolder.swift
+      # What `wortel cd` types and tells the agent that asked.
+      - path: Wortel/Sessions/SessionMove.swift
       # Which conversation Claude, Pi or Codex is in, read from each agent's
       # own files. Three layouts nobody documents; a drift resumes the wrong
       # conversation without a sound. Foundation only.

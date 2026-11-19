@@ -831,6 +831,9 @@ final class SessionManager {
         // still needs the watcher, or nothing would ever record a running agent and
         // the *next* launch would have nothing to resume.
         startAgentActivityWatch()
+        // The agents' folder, made by an earlier build, has no guide yet, and
+        // its sessions are resumed from it (a move, a wake): one stat.
+        if FileManager.default.fileExists(atPath: ChatFolder.root) { ChatFolder.writeGuide(in: ChatFolder.root) }
         // Every marker read until restore is done belongs to an agent that was
         // already running (it survived the last quit), so none is "started".
         // Set on every way out, the first launch's early return included.
@@ -3368,12 +3371,14 @@ final class SessionManager {
     }
 
     /// The second half, after the save: one last look, and the signal.
-    private func signalSleep(_ session: Session, _ candidate: SleepCandidate, waiting: Bool, pressure: Bool) {
+    private func signalSleep(_ session: Session, _ candidate: SleepCandidate, waiting: Bool, pressure: Bool,
+                             moving: Bool = false) {
         let id = session.id
         let group = candidate.group
         guard case .ending(let sleeper, _) = session.sleep else { return }
+        // A move ends the agent in front of you on purpose: you asked for it.
         guard session.surfaceView?.ptyHost?.foregroundProcessGroup() == group,
-              !session.isBusy, id != selectedID else {
+              !session.isBusy, moving || id != selectedID else {
             session.sleep = .awake
             sleepSurvivors[id] = nil
             scheduleSave()
@@ -3386,8 +3391,10 @@ final class SessionManager {
             \(candidate.started.count) started under it
             """)
         kill(-group, SIGTERM)
-        Telemetry.capture(.agentSlept(agent: AgentName(command: sleeper.marker.agent),
-                                      cause: pressure ? .pressure : .clock))
+        if !moving {
+            Telemetry.capture(.agentSlept(agent: AgentName(command: sleeper.marker.agent),
+                                          cause: pressure ? .pressure : .clock))
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + AgentSleep.exitGrace) { [weak self] in
             guard let self, let session = self.sessions.first(where: { $0.id == id }),
                   case .ending(let sleeper, let ending) = session.sleep, ending == group else { return }
@@ -3406,6 +3413,7 @@ final class SessionManager {
                     "session \(id.uuidString, privacy: .public): the agent did not exit, still awake")
                 self.scheduleSave()
                 self.armSleep(session)
+                if moving { self.failMove(session, because: "the agent didn't quit when asked") }
             } else {
                 self.commitSleep(session, sleeper)
             }
@@ -3415,6 +3423,19 @@ final class SessionManager {
     /// The agent has gone, as asked: the session is asleep from here.
     private func commitSleep(_ session: Session, _ sleeper: SleepingAgent) {
         let id = session.id
+        // Ended to be moved: resumed straight away, built for where it goes.
+        var sleeper = sleeper
+        if let move = pendingMoves[id] {
+            if let moved = movedSleeper(sleeper, to: move.path) {
+                sleeper = moved
+                wantsWake.insert(id)
+            } else {
+                // Still resumed, where it was: an agent ended for nothing is
+                // worse than a move that didn't happen.
+                wantsWake.insert(id)
+                failMove(session, because: "its conversation can't be resumed there")
+            }
+        }
         // Not an agent that ended: nothing is owed for it at a quit beyond
         // what `sleep` already says.
         session.sleep = .asleep(sleeper)
@@ -3580,6 +3601,11 @@ final class SessionManager {
             return .shellBusy
         }
         let line = sleeper.input.hasSuffix("\n") ? String(sleeper.input.dropLast()) : sleeper.input
+        // Being moved: into the new directory first, on a line of its own.
+        if let path = sleeper.moveTo, let cd = SessionMove.cdLine(path) {
+            guard view.typeCommand(cd) else { return .shellBusy }
+            pendingMoves[session.id]?.typed = true
+        }
         guard view.typeCommand(line) else { return .shellBusy }
         sleeper.typedAt = now
         sleeper.attempts += 1
@@ -3593,6 +3619,150 @@ final class SessionManager {
             (attempt \(sleeper.attempts))
             """)
         return .starting
+    }
+
+    // MARK: - Moving a session (`wortel cd`)
+    //
+    // Deep sleep's road with a `cd` in it: wait for the agent's turn to end,
+    // end it as a sleep would, type `cd <dir>` into the same shell and resume
+    // the exact conversation there. The move is done when the shell reports
+    // the new directory; then the row is filed where ⌘O would put it.
+
+    @ObservationIgnored private var pendingMoves: [Session.ID: PendingMove] = [:]
+    @ObservationIgnored private var moveChecks: [Session.ID: DispatchWorkItem] = [:]
+
+    /// Move `session` to `path`. Answered at once; the move itself waits for
+    /// the agent's turn to end when it is working (it is, when it asked).
+    func changeDirectory(_ session: Session, to path: String) -> WortelResponse {
+        let path = FolderRoot.normalize(path) ?? path
+        let shown = SessionMove.display(path)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return .failure("No such directory: \(shown)")
+        }
+        guard SessionMove.cdLine(path) != nil else {
+            return .failure("Wortel can't type \(shown) into a shell safely.")
+        }
+        guard let agent = session.runningAgent else {
+            return .failure("No agent is running in this session. In a shell, use cd.")
+        }
+        guard agent == "claude" else {
+            return .failure("Wortel can only move a Claude Code conversation so far.")
+        }
+        guard case .awake = session.sleep else {
+            return .failure("This session's agent is asleep. Select the session, then try again.")
+        }
+        if let current = session.cwd, FolderRoot.normalize(current) == path, pendingMoves[session.id] == nil {
+            return .failure("Already in \(shown).")
+        }
+        guard let candidate = sleepCandidate(for: session) else {
+            return .failure("Wortel can't stop and resume this agent safely right now.")
+        }
+        guard candidate.inputs.resumable, candidate.inputs.launchIsSimple else {
+            return .failure(candidate.inputs.launchIsSimple
+                ? "Wortel can't tell which conversation this is, so it can't carry it over."
+                : "This agent was started with more on its command line than the agent, "
+                    + "so quitting it would run the rest. Start it on its own to be able to move it.")
+        }
+        let idle: Bool
+        if case .finished = candidate.inputs.rest, !session.isBusy { idle = true } else { idle = false }
+        let previous = pendingMoves[session.id].map(\.path)
+        if let move = pendingMoves[session.id], move.ending {
+            return .failure("This session is already being moved to \(SessionMove.display(move.path)).")
+        }
+        pendingMoves[session.id] = PendingMove(path: path, requestedAt: Date(), idleWhenAsked: idle)
+        AgentSleepLog.log.notice("""
+            session \(session.id.uuidString, privacy: .public): move asked\
+            \(idle ? ", agent at rest" : ", after this turn", privacy: .public)
+            """)
+        scheduleMoveCheck(session, after: idle ? 0.3 : 1)
+        return .success(SessionMove.acceptedMessage(to: path, waitsForTurn: !idle, instead: previous),
+                        value: path)
+    }
+
+    /// Look again soon. One check pending per session.
+    private func scheduleMoveCheck(_ session: Session, after delay: TimeInterval = 2) {
+        let id = session.id
+        moveChecks.removeValue(forKey: id)?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.moveChecks[id] = nil
+            guard let session = self.sessions.first(where: { $0.id == id }) else {
+                self.pendingMoves[id] = nil
+                return
+            }
+            self.tryMove(session)
+        }
+        moveChecks[id] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// End the agent for its move, if its turn is over and nothing holds it.
+    private func tryMove(_ session: Session) {
+        let id = session.id
+        guard let move = pendingMoves[id], !move.ending else { return }
+        if Date().timeIntervalSince(move.requestedAt) > PendingMove.patience {
+            return failMove(session, because: "the agent's turn didn't end within an hour")
+        }
+        guard session.runningAgent != nil else {
+            return failMove(session, because: "the agent quit before it could be moved")
+        }
+        // Asked again in a moment for anything that may pass: still working,
+        // a draft typed and not sent, a question waiting, a command running.
+        guard case .awake = session.sleep, !session.isBusy,
+              let candidate = sleepCandidate(for: session),
+              case .finished(let since) = candidate.inputs.rest,
+              move.idleWhenAsked || since > move.requestedAt,
+              !candidate.inputs.typedSinceRest
+        else { return scheduleMoveCheck(session) }
+        pendingMoves[id]?.ending = true
+        AgentSleepLog.log.notice("session \(id.uuidString, privacy: .public): ending the agent to move it")
+        markEnding(session, candidate, waiting: false)
+        saveNow()
+        signalSleep(session, candidate, waiting: false, pressure: false, moving: true)
+        // The last look before the signal found a reason to wait.
+        if case .awake = session.sleep, pendingMoves[id] != nil {
+            pendingMoves[id]?.ending = false
+            scheduleMoveCheck(session)
+        }
+    }
+
+    /// The sleeping agent as it resumes in `path`: the same conversation,
+    /// its resume built for that directory (by the transcript's path, since
+    /// the transcript stays where it was written).
+    private func movedSleeper(_ sleeper: SleepingAgent, to path: String) -> SleepingAgent? {
+        let old = sleeper.marker
+        let marker = AgentMarker(agent: old.agent, model: old.model, cwd: path, argv: old.argv,
+                                 shellPID: old.shellPID, startedAt: old.startedAt)
+        guard let input = AgentResumeStore.resumeInput(for: marker, knownConversationID: sleeper.conversationID),
+              input.hasSuffix("\n"), AgentConversation.exists(agent: old.agent, id: sleeper.conversationID, cwd: path)
+        else { return nil }
+        return SleepingAgent(marker: marker, conversationID: sleeper.conversationID, input: input,
+                             waiting: false, moveTo: path)
+    }
+
+    /// The shell is in the new directory: the row follows, filed as ⌘O would
+    /// file it, and ⌘N beside it starts there.
+    private func finishMove(_ session: Session, to path: String) {
+        pendingMoves[session.id] = nil
+        moveChecks.removeValue(forKey: session.id)?.cancel()
+        session.originCwd = path
+        let folder = folder(forDirectory: path)
+        if folder != session.folderPath { moveSessions([session.id], toFolder: folder) }
+        AgentSleepLog.log.notice("session \(session.id.uuidString, privacy: .public): moved")
+        scheduleSave()
+    }
+
+    /// The move is off: the session stays (or is resumed) where it was, and
+    /// the person is told, since whoever asked may be gone.
+    private func failMove(_ session: Session, because why: String) {
+        guard let move = pendingMoves.removeValue(forKey: session.id) else { return }
+        moveChecks.removeValue(forKey: session.id)?.cancel()
+        AgentSleepLog.log.notice("""
+            session \(session.id.uuidString, privacy: .public): move given up: \(why, privacy: .public)
+            """)
+        raiseAttention(session, kind: .failed, title: session.name,
+                       body: "Didn't move to \(SessionMove.display(move.path)): \(why).", source: "move")
     }
 
     /// macOS says memory is short: every agent at rest long enough goes now.
@@ -3670,6 +3840,7 @@ final class SessionManager {
         }
         // At rest, perhaps: the hour starts counting (`AgentSleep`).
         armSleep(session)
+        if pendingMoves[session.id] != nil { scheduleMoveCheck(session, after: 0.5) }
     }
 
     /// Look at which conversation the running agent is in: when it starts,
@@ -5258,6 +5429,10 @@ final class SessionManager {
                 guard let self, let session else { return }
                 let previous = session.linkedCheckout?.root
                 session.cwd = pwd // observed → sidebar row + navigation subtitle update
+                if let move = self.pendingMoves[session.id], move.typed,
+                   FolderRoot.normalize(pwd) == FolderRoot.normalize(move.path) {
+                    self.finishMove(session, to: move.path)
+                }
                 self.noteCheckout(session)
                 // Into a worktree, or from one into another: whose branch the
                 // row shows has changed.

@@ -74,7 +74,9 @@ plain terminal.
   Claude session starts in `~/Wortel` itself and Claude asks there once;
   after that every one gets its own folder and is never asked. The session
   is called by its command ("Claude") until the agent names it. Nothing
-  made there is ever removed. A test copy keeps its own under its data
+  made there is ever removed. `~/Wortel/CLAUDE.md` (written when missing,
+  `ChatFolder.guide`) tells the agent to offer `wortel cd` when the work
+  turns to a project elsewhere. A test copy keeps its own under its data
   folder.
 - **New Terminal** (⌃⌘N) is hidden unless the field holds a command, in the
   Session menu (shown and hidden from `AppSettings.onNewSessionCommandChange`,

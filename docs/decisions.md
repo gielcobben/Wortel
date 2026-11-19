@@ -263,7 +263,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   home, ⇧⌘N on a branch, ⌘O somewhere else. Cut that day: Fork Session, Open
   Branch (⇧⌘O), New Folder, Move To, Change Directory, `wortel fork` and
   `wortel cd`. Seven ways in was more than anyone kept apart. Don't add a fifth
-  without answering that (`b447405`).
+  without answering that (`b447405`). `wortel cd` came back on 2026-11-19
+  for agents only, with no menu item (below).
 - **2026-11-16. Remind Me, as Slack has it.** Row menu, Session menu, ⌘P and
   `wortel remind`: Slack's own choices, In 30 Minutes, In 1 Hour, In 3 Hours,
   Tomorrow at 09:00, Monday at 09:00 (the next one), Custom…. A row's menu
@@ -474,6 +475,31 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   writing the trust record (another app's security setting, in a file every
   running Claude rewrites), and Claude asking in each new folder. Existing
   home sessions were left where they are.
+- **2026-11-19. `wortel cd` is back, for the agent only.** Cut on 11-09 with
+  Change Directory; back because agent sessions now start in a folder of
+  their own on purpose (above), so moving to the project the chat turned
+  into is the expected next step, and without it the git panel showed the
+  chat folder while the agent worked in Opmaak. No menu item, so the four
+  ways in stay four. The agent asks first: `~/Wortel/CLAUDE.md`, written by
+  Wortel when missing, tells it to offer the move and run `wortel cd` once
+  the person agrees. Built on deep sleep's road rather than restoring the
+  old `SessionMove` (about a thousand lines, written before sleep existed):
+  wait for the turn to end, end the agent as a sleep does (the selected
+  session included), type `cd` and the exact resume, file the row as ⌘O
+  would. Claude only. Seen 2026-11-19 with Claude Code 2.1.328 in a test
+  copy: told "move this session to b", the agent ran `wortel cd`, was told
+  "Not moved yet", finished its reply, quit, and came back in `b` on the
+  same conversation (it remembered a word from before), the row filed under
+  a new folder "b". In a second session, asked only to work on a README in
+  `b`, it offered "Should I move this session to b first?" on its own, the
+  guide read from the folder above where it started. Not seen: the hour's
+  give-up, a move of a session made by ⌘N in `~/Wortel` itself. The guide
+  only reaches agents started under `~/Wortel`: one in a project folder
+  told the person a move was impossible and suggested `/add-dir`. Wortel
+  doesn't write into a person's own `~/.claude/CLAUDE.md`; a paragraph there
+  (when `$WORTEL_SESSION_ID` is set, offer the move, run `wortel cd`) is what
+  reaches every session, and it is theirs to add. The guide is also written
+  at launch when `~/Wortel` exists, for a folder an earlier build made.
 
 ## Keeper
 

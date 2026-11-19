@@ -275,6 +275,15 @@ only checks that it is ahead and within a year. A bare number is refused: `20`
 could be minutes or a time of day, and a wrong guess is a reminder that never
 comes.
 
+**`cd` is answered at once and done later.** The agent that runs it is mid
+turn, waiting on the reply, so the reply says what will happen ("Not moved
+yet") and the move waits for the turn to end (`SessionManager.changeDirectory`,
+`SessionMove`). It goes on deep sleep's road: the agent is ended the way a
+sleeping one is, `cd` and the resume are typed as two lines (only zsh follows
+a `cd` through a quoted path on the same line), and the move is done when the
+shell reports the new directory. No `--session`: it acts on the agent inside,
+and who may ask that is the session itself.
+
 **`read` reads the active screen, not the viewport.** The active area is what
 the program last drew; the viewport is wherever the person at the keyboard has
 scrolled. An agent asking what another session says means the first.

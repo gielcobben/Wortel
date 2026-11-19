@@ -146,6 +146,22 @@ final class WortelCommandTests: XCTestCase {
                        .remind(session: "agent two", at: nil))
     }
 
+    /// `cd` resolves against where the caller stands: for an agent, where its
+    /// own shell tool is, so `cd ../site && wortel cd .` means the site.
+    func testCdIsResolvedAgainstTheCaller() throws {
+        XCTAssertEqual(try parse(["cd", "../opmaak"]),
+                       .changeDirectory(session: session, path: "/Users/x/opmaak"))
+        XCTAssertEqual(try parse(["cd", "/Users/x/site"]),
+                       .changeDirectory(session: session, path: "/Users/x/site"))
+    }
+
+    /// A second word is nearly always the rest of an unquoted path.
+    func testCdTakesOneDirectory() {
+        XCTAssertThrowsError(try parse(["cd"]))
+        XCTAssertThrowsError(try parse(["cd", ""]))
+        XCTAssertThrowsError(try parse(["cd", "My", "Project"]))
+    }
+
     /// A reminder that can't be understood is refused here, not set for some
     /// other time: a bare number could be minutes or a time of day.
     func testRemindRefusesWhatItCantRead() {

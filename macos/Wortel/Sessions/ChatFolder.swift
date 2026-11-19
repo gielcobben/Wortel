@@ -42,6 +42,7 @@ enum ChatFolder {
         guard (try? fm.createDirectory(atPath: root, withIntermediateDirectories: true)) != nil else {
             return nil
         }
+        writeGuide(in: root)
         if isClaude(command), !claudeTrusts(root, config: claudeConfig()) { return root }
         return nextFolder(in: root, now: now)
     }
@@ -66,6 +67,34 @@ enum ChatFolder {
             n += 1
         }
         return nil
+    }
+
+    /// What every agent started under `root` reads: Claude Code loads the
+    /// `CLAUDE.md` of each folder above where it starts (read when it starts,
+    /// so an agent already running sees it after its next resume). It says how to move
+    /// the session when the work turns to a project elsewhere (`wortel cd`),
+    /// and to ask first. Written when missing, never over one that is there:
+    /// once written it is the person's to change.
+    static let guide = """
+        # Wortel
+
+        This folder was made by Wortel, the terminal this session runs in, as a \
+        place for this conversation to start. It is not a project.
+
+        When the work turns to a project somewhere else on this Mac (a \
+        repository, an app, a site), offer to move this session there. Once \
+        the person agrees, run `wortel cd <that folder>` and finish your \
+        reply. When your turn ends, Wortel quits you and continues this same \
+        conversation in that folder, so the person sees its git and you get \
+        its own settings. Start nothing else after running it: anything still \
+        running when you quit stops.
+
+        """
+
+    static func writeGuide(in root: String) {
+        let path = (root as NSString).appendingPathComponent("CLAUDE.md")
+        guard !FileManager.default.fileExists(atPath: path) else { return }
+        try? guide.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
     /// `2026-11-19`, in the Mac's own time zone.

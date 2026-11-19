@@ -215,6 +215,31 @@ wortel remind none
 A session has one reminder; setting another replaces it. Opening the session
 before then leaves it set, and closing the session ends it.
 
+### `wortel cd <dir>`
+
+Moves the session it was run in to another directory, with its agent's
+conversation. Meant for the agent itself: a session that started in a folder
+of its own under `~/Wortel` and turned into work on a project elsewhere. The
+guide Wortel keeps in `~/Wortel/CLAUDE.md` tells Claude to offer the move and
+to run this once you agree.
+
+Nothing happens at once. When the agent's turn ends, Wortel quits it, types
+`cd <dir>` into the same shell and resumes the same conversation there, then
+the agent waits for you. The row is filed into the folder that covers `<dir>`,
+or a new one, as ⌘O would. The git panel, and the agent's own settings, are
+then that project's.
+
+```sh
+wortel cd ~/Developer/opmaak
+```
+
+Claude Code only. The move waits while a turn is running, a question is
+waiting on you, something the agent started is still running, or you have
+typed and not sent. If it can't happen within an hour, the session gets a red
+dot and a notification and stays where it was. Anything the agent started that
+is still running when it quits stops. A relative `<dir>` is read from where the
+command was run.
+
 ## Reaching other sessions
 
 The commands above act on the session they're run in. These four act on any

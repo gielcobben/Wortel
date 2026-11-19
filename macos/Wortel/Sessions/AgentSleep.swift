@@ -27,6 +27,9 @@ struct SleepingAgent: Equatable {
     var typedAt: Date?
     /// How many times the resume has been typed without the agent starting.
     var attempts = 0
+    /// Ended to be moved (`wortel cd`): the shell `cd`s here before the
+    /// resume is typed, and the resume was built for this directory.
+    var moveTo: String? = nil
 }
 
 /// Where a session's agent is, as far as sleep goes.

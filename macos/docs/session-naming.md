@@ -87,7 +87,7 @@ in precedence order:
 
 | Source | Set by | Replaced by |
 |---|---|---|
-| `placeholder` | the directory at creation; the branch for a worktree session | anything |
+| `placeholder` | the directory at creation ("Home" for the home folder); the branch for a worktree session | anything |
 | `model` | the on-device model, from the screen (`SessionNameGenerator`) | prompt, agent, user, or a better model guess |
 | `prompt` | the first prompt typed into the agent, titled by the model | a new conversation's prompt, an agent title, or the user |
 | `agent` | the agent's terminal title | a new agent title, or the user |

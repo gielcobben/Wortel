@@ -902,6 +902,12 @@ final class SessionManager {
         // An unrecognised source (a file from a newer build) is treated as the
         // user's: the one reading that can never relabel work by surprise.
         session.nameSource = Session.NameSource(rawValue: entry.nameSource) ?? .user
+        // Home sessions were named "~", "~ 2"… before they were "Home". One
+        // still on that placeholder takes the new one; a name anyone gave
+        // it is left alone.
+        if session.nameSource == .placeholder, let home = Self.homeName(forOldPlaceholder: session.name) {
+            session.name = home
+        }
         session.worktreeBranch = entry.worktreeBranch
         noteCheckout(session)
         // A colour only a newer build knows reads as none.
@@ -1823,7 +1829,7 @@ final class SessionManager {
         // forever. The directory is known at creation and is nearly always the
         // answer you'd have typed. Auto-naming still overrides it later: a
         // directory name isn't user-set.
-        let leaf = uniqueLeaf(Self.defaultTitle(forCwd: directory), in: dir)
+        let leaf = uniqueLeaf(Self.defaultName(forCwd: directory), in: dir)
         let session = Session(name: dir.map { "\($0)/\(leaf)" } ?? leaf, cwd: directory)
         session.title = Self.defaultTitle(forCwd: session.cwd)
         noteCheckout(session)
@@ -5454,6 +5460,24 @@ final class SessionManager {
                 self?.onOpenMarkdown?(url)
             }
         }
+    }
+
+    /// What a new session is called before anything better is known: its
+    /// directory's name, and "Home" for the home folder. A row reading "~",
+    /// and "~ 2" to "~ 6" beside it, looked like a path cut short rather than
+    /// a name. Only the name: the title stays "~" (`defaultTitle`), since
+    /// that is also what an agent title echoing the directory is checked
+    /// against, and in the home folder that echo is "~".
+    static func defaultName(forCwd cwd: String?) -> String {
+        guard let cwd, !cwd.isEmpty, cwd != NSHomeDirectory() else { return "Home" }
+        return (cwd as NSString).lastPathComponent
+    }
+
+    /// "Home" for a top-level "~", "Home 2" for "~ 2"; nil for any other name.
+    static func homeName(forOldPlaceholder name: String) -> String? {
+        if name == "~" { return "Home" }
+        guard name.hasPrefix("~ "), let n = Int(name.dropFirst(2)), n > 1 else { return nil }
+        return "Home \(n)"
     }
 
     static func defaultTitle(forCwd cwd: String?) -> String {

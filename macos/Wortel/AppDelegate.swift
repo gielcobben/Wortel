@@ -71,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let manager = SessionManager(runtime: runtime)
         self.manager = manager
+        #if DEBUG
+        SwitchProbe.install(manager: manager)
+        #endif
 
         // AppKit window hosting a SwiftUI NavigationSplitView (the Opslan
         // layout). fullSizeContentView so the sidebar runs to the top; SwiftUI

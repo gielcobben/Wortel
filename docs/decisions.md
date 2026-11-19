@@ -140,7 +140,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   not known**: it was not reproduced in a test copy (three relaunches, right
   size each time). Every catch is logged in the `layout` category with what
   it found, so the next one names its cause; this entry should be replaced by
-  that fix.
+  that fix. **2026-11-19:** the too-wide case was not a dropped size at all,
+  which is why this net never caught it: the terminal's view was that wide,
+  left there by SwiftUI, and was told exactly its size. See the entry on the
+  terminal's pane. The too-narrow case was the placeholder grid, also above.
 - **2026-11-19. A new terminal starts at the size a session's terminal last
   had on screen, and its pty ignores it until it is told one.** Agents in
   sessions not looked at since a relaunch printed everything 45 columns wide,
@@ -172,6 +175,32 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   screen. Verified in a copy: seven idle Claude Codes, six out of sight, came
   back after a relaunch with the same text at the same width, and the one on
   screen was screenshotted correct.
+- **2026-11-19. The terminal's pane is AppKit, and SwiftUI draws only what
+  stands in front of it.** The pane was a SwiftUI view with the terminals'
+  host inside it as a representable, so SwiftUI decided where the host was.
+  On a session switch that brought the side column back, SwiftUI took the
+  pane's new width and did not move the host: it applied that placement at
+  the next change of size and not before. Until then the terminal was as
+  wide as the page without the column, ran under the column and was cut off
+  by it, and its program wrapped for a width nobody could see. Seen on
+  2026-11-18 (the entry on a terminal checking its size) and in a recording
+  on 2026-11-19. Made to happen on demand with `macos/scripts/try-switch.sh`
+  (a Debug build switching sessions itself at six paces and writing down
+  where the terminal is): 61 of 72 returns ended under the column by its
+  full 440 points, with libghostty's frame rule or ours, so not that. The
+  split view and the hosting view were right every time; only the host
+  inside was a layout behind. Laying the hosting view out again did not
+  flush it, a change of its size by one point did. Now
+  `TerminalPaneController` holds the host and sizes it by its autoresizing
+  mask, and the pages that can stand in for a terminal (no sessions, a
+  worktree being made, the attention ring) are a SwiftUI view on top that
+  takes clicks only while a page is up. Same script: 0 of 72, the terminal
+  in the same place to the point (221,0 438x660 with the column, 879x660
+  without), and the keyboard on it after a relaunch. It also took SwiftUI
+  out of every step of a resize: 5.0 to 3.8 ms a step with the column shut,
+  7.9 to 6.6 ms on the divider. **Not changed:** the side column's own
+  terminals are still placed by SwiftUI (`InspectorContainer`), and could
+  fall behind the same way.
 - **2026-11-19. A terminal's new size waits for its frame only when it is
   one change, not a drag.** libghostty's layer draws a frame on the main
   thread at every change of its bounds and waits for the GPU to finish it.

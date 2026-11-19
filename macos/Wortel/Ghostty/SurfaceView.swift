@@ -709,6 +709,37 @@ final class SurfaceView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.dragGap * 2, execute: check)
     }
 
+    #if DEBUG
+    /// What the terminal has been told against what it is, for `SwitchProbe`.
+    struct DebugState {
+        var told: (UInt32, UInt32)?
+        var columns: UInt16 = 0
+        var rows: UInt16 = 0
+        /// The width its columns take, without padding.
+        var gridWidthPx = 0
+        var shown: (UInt32, UInt32)?
+        var layerPx = (0, 0)
+        var pending = false
+        var holds = 0
+        var hidden = false
+    }
+
+    var debugState: DebugState {
+        var state = DebugState(told: toldSize.map { ($0.width, $0.height) }, shown: shownFrameSize.map { ($0.width, $0.height) },
+                               pending: resizePending, holds: Self.resizeHolds, hidden: isHidden)
+        if let surface {
+            let size = ghostty_surface_size(surface)
+            state.columns = size.columns
+            state.rows = size.rows
+            state.gridWidthPx = Int(size.columns) * Int(size.cell_width_px)
+        }
+        if let layer {
+            state.layerPx = (Int(layer.bounds.width * layer.contentsScale), Int(layer.bounds.height * layer.contentsScale))
+        }
+        return state
+    }
+    #endif
+
     /// A frame on every change of size, as libghostty has it. Never set by
     /// the app: `ResizeBench` flips it to measure the two against each other.
     nonisolated(unsafe) static var frameOnEveryResize = false {

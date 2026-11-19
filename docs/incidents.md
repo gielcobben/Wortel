@@ -337,3 +337,25 @@ a hibernation dump. `macos/docs/appearance.md`.
 **Rule:** a second fix for the same complaint means the paths have not been
 counted. Count them: write the test that visits every state a terminal can be
 in (`macos/scripts/try-appearance.sh`), then fix what it finds.
+
+## 2026-11-19. A terminal that ran under the side column
+
+**Seen:** switching back to a session with the side column open, its terminal
+was drawn as wide as the page without the column: the lines ran under the
+column and were cut off, and the agent had wrapped its text for that width.
+Dragging the divider put it right. First seen the day before, when a net was
+put under it (`SurfaceView.reconcileSize`) that never caught one.
+
+**Cause:** the terminal's pane was SwiftUI, and SwiftUI fell a layout behind.
+It took the pane's new width when the column came back and did not move the
+view holding the terminals until the next change of size. The net compared
+what a terminal was told with the size of its view, and those agreed: the
+view was the thing that was wrong.
+
+**Changed:** the pane is AppKit (`TerminalPaneController`), so a terminal is
+as wide as its pane the moment the pane is. `docs/decisions.md`, 2026-11-19.
+
+**Rule:** before guarding a value, ask where it comes from. A check between
+two things that share a cause passes when the cause is wrong. And a fault
+that shows "sometimes" wants a script that does it seventy times
+(`macos/scripts/try-switch.sh`), not a second look.

@@ -159,8 +159,7 @@ final class MainSplitViewController: NSSplitViewController {
         let bottomPane = BottomPaneController(runtime: runtime, manager: manager, git: git,
                                               files: files, previewTabs: previewTabs)
         let mainArea = MainAreaController(
-            terminal: NSHostingController(rootView: DetailPane(
-                runtime: runtime, manager: manager, git: git, files: files)),
+            terminal: TerminalPaneController(runtime: runtime, manager: manager, git: git, files: files),
             runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs)
         let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
         bottomAreaView = bottomPane.view

@@ -248,9 +248,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   it was told, a quarter of a second at the most
   (`SurfaceView.waitForGrid`). Same script after: every line, once, in
   order, and "its size after 26.6 ms" in the log. The cost is those 26 ms
-  on every wake, on that session's queue only. **Not changed:** a relaunch
-  writes the keeper's replay into a new surface the same way; there the
-  program is made to repaint once it is quiet (above).
+  on every wake, on that session's queue only. **And a woken terminal's
+  program is no longer made to repaint.** It was asked to, like a relaunched
+  one, by going one column narrow and back, on the belief that a snapshot
+  lacks what had scrolled off; it holds all of it (a shell's `seq 1 300`
+  read back whole after a wake, 303 lines for 303). The repaint cost a
+  moment at the wrong width and had Claude Code clear the terminal and print
+  its conversation again over a screen that was already right. Checked with
+  a real Claude Code: its pty stays 34x102 through a wake and its screen
+  reads the same before and after. Only a wake whose missed output outran
+  what is kept is still asked, since its start is gone. **Not changed:** a
+  relaunch writes the keeper's replay into a new surface the same way; there
+  the terminal starts empty and the program is made to repaint once it is
+  quiet (above).
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
   keeps what its program writes meanwhile, up to 512 KB. An agent's output
   is drawing, each piece placed from where the last ended, so with the start

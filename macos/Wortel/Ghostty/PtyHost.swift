@@ -696,7 +696,8 @@ final class PtyHost: @unchecked Sendable {
     /// this, no program was ever told 15x45.
     ///
     /// **A repaint, for a terminal that starts empty** (a session that
-    /// survived a relaunch, a woken one). The keeper only buffers while
+    /// survived a relaunch; not a woken one, which gets its screen back
+    /// whole). The keeper only buffers while
     /// detached, so a program that sat idle while the app was gone comes back
     /// with no bytes at all, and a program at rest does not reprint itself
     /// unasked. It used to be the placeholder that made it: 45x15 and then the

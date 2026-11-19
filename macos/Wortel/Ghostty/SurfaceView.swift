@@ -868,6 +868,10 @@ final class SurfaceView: NSView {
         /// full, and again at every sixteenth of it written after that: the
         /// answer changes when an agent that was resting starts a turn.
         var sinceAsked = 0
+        /// More came than `buffer` holds, so its start is gone and what is
+        /// written back cannot be the screen the program left. Set on the
+        /// pty queue, read on the main thread as the terminal is woken.
+        let overflowed = OSAllocatedUnfairLock(initialState: false)
         /// The modes the program believed in at the moment its output turned
         /// away from the terminal: the ones that go with the snapshot. What
         /// it changed after is in `buffer`. Read on the pty queue at the
@@ -931,6 +935,7 @@ final class SurfaceView: NSView {
                     guard let base = raw.baseAddress, raw.count > 0 else { return }
                     missed.buffer.append(base, count: raw.count)
                 }
+                if missed.buffer.dropped > 0 { missed.overflowed.withLock { $0 = true } }
                 missed.sinceAsked += kept.count
                 if missed.buffer.count >= missed.buffer.limit / 2,
                    missed.sinceAsked >= max(1, missed.buffer.limit / 16) {
@@ -1038,7 +1043,8 @@ final class SurfaceView: NSView {
             return
         }
         let started = DispatchTime.now()
-        guard let new = runtime.wakeSurface(view: self, pty: pty, fontSize: hibernation.fontSize) else {
+        guard let new = runtime.wakeSurface(view: self, pty: pty, fontSize: hibernation.fontSize,
+                                            repaint: hibernation.missed.overflowed.withLock { $0 }) else {
             HibernationLog.log.error("could not wake \(session.uuidString, privacy: .public)")
             onRestored?()
             return

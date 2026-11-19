@@ -35,6 +35,9 @@ enum SidebarLayout {
     /// (Index 0 is in front of Pinned and the folders in the stored order;
     /// the sections are drawn by group, so it is the top level's first row.)
     ///
+    /// Both only show in a section sorted by hand: the others are drawn in
+    /// their own order (`SectionSort`) over the stored one.
+    ///
     /// **In a folder, right after the selected row** when that row is drawn
     /// in the same folder, otherwise at the end. A folder is arranged by
     /// hand, so the new row goes beside the one it came from. A pinned row is

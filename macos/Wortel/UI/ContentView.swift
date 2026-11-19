@@ -62,7 +62,8 @@ struct SidebarPane: View {
                 SidebarSnapshotGroup(
                     folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
                     tallIDs: Set($0.sessions.filter(\.hasSecondLine).map(\.id)),
-                    isPinned: $0.isPinned)
+                    isPinned: $0.isPinned,
+                    sortedIDs: manager.sortedOrder(of: $0))
             },
             folding: SidebarFolding(folders: manager.collapsedFolders,
                                     pinned: manager.pinnedCollapsed,
@@ -500,6 +501,15 @@ struct SidebarSectionHeaderContent: View {
         .padding(.leading, 20)
         .padding(.trailing, 36)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        // Sessions' right-click is its "…": Sort By. Pinned has neither.
+        .overlay {
+            if !isPinned {
+                RightClickCatcher(onRightClick: {}, makeMenu: {
+                    SectionSortMenu.menu(forFolder: nil, manager: manager)
+                })
+            }
+        }
     }
 }
 
@@ -774,6 +784,31 @@ struct SidebarHeaderContent: View {
     }
 }
 
+@MainActor
+/// Sort By: how one sidebar section orders its sessions (`SectionSort`), a
+/// checkmark on the current choice. In a folder's "…" as a submenu, and in
+/// the Sessions header's "…" as the whole menu.
+enum SectionSortMenu {
+    static func add(to menu: NSMenu, folder: String?, manager: SessionManager) {
+        let current = manager.sectionSort(ofFolder: folder)
+        for mode in SectionSort.Mode.allCases {
+            let item = ClosureMenuItem(title: mode.title) {
+                manager.setSectionSort(mode, ofFolder: folder)
+            }
+            item.state = mode == current ? .on : .off
+            menu.addItem(item)
+        }
+    }
+
+    /// The Sessions header's "…": nothing else to show but its sort.
+    static func menu(forFolder folder: String?, manager: SessionManager) -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(.sectionHeader(title: "Sort By"))
+        add(to: menu, folder: folder, manager: manager)
+        return menu
+    }
+}
+
 /// What can be done to a folder: its header's right-click menu and its hover
 /// "…". Named and drawn as the session menus are (SessionActions), so "Rename…"
 /// is one thing wherever it appears.
@@ -802,6 +837,12 @@ enum FolderActions {
                 manager.renameFolder(folder, to: name)
             }
         }
+        let sort = NSMenuItem(title: "Sort By", action: nil, keyEquivalent: "")
+        sort.setGlyph("arrow.up.arrow.down")
+        let choices = NSMenu()
+        SectionSortMenu.add(to: choices, folder: folder, manager: manager)
+        sort.submenu = choices
+        menu.addItem(sort)
         menu.addItem(.separator())
         // Non-destructive: the sessions drop to the top level, they're not
         // closed, and nothing on disk is touched. Named for what happens, since

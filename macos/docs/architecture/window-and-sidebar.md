@@ -58,3 +58,24 @@ pointer is on a row or a button is down; rows slide with `moveItem`, not a
 reload. A drop is placed *before the row drawn below it* (`moveSessions(before:)`),
 which means the same thing in the stored order as on screen, so dragging while
 sorted still writes the manual order.
+
+**Sections and how each sorts** (`SidebarLayout`, `SidebarRoot`,
+`SectionSort`, all pure and in `WortelTests`). The sections run Pinned, the
+folders, then Sessions (the folderless ones, under their own header), as a
+list of chats sits under its projects. In the outline Sessions' rows are root
+rows after its header, not its children, and every root index (a row, a drop,
+the insertion line, a fold's slide) goes through `SidebarRoot`. Each section
+but Pinned has a **Sort By** in its "…" (`SectionSortMenu`): Recent Activity,
+the default, Date Created, Name, or Manual. It is stored per folder name, ""
+for Sessions, only when it isn't the default (`SessionManager.sectionSorts`,
+UserDefaults, carried over a folder rename). Recent Activity is
+`Session.lastSentAt`, set by `SurfaceView.onSubmit` on a Return of the user's
+own, else `createdAt`; both are saved with the session. Like Sort Unread
+First, a section's sort is a view over the stored order: `SidebarPane` hands
+the outline each group's `sortedIDs` beside its stored ids, the coordinator
+draws them with `SidebarSort.draw(manual:base:…)` (the unread band over the
+base), and a change to the base waits while a click may be on its way, while
+a change to the stored order (a drag in a Manual section) is drawn at once.
+A drop into a section that sorts itself goes onto it: the folder's or the
+Sessions header lights up, no insertion line is drawn, and a drag that stays
+inside its own sorted section is refused.

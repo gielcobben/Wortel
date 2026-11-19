@@ -33,6 +33,12 @@ import Foundation
 /// Both are held against the *sort* only. A section whose manual order
 /// changed (you dragged a row) is drawn fresh, or the row you just dropped
 /// would refuse to move.
+///
+/// Beneath the unread band is the section's own order (`base`): its Sort By
+/// choice (`SectionSort`), or the manual order for Pinned and a Manual
+/// section. A change there (a Return moved a session up, a name changed) is
+/// the sort's too, and waits while a click may be on its way like the band
+/// does. Only a change to the *manual* order is drawn at once.
 enum SidebarSort {
     /// Where an unread session sorts. Only unread sessions have one.
     struct Key: Equatable {
@@ -52,11 +58,12 @@ enum SidebarSort {
     }
 
     /// The order to draw `manual` in, and what to remember of it for next
-    /// time.
-    static func draw(manual: [UUID], keys: [UUID: Key], previous: Drawn?,
+    /// time. `base` is the section's own order of the same rows, nil for
+    /// `manual` itself; the unread band goes over it.
+    static func draw(manual: [UUID], base: [UUID]? = nil, keys: [UUID: Key], previous: Drawn?,
                      holding held: UUID?, frozen: Bool) -> Drawn {
         func fresh(_ keys: [UUID: Key]) -> Drawn {
-            Drawn(manual: manual, drawn: sorted(manual, keys: keys), keys: keys)
+            Drawn(manual: manual, drawn: sorted(base ?? manual, keys: keys), keys: keys)
         }
         guard let previous else { return fresh(keys) }
         // A reorder by hand, among the rows both orders have: draw it fresh.
@@ -74,9 +81,9 @@ enum SidebarSort {
     }
 
     /// Just the order: `draw` without the memory.
-    static func order(manual: [UUID], keys: [UUID: Key], previous: Drawn?,
+    static func order(manual: [UUID], base: [UUID]? = nil, keys: [UUID: Key], previous: Drawn?,
                       holding held: UUID?, frozen: Bool) -> [UUID] {
-        draw(manual: manual, keys: keys, previous: previous, holding: held, frozen: frozen).drawn
+        draw(manual: manual, base: base, keys: keys, previous: previous, holding: held, frozen: frozen).drawn
     }
 
     /// The plain sort, no holding: the unread band, then the rest as they are.

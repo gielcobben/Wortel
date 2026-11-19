@@ -224,6 +224,22 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   folderless session yet, the empty space under the list is where a session
   is dropped to take it out of its folder. The zone at the first folder's top
   edge that did that went with the section that used to sit above it.
+- **2026-11-19. Each section sorts itself, Recent Activity unless you say
+  otherwise.** Sort By in a folder's "…", and in the Sessions header's:
+  Recent Activity, Date Created, Name, Manual. Every section starts on Recent
+  Activity, the ones that existed too; Manual is the order you dragged, kept
+  underneath all along, so it comes back exactly. Pinned stays by hand.
+  **Activity is a Return of yours** (or the session being made): not a click,
+  not a scroll, not `wortel send`, and not the agent working, because rows
+  that move while you aim at them is what the "Needs You" section was
+  dropped for. A sorted order still waits while the pointer is on a row.
+  **A drop into a sorted section goes into it**, as in a sorted Finder
+  window: its header lights up, there is no line between rows, and the
+  session takes its sorted place. A place in a list only exists in Manual.
+  This narrows 2026-11-18's "goes on top" to Manual sections; in a sorted one
+  a new session is on top by Recent Activity or Date Created anyway. Sort
+  Unread First still puts its band over whichever order a section has. The
+  choice is view state, like a fold, not a setting.
 
 ## Sessions
 

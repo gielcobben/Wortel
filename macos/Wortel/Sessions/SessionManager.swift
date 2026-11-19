@@ -436,6 +436,42 @@ final class SessionManager {
         if looseCollapsed != collapsed { looseCollapsed = collapsed }
     }
 
+    /// How each section sorts (Sort By in its "…" menu), by folder name, ""
+    /// for Sessions. Only the sections not on Recent Activity have an entry:
+    /// that is the default, for every section that existed before there was
+    /// a choice too. View state, kept beside the folds. Pinned has none: it
+    /// is arranged by hand.
+    private(set) var sectionSorts: [String: SectionSort.Mode] = [:] {
+        didSet {
+            UserDefaults.standard.set(sectionSorts.mapValues(\.rawValue), forKey: Self.sectionSortsKey)
+        }
+    }
+    @ObservationIgnored private static let sectionSortsKey = "WortelSectionSort"
+
+    /// How the section of `folder` (nil: Sessions) sorts.
+    func sectionSort(ofFolder folder: String?) -> SectionSort.Mode {
+        sectionSorts[folder ?? ""] ?? .recent
+    }
+
+    func setSectionSort(_ mode: SectionSort.Mode, ofFolder folder: String?) {
+        let value: SectionSort.Mode? = mode == .recent ? nil : mode
+        if sectionSorts[folder ?? ""] != value { sectionSorts[folder ?? ""] = value }
+    }
+
+    /// The order `group` is drawn in by its Sort By choice, beneath Sort
+    /// Unread First; nil for Pinned and a Manual section, which are drawn as
+    /// stored. Reads each row's times and name, so a Return in a sorted
+    /// section redraws the sidebar, and nothing else's does.
+    func sortedOrder(of group: SidebarGroup) -> [UUID]? {
+        guard !group.isPinned else { return nil }
+        let mode = sectionSort(ofFolder: group.folder)
+        guard mode != .manual else { return nil }
+        let facts = Dictionary(group.sessions.map {
+            ($0.id, SectionSort.Facts(created: $0.createdAt, sent: $0.lastSentAt, name: $0.leafName))
+        }, uniquingKeysWith: { first, _ in first })
+        return SectionSort.order(group.sessions.map(\.id), mode: mode, facts: facts)
+    }
+
     /// Unfold whichever section a session is drawn in now (Pinned, its folder,
     /// or Sessions), so it has a row: after it was selected, pinned, unpinned,
     /// or renamed into another place.
@@ -531,6 +567,8 @@ final class SessionManager {
         collapsedFolders = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedFoldersKey) ?? [])
         pinnedCollapsed = UserDefaults.standard.bool(forKey: Self.pinnedCollapsedKey)
         looseCollapsed = UserDefaults.standard.bool(forKey: Self.looseCollapsedKey)
+        sectionSorts = (UserDefaults.standard.dictionary(forKey: Self.sectionSortsKey) as? [String: String] ?? [:])
+            .compactMapValues(SectionSort.Mode.init(rawValue:))
         declaredFolders = UserDefaults.standard.stringArray(forKey: Self.declaredFoldersKey) ?? []
         folderOrder = UserDefaults.standard.stringArray(forKey: Self.folderOrderKey) ?? []
         folderRoots = UserDefaults.standard.dictionary(forKey: Self.folderRootsKey)
@@ -666,6 +704,10 @@ final class SessionManager {
     func renameFolder(_ folder: String, to newName: String) {
         guard let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
               trimmed != folder else { return }
+        // Its sort goes with it, as its fold does. Onto a folder that is
+        // there already is a merge, and the destination keeps its own.
+        let merging = folderOrder.contains(trimmed)
+        if let sort = sectionSorts.removeValue(forKey: folder), !merging { sectionSorts[trimmed] = sort }
         for session in sessions where session.folderPath == folder {
             session.name = "\(trimmed)/\(session.leafName)"
         }
@@ -714,6 +756,7 @@ final class SessionManager {
         if released { setLooseCollapsed(false) }
         declaredFolders.removeAll { $0 == folder }
         collapsedFolders.remove(folder)
+        sectionSorts.removeValue(forKey: folder)
         folderRoots.removeValue(forKey: folder)
         normalizeOrder()
         scheduleSave()
@@ -1795,8 +1838,10 @@ final class SessionManager {
         session.startedWithSettingsCommand = usesCommand
         session.createdAt = Date()
         prepare?(session)
-        // At the top level, on top: a list nobody arranges then reads newest
-        // first, as a list of chats does. In a folder, right after the selected
+        // Where it goes in the stored order, which is what a Manual section
+        // draws (a sorted one puts it by its sort: on top, for Recent
+        // Activity and Date Created). At the top level, on top: a list nobody
+        // arranges then reads newest first, as a list of chats does. In a folder, right after the selected
         // row when that row is in the same folder, otherwise at the folder's
         // end: a folder is arranged by hand, and the new row belongs beside
         // the one it came from. A pinned row is drawn in Pinned, not in its

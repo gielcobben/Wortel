@@ -84,6 +84,26 @@ enum AgentRest: Equatable {
         default: self = .unknown
         }
     }
+
+    /// From what a program says of itself (`ProgramRecords`, OSC 7501), for
+    /// an agent with no record of its own to read: Codex. `since` is when it
+    /// stopped saying `working`.
+    ///
+    /// `idle` and `done` are at rest. A block, its own or a piece of its
+    /// work's, is waiting on the person, and so is a piece of work still
+    /// going while the root says it is done. `error` is left unknown: a turn
+    /// that failed is something to look at, not to restart over.
+    init(reported records: ProgramRecords?, since: Date?) {
+        guard let records, let root = records.root, let since else { self = .unknown; return }
+        if records.block != nil { self = .waiting(since: since); return }
+        switch root.state {
+        case .idle, .done:
+            let stillGoing = records.childrenInOrder.contains { $0.state == .working }
+            self = stillGoing ? .waiting(since: since) : .finished(since: since)
+        case .working, .blocked, .error:
+            self = .unknown
+        }
+    }
 }
 
 /// What asking for a sleeping agent back came to (`SessionManager.wake`).
@@ -121,6 +141,23 @@ enum AgentSleep {
     /// cleanly on SIGTERM, leaves the terminal as a shell's, and resumes in
     /// place). A constant, like `HibernationPolicy.watchableAgents`.
     static let enabledAgents: Set<String> = ["claude"]
+
+    /// Agents that are ended to be repainted when light and dark change
+    /// (`docs/appearance.md`): the same checks, and that it says itself when
+    /// it is idle. Claude Code by its own record, Codex by its status
+    /// reports (0.164 and later; an older one says nothing and is left).
+    /// Pi follows a change by itself and no Pi that reports was at hand to
+    /// check, so it is not here.
+    static let repaintAgents: Set<String> = ["claude", "codex"]
+
+    /// An agent painted for the other appearance, at rest and out of sight
+    /// this long, is ended. Short, because it is unreadable now; not nothing,
+    /// so stepping away from a session for a moment does not end its agent.
+    static let repaintAfter = seconds("WORTEL_REPAINT_AFTER", 20)
+    /// The one in front when the appearance changed is restarted where it
+    /// stands once it has been at rest this long: a turn that ended a second
+    /// ago is still being read.
+    static let repaintInPlaceAfter: TimeInterval = min(repaintAfter, 5)
 
     /// A finished agent, out of sight this long, sleeps.
     static let finishedAfter = seconds("WORTEL_SLEEP_AFTER", 60 * 60)
@@ -187,11 +224,26 @@ enum AgentSleep {
         /// this Mac. Not never: someone with Remote Control on for every
         /// session would never get deep sleep at all.
         var remoteControl = false
+        /// It drew itself for light and the Mac is now dark, or the other
+        /// way round (`SessionManager.isPaintedForTheOtherAppearance`).
+        var repaint = false
+        /// Keys, a paste or a script's text went in since it last started
+        /// working: maybe a prompt half written, or a `/new` that moved it to
+        /// another conversation. Not a click or a scroll, which
+        /// `typedSinceRest` also counts: reading an answer is not typing one.
+        var keysSinceWork = false
+        /// It was in front when the appearance changed, and is still: it may
+        /// be restarted where it stands.
+        var inPlace = false
         var now: Date
     }
 
     enum Reason: Equatable {
         case notAnAgent, notEnabled, launchNotSimple, notResumable, homeFolder, selected, busy, restUnknown
+        /// Painted for the other appearance, and not ended for it: text was
+        /// typed, something runs under it, it waits on an answer, or Remote
+        /// Control is on. For an agent with no clock of its own.
+        case held
     }
 
     enum Verdict: Equatable {
@@ -200,26 +252,47 @@ enum AgentSleep {
         case notBefore(Date)
         /// Now. `waiting` says which clock it was on.
         case sleep(waiting: Bool)
+        /// Now, so that it comes back painted for the appearance of the day.
+        case repaint
     }
 
     /// Whether the agent in a session may be ended now. `pressure` is a
     /// memory warning from macOS, which shortens only the finished clock.
     static func decide(_ inputs: Inputs, pressure: Bool = false) -> Verdict {
         guard let agent = inputs.agent else { return .never(.notAnAgent) }
-        guard enabledAgents.contains(agent) else { return .never(.notEnabled) }
+        let repaints = inputs.repaint && repaintAgents.contains(agent)
+        guard enabledAgents.contains(agent) || repaints else { return .never(.notEnabled) }
         guard inputs.launchIsSimple else { return .never(.launchNotSimple) }
         guard inputs.resumable else { return .never(.notResumable) }
+        // A restart there stops at Claude's trust question: neither a sleep
+        // nor a repaint.
         guard !inputs.inHomeFolder else { return .never(.homeFolder) }
-        guard !inputs.selected else { return .never(.selected) }
+        // In front it is only ever restarted where it stands, and only the
+        // one that was in front at the change itself.
+        let inPlace = repaints && inputs.selected && inputs.inPlace
+        guard !inputs.selected || inPlace else { return .never(.selected) }
         guard !inputs.busy else { return .never(.busy) }
 
         let restSince: Date
         var waiting = inputs.hasWorkUnder || inputs.typedSinceRest || inputs.remoteControl
+        // What keeps a repaint off is narrower in one way (a click or a
+        // scroll is not a prompt) and wider in none.
+        var held = inputs.hasWorkUnder || inputs.keysSinceWork || inputs.remoteControl
         switch inputs.rest {
         case .unknown: return .never(.restUnknown)
         case .finished(let since): restSince = since
-        case .waiting(let since): restSince = since; waiting = true
+        case .waiting(let since): restSince = since; waiting = true; held = true
         }
+        if repaints, !held {
+            let quiet = max(restSince, inputs.quietSince ?? .distantPast)
+            let deadline = inPlace ? quiet.addingTimeInterval(repaintInPlaceAfter)
+                                   : max(quiet, inputs.hiddenSince).addingTimeInterval(repaintAfter)
+            return inputs.now >= deadline ? .repaint : .notBefore(deadline)
+        }
+        // Held, or not painted wrong: the ordinary clocks, for the agents
+        // that have them. In front, nothing.
+        guard enabledAgents.contains(agent) else { return .never(.held) }
+        guard !inputs.selected else { return .never(.selected) }
         let interval = waiting ? waitingAfter : (pressure ? pressureFloor : finishedAfter)
         // Every way the clock restarts is one of these being later.
         let from = max(restSince, inputs.hiddenSince, inputs.quietSince ?? .distantPast)

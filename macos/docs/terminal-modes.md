@@ -108,9 +108,17 @@ Tracking what each program was last told would mean persisting a second belief
 about the far side and being silently wrong about it, which is the shape of the
 bug this whole file exists for, and a report a program already agrees with costs
 it nothing — it sets the theme it is already painting. Note that a fresh
-surface's conditional theme is `.light` (ghostty's default), so on a *light* Mac
+surface starts on the app handle's scheme, which is already the current one, so
 ghostty's own `set_color_scheme` sees no change and reports nothing: without
-this the light case would never resync at all.
+this a resumed program would never be resynced at all. How a terminal is told
+light or dark in the first place is in `docs/appearance.md`.
+
+**What a running agent is assumed to have set is written down.** An agent's
+startup modes are often not on record (see `TerminalModes.assuming`), so a
+reattach takes them from the agent's marker. `TerminalModeRecorder.assume` also
+records them, because a hibernation takes its prelude from the record: before
+it did, the terminal such a session woke with had no theme reports and no
+bracketed paste.
 
 ## The terminal's answers to the replay
 
@@ -175,6 +183,25 @@ pieces. Two things about it are load-bearing, and both are pinned by
 
 It is not a terminal emulator and must not become one: libghostty is the
 emulator, this only needs to know what to say again.
+
+## Taking modes back
+
+The same record says what to take back from a program that is ended and does
+not tidy up. Codex has no handler for any signal, so ended by one (an agent
+restarted to repaint it, `appearance.md`) it leaves the shell on the alternate
+screen with mouse reporting and its keyboard flags on. `TerminalModes.undo`
+turns off every mode on record as on, the alternate screen last, pops the
+keyboard flags on both screens, shows the cursor and turns the wheel's
+scrolling of a pager (`?1007`) back on. It is written before the signal, so
+the shell's next prompt, which switches bracketed paste on for itself, comes
+after it; and if the program does not go, the prelude puts it all back.
+
+An agent's startup modes are written down for as long as it runs, seen or not
+(`TerminalModeRecorder.assume`). When its marker goes, the ones still on
+record as on are taken off it (`forgetStartupModes`): an agent that was
+killed, or never set them (`claude -p`), would otherwise have focus reporting
+and theme reports put into a plain shell's terminal at every later wake.
+Bracketed paste stays, which the shell has on at its prompt itself.
 
 ## Known limits
 

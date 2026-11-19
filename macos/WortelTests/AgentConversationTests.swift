@@ -154,6 +154,49 @@ final class AgentConversationTests: XCTestCase {
         return id
     }
 
+    // MARK: - The last sign of being in a conversation
+
+    /// What ending an agent to bring it back goes by: text typed after the
+    /// last sign of it being in the conversation Wortel knows may have moved
+    /// it to another (`/new`), and then the wrong one would come back.
+    func testCodexWasLastSeenInAConversationWhenItsFileWasWritten() throws {
+        let made = Date(timeIntervalSinceNow: -3600)
+        let id = try makeCodexRollout(made: made, cwd: cwd, turnAt: made)
+        let file = try XCTUnwrap(AgentConversation.Codex.file(id: id, root: root))
+        let written = Date(timeIntervalSinceNow: -600)
+        try FileManager.default.setAttributes([.modificationDate: written], ofItemAtPath: file.path)
+        let seen = try XCTUnwrap(AgentConversation.lastSeenIn(
+            agent: "codex", id: id, cwd: cwd, argv: "codex", startedAt: made, codexRoot: root))
+        XCTAssertEqual(seen.timeIntervalSince(written), 0, accuracy: 1)
+    }
+
+    /// Resumed by name and not written to since: its start is the sign.
+    func testOrWhenItWasStartedByName() throws {
+        let made = Date(timeIntervalSinceNow: -86_400)
+        let id = try makeCodexRollout(made: made, cwd: cwd, turnAt: made)
+        let file = try XCTUnwrap(AgentConversation.Codex.file(id: id, root: root))
+        try FileManager.default.setAttributes([.modificationDate: made], ofItemAtPath: file.path)
+        let started = Date(timeIntervalSinceNow: -60)
+        XCTAssertEqual(AgentConversation.lastSeenIn(
+            agent: "codex", id: id, cwd: cwd, argv: "codex resume \(id)", startedAt: started,
+            codexRoot: root), started)
+        // Started plainly, the old write is all there is.
+        let plain = try XCTUnwrap(AgentConversation.lastSeenIn(
+            agent: "codex", id: id, cwd: cwd, argv: "codex", startedAt: started, codexRoot: root))
+        XCTAssertEqual(plain.timeIntervalSince(made), 0, accuracy: 1)
+        // Named another conversation: no sign of this one from the start.
+        let other = try XCTUnwrap(AgentConversation.lastSeenIn(
+            agent: "codex", id: id, cwd: cwd, argv: "codex resume \(b)", startedAt: started, codexRoot: root))
+        XCTAssertEqual(other.timeIntervalSince(made), 0, accuracy: 1)
+    }
+
+    func testNoFileAndNoNameIsNoSign() {
+        XCTAssertNil(AgentConversation.lastSeenIn(agent: "codex", id: b, cwd: cwd, argv: "codex",
+                                                  startedAt: Date(), codexRoot: root))
+        XCTAssertNil(AgentConversation.lastSeenIn(agent: "claude", id: b, cwd: cwd, argv: "claude",
+                                                  startedAt: Date(), codexRoot: root))
+    }
+
     private func reading(_ id: String?, cwd: String? = nil, others: Set<String> = [],
                          since: Date) -> String {
         switch AgentConversation.Codex.turnReading(conversation: id, cwd: cwd ?? self.cwd, since: since,

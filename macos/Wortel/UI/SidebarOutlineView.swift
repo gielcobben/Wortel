@@ -542,11 +542,26 @@ final class SidebarInsertionLine: NSView {
 /// ends over it, so a stale drop highlight gets cleared.
 final class SidebarOutline: NSOutlineView {
     var onDragEnd: (() -> Void)?
+    /// A rename in the list was ended by a press elsewhere in it: the
+    /// keyboard goes back to the session, as it does from Return or Esc.
+    var onRenameLeft: (() -> Void)?
+
+    /// Never the keyboard: the terminal has it (`docs/architecture/window-and-sidebar.md`).
+    /// A table takes it on any press its own code handles, and a press that
+    /// switched sessions only kept it with the terminal because the switch
+    /// handed it there first. Every other press (the session already on
+    /// screen, a folder's header, ⌘- and ⇧-click) left it in the list, which
+    /// shows nothing for it, so typing went nowhere until the terminal was
+    /// clicked (measured 2026-11-19). A rename field in a row is its own
+    /// control and still takes it.
+    override var acceptsFirstResponder: Bool { false }
     /// Mouse-*down* on a folder header, outside the disclosure chevron.
     var onHeaderPressed: ((Any) -> Void)?
     /// Mouse-*down* on a session's row, a plain press: the switch happens
-    /// here rather than on mouse-up (see `mouseDown`).
-    var onSessionPressed: ((Any) -> Void)?
+    /// here rather than on mouse-up (see `mouseDown`). Returns whether the
+    /// press was taken as that: false for a header, or a row inside a
+    /// selection of several, which wait for mouse-up.
+    var onSessionPressed: ((Any) -> Bool)?
 
     /// Headers toggle on mouse-down, like the chevron beside them — which
     /// NSOutlineView drives from its own mouse-down tracking. The table's
@@ -560,15 +575,18 @@ final class SidebarOutline: NSOutlineView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let row = self.row(at: point)
+        // A rename under way is ended by a press anywhere else in the list.
+        // The list ended it by taking the keyboard, once; it refuses the
+        // keyboard now, so the edit is ended here. Where the keyboard goes
+        // after is decided below, once it is known what the press is.
+        let editing = (window?.firstResponder as? NSView)?.isDescendant(of: self) == true
+        if editing { window?.makeFirstResponder(nil) }
         // The gap between two sections is no row's: a press there neither
-        // selects the session above it nor starts a drag. It does end a
-        // rename, as a press anywhere else in the list does.
+        // selects the session above it nor starts a drag.
         if row >= 0, let rowView = rowView(atRow: row, makeIfNecessary: false) as? SidebarPillRowView,
            rowView.gapBelow > 0,
            !rowView.contentRect.contains(rowView.convert(point, from: self)) {
-            if let editor = window?.firstResponder as? NSView, editor.isDescendant(of: self) {
-                window?.makeFirstResponder(self)
-            }
+            if editing { onRenameLeft?() }
             return
         }
         // A press on a row's button ("+", "…", "×") is the button's, not a
@@ -584,13 +602,17 @@ final class SidebarOutline: NSOutlineView {
         // was held (115 ms a click on average, measured 2026-11-18) in front
         // of every switch. Dragging still works: the press selected the
         // session, and the drag takes it. ⌘ and ⇧ stay on mouse-up, as does
-        // a second press, and so does editing a name in the list.
+        // a second press. A press that ended a rename switches here too: the
+        // edit is already over, and the switch puts the keyboard in the
+        // session pressed, rather than in the one being left first.
         let plain = event.modifierFlags.intersection([.command, .shift, .control]).isEmpty
-        let editing = (window?.firstResponder as? NSView)?.isDescendant(of: self) == true
-            && window?.firstResponder !== self
-        if row >= 0, !onButton, plain, event.clickCount == 1, !editing, let item = item(atRow: row) {
-            onSessionPressed?(item)
+        var pressed = false
+        if row >= 0, !onButton, plain, event.clickCount == 1, let item = item(atRow: row) {
+            pressed = onSessionPressed?(item) ?? false
         }
+        // A rename ended by anything else (a header, ⌘-click): back to the
+        // session on screen.
+        if editing, !pressed { onRenameLeft?() }
         super.mouseDown(with: event)
     }
 
@@ -761,8 +783,9 @@ struct SidebarOutlineView: NSViewRepresentable {
             coordinator?.headerPressed(item, in: outline)
         }
         outline.onSessionPressed = { [weak coordinator = context.coordinator] item in
-            coordinator?.sessionPressed(item)
+            coordinator?.sessionPressed(item) ?? false
         }
+        outline.onRenameLeft = { [weak manager] in manager?.returnKeyboardToSession() }
         outline.headerView = nil
         outline.focusRingType = .none
         outline.rowSizeStyle = .custom
@@ -1454,10 +1477,27 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// when the row is part of a selection of several, as in Finder: the
         /// press may be the start of dragging them all, and mouse-up
         /// (`rowClicked`) narrows it to the one if it wasn't.
-        func sessionPressed(_ item: Any) {
+        func sessionPressed(_ item: Any) -> Bool {
             guard let item = item as? SessionItem,
-                  !manager.isInMultipleSelection(item.session) else { return }
-            manager.clickSidebarRow(item.id, .plain)
+                  !manager.isInMultipleSelection(item.session) else { return false }
+            pressed(item.id)
+            pressHandled = item.id
+            return true
+        }
+
+        /// The session a mouse-down already acted on, so its mouse-up does
+        /// not act again: a second hand-back of the keyboard is a second
+        /// focus report to the program, or a waking terminal given it before
+        /// it is shown.
+        private var pressHandled: Session.ID?
+
+        /// A plain press on a session: switch to it, or, if it is the one on
+        /// screen already, back into its terminal. Nothing switches then, so
+        /// nothing else would give the terminal the keyboard.
+        private func pressed(_ id: Session.ID) {
+            let switches = manager.selectedID != id
+            manager.clickSidebarRow(id, .plain)
+            if !switches { manager.returnKeyboardToSession() }
         }
 
         @objc func rowClicked(_ sender: NSOutlineView) {
@@ -1466,10 +1506,19 @@ struct SidebarOutlineView: NSViewRepresentable {
             // mouse-up) would undo it.
             guard row >= 0 else { return }
             guard let session = sender.item(atRow: row) as? SessionItem else { return }
+            let click = Self.click(NSApp.currentEvent?.modifierFlags ?? [])
+            let handled = pressHandled == session.id
+            pressHandled = nil
             // ⌘ toggles the row in or out of the selection, ⇧ takes the range
             // from the anchor over the rows as drawn; neither moves the
-            // terminal (see `SessionSelection`). A plain click is one row.
-            manager.clickSidebarRow(session.id, Self.click(NSApp.currentEvent?.modifierFlags ?? []))
+            // terminal (see `SessionSelection`). A plain click is one row,
+            // already acted on at mouse-down unless it was inside a selection
+            // of several.
+            if click == .plain {
+                if !handled { pressed(session.id) }
+            } else {
+                manager.clickSidebarRow(session.id, click)
+            }
         }
 
         private static func click(_ modifiers: NSEvent.ModifierFlags) -> SessionManager.SidebarClick {

@@ -98,6 +98,36 @@ struct TerminalModes: Equatable {
         return Array(out.utf8)
     }
 
+    /// What to write into a terminal to take back what a program switched
+    /// on, for a program that is being ended and may not do it itself.
+    ///
+    /// Claude Code leaves on SIGTERM and tidies up first. Codex has no handler
+    /// for any signal: it is simply gone, and the shell is left on the
+    /// alternate screen with mouse reporting on, so the prompt is drawn where
+    /// it does not belong and every move of the mouse types at it (measured
+    /// 2026-11-19, Codex 0.170, SIGTERM, SIGHUP and SIGINT alike).
+    ///
+    /// Every mode on record as on is turned off, the alternate screen last so
+    /// that what is undone before it is undone where it was set. The keyboard
+    /// flags are popped on both screens, which keep a stack each; a pop of
+    /// nothing does nothing. Then the cursor, which a TUI hides, and the wheel
+    /// scrolling a pager (`?1007`, this terminal's default, which Codex turns
+    /// off): neither is on record, and both are what a shell expects.
+    ///
+    /// Written **before** the signal, so the shell's next prompt, which turns
+    /// bracketed paste back on for itself, comes after it.
+    var undo: [UInt8] {
+        let screens: Set<Int> = [1047, 1048, 1049]
+        let on = privateModes.filter(\.value).keys.sorted()
+        var out = keyboardFlags == nil ? "" : "\u{1B}[<u"
+        for mode in on where !screens.contains(mode) { out += "\u{1B}[?\(mode)l" }
+        let left = on.filter(screens.contains)
+        for mode in left { out += "\u{1B}[?\(mode)l" }
+        if keyboardFlags != nil, !left.isEmpty { out += "\u{1B}[<u" }
+        if out.isEmpty { return [] }
+        return Array((out + "\u{1B}[?25h\u{1B}[?1007h").utf8)
+    }
+
     /// Whether the program asked to be told when the system appearance changes
     /// (`?2031`). The prelude puts the mode back in the *terminal*; this asks a
     /// different question — is anyone on the far side listening — and it is the
@@ -348,6 +378,12 @@ extension TerminalModes {
     /// parser's private state.
     var privateModesForStorage: [Int: Bool] { privateModes }
 
+    /// Take a mode that is on off the record, as though nobody had
+    /// mentioned it. One turned off outright stays as it is.
+    mutating func forget(mode: Int) {
+        if privateModes[mode] == true { privateModes[mode] = nil }
+    }
+
     mutating func restore(mode: Int, on: Bool) {
         guard Self.restorable.contains(mode) else { return }
         privateModes[mode] = on
@@ -395,6 +431,59 @@ final class TerminalModeRecorder: @unchecked Sendable {
         scanners[session] = scanner
         let changed = state != modes[session]
         modes[session] = state
+        let schedule = changed && !saveScheduled
+        if schedule { saveScheduled = true }
+        lock.unlock()
+        guard schedule else { return }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.saveDelay) {
+            [weak self] in self?.save()
+        }
+    }
+
+    /// Write down what a running agent is known to have switched on, and give
+    /// back the record with it.
+    ///
+    /// `assuming(agent:)` alone was acted on at a reattach (the prelude put the
+    /// modes into the new terminal) and then forgotten, so the record and the
+    /// terminal disagreed from that moment. A hibernation takes its prelude
+    /// from the record: the terminal that session woke with had no `?2031`
+    /// and no bracketed paste, and its agent was not sent the appearance
+    /// either. What the terminal is told, the record says.
+    func assume(agent: String?, in session: UUID) -> TerminalModes {
+        lock.lock()
+        let before = modes[session] ?? TerminalModes()
+        let after = before.assuming(agent: agent)
+        let changed = after != before
+        if changed { modes[session] = after }
+        let schedule = changed && !saveScheduled
+        if schedule { saveScheduled = true }
+        lock.unlock()
+        if schedule {
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.saveDelay) {
+                [weak self] in self?.save()
+            }
+        }
+        return after
+    }
+
+    /// The agent in `session` has gone: what it is known to switch on at
+    /// startup, and is still on record as on, is taken off the record.
+    ///
+    /// `assume` writes those modes down for a running agent whether or not
+    /// it was seen setting them. One that leaves tidily turns them off
+    /// itself and there is nothing here to do. One that was killed, or never
+    /// set them (`claude -p`), would otherwise have them on record for good:
+    /// every later wake and relaunch put focus reporting into a plain
+    /// shell's terminal and wrote a theme report at its prompt. Bracketed
+    /// paste is left, because the shell at its prompt has it on itself.
+    func forgetStartupModes(of agent: String, in session: UUID) {
+        guard let startup = TerminalModes.agentStartupModes[agent] else { return }
+        lock.lock()
+        guard var state = modes[session] else { lock.unlock(); return }
+        let before = state
+        for mode in startup where mode != 2004 { state.forget(mode: mode) }
+        let changed = state != before
+        if changed { modes[session] = state }
         let schedule = changed && !saveScheduled
         if schedule { saveScheduled = true }
         lock.unlock()

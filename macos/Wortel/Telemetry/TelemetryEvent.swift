@@ -294,6 +294,8 @@ enum SleepCause: String, CaseIterable {
     case clock
     /// macOS said memory was short.
     case pressure
+    /// Light and dark changed, and it was painted for the other one.
+    case appearance
 }
 
 /// Where a new session came from.

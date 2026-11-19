@@ -60,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             fatalError("failed to initialize libghostty")
         }
         self.runtime = runtime
+        #if DEBUG
+        AppearanceTestHook.install()
+        #endif
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
             DropPasteboard.sweepOldImages()
@@ -425,10 +428,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let window = self?.window, window.firstResponder is SurfaceView else { return }
             window.makeFirstResponder(nil)
         }
+        manager.onReturnKeyboard = { [weak self] in
+            guard let self, let window = self.window, let session = self.manager.selected else { return }
+            if session.workspace.showsSessionTerminal {
+                // Its own terminal is in front, wherever its row is: that,
+                // once it is there to take it. One still waking is given the
+                // keyboard as it is shown (`TerminalHostViewController`), and
+                // the area it is in is noted then (`noteKeyboardActivity`).
+                guard let view = session.surfaceView, view.window === window,
+                      !view.isHiddenOrHasHiddenAncestor else { return }
+                window.makeFirstResponder(view)
+            } else {
+                // A file, a page or a pane in front of it: what is in front
+                // of the main area, which is then where you are, so ⌘W and
+                // the rest act there.
+                if self.gitPanel.lastRegion != .main { self.gitPanel.lastRegion = .main }
+                self.gitPanel.focusFront(of: .main)
+            }
+        }
         gitPanel.onFocusMainTerminal = { [weak self] in
             // Not while a tab in the main area's row covers the terminal.
             guard let self, self.gitPanel.activeMainTab == nil,
-                  let view = self.manager.selected?.surfaceView else { return }
+                  let view = self.manager.selected?.surfaceView,
+                  view.window === self.window, !view.isHiddenOrHasHiddenAncestor else { return }
             self.window?.makeFirstResponder(view)
         }
 
@@ -1228,7 +1250,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let session = manager.selected else { return }
         let region: TabRegion
         if surface === session.surfaceView {
-            region = .main
+            // Wherever its row is: a session's own terminal can be moved to
+            // the column or the strip.
+            region = session.workspace.region(of: .session) ?? .main
         } else if let id = session.sideSurfaces.first(where: { $0.value === surface })?.key,
                   let row = session.workspace.region(of: .terminal(id)) {
             region = row

@@ -138,6 +138,34 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   size each time). Every catch is logged in the `layout` category with what
   it found, so the next one names its cause; this entry should be replaced by
   that fix.
+- **2026-11-19. A new terminal starts at the size a session's terminal last
+  had on screen, and its pty ignores it until it is told one.** Agents in
+  sessions not looked at since a relaunch printed everything 45 columns wide,
+  in a full-width page, for good (an agent wraps its own output, so nothing
+  reflows it). Measured: eight of twelve Claude Code ptys at 15x45. A surface
+  reports libghostty's placeholder grid (45 by 15) as soon as it exists, the
+  pty passed it on, and a hidden terminal is never resized, so the agent
+  worked at that width until shown. Reproduced in a test copy: after a
+  relaunch the two sessions not on screen were sent 15x45. Now
+  `PtyHost.ignoreSizesUntilTold` drops a new surface's reports until
+  `setSurfaceSize`, and a surface made or woken out of sight is told the last
+  size a session's terminal was shown at (kept in defaults,
+  `terminal.lastShownSize`). Same test after: every pty kept 34x102, and no
+  program was ever told 15x45. It may also be the "too narrow" case above.
+  **The placeholder was also what repainted a relaunched terminal**, which
+  starts empty: 45 then the real width was a change of width, and Claude Code
+  answers one by printing its whole conversation again. Without it the first
+  builds left idle agents blank (in the running app, and 4 of 6 in a copy).
+  So a relaunched or woken terminal's first size is a forced repaint
+  (`PtyHost.resize`): one column narrower, and the true width back once the
+  program has been quiet for 0.3 s. A brand-new session is not asked; it has
+  nothing to repaint. Side terminals are told no first size: their page is
+  the column's. Back to back the two reached a program as
+  one SIGWINCH at the old size; back after a fixed 150 ms, or at the first
+  output, they cut a reprint short and left only the coloured words on
+  screen. Verified in a copy: seven idle Claude Codes, six out of sight, came
+  back after a relaunch with the same text at the same width, and the one on
+  screen was screenshotted correct.
 - **2026-11-18. A session switches on mouse-down**, as in Finder's sidebar.
   It switched on mouse-up, after AppKit had ruled out a drag, so the time the
   button was held (115 ms a click on average, sampled) came before every
@@ -171,6 +199,90 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   each lose it; neither was caught in the act. The pointer starts as inside:
   read from the frame before the saved one was applied, it left the window
   movable from launch (`e83bbd6` for why it's off at all).
+- **2026-11-19. Light and dark have one source and one place.** The source is
+  the app's appearance; the place is `GhosttyRuntime.syncColorScheme`, which
+  tells the app handle and every terminal view there is, in a window or not.
+  Before, each view told its own terminal from its own appearance, which a
+  view outside a window never hears: every session not yet looked at since
+  launch kept the old theme. A view's appearance is now only a reason to look
+  again, as are waking, unlocking and becoming active. Ghostty.app made the
+  same move (its PR #9360). `macos/docs/appearance.md`.
+- **2026-11-19. The app-level config reload is answered with nothing.** It
+  amends the 2026-10-20 entry, which still holds for a surface's reload.
+  `ghostty_app_update_config` re-applies the config to every surface with the
+  scheme that surface still holds, and each re-apply ends in a theme report:
+  a program was told the old theme first, then the new one twice. Measured
+  with Claude Code, which answered the first by reading a background that had
+  not changed yet. A new surface takes its scheme from the app handle, so the
+  call has nothing left to do here. To check again on a libghostty update:
+  `macos/scripts/try-appearance.sh`.
+- **2026-11-19. A hibernated screen keeps its palette colours as palette
+  colours.** It reverses the last line of the 2026-11-17 hibernation entry
+  ("keeps the theme it was saved in"). libghostty's dump writes them as the
+  24-bit values of the moment, so the palette is swapped for marker colours
+  for the dump and the markers are turned back into indices on waking
+  (`SnapshotPalette`). Considered and not done: matching the dump's colours
+  against the theme's palette, which also catches a program's own white.
+- **2026-11-19. Text is never drawn unreadable: `minimum-contrast = 2`.** A
+  program that read the colours once goes on painting the old theme after a
+  change, and Codex's input box became near-white text on a near-white band.
+  Below a ratio of 2 the renderer draws the text black or white. Not higher:
+  the faintest colours anyone chose measure 2.28 and up, the unreadable pairs
+  1.1 (`macos/docs/appearance.md`). **Taken out the same day:** with
+  `background-opacity = 0` libghostty measures against a transparent, so
+  black, background, and every default-foreground character on the light
+  theme was drawn white on the white page. Seen in the running app, then
+  reproduced in a test copy and gone with only that line removed.
+- **2026-11-19. An idle agent is restarted into its conversation when the
+  appearance changes.** Codex reads the colours once, at startup, and keeps
+  them for the life of its process; Claude Code can leave what it already
+  drew. A new terminal does not help (tried: Codex redrew the old band into
+  it), and a resize or a focus report changes neither (both projects'
+  trackers), so a new process is the only thing that repaints. The rule: at a
+  change, the idle agent in front is restarted where it stands once it has
+  rested five seconds, an idle one out of sight for twenty seconds is ended
+  and resumed when selected (deep sleep's mechanism, under its checks), and
+  one that is working, waiting on an answer, running something, reachable by
+  Remote Control or has had text typed into it since it last set to work is
+  left until it next comes to rest out of sight. "Painted for the other
+  appearance" is the appearance at the agent's start against the one now, so
+  a change there and back restarts nothing. A click or a scroll is not text:
+  reading an answer must not keep it unreadable.
+  **Which agents: Claude Code and Codex.** Claude by its own record, as for
+  deep sleep. Codex by its status reports (OSC 7501, 0.164 and later), the
+  only word it gives on being idle; an older Codex says nothing and is left,
+  with the contrast floor. Pi follows a change by itself, and no Pi that
+  reports was at hand to check, so it is not in the list.
+  **Codex does not say which conversation it is in**, and a `/new` inside it
+  moves it without a word, so the one Wortel knows could be one it has left.
+  Moving takes keys. So text that went in after the last sign of it being in
+  the known conversation (its command line naming it, or a write to its
+  rollout) leaves it alone (`AgentConversation.lastSeenIn`).
+  **Codex has no handler for any signal**: SIGTERM, SIGHUP and SIGINT each
+  end it at once with the alternate screen, mouse reporting and its keyboard
+  flags left on (measured in a pty, 0.170). So what an agent switched on is
+  taken back by Wortel before the signal (`TerminalModes.undo`), and put back
+  if the agent does not go.
+  Run in a copy of the app the same day, Codex 0.170 and Claude Code 2.1.328,
+  one turn each, the copy changed between light and dark: the Codex in front
+  was ended and back in its conversation 0.4 s later, painted for dark; a
+  Codex and a Claude out of sight were ended, left a shell on the primary
+  screen, and came back in their conversations when asked for; a Claude and a
+  Codex with a prompt half written, a Claude at work, and a Codex moved to
+  another conversation with `/new` were not touched; and the Claude at work
+  was ended once it said it was idle and eight seconds had passed (the clock
+  shortened for the test). Not seen: Remote Control keeping one awake for
+  this, a real change of the Mac's appearance, and a change during a relaunch.
+  A review of the code afterwards found what a test that sends text by
+  script could not: a key coming up counted as text, so the release of the
+  Return that sent a prompt, landing after the agent said `working`, held the
+  agent for the whole turn; and the agent in front, at work when the Mac
+  changed, would have been restarted five seconds into the answer it then
+  gave. Both fixed, by reading, with no person at a keyboard in a test.
+  Known limits: after a relaunch an agent has to take one turn before it can
+  be repainted, since when it last set to work was not saved and anything
+  typed since it started counts; and zsh says `terminated` for a Codex ended
+  this way, which is true.
 
 ## Sidebar
 
@@ -367,6 +479,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   neither does an older Codex, Claude Code, Pi, opencode or crush. Those five
   get a mark that says to update. A notification or a bell of a program's own
   still arrives, sorted by how it opens, never by a word somewhere in it.
+- **2026-11-19. The sidebar never takes the keyboard, and pressing the
+  session you are in puts you back in its terminal.** Any press in the list
+  that didn't switch sessions left the keyboard in it, invisibly. Ending a
+  rename hands it back to the terminal too, not to nobody.
 - **2026-11-19. A program's notifications are read by Wortel, not by the
   terminal core.** The core allows one a second for the whole app and drops a
   repeat inside five seconds, so two sessions notifying in the same second
@@ -455,7 +571,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   not a copy of Claude's trust lookup, which also walks up to a git root and
   maps a worktree to its main checkout. Answering the question for the
   person was not considered: it is a safety prompt. A home-folder session
-  that was already asleep before this still asks once when woken.
+  that was already asleep before this still asks once when woken. Nor is it
+  restarted to repaint after a light or dark change: that is the same
+  restart, and would stop at the same question.
 - **2026-11-19. An agent session headed for the home folder gets a folder
   of its own, `~/Wortel/<day>/<n>`.** The other half of the entry above:
   on this Mac 7 of 21 sessions were Claude in `~` (⌘N with Settings'

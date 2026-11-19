@@ -443,6 +443,10 @@ targets:
       # scanner that reads inside a DCS passthrough, or misses a sequence split
       # across two reads, is wrong in exactly the same silent way.
       - path: Wortel/Ghostty/TerminalModes.swift
+      # A hibernated screen's palette colours, kept as palette colours through
+      # libghostty's dump, which only writes them resolved. Pure byte work, and
+      # wrong in a way nobody sees until the appearance next changes.
+      - path: Wortel/Ghostty/SnapshotPalette.swift
       # Where TerminalModes, SessionStore and AgentResumeStore keep their files.
       - path: Wortel/DataDirectory.swift
       # The font-size clamp, which is a `didSet` that assigns to its own

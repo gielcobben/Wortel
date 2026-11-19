@@ -126,6 +126,158 @@ final class AgentSleepTests: XCTestCase {
         XCTAssertEqual(AgentSleep.decide(inputs), .never(.launchNotSimple))
     }
 
+    // MARK: - Painted for the other appearance
+
+    /// An agent at rest for `ago` seconds, out of sight since before that,
+    /// that drew itself for light on a Mac that is now dark.
+    private func painted(_ ago: TimeInterval, _ agent: String = "codex") -> AgentSleep.Inputs {
+        var inputs = finished(ago)
+        inputs.agent = agent
+        inputs.repaint = true
+        return inputs
+    }
+    private var soon: TimeInterval { AgentSleep.repaintAfter }
+
+    func testAnAgentPaintedForTheOtherAppearanceGoesOnceItHasRestedOutOfSight() {
+        XCTAssertEqual(AgentSleep.decide(painted(soon + 1)), .repaint)
+        XCTAssertEqual(AgentSleep.decide(painted(soon + 1, "claude")), .repaint)
+        XCTAssertEqual(AgentSleep.decide(painted(soon - 5)), .notBefore(now.addingTimeInterval(5)))
+    }
+
+    /// Stepping away from a session for a moment must not end its agent.
+    func testASessionJustLeftWaitsOutTheShortClock() {
+        var inputs = painted(hour)
+        inputs.hiddenSince = now.addingTimeInterval(-2)
+        XCTAssertEqual(AgentSleep.decide(inputs), .notBefore(now.addingTimeInterval(soon - 2)))
+    }
+
+    func testOnlyAgentsCheckedForItAreRepainted() {
+        var inputs = painted(hour)
+        inputs.agent = "pi"
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.notEnabled))
+        // And one painted right has no clock at all, unless it is Claude's.
+        inputs = painted(hour * 10)
+        inputs.repaint = false
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.notEnabled))
+    }
+
+    func testAWorkingOrUnreadableAgentIsNotRepainted() {
+        var inputs = painted(hour)
+        inputs.busy = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.busy))
+        inputs = painted(hour)
+        inputs.rest = .unknown
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.restUnknown))
+        inputs = painted(hour)
+        inputs.resumable = false
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.notResumable))
+        inputs = painted(hour)
+        inputs.launchIsSimple = false
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.launchNotSimple))
+    }
+
+    /// A prompt half written, a question, something still running, Remote
+    /// Control: none of them is worth a repaint. Codex has no clock of its
+    /// own, so it stays; Claude falls back to its long one.
+    func testTextTypedAQuestionWorkUnderItOrRemoteControlKeepARepaintOff() {
+        for hold in [\AgentSleep.Inputs.keysSinceWork, \.hasWorkUnder, \.remoteControl] {
+            var inputs = painted(hour)
+            inputs[keyPath: hold] = true
+            XCTAssertEqual(AgentSleep.decide(inputs), .never(.held))
+        }
+        var inputs = painted(hour)
+        inputs.rest = .waiting(since: now.addingTimeInterval(-hour))
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.held))
+
+        inputs = painted(hour + 1, "claude")
+        inputs.keysSinceWork = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .sleep(waiting: false),
+                       "its ordinary hour is up, and text typed before it rested is no reason against")
+        inputs = painted(soon + 1, "claude")
+        inputs.keysSinceWork = true
+        guard case .notBefore = AgentSleep.decide(inputs) else {
+            return XCTFail("with text typed it waits for its ordinary clock")
+        }
+    }
+
+    /// A click or a scroll after it finished is someone reading the answer.
+    func testAClickOrAScrollDoesNotKeepARepaintOff() {
+        var inputs = painted(soon + 1)
+        inputs.typedSinceRest = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .repaint)
+    }
+
+    // MARK: - The one in front
+
+    func testTheOneInFrontAtTheChangeIsRestartedWhereItStands() {
+        var inputs = painted(AgentSleep.repaintInPlaceAfter + 1)
+        inputs.selected = true
+        inputs.hiddenSince = now
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.selected), "in front, and not asked for")
+        inputs.inPlace = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .repaint)
+    }
+
+    /// A turn that ended a second ago is still being read.
+    func testNotWhileItsAnswerIsFresh() {
+        var inputs = painted(1)
+        inputs.selected = true
+        inputs.inPlace = true
+        XCTAssertEqual(AgentSleep.decide(inputs),
+                       .notBefore(now.addingTimeInterval(AgentSleep.repaintInPlaceAfter - 1)))
+    }
+
+    func testTheOneInFrontIsNeverEndedForAnythingElse() {
+        var inputs = painted(hour * 10, "claude")
+        inputs.selected = true
+        inputs.inPlace = true
+        inputs.keysSinceWork = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.selected))
+        inputs = finished(hour * 10)
+        inputs.selected = true
+        inputs.inPlace = true
+        XCTAssertEqual(AgentSleep.decide(inputs), .never(.selected), "painted right: nothing to restart for")
+    }
+
+    // MARK: - What a report says of rest
+
+    private func records(_ root: ProgramStatus.State, child: ProgramStatus.State? = nil) -> ProgramRecords {
+        var records = ProgramRecords(root: ProgramStatus(state: root))
+        if let child {
+            var piece = ProgramStatus(state: child)
+            piece.id = "task_1"
+            records.apply(.status(piece))
+        }
+        return records
+    }
+
+    func testIdleAndDoneAreRest() {
+        let since = now.addingTimeInterval(-60)
+        XCTAssertEqual(AgentRest(reported: records(.idle), since: since), .finished(since: since))
+        XCTAssertEqual(AgentRest(reported: records(.done), since: since), .finished(since: since))
+    }
+
+    func testWorkingBlockedAndFailedAreNot() {
+        let since = now.addingTimeInterval(-60)
+        XCTAssertEqual(AgentRest(reported: records(.working), since: since), .unknown)
+        XCTAssertEqual(AgentRest(reported: records(.error), since: since), .unknown)
+        XCTAssertEqual(AgentRest(reported: records(.blocked), since: since), .waiting(since: since))
+    }
+
+    /// Claude Code's root reads `done` while a background command runs, or a
+    /// remote agent waits for an answer.
+    func testAPieceOfWorkStillGoingOrWaitingIsNotRest() {
+        let since = now.addingTimeInterval(-60)
+        XCTAssertEqual(AgentRest(reported: records(.done, child: .working), since: since), .waiting(since: since))
+        XCTAssertEqual(AgentRest(reported: records(.done, child: .blocked), since: since), .waiting(since: since))
+    }
+
+    func testNothingSaidIsUnknown() {
+        XCTAssertEqual(AgentRest(reported: nil, since: now), .unknown)
+        XCTAssertEqual(AgentRest(reported: ProgramRecords(), since: now), .unknown)
+        XCTAssertEqual(AgentRest(reported: records(.idle), since: nil), .unknown)
+    }
+
     // MARK: - Memory pressure
 
     func testPressureShortensTheFinishedClockToItsFloor() {

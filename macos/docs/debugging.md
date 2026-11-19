@@ -131,10 +131,27 @@ grants, because the keeper makes Wortel its responsible app.
 
 ## Light on dark, or dark on light
 
+`docs/appearance.md` says what follows the appearance and by which road. Start
+with `scripts/try-appearance.sh`: it changes a throwaway copy between light and
+dark and reads what every terminal answered and what every program was told.
+If it passes, the terminal is right and the question is the program: Codex
+never looks again, and Claude Code leaves what it has already drawn.
+
 An agent that paints a light diff on a dark screen is judging the background
-through OSC 11. `scripts/check-theme-reports.py` is the probe: run it in a
-session and flip the system appearance. Check the live path before touching the
-reattach code (`../docs/incidents.md`, 2026-10-20).
+through OSC 11. `scripts/check-theme-reports.py` is the probe to run by hand in
+a real session while changing the Mac's appearance (`../docs/incidents.md`,
+2026-10-20). A change that nobody announced and a second look found is logged
+as an error:
+
+```sh
+/usr/bin/log show --last 1d --predicate 'process == "Wortel" AND category == "appearance"'
+```
+
+An agent still in the old colours after a change was not restarted, and the
+`sleep` category says why (`docs/appearance.md`, "Agents that are restarted"):
+`held` is text typed, something running under it, a question or Remote
+Control; `restUnknown` is an agent that does not say it is idle, which for
+Codex means older than 0.164.
 
 ## Modes after a reattach
 
@@ -168,5 +185,6 @@ the newer revision is a decision for the maintainer, and goes through
 | `scripts/try-git.sh` | a release touching `Wortel/Git/`. Builds a repo with every situation the panel handles, and a checklist. |
 | `scripts/try-replay-modes.sh` | a change to the keeper's replay or to `TerminalModes`. Declares a fullscreen agent's modes while a throwaway copy is quit, floods past the replay, and asks the reattached terminal which modes it has. |
 | `scripts/try-keeper-loss.sh` | a change to keeper recovery. Kills a throwaway copy's keeper the way the Dock does. |
-| `scripts/check-theme-reports.py` | a change to appearance handling. |
+| `scripts/try-appearance.sh` | a change to appearance handling, to hibernation, or a libghostty update. Changes a throwaway copy's appearance (not the Mac's) and checks every state a terminal can be in. About a minute, on a Debug build. |
+| `scripts/check-theme-reports.py` | by hand, in a real session, while changing the Mac's appearance. |
 | `scripts/symbolicate.sh` | reading a crash: turns the offset a crash report carries back into a function and line, from that release's archived dSYM. |

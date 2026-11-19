@@ -160,8 +160,53 @@ final class TerminalModesTests: XCTestCase {
         XCTAssertTrue(TerminalModeStore.decode(Data("not json".utf8)).isEmpty)
     }
 
+    /// A reattach puts a running agent's startup modes into the new terminal.
+    /// A hibernation later reads the record, not the assumption, so the record
+    /// has to have them: without that the terminal a session woke with had no
+    /// theme reports and no bracketed paste.
+    func testWhatARunningAgentIsAssumedToHaveSetIsOnRecord() {
+        let recorder = TerminalModeRecorder(modes: [:])
+        let session = UUID()
+        XCTAssertTrue(recorder.assume(agent: "claude", in: session).wantsColorSchemeReports)
+        XCTAssertTrue(recorder.modes(for: session).wantsColorSchemeReports)
+        XCTAssertTrue(recorder.modes(for: session).bracketedPaste)
+
+        // What the program said itself still wins over what was assumed.
+        var off = Array("\u{1B}[?2031l".utf8)
+        off.withUnsafeBufferPointer { raw in
+            recorder.feed(session: session, bytes: raw.baseAddress!, count: raw.count)
+        }
+        XCTAssertFalse(recorder.modes(for: session).wantsColorSchemeReports)
+
+        let other = UUID()
+        XCTAssertTrue(recorder.assume(agent: nil, in: other).isEmpty)
+        XCTAssertTrue(recorder.assume(agent: "codex", in: other).isEmpty)
+    }
+
     /// The recorder is what the app talks to: fed from the pty thread, read on
     /// the main thread when a surface is built.
+    // MARK: - Taking back what a program switched on
+
+    /// What Codex 0.170 switches on, as it wrote it (2026-11-19). It has no
+    /// handler for any signal, so ended by one it takes none of it back.
+    func testWhatAProgramSwitchedOnIsTakenBackAlternateScreenLast() {
+        let modes = track(["\u{1B}[?1049h\u{1B}[?2004h\u{1B}[>5u\u{1B}[?1004h\u{1B}[?1000h\u{1B}[?1002h\u{1B}[?1003h\u{1B}[?1006h"])
+        let undo = String(decoding: modes.undo, as: UTF8.self)
+        XCTAssertEqual(undo, "\u{1B}[<u\u{1B}[?1000l\u{1B}[?1002l\u{1B}[?1003l\u{1B}[?1004l\u{1B}[?1006l"
+            + "\u{1B}[?2004l\u{1B}[?1049l\u{1B}[<u\u{1B}[?25h\u{1B}[?1007h")
+        // And a terminal told that has nothing left on record to put back.
+        let after = track([String(decoding: modes.prelude, as: UTF8.self) + undo])
+        XCTAssertNil(after.keyboardFlags)
+        XCTAssertFalse(after.privateModesForStorage.values.contains(true))
+    }
+
+    /// A program that tidied up after itself, or switched nothing on, is
+    /// told nothing: not even the cursor.
+    func testNothingOnRecordIsNothingToTakeBack() {
+        XCTAssertTrue(TerminalModes().undo.isEmpty)
+        XCTAssertTrue(track(["\u{1B}[?2004h\u{1B}[?1004h\u{1B}[?2004l\u{1B}[?1004l"]).undo.isEmpty)
+    }
+
     func testTheRecorderKeepsEachSessionsModesApart() {
         let recorder = TerminalModeRecorder(modes: [:])
         let first = UUID(), second = UUID()

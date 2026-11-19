@@ -229,6 +229,30 @@ struct PreviewContent: View {
 /// the window and leaves everything else exactly as authored. A 16×16 icon
 /// should look like a 16×16 icon — blown up to 700pt it tells you nothing about
 /// itself except that it's blurry.
+///
+/// A transparent PNG on a transparent background is an invisible PNG, so the
+/// picture gets a backing. Resolved again whenever the appearance changes: a
+/// `cgColor` is a fixed colour, and one taken when the view was made kept the
+/// light backing after the Mac went dark.
+private final class BackedImageView: NSImageView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyBacking()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyBacking()
+    }
+
+    private func applyBacking() {
+        wantsLayer = true
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.5).cgColor
+        }
+    }
+}
+
 private struct ImagePreview: NSViewRepresentable {
     let url: URL
     /// Changes only when the file does — see `PreviewDocument.contentVersion`.
@@ -239,7 +263,7 @@ private struct ImagePreview: NSViewRepresentable {
     final class Coordinator { var loaded: Int? }
 
     func makeNSView(context: Context) -> NSImageView {
-        let view = NSImageView()
+        let view = BackedImageView()
         view.imageScaling = .scaleProportionallyDown
         view.imageAlignment = .alignCenter
         // An image view resists being made smaller than its image. Left at the
@@ -249,9 +273,6 @@ private struct ImagePreview: NSViewRepresentable {
             view.setContentCompressionResistancePriority(.defaultLow, for: axis)
             view.setContentHuggingPriority(.defaultLow, for: axis)
         }
-        // A transparent PNG on a transparent background is an invisible PNG.
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.5).cgColor
         view.image = NSImage(contentsOf: url)
         context.coordinator.loaded = version
         return view

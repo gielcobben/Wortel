@@ -171,6 +171,80 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   each lose it; neither was caught in the act. The pointer starts as inside:
   read from the frame before the saved one was applied, it left the window
   movable from launch (`e83bbd6` for why it's off at all).
+- **2026-11-19. Light and dark have one source and one place.** The source is
+  the app's appearance; the place is `GhosttyRuntime.syncColorScheme`, which
+  tells the app handle and every terminal view there is, in a window or not.
+  Before, each view told its own terminal from its own appearance, which a
+  view outside a window never hears: every session not yet looked at since
+  launch kept the old theme. A view's appearance is now only a reason to look
+  again, as are waking, unlocking and becoming active. Ghostty.app made the
+  same move (its PR #9360). `macos/docs/appearance.md`.
+- **2026-11-19. The app-level config reload is answered with nothing.** It
+  amends the 2026-10-20 entry, which still holds for a surface's reload.
+  `ghostty_app_update_config` re-applies the config to every surface with the
+  scheme that surface still holds, and each re-apply ends in a theme report:
+  a program was told the old theme first, then the new one twice. Measured
+  with Claude Code, which answered the first by reading a background that had
+  not changed yet. A new surface takes its scheme from the app handle, so the
+  call has nothing left to do here. To check again on a libghostty update:
+  `macos/scripts/try-appearance.sh`.
+- **2026-11-19. A hibernated screen keeps its palette colours as palette
+  colours.** It reverses the last line of the 2026-11-17 hibernation entry
+  ("keeps the theme it was saved in"). libghostty's dump writes them as the
+  24-bit values of the moment, so the palette is swapped for marker colours
+  for the dump and the markers are turned back into indices on waking
+  (`SnapshotPalette`). Considered and not done: matching the dump's colours
+  against the theme's palette, which also catches a program's own white.
+- **2026-11-19. Text is never drawn unreadable: `minimum-contrast = 2`.** A
+  program that read the colours once goes on painting the old theme after a
+  change, and Codex's input box became near-white text on a near-white band.
+  Below a ratio of 2 the renderer draws the text black or white. Not higher:
+  the faintest colours anyone chose measure 2.28 and up, the unreadable pairs
+  1.1 (`macos/docs/appearance.md`).
+- **2026-11-19. An idle agent is restarted into its conversation when the
+  appearance changes.** Codex reads the colours once, at startup, and keeps
+  them for the life of its process; Claude Code can leave what it already
+  drew. A new terminal does not help (tried: Codex redrew the old band into
+  it), and a resize or a focus report changes neither (both projects'
+  trackers), so a new process is the only thing that repaints. The rule: at a
+  change, the idle agent in front is restarted where it stands once it has
+  rested five seconds, an idle one out of sight for twenty seconds is ended
+  and resumed when selected (deep sleep's mechanism, under its checks), and
+  one that is working, waiting on an answer, running something, reachable by
+  Remote Control or has had text typed into it since it last set to work is
+  left until it next comes to rest out of sight. "Painted for the other
+  appearance" is the appearance at the agent's start against the one now, so
+  a change there and back restarts nothing. A click or a scroll is not text:
+  reading an answer must not keep it unreadable.
+  **Which agents: Claude Code and Codex.** Claude by its own record, as for
+  deep sleep. Codex by its status reports (OSC 7501, 0.164 and later), the
+  only word it gives on being idle; an older Codex says nothing and is left,
+  with the contrast floor. Pi follows a change by itself, and no Pi that
+  reports was at hand to check, so it is not in the list.
+  **Codex does not say which conversation it is in**, and a `/new` inside it
+  moves it without a word, so the one Wortel knows could be one it has left.
+  Moving takes keys. So text that went in after the last sign of it being in
+  the known conversation (its command line naming it, or a write to its
+  rollout) leaves it alone (`AgentConversation.lastSeenIn`).
+  **Codex has no handler for any signal**: SIGTERM, SIGHUP and SIGINT each
+  end it at once with the alternate screen, mouse reporting and its keyboard
+  flags left on (measured in a pty, 0.170). So what an agent switched on is
+  taken back by Wortel before the signal (`TerminalModes.undo`), and put back
+  if the agent does not go.
+  Run in a copy of the app the same day, Codex 0.170 and Claude Code 2.1.328,
+  one turn each, the copy changed between light and dark: the Codex in front
+  was ended and back in its conversation 0.4 s later, painted for dark; a
+  Codex and a Claude out of sight were ended, left a shell on the primary
+  screen, and came back in their conversations when asked for; a Claude and a
+  Codex with a prompt half written, a Claude at work, and a Codex moved to
+  another conversation with `/new` were not touched; and the Claude at work
+  was ended once it said it was idle and eight seconds had passed (the clock
+  shortened for the test). Not seen: Remote Control keeping one awake for
+  this, a real change of the Mac's appearance, and a change during a relaunch.
+  Known limits: after a relaunch an agent has to take one turn before it can
+  be repainted, since when it last set to work was not saved and anything
+  typed since it started counts; and zsh says `terminated` for a Codex ended
+  this way, which is true.
 
 ## Sidebar
 

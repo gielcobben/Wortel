@@ -80,6 +80,38 @@ enum AgentConversation {
         }
     }
 
+    /// The last moment there was a sign of a running Pi or Codex being in
+    /// conversation `id`: when it started, if its command line names the
+    /// conversation, or the last write to the conversation's file, whichever
+    /// is later. nil with neither.
+    ///
+    /// Neither agent says which conversation it is in, and a `/new` or a
+    /// `/resume` inside one moves it without a word to anyone. Either takes
+    /// keys, so text that went into the session after this moment is text
+    /// that may have moved it, and before it, cannot have: the conversation
+    /// was still being written to, or had just been asked for by name.
+    /// Claude needs none of this. Its process file names its conversation.
+    static func lastSeenIn(agent: String, id: String, cwd: String, argv: String?, startedAt: Date,
+                           piRoot: URL = Pi.root, codexRoot: URL = Codex.root) -> Date? {
+        let named: String?
+        let file: URL?
+        switch agent {
+        case "pi":
+            named = Pi.target(argv: argv, cwd: cwd, root: piRoot)
+            file = Pi.file(id: id, cwd: cwd, root: piRoot)
+        case "codex":
+            named = Codex.target(argv: argv)
+            file = Codex.file(id: id, root: codexRoot)
+        default:
+            return nil
+        }
+        let written = file.flatMap {
+            (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        }
+        let asked = named?.lowercased() == id.lowercased() ? startedAt : nil
+        return [written, asked].compactMap { $0 }.max()
+    }
+
     /// The agent's own words for "resume conversation `id`", after its name,
     /// or nil for an agent without exact resume or an id that can't be typed.
     static func resumeWords(agent: String, id: String) -> [String]? {

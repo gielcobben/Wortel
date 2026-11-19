@@ -48,6 +48,7 @@ xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # about 85s
 | You are changing | Read first |
 | --- | --- |
 | `Wortel/Ghostty/` | `docs/architecture/runtime-and-surface.md`, and `docs/terminal-modes.md` or `docs/accessibility.md` for those parts |
+| Light and dark: a theme, a layer colour, what a program is told | `docs/appearance.md`. Run `scripts/try-appearance.sh` |
 | `Wortel/Sessions/` | `docs/architecture/sessions.md`, `docs/session-naming.md` |
 | Busy state, dots, notifications | `docs/agent-signals.md`. Run `scripts/verify-agent-status.py` before it ships |
 | `Wortel/UI/`, the sidebar | `docs/architecture/window-and-sidebar.md`, and `../DESIGN.md` for anything that is drawn |

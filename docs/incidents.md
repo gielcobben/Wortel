@@ -306,3 +306,34 @@ their whole screens.
 **Rule:** a surface freed while its view lives on takes its layer with it.
 Anything that keeps a `SurfaceView` past its surface (hibernation now, any
 future pooling) goes through `retireLayer`.
+
+## 2026-11-19. Some colours stayed behind when the Mac changed appearance
+
+**Seen:** on a Mac set to Auto, after the appearance changed, some colours had
+not changed with it. Reported more than once, after two fixes (2026-09-17,
+2026-10-20) that each closed one path.
+
+**Cause:** not one. Light and dark reached a terminal by two roads, the app's
+appearance and each view's, and what a terminal showed depended on which had
+reached it. Measured on a test copy:
+
+- A session not shown since launch has a terminal that is not in the window,
+  and a view outside a window is not told its appearance changed. It kept the
+  old theme until shown.
+- The app's road ran first and re-applied the config to terminals still on the
+  old scheme, so every listening program was told the old theme, then the new
+  one twice.
+- A hibernated screen was saved with its palette colours as fixed colours.
+- A woken agent's terminal lacked the modes it had only been assumed to have,
+  theme reports among them.
+
+Part of what was reported is not Wortel's: Codex never looks again, and
+Claude Code leaves what it has already drawn.
+
+**Changed:** one source and one place (`GhosttyRuntime.syncColorScheme`), a
+list of every terminal view, no app-level reload, markers for the palette in
+a hibernation dump. `macos/docs/appearance.md`.
+
+**Rule:** a second fix for the same complaint means the paths have not been
+counted. Count them: write the test that visits every state a terminal can be
+in (`macos/scripts/try-appearance.sh`), then fix what it finds.

@@ -76,6 +76,19 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertEqual(decoded.runningConversationID, "4d98c3d5-653b-4915-8fa3-8db43f551ea7")
     }
 
+    /// The appearance a running agent drew itself for outlives a quit: one
+    /// started in light, still running after an update at night, is painted
+    /// for light. An older file has none, and says nothing.
+    func testWhatAnAgentWasPaintedForRoundTrips() throws {
+        let original = PersistedSession(
+            id: UUID(), name: "fix login", title: "shell", cwd: "/tmp", selected: false, nameSource: "user",
+            gitPanelVisible: nil, runningAgent: "codex", agentPaintedDark: false)
+        let data = try JSONEncoder().encode([original])
+        let decoded = try XCTUnwrap(JSONDecoder().decode([PersistedSession].self, from: data).first)
+        XCTAssertEqual(decoded.agentPaintedDark, false)
+        XCTAssertNil(try decode(#"{"id":"\#(UUID())","runningAgent":"codex"}"#).agentPaintedDark)
+    }
+
     /// "Typed and not sent" is what gives an agent the long clock, and an
     /// update relaunches the app: the half-written prompt is still there in
     /// the agent, so the note that there may be one has to be too.

@@ -1565,9 +1565,30 @@ final class SessionManager {
             ?? existingDirectory(root(ofFolder: folder))
             ?? existingDirectory(root(ofFolder: selected?.folderPath))
             ?? existingDirectory(selected?.originCwd)
+        // An agent headed for the home folder, or for another agent's own
+        // folder, gets one of its own. Not where the caller named the place.
+        if cwd == nil, let own = agentFolder(for: directory, starting: start) {
+            return makeSession(cwd: own.path, inFolder: dir, via: origin, starting: start) { [weak self] session in
+                guard let self else { return }
+                let leaf = self.uniqueLeaf(own.name, in: dir)
+                session.name = dir.map { "\($0)/\(leaf)" } ?? leaf
+            }
+        }
         // Through `prepare`, because selecting the row starts its shell, and
         // that is before this returns.
         return makeSession(cwd: directory, inFolder: dir, via: origin, starting: start)
+    }
+
+    /// The folder of its own an agent session starts in instead of the home
+    /// folder (`ChatFolder`), and what it is called until the agent names it.
+    /// Only for Settings' command: a plain terminal still opens at home, and
+    /// `wortel new -- <command>` starts where it was asked to.
+    private func agentFolder(for directory: String?,
+                             starting start: SessionStart) -> (path: String, name: String)? {
+        let command = AppSettings.shared.newSessionCommand
+        guard start.usesPreferredCommand(stored: command), ChatFolder.wantsOwnFolder(directory),
+              let path = ChatFolder.make(for: command) else { return nil }
+        return (path, ChatFolder.sessionName(for: command))
     }
 
     /// A session in the home directory, deliberately outside every folder.
@@ -1578,7 +1599,14 @@ final class SessionManager {
     /// without a `cd` and without a folder to point at first.
     @discardableResult
     func newHomeSession(via origin: SessionOrigin = .home, starting start: SessionStart) -> Session {
-        makeSession(cwd: NSHomeDirectory(), inFolder: nil, via: origin, starting: start)
+        // Outside every folder either way; an agent in a folder of its own.
+        if let own = agentFolder(for: NSHomeDirectory(), starting: start) {
+            return makeSession(cwd: own.path, inFolder: nil, via: origin, starting: start) { [weak self] session in
+                guard let self else { return }
+                session.name = self.uniqueLeaf(own.name, in: nil)
+            }
+        }
+        return makeSession(cwd: NSHomeDirectory(), inFolder: nil, via: origin, starting: start)
     }
 
     /// The shared tail of every way a session is made, taking a directory and

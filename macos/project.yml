@@ -548,6 +548,9 @@ targets:
       # is a reason to stay awake, and each one wrong is an agent killed
       # that should not have been.
       - path: Wortel/Sessions/AgentSleep.swift
+      # Where an agent session that would start in the home folder starts
+      # instead, and when Claude already trusts it. Foundation only.
+      - path: Wortel/Sessions/ChatFolder.swift
       # Which conversation Claude, Pi or Codex is in, read from each agent's
       # own files. Three layouts nobody documents; a drift resumes the wrong
       # conversation without a sound. Foundation only.

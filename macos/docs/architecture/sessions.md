@@ -26,7 +26,10 @@ Session in “GFPC”" filed a session under GFPC and started it wherever the
 resolution order is: an explicit `cwd` (the CLI, a worktree, ⌘O), then the named
 folder's directory, then the selected session's **`originCwd`**, then that
 session's folder's directory, then nil so `wortel.conf`'s `working-directory =
-home` answers. Two things about it are load-bearing:
+home` answers. An agent started by Settings' command that would land at home
+(or in another agent's folder under `~/Wortel`) gets a folder of its own
+instead (`ChatFolder`, see `settings.md`). Two things about it are
+load-bearing:
 
 - **`originCwd`, not `cwd`.** `cwd` tracks the shell's pwd reports, so
   inheriting it meant a session opened beside one you had taken three levels

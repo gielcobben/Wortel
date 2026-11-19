@@ -455,6 +455,25 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   maps a worktree to its main checkout. Answering the question for the
   person was not considered: it is a safety prompt. A home-folder session
   that was already asleep before this still asks once when woken.
+- **2026-11-19. An agent session headed for the home folder gets a folder
+  of its own, `~/Wortel/<day>/<n>`.** The other half of the entry above:
+  on this Mac 7 of 21 sessions were Claude in `~` (⌘N with Settings'
+  command, people using the list as chats), so never sleeping there would
+  have kept most of what deep sleep was for. The Codex app does the same for
+  a thread with no project (`~/Documents/Codex/<date>/<slug>`, per its
+  issue tracker). Decided with the user: agents only (a plain terminal
+  still opens at `~`), ⌥⌘N included; `~/Wortel`, not `~/Documents` (a macOS
+  permission prompt, and iCloud syncs it) and not hidden (it is where the
+  agent's files are); day and number, since Claude files a conversation
+  under its folder's path and the folder can never be renamed after the
+  session. Trust: a trusted folder covers every folder under it (Claude's
+  own lookup outside git, and seen in this Mac's config: twenty folders
+  under one trusted `~/Developer`, none asked). So until `~/Wortel` is
+  trusted, a Claude session starts in `~/Wortel` itself and Claude asks its
+  own question once; Wortel only reads `~/.claude.json`. Rejected: Wortel
+  writing the trust record (another app's security setting, in a file every
+  running Claude rewrites), and Claude asking in each new folder. Existing
+  home sessions were left where they are.
 
 ## Keeper
 

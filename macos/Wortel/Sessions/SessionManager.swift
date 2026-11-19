@@ -1174,7 +1174,9 @@ final class SessionManager {
             // prompt; the same agent exiting, or being replaced, ends the wait.
             if let marker, marker.agent != wasRunning {
                 beginPromptCapture(session, marker: marker)
-            } else if marker == nil, wasRunning != nil {
+            } else if marker == nil, let wasRunning {
+                // What it was assumed to have switched on is nobody's now.
+                TerminalModeRecorder.shared.forgetStartupModes(of: wasRunning, in: session.id)
                 endPromptCapture(session)
                 // The marker is cleared at the shell's next prompt, so this
                 // *is* the shell back in charge and idle — the backstop that
@@ -3281,8 +3283,12 @@ final class SessionManager {
         // Text went in since it last set to work: maybe a prompt half
         // written. An agent that reports nothing has no "set to work" to
         // count from, so any text since it started is that.
+        //
+        // The marker's start is in whole seconds, so the Return that started
+        // the agent falls up to a second after it: that much is the launch.
+        let launched = startedAt.addingTimeInterval(1)
         let keys = lastKeysAt[id]
-        var keysSinceWork = keys.map { $0 > (workBeganAt[id] ?? startedAt) } ?? false
+        var keysSinceWork = keys.map { $0 > (workBeganAt[id] ?? launched) } ?? false
         if agent == "claude" {
             // The record of the process that has the terminal, when it has
             // one. Started through a wrapper (`devx claude`), the leader is
@@ -3320,7 +3326,7 @@ final class SessionManager {
             // one (its command line naming it, or a write to the file) is
             // text that may have moved it, and it is left.
             let seen = AgentConversation.lastSeenIn(agent: agent, id: known, cwd: cwd,
-                                                    argv: marker.argv, startedAt: startedAt)
+                                                    argv: marker.argv, startedAt: launched)
             if let keys, keys > (seen ?? .distantPast) { keysSinceWork = true }
         }
         // A piece of its work waiting on the person, or still going, while
@@ -3467,17 +3473,29 @@ final class SessionManager {
             // is asked, not the marker: with nothing left of the group the
             // agent has gone, and counting it as awake would leave a session
             // with no agent and nothing to bring it back.
-            if ProcessTable.snapshot().contains(where: { $0.pgid == group && !$0.isExiting }) {
+            //
+            // The agent is the group's leader. Something else of the group
+            // outliving it (a helper slow to stop) is not the agent still
+            // being there: counted so, a bare shell was handed the dead
+            // agent's modes back.
+            let table = ProcessTable.snapshot()
+            let leaderLives = table.contains { $0.pid == group && !$0.isExiting }
+            if leaderLives {
                 // It didn't go. Awake as it was, with the modes that were
-                // taken back from it put back; nothing else is touched.
-                session.surfaceView?.writeAsOutput(modes.prelude)
+                // taken back from it put back if it still has the terminal;
+                // nothing else is touched.
+                if session.surfaceView?.ptyHost?.foregroundProcessGroup() == group {
+                    session.surfaceView?.writeAsOutput(modes.prelude)
+                }
                 session.sleep = .awake
                 self.sleepSurvivors[id] = nil
                 self.wantsWake.remove(id)
                 AgentSleepLog.log.notice(
                     "session \(id.uuidString, privacy: .public): the agent did not exit, still awake")
                 self.scheduleSave()
-                self.armSleep(session)
+                // The hour, whatever it is painted for: one that does not
+                // go when asked is not asked again every half minute.
+                self.armSleep(session, after: AgentSleep.finishedAfter)
             } else {
                 self.commitSleep(session, sleeper)
             }
@@ -3731,14 +3749,28 @@ final class SessionManager {
         // and arms that.
         guard !stale.isEmpty else { return }
         AgentSleepLog.log.notice("the appearance changed: \(stale.count) agents are painted for the other one")
-        if let front = stale.first(where: { $0.id == selectedID }) { repaintInPlace = front.id }
+        // The one in front is offered a restart where it stands, for this
+        // look only: kept below if it may have one now or in a moment, and
+        // taken back if not. One at work in front when the Mac changed is
+        // not restarted under the answer it then gives.
+        let front = stale.first(where: { $0.id == selectedID })?.id
+        repaintInPlace = front
         let table = ProcessTable.snapshot()
         let markers = AgentResumeStore.currentMarkers()
         var going: [(Session, SleepCandidate)] = []
+        var frontMayRestart = false
+        defer { if !frontMayRestart, repaintInPlace == front { repaintInPlace = nil } }
         for session in stale {
             if let owed = session.owedResume, owed.isOwed(at: Date()) { continue }
             guard let candidate = sleepCandidate(for: session, table: table, markers: markers) else { continue }
-            switch AgentSleep.decide(candidate.inputs) {
+            let verdict = AgentSleep.decide(candidate.inputs)
+            if session.id == front {
+                switch verdict {
+                case .repaint, .notBefore: frontMayRestart = true
+                case .sleep, .never: break
+                }
+            }
+            switch verdict {
             case .repaint:
                 going.append((session, candidate))
             case .notBefore(let date):

@@ -378,6 +378,12 @@ extension TerminalModes {
     /// parser's private state.
     var privateModesForStorage: [Int: Bool] { privateModes }
 
+    /// Take a mode that is on off the record, as though nobody had
+    /// mentioned it. One turned off outright stays as it is.
+    mutating func forget(mode: Int) {
+        if privateModes[mode] == true { privateModes[mode] = nil }
+    }
+
     mutating func restore(mode: Int, on: Bool) {
         guard Self.restorable.contains(mode) else { return }
         privateModes[mode] = on
@@ -458,6 +464,33 @@ final class TerminalModeRecorder: @unchecked Sendable {
             }
         }
         return after
+    }
+
+    /// The agent in `session` has gone: what it is known to switch on at
+    /// startup, and is still on record as on, is taken off the record.
+    ///
+    /// `assume` writes those modes down for a running agent whether or not
+    /// it was seen setting them. One that leaves tidily turns them off
+    /// itself and there is nothing here to do. One that was killed, or never
+    /// set them (`claude -p`), would otherwise have them on record for good:
+    /// every later wake and relaunch put focus reporting into a plain
+    /// shell's terminal and wrote a theme report at its prompt. Bracketed
+    /// paste is left, because the shell at its prompt has it on itself.
+    func forgetStartupModes(of agent: String, in session: UUID) {
+        guard let startup = TerminalModes.agentStartupModes[agent] else { return }
+        lock.lock()
+        guard var state = modes[session] else { lock.unlock(); return }
+        let before = state
+        for mode in startup where mode != 2004 { state.forget(mode: mode) }
+        let changed = state != before
+        if changed { modes[session] = state }
+        let schedule = changed && !saveScheduled
+        if schedule { saveScheduled = true }
+        lock.unlock()
+        guard schedule else { return }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.saveDelay) {
+            [weak self] in self?.save()
+        }
     }
 
     func feed(session: UUID, replay: Data) {

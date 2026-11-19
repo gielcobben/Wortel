@@ -196,6 +196,13 @@ scrolling of a pager (`?1007`) back on. It is written before the signal, so
 the shell's next prompt, which switches bracketed paste on for itself, comes
 after it; and if the program does not go, the prelude puts it all back.
 
+An agent's startup modes are written down for as long as it runs, seen or not
+(`TerminalModeRecorder.assume`). When its marker goes, the ones still on
+record as on are taken off it (`forgetStartupModes`): an agent that was
+killed, or never set them (`claude -p`), would otherwise have focus reporting
+and theme reports put into a plain shell's terminal at every later wake.
+Bracketed paste stays, which the shell has on at its prompt itself.
+
 ## Known limits
 
 - **What the program changed and never announced.** Only modes are restored:

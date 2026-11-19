@@ -1370,7 +1370,9 @@ final class SurfaceView: NSView {
     @discardableResult
     private func performBinding(_ action: String) -> Bool {
         guard let surface else { return false }
-        noteUserInput()
+        // Only a paste puts anything into the program. Copy, select all and
+        // the font size are the user's doing and nothing the program sees.
+        noteUserInput(text: action.hasPrefix("paste"))
         return action.withCString { ptr in
             ghostty_surface_binding_action(surface, ptr, UInt(action.utf8.count))
         }
@@ -1635,7 +1637,7 @@ final class SurfaceView: NSView {
     }
 
     override func keyUp(with event: NSEvent) {
-        _ = keyAction(GHOSTTY_ACTION_RELEASE, event: event)
+        _ = keyAction(GHOSTTY_ACTION_RELEASE, event: event, entersText: false)
     }
 
     override func flagsChanged(with event: NSEvent) {
@@ -1668,7 +1670,7 @@ final class SurfaceView: NSView {
             if sidePressed { action = GHOSTTY_ACTION_PRESS }
         }
 
-        _ = keyAction(action, event: event)
+        _ = keyAction(action, event: event, entersText: false)
 
         // ⌘ going down over a link while the program has the mouse: the key
         // event above told libghostty ⌘ without the added Shift, so it would
@@ -1784,10 +1786,15 @@ final class SurfaceView: NSView {
         event: NSEvent,
         translationEvent: NSEvent? = nil,
         text: String? = nil,
-        composing: Bool = false
+        composing: Bool = false,
+        entersText: Bool = true
     ) -> Bool {
         guard let surface else { return false }
-        noteUserInput()
+        // A key coming up is not text going in, and nor is a modifier on its
+        // own. Counted as text, the release of the Return that sent a prompt
+        // landed after the agent said `working`, and read as a prompt half
+        // written for the whole of the turn that followed.
+        noteUserInput(text: entersText && action != GHOSTTY_ACTION_RELEASE)
 
         var keyEvent = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
         keyEvent.composing = composing

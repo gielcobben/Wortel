@@ -207,6 +207,25 @@ final class TerminalModesTests: XCTestCase {
         XCTAssertTrue(track(["\u{1B}[?2004h\u{1B}[?1004h\u{1B}[?2004l\u{1B}[?1004l"]).undo.isEmpty)
     }
 
+    /// `assume` writes an agent's startup modes down whether or not it set
+    /// them. Once it has gone they are nobody's: left on record, every later
+    /// wake put focus reporting into a plain shell's terminal and wrote a
+    /// theme report at its prompt.
+    func testAnAgentThatHasGoneNoLongerHasItsStartupModesOnRecord() {
+        let recorder = TerminalModeRecorder(modes: [:])
+        let session = UUID()
+        _ = recorder.assume(agent: "claude", in: session)
+        XCTAssertTrue(recorder.modes(for: session).wantsColorSchemeReports)
+        recorder.forgetStartupModes(of: "claude", in: session)
+        let after = recorder.modes(for: session)
+        XCTAssertFalse(after.wantsColorSchemeReports)
+        XCTAssertNil(after.privateModesForStorage[1004])
+        XCTAssertTrue(after.bracketedPaste, "the shell at its prompt has bracketed paste on itself")
+        // An agent with nothing assumed of it changes nothing.
+        recorder.forgetStartupModes(of: "codex", in: session)
+        XCTAssertEqual(recorder.modes(for: session), after)
+    }
+
     func testTheRecorderKeepsEachSessionsModesApart() {
         let recorder = TerminalModeRecorder(modes: [:])
         let first = UUID(), second = UUID()

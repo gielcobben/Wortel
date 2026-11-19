@@ -14,6 +14,7 @@ final class GhosttyRuntime {
     private let config: ghostty_config_t
     private var observers: [NSObjectProtocol] = []
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var unlockObserver: NSObjectProtocol?
     private var appearanceObservation: NSKeyValueObservation?
 
     /// Whether an appearance is a dark one, and what the app's is right now.
@@ -195,12 +196,17 @@ final class GhosttyRuntime {
         for (name, reason) in [
             (NSWorkspace.didWakeNotification, "the Mac woke"),
             (NSWorkspace.screensDidWakeNotification, "the display woke"),
-            (NSWorkspace.sessionDidBecomeActiveNotification, "the screen was unlocked"),
+            (NSWorkspace.sessionDidBecomeActiveNotification, "the user was switched back to"),
         ] {
             workspaceObservers.append(workspace.addObserver(forName: name, object: nil, queue: .main) {
                 [weak self] _ in self?.syncColorScheme(because: reason)
             })
         }
+        // Unlocking is not one of NSWorkspace's: `sessionDidBecomeActive` is
+        // fast user switching. The login window says it to everyone.
+        unlockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main
+        ) { [weak self] _ in self?.syncColorScheme(because: "the screen was unlocked") }
 
         // Prime the mailbox once.
         ghostty_app_tick(appHandle)
@@ -209,6 +215,7 @@ final class GhosttyRuntime {
     deinit {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        if let unlockObserver { DistributedNotificationCenter.default().removeObserver(unlockObserver) }
         ghostty_app_free(app)
         ghostty_config_free(config)
     }

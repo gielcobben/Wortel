@@ -241,6 +241,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   was ended once it said it was idle and eight seconds had passed (the clock
   shortened for the test). Not seen: Remote Control keeping one awake for
   this, a real change of the Mac's appearance, and a change during a relaunch.
+  A review of the code afterwards found what a test that sends text by
+  script could not: a key coming up counted as text, so the release of the
+  Return that sent a prompt, landing after the agent said `working`, held the
+  agent for the whole turn; and the agent in front, at work when the Mac
+  changed, would have been restarted five seconds into the answer it then
+  gave. Both fixed, by reading, with no person at a keyboard in a test.
   Known limits: after a relaunch an agent has to take one turn before it can
   be repainted, since when it last set to work was not saved and anything
   typed since it started counts; and zsh says `terminated` for a Codex ended

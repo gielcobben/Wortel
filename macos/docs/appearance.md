@@ -34,7 +34,8 @@ calls it, and nothing else decides anything:
   window;
 - a view's `viewDidChangeEffectiveAppearance`, as a second witness;
 - the app becoming active, the Mac or the display waking, the screen being
-  unlocked.
+  unlocked (`com.apple.screenIsUnlocked`; NSWorkspace has no notice for it),
+  the user being switched back to.
 
 The last group is insurance. macOS on Auto changes appearance only after the
 Mac has been idle for a while, so the change tends to land as the display
@@ -127,7 +128,9 @@ indices before the dump is written into the new terminal. A terminal that
 turns out not to hibernate gets its palette back (`OSC 104`).
 
 Known limit: a palette entry a program changed itself (`OSC 4`) is the theme's
-again after a hibernation.
+again after a hibernation, and after one that was called off at the last
+moment (the session selected between the markers going in and the dump), since
+`OSC 104` gives back the theme's palette and not the program's.
 
 ## Readable, whatever was painted
 
@@ -190,11 +193,13 @@ agent.
   front: ended and resumed at once, when it has rested 5 s. Otherwise a timer
   for when it may.
 - **Left alone:** working, waiting on an answer, something running under it,
-  Remote Control on, or text gone in since it last set to work (keys, a
-  paste, a script's text: `SurfaceView.onTextInput`. A click or a scroll is
-  not text). Looked at again when it stops working or its session is left.
-  In front it is only ever restarted at the change itself, and not once
-  anything has happened in it since.
+  Remote Control on, or text gone in since it last set to work (a key going
+  down, a paste, a drop, a script's text: `SurfaceView.onTextInput`. A click,
+  a scroll, a key coming up, a modifier alone and a copy are not text).
+  Looked at again when it stops working or its session is left. In front it
+  is only ever restarted at the change itself: one that could not be then (at
+  work, say) is not restarted under the answer it gives next, and nor is one
+  in which anything has happened since.
 - **At rest** is the agent's own word: Claude Code's record of itself, Codex's
   status report (`idle` or `done` with nothing blocked and no piece of work
   still going). An agent that says nothing is never ended: a Codex older than

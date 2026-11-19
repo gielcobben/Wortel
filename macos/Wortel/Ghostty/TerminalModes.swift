@@ -135,6 +135,18 @@ struct TerminalModes: Equatable {
     /// input at all.
     var wantsColorSchemeReports: Bool { privateModes[2031] == true }
 
+    /// Whether the program owns the whole screen and hears a change of light
+    /// and dark (`?2031` while on the alternate screen), so it puts every cell
+    /// it coloured right by itself when told. Claude Code's fullscreen
+    /// renderer does: on the report it repaints each cell in its own colours,
+    /// including after a hibernation (measured 2026-11-19, 2.1.329, in a copy
+    /// of the app). Its inline renderer does not: what it printed before
+    /// keeps the old colours, which is why this needs the alternate screen.
+    /// Codex is on the alternate screen but has no `?2031`.
+    var repaintsItselfOnSchemeChange: Bool {
+        wantsColorSchemeReports && (privateModes[1049] == true || privateModes[1047] == true)
+    }
+
     /// Whether the program has bracketed paste on, so a pasted newline is
     /// text and not Return. False when nobody recorded it (the exec backend
     /// records nothing), which is the safe way to be wrong for a paste.

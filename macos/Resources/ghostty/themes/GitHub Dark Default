@@ -14,7 +14,9 @@ palette = 12=#79c0ff
 palette = 13=#d2a8ff
 palette = 14=#56d4dd
 palette = 15=#ffffff
-background = #0d1117
+# Wortel: the dark page's colour (Chrome.content), not the theme's own #0d1117.
+# The terminal draws the page under its text; see wortel.conf.
+background = #1f1f1f
 foreground = #e6edf3
 cursor-color = #2f81f7
 cursor-text = #6fc1ff

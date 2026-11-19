@@ -9,13 +9,17 @@ it is light or dark.
 | What you see | Drawn by | Follows because |
 | --- | --- | --- |
 | The window, sidebar, tabs, panels | AppKit and SwiftUI | Dynamic `NSColor`s (`Chrome`, the system's), resolved at draw time |
-| The page behind the terminal | AppKit (`Chrome.content`) | The same. The terminal draws no background of its own (`background-opacity = 0`) |
+| The page around the terminal | AppKit (`Chrome.content`) | The same |
+| The page under the terminal's text | libghostty, in the theme's `background` | The bundled themes' backgrounds are the page's two colours (`PageColourTests`) |
 | The terminal's text, cursor, selection and its 256 palette colours | libghostty | `theme = light:…,dark:…` in `wortel.conf`, switched by `GhosttyRuntime.syncColorScheme` |
 | What a program paints with palette colours ("ANSI green") | libghostty | They are the palette |
 | What a program paints with its own 24-bit colours | The program | Only if the program repaints. See "What Wortel cannot do" |
 
-The second and third rows are two systems that have to agree. When they
-don't, it is light text on a white page.
+The page is drawn twice, by AppKit around the terminal and by libghostty
+under it, in the same colour. The terminal draws it so that the contrast
+floor has the page to measure against (below). AppKit and libghostty have to
+agree on light and dark as well: when they don't, it is light text on a
+white page.
 
 ## The rule
 
@@ -134,28 +138,39 @@ moment (the session selected between the markers going in and the dump), since
 
 ## Readable, whatever was painted
 
-**Not done: `minimum-contrast` cannot be used.** It was set to 2 for a few
-hours on 2026-11-19 and turned all plain text white on the light theme: the
-shell's own output, Claude Code's answers, everything in the default
-foreground, invisible on the white page. The terminal draws no background of
-its own (`background-opacity = 0`, the window behind it is the page), and
-libghostty measures the contrast against that transparent background as if
-it were black, so the light theme's near-black text read as unreadable and was
-redrawn white. Confirmed in a test copy: the same build with only that line
-removed draws correctly. The paragraphs below are what it was for, and remain
-the open problem.
+`minimum-contrast = 1.9`: text below that contrast with what is under it is
+drawn black or white instead. It is the floor under everything a change of
+appearance leaves behind, in any program, whether or not an agent is
+restarted (Remote Control, a question waiting, text typed).
 
-It was for the programs in the "no" rows below. Codex blends its input box from
-the background it read at startup; after a change that band is the old theme's
-and what you type in it is the new theme's text, near-white on near-white
-(seen in a test copy, 2026-11-19). With the floor gone, that text is
-unreadable again until Codex is restarted, which an idle one is (next
-section).
+It works only because the terminal draws the page itself
+(`background-opacity = 1`). libghostty measures a cell's text against the
+cell's own background, or else the terminal's background premultiplied by
+its opacity (`cell_text_vertex` in Ghostty 1.3.1's `shaders.metal`). At
+opacity 0 that is black: on 2026-11-19 a floor of 2 over a transparent
+terminal turned all of the light theme's ordinary text white on the white
+page, and was taken out. `PageColourTests` fails if a floor is set over a
+background that is not opaque.
 
-Two and no higher, measured the same day: the faintest colours meant to be
-seen are the dark theme's black on its page (2.28), Codex's orange on white
-(2.67) and Claude Code's grey on white (2.85), and the unreadable pairs are at
-1.1. At 3 the floor starts redrawing colours somebody chose.
+Why 1.9, measured against the real pages (`#FFFFFF`, `#1F1F1F`) on
+2026-11-19:
+
+| | Contrast |
+| --- | --- |
+| Claude Code's light text colour left on the dark page | 1.27 |
+| Its dark text colour left on the light page | 1.00 |
+| Its dark warning and permission colours left on the light page | 1.63, 1.88 |
+| GitHub Dark's black (palette 0) on the dark page | 1.99 |
+| Claude Code's `subtle`, on its own page | 2.04, 2.19 |
+| Plain text in either theme | 14 and up |
+
+The first three are redrawn, the rest are left as they were chosen. A
+coloured band a program left (Codex's input box, a diff line) keeps its
+colour; the text on it is measured against the band.
+
+What the floor does not do: put the colours right. A light theme's grey on
+the dark page (2.87) stays that grey, a light band stays light. That is the
+program's to repaint, or a restart's (below).
 
 ## What Wortel cannot do
 
@@ -165,7 +180,8 @@ tracker on 2026-11-19:
 
 | Program | Follows a change while running |
 | --- | --- |
-| Claude Code | With its theme on Auto: yes, for what it draws from then on. What it has already drawn can keep its colours (its tracker has this open). With a fixed theme: no |
+| Claude Code, fullscreen (`tui: fullscreen`) | With its theme on Auto: yes, all of it. On the report it repaints every cell it coloured, and a hibernated one when its terminal wakes (measured in a copy, 2.1.329). Not restarted, below |
+| Claude Code, inline | With its theme on Auto: only what it draws from then on and its live area. What it printed keeps its colours. With a fixed theme: no |
 | Codex | No. It reads the colours once, at startup, and has no `?2031`. Restarted, below |
 | Pi, opencode | Yes, with their system theme |
 | neovim, lazygit, tmux, zellij | Yes |
@@ -173,21 +189,29 @@ tracker on 2026-11-19:
 
 For a program in the "no" rows the answer is a new process. Nothing a terminal
 sends changes that: a resize does not (both Claude Code's and Pi's trackers
-say so), neither do focus reports, and neither does a new terminal (tried: a
+say so, and a one-column change makes inline Claude Code 2.1.329 redraw only
+the visible screen, measured), neither do focus reports, and neither does a new terminal (tried: a
 relaunched test copy gave Codex a fresh terminal, and it drew the old band
 into it). Codex keeps the colours it read at startup for the life of the
 process.
 
 So Wortel gives an agent a new process, when that costs nothing: see the
-next section. Anything else in the "no" rows can be left unreadable, with no
-floor under it any more (above), and is put right by restarting it by hand.
+next section. Anything else in the "no" rows keeps the other theme's colours,
+readable over the floor (above), until it is restarted by hand.
 
 Also not Wortel's: a colour a program set with `OSC 10` or `OSC 11` stays
 until the program resets it, across a change of theme.
 
 ## Agents that are restarted
 
-Claude Code and Codex (`AgentSleep.repaintAgents`). The decision, why these
+Claude Code and Codex (`AgentSleep.repaintAgents`), except one that repaints
+itself: on the alternate screen with `?2031` on
+(`TerminalModes.repaintsItselfOnSchemeChange`), which is Claude Code
+fullscreen. By the record as it is: a woken terminal reports only a `?2031`
+on record, so one assumed on is not enough. A record that missed either mode
+errs towards the restart; one left stale by a full reset (`ESC c`, which the
+recorder does not see) or a program killed on the alternate screen errs
+towards no restart, over the floor. The decision, why these
 two and what was seen are in `../../docs/decisions.md` (2026-11-19); the code
 is deep sleep's (`architecture/sessions.md`), with a second reason to end an
 agent.

@@ -150,6 +150,10 @@ struct PersistedSession: Codable {
     /// at the next launch is taken at its word from the start, instead of
     /// being guessed at until it next says something.
     let reportedState: String?
+    /// `Session.agentPaintedDark`: whether the Mac was dark when the running
+    /// agent started. nil with no agent and in older files, where an agent
+    /// still running is taken to have started in the appearance of the launch.
+    let agentPaintedDark: Bool?
 
     // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
@@ -160,7 +164,7 @@ struct PersistedSession: Codable {
         case runningAgent, runningModel, runningArgv, runningConversationID
         case lastConversationID, portBase, remindAt, agentAsleep, lastTypedAt
         case createdAt, lastSentAt
-        case reportedState
+        case reportedState, agentPaintedDark
     }
     /// Read-only: the flag `nameSource` replaced. Kept apart from `CodingKeys`
     /// so the synthesised encoder never writes it again.
@@ -184,7 +188,7 @@ struct PersistedSession: Codable {
          runningConversationID: String? = nil, lastConversationID: String? = nil,
          portBase: Int? = nil, remindAt: Date? = nil, agentAsleep: String? = nil,
          lastTypedAt: Date? = nil, createdAt: Date? = nil, lastSentAt: Date? = nil,
-         reportedState: String? = nil) {
+         reportedState: String? = nil, agentPaintedDark: Bool? = nil) {
         self.id = id; self.name = name; self.title = title; self.cwd = cwd
         self.originCwd = originCwd
         self.selected = selected; self.nameSource = nameSource
@@ -216,6 +220,7 @@ struct PersistedSession: Codable {
         self.createdAt = createdAt
         self.lastSentAt = lastSentAt
         self.reportedState = reportedState
+        self.agentPaintedDark = agentPaintedDark
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -290,6 +295,7 @@ struct PersistedSession: Codable {
         lastSentAt = try c.decodeIfPresent(Date.self, forKey: .lastSentAt)
         remindAt = try c.decodeIfPresent(Date.self, forKey: .remindAt)
         reportedState = try c.decodeIfPresent(String.self, forKey: .reportedState)
+        agentPaintedDark = try c.decodeIfPresent(Bool.self, forKey: .agentPaintedDark)
     }
 }
 

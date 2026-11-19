@@ -134,6 +134,20 @@ it is built:
 - **Whose record.** The agent's own word comes from the process that has the
   terminal; through a wrapper, from the one process in its group that has a
   record, and from none if there are two.
+- **A second reason to end one: it is painted for the other appearance**
+  (`docs/appearance.md`). The same candidate, the same signal and the same
+  wake, with a short clock (`AgentSleep.repaintAfter`), a verdict of its own
+  (`.repaint`), and two things the hour does not have: the agent in front may
+  be restarted where it stands (`repaintInPlace`, which `commitSleep` wakes
+  at once), and Codex is among the agents. Codex has no record of itself, so
+  its rest is read from its status reports (`AgentRest(reported:)`) and its
+  conversation is the one Wortel saw it in, trusted only while no text has
+  gone in since the last sign of it (`AgentConversation.lastSeenIn`).
+- **What the agent switched on in the terminal is taken back before the
+  signal** (`TerminalModes.undo`, written by `SurfaceView.writeAsOutput`, the
+  road the program's own output takes, so the record hears it and a
+  hibernated terminal keeps it). Claude Code tidies up after itself and the
+  second telling does nothing; Codex does not.
 - **Remote Control** on (`bridgeSessionId` in the agent's record) is the
   long clock too, under a memory warning as well: a phone can't wake it.
 - **Typed and not sent** is `lastTypedAt`, saved with the session, so a

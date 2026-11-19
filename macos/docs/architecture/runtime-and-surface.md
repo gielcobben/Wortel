@@ -19,7 +19,8 @@ hosting one surface. Ported from Ghostty.app's `SurfaceView_AppKit.swift` and
 trimmed (no splits/drag-drop/inspector/context-menu). libghostty installs its
 own IOSurface-backed CALayer and renders from its own thread; this view only
 does input forwarding (mouse, keyboard, full `NSTextInputClient` IME dance) and
-geometry (size/scale/appearance → libghostty). The keyboard path is subtle —
+geometry (size/scale → libghostty; light and dark are told by the runtime,
+`docs/appearance.md`). The keyboard path is subtle —
 `keyDown`/`performKeyEquivalent`/`doCommand` coordinate via `lastPerformKeyEvent`
 and `keyTextAccumulator` to make IME (Korean/Japanese) and unclaimed command
 keys work; preserve the upstream comments when touching it. `GhosttyInput.swift`

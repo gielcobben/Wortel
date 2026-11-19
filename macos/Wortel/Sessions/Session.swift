@@ -228,6 +228,12 @@ final class Session: Identifiable {
     /// When the running agent launched, used to identify which transcript it
     /// created and so which conversation it is in.
     @ObservationIgnored var runningStartedAt: Date?
+    /// Whether the Mac was dark when the running agent started, which is the
+    /// appearance it drew itself for: a program that reads the terminal's
+    /// colours once (Codex) keeps them for the life of its process. nil with
+    /// no agent. Saved, so an agent that outlives a quit is still known to be
+    /// painted for the appearance of the day it started.
+    @ObservationIgnored var agentPaintedDark: Bool?
     /// Where the running agent was started, by its marker. Usually `cwd`, but
     /// not after `cd ~/proj && claude` in bash, which reports its directory
     /// only at a prompt: the agent's conversations are filed under its own

@@ -101,16 +101,42 @@ final class SurfaceView: NSView {
         return modifiers.intersection([.shift, .option, .control, .command]).isEmpty
     }
 
+    /// Write `bytes` into this terminal as though the program had written
+    /// them: by the road its output takes, so the record of its modes hears
+    /// them, and a hibernated terminal keeps them for when it wakes. For the
+    /// few things Wortel has to say to the terminal about a program it is
+    /// ending (`TerminalModes.undo`). On the pty's queue, as every write into
+    /// a terminal is.
+    func writeAsOutput(_ bytes: [UInt8]) {
+        guard !bytes.isEmpty, let pty = ptyHost else { return }
+        pty.enqueue { [weak pty] in
+            bytes.withUnsafeBufferPointer { raw in
+                guard let base = raw.baseAddress else { return }
+                pty?.onOutput?(base, raw.count)
+            }
+        }
+    }
+
+    /// Something went into the program's input: keys, a paste, a drop, or
+    /// text a script sent. Not a click and not a scroll. What it is for is
+    /// knowing that a prompt may be half written, or that the program was
+    /// told something (`/new`) nobody else heard: an agent Wortel would end
+    /// and bring back is left alone after this until it has worked again
+    /// (`AgentSleep.Inputs.keysSinceWork`).
+    var onTextInput: (() -> Void)?
+
     /// Every input path reports here, so the time and the hook can't drift apart.
-    private func noteUserInput() {
+    private func noteUserInput(text: Bool = true) {
         lastUserInputAt = Date()
         onUserInput?()
+        if text { onTextInput?() }
     }
 
     private func noteInput(scripted: Bool) {
         guard scripted else { return noteUserInput() }
         lastScriptedInputAt = Date()
         onScriptedInput?()
+        onTextInput?()
     }
 
     private(set) var pwd: String?
@@ -371,6 +397,9 @@ final class SurfaceView: NSView {
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         accessibilityWatch.onChange = { [weak self] in self?.accessibilityScreenChanged() }
+        // Before it has a window, and whether or not it ever gets one: this
+        // is what has it told light or dark with the rest.
+        runtime.register(self)
         programStatusWatch.onHeard = { [weak self] heard, replayed in
             switch heard {
             case .status(let report): self?.onProgramStatus?(report, replayed)
@@ -591,7 +620,7 @@ final class SurfaceView: NSView {
         // whether it is shown, and whether it has the keyboard.
         if let window { ghostty_surface_set_display_id(surface, window.screen?.displayID ?? 0) }
         viewDidChangeBackingProperties()
-        viewDidChangeEffectiveAppearance()
+        runtime.syncColorScheme(because: "a shell was restarted")
         ghostty_surface_set_occlusion(surface, !isHidden)
         focused = false
         updateFocus()
@@ -700,6 +729,14 @@ final class SurfaceView: NSView {
                 guard !signals.isEmpty else { return }
                 DispatchQueue.main.async { self?.raise(signals) }
             }
+            // Nothing else is written into this terminal from here on, so its
+            // palette can stand in for itself in the dump: each entry a marker
+            // that is turned back into its index on waking, or the screen
+            // would come back frozen in today's theme (`SnapshotPalette`).
+            SnapshotPalette.install.withUnsafeBufferPointer { raw in
+                guard let base = raw.baseAddress else { return }
+                ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+            }
             DispatchQueue.main.async {
                 self?.finishHibernating(surface: surface, pty: pty, session: session,
                                         missed: missed, started: started)
@@ -719,7 +756,8 @@ final class SurfaceView: NSView {
         func stayAwake() {
             let live = GhosttyRuntime.liveOutput(surface: old, session: session, view: self)
             pty.enqueue {
-                let held = missed.buffer.take() + missed.scanner.unfinished
+                // Its own palette back first, in place of the markers.
+                let held = SnapshotPalette.remove + missed.buffer.take() + missed.scanner.unfinished
                 held.withUnsafeBytes { raw in
                     guard let base = raw.bindMemory(to: UInt8.self).baseAddress, raw.count > 0 else { return }
                     ghostty_surface_write_buffer(old, base, UInt(raw.count))
@@ -800,7 +838,7 @@ final class SurfaceView: NSView {
         layerReplaced()
         if let window { ghostty_surface_set_display_id(new, window.screen?.displayID ?? 0) }
         viewDidChangeBackingProperties()
-        viewDidChangeEffectiveAppearance()
+        runtime.syncColorScheme(because: "a terminal woke")
         ghostty_surface_set_occlusion(new, !isHidden)
         updateFocus()
 
@@ -812,7 +850,10 @@ final class SurfaceView: NSView {
         // the one writing (the beach ball of 2026-10-07).
         pty.enqueue { [weak self] in
             let missed = hibernation.missed
-            let snapshot = Self.withoutColourSettings((try? Data(contentsOf: hibernation.snapshot)) ?? Data())
+            var paletteColours = 0
+            let snapshot = SnapshotPalette.restoringIndices(
+                Self.withoutColourSettings((try? Data(contentsOf: hibernation.snapshot)) ?? Data()),
+                restored: &paletteColours)
             // The snapshot, the empty rows and cursor it leaves out, what came
             // since, and last a sequence the output was in the middle of, for
             // the live output to finish.
@@ -832,7 +873,8 @@ final class SurfaceView: NSView {
             let writeMs = Double(done.uptimeNanoseconds - created.uptimeNanoseconds) / 1e6
             HibernationLog.log.notice("""
                 woke \(session.uuidString, privacy: .public): surface \(createMs, format: .fixed(precision: 1)) ms, \
-                restore \(snapshot.count) + \(held.count) bytes in \(writeMs, format: .fixed(precision: 1)) ms
+                restore \(snapshot.count) + \(held.count) bytes in \(writeMs, format: .fixed(precision: 1)) ms, \
+                \(paletteColours) palette colours
                 """)
 
             DispatchQueue.main.async {
@@ -1071,7 +1113,7 @@ final class SurfaceView: NSView {
         ghostty_surface_set_display_id(surface, window.screen?.displayID ?? 0)
         viewDidChangeBackingProperties()
         sizeDidChange(frame.size)
-        viewDidChangeEffectiveAppearance()
+        runtime?.syncColorScheme(because: "a terminal joined the window")
         // The frame it arrives with is often not the one it ends up with
         // (during launch the host is still zero-sized), and a size too small
         // to be real is not passed on at all.
@@ -1154,11 +1196,23 @@ final class SurfaceView: NSView {
         }
     }
 
+    /// Light or dark, for this terminal. Called by `GhosttyRuntime.syncColorScheme`
+    /// and by nothing else: which of the two it is gets decided there, once,
+    /// for every terminal. A hibernated view has no terminal to tell, and the
+    /// one it wakes with starts from the app's scheme.
+    func setColorScheme(_ scheme: ghostty_color_scheme_e) {
+        guard let surface else { return }
+        ghostty_surface_set_color_scheme(surface, scheme)
+    }
+
+    /// A second witness to a change of appearance, not a source of one: it
+    /// asks for a sync, which reads the app's appearance and not this view's.
+    /// A view's own `effectiveAppearance` also moves when a window is given
+    /// an appearance of its own, and is not told at all outside a window,
+    /// which is why upstream stopped deciding from it (ghostty PR #9360).
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        guard let surface else { return }
-        let isDark = GhosttyRuntime.isDark(effectiveAppearance)
-        ghostty_surface_set_color_scheme(surface, isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT)
+        runtime?.syncColorScheme(because: "a view's appearance changed", announced: true)
     }
 
     @objc private func windowDidChangeScreen(_ notification: Notification) {
@@ -1316,7 +1370,9 @@ final class SurfaceView: NSView {
     @discardableResult
     private func performBinding(_ action: String) -> Bool {
         guard let surface else { return false }
-        noteUserInput()
+        // Only a paste puts anything into the program. Copy, select all and
+        // the font size are the user's doing and nothing the program sees.
+        noteUserInput(text: action.hasPrefix("paste"))
         return action.withCString { ptr in
             ghostty_surface_binding_action(surface, ptr, UInt(action.utf8.count))
         }
@@ -1380,7 +1436,7 @@ final class SurfaceView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let surface else { return }
-        noteUserInput()
+        noteUserInput(text: false)
         let override = overridesShift(event.modifierFlags)
         pressOverride = override
         let mods = pointerMods(event.modifierFlags)
@@ -1467,7 +1523,7 @@ final class SurfaceView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-        noteUserInput()
+        noteUserInput(text: false)
 
         var x = event.scrollingDeltaX
         var y = event.scrollingDeltaY
@@ -1581,7 +1637,7 @@ final class SurfaceView: NSView {
     }
 
     override func keyUp(with event: NSEvent) {
-        _ = keyAction(GHOSTTY_ACTION_RELEASE, event: event)
+        _ = keyAction(GHOSTTY_ACTION_RELEASE, event: event, entersText: false)
     }
 
     override func flagsChanged(with event: NSEvent) {
@@ -1614,7 +1670,7 @@ final class SurfaceView: NSView {
             if sidePressed { action = GHOSTTY_ACTION_PRESS }
         }
 
-        _ = keyAction(action, event: event)
+        _ = keyAction(action, event: event, entersText: false)
 
         // ⌘ going down over a link while the program has the mouse: the key
         // event above told libghostty ⌘ without the added Shift, so it would
@@ -1730,10 +1786,15 @@ final class SurfaceView: NSView {
         event: NSEvent,
         translationEvent: NSEvent? = nil,
         text: String? = nil,
-        composing: Bool = false
+        composing: Bool = false,
+        entersText: Bool = true
     ) -> Bool {
         guard let surface else { return false }
-        noteUserInput()
+        // A key coming up is not text going in, and nor is a modifier on its
+        // own. Counted as text, the release of the Return that sent a prompt
+        // landed after the agent said `working`, and read as a prompt half
+        // written for the whole of the turn that followed.
+        noteUserInput(text: entersText && action != GHOSTTY_ACTION_RELEASE)
 
         var keyEvent = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
         keyEvent.composing = composing

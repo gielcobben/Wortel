@@ -60,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             fatalError("failed to initialize libghostty")
         }
         self.runtime = runtime
+        #if DEBUG
+        AppearanceTestHook.install()
+        #endif
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
             DropPasteboard.sweepOldImages()

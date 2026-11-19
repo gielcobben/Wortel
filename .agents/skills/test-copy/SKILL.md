@@ -53,6 +53,18 @@ WORTEL_DATA_DIR="$DATA" "$W" read <session>
 
 `send` without `--enter` leaves the text in the program's input box.
 
+To change the copy between light and dark without changing the Mac (a Debug
+build only), post it a notification addressed to its pid. The object is
+`dark`, `light`, or `system`. `macos/scripts/try-appearance.sh` is a working
+example:
+
+```sh
+osascript -l JavaScript -e 'ObjC.import("Foundation");
+  $.NSDistributedNotificationCenter.defaultCenter
+   .postNotificationNameObjectUserInfoDeliverImmediately(
+     "sh.wortel.test.appearance.<pid>", "dark", $(), true)'
+```
+
 To fake a signal from a program, write to the tty of the process in the session
 (`ps -o tty= -p <pid>`, then `printf` to `/dev/ttysNNN`): screen repaints, an
 OSC 0 title, an OSC 9. To read what the app decided, stream its log by pid,

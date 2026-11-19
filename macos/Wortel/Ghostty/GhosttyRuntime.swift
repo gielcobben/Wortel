@@ -1,5 +1,6 @@
 import AppKit
 import GhosttyKit
+import os
 
 /// Owns the libghostty process state: ghostty_init, the config, the app
 /// handle, tick scheduling, and the runtime callbacks.
@@ -12,19 +13,30 @@ final class GhosttyRuntime {
     private(set) var app: ghostty_app_t!
     private let config: ghostty_config_t
     private var observers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var unlockObserver: NSObjectProtocol?
     private var appearanceObservation: NSKeyValueObservation?
 
-    /// Whether an appearance is a dark one, and what the Mac's is right now.
+    /// Whether an appearance is a dark one, and what the app's is right now.
     ///
-    /// One definition on purpose. Three places ask — the app-level forwarding
-    /// below, each surface in `viewDidChangeEffectiveAppearance`, and the catch-up
-    /// report a resumed session gets — and a program is only ever told one thing,
-    /// so they have to agree.
+    /// One definition and one source on purpose: `NSApp.effectiveAppearance`.
+    /// Everything that tells a terminal or a program light or dark asks here
+    /// (`syncColorScheme`, and the catch-up report a resumed or woken session
+    /// gets), because a program is only ever told one thing, so they have to
+    /// agree. Never a view's own `effectiveAppearance`, and never the
+    /// `AppleInterfaceStyle` default: see `docs/appearance.md`.
     static func isDark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
 
     static var systemIsDark: Bool { isDark(NSApplication.shared.effectiveAppearance) }
+
+    /// Every terminal view there is, in a window or not, hibernated or not.
+    /// Weak: a view leaves by going away.
+    private let surfaceViews = NSHashTable<SurfaceView>.weakObjects()
+    /// What the terminals were last told, to say in the log what changed.
+    private var toldDark: Bool?
+    private static let appearanceLog = Logger(subsystem: "com.gielcobben.Wortel", category: "appearance")
 
     init?() {
         guard ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS else {
@@ -148,6 +160,7 @@ final class GhosttyRuntime {
         ) { [weak self] _ in
             guard let self else { return }
             ghostty_app_set_focus(self.app, true)
+            self.syncColorScheme(because: "became active")
         })
         observers.append(center.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
@@ -162,16 +175,38 @@ final class GhosttyRuntime {
             ghostty_app_keyboard_changed(self.app)
         })
 
-        // -- System appearance forwarding (app-level) --------------------------
-        let applyAppearance = { (appearance: NSAppearance) in
-            let isDark = GhosttyRuntime.isDark(appearance)
-            ghostty_app_set_color_scheme(
-                appHandle, isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT)
+        // -- Light and dark ----------------------------------------------------
+        // The app's appearance is the one notice; `syncColorScheme` does the
+        // telling. The rest are second looks at moments a notice could have
+        // been missed. macOS on Auto changes appearance only once the Mac has
+        // been idle a while, which is as the display sleeps or the screen
+        // locks, so the first thing that happens after a change is often one
+        // of these. None is known to be needed; each costs a comparison.
+        syncColorScheme(because: "launch")
+        appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            if Thread.isMainThread {
+                self?.syncColorScheme(because: "the appearance changed", announced: true)
+            } else {
+                DispatchQueue.main.async {
+                    self?.syncColorScheme(because: "the appearance changed", announced: true)
+                }
+            }
         }
-        applyAppearance(NSApp.effectiveAppearance)
-        appearanceObservation = NSApp.observe(\.effectiveAppearance) { app, _ in
-            applyAppearance(app.effectiveAppearance)
+        let workspace = NSWorkspace.shared.notificationCenter
+        for (name, reason) in [
+            (NSWorkspace.didWakeNotification, "the Mac woke"),
+            (NSWorkspace.screensDidWakeNotification, "the display woke"),
+            (NSWorkspace.sessionDidBecomeActiveNotification, "the user was switched back to"),
+        ] {
+            workspaceObservers.append(workspace.addObserver(forName: name, object: nil, queue: .main) {
+                [weak self] _ in self?.syncColorScheme(because: reason)
+            })
         }
+        // Unlocking is not one of NSWorkspace's: `sessionDidBecomeActive` is
+        // fast user switching. The login window says it to everyone.
+        unlockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main
+        ) { [weak self] _ in self?.syncColorScheme(because: "the screen was unlocked") }
 
         // Prime the mailbox once.
         ghostty_app_tick(appHandle)
@@ -179,9 +214,84 @@ final class GhosttyRuntime {
 
     deinit {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        if let unlockObserver { DistributedNotificationCenter.default().removeObserver(unlockObserver) }
         ghostty_app_free(app)
         ghostty_config_free(config)
     }
+
+    // MARK: - Light and dark
+
+    /// A terminal view exists. From here on it is told light or dark with the
+    /// rest, whether or not it is ever in a window.
+    func register(_ view: SurfaceView) {
+        surfaceViews.add(view)
+    }
+
+    /// Tell libghostty light or dark: the app, and every terminal there is.
+    ///
+    /// **The only place that does.** Light and dark used to reach a terminal
+    /// by two roads: the app's appearance told the app handle, and each view's
+    /// `viewDidChangeEffectiveAppearance` told its own surface. Two roads
+    /// arrive at different times and one of them doesn't go everywhere:
+    ///
+    /// - A view that is not in a window is never told. Every session gets a
+    ///   terminal at launch and joins the window only when first shown, so
+    ///   after a change every session not yet looked at kept the old theme
+    ///   and its program was never told (measured 2026-11-19).
+    /// - The app road came first and re-applied the config to surfaces that
+    ///   still held the old scheme, so every program that listens (`?2031`)
+    ///   was first sent a report naming the *old* theme, and asked the
+    ///   terminal for a background that had not changed yet. Then came two
+    ///   reports for the new one. Upstream has the same (discussion #15116).
+    ///
+    /// So: one source (`systemIsDark`), one list (every view registers), and
+    /// the app-level reload does not touch the surfaces (`handleAction`,
+    /// `GHOSTTY_ACTION_RELOAD_CONFIG`). Each surface is told once, takes its
+    /// new colours and then reports them, in that order.
+    ///
+    /// Safe to call at any time and as often as wanted: libghostty does
+    /// nothing for a scheme it already has. That is what lets everything that
+    /// might have missed a change simply call this.
+    ///
+    /// `announced` is for the log only: whether AppKit said the appearance
+    /// changed, or this is a second look that may find it has.
+    func syncColorScheme(because reason: String, announced: Bool = false) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let dark = Self.systemIsDark
+        let scheme = dark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+        // The app first: a terminal made from here on starts from it.
+        ghostty_app_set_color_scheme(app, scheme)
+        let views = surfaceViews.allObjects
+        for view in views { view.setColorScheme(scheme) }
+
+        guard dark != toldDark else { return }
+        let was = toldDark
+        toldDark = dark
+        guard let was else { return }
+        let change = "\(was ? "dark" : "light") to \(dark ? "dark" : "light")"
+        if announced {
+            Self.appearanceLog.notice("\(change, privacy: .public): \(views.count) terminals told")
+        } else {
+            // A change nobody announced, found by looking. Worth knowing
+            // about: it is the case the second looks exist for.
+            Self.appearanceLog.error("""
+                \(change, privacy: .public) without a notice, found because \(reason, privacy: .public): \
+                \(views.count) terminals told
+                """)
+        }
+        // After every terminal has been told: what an agent drew before this
+        // is in the other appearance's colours now (`SessionManager`).
+        NotificationCenter.default.post(name: Self.appearanceDidChange, object: self)
+    }
+
+    /// Light and dark changed, and every terminal has been told. Not posted
+    /// for the first look at launch, which changes nothing.
+    static let appearanceDidChange = Notification.Name("WortelAppearanceDidChange")
+
+    /// What the terminals were last told. `systemIsDark` before the first
+    /// look.
+    var isDark: Bool { toldDark ?? Self.systemIsDark }
 
     // MARK: - Surface creation
 
@@ -411,7 +521,9 @@ final class GhosttyRuntime {
                                                        table: Self.recentProcessTable()) else { return nil }
             return marker.agent
         } : nil
-        let prelude = resumed ? TerminalModeRecorder.shared.modes(for: session).assuming(agent: agent).prelude : []
+        // Written down as well as acted on, so a later hibernation's prelude
+        // (taken from the record) has them too.
+        let prelude = resumed ? TerminalModeRecorder.shared.assume(agent: agent, in: session).prelude : []
         // Whatever the replay asked the terminal was asked long ago, while
         // nobody was attached, and the program is no longer waiting for an
         // answer: one now would arrive as typed input. So the terminal's
@@ -817,6 +929,22 @@ final class GhosttyRuntime {
             guard let app, let runtime = runtime(fromApp: app) else { return false }
             let config = runtime.config
             let surface = target.tag == GHOSTTY_TARGET_SURFACE ? target.target.surface : nil
+            // The app's own scheme changed: nothing to do, and one thing not
+            // to. `ghostty_app_update_config` re-applies the config to every
+            // surface *with the scheme that surface still holds*, and each
+            // re-apply ends in a `?997` report. Called here, before the
+            // surfaces have been told, that report names the old theme, and
+            // the program asks for a background that has not changed yet.
+            // The surfaces are told one by one right after this
+            // (`syncColorScheme`), each with a reload of its own, and a new
+            // surface derives its colours from the app's scheme, not from a
+            // config the app holds (`Surface.init`, Ghostty 1.3.1), so the
+            // app-wide update has nothing left to do. One reload per surface
+            // instead of two also halves the times a change of appearance
+            // walks into upstream's reload deadlock (#14833, not in 1.3.1).
+            // `scripts/try-appearance.sh` checks both: one theme per report,
+            // and a session started after a change comes up in the new one.
+            if surface == nil, action.action.reload_config.soft { return true }
             let update = {
                 if let surface {
                     ghostty_surface_update_config(surface, config)

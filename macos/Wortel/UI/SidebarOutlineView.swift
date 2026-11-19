@@ -189,8 +189,12 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     private func showMoreMenu() {
         guard let menu = makeMoreMenu?() else { return }
         // Its right edge on the button's, opening into the sidebar rather than
-        // off across the terminal, as the titlebar's menus do.
-        let x = moreButton.bounds.width - menu.size.width
+        // off across the terminal, as the titlebar's menus do. But never past
+        // the row's leading edge: wider than the room to the button's left,
+        // it hung off the window, so then it starts where the row does and
+        // reaches past the button instead.
+        let leading = moreButton.convert(NSPoint(x: pillRect.minX, y: 0), from: self).x
+        let x = max(leading, moreButton.bounds.width - menu.size.width)
         contextMenu(isOpen: true)
         menu.popUp(positioning: nil, at: NSPoint(x: x, y: moreButton.bounds.maxY + 4), in: moreButton)
         contextMenu(isOpen: false)

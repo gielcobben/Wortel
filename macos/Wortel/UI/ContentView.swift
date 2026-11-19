@@ -792,6 +792,9 @@ enum SectionSortMenu {
     static func add(to menu: NSMenu, folder: String?, manager: SessionManager) {
         let current = manager.sectionSort(ofFolder: folder)
         for mode in SectionSort.Mode.allCases {
+            // The three a section keeps by itself, then by hand, set apart
+            // as Finder's Sort By sets None apart.
+            if mode == .manual { menu.addItem(.separator()) }
             let item = ClosureMenuItem(title: mode.title) {
                 manager.setSectionSort(mode, ofFolder: folder)
             }
@@ -832,6 +835,9 @@ enum FolderActions {
         item("New Worktree Session\u{2026}", "plus.square.dashed") {
             newWorktreeSessionFromSheet(manager, inFolder: folder)
         }
+        // Three groups, as the session menu has: make something in it, the
+        // folder itself, then letting it go.
+        menu.addItem(.separator())
         item("Rename\u{2026}", "pencil") {
             if let name = promptFolderName(title: "Rename Folder", confirm: "Rename", initial: folder) {
                 manager.renameFolder(folder, to: name)

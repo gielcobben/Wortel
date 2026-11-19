@@ -286,9 +286,11 @@ final class SidebarPillRowView: NSTableRowView, ContextMenuHost {
     /// row it left then: rows the pointer passed over stayed lit (and, being
     /// hovered, held the sidebar's sort still). The scroller calls this on
     /// every row it shows, each time it scrolls.
-    func settleHover() {
+    /// `pointerOverWindow`: no other window is between the pointer and this
+    /// one, so a row under a covering window isn't counted as hovered.
+    func settleHover(pointerOverWindow: Bool) {
         guard let window else { return }
-        let inside = NSApp.isActive
+        let inside = NSApp.isActive && pointerOverWindow
             && contentRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
         if inside != isRowHovered { setRowHovered(inside) }
     }
@@ -645,8 +647,11 @@ final class SidebarScrollView: NSScrollView {
         super.reflectScrolledClipView(clip)
         updateFade()
         // Rows slid under a pointer that didn't move: see `settleHover`.
-        (documentView as? NSOutlineView)?.enumerateAvailableRowViews { rowView, _ in
-            (rowView as? SidebarPillRowView)?.settleHover()
+        guard let window, let outline = documentView as? NSOutlineView else { return }
+        let over = NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0)
+            == window.windowNumber
+        outline.enumerateAvailableRowViews { rowView, _ in
+            (rowView as? SidebarPillRowView)?.settleHover(pointerOverWindow: over)
         }
     }
 
@@ -1797,6 +1802,23 @@ struct SidebarOutlineView: NSViewRepresentable {
             guard let item = outline.item(atRow: row) else { return (nil, topLevelEnd, nil) }
             let content = contentRect(ofRow: row)
             let topHalf = hovered >= 0 && point.y < content.midY
+
+            // With no folderless sessions, two more places take a session out
+            // of its folder, both at the top, so they're there however long
+            // the list is (the space under it is gone once it overflows): the
+            // gap under Pinned's last row, and the top edge of the first
+            // folder's header when nothing is open above it. The line is
+            // drawn there, over the first folder (`root.firstFolder`).
+            if looseItems.isEmpty, hovered >= 0 {
+                if point.y >= content.maxY, let session = item as? SessionItem, session === pinnedItems.last {
+                    return (nil, root.firstFolder, nil)
+                }
+                let rowsAbove = row > 0 && outline.item(atRow: row - 1) is SessionItem
+                if let folder = item as? FolderItem, folder === folderItems.first, !rowsAbove,
+                   point.y < outline.rect(ofRow: row).minY + outline.rect(ofRow: row).height * 0.34 {
+                    return (nil, root.firstFolder, nil)
+                }
+            }
 
             // Onto a section's header: first in it, as onto a folder's. Pinned
             // folded, onto the header itself: there are no rows to put a line

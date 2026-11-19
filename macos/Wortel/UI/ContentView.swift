@@ -492,7 +492,8 @@ struct SidebarSectionLabel: View {
 }
 
 /// A fixed section's header (Pinned, Sessions): a press anywhere folds it, as a
-/// folder header's does; never dragged, no menu.
+/// folder header's does; never dragged. Pinned has no menu; Sessions' "…" and
+/// right-click are its Sort By (`SectionSortMenu`).
 struct SidebarSectionHeaderContent: View {
     let manager: SessionManager
     /// Pinned, or the folderless "Sessions".

@@ -534,9 +534,9 @@ targets:
       # its rows. An index off by one draws the wrong row or files a dropped
       # session in the wrong section.
       - path: Wortel/Sessions/SidebarRoot.swift
-      # How a section sorts itself: Recent Activity, Date Created, Name or by
-      # hand. Wrong, it shuffles rows that are equal or puts a session where
-      # nobody can find it, and nothing reports it.
+      # How a section sorts itself: Recent, Created, Name or Manual. Wrong, it
+      # shuffles rows that are equal or puts a session where nobody can find
+      # it, and nothing reports it.
       - path: Wortel/Sessions/SectionSort.swift
       # The agent marker format is a contract between two languages — the shell
       # integration writes it, Swift parses it — so nothing catches a drift on

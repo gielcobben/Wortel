@@ -458,6 +458,19 @@ final class SessionManager {
         if sectionSorts[folder ?? ""] != value { sectionSorts[folder ?? ""] = value }
     }
 
+    /// Every session in the order the sidebar has them: Pinned, the folders,
+    /// Sessions, each section by its Sort By. Folded sections included, and
+    /// without Sort Unread First's band, which only moves rows while it's on.
+    /// For what walks "the sidebar" without drawing it: `wortel list`, the
+    /// jump to the next waiting session, the menu bar's list.
+    var sessionsInSidebarOrder: [Session] {
+        sidebarGroups.flatMap { group -> [Session] in
+            guard let order = sortedOrder(of: group) else { return group.sessions }
+            let byID = Dictionary(group.sessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            return order.compactMap { byID[$0] }
+        }
+    }
+
     /// The order `group` is drawn in by its Sort By choice, beneath Sort
     /// Unread First; nil for Pinned and a Manual section, which are drawn as
     /// stored. Reads each row's times and name, so a Return in a sorted
@@ -873,6 +886,7 @@ final class SessionManager {
         for entry in persisted {
             appendRestored(restoredSession(from: entry, marker: resume[entry.id], table: { table }))
         }
+        renameOldHomePlaceholders()
         syncFolderOrder() // seed/prune the persisted folder order for the restored set
         adoptFolderRoots() // give folders that predate directories one, from where they already are
         assignPortBlocks() // before any surface: the first shell is spawned with its ports
@@ -902,12 +916,6 @@ final class SessionManager {
         // An unrecognised source (a file from a newer build) is treated as the
         // user's: the one reading that can never relabel work by surprise.
         session.nameSource = Session.NameSource(rawValue: entry.nameSource) ?? .user
-        // Home sessions were named "~", "~ 2"… before they were "Home". One
-        // still on that placeholder takes the new one; a name anyone gave
-        // it is left alone.
-        if session.nameSource == .placeholder, let home = Self.homeName(forOldPlaceholder: session.name) {
-            session.name = home
-        }
         session.worktreeBranch = entry.worktreeBranch
         noteCheckout(session)
         // A colour only a newer build knows reads as none.
@@ -2550,6 +2558,10 @@ final class SessionManager {
             // A placeholder: the agent's own title, when it pushes one, is a
             // better name than ours.
             session.nameSource = .placeholder
+            // New to the sidebar now, so it sorts as new: at the top of a
+            // Recent or Created section, where whoever is looking for the
+            // shell that survived will look, not under everything dated.
+            session.createdAt = Date()
             appendRestored(session)
             recovered = true
         }
@@ -3268,9 +3280,11 @@ final class SessionManager {
         guard !sessions.isEmpty,
               let loudest = sessions.compactMap(\.attention).max(by: { $0.priority < $1.priority })
         else { return }
-        let start = selectedIndex ?? -1
-        for offset in 1...sessions.count {
-            let candidate = sessions[(start + offset) % sessions.count]
+        // In the order the sidebar shows them, so the jump goes down the rows.
+        let ordered = sessionsInSidebarOrder
+        let start = ordered.firstIndex { $0.id == selectedID } ?? -1
+        for offset in 1...ordered.count {
+            let candidate = ordered[(start + offset) % ordered.count]
             if candidate.attention == loudest {
                 selectedID = candidate.id
                 // Only when it actually lands. Counting the misses would report
@@ -3317,10 +3331,6 @@ final class SessionManager {
         let live = Set(sessions.map(\.id))
         let drawn = sidebarRowOrder.filter(live.contains)
         return drawn.isEmpty ? sessions.filter(isVisibleInSidebar).map(\.id) : drawn
-    }
-
-    private var selectedIndex: Int? {
-        sessions.firstIndex { $0.id == selectedID }
     }
 
     /// Create surfaces for restored sessions that don't have one yet, one per
@@ -5366,8 +5376,6 @@ final class SessionManager {
                 self.lastTypedAt[session.id] = Date()
                 self.noteUserInput(session)
             }
-            // A script's `wortel send` repaints too, but it is not you back
-            // at the keyboard: an attention raised while you were away stays.
             // A Return of yours: the sidebar's Recent. Saved, so
             // the order survives a relaunch; the save is debounced.
             view.onSubmit = { [weak self, weak session] in
@@ -5375,6 +5383,8 @@ final class SessionManager {
                 session.lastSentAt = Date()
                 self.scheduleSave()
             }
+            // A script's `wortel send` repaints too, but it is not you back
+            // at the keyboard: an attention raised while you were away stays.
             view.onScriptedInput = { [weak self, weak session] in
                 guard let self, let session else { return }
                 self.agentScreenTrackers[session.id]?.rebaseline(now: Date())
@@ -5473,7 +5483,25 @@ final class SessionManager {
         return (cwd as NSString).lastPathComponent
     }
 
-    /// "Home" for a top-level "~", "Home 2" for "~ 2"; nil for any other name.
+    /// Home sessions were named "~", "~ 2"… before they were "Home". Each
+    /// still on that placeholder takes the new one, in its own folder, once
+    /// every saved session is back so the name can't clash with one restored
+    /// later: "Home 3" for "~ 3" while that's free, else the next free "Home".
+    /// A name anyone gave is left alone.
+    private func renameOldHomePlaceholders() {
+        var renamed = false
+        defer { if renamed { scheduleSave() } }
+        for session in sessions where session.nameSource == .placeholder {
+            guard let leaf = Self.homeName(forOldPlaceholder: session.leafName) else { continue }
+            let folder = session.folderPath
+            let taken = sessions.contains { $0 !== session && $0.folderPath == folder && $0.leafName == leaf }
+            let name = taken ? uniqueLeaf("Home", in: folder) : leaf
+            session.name = folder.map { "\($0)/\(name)" } ?? name
+            renamed = true
+        }
+    }
+
+    /// "Home" for a leaf "~", "Home 2" for "~ 2"; nil for any other leaf.
     static func homeName(forOldPlaceholder name: String) -> String? {
         if name == "~" { return "Home" }
         guard name.hasPrefix("~ "), let n = Int(name.dropFirst(2)), n > 1 else { return nil }

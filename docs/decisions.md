@@ -221,9 +221,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   then the folders, then Sessions, as ChatGPT, Claude and Codex put projects
   above the loose chats. Someone who never files a session sees no change;
   someone with many open folders folds them to reach the loose list. With no
-  folderless session yet, the empty space under the list is where a session
-  is dropped to take it out of its folder. The zone at the first folder's top
-  edge that did that went with the section that used to sit above it.
+  folderless session yet, a session is taken out of its folder by a drop in
+  the empty space under the list, or, since that space is gone once the list
+  overflows, at the top: the gap under Pinned's last row, or the top edge of
+  the first folder's header (found in review the same day, after the top
+  zones had been taken out with the section above them).
 - **2026-11-19. Each section sorts itself, Recent unless you say
   otherwise.** Sort By in a folder's "…", and in the Sessions header's:
   Recent, Created, Name, Manual (one word each, as the

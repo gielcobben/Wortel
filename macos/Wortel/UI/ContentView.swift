@@ -75,7 +75,12 @@ struct SidebarPane: View {
                     manager.sidebarSortKey(for: session).map { (session.id, $0) }
                 })
                 : nil)
-            .safeAreaInset(edge: .bottom) {
+            // The list runs on into the bar's own top padding, so it ends
+            // (and fades out, `SidebarScrollView`) level with the tops of the
+            // buttons rather than 20pt above them: SwiftUI's default spacing
+            // here measured 8pt, on top of the 12pt padding. The padding has
+            // nothing to hit, so a click there still reaches the row.
+            .safeAreaInset(edge: .bottom, spacing: -12) {
                 HStack(spacing: 2) {
                     // AppKit, as the ⓘ and the update icon are, so all three
                     // light up under the pointer the same way (HoverFillButton,

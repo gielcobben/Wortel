@@ -1,0 +1,10 @@
+# The app the design canvas shows. Read by drift.sh, and moved by the
+# sync-visuals skill in the commit that brings the canvas up to date.
+#
+#   app     the commit whose app the canvas was last checked against
+#   canvas  the working canvas's revision after that check (the last line of
+#           `opmaak log`)
+#   date    the day of that check
+app c2f50fddabdfd9f06916525ac4c70d027d7ddb37
+canvas 1465
+date 2026-11-19

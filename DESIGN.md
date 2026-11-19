@@ -85,6 +85,11 @@ When they disagree, the code is right for the app, and the canvas and the site
 follow it. A change to a value in `Chrome.swift` is a change to make on the
 canvas too, or the site will show an app that no longer exists.
 
+Nothing keeps the canvas current by itself: it is drawn by hand from the app.
+`web/scripts/opmaak/synced` names the commit it last showed,
+`web/scripts/opmaak/drift.sh` lists what the app has gained since, and the
+`sync-visuals` skill is how it is brought level again.
+
 ## The idea
 
 Wortel has a handful of settings, and it is not a small app. It holds

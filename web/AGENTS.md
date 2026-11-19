@@ -56,8 +56,8 @@ npm run build        # → dist/, with the local pixel tools stripped out
 **The app on the page**
 
 - Every window is the real interface, generated from the design canvas into
-  `src/app/gen/`. Never edit those files by hand. `README.md` has the commands
-  to regenerate one.
+  `src/app/gen/`. Never edit those files by hand. `scripts/opmaak/regen.sh`
+  regenerates them, and `regen.sh --check` says whether they match the canvas.
 - 1:1, never scaled. A shorter window is fine. Never half a row
   (`wholeRows()`).
 - Change a window's state through `src/scripts/app.ts`, not by touching markup.

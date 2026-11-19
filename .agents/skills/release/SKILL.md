@@ -27,7 +27,12 @@ All commands run from `macos/`.
    untrue, in its own commit before the release, since `--publish` redeploys
    the site. A new verb also belongs in `macos/docs/wortel-command.md`.
    2026.47.1 shipped Remind Me with no word of it on /docs.
-4. **Notarization can log in:**
+4. **How far behind the pictures are.** `../web/scripts/opmaak/drift.sh --count`
+   prints how many commits have touched code that draws since the design
+   canvas, and so the app windows on wortel.sh, last showed the app. It never
+   holds a release up. Say the number when you hand over, and when it is
+   large, that the `sync-visuals` skill is the way to bring them level.
+5. **Notarization can log in:**
 
    ```sh
    xcrun notarytool history --keychain-profile notary >/dev/null && echo ok
@@ -37,12 +42,12 @@ All commands run from `macos/`.
    is at the bottom of `scripts/release.sh`). Don't go looking in the Keychain.
    It has gone missing between this check and the upload before (2026-11-03),
    so see "After".
-5. **Checks against a real machine**, for what the release touches:
+6. **Checks against a real machine**, for what the release touches:
    `scripts/verify-running-jobs.py` for `Wortel/Processes/`,
    `scripts/try-git.sh` for `Wortel/Git/`, `scripts/try-keeper-loss.sh` for
    keeper recovery, `scripts/try-replay-modes.sh` for the keeper's replay. The script itself runs `WortelTests` and the `updates/`
    tests.
-6. **The build has been used.** There are no UI tests. Someone has run this
+7. **The build has been used.** There are no UI tests. Someone has run this
    code as an app and seen its terminals draw.
 
 ## The command

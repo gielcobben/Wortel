@@ -143,18 +143,60 @@ final class ReportedStatusTests: XCTestCase {
         XCTAssertEqual(ReportedStatus.effects(from: asking, to: answered), [.answered])
     }
 
-    /// A turn that ends while a piece of its work still waits: both are said.
+    /// A turn that ends while a piece of its work still waits on a question.
     func testATurnCanEndWhileAChildStillWaits() {
         var asking = records(status(.working))
         asking.apply(.status(status(.blocked, kind: .question, id: "agent-7")))
         var finished = asking
         finished.apply(.status(status(.done)))
-        XCTAssertEqual(ReportedStatus.effects(from: asking, to: finished),
-                       [.resting, .announce(.turnDone, words: nil)])
+        // The question was announced when it was asked; the turn is held
+        // until that agent is done, since it carries on once answered.
+        XCTAssertEqual(ReportedStatus.effects(from: asking, to: finished), [])
+        XCTAssertEqual(finished.effective?.state, .blocked)
+        var gone = finished
+        gone.apply(.clearRecord("agent-7"))
+        XCTAssertEqual(ReportedStatus.effects(from: finished, to: gone),
+                       [.answered, .resting, .announceAfterWork(.turnDone)])
     }
 
-    /// Children that are only working change nothing at all.
-    func testWorkingChildrenAreNoNews() {
+    /// A turn that ends while a background command it started still runs is
+    /// not over: the spinner stays, and "finished" comes when the command
+    /// has ended too.
+    func testATurnWithBackgroundWorkEndsWhenTheWorkDoes() {
+        var running = records(status(.working))
+        running.apply(.status(status(.working, id: "bash_1")))
+        var turnEnded = running
+        turnEnded.apply(.status(status(.done)))
+        // Nothing to say: it was working and still is.
+        XCTAssertEqual(ReportedStatus.effects(from: running, to: turnEnded), [])
+        XCTAssertEqual(turnEnded.effective?.state, .working)
+        var allDone = turnEnded
+        allDone.apply(.clearRecord("bash_1"))
+        // Later than a turn's end usually is: the program tends to carry on.
+        XCTAssertEqual(ReportedStatus.effects(from: turnEnded, to: allDone),
+                       [.resting, .announceAfterWork(.turnDone)])
+        XCTAssertEqual(allDone.effective?.state, .done)
+        // What is kept across a relaunch is what the program said: not a turn
+        // held open by work that is not kept.
+        XCTAssertEqual(turnEnded.said?.state, .done)
+    }
+
+    /// Two pieces of work: the turn is over when the last one is.
+    func testTheLastPieceOfWorkEndsTheTurn() {
+        var turnEnded = records(status(.working, id: "bash_1"), status(.working, id: "monitor_2"),
+                                status(.done))
+        var one = turnEnded
+        one.apply(.clearRecord("bash_1"))
+        XCTAssertEqual(ReportedStatus.effects(from: turnEnded, to: one), [])
+        turnEnded = one
+        one.apply(.clearRecord("monitor_2"))
+        XCTAssertEqual(ReportedStatus.effects(from: turnEnded, to: one),
+                       [.resting, .announceAfterWork(.turnDone)])
+    }
+
+    /// Work listed after a turn was over does not take back its end, nor
+    /// announce it again when it ends.
+    func testWorkListedAfterTheTurnChangesNothing() {
         let finished = records(status(.done))
         var listed = finished
         listed.apply(.status(status(.working, id: "bash_1")))
@@ -162,6 +204,43 @@ final class ReportedStatusTests: XCTestCase {
         var cleared = listed
         cleared.apply(.clearRecord("bash_1"))
         XCTAssertEqual(ReportedStatus.effects(from: listed, to: cleared), [])
+    }
+
+    /// A turn stopped with Esc is stopped, background work or not.
+    func testAStoppedTurnIsNotHeld() {
+        let stopped = records(status(.working, id: "bash_1"), status(.idle))
+        XCTAssertEqual(stopped.effective?.state, .idle)
+    }
+
+    /// A background agent that asks a question is not the turn's end: the
+    /// question is announced, the turn is not, and once it is answered and
+    /// done the turn is announced once.
+    func testAQuestionFromHeldWorkIsNotTheTurnsEnd() {
+        let held = records(status(.working, id: "agent-7"), status(.done))
+        var asking = held
+        asking.apply(.status(status(.blocked, kind: .question, message: "Which database?", id: "agent-7")))
+        XCTAssertEqual(ReportedStatus.effects(from: held, to: asking),
+                       [.announce(.needsInput, words: "Which database?")])
+        var answered = asking
+        answered.apply(.status(status(.working, id: "agent-7")))
+        XCTAssertEqual(ReportedStatus.effects(from: asking, to: answered), [.answered])
+        var ended = answered
+        ended.apply(.clearRecord("agent-7"))
+        XCTAssertEqual(ReportedStatus.effects(from: answered, to: ended),
+                       [.resting, .announceAfterWork(.turnDone)])
+    }
+
+    /// A failed turn and a question are news even with work still going.
+    func testErrorAndBlockStandOverBackgroundWork() {
+        var running = records(status(.working, id: "bash_1"), status(.working))
+        var failed = running
+        failed.apply(.status(status(.error, message: "Rate limit reached")))
+        XCTAssertEqual(ReportedStatus.effects(from: running, to: failed),
+                       [.resting, .announce(.failed, words: "Rate limit reached")])
+        running = records(status(.working, id: "bash_1"), status(.working))
+        var asking = running
+        asking.apply(.status(status(.blocked, kind: .permission)))
+        XCTAssertEqual(asking.effective?.state, .blocked)
     }
 
     // MARK: - Repeats, and the program leaving

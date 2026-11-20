@@ -6,6 +6,7 @@ The `.xcodeproj` is **gitignored and generated** — `project.yml` (XcodeGen) is
 the source of truth. After a fresh checkout or any change to `project.yml`:
 
 ```sh
+scripts/build-ghostty.sh   # Ghostty from source, once per pinned commit (cached)
 xcodegen generate          # regenerate Wortel.xcodeproj from project.yml
 xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug build
 open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.app
@@ -39,6 +40,22 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   `--publish` refuses uncommitted changes and runs `WortelTests` and the
   `updates/` tests before it builds (`--allow-dirty`, `--no-tests` to
   override); it uploads with the wrangler pinned in `updates/`.
+- **Ghostty is built here, from source** (`scripts/build-ghostty.sh`, into
+  `GhosttyKit/Frameworks/`, gitignored). The inputs are tracked in
+  `GhosttyKit/`: `ghostty.ref` (the Ghostty commit), `spm.ref` (the
+  libghostty-spm commit whose build scripts and patch stack are used),
+  `zig.version`, and `Patches/` (Wortel's own, applied after libghostty-spm's;
+  `0100` adds the snapshot restore). Two libraries come out of the one patched
+  tree: GhosttyKit for the app, libghostty-vt for the keeper and the tests, and
+  they must, since the snapshots they pass are only defined within one commit.
+  Never link both into one binary: they share C dependencies. A build is
+  cached by a hash of its inputs in `~/Library/Caches/sh.wortel.ghostty`,
+  shared by every checkout, so a second worktree costs a copy. A full build is
+  about five minutes and needs Zig (`brew install zig`, the version in
+  `zig.version`) and Xcode's Metal toolchain (`xcodebuild -downloadComponent
+  MetalToolchain`). `check.sh` and `release.sh` run it first. To move Ghostty:
+  change the two refs, run it, fix what the patches no longer apply to (they
+  fail loudly on a changed anchor), and run `check-terminals.sh`.
 - **Package versions are pinned in `macos/Package.resolved`** (tracked; the
   project's own copy is generated and ignored). `release.sh` copies it into the
   generated project and builds with `-onlyUsePackageVersionsFromResolvedFile`,
@@ -101,4 +118,4 @@ do not add a row to the Settings window for them
 
 Ghostty config has **no trailing/inline comments**: a `#` after a value is
 swallowed into the value. Keep every comment on its own line. Config keys are
-pinned to Ghostty v1.3.1 (https://ghostty.org/docs/config/reference).
+those of the Ghostty in `GhosttyKit/ghostty.ref` (https://ghostty.org/docs/config/reference).

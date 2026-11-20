@@ -30,9 +30,9 @@ reason.
 
 1. **Fast.** Throughput and latency are Ghostty's, by construction. Wortel's
    job is to add nothing on top: a 7 MB bundle, a cold launch of 55 to 57 ms, a
-   session switch in one frame (to a session seen in the last ten minutes; one
-   out of sight longer has hibernated and takes 10 to 30 ms to wake, see
-   `decisions.md`). Numbers on the site and in the docs are
+   session switch in one frame (to a session seen in the last minute; one out
+   of sight longer has given back its terminal's memory and is restored from
+   the keeper in 30 to 45 ms, see `decisions.md`). Numbers on the site and in the docs are
    measured, never estimated. `macos/bench/BENCHMARKS.md` has the method.
 2. **Native.** Swift and AppKit, Metal, the system's own controls. No web view
    under the terminal, no runtime underneath.

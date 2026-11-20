@@ -313,11 +313,10 @@ at the keyboard.
 **A session not shown since launch is warmed, not refused.** Surfaces are
 lazy, so `read`, `send` and `wait` on a restored session create its terminal
 the way the warm-up does: no selection, no focus. They then wait for the pty
-queue to drain (`SurfaceView.afterPendingOutput`), because the keeper's replay
-and the saved modes arrive there first. Read before that, the screen is blank;
-paste before that, and the terminal doesn't yet know the program asked for
-bracketed paste. `send` also waits out a reattach's muted answers, which can
-take seconds while a big replay is written, but only for `WortelCLI.sendPatience`
+queue to drain (`SurfaceView.afterPendingOutput`) and a woken terminal to be
+restored from the keeper's snapshot (`afterRestore`). Read before that, the
+screen is the old one or none; paste before that, and the terminal doesn't yet
+know the program asked for bracketed paste. `send` waits, but only for `WortelCLI.sendPatience`
 (half the CLI's ten-second deadline, derived from it): past that it fails and
 types nothing, because text typed after the CLI has already reported failure is
 sent twice by a script that retries.

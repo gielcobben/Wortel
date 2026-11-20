@@ -45,8 +45,8 @@ though: `SessionManager.onSwitch` runs
 `MainSplitViewController.show` in the same turn as the selection, which lays
 out the session's column and strip first and only then shows its terminal,
 with resizes held throughout, so the terminal is shown at its final size and
-the one being left is never resized. Waking a hibernated terminal holds
-resizes until it is swapped in, for the same reason.
+the one being left is never resized. Waking a dropped terminal holds resizes
+until it is restored and swapped in, for the same reason.
 
 **Several windows** (`MainWindowController`, `SessionWindow`, `WindowStore`,
 since 2026-11-19). Each main window is a `MainWindowController`: its NSWindow,

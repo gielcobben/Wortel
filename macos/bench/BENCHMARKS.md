@@ -59,6 +59,35 @@ running afterwards; the other terminals are quit.
 
 Accept: within noise of Ghostty.app.
 
+## The keeper's terminal
+
+Every byte now goes through the keeper, which parses it into its own terminal
+and forwards it to the app (`docs/architecture/keeper.md`). Measured
+2026-11-20 on Apple silicon, Release builds, against protocol 1 (the pty
+passed to the app, nothing parsed in the keeper):
+
+| | protocol 1 | keeper keeps the terminal |
+| --- | --- | --- |
+| `cat` of 64 MB in a shown session, end to end | 97 to 103 MB/s | 99 to 110 MB/s |
+| CPU for those 64 MB | app 1.17 to 1.35 s | app 1.04 to 1.19 s, keeper 0.45 to 0.47 s |
+| A keystroke's round trip (typed, echoed, back) | median 28 µs, p99 54 | median 42 µs, p99 85 |
+| Keeper, 20 idle shells | | 9 MB |
+| Keeper, 10 sessions with full 10 MB scrollbacks | | 108 MB, 23 MB after 40 s quiet |
+| A dropped terminal shown again | | 30 to 45 ms |
+
+The keeper parses in parallel with the app and stays ahead of it, so
+throughput is the app's; what is added is the keeper's CPU, about 7 ms a MB.
+The end-to-end figures were taken from copies launched in the background
+(parsing, not drawing). How to take them again:
+
+```sh
+xcodebuild ... -scheme WortelTests -configuration Release test \
+  -only-testing:WortelTests/KeeperTerminalThroughputTests   # prints THROUGHPUT and KEYSTROKE
+```
+
+Memory is `footprint` (phys_footprint), not RSS: on a Mac short of memory,
+macOS compresses a quiet keeper's pages and RSS reads as a few MB.
+
 ## Render stress
 
 Clone `github.com/const-void/DOOM-fire-zig`, run it in both terminals side by

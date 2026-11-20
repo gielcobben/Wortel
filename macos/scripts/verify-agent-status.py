@@ -490,14 +490,14 @@ def notices(pattern, since="6m"):
     return [l for l in out.splitlines() if pattern in l]
 
 def hibernation():
-    """A terminal with no terminal still hears its agent (WORTEL_HIBERNATE_AFTER=5)."""
+    """A session whose surface was dropped out of sight still hears its agent (WORTEL_HIBERNATE_AFTER=5)."""
     if not wanted("hibernated"): return
     h1 = start("hibernated: a turn ends", "claude", ["tui", "r:idle", "r:working", "s:13", "r:done", "hold:20"])
     h2 = start("hibernated: blocked, answered, done", "claude",
                ["tui", "r:idle", "r:working", "s:11", "r:blocked:kind=permission", "s:4", "r:working", "s:3", "r:done", "hold:20"])
     unselect()
     time.sleep(24)
-    asleep = notices("hibernated ")
+    asleep = notices("dropped the terminal of ")
     ev = events_for(h1)
     report("hibernated: a turn ends", "the terminal was freed before the turn ended, and it was still announced",
            any(h1 in l for l in asleep) and kinds(ev) == ["turnDone"], ev)

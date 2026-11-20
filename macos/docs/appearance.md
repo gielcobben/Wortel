@@ -34,8 +34,8 @@ calls it, and nothing else decides anything:
 
 - the app's appearance changing (KVO on `NSApp.effectiveAppearance`), which is
   the real notice;
-- a terminal being made, woken from hibernation, restarted, or joining the
-  window;
+- a terminal being made, restored after being dropped, restarted, or joining
+  the window;
 - a view's `viewDidChangeEffectiveAppearance`, as a second witness;
 - the app becoming active, the Mac or the display waking, the screen being
   unlocked (`com.apple.screenIsUnlocked`; NSWorkspace has no notice for it),
@@ -114,27 +114,20 @@ in Ghostty 1.3.1), so nothing is lost. **Check this again when libghostty is
 updated**: `scripts/try-appearance.sh` fails if a new session comes up in the
 old theme.
 
-A resumed or woken session whose program listens is also sent one report, of
-the appearance now (`docs/terminal-modes.md`).
+A program that listens is told by the keeper, not by its surface (below).
 
-## Hibernated screens
+## Dropped terminals, and the keeper
 
-A terminal's cells hold two kinds of colour: a place in the palette, which
-follows light and dark, and a fixed 24-bit colour. libghostty's screen dump
-writes palette cells as the 24-bit value they have at that moment, and the
-binding gives no way to ask otherwise. Written back on waking, a prompt saved
-in dark was the dark theme's green for good, and the dark theme's white on a
-white page cannot be read.
-
-`SnapshotPalette` swaps the palette for 256 marker colours just before the
-dump (`OSC 4`, on the pty's queue) and turns the markers back into palette
-indices before the dump is written into the new terminal. A terminal that
-turns out not to hibernate gets its palette back (`OSC 104`).
-
-Known limit: a palette entry a program changed itself (`OSC 4`) is the theme's
-again after a hibernation, and after one that was called off at the last
-moment (the session selected between the markers going in and the dump), since
-`OSC 104` gives back the theme's palette and not the program's.
+The keeper keeps every session's terminal and is the one that answers a
+program (`docs/architecture/keeper.md`). So it is told what the app shows
+(`KeeperCommand.appearance`: light or dark, the theme's colours, read from the
+same files libghostty reads, `TerminalTheme`) when it connects and at every
+change. A program that listens (`?2031`) is sent the report by the keeper,
+whether its terminal has a surface in the app or not, and a change made while
+the app was not running is reported when it next connects. A terminal dropped
+out of sight is restored from a snapshot, which keeps each cell's colour as
+it is: a palette cell stays a palette cell and follows light and dark. The
+`SnapshotPalette` markers this section used to describe are gone.
 
 ## Readable, whatever was painted
 
@@ -262,8 +255,8 @@ scripts/try-appearance.sh          # about a minute, on a Debug build
 It runs a throwaway copy with a probe in each session, changes that copy
 between light and dark, and reads what each terminal answered and what each
 program was told: on screen, out of sight, never shown since launch, started
-after the change, and hibernated. Run it after any change here and after a
-libghostty update.
+after the change, and dropped. Run it after any change here and after a
+Ghostty update.
 
 A Debug build can be told its appearance without touching the Mac's
 (`AppearanceTestHook`), which is what the script uses. By hand, for a copy

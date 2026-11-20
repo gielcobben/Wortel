@@ -104,12 +104,13 @@ why a program is blocked.
 **How it is read.** libghostty ignores the sequence, and Wortel owns the pty,
 so `ProgramStatusWatch` reads it off the output on its way to the terminal
 (`ProgramSignalScanner`: outside a match it only looks for the next ESC). It
-answers the question with the same body. A hibernated session is heard the
-same way, since the output is read with or without a terminal. A replay (what
-the program wrote while Wortel was closed) is old news twice over: a question
-in it is not answered, because the program stopped waiting long ago and the
-answer would be typed into it. Of the rest, only what it leaves standing is
-passed on, marked as replayed: a `clear` if there was one, the last root
+answers the question with the same body. A session whose terminal was dropped
+is heard the same way, since the output is read with or without a surface.
+What the program wrote while Wortel was closed reaches the app as the keeper's
+tail of the session's output (`OutputTail`), and is old news twice over: a
+question in it is not answered, because the program stopped waiting long ago
+and the answer would be typed into it. Of the rest, only what it leaves
+standing is passed on, marked as replayed: a `clear` if there was one, the last root
 report, each child record still there, and the last notification. Not heard
 at all: a session on the exec backend (no keeper), where libghostty owns the
 pty, and whose notifications libghostty still forwards.
@@ -242,7 +243,7 @@ what a script tells them to, under the names the shell integration knows
 (`codex`, `claude`, `pi`, `opencode`, `gemini`), and reads the app's log for
 what it decided. Forty-four cases: a turn, a block and its answer, timing,
 rubbish, programs that never say `done`, old versions, plain programs,
-hibernated terminals, and the app closed and reopened around five sessions.
+terminals dropped out of sight, and the app closed and reopened around five sessions.
 `--real` adds the real Claude Code being put to sleep and woken. `--soak`
 is the nearest thing to a day of use: twenty stand-ins, forty random changes
 of state each, some standing and some flickering past faster than an
@@ -324,22 +325,17 @@ turn-end notification: Gemini CLI, goose, aider, cline, cursor-agent, and any
 agent in a version from before it reported. A notification or a bell of its
 own still arrives.
 
-## While a terminal is hibernated
+## While a terminal has no surface
 
-A hibernated session (`docs/glossary.md`) has no libghostty surface, so
-nothing is parsed by the core. Status reports are heard as always, since
-`ProgramStatusWatch` listens to the pty and not the terminal. For the rest,
-`SignalScanner` reads the pty instead (OSC 0/2, 7, 9, 9;4, 99, 133;D, 777 and
-BEL) and raises the same `SurfaceView` callbacks, then takes those sequences
-out of what is written back into the terminal on wake, so nothing is raised
-twice. Nothing answers a program's terminal queries while there is no
-terminal, so a session running an agent outside
-`HibernationPolicy.watchableAgents` (only claude so far) is not hibernated
-while that agent runs. And no agent's terminal is hibernated while the agent
-is at work (`Session.isBusy`): what it writes then is drawing, and only
-512 KB of it is kept for a terminal that is away. One that starts a turn
-while hibernated is woken out of sight once half of that is used
-(`HibernationPolicy.outrunning`). `../../docs/decisions.md`, 2026-11-19.
+A session whose terminal was dropped out of sight (`docs/glossary.md`) has no
+libghostty surface in the app; the keeper still has its terminal, and the app
+still reads the session's output from the keeper. Status reports are heard as
+always, since `ProgramStatusWatch` reads that output, not the surface. For the
+rest, `SignalScanner` reads it (OSC 0/2, 7, 9, 9;4, 99, 133;D, 777 and BEL)
+and raises the same `SurfaceView` callbacks, until a surface is restored and
+takes over from its snapshot on, so nothing is raised twice. The program's
+terminal queries are answered by the keeper either way, so an agent at work
+loses nothing when its surface goes. `../../docs/decisions.md`, 2026-11-20.
 
 ## While an agent is asleep
 

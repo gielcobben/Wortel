@@ -83,6 +83,9 @@ final class PtyHost: @unchecked Sendable {
         /// what it reports is libghostty's own placeholder. See
         /// `ignoreSizesUntilTold`.
         var awaitingSize = false
+        /// A new surface's first report is still to come, and is its
+        /// placeholder: drop it whenever it lands (`ignoreSizesUntilTold`).
+        var placeholderDue = false
     }
     /// `uncheckedState` only because `DispatchSourceRead` is not Sendable; it
     /// never leaves the lock except to be cancelled by the one caller that took
@@ -539,7 +542,14 @@ final class PtyHost: @unchecked Sendable {
     /// keeper keeps the terminal, so the size is its to apply, to the pty and
     /// its own terminal at one point in the stream (`resizeInKeeper`).
     func resize(columns: UInt16, rows: UInt16, widthPx: UInt32, heightPx: UInt32) {
-        guard let resizeInKeeper, !shared.withLock({ $0.awaitingSize }) else { return }
+        let passOn = shared.withLock { state -> Bool in
+            if state.placeholderDue {
+                state.placeholderDue = false
+                return false
+            }
+            return !state.awaitingSize
+        }
+        guard passOn, let resizeInKeeper else { return }
         resizeInKeeper(columns, rows, widthPx, heightPx)
     }
 
@@ -553,8 +563,21 @@ final class PtyHost: @unchecked Sendable {
     /// that width, for good (2026-11-19: eight of twelve Claude Code ptys at
     /// 45x15). Until the surface is told, the pty keeps the size the keeper
     /// has for it.
+    ///
+    /// **And that report is dropped whenever it comes.** It is made once, by
+    /// the host-managed backend's `threadEnter` on the surface's IO thread as
+    /// it starts (Ghostty `src/termio/HostManaged.zig`), before any resize
+    /// that thread handles, so it is always a surface's first report. It
+    /// usually lands during `ghostty_surface_new`; with Ghostty `5ebe501` it
+    /// was seen to land after the surface had been told its size, and a
+    /// program out of sight was given 45x15 and then its own size
+    /// (`try-app-crash.sh`, 2026-11-20). Waiting for "told" is a bet on timing;
+    /// dropping the first report is not.
     func ignoreSizesUntilTold() {
-        shared.withLock { $0.awaitingSize = true }
+        shared.withLock {
+            $0.awaitingSize = true
+            $0.placeholderDue = true
+        }
     }
 
     /// The terminal has been given a real size: what it reports from now on

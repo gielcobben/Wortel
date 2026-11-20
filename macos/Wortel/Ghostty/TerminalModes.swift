@@ -29,13 +29,11 @@ import Foundation
 /// or a white prompt box on a dark one. Nothing recovers on its own, because
 /// the agent has no reason to ask again.
 ///
-/// **This has to live in the app, not the keeper.** While a session is
-/// attached the app reads the pty itself and the keeper sees none of those
-/// bytes, which is precisely when a program declares its modes. So the app
-/// watches the output it is already handling, and writes it down
-/// (`TerminalModeStore`) because the process that knows is the one that is
-/// about to exit. While nobody is attached the keeper is where the bytes are,
-/// and its replay reads the modes out of what it drops (`ReplayBuffer`).
+/// **No longer what restores a terminal.** Since protocol 2 the keeper keeps
+/// each session's terminal, and its snapshot carries every mode. The record
+/// stays, fed by the live output (`KeptTerminalFeed`) and kept on disk
+/// (`TerminalModeStore`), for the few readers in the app that ask it what a
+/// program has on (`docs/terminal-modes.md`), until they ask the keeper.
 struct TerminalModes: Equatable {
     /// The DEC private modes worth restoring, by number.
     ///

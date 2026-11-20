@@ -57,21 +57,12 @@ This is *app state*, not user config — Wortel stays zero-config. Decoder
 tolerates older files missing fields. `saveNow` runs synchronously on
 termination.
 
-**Terminal modes across a reattach** (`Wortel/Ghostty/TerminalModes.swift`) —
-the keeper keeps a session's shell alive across a relaunch, so the *program*
-never restarts, but its terminal does: a new libghostty surface starts with
-every mode at its default while the program still believes what it set. That
-costs a paste its brackets (`?2004`), and each pasted line then arrives as
-Enter. So the app watches the output it already handles, records the sticky
-modes, persists them per session, and re-declares them into the new surface
-*before* the keeper's replay. **The watching cannot live in the keeper**: while
-a session is attached the app reads the pty itself, which is exactly when a
-program declares its modes. The replay's own queries get answered by the new
-surface, long after the program stopped waiting, so those answers are dropped
-(`ReplayAnswers`, `PtyHost.writeFromTerminal`) until a marker query parsed
-after the replay comes back: libghostty writes answers from its IO thread a
-moment after parsing, so "the replay was written" is not "its answers are out".
-See `docs/terminal-modes.md`.
+**Terminal modes** (`Wortel/Ghostty/TerminalModes.swift`): the keeper keeps
+each session's terminal, so the modes a program set travel in every snapshot
+and are never lost or declared again (`docs/architecture/keeper.md`). The app
+still records them from the live output, for its own readers (whether to
+bracket an inserted prompt, what to take back from an agent it ends). See
+`docs/terminal-modes.md`.
 
 **Attention** (`SessionManager`'s Attention section, `docs/agent-signals.md`)
 — a session that wants you gets a dot, the Dock badge and a notification,
@@ -151,9 +142,9 @@ it is built:
   conversation is the one Wortel saw it in, trusted only while no text has
   gone in since the last sign of it (`AgentConversation.lastSeenIn`).
 - **What the agent switched on in the terminal is taken back before the
-  signal** (`TerminalModes.undo`, written by `SurfaceView.writeAsOutput`, the
-  road the program's own output takes, so the record hears it and a
-  hibernated terminal keeps it). Claude Code tidies up after itself and the
+  signal** (`TerminalModes.undo`, written by `SurfaceView.writeAsOutput`
+  through the keeper, so its terminal, the app's copy and the record all
+  hear it). Claude Code tidies up after itself and the
   second telling does nothing; Codex does not.
 - **Remote Control** on (`bridgeSessionId` in the agent's record) is the
   long clock too, under a memory warning as well: a phone can't wake it.

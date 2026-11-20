@@ -267,20 +267,12 @@ final class SurfaceView: NSView {
 
     private static var saveFirstSize: DispatchWorkItem?
 
-    /// The size, in pixels, a new surface is told before anything else,
-    /// because what is about to be written into it was drawn for that size:
-    /// a hibernated terminal's, or a screen saved at the last quit
-    /// (`SavedScreens`). Taken by `tellFirstSize`. While it is waiting, the
-    /// view's own size is not passed on (`viewDidChangeBackingProperties`).
-    var restoreSize: (width: UInt32, height: UInt32)?
-
     /// Whether a new surface on this view is about to be told a size of its
     /// own as it is set up (`tellFirstSize`), so that what is written into
     /// it can wait for that size (`waitForToldGrid`). Not a side terminal's,
     /// which is told nothing until it is shown.
     var expectsFirstSize: Bool {
-        restoreSize != nil
-            || isSessionTerminal && (shownSizeOwner.flatMap { Self.shownSizes[$0] } ?? Self.firstSize) != nil
+        isSessionTerminal && (shownSizeOwner.flatMap { Self.shownSizes[$0] } ?? Self.firstSize) != nil
     }
 
     /// A new surface that nothing has told a size yet (made out of sight, or
@@ -294,11 +286,6 @@ final class SurfaceView: NSView {
         // of a drag: the size its view gives it next, however soon, gets its
         // frame in the same commit (`frameForNewSize`).
         defer { sizedAt = nil }
-        if let restore = restoreSize, surface != nil {
-            restoreSize = nil
-            setSurfaceSize(width: restore.width, height: restore.height)
-            return
-        }
         guard isSessionTerminal, surface != nil, toldSize == nil,
               let size = shownSizeOwner.flatMap({ Self.shownSizes[$0] }) ?? Self.firstSize else { return }
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
@@ -1074,7 +1061,7 @@ final class SurfaceView: NSView {
     /// size lands. What the program wrote meanwhile does not: an agent draws
     /// in place, each piece from where the last ended, and at 45 columns a
     /// line of 78 is two rows, so "up three and clear" clears a line and a
-    /// half. Found with `scripts/try-hibernate-screen.sh` on 2026-11-19: an
+    /// half. Found with a script of 2026-11-19, since gone with what it tested: an
     /// agent woken as it began to write had 3 lines of 120 missing and 18
     /// left over, with nothing lost, and its status line cut at exactly
     /// column 45. It is also what a session looked like when it was shown
@@ -1401,8 +1388,7 @@ final class SurfaceView: NSView {
             fbFrame.size.width / frame.size.width,
             fbFrame.size.height / frame.size.height)
 
-        // Not while a size to restore at is waiting to be told: see `restoreSize`.
-        if contentSize != .zero, restoreSize == nil {
+        if contentSize != .zero {
             let scaled = convertToBacking(contentSize)
             setSurfaceSize(width: UInt32(max(0, scaled.width)), height: UInt32(max(0, scaled.height)))
         }

@@ -19,6 +19,9 @@ if run macos; then
   (
     cd "$ROOT/macos"
     command -v xcodegen >/dev/null || { echo "✗ xcodegen not found (brew install xcodegen)" >&2; exit 1; }
+    # Ghostty, from source, if this checkout has no build of the pinned one
+    # yet (a cached build is a copy; a new one is about five minutes).
+    scripts/build-ghostty.sh
     xcodegen generate --quiet
     # shellcheck disable=SC2086
     xcodebuild -project Wortel.xcodeproj -scheme WortelTests ${XCODEBUILD_FLAGS:-} test -quiet

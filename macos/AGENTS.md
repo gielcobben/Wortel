@@ -12,8 +12,10 @@ one you need. Don't read them all.
 
 A minimal, performance-first, fully native macOS terminal. It embeds Ghostty's
 real engine (VT parser, Metal renderer, glyph atlas, per-surface IO threads) via
-the `GhosttyKit` Swift package — so raw terminal throughput/render/latency are
-Ghostty-class by construction. Wortel's own code is only the **app shell**: a
+`GhosttyKit`, built here from source (`scripts/build-ghostty.sh`), so raw
+terminal throughput/render/latency are Ghostty-class by construction. Each
+session's terminal lives in the keeper (`docs/architecture/keeper.md`); the
+app's surface is a copy of it. Wortel's own code is only the **app shell**: a
 sidebar of named terminal sessions, session persistence, input plumbing, and
 menu/keybind wiring. The design goal is "indistinguishable from Ghostty.app,
 faster to launch, instant session switch" (see `bench/BENCHMARKS.md`).
@@ -25,6 +27,7 @@ What a person can change is a handful of switches in the Settings window (⌘,).
 ## Commands
 
 ```sh
+scripts/build-ghostty.sh     # Ghostty from source; first, once per pinned commit
 xcodegen generate            # after a fresh checkout or any change to project.yml
 xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug build
 xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # about 85s

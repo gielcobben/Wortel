@@ -70,22 +70,26 @@ there. One running Wortel per data folder.
 **Keeper.** `wortel-keeper`, the small process that holds every pty so shells
 are not the app's children. Never named in the UI.
 
-**Attach, detach.** The app taking over reading a session's pty from the keeper,
-and the keeper taking it back. There is no detach message: detaching is the
-connection closing. Only one of the two reads at a time.
+**Attach.** The app asking the keeper for a session: its terminal's channel
+(a snapshot, then the output) and its pty to type into. There is no detach:
+the connection closing is the app gone. The keeper is every pty's one reader.
 
-**Replay.** What the keeper buffered while nothing was attached, written into
-the new terminal on attach. Bounded, and not scrollback.
+**Snapshot.** The keeper's terminal for a session, whole, as libghostty-vt
+encodes it: what an app's surface is restored from. Only readable by a Ghostty
+built from the same commit.
 
-**Hibernated.** A session whose terminal was freed after ten minutes out of
-sight (a minute, for one not opened since launch), or on a memory warning. Its shell runs on and the app still reads it;
-the screen comes back when the session is shown. Never named in the UI.
+**Dropped** (in code still `hibernate`). A session whose terminal's surface,
+the app's copy of it, was freed after a minute out of sight, or on a memory
+warning. The keeper keeps the terminal itself and the app still reads the
+output; shown, the surface is restored from the keeper exactly. Never named in
+the UI.
 
 **Asleep.** A session whose agent was ended to give its memory back, after an
 hour at rest out of sight (eight, if it was waiting on you, had something
 running, or could be reached by Remote Control). Its shell stays, and the
 agent's exact conversation is resumed when the session is selected. Deeper
-than hibernated, which only frees the terminal. Never named in the UI.
+than a dropped terminal, which only frees the app's copy of it. Never named in
+the UI.
 
 **Resume.** Typing an agent's own "continue this conversation" command back
 into a session after a relaunch or a recovery, or when a session whose agent

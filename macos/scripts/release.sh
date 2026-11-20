@@ -216,6 +216,10 @@ echo "==> Signing identity: $IDENTITY"
 # --- Build ------------------------------------------------------------------
 echo "==> Regenerating project + building Release"
 command -v xcodegen >/dev/null || { echo "✗ xcodegen not found (brew install xcodegen). Building without it would build a stale project." >&2; exit 1; }
+# Ghostty, built here from the pinned commit and patches (GhosttyKit/), or
+# taken from the cache of that exact build. The app and the keeper must ship
+# from one Ghostty tree: they pass snapshots only that tree can read.
+scripts/build-ghostty.sh
 xcodegen generate
 # The versions every package resolves to are the tracked ones
 # (macos/Package.resolved), not whatever is newest today. The project is

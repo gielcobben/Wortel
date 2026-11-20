@@ -115,6 +115,76 @@ final class KeeperTerminalThroughputTests: XCTestCase {
     }
 }
 
+extension KeeperTerminalThroughputTests {
+    /// A key's round trip: typed into the pty, echoed by the program, back
+    /// to the app. Keys go straight to the pty either way; the echo now comes
+    /// through the keeper. 2000 trips each, alternated in blocks.
+    func testWhatKeepingTheTerminalCostsAKeystroke() throws {
+        let server = KeeperServer(path: path)
+        try server.start()
+        self.server = server
+        let client = KeeperClient(path: path)
+        XCTAssertTrue(try client.connect())
+        let echo = KeeperSpawnPlan(executable: "/bin/sh", arguments: ["-c", "stty raw -echo; exec cat"],
+                                   environment: ["PATH": "/usr/bin:/bin"], workingDirectory: nil)
+
+        func waitReadable(_ fd: Int32) { var p = pollfd(fd: fd, events: Int16(POLLIN), revents: 0); _ = poll(&p, 1, 1000) }
+
+        func trips(terminal: Bool, id: String, count: Int) throws -> [Double] {
+            var readFD: Int32 = -1, writeFD: Int32 = -1
+            if terminal {
+                let (_, fds) = try client.sendForDescriptors(.terminal(session: id, plan: echo, columns: 80, rows: 24))
+                readFD = fds[0]; writeFD = fds[1]
+            } else {
+                let (_, fd) = try client.send(.open(session: id, plan: echo, columns: 80, rows: 24))
+                readFD = try XCTUnwrap(fd); writeFD = readFD
+            }
+            defer { close(readFD); if writeFD != readFD { close(writeFD) } }
+            var reader = KeeperChannelReader()
+            var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+            // Let the shell settle, and take the snapshot off the channel.
+            usleep(300_000)
+            while true {
+                var p = pollfd(fd: readFD, events: Int16(POLLIN), revents: 0)
+                guard poll(&p, 1, 50) > 0 else { break }
+                let n = read(readFD, &buffer, buffer.count)
+                if n <= 0 { break }
+                if terminal { buffer.withUnsafeBufferPointer { b in reader.feed(b.baseAddress!, count: n) { _ in } } }
+            }
+            var samples: [Double] = []
+            var key: UInt8 = 0x61
+            for _ in 0..<count {
+                var got = false
+                let start = DispatchTime.now().uptimeNanoseconds
+                _ = write(writeFD, &key, 1)
+                while !got {
+                    waitReadable(readFD)
+                    let n = read(readFD, &buffer, buffer.count)
+                    guard n > 0 else { continue }
+                    if terminal {
+                        buffer.withUnsafeBufferPointer { b in
+                            reader.feed(b.baseAddress!, count: n) { piece in if case .output = piece { got = true } }
+                        }
+                    } else { got = true }
+                }
+                samples.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1000)
+            }
+            return samples.sorted()
+        }
+
+        var direct: [Double] = [], kept: [Double] = []
+        for round in 0..<4 {
+            direct += try trips(terminal: false, id: "d\(round)", count: 500)
+            kept += try trips(terminal: true, id: "k\(round)", count: 500)
+        }
+        direct.sort(); kept.sort()
+        func at(_ a: [Double], _ q: Double) -> Double { a[min(a.count - 1, Int(Double(a.count) * q))] }
+        print(String(format: "KEYSTROKE pty passed: median %.0f µs, p99 %.0f µs; terminal kept: median %.0f µs, p99 %.0f µs",
+                     at(direct, 0.5), at(direct, 0.99), at(kept, 0.5), at(kept, 0.99)))
+        XCTAssertEqual(kept.count, 2000)
+    }
+}
+
 private extension Array where Element == UInt8 {
     func windowContaining(_ needle: [UInt8]) -> Bool {
         guard count >= needle.count else { return false }

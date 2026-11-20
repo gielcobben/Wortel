@@ -142,6 +142,19 @@ final class KeeperTerminalTests: XCTestCase {
 
     // MARK: - Memory
 
+    /// Scrollback nobody is reading is compressed, and a compressed terminal
+    /// snapshots exactly as it was: it is what an app restores from.
+    func testCompressedScrollbackSnapshotsTheSameAndTakesLess() {
+        let t = terminal(80, 24)
+        for line in 1...20_000 { write(t, "line \(line) of a log nobody is scrolling through\r\n") }
+        let before = t.residentBytes, text = t.text()
+        var steps = 0
+        while t.compressStep(), steps < 10_000 { steps += 1 }
+        XCTAssertLessThan(t.residentBytes, before / 2, "compressed \(before) to \(t.residentBytes)")
+        XCTAssertEqual(roundTrip(t).text(), text)
+        XCTAssertEqual(t.text(), text)
+    }
+
     /// A runaway log can't grow the keeper without bound: scrollback is kept
     /// in whole pages up to the limit, oldest dropped first.
     func testScrollbackIsBounded() {

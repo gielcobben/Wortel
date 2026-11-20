@@ -42,6 +42,10 @@ final class KeeperServer: @unchecked Sendable {
         /// from then on the keeper is not reading, and its terminal falls
         /// behind for good.
         var terminalStale = false
+        /// The terminal's activity (`KeeperTerminal.activity`) as of the last
+        /// look, and the one it was compressed at. Read queue only.
+        var seenActivity: UInt64?
+        var compressedActivity: UInt64?
         /// Answers to the program go out here, never on the read queue: a
         /// program that is not reading its input would otherwise stop the
         /// keeper reading its output, and each would wait on the other.
@@ -71,6 +75,12 @@ final class KeeperServer: @unchecked Sendable {
     private let connections = DispatchQueue(label: "sh.wortel.keeper.conn", attributes: .concurrent)
     private var sessions: [String: Session] = [:]
     private var listener: DispatchSourceRead?
+    /// Compresses the scrollback of terminals that have gone quiet
+    /// (`compressQuietTerminals`).
+    private var compression: DispatchSourceTimer?
+    /// How often terminals are looked at for compression: one quiet for a
+    /// whole interval is compressed.
+    static let compressionInterval: TimeInterval = 15
     private var descriptor: Int32 = -1
     private var liveConnections = 0
     /// Set by `stopIfIdle` as it decides to go. `open` refuses from then on,
@@ -155,9 +165,45 @@ final class KeeperServer: @unchecked Sendable {
         source.setCancelHandler { close(socketFD) }
         listener = source
         source.resume()
+
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "sh.wortel.keeper.compress", qos: .utility))
+        timer.schedule(deadline: .now() + Self.compressionInterval, repeating: Self.compressionInterval,
+                       leeway: .seconds(5))
+        timer.setEventHandler { [weak self] in self?.compressQuietTerminals() }
+        compression = timer
+        timer.resume()
+    }
+
+    /// Compress the scrollback of every terminal that has done nothing since
+    /// the last look. Memory is most of what a terminal costs the keeper (a
+    /// full scrollback is its limit, 10 MB), and what nobody is scrolling
+    /// through compresses to a fraction (libghostty-vt measured 70 to 90%).
+    /// A page is decompressed when it is next read or written, so this is
+    /// invisible but for the memory. In bounded steps, on each session's read
+    /// queue between two reads, so a session that wakes up waits for at most
+    /// one step.
+    private func compressQuietTerminals() {
+        let all = state.sync { Array(sessions.values) }
+        for session in all {
+            session.pty.enqueue { [weak session] in
+                guard let session, let terminal = session.terminal else { return }
+                let activity = terminal.activity
+                defer { session.seenActivity = activity }
+                guard activity == session.seenActivity, activity != session.compressedActivity else { return }
+                var steps = 0
+                while terminal.compressStep() {
+                    steps += 1
+                    // Not all of a huge scrollback in one turn of the queue.
+                    if steps >= 256 { return }
+                }
+                session.compressedActivity = terminal.activity
+            }
+        }
     }
 
     func stop() {
+        compression?.cancel()
+        compression = nil
         listener?.cancel()
         listener = nil
         descriptor = -1

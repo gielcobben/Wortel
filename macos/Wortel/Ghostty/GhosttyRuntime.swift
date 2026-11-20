@@ -493,7 +493,7 @@ final class GhosttyRuntime {
         ghostty_surface_set_responds(surface, false)
 
         let feed = KeptTerminalFeed(session: session, status: view.programStatusWatch,
-                                    accessibility: view.accessibilityWatch, pty: pty)
+                                    accessibility: view.accessibilityWatch)
         view.keptFeed = feed
         feed.onSignals = { [weak view] signals in view?.raise(signals) }
         feed.show(in: surface, waitsForSize: view.expectsFirstSize)

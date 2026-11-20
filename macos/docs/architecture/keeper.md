@@ -51,9 +51,13 @@ and whatever sequence the program was in the middle of.
 
 ## Rules that look wrong and aren't
 
-- **The keeper answers the program; the app's surface never does.** Cursor
-  position, device attributes, colours, light or dark, sizes: libghostty-vt's
-  answers (`KeeperTerminal`), with the app open or not. The surface is fed with
+- **The keeper answers the program; the app never does.** Cursor position,
+  device attributes, colours, light or dark, sizes, and the agent status
+  question (`OSC 7501 ; ?`): libghostty-vt's answers (`KeeperTerminal`), with
+  the app open or not, in the order they were asked. The order is part of the
+  answer: Claude Code takes a DA1 answer that comes before its status answer
+  as "no", and when the app answered that question it came second
+  (`../agent-signals.md`). The surface is fed with
   `ghostty_surface_write_buffer_replay` and told `ghostty_surface_set_responds(false)`,
   so nothing is answered twice. The app tells the keeper its colours and light
   or dark (`appearance`).

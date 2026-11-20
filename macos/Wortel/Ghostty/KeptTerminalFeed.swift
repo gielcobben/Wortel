@@ -34,13 +34,11 @@ final class KeptTerminalFeed {
     private let session: UUID
     private let status: ProgramStatusWatch
     private let accessibility: SurfaceAccessibilityWatch
-    private weak var pty: PtyHost?
 
-    init(session: UUID, status: ProgramStatusWatch, accessibility: SurfaceAccessibilityWatch, pty: PtyHost) {
+    init(session: UUID, status: ProgramStatusWatch, accessibility: SurfaceAccessibilityWatch) {
         self.session = session
         self.status = status
         self.accessibility = accessibility
-        self.pty = pty
     }
 
     /// Show the session in `surface`, from the next snapshot on. `waitsForSize`:
@@ -91,7 +89,7 @@ final class KeptTerminalFeed {
                 // The record of the program's modes, which agent sleep and
                 // the light/dark handling read (`TerminalModes`).
                 TerminalModeRecorder.shared.feed(session: session, bytes: base, count: output.count)
-                status.output(base, count: output.count, pty: pty)
+                status.output(base, count: output.count)
                 if scanner != nil {
                     var passed: [UInt8] = []
                     let signals = scanner!.scan(output, now: DispatchTime.now().uptimeNanoseconds, output: &passed)

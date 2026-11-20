@@ -61,7 +61,7 @@ ENV = dict(os.environ, WORTEL_DATA_DIR=DATA)
 OPEN = ["open", "-g", "-n", "--env", "WORTEL_DATA_DIR=" + DATA, "--env", "DO_NOT_TRACK=1"]
 
 AGENT = r'''"""A stand-in agent: says what its steps file tells it to, when it tells it to."""
-import base64, os, select, sys, termios, time, tty
+import base64, os, re, select, sys, termios, time, tty
 
 APPS = {"claude": "claude-code"}
 name = sys.argv[1]
@@ -128,13 +128,16 @@ try:
             fd = sys.stdin.fileno(); old = termios.tcgetattr(fd)
             try:
                 tty.setraw(fd)
-                emit("\x1b]7501;?\x1b\\")
+                # As Claude Code asks: DA1 right behind the question, and
+                # supported only if the status answer comes first.
+                emit("\x1b]7501;?\x1b\\\x1b[c")
                 got = b""; end = time.time() + 1.5
-                while time.time() < end and not got.endswith(b"\x1b\\"):
+                while time.time() < end and not got.endswith(b"c"):
                     if select.select([fd], [], [], 0.1)[0]: got += os.read(fd, 64)
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old)
-            open(rest, "w").write("answered" if got == b"\x1b]7501;?\x1b\\" else "silent:" + got.hex())
+            first = re.match(rb"\x1b\]7501;\?[^\x1b\x07]*(\x1b\\|\x07)", got)
+            open(rest, "w").write("answered" if first else "silent:" + got.hex())
         else:
             raise SystemExit(f"unknown step: {step}")
 finally:

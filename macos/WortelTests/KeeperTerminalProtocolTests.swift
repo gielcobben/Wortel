@@ -296,6 +296,26 @@ final class KeeperTerminalProtocolTests: XCTestCase {
         XCTAssertTrue(screen.contains("ANSWER:E[?62;22;52c"), "DA1 not answered: \(screen)")
     }
 
+    /// What Claude Code does at startup: the status question, DA1 behind
+    /// it, and "supported" only if the status answer came first. Asked with
+    /// no app attached, which is also an agent started while Wortel is closed:
+    /// it is answered all the same, so it reports from its first turn.
+    func testTheStatusQuestionIsAnsweredBeforeDA1WithNoAppAttached() throws {
+        try startServer()
+        let client = try connect()
+        // The first byte after the ESC that starts the first answer: `]` for
+        // OSC 7501, `[` for DA1.
+        let script = "stty raw -echo; printf '\\033]7501;?\\033\\\\\\033[c'; first=$(dd bs=1 count=2 2>/dev/null | tail -c 1); stty sane; echo \"FIRST:$first\"; sleep 30"
+        let opened = try terminal(client, "agent", script)
+        close(opened.channel)
+        descriptors.removeAll { $0 == opened.channel }
+        usleep(800_000)
+        let again = try terminal(client, "agent", "unused")
+        let read = readChannel(again.channel, timeout: 2)
+        let screen = try decode(read.snapshot).text() + text(read.output)
+        XCTAssertTrue(screen.contains("FIRST:]"), "the status question was not answered first: \(screen)")
+    }
+
     // MARK: - Size
 
     /// A resize reaches the program (SIGWINCH and the new size) and the

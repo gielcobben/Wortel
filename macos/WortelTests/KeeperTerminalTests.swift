@@ -118,6 +118,23 @@ final class KeeperTerminalTests: XCTestCase {
         XCTAssertTrue(replies(of: t) { write(t, "\u{1B}[>q") }.hasPrefix("\u{1B}P>|ghostty "), "XTVERSION")
     }
 
+    /// Claude Code asks whether the terminal speaks the Program Status
+    /// Protocol with DA1 right behind the question, and takes a DA1 answer
+    /// that comes first as "no": it then reports nothing for its whole run.
+    /// So the keeper answers the question itself, in the order asked, ended
+    /// the way it was asked. When the app answered it after a round trip, the
+    /// keeper's DA1 usually beat it (2026-11-20).
+    func testTheStatusQuestionIsAnsweredInOrderWithTheRest() {
+        let t = terminal()
+        let lists = ":states=idle,working,done,blocked,error:kinds=permission,question,auth"
+        XCTAssertEqual(replies(of: t) { write(t, "\u{1B}]7501;?\u{1B}\\\u{1B}[c") },
+                       "\u{1B}]7501;?\(lists)\u{1B}\\\u{1B}[?62;22;52c")
+        XCTAssertEqual(replies(of: t) { write(t, "\u{1B}]7501;?\u{07}\u{1B}[c") },
+                       "\u{1B}]7501;?\(lists)\u{07}\u{1B}[?62;22;52c", "BEL in, BEL out")
+        XCTAssertEqual(replies(of: t) { write(t, "\u{1B}]7501;state=working:app=x\u{1B}\\") }, "",
+                       "a report is not answered")
+    }
+
     /// Light or dark is not known until the app says; a question before that
     /// goes unanswered rather than answered wrong. After, it is answered, and
     /// a program that subscribed (`?2031`) is told when it changes, with or

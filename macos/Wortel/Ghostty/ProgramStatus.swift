@@ -62,8 +62,8 @@ struct ProgramStatus: Equatable {
 /// One OSC 7501 sequence, read.
 enum ProgramStatusReport: Equatable {
     /// `OSC 7501 ; ? ST`: the program asking whether the terminal speaks the
-    /// protocol. The answer is `reply`, and a program that gets none treats
-    /// the protocol as unsupported for as long as it runs.
+    /// protocol. The keeper answers it (`KeeperTerminal`); a program that gets
+    /// no answer treats the protocol as unsupported for as long as it runs.
     case query
     /// The root record is now this.
     case status(ProgramStatus)
@@ -72,11 +72,6 @@ enum ProgramStatusReport: Equatable {
     case clear
     /// `state=clear` with an id: that record and every record beneath it.
     case clearRecord(String)
-
-    /// What a supporting terminal answers a query with. No `states=` or
-    /// `kinds=`: without them the reply means exactly the spec's fixed lists,
-    /// which are the ones read here.
-    static let reply = Array("\u{1B}]7501;?\u{1B}\\".utf8)
 
     // The spec's limits. A report that breaks one is discarded whole, so a
     // hostile or broken program cannot make memory grow.

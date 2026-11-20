@@ -1,8 +1,9 @@
 import Foundation
 
 /// Listens to one terminal's output for what its program says: what it is
-/// doing (OSC 7501, `ProgramStatus`) and the notifications it asks for. And
-/// answers the program when it asks whether anyone is listening.
+/// doing (OSC 7501, `ProgramStatus`) and the notifications it asks for.
+/// It only listens. The question a program asks first (`OSC 7501 ; ?`) is the
+/// keeper's to answer (`KeeperTerminal`), in order with its other answers.
 ///
 /// It is read here, on the pty's queue, as the bytes go past to the terminal.
 /// libghostty ignores a status report; and its own count of notifications is
@@ -37,23 +38,9 @@ final class ProgramStatusWatch: @unchecked Sendable {
     }
 
     /// Output on its way to the terminal. Called on the pty queue.
-    func output(_ bytes: UnsafePointer<UInt8>, count: Int, pty: PtyHost?) {
+    func output(_ bytes: UnsafePointer<UInt8>, count: Int) {
         let heard = lock.withLock { scanner.scan(UnsafeBufferPointer(start: bytes, count: count)) }
-        guard !heard.isEmpty else { return }
-        var news: [ProgramSignal] = []
-        for signal in heard {
-            if signal == .status(.query) {
-                // The program is waiting on this, and takes silence as "no"
-                // for as long as it runs.
-                ProgramStatusReport.reply.withUnsafeBufferPointer { raw in
-                    guard let base = raw.baseAddress else { return }
-                    pty?.write(base, count: raw.count)
-                }
-            } else {
-                news.append(signal)
-            }
-        }
-        deliver(news, replayed: false)
+        deliver(heard.filter { $0 != .status(.query) }, replayed: false)
     }
 
     /// What the program wrote while nobody was attached, on its way into a

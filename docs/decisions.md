@@ -1087,6 +1087,17 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-11-20. A quiet terminal's scrollback is compressed by the keeper**,
   after a 15 s look that finds it unchanged. 108 MB to 23 MB for ten full
   scrollbacks; decompressed when touched.
+- **2026-11-20. The agent status question (`OSC 7501 ; ?`) is the keeper's to
+  answer, not the app's.** The app answered it at first, as it had before the
+  keeper kept the terminal. But the keeper now answers everything else, at
+  once, and Claude Code sends DA1 right behind its question and reads a DA1
+  answer that comes first as "no". The app's answer, a round trip later, came
+  second every time it was measured, and agents started in a dropped terminal
+  or resumed from sleep stayed silent and showed the "update Claude Code"
+  triangle. libghostty-vt answers it itself, in order, once a
+  `program_status` callback is set. Its reply lists the states and kinds
+  rather than the bare `?` Wortel sent; the lists are the same ones. A side
+  effect: an agent started while Wortel is closed is answered too.
 - **2026-10-07. Tried and dropped, twice: moving the keeper out of the app's
   reach.** As a launchd agent, then as a background-only helper app. The Dock
   still offered "Stop Running in Background" both times. Real separation needs

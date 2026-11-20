@@ -300,6 +300,18 @@ final class KeeperTerminal {
             return true
         }
         ghostty_terminal_set(handle, GHOSTTY_TERMINAL_OPT_COLOR_SCHEME, unsafeBitCast(colorScheme, to: UnsafeRawPointer.self))
+
+        // Having it is what makes vt claim the Program Status Protocol: it
+        // answers the question (`OSC 7501 ; ?`) itself, in the order asked,
+        // with the spec's lists, which are the ones the app reads. It has to
+        // be here. Claude Code sends DA1 right behind its question and takes a
+        // DA1 answer that comes first as "no", and an answer from the app,
+        // after a round trip through the channel, came after this terminal's
+        // DA1 more often than not. The reports themselves go on to the app in
+        // the output it is sent (`ProgramStatusWatch`); nothing here keeps them.
+        let programStatus: GhosttyTerminalProgramStatusFn = { _, _, _ in }
+        ghostty_terminal_set(handle, GHOSTTY_TERMINAL_OPT_PROGRAM_STATUS,
+                             unsafeBitCast(programStatus, to: UnsafeRawPointer.self))
     }
 
     private func sendColorSchemeReport(dark: Bool) {

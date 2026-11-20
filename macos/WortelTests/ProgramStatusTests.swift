@@ -399,9 +399,4 @@ final class ProgramStatusTests: XCTestCase {
     func testAQueryIsFound() {
         XCTAssertEqual(scan("\u{1B}]7501;?\u{1B}\\"), [.query])
     }
-
-    func testTheReplyIsAQueryBody() {
-        // What Wortel writes back is what a program checks for: the same body.
-        XCTAssertEqual(String(decoding: ProgramStatusReport.reply, as: UTF8.self), "\u{1B}]7501;?\u{1B}\\")
-    }
 }

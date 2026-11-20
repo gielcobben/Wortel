@@ -104,13 +104,18 @@ why a program is blocked.
 **How it is read.** libghostty ignores the sequence, and Wortel owns the pty,
 so `ProgramStatusWatch` reads it off the output on its way to the terminal
 (`ProgramSignalScanner`: outside a match it only looks for the next ESC). It
-answers the question with the same body. A session whose terminal was dropped
-is heard the same way, since the output is read with or without a surface.
-What the program wrote while Wortel was closed reaches the app as the keeper's
-tail of the session's output (`OutputTail`), and is old news twice over: a
-question in it is not answered, because the program stopped waiting long ago
-and the answer would be typed into it. Of the rest, only what it leaves
-standing is passed on, marked as replayed: a `clear` if there was one, the last root
+only listens. The question is answered by the keeper, whose terminal reads
+every byte first (`KeeperTerminal`, libghostty-vt's own answer), so the answer
+goes out in order with its answers to everything else, with Wortel open or
+closed. It has to: Claude Code sends DA1 right behind its question and takes a
+DA1 answer that comes first as "no". While the app answered, after a round
+trip through the keeper's channel, the keeper's DA1 got there first every time
+it was measured, and about half the Claude Codes seen starting (in a dropped
+terminal, or resumed from sleep) stayed silent for their whole run
+(2026-11-20). A session whose terminal was dropped is heard the same way,
+since the output is read with or without a surface. What the program wrote
+while Wortel was closed reaches the app as the keeper's tail of the session's
+output (`OutputTail`), and is old news: of it, only what it leaves standing is passed on, marked as replayed: a `clear` if there was one, the last root
 report, each child record still there, and the last notification. Not heard
 at all: a session on the exec backend (no keeper), where libghostty owns the
 pty, and whose notifications libghostty still forwards.
@@ -169,11 +174,10 @@ bad `id` ignoring its report rather than landing on the root, `kind` only
 with `blocked`, `app` outside its character set treated as absent, the reply
 to the question written before the terminal's own answers to anything asked
 after it, working and blocked records dropped when the program exits or the
-shell is back. Not followed, on purpose: a full reset (RIS) does not remove
+shell is back. The reply lists the states and kinds, which are exactly the
+ones read here. Not followed, on purpose: a full reset (RIS) does not remove
 the records (a reset in the middle of an agent's run would leave the session
-with no state until its state next changed), `progress` is not shown, and
-the reply does not list states and kinds, which without a list means exactly
-the ones read here.
+with no state until its state next changed), and `progress` is not shown.
 
 **What a reporting session's other signals come to**
 (`SessionManager.reports`): OSC 9;4 from it is ignored (it is a build the
@@ -230,13 +234,15 @@ covered (#61778). A crashed agent leaves `working` until the marker sweep
 finds it gone, within about two minutes. And Wortel's: Claude Code and Pi ask
 their question once, at startup. One that was already running when a Wortel
 that answers was installed asked a Wortel that did not, and says nothing
-until it is next started. So does one started while Wortel was closed. Neither
-gets the "out of date" triangle, which is only for an agent seen starting.
+until it is next started. It does not get the "out of date" triangle, which is
+only for an agent seen starting. One started while Wortel was closed is
+answered by the keeper and reports as usual.
 
 **Tested how.** `ProgramStatusTests` (the grammar and the records),
-`ReportedStatusTests` (every effect), and `ProgramStatusWatchTests`, which
-runs a script on a real pty that asks the question, checks the reply byte for
-byte, and reports only if it was right. What `SessionManager` does with an
+`ReportedStatusTests` (every effect), `ProgramStatusWatchTests` (what is
+heard), `KeeperTerminalTests` (the answer, byte for byte, before DA1 asked
+behind it) and `KeeperTerminalProtocolTests`, which runs what Claude Code does
+on a real pty with no app attached and checks the status answer came first. What `SessionManager` does with an
 effect is not in the test target, so that half is checked in a running copy
 of the app: `scripts/verify-agent-status.py` starts stand-in agents that say
 what a script tells them to, under the names the shell integration knows

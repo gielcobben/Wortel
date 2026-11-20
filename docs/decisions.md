@@ -1079,6 +1079,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Ghostty 1.3.1 changed the old rebuild paths' results (a replayed in-place
   drawing gained three stray lines), so the upgrade ships only with the
   keeper's terminal. `scrollback-limit-bytes` is pinned at 1.3's 10 MB.
+  **A keeper of another Ghostty commit is replaced**, like one of another
+  protocol (it reports its commit in `ping`): its snapshots would not read,
+  and a keeper holding sessions outlives an update. So any release that
+  moves Ghostty restarts running shells once, agents resumed; say so in its
+  note.
 - **2026-11-20. A quiet terminal's scrollback is compressed by the keeper**,
   after a 15 s look that finds it unchanged. 108 MB to 23 MB for ten full
   scrollbacks; decompressed when touched.

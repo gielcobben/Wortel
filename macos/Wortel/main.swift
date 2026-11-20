@@ -5,6 +5,8 @@ import AppKit
 // prefix InheritedEnvironment throws away — so a flag read any later is always
 // unset, and the escape hatch would silently do nothing.
 PtyHost.readEnableFlag()
+// And WORTEL_KEEPER_TERMINAL=1: the session's terminal lives in the keeper.
+KeeperConnection.readTerminalsFlag()
 
 // Where this launch keeps its state, read before the scrub for the same reason
 // (WORTEL_DATA_DIR), and then claimed: one Wortel per data folder, settled

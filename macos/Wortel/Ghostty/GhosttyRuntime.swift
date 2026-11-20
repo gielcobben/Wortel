@@ -36,6 +36,9 @@ final class GhosttyRuntime {
     private let surfaceViews = NSHashTable<SurfaceView>.weakObjects()
     /// What the terminals were last told, to say in the log what changed.
     private var toldDark: Bool?
+    /// What the keeper was last told, as `toldDark` is for the terminals.
+    /// The connection tells it once as it connects.
+    private var keeperToldDark: Bool? = GhosttyRuntime.systemIsDark
     private static let appearanceLog = Logger(subsystem: "com.gielcobben.Wortel", category: "appearance")
 
     init?() {
@@ -60,48 +63,49 @@ final class GhosttyRuntime {
         let diagCount = ghostty_config_diagnostics_count(config)
         for i in 0..<diagCount {
             let diag = ghostty_config_get_diagnostic(config, i)
-            let message = diag.message.map { String(cString: $0) } ?? "?"
+            let message = String(cString: diag.message)
             NSLog("ghostty config diagnostic: %@", message)
         }
         assert(diagCount == 0, "invalid hardcoded ghostty config; see log")
         #endif
 
         // -- App ---------------------------------------------------------------
-        var runtimeConfig = ghostty_runtime_config_s()
-        runtimeConfig.supports_selection_clipboard = false
-        runtimeConfig.wakeup_cb = { userdata in
+        let wakeup: ghostty_runtime_wakeup_cb = { userdata in
             // May fire on any thread. Tick pumps app-level mailbox work only;
             // rendering runs on Ghostty's own threads.
             guard let userdata else { return }
             let runtime = Unmanaged<GhosttyRuntime>.fromOpaque(userdata).takeUnretainedValue()
             DispatchQueue.main.async { ghostty_app_tick(runtime.app) }
         }
-        runtimeConfig.action_cb = { app, target, action in
+        let action: ghostty_runtime_action_cb = { app, target, action in
             GhosttyRuntime.handleAction(app: app, target: target, action: action)
         }
-        runtimeConfig.read_clipboard_cb = { userdata, location, state in
+        let readClipboard: ghostty_runtime_read_clipboard_cb = { userdata, location, state, mimes, mimeCount, list in
             // Synchronous by contract: fetch pasteboard text and complete.
+            // Text is all Wortel hands a program, whatever else it asks for:
+            // the paste of an image or a file is its path, as with drag and
+            // drop, so agents receive pasted screenshots.
             guard location == GHOSTTY_CLIPBOARD_STANDARD,
                   let view = GhosttyRuntime.surfaceView(fromUserdata: userdata),
                   let surface = view.surface
-            else { return false }
+            else { return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED }
+            let wantsText = (0..<mimeCount).contains { String(cString: mimes[$0]).hasPrefix("text/") }
             let pasteboard = NSPasteboard.general
-            // Text wins; otherwise paste an image/file as its path so agents
-            // receive pasted screenshots (matches drag & drop).
             let payload: String?
-            if let string = pasteboard.string(forType: .string) {
+            if !wantsText {
+                payload = nil
+            } else if let string = pasteboard.string(forType: .string) {
                 payload = string
             } else {
                 let paths = DropPasteboard.insertablePaths(from: pasteboard)
                 payload = paths.isEmpty ? nil : paths.joined(separator: " ")
             }
-            guard let payload else { return false }
-            payload.withCString { ptr in
-                ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
-            }
-            return true
+            guard payload != nil || list else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
+            GhosttyRuntime.completeClipboardRequest(
+                surface, text: payload, available: list ? ["text/plain"] : [], state: state)
+            return GHOSTTY_CLIPBOARD_READ_STARTED
         }
-        runtimeConfig.confirm_read_clipboard_cb = { userdata, string, state, _ in
+        let confirmReadClipboard: ghostty_runtime_confirm_read_clipboard_cb = { userdata, confirm, state, _ in
             // Auto-approved, deliberately. libghostty raises this for a paste
             // that looks unsafe — most often one carrying a newline, i.e. text
             // that could execute on arrival. The prompt is the right default for
@@ -114,19 +118,27 @@ final class GhosttyRuntime {
             // filled by something the user already ran. If Wortel ever grows a
             // path that writes the clipboard from remote content, this decision
             // has to be revisited rather than inherited.
+            //
+            // Completed with exactly what was asked about: the clipboard is
+            // not read again.
             guard let view = GhosttyRuntime.surfaceView(fromUserdata: userdata),
-                  let surface = view.surface, let string
+                  let surface = view.surface
             else { return }
-            ghostty_surface_complete_clipboard_request(surface, string, state, true)
+            var complete = ghostty_clipboard_complete_s(
+                contents: confirm.pointee.contents, contents_len: confirm.pointee.contents_len,
+                available: confirm.pointee.available, available_len: confirm.pointee.available_len,
+                confirmed: true, remember: false)
+            ghostty_surface_complete_clipboard_request(surface, &complete, state)
         }
-        runtimeConfig.write_clipboard_cb = { userdata, location, content, len, _ in
-            guard location == GHOSTTY_CLIPBOARD_STANDARD, let content, len > 0 else { return }
-            // Find the text/plain entry and copy it out before returning.
+        let writeClipboard: ghostty_runtime_write_clipboard_cb = { userdata, location, content, len, _ in
+            guard location == GHOSTTY_CLIPBOARD_STANDARD, len > 0 else { return }
+            // Find the text/plain entry and copy it out before returning. The
+            // data is binary-safe, with a length, and not NUL-terminated.
             for i in 0..<len {
                 let item = content[i]
-                guard let mime = item.mime, let data = item.data,
-                      String(cString: mime) == "text/plain" else { continue }
-                let string = String(cString: data)
+                guard String(cString: item.mime) == "text/plain" else { continue }
+                let string = String(decoding: UnsafeRawBufferPointer(start: item.data, count: item.len),
+                                    as: UTF8.self)
                 // A screen dump for hibernation: libghostty's only way to say
                 // where it wrote the file is to "copy" the path. It goes to the
                 // view that asked, never to the pasteboard.
@@ -141,12 +153,17 @@ final class GhosttyRuntime {
                 return
             }
         }
-        runtimeConfig.close_surface_cb = { userdata, _ in
+        let closeSurface: ghostty_runtime_close_surface_cb = { userdata, _ in
             guard let view = GhosttyRuntime.surfaceView(fromUserdata: userdata) else { return }
             DispatchQueue.main.async { view.onCloseRequest?() }
         }
 
-        runtimeConfig.userdata = Unmanaged.passUnretained(self).toOpaque()
+        var runtimeConfig = ghostty_runtime_config_s(
+            userdata: Unmanaged.passUnretained(self).toOpaque(),
+            supports_selection_clipboard: false,
+            wakeup_cb: wakeup, action_cb: action,
+            read_clipboard_cb: readClipboard, confirm_read_clipboard_cb: confirmReadClipboard,
+            write_clipboard_cb: writeClipboard, close_surface_cb: closeSurface)
         guard let appHandle = ghostty_app_new(&runtimeConfig, config) else {
             ghostty_config_free(config)
             return nil
@@ -264,6 +281,13 @@ final class GhosttyRuntime {
         ghostty_app_set_color_scheme(app, scheme)
         let views = surfaceViews.allObjects
         for view in views { view.setColorScheme(scheme) }
+        // The keeper's terminals answer the programs, and tell those that
+        // asked to hear (`?2031`) that light or dark changed.
+        if KeeperConnection.keepsTerminals, dark != keeperToldDark,
+           let appearance = TerminalTheme.appearance(dark: dark) {
+            keeperToldDark = dark
+            Self.keeper?.setAppearance(appearance)
+        }
 
         guard dark != toldDark else { return }
         let was = toldDark
@@ -414,6 +438,10 @@ final class GhosttyRuntime {
             // nothing; then libghostty types it into the fresh shell, as it
             // did before the keeper could. A survived shell never gets it here.
             if attachment.resumed || attachment.inputDelivered { cfg.initial_input = nil }
+            if attachment.keepsTerminal {
+                return keeperTerminalSurface(view: view, config: &cfg, attachment: attachment,
+                                             keeper: keeper, resumeAgain: resumeAgain)
+            }
             return hostManagedSurface(view: view, config: &cfg, attachment: attachment,
                                       keeperPID: keeper.keeperPID, resumeAgain: resumeAgain)
         }
@@ -600,6 +628,126 @@ final class GhosttyRuntime {
         return surface
     }
 
+    /// Build a surface that shows a terminal the keeper keeps
+    /// (`KeeperCommand.terminal`).
+    ///
+    /// Nothing about the session is rebuilt here. The keeper has parsed every
+    /// byte the program wrote, at the size its pty had; the channel it hands
+    /// over starts with a snapshot of that terminal and goes on with every
+    /// byte after it. So the surface is restored from the snapshot, exactly,
+    /// and then fed what follows. It answers nothing (the keeper does), and
+    /// its size goes to the keeper, which resizes the pty and its own
+    /// terminal at one point in the stream.
+    private func keeperTerminalSurface(
+        view: SurfaceView, config cfg: inout ghostty_surface_config_s,
+        attachment: KeeperConnection.Attachment, keeper: KeeperConnection, resumeAgain: String?
+    ) -> ghostty_surface_t? {
+        let session = attachment.session
+        guard let typing = attachment.typingDescriptor else { return nil }
+        let pty = PtyHost(channel: attachment.descriptor, typing: typing)
+        view.ptyHost = pty
+        view.programStatusWatch.reset()
+        view.keeperSession = session
+        view.keeperPID = keeper.keeperPID
+        view.shellPID = attachment.pid > 0 ? attachment.pid : nil
+
+        cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
+        cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
+        // Only the user's keys reach here: the surface answers nothing.
+        cfg.receive_buffer = { userdata, bytes, length in
+            guard let userdata else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue().write(bytes, count: length)
+        }
+        cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
+            guard let userdata else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
+                .resize(columns: columns, rows: rows, widthPx: widthPx, heightPx: heightPx)
+        }
+        // Its first report, before it is told a size, is libghostty's
+        // placeholder, and never reaches the keeper.
+        pty.ignoreSizesUntilTold(repaint: false)
+        pty.resizeInKeeper = { [weak keeper] columns, rows, widthPx, heightPx in
+            guard columns > 0, rows > 0 else { return }
+            let cellWidth = widthPx / UInt32(columns), cellHeight = heightPx / UInt32(rows)
+            // One connection, used from the main thread; sizes reach it in
+            // the order they were made.
+            DispatchQueue.main.async {
+                keeper?.resize(session: session, columns: columns, rows: rows,
+                               cellWidth: cellWidth, cellHeight: cellHeight)
+            }
+        }
+
+        guard let surface = ghostty_surface_new(app, &cfg) else {
+            NSLog("wortel: host-managed surface could not be created")
+            return nil
+        }
+        ghostty_surface_set_responds(surface, false)
+
+        let status = view.programStatusWatch
+        let accessibility = view.accessibilityWatch
+        let waitsForSize = view.expectsFirstSize
+        var reader = KeeperChannelReader()
+        pty.onOutput = { [weak pty] bytes, count in
+            reader.feed(bytes, count: count) { piece in
+                switch piece {
+                case .snapshot(let snapshot):
+                    // At the size the view is about to give it, when one is
+                    // coming: restored into libghostty's placeholder grid, the
+                    // copy would be re-wrapped twice on its way to the right
+                    // one. A quarter of a second at most.
+                    if waitsForSize, !SurfaceView.waitForToldGrid(surface).reached {
+                        NSLog("wortel: %@ restored before its terminal took its size", session.uuidString)
+                    }
+                    let restored = snapshot.withUnsafeBytes { raw -> Bool in
+                        guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return false }
+                        return ghostty_surface_restore_snapshot(surface, base, UInt(raw.count))
+                    }
+                    if !restored {
+                        KeeperLog.log.error("""
+                            session \(session.uuidString, privacy: .public): its snapshot \
+                            (\(snapshot.count) bytes) would not restore
+                            """)
+                    }
+                case .output(let output):
+                    guard let base = output.baseAddress else { return }
+                    status.output(base, count: output.count, pty: pty)
+                    ghostty_surface_write_buffer_replay(surface, base, UInt(output.count))
+                    accessibility.outputArrived()
+                case .invalid:
+                    KeeperLog.log.error("session \(session.uuidString, privacy: .public): its channel did not start with a snapshot")
+                }
+            }
+        }
+        // The channel ends after the shell does, or when the keeper lets this
+        // copy go (it fell far behind). Only the first is the shell's end.
+        pty.onHangup = { [weak view, weak pty] in
+            DispatchQueue.main.async {
+                guard let view, let pty, view.ptyHost === pty else { return }
+                if GhosttyRuntime.keeper?.running().contains(where: { $0.session == session.uuidString }) == true {
+                    KeeperLog.log.error("session \(session.uuidString, privacy: .public): its channel ended while it runs")
+                    return
+                }
+                if let shellEnded = view.onShellEnded { shellEnded() } else { view.finishProcess() }
+            }
+        }
+
+        // What the program said about itself lately, for the dots: read as a
+        // replay, never written into the terminal (the snapshot has it).
+        let tail = attachment.replay
+        if !tail.isEmpty { pty.enqueue { status.replay(tail) } }
+        if let resumeAgain {
+            let bytes = Array(resumeAgain.utf8)
+            pty.enqueue { [weak pty] in
+                bytes.withUnsafeBufferPointer { raw in
+                    guard let base = raw.baseAddress else { return }
+                    pty?.write(base, count: raw.count)
+                }
+            }
+        }
+        pty.beginReading()
+        return surface
+    }
+
     /// Write a session's past into a new terminal: the modes the program
     /// believes in, then what it wrote, then a marker that ends the window in
     /// which the terminal's answers are held back (`ReplayAnswers`), then, if
@@ -699,7 +847,7 @@ final class GhosttyRuntime {
         // Not `write`: during the replay below, those answers are old and are
         // held back (`ReplayAnswers`).
         cfg.receive_buffer = { userdata, bytes, length in
-            guard let userdata, let bytes else { return }
+            guard let userdata else { return }
             Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
                 .writeFromTerminal(bytes, count: length)
         }
@@ -830,6 +978,9 @@ final class GhosttyRuntime {
             return nil
         }
         connection.watchForExit { pid in onKeeperLost?(pid) }
+        if KeeperConnection.keepsTerminals, let appearance = TerminalTheme.appearance(dark: systemIsDark) {
+            connection.setAppearance(appearance)
+        }
         return connection
     }
 
@@ -881,6 +1032,40 @@ final class GhosttyRuntime {
         return Unmanaged<SurfaceView>.fromOpaque(userdata).takeUnretainedValue()
     }
 
+    /// Answer a clipboard read with `text` as its one `text/plain`
+    /// representation (or none), and `available` as the listing of what the
+    /// clipboard holds. Everything is copied into C memory for the call only.
+    private static func completeClipboardRequest(
+        _ surface: ghostty_surface_t, text: String?, available: [String],
+        state: UnsafeMutableRawPointer
+    ) {
+        let mime = strdup("text/plain")!
+        let bytes = text.map { Array($0.utf8) } ?? []
+        let names = available.map { strdup($0)! }
+        defer {
+            free(mime)
+            names.forEach { free($0) }
+        }
+        bytes.withUnsafeBufferPointer { raw in
+            raw.withMemoryRebound(to: CChar.self) { data in
+                var contents = text == nil ? [] : [ghostty_clipboard_content_s(
+                    mime: UnsafePointer(mime), data: data.baseAddress ?? UnsafePointer(mime), len: data.count)]
+                var listing = names.map { UnsafePointer($0) }
+                contents.withUnsafeMutableBufferPointer { contents in
+                    listing.withUnsafeMutableBufferPointer { listing in
+                        var complete = ghostty_clipboard_complete_s(
+                            contents: contents.isEmpty ? nil : UnsafePointer(contents.baseAddress),
+                            contents_len: contents.count,
+                            available: listing.isEmpty ? nil : UnsafePointer(listing.baseAddress),
+                            available_len: listing.count,
+                            confirmed: false, remember: false)
+                        ghostty_surface_complete_clipboard_request(surface, &complete, state)
+                    }
+                }
+            }
+        }
+    }
+
     /// Recover the owning runtime from the app handle's userdata (set to
     /// `self` in `init`). Lets the static action callback reach instance state
     /// like the bundled config.
@@ -907,16 +1092,14 @@ final class GhosttyRuntime {
     ) -> Bool {
         switch action.tag {
         case GHOSTTY_ACTION_SET_TITLE:
-            guard let view = surfaceView(fromTarget: target),
-                  let titlePtr = action.action.set_title.title else { return false }
-            let title = String(cString: titlePtr) // copy before returning
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            let title = String(cString: action.action.set_title.title) // copy before returning
             DispatchQueue.main.async { view.onTitleChange?(title) }
             return true
 
         case GHOSTTY_ACTION_PWD:
-            guard let view = surfaceView(fromTarget: target),
-                  let pwdPtr = action.action.pwd.pwd else { return false }
-            let pwd = String(cString: pwdPtr)
+            guard let view = surfaceView(fromTarget: target) else { return false }
+            let pwd = String(cString: action.action.pwd.pwd)
             DispatchQueue.main.async { view.reportPwd(pwd) }
             return true
 
@@ -1062,8 +1245,8 @@ final class GhosttyRuntime {
         case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
             guard let view = surfaceView(fromTarget: target) else { return false }
             let note = action.action.desktop_notification
-            let title = note.title.map { String(cString: $0) } ?? ""
-            let body = note.body.map { String(cString: $0) } ?? ""
+            let title = String(cString: note.title)
+            let body = String(cString: note.body)
             DispatchQueue.main.async {
                 // Only for a terminal whose pty libghostty owns (no keeper).
                 // Everywhere else Wortel has read the notification off the
@@ -1088,7 +1271,7 @@ final class GhosttyRuntime {
             // pure string work because its answer is this return value.
             guard let view = surfaceView(fromTarget: target) else { return false }
             let open = action.action.open_url
-            guard let ptr = open.url else { return false }
+            let ptr = open.url
             // The bytes aren't guaranteed NUL-terminated; `len` is authoritative.
             let link = String(decoding: Data(bytes: ptr, count: Int(open.len)), as: UTF8.self)
             guard TerminalLink.isPath(link) || TerminalLink.localServer(link) != nil else { return false }

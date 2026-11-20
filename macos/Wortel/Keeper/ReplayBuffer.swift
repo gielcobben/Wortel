@@ -79,6 +79,18 @@ struct ReplayBuffer {
         }
     }
 
+    /// What is held, oldest first, without letting go of it: the tail a
+    /// keeper that keeps the terminal gives each app that attaches, for what
+    /// the program said about itself (`ProgramStatusWatch`). Never written
+    /// into a terminal, so a cut start needs no resync in front of it.
+    func copy() -> Data {
+        guard !storage.isEmpty else { return Data() }
+        var data = Data(capacity: storage.count)
+        data.append(contentsOf: storage[head...])
+        data.append(contentsOf: storage[..<head])
+        return data
+    }
+
     /// Hand everything over and start again. Taking rather than copying is the
     /// point: once it has been replayed it must not be replayed twice, which is
     /// how a reattach loop would duplicate a screenful of output.

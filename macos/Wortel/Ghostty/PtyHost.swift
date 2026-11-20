@@ -70,6 +70,10 @@ final class PtyHost: @unchecked Sendable {
     /// before this object is published to anyone and never again.
     private struct Shared {
         var master: Int32 = -1
+        /// The pty, for typing, when `master` is not it: the app reading the
+        /// keeper's output channel for the session (`init(channel:typing:)`).
+        /// Closed with the host. -1 otherwise.
+        var typing: Int32 = -1
         var isReading = false
         /// Set once the child has been reaped, so nothing signals a pid the
         /// system is free to hand to someone else.
@@ -124,12 +128,17 @@ final class PtyHost: @unchecked Sendable {
     /// terminal to. nil when there is no terminal to ask or it won't say.
     /// Asking changes nothing.
     func foregroundProcessGroup() -> pid_t? {
-        let master = self.master
+        let master = shared.withLock { $0.typing >= 0 ? $0.typing : $0.master }
         guard master >= 0 else { return nil }
         let group = tcgetpgrp(master)
         return group > 0 ? group : nil
     }
     private(set) var pid: pid_t = -1
+
+    /// Where a new size goes when the keeper keeps this terminal
+    /// (`init(channel:typing:)`): columns, rows, and the grid in pixels.
+    /// Called on libghostty's IO thread. nil means this host sets it itself.
+    var resizeInKeeper: ((UInt16, UInt16, UInt32, UInt32) -> Void)?
 
     /// Output from the program. Called on `queue`, never on main — it's the hot
     /// path, and a terminal that hops to the main actor per read is a terminal
@@ -175,6 +184,16 @@ final class PtyHost: @unchecked Sendable {
         // writes the replay, and only then calls `beginReading`.
     }
 
+    /// Read a session's output from the keeper's channel for it and type
+    /// into its pty: the keeper keeps the terminal (`KeeperCommand.terminal`)
+    /// and is the pty's only reader. `channel` is read as the pty would be,
+    /// and ends when the session does or the keeper lets this copy go.
+    convenience init(channel: Int32, typing: Int32) {
+        self.init(adopting: channel)
+        _ = fcntl(typing, F_SETFD, FD_CLOEXEC)
+        shared.withLock { $0.typing = typing }
+    }
+
     /// Run `work` on the read queue, in order with the reads.
     ///
     /// The queue is serial and the read source targets it, so that is the
@@ -194,6 +213,33 @@ final class PtyHost: @unchecked Sendable {
     ///   synchronously instead would deadlock on that same mailbox.
     func enqueue(_ work: @escaping () -> Void) {
         queue.async(execute: work)
+    }
+
+    /// Read what the pty still holds, now, on the read queue: for a child
+    /// that has exited, whose last output would otherwise go unread when the
+    /// reader stops. Bounded, in case something else still writes.
+    func readWhatIsLeft() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        let fd = shared.withLock { $0.isReading ? $0.master : -1 }
+        guard fd >= 0 else { return }
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        for _ in 0..<64 {
+            let count = read(fd, &buffer, buffer.count)
+            guard count > 0 else { return }
+            buffer.withUnsafeBufferPointer { onOutput?($0.baseAddress!, count) }
+        }
+    }
+
+    /// The read queue itself, for what has to live on it (the keeper's
+    /// output channel for this pty).
+    var readQueue: DispatchQueue { queue }
+
+    /// Run `work` on the read queue and wait for it: between two reads, so
+    /// it sees the stream at a point and nothing moves while it looks. Never
+    /// from the read queue, nor holding anything a read hands its bytes to.
+    func onReadQueue<T>(_ work: () -> T) -> T {
+        dispatchPrecondition(condition: .notOnQueue(queue))
+        return queue.sync(execute: work)
     }
 
     /// Wait until a read already under way has delivered its bytes.
@@ -480,7 +526,7 @@ final class PtyHost: @unchecked Sendable {
     /// keystroke path to fix a race no one has hit.
     func write(_ bytes: UnsafePointer<UInt8>, count: Int) {
         if let tap = tap.withLock({ $0 }) { tap.feed(bytes, count: count) }
-        let master = shared.withLock { $0.master }
+        let master = shared.withLock { $0.typing >= 0 ? $0.typing : $0.master }
         guard master >= 0 else { return }
         var offset = 0
         while offset < count {
@@ -581,6 +627,16 @@ final class PtyHost: @unchecked Sendable {
     /// read queue) can't land in the other's order: the pty is always at the
     /// last size decided.
     func resize(columns: UInt16, rows: UInt16, widthPx: UInt32, heightPx: UInt32) {
+        // The keeper keeps this terminal: the size is its to apply, to the
+        // pty and its own terminal at once. Still not libghostty's placeholder.
+        if let resizeInKeeper {
+            let send = shared.withLock { state -> Bool in
+                guard !state.awaitingSize, state.typing >= 0 else { return false }
+                return true
+            }
+            if send { resizeInKeeper(columns, rows, widthPx, heightPx) }
+            return
+        }
         let size = winsize(
             ws_row: rows, ws_col: columns,
             ws_xpixel: UInt16(truncatingIfNeeded: widthPx),
@@ -744,6 +800,18 @@ final class PtyHost: @unchecked Sendable {
         shared.withLock { $0.awaitingSize = false }
     }
 
+    /// Tell the pty its size, and so the program (SIGWINCH), and nothing
+    /// else. The keeper's, which resizes its terminal at the same point in
+    /// the stream; none of the app's rules about first sizes and repaints.
+    func setWindowSize(columns: UInt16, rows: UInt16, widthPx: UInt32, heightPx: UInt32) {
+        shared.withLock { state in
+            guard state.master >= 0 else { return }
+            var size = winsize(ws_row: rows, ws_col: columns,
+                               ws_xpixel: UInt16(clamping: widthPx), ws_ypixel: UInt16(clamping: heightPx))
+            _ = ioctl(state.master, TIOCSWINSZ, &size)
+        }
+    }
+
     /// Stop reading without giving up the pty.
     ///
     /// **The load-bearing rule of the whole design**: exactly one process may
@@ -792,6 +860,7 @@ final class PtyHost: @unchecked Sendable {
     /// precisely what survival means.
     func stop() {
         takeReader()?.cancel()
+        closeTyping()
         guard ownsProcess, pid > 0 else { return }
         // Both signals are guarded on `hasExited` (see `signalGroup`) rather than a
         // `kill(pid, 0)` probe: once the reaper has collected the child the
@@ -820,6 +889,15 @@ final class PtyHost: @unchecked Sendable {
     /// the shell carries on with nobody watching. `onHangup` does not fire.
     func release() {
         takeReader()?.cancel()
+        closeTyping()
+    }
+
+    private func closeTyping() {
+        shared.withLock { state in
+            guard state.typing >= 0 else { return }
+            close(state.typing)
+            state.typing = -1
+        }
     }
 }
 

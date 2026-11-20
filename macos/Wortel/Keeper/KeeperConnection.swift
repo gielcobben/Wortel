@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import os
 
 /// The app's side of process survival: one connection to the keeper, held open
 /// for the whole run.
@@ -250,7 +251,15 @@ final class KeeperConnection {
     /// happened while it wasn't watching.
     struct Attachment {
         let session: UUID
+        /// What the app reads: the pty itself (protocol 1), or the session's
+        /// output channel from the keeper's terminal (`KeeperCommand.terminal`).
         let descriptor: Int32
+        /// The pty, for typing into, when the keeper keeps the terminal and
+        /// `descriptor` is its channel. nil when `descriptor` is the pty.
+        var typingDescriptor: Int32? = nil
+        /// The keeper keeps this session's terminal, and `descriptor` starts
+        /// with a snapshot of it (`KeeperChannel`).
+        var keepsTerminal: Bool { typingDescriptor != nil }
         let pid: Int32
         let replay: Data
         /// True when this attached to a shell that was already running — i.e.
@@ -304,6 +313,26 @@ final class KeeperConnection {
         guard client.isConnected else { return nil }
         let id = session.uuidString
 
+        if Self.keepsTerminals {
+            let keeperPlan = KeeperSpawnPlan(
+                executable: plan.executable, arguments: plan.arguments,
+                environment: plan.environment, workingDirectory: workingDirectory,
+                initialInput: initialInput)
+            guard let (response, descriptors) = try? client.sendForDescriptors(
+                .terminal(session: id, plan: keeperPlan, columns: columns, rows: rows)) else { return nil }
+            guard response.ok, descriptors.count == 2 else {
+                descriptors.forEach { Darwin.close($0) }
+                let reason = response.message ?? "no reason"
+                KeeperLog.log.error("keeper would not give session \(id, privacy: .public) its terminal: \(reason, privacy: .public)")
+                return nil
+            }
+            return Attachment(session: session, descriptor: descriptors[0], typingDescriptor: descriptors[1],
+                              pid: response.pid ?? -1,
+                              replay: response.replay ?? Data(), resumed: response.existing ?? false,
+                              inputDelivered: response.inputDelivered ?? false,
+                              startedAt: response.startedAt.map(Date.init(timeIntervalSince1970:)))
+        }
+
         // Ask to attach first purely so we can *tell* whether it survived —
         // `open` would do both, but silently, and "your agent is still running"
         // is worth knowing.
@@ -353,6 +382,41 @@ final class KeeperConnection {
         guard (try? once.connect()) == true else { return }
         _ = try? once.send(command)
         once.disconnect()
+    }
+
+    // MARK: - Terminals the keeper keeps
+
+    /// Whether sessions' terminals live in the keeper (`KeeperCommand.terminal`).
+    /// Latched from `WORTEL_KEEPER_TERMINAL=1` at launch, while it is proved.
+    private static let terminalsFlag = OSAllocatedUnfairLock(initialState: false)
+    static var keepsTerminals: Bool { terminalsFlag.withLock { $0 } }
+    static func readTerminalsFlag() {
+        let on = ProcessInfo.processInfo.environment["WORTEL_KEEPER_TERMINAL"] == "1"
+        terminalsFlag.withLock { $0 = on }
+    }
+
+    /// The session's pty and the keeper's terminal for it take this size.
+    /// Main thread, like every request on this connection.
+    func resize(session: UUID, columns: UInt16, rows: UInt16, cellWidth: UInt32, cellHeight: UInt32) {
+        guard client.isConnected else { return }
+        _ = try? client.send(.resize(session: session.uuidString, columns: columns, rows: rows,
+                                     cellWidth: cellWidth, cellHeight: cellHeight))
+    }
+
+    /// What terminals are shown in, for the keeper to answer programs with.
+    func setAppearance(_ appearance: KeeperAppearance) {
+        guard client.isConnected else { return }
+        _ = try? client.send(.appearance(appearance))
+    }
+
+    /// Whether each DEC private mode is set in the keeper's terminal for the
+    /// session, or nil when it could not say.
+    func modes(session: UUID, _ modes: [UInt16]) -> [Bool]? {
+        guard client.isConnected,
+              let (response, _) = try? client.send(.modes(session: session.uuidString, modes: modes)),
+              response.ok, let set = response.modes, set.count == modes.count
+        else { return nil }
+        return set
     }
 
     /// Sessions the keeper is still holding. Used to tell whether anything

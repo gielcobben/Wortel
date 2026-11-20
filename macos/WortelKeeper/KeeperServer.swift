@@ -30,10 +30,29 @@ final class KeeperServer: @unchecked Sendable {
         let startedAt = Date()
         var inputDelivered = false
 
-        init(id: String, pty: PtyHost, limit: Int) {
+        /// The session's terminal: every byte the program wrote, parsed at
+        /// the size its pty had (`KeeperTerminal`). **Touched on the pty's
+        /// read queue only**, in stream order. nil only if libghostty-vt
+        /// could not make one.
+        let terminal: KeeperTerminal?
+        /// Where the app's copy of the terminal is fed from, while one is
+        /// attached through `terminal`. Read queue only.
+        var channel: KeeperOutputChannel?
+        /// Set when a `attach` (protocol 1) handed the app the pty itself:
+        /// from then on the keeper is not reading, and its terminal falls
+        /// behind for good.
+        var terminalStale = false
+        /// Answers to the program go out here, never on the read queue: a
+        /// program that is not reading its input would otherwise stop the
+        /// keeper reading its output, and each would wait on the other.
+        let replies: DispatchQueue
+
+        init(id: String, pty: PtyHost, limit: Int, columns: UInt16, rows: UInt16) {
             self.id = id
             self.pty = pty
             self.buffer = ReplayBuffer(limit: limit)
+            self.terminal = KeeperTerminal(columns: columns, rows: rows, scrollbackBytes: Keeper.scrollbackBytes)
+            self.replies = DispatchQueue(label: "sh.wortel.keeper.replies", qos: .userInitiated)
         }
     }
 
@@ -54,6 +73,9 @@ final class KeeperServer: @unchecked Sendable {
     /// Set by `stopIfIdle` as it decides to go. `open` refuses from then on,
     /// so no shell is forked into a keeper that is about to hang it up.
     private var stopping = false
+    /// What the app shows terminals in, last it said (`appearance`). Given to
+    /// every terminal, those opened later included. Under `state`.
+    private var appearance: KeeperAppearance?
 
     /// Called when nothing is left to keep — no sessions, no clients. A keeper
     /// that lingers with nothing to hold is just a leaked process. A hint, not
@@ -200,10 +222,11 @@ final class KeeperServer: @unchecked Sendable {
         }
 
         while true {
-            guard let (line, extra) = try? FileDescriptorChannel.receiveLine(from: client) else {
+            guard let received = try? FileDescriptorChannel.receiveLine(from: client) else {
                 return
             }
-            if let extra { close(extra) } // clients never send us descriptors
+            received.descriptors.forEach { close($0) } // clients never send us descriptors
+            let line = received.line
             guard !line.isEmpty else { continue }
             guard let command = try? JSONDecoder().decode(KeeperCommand.self, from: line) else {
                 reply(.failure("this keeper does not understand that command"), to: client)
@@ -214,9 +237,13 @@ final class KeeperServer: @unchecked Sendable {
     }
 
     private func reply(_ response: KeeperResponse, descriptor: Int32? = nil, to client: Int32) {
+        reply(response, descriptors: descriptor.map { [$0] } ?? [], to: client)
+    }
+
+    private func reply(_ response: KeeperResponse, descriptors: [Int32], to client: Int32) {
         guard var data = try? JSONEncoder().encode(response) else { return }
         data.append(0x0A)
-        try? FileDescriptorChannel.send(data, descriptor: descriptor, over: client)
+        try? FileDescriptorChannel.send(data, descriptors: descriptors, over: client)
     }
 
     // MARK: - Commands
@@ -257,7 +284,115 @@ final class KeeperServer: @unchecked Sendable {
                 }.sorted { $0.session < $1.session }
             }
             reply(.success(sessions: states), to: client)
+
+        case .terminal(let id, let plan, let columns, let rows):
+            attachTerminal(id: id, plan: plan, columns: columns, rows: rows, from: client)
+
+        case .resize(let id, let columns, let rows, let cellWidth, let cellHeight):
+            guard let session = state.sync(execute: { sessions[id] }) else {
+                return reply(.failure("no such session"), to: client)
+            }
+            // Between two reads: what the program wrote before is parsed at
+            // the old size, what it writes after the SIGWINCH at the new one.
+            session.pty.enqueue { [weak session] in
+                guard let session else { return }
+                let columns = max(columns, 1), rows = max(rows, 1)
+                session.pty.setWindowSize(
+                    columns: columns, rows: rows,
+                    widthPx: UInt32(columns) &* cellWidth, heightPx: UInt32(rows) &* cellHeight)
+                session.terminal?.resize(columns: columns, rows: rows,
+                                         cellWidth: cellWidth, cellHeight: cellHeight)
+            }
+            reply(.success(), to: client)
+
+        case .appearance(let new):
+            let all: [Session] = state.sync {
+                appearance = new
+                return Array(sessions.values)
+            }
+            for session in all {
+                session.pty.enqueue { [weak session] in session?.terminal?.setAppearance(new) }
+            }
+            reply(.success(), to: client)
+
+        case .modes(let id, let modes):
+            guard let session = state.sync(execute: { sessions[id] }), let terminal = session.terminal else {
+                return reply(.failure("no such session"), to: client)
+            }
+            let set = session.pty.onReadQueue { modes.map { terminal.mode($0) } }
+            reply(.success(modes: set), to: client)
         }
+    }
+
+    /// `KeeperCommand.terminal`: open the session or find it, and give the
+    /// app a channel that starts with a snapshot of its terminal and goes on
+    /// with every byte after it, and the pty to type into.
+    private func attachTerminal(
+        id: String, plan: KeeperSpawnPlan, columns: UInt16, rows: UInt16, from client: Int32
+    ) {
+        enum Admission { case refused(String), attached(Session, existing: Bool) }
+        // As `open`: one step under `state`, fork included.
+        let admission: Admission = state.sync {
+            if let session = sessions[id] {
+                if let holder = session.attachedTo, holder != client {
+                    return .refused("session is attached elsewhere")
+                }
+                guard session.terminal != nil, !session.terminalStale else {
+                    return .refused("this session's terminal was not kept")
+                }
+                session.attachedTo = client
+                return .attached(session, existing: true)
+            }
+            guard !stopping else { return .refused("this keeper is shutting down") }
+            guard let session = startSession(id: id, plan: plan, columns: columns, rows: rows),
+                  session.terminal != nil else {
+                return .refused("could not start \(plan.executable)")
+            }
+            sessions[id] = session
+            session.attachedTo = client
+            return .attached(session, existing: false)
+        }
+
+        guard case .attached(let session, let existing) = admission else {
+            if case .refused(let reason) = admission { reply(.failure(reason), to: client) }
+            return
+        }
+        if !existing { typeInitialInput(of: plan, into: session) }
+
+        guard let pair = KeeperOutputChannel.makePair(queue: session.pty.readQueue) else {
+            return reply(.failure("no socket for the session's output"), to: client)
+        }
+        guard let pty = session.pty.duplicateMaster() else {
+            close(pair.appEnd)
+            pair.channel.closeNow()
+            return reply(.failure("session has no pty"), to: client)
+        }
+
+        // **The cut.** Between two reads, on the read queue: the previous
+        // channel gets everything up to here and then ends, the snapshot is
+        // the terminal as of here, and the new channel carries every byte
+        // after it. Nothing is lost or seen twice between the two.
+        let channel = pair.channel
+        session.pty.enqueue { [weak session] in
+            guard let session, let terminal = session.terminal else { return channel.closeNow() }
+            session.channel?.finish()
+            session.channel = nil
+            guard let snapshot = terminal.snapshot() else {
+                KeeperLog.log.error("session \(session.id, privacy: .public): its terminal would not snapshot")
+                return channel.closeNow()
+            }
+            guard channel.send(KeeperChannel.header(snapshotLength: snapshot.count)),
+                  channel.send(snapshot) else { return }
+            session.channel = channel
+        }
+
+        let (tail, delivered) = state.sync { (session.buffer.copy(), session.inputDelivered) }
+        reply(.success(pid: session.pty.pid, replay: tail.isEmpty ? nil : tail,
+                       existing: existing ? true : nil, inputDelivered: delivered,
+                       startedAt: session.startedAt.timeIntervalSince1970),
+              descriptors: [pair.appEnd, pty], to: client)
+        close(pair.appEnd)
+        close(pty)
     }
 
     private func open(
@@ -306,11 +441,31 @@ final class KeeperServer: @unchecked Sendable {
         id: String, plan: KeeperSpawnPlan, columns: UInt16, rows: UInt16
     ) -> Session? {
         let pty = PtyHost()
-        let session = Session(id: id, pty: pty, limit: replayLimit)
+        let session = Session(id: id, pty: pty, limit: replayLimit,
+                              columns: max(columns, 1), rows: max(rows, 1))
+        // Answers the terminal gives the program, copied out of the callback
+        // and written off the read queue (see `Session.replies`).
+        session.terminal?.reply = { [weak pty, replies = session.replies] bytes, count in
+            let answer = Data(bytes: bytes, count: count)
+            replies.async {
+                answer.withUnsafeBytes { raw in
+                    guard let pty, let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                    pty.write(base, count: raw.count)
+                }
+            }
+        }
+        if let appearance {
+            pty.enqueue { [weak session] in session?.terminal?.setAppearance(appearance) }
+        }
         pty.onOutput = { [weak self, weak session] bytes, count in
-            // Only while detached, plus at most the one read that was under way
-            // when an attach paused it, which `handOver` waits for and takes.
+            // The read queue. The terminal first: it is the session's record.
+            // Then the app's copy, if one is attached. Then the tail kept for
+            // what the program said about itself (`buffer`).
             guard let self, let session else { return }
+            session.terminal?.write(bytes, count: count)
+            if let channel = session.channel, !channel.send(bytes, count: count) {
+                session.channel = nil
+            }
             self.state.sync { session.buffer.append(bytes, count: count) }
         }
         pty.onExit = { [weak self, weak session] _, _ in
@@ -327,6 +482,12 @@ final class KeeperServer: @unchecked Sendable {
                 self.sessions.removeValue(forKey: session.id)
                 return self.liveConnections == 0 && self.sessions.isEmpty
             }
+            // The shell's last words (an exit message, a final prompt) are
+            // still in the pty; they reach the terminal and the app's copy
+            // before the channel ends, and its end is how the app hears.
+            session.pty.readWhatIsLeft()
+            session.channel?.finish()
+            session.channel = nil
             session.pty.stop()
             // The other way to run out of things to keep: the app quit with
             // shells alive and the last of them has now ended. Checked only on
@@ -382,6 +543,9 @@ final class KeeperServer: @unchecked Sendable {
         if let holder = session.attachedTo, holder != client { return false }
         session.attachedTo = client
         session.pty.pauseReading()
+        // The app reads the pty itself from here: the keeper's terminal
+        // misses what it reads, so it is not offered again.
+        session.terminalStale = true
         return true
     }
 
@@ -437,6 +601,11 @@ final class KeeperServer: @unchecked Sendable {
         state.sync {
             for session in sessions.values where session.attachedTo == client {
                 resume(session)
+                // The app has gone, so has whatever reads the channel.
+                session.pty.enqueue { [weak session] in
+                    session?.channel?.closeNow()
+                    session?.channel = nil
+                }
             }
         }
     }

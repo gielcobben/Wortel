@@ -24,9 +24,12 @@ enum FileDescriptorChannel {
     private static let alignBytes = MemoryLayout<UInt32>.size - 1
     private static func align(_ value: Int) -> Int { (value + alignBytes) & ~alignBytes }
     private static var headerSize: Int { align(MemoryLayout<cmsghdr>.size) }
-    private static var payloadSize: Int { MemoryLayout<Int32>.size }
-    private static var controlSpace: Int { headerSize + align(payloadSize) }
-    private static var controlLength: Int { headerSize + payloadSize }
+    /// The most descriptors one message carries: a session's output channel
+    /// and its pty.
+    static let maximumDescriptors = 2
+    private static func payloadSize(_ count: Int) -> Int { MemoryLayout<Int32>.size * count }
+    private static var controlSpace: Int { headerSize + align(payloadSize(maximumDescriptors)) }
+    private static func controlLength(_ count: Int) -> Int { headerSize + payloadSize(count) }
     private static func controlData(_ control: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer {
         control.advanced(by: headerSize)
     }
@@ -38,6 +41,13 @@ enum FileDescriptorChannel {
     /// carrying only ancillary data is allowed to be dropped. Here that byte is
     /// the JSON we were sending anyway.
     static func send(_ line: Data, descriptor: Int32?, over socket: Int32) throws {
+        try send(line, descriptors: descriptor.map { [$0] } ?? [], over: socket)
+    }
+
+    /// `send(_:descriptor:over:)` with up to `maximumDescriptors` of them, in
+    /// one message, received in the same order.
+    static func send(_ line: Data, descriptors: [Int32], over socket: Int32) throws {
+        precondition(descriptors.count <= maximumDescriptors, "too many descriptors for one message")
         var bytes = [UInt8](line)
         if bytes.isEmpty { bytes = [0x0A] }
 
@@ -52,15 +62,16 @@ enum FileDescriptorChannel {
                 var message = msghdr()
                 message.msg_iov = iovPointer
                 message.msg_iovlen = 1
-                if let descriptor {
+                if !descriptors.isEmpty {
                     message.msg_control = control
-                    message.msg_controllen = socklen_t(controlSpace)
+                    message.msg_controllen = socklen_t(headerSize + align(payloadSize(descriptors.count)))
                     let header = control.assumingMemoryBound(to: cmsghdr.self)
                     header.pointee.cmsg_level = SOL_SOCKET
                     header.pointee.cmsg_type = SCM_RIGHTS
-                    header.pointee.cmsg_len = socklen_t(controlLength)
-                    var copy = descriptor
-                    memcpy(controlData(control), &copy, payloadSize)
+                    header.pointee.cmsg_len = socklen_t(controlLength(descriptors.count))
+                    descriptors.withUnsafeBytes { raw in
+                        _ = memcpy(controlData(control), raw.baseAddress!, raw.count)
+                    }
                 }
                 // The descriptor rides on the first segment only. A reply with
                 // a replay can be larger than the socket buffer, so the rest
@@ -95,9 +106,17 @@ enum FileDescriptorChannel {
     /// the end of the line. A line used to be read a byte at a time, which for
     /// a full replay (700 KB of base64) was 700,000 syscalls on the main
     /// thread, about half a second per restored session.
-    static func receiveLine(from socket: Int32) throws -> (line: Data, descriptor: Int32?)? {
+    /// One line and what came with it. `descriptor` is the first of them.
+    struct Received {
+        var line: Data
+        var descriptors: [Int32]
+        var descriptor: Int32? { descriptors.first }
+    }
+
+    static func receiveLine(from socket: Int32) throws -> Received? {
         var line = Data()
-        var descriptor: Int32?
+        var descriptors: [Int32] = []
+        func closeAll() { descriptors.forEach { close($0) } }
 
         let control = UnsafeMutableRawPointer.allocate(
             byteCount: controlSpace, alignment: MemoryLayout<cmsghdr>.alignment)
@@ -109,12 +128,12 @@ enum FileDescriptorChannel {
             let peeked = chunk.withUnsafeMutableBytes { recv(socket, $0.baseAddress, $0.count, MSG_PEEK) }
             if peeked < 0 {
                 if errno == EINTR { continue }
-                if let descriptor { close(descriptor) }
+                closeAll()
                 throw ChannelError.failed("recv", errno)
             }
             if peeked == 0 {
-                if line.isEmpty, descriptor == nil { return nil }
-                return (line, descriptor)
+                if line.isEmpty, descriptors.isEmpty { return nil }
+                return Received(line: line, descriptors: descriptors)
             }
             let newline = chunk[0..<peeked].firstIndex(of: 0x0A)
             let wanted = newline.map { $0 + 1 } ?? peeked
@@ -129,17 +148,20 @@ enum FileDescriptorChannel {
                     message.msg_control = control
                     message.msg_controllen = socklen_t(controlSpace)
                     let count = recvmsg(socket, &message, 0)
-                    if count > 0, message.msg_controllen >= socklen_t(controlLength) {
+                    if count > 0, message.msg_controllen >= socklen_t(controlLength(1)) {
                         let header = control.assumingMemoryBound(to: cmsghdr.self)
                         if header.pointee.cmsg_level == SOL_SOCKET,
                            header.pointee.cmsg_type == SCM_RIGHTS {
-                            var incoming: Int32 = -1
-                            memcpy(&incoming, controlData(control), payloadSize)
-                            if incoming >= 0 {
-                                // Two descriptors is a protocol error, and
-                                // leaking one is worse than dropping it.
-                                if descriptor != nil { close(incoming) } else { descriptor = incoming }
+                            let carried = (Int(header.pointee.cmsg_len) - headerSize) / MemoryLayout<Int32>.size
+                            var incoming = [Int32](repeating: -1, count: carried)
+                            incoming.withUnsafeMutableBytes { raw in
+                                _ = memcpy(raw.baseAddress!, controlData(control), raw.count)
                             }
+                            // They ride on a line's first piece only. More on
+                            // a later piece are a protocol error, and leaking
+                            // them is worse than dropping them.
+                            let valid = incoming.filter { $0 >= 0 }
+                            if descriptors.isEmpty { descriptors = valid } else { valid.forEach { close($0) } }
                         }
                     }
                     return count
@@ -148,20 +170,20 @@ enum FileDescriptorChannel {
 
             if received < 0 {
                 if errno == EINTR { continue }
-                if let descriptor { close(descriptor) }
+                closeAll()
                 throw ChannelError.failed("recvmsg", errno)
             }
             if received == 0 {
-                if line.isEmpty, descriptor == nil { return nil }
-                return (line, descriptor)
+                if line.isEmpty, descriptors.isEmpty { return nil }
+                return Received(line: line, descriptors: descriptors)
             }
             if received > 0, chunk[received - 1] == 0x0A {
                 line.append(contentsOf: chunk[0..<(received - 1)])
-                return (line, descriptor)
+                return Received(line: line, descriptors: descriptors)
             }
             line.append(contentsOf: chunk[0..<received])
             if line.count > Keeper.maximumLineBytes {
-                if let descriptor { close(descriptor) }
+                closeAll()
                 throw ChannelError.failed("line too long", EMSGSIZE)
             }
         }

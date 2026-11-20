@@ -32,3 +32,9 @@ web/dist/
 # screenshots on wortel.sh. See web/README.md.
 web/public/refs/
 web/src/pages/pixel.astro
+
+# Ghostty, built from source by macos/scripts/build-ghostty.sh. The inputs
+# (refs, patches) are tracked; the frameworks are a cache.
+macos/GhosttyKit/Frameworks/
+macos/GhosttyKit/.build/
+macos/GhosttyKit/.swiftpm/

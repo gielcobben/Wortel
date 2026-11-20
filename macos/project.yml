@@ -6,9 +6,13 @@ options:
   createIntermediateGroups: true
 
 packages:
+  # Ghostty, built here from source: GhosttyKit (the app) and libghostty-vt
+  # (the keeper, the tests) from one commit and one patch set, because the
+  # keeper's terminal and the app's surface pass snapshots whose format is only
+  # defined within one commit. `scripts/build-ghostty.sh` fills the package's
+  # Frameworks/; see GhosttyKit/Package.swift.
   GhosttyKit:
-    url: https://github.com/Lakr233/libghostty-spm
-    exactVersion: 1.2.9
+    path: GhosttyKit
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.9.0"
@@ -331,7 +335,6 @@ targets:
       # and the pty, so the two ends cannot drift. The keeper outlives the app
       # by design, so a mismatch here is not hypothetical.
       - path: Wortel/Keeper/KeeperProtocol.swift
-      - path: Wortel/Keeper/KeeperServer.swift
       - path: Wortel/Keeper/ReplayBuffer.swift
       # The replay reads the modes out of what it drops.
       - path: Wortel/Ghostty/TerminalModes.swift
@@ -342,6 +345,12 @@ targets:
       - path: Wortel/Sessions/ReminderTime.swift
       - path: Wortel/CLI/WortelCLIClient.swift
       - path: Wortel/DataDirectory.swift
+    # The session's terminal lives here (`KeeperTerminal`): libghostty-vt,
+    # no renderer. Never GhosttyKit, which the app links: the two libraries
+    # share C dependencies and must not meet in one binary.
+    dependencies:
+      - package: GhosttyKit
+        product: GhosttyVt
     settings:
       base:
         PRODUCT_NAME: wortel-keeper
@@ -359,6 +368,11 @@ targets:
   WortelTests:
     type: bundle.unit-test
     platform: macOS
+    # libghostty-vt only, for the keeper's terminal (`KeeperTerminal`). Never
+    # GhosttyKit: see the keeper's target.
+    dependencies:
+      - package: GhosttyKit
+        product: GhosttyVt
     settings:
       base:
         GENERATE_INFOPLIST_FILE: true
@@ -640,7 +654,11 @@ targets:
       # leak, and a client that dies without detaching leaves a shell blocked on
       # a pty nobody drains.
       - path: Wortel/Keeper/KeeperProtocol.swift
-      - path: Wortel/Keeper/KeeperServer.swift
+      - path: WortelKeeper/KeeperServer.swift
+      - path: WortelKeeper/KeeperTerminal.swift
+      - path: WortelKeeper/KeeperOutputChannel.swift
+      - path: Wortel/Keeper/KeeperChannelReader.swift
+      - path: Wortel/Ghostty/TerminalTheme.swift
       - path: Wortel/Keeper/KeeperClient.swift
       - path: Wortel/Keeper/KeeperConnection.swift
       - path: Wortel/Keeper/ReplayBuffer.swift

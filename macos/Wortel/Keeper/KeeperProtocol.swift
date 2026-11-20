@@ -56,6 +56,28 @@ enum KeeperCommand: Codable, Equatable {
     case close(session: String)
     /// What is still running.
     case list
+    /// Open a session whose terminal the keeper keeps, or attach to one that
+    /// is already running (the plan is then ignored, as for `open`).
+    ///
+    /// The keeper reads the pty itself and goes on reading: the app is given
+    /// two descriptors, the session's **output channel** and the pty. The
+    /// channel starts with a snapshot of the keeper's terminal for the session
+    /// (`KeeperChannel`), then carries every byte the program writes after
+    /// it, so nothing is lost or seen twice between the two. The pty is for
+    /// typing, and for asking who is in the foreground; the app never reads
+    /// it. Attaching again (a terminal shown after being dropped) ends the
+    /// previous channel after its last byte and starts a new one.
+    case terminal(session: String, plan: KeeperSpawnPlan, columns: UInt16, rows: UInt16)
+    /// A new size for a session's pty and terminal, applied between two reads
+    /// of its output, so what came before is parsed at the old size and what
+    /// comes after at the new one.
+    case resize(session: String, columns: UInt16, rows: UInt16, cellWidth: UInt32, cellHeight: UInt32)
+    /// What the app shows terminals in. For every session, and every one
+    /// opened later: the keeper answers the programs that ask.
+    case appearance(KeeperAppearance)
+    /// Whether each of `modes` (DEC private mode numbers) is set in a
+    /// session's terminal. Replied in `modes`, in the same order.
+    case modes(session: String, modes: [UInt16])
 
     var verb: String {
         switch self {
@@ -65,7 +87,51 @@ enum KeeperCommand: Codable, Equatable {
         case .detach: return "detach"
         case .close: return "close"
         case .list: return "list"
+        case .terminal: return "terminal"
+        case .resize: return "resize"
+        case .appearance: return "appearance"
+        case .modes: return "modes"
         }
+    }
+}
+
+/// The colours the app shows terminals in, and whether that is light or dark.
+/// The keeper's terminals answer programs from it (OSC 10, 11, 12 and 4 for
+/// colours, `CSI ? 996 n` for light or dark) and tell a program that asked to
+/// hear (`?2031`) when light or dark changes, with or without the app.
+struct KeeperAppearance: Codable, Equatable, Sendable {
+    var dark: Bool
+    /// 0xRRGGBB.
+    var foreground: UInt32
+    var background: UInt32
+    var cursor: UInt32?
+    /// 256 entries, or none for libghostty's own.
+    var palette: [UInt32] = []
+}
+
+/// The start of a session's output channel (`KeeperCommand.terminal`): a
+/// header, then a snapshot of the keeper's terminal as libghostty-vt encodes
+/// it, then the program's output, raw, from the byte after the snapshot on.
+///
+///     "WKT1"  UInt64 big-endian snapshot length  snapshot bytes  output...
+///
+/// The snapshot is only meaningful to a Ghostty built from the same commit as
+/// the keeper's, which is the one in this app bundle.
+enum KeeperChannel {
+    static let magic: [UInt8] = Array("WKT1".utf8)
+    static let headerSize = 12
+
+    static func header(snapshotLength: Int) -> [UInt8] {
+        var length = UInt64(snapshotLength).bigEndian
+        return magic + withUnsafeBytes(of: &length) { Array($0) }
+    }
+
+    /// The snapshot length a complete header says, or nil for one that is not
+    /// a header at all.
+    static func snapshotLength(header bytes: some Collection<UInt8>) -> Int? {
+        guard bytes.count == headerSize, bytes.prefix(4).elementsEqual(magic) else { return nil }
+        let length = bytes.dropFirst(4).reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
+        return length <= UInt64(Int.max) ? Int(length) : nil
     }
 }
 
@@ -124,6 +190,8 @@ struct KeeperResponse: Codable, Equatable {
     /// time to run what was typed into it; this is how the app tells that from
     /// an agent that ran and ended.
     var startedAt: Double?
+    /// For `modes`: whether each mode asked about is set, in the order asked.
+    var modes: [Bool]?
 
     static func failure(_ message: String) -> KeeperResponse {
         KeeperResponse(ok: false, message: message)
@@ -133,12 +201,12 @@ struct KeeperResponse: Codable, Equatable {
         message: String? = nil, pid: Int32? = nil, replay: Data? = nil,
         sessions: [KeeperSessionState]? = nil, version: String? = nil,
         build: String? = nil, executable: String? = nil, existing: Bool? = nil,
-        inputDelivered: Bool? = nil, startedAt: Double? = nil
+        inputDelivered: Bool? = nil, startedAt: Double? = nil, modes: [Bool]? = nil
     ) -> KeeperResponse {
         KeeperResponse(ok: true, message: message, pid: pid, replay: replay,
                        sessions: sessions, version: version,
                        build: build, executable: executable, existing: existing,
-                       inputDelivered: inputDelivered, startedAt: startedAt)
+                       inputDelivered: inputDelivered, startedAt: startedAt, modes: modes)
     }
 }
 
@@ -187,4 +255,9 @@ enum Keeper {
     /// small enough that a runaway process detached overnight can't grow the
     /// keeper without limit.
     static let replayLimit = 512 * 1024
+
+    /// Scrollback the keeper's terminal keeps for each session, in bytes: the
+    /// same as the app's (`scrollback-limit-bytes` in `wortel.conf`), whose
+    /// surface is a copy of it.
+    static let scrollbackBytes = 10_000_000
 }

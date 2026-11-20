@@ -972,6 +972,9 @@ final class SurfaceView: NSView {
     /// Free this terminal, keeping its shell. Only a keeper session whose shell
     /// is alive: on the exec backend the terminal *is* the shell's parent.
     func hibernate(forQuit: Bool = false) {
+        // The keeper keeps this terminal: nothing to save, and dropping it
+        // will be a restore from the keeper (prototype: not dropped yet).
+        guard !KeeperConnection.keepsTerminals else { return }
         guard let surface, let pty = ptyHost, let session = keeperSession,
               hibernation == nil, !isHibernating, !processFinished else {
             HibernationLog.log.debug("""

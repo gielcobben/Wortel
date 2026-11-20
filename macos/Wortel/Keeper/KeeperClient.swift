@@ -108,20 +108,29 @@ final class KeeperClient {
     /// reading the ptys this app is still reading.
     @discardableResult
     func send(_ command: KeeperCommand) throws -> (response: KeeperResponse, descriptor: Int32?) {
+        let (response, descriptors) = try sendForDescriptors(command)
+        // Only the first is wanted; any other is closed rather than leaked.
+        descriptors.dropFirst().forEach { close($0) }
+        return (response, descriptors.first)
+    }
+
+    /// `send`, for a command whose reply carries more than one descriptor
+    /// (a session's output channel and its pty). The caller owns them all.
+    func sendForDescriptors(_ command: KeeperCommand) throws -> (response: KeeperResponse, descriptors: [Int32]) {
         guard socket >= 0, !isOutOfStep else { throw WortelCLI.SocketError.notRunning }
         do {
             var data = try JSONEncoder().encode(command)
             data.append(0x0A)
             try FileDescriptorChannel.send(data, descriptor: nil, over: socket)
 
-            guard let (line, descriptor) = try FileDescriptorChannel.receiveLine(from: socket) else {
+            guard let received = try FileDescriptorChannel.receiveLine(from: socket) else {
                 throw WortelCLI.SocketError.notRunning
             }
-            guard let response = try? JSONDecoder().decode(KeeperResponse.self, from: line) else {
-                if let descriptor { close(descriptor) }
+            guard let response = try? JSONDecoder().decode(KeeperResponse.self, from: received.line) else {
+                received.descriptors.forEach { close($0) }
                 throw WortelCLI.SocketError.badResponse
             }
-            return (response, descriptor)
+            return (response, received.descriptors)
         } catch {
             isOutOfStep = true
             KeeperLog.log.error("""

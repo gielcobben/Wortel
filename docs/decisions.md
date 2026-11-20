@@ -73,7 +73,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 ## Window, terminal and keys
 
 - **2026-07-08. The window paints the background; the terminal is transparent
-  with no blur.** Blur costs the compositor every frame (`1206fcc`).
+  with no blur.** Blur costs the compositor every frame (`1206fcc`). Since
+  2026-11-19 the terminal is opaque and draws the page itself, in the page's
+  own colour, so the contrast floor can measure against it (below). Still no
+  blur.
 - **2026-07-14. The shell is AppKit split panes hosting SwiftUI.** It went
   AppKit, then SwiftUI `NavigationSplitView`, then back. A SwiftUI inspector is
   a fixed thickness and resizes the window instead of its siblings (`2cc5b81`).
@@ -154,7 +157,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   program was ever told 15x45. It may also be the "too narrow" case above.
   **The placeholder was also what repainted a relaunched terminal**, which
   starts empty: 45 then the real width was a change of width, and Claude Code
-  answers one by printing its whole conversation again. Without it the first
+  answers one by printing its whole conversation again. (Measured again on
+  2026-11-19 with 2.1.329's inline renderer under a pty harness: a width
+  change of one column redraws the visible screen, not the conversation.
+  Enough to repaint an empty terminal, not to recolour scrollback.) Without it the first
   builds left idle agents blank (in the running app, and 4 of 6 in a copy).
   So a relaunched or woken terminal's first size is a forced repaint
   (`PtyHost.resize`): one column narrower, and the true width back once the
@@ -232,7 +238,31 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `background-opacity = 0` libghostty measures against a transparent, so
   black, background, and every default-foreground character on the light
   theme was drawn white on the white page. Seen in the running app, then
-  reproduced in a test copy and gone with only that line removed.
+  reproduced in a test copy and gone with only that line removed. Back the
+  same evening over an opaque page: the next entry.
+- **2026-11-19. The terminal draws the page, and the floor is back at 1.9.**
+  An agent with Remote Control on is never restarted at a change (above and
+  below), and people who use it keep it on in most sessions, so for them the
+  restart left almost everything unreadable: a hibernated inline Claude Code
+  woke dark text on the dark page. The floor's measure was the bug, not the
+  floor. In Ghostty 1.3.1's shader (`cell_text_vertex`) the background a cell
+  is measured against is the terminal's background premultiplied by
+  `background-opacity`, so at 0 it is black. Now `background-opacity = 1`
+  and each bundled theme's `background` is the page colour
+  (`Chrome.content`: the dark theme's `#0d1117` became `#1f1f1f`), so the
+  terminal draws the page under its text and the floor measures against it;
+  `PageColourTests` keeps the two equal. 1.9, measured: what a change leaves
+  is 1.0 to 1.6 (Claude Code's text colour 1.27 on the dark page and 1.00 on
+  the light one, its dark warning 1.63 and permission 1.88 on white), and the
+  faintest colours meant to be seen are GitHub Dark's black on the dark page
+  (1.99) and Claude Code's `subtle` on its own page (2.04, 2.19). Looked at
+  in a test copy in light and dark, with a row of each colour and a Codex
+  and an inline Claude left in the other theme: readable, plain text
+  unchanged, no seam at the terminal's edge. Not looked at: a window being
+  resized, where a frame pinned at its old size meets the page. Also: a program asking for the background is now told
+  the colour it is on (it was told `#0d1117` on a `#1f1f1f` page). A program
+  that sets the background (OSC 11) now changes what is shown, as in any
+  terminal.
 - **2026-11-19. An idle agent is restarted into its conversation when the
   appearance changes.** Codex reads the colours once, at startup, and keeps
   them for the life of its process; Claude Code can leave what it already
@@ -248,6 +278,23 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   appearance" is the appearance at the agent's start against the one now, so
   a change there and back restarts nothing. A click or a scroll is not text:
   reading an answer must not keep it unreadable.
+  **Amended the same day: not an agent that repaints itself.** Claude Code's
+  fullscreen renderer (`tui: fullscreen`, on the alternate screen) repaints
+  every cell it coloured when it is told of the change, and a hibernated one
+  is told when its terminal wakes. Measured in a copy, 2.1.329: hibernated in
+  light, the copy turned dark, woken; its next snapshot held only the dark
+  theme's colours. Restarting it only ended the process (seen: two seconds
+  after it had repainted). So an agent on the alternate screen with `?2031`
+  on is not painted for the other appearance
+  (`TerminalModes.repaintsItselfOnSchemeChange`), by the record as it is:
+  a woken terminal reports only a `?2031` on record. Known limit: the
+  recorder does not see a full reset (`ESC c`, which `reset` sends), so after
+  one, or after a program killed on the alternate screen, an inline Claude
+  can read as fullscreen and is not restarted; the floor keeps it readable. Its inline renderer cannot:
+  what it printed stays in the old colours, and a width change reprints only
+  the visible screen (measured, 2.1.329), so inline Claude and Codex are
+  still restarted, under the same holds. With the floor above, what they
+  leave is readable until then.
   **Which agents: Claude Code and Codex.** Claude by its own record, as for
   deep sleep. Codex by its status reports (OSC 7501, 0.164 and later), the
   only word it gives on being idle; an older Codex says nothing and is left,

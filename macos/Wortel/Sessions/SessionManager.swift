@@ -3953,11 +3953,17 @@ final class SessionManager {
 
     /// Whether `session`'s agent drew itself for the appearance the Mac no
     /// longer has. An agent started since the last change, or after a change
-    /// there and back, did not.
+    /// there and back, did not. Nor did one that repaints itself when told
+    /// (Claude Code fullscreen): it was told with every terminal, or is told
+    /// when its terminal wakes, and a restart would only end its process.
+    /// Only by what is on record, never `assuming(agent:)`: a woken terminal
+    /// sends the report only for a `?2031` on record, and one that is not
+    /// told does not repaint. A record that missed either mode errs towards
+    /// the restart.
     private func isPaintedForTheOtherAppearance(_ session: Session) -> Bool {
         guard let agent = session.runningAgent, AgentSleep.repaintAgents.contains(agent),
-              let painted = session.agentPaintedDark else { return false }
-        return painted != runtime.isDark
+              let painted = session.agentPaintedDark, painted != runtime.isDark else { return false }
+        return !TerminalModeRecorder.shared.modes(for: session.id).repaintsItselfOnSchemeChange
     }
 
     /// Light and dark changed (`GhosttyRuntime.appearanceDidChange`), and

@@ -79,6 +79,28 @@ final class TerminalModesTests: XCTestCase {
         XCTAssertFalse(TerminalModes().assuming(agent: nil).wantsColorSchemeReports)
     }
 
+    /// A program that owns the whole screen and hears the change repaints
+    /// itself, so it is not restarted to repaint (Claude Code fullscreen). One
+    /// that printed into the scrollback cannot reach what it printed, and one
+    /// that does not listen is never told: both still need a new process.
+    func testOnlyAListenerOnTheAlternateScreenRepaintsItself() {
+        // Claude Code fullscreen, as it starts.
+        XCTAssertTrue(track(["\u{1B}[?2004h\u{1B}[?2031h\u{1B}[?1004h", "\u{1B}[?1049h\u{1B}[?1000h"])
+            .repaintsItselfOnSchemeChange)
+        XCTAssertTrue(track(["\u{1B}[?1047h", "\u{1B}[?2031h"]).repaintsItselfOnSchemeChange)
+        // Claude Code inline: listens, but on the main screen.
+        XCTAssertFalse(track(["\u{1B}[?2004h\u{1B}[?2031h\u{1B}[?1004h"]).repaintsItselfOnSchemeChange)
+        // Left the alternate screen again.
+        XCTAssertFalse(track(["\u{1B}[?2031h\u{1B}[?1049h", "\u{1B}[?1049l"]).repaintsItselfOnSchemeChange)
+        // Codex: the alternate screen, no `?2031`.
+        XCTAssertFalse(track(["\u{1B}[?1049h\u{1B}[?2004h"]).repaintsItselfOnSchemeChange)
+        XCTAssertFalse(TerminalModes().repaintsItselfOnSchemeChange)
+        // The alternate screen with no `?2031` on record: a woken terminal is
+        // not told of the change, so it must not count (SessionManager reads
+        // the record as it is, not `assuming(agent:)`).
+        XCTAssertFalse(track(["\u{1B}[?1049h\u{1B}[?1000h"]).repaintsItselfOnSchemeChange)
+    }
+
     /// The bytes are ghostty's own, so a catch-up report is indistinguishable
     /// from a live one — which is the point.
     func testTheColorSchemeReportIsWhatGhosttyWouldSend() {

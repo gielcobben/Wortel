@@ -73,10 +73,10 @@ private struct SideTerminalContainer: NSViewControllerRepresentable {
 /// other region is re-parented into that region's host by `show`, the same
 /// `addSubview` that put it here: a new place for the same live view.
 ///
-/// Opaque while a terminal shows. The terminal draws no background of its own
-/// (`background-opacity = 0` in wortel.conf), and over the column's glass it
-/// would read as text floating on a material rather than as a terminal; the
-/// main terminal gets the same backing from the window.
+/// Opaque while a terminal shows. The terminal draws the page under its text
+/// (wortel.conf), but not the strip a frame pinned at its old size leaves
+/// uncovered during a resize, and over the column's glass that strip would
+/// show the material; the main terminal gets the same backing from the window.
 final class SideTerminalHostController: NSViewController {
     private weak var current: SurfaceView?
     /// The last focus request acted on, so an unrelated SwiftUI update doesn't
@@ -160,7 +160,7 @@ final class SideTerminalHostController: NSViewController {
             return
         }
         view.effectiveAppearance.performAsCurrentDrawingAppearance {
-            view.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+            view.layer?.backgroundColor = Chrome.content.cgColor
         }
     }
 }

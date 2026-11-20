@@ -217,7 +217,7 @@ final class WortelCLIService {
             newSession(cwd: cwd, name: name, branch: branch, base: base, typing: input, reply: reply)
 
         case .newWorktree(let cwd, let name):
-            guard let cwd = cwd ?? manager.selected?.cwd else {
+            guard let cwd = cwd ?? manager.placingSelected?.cwd else {
                 return reply(.failure("No session to take a repository from."))
             }
             _ = manager.newWorktreeSession(
@@ -230,7 +230,7 @@ final class WortelCLIService {
             guard let pr = PullRequestRef.parse(text) else {
                 return reply(.failure("\u{201c}\(text)\u{201d} isn't a pull request: give its number or its URL."))
             }
-            guard let cwd = cwd ?? manager.selected?.cwd else {
+            guard let cwd = cwd ?? manager.placingSelected?.cwd else {
                 return reply(.failure("No session to take a repository from."))
             }
             _ = manager.newSession(
@@ -277,7 +277,7 @@ final class WortelCLIService {
         // a script in one repo must not open a worktree of whichever repo the
         // sidebar happens to be pointing at. The row is on screen meanwhile,
         // saying it's preparing, as it is for the sheet.
-        guard let cwd = cwd ?? manager.selected?.cwd else {
+        guard let cwd = cwd ?? manager.placingSelected?.cwd else {
             return reply(.failure("No session to take a repository from."))
         }
         let created = manager.newSession(

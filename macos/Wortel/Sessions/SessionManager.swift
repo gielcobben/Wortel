@@ -167,6 +167,14 @@ final class SessionManager {
             if target !== activeWindow {
                 activate(target)
                 onActivateWindow?(target)
+                // Already in front there: nothing switches, but you have
+                // come to it (⌘P, its banner, Next Waiting Session), which
+                // is what clears its dot, its unread mark and its reminder.
+                if target.selectedID == newValue {
+                    arrive(at: session, in: target)
+                    scheduleCaughtUp(session)
+                    return
+                }
             }
             select(newValue, in: target)
         }
@@ -203,6 +211,22 @@ final class SessionManager {
         // Gone to another session: the one just made is one among the
         // rest now, and closing it later is not a way back.
         if justMade?.session != session.id { justMade = nil }
+        arrive(at: session, in: window)
+        // Left the previous session before it could count as read; start the
+        // caught-up clock on the one you just landed on.
+        cancelCaughtUp(oldValue)
+        scheduleCaughtUp(session)
+        // Not while its worktree is still being made: there's no folder
+        // for the shell to start in yet (see `prepareWorktree`).
+        if session.preparation == nil { session.ensureSurfaceView(runtime: runtime) }
+        scheduleSave()
+        window.onSwitch?(session)
+        noteSelectionForSleep(left: oldValue, arrived: session)
+    }
+
+    /// What coming to a session means, whether it was switched to or was
+    /// already in front of the window brought forward for it.
+    private func arrive(at session: Session, in window: SessionWindow) {
         // Most recent first, for ⌘P's list.
         recentSessionIDs.removeAll { $0 == session.id }
         recentSessionIDs.insert(session.id, at: 0)
@@ -217,16 +241,6 @@ final class SessionManager {
         session.markedUnread = false
         // A reminder that went off for it has been answered the same way.
         answerReminder(session)
-        // Left the previous session before it could count as read; start the
-        // caught-up clock on the one you just landed on.
-        cancelCaughtUp(oldValue)
-        scheduleCaughtUp(session)
-        // Not while its worktree is still being made: there's no folder
-        // for the shell to start in yet (see `prepareWorktree`).
-        if session.preparation == nil { session.ensureSurfaceView(runtime: runtime) }
-        scheduleSave()
-        window.onSwitch?(session)
-        noteSelectionForSleep(left: oldValue, arrived: session)
     }
 
     /// Sessions in the order they were last selected, most recent first: what
@@ -1102,6 +1116,10 @@ final class SessionManager {
     /// Run `body` with every session it makes placed in `window`, rather
     /// than in the active one: a new window's first session, `wortel new`
     /// from a session in a window behind.
+    /// The session in front of the window new sessions go into now: what a
+    /// new one takes its folder or repository from when given none.
+    var placingSelected: Session? { (placingWindow ?? activeWindow)?.selected }
+
     func inWindow<T>(_ window: SessionWindow?, _ body: () -> T) -> T {
         guard let window else { return body() }
         let previous = placingWindow
@@ -1372,7 +1390,7 @@ final class SessionManager {
                 // of now. An agent that survived the last quit keeps what was
                 // saved for it: it drew itself before this launch.
                 workBeganAt[session.id] = nil
-                if repaintInPlace == session.id { repaintInPlace = nil }
+                repaintInPlace.remove(session.id)
                 if marker == nil {
                     session.agentPaintedDark = nil
                 } else if agentMarkersBaselined || session.agentPaintedDark == nil {
@@ -2681,7 +2699,7 @@ final class SessionManager {
         lastKeysAt.removeValue(forKey: session.id)
         workBeganAt.removeValue(forKey: session.id)
         reportedRestSince.removeValue(forKey: session.id)
-        if repaintInPlace == session.id { repaintInPlace = nil }
+        repaintInPlace.remove(session.id)
         cancelMove(session)
         sleptAt.removeValue(forKey: session.id)
         sleepSurvivors.removeValue(forKey: session.id)
@@ -2871,7 +2889,7 @@ final class SessionManager {
     /// seconds at most), named for now with a placeholder, and for the work
     /// once the session has a name (`nameBranchForWork`). The repository is
     /// the selected session's, as for any new branch (`branchSource`).
-    /// `wortel new --worktree`, and what ⇧⌘N's sheet does when Return is
+    /// `wortel new --worktree`, and what ⌥⇧⌘N's sheet does when Return is
     /// pressed on it as it opens (`newWorktreeSessionFromSheet`).
     @discardableResult
     func newWorktreeSession(from directory: String? = nil, inFolder folder: String? = nil,
@@ -3335,6 +3353,7 @@ final class SessionManager {
         // clicked, with Wortel behind another app): nothing changes hands,
         // so the reminder is answered here, ring and banner both.
         if id == selectedID, answerReminder(session) { session.markedUnread = false }
+        // In front of another window, the setter's arrival answers it.
         selectedID = id
     }
 
@@ -3467,10 +3486,11 @@ final class SessionManager {
     @ObservationIgnored private var workBeganAt: [Session.ID: Date] = [:]
     /// Since when each reporting agent has not said `working`.
     @ObservationIgnored private var reportedRestSince: [Session.ID: Date] = [:]
-    /// The session that was in front when light and dark last changed, while
-    /// its agent is still owed a restart where it stands. Given up the moment
-    /// anything happens in it: the selection moving, text going in, work.
-    @ObservationIgnored private var repaintInPlace: Session.ID?
+    /// The sessions that were in front (one per window) when light and dark
+    /// last changed, while their agents are still owed a restart where they
+    /// stand. Each given up the moment anything happens in it: its window
+    /// moving on, text going in, work.
+    @ObservationIgnored private var repaintInPlace: Set<Session.ID> = []
     @ObservationIgnored private var appearanceObserver: NSObjectProtocol?
 
     /// Start the clock for `session`'s agent, unless one is running already.
@@ -3654,7 +3674,7 @@ final class SessionManager {
             remoteControl: remoteControl,
             repaint: isPaintedForTheOtherAppearance(session),
             keysSinceWork: keysSinceWork,
-            inPlace: repaintInPlace == id,
+            inPlace: repaintInPlace.contains(id),
             now: Date())
         return SleepCandidate(inputs: inputs, marker: marker, conversationID: conversationID,
                               input: input ?? "", group: group,
@@ -3732,8 +3752,8 @@ final class SessionManager {
         guard case .ending(let sleeper, _) = session.sleep else { return }
         // In front, only the one being restarted where it stands, which
         // `commitSleep` brings straight back, or one being moved: you asked.
-        let inPlace = cause == .appearance && repaintInPlace == id
-        if inPlace { repaintInPlace = nil }
+        let inPlace = cause == .appearance && repaintInPlace.contains(id)
+        if inPlace { repaintInPlace.remove(id) }
         guard session.surfaceView?.ptyHost?.foregroundProcessGroup() == group,
               !session.isBusy, !isFront(id) || inPlace || moving else {
             session.sleep = .awake
@@ -3898,7 +3918,7 @@ final class SessionManager {
     /// selection has stayed a moment (so stepping past rows starts nothing).
     private func noteSelectionForSleep(left: Session.ID?, arrived: Session) {
         // No longer in front: its agent goes by the rule for one out of sight.
-        if repaintInPlace != arrived.id { repaintInPlace = nil }
+        if let left, left != arrived.id { repaintInPlace.remove(left) }
         if let left, left != arrived.id, let old = sessions.first(where: { $0.id == left }) {
             hiddenSince[left] = Date()
             armSleep(old, replacing: true)
@@ -4231,7 +4251,7 @@ final class SessionManager {
     /// touched, and is looked at again when it next comes to rest or its
     /// session is left (`armSleep`).
     private func appearanceChanged() {
-        repaintInPlace = nil
+        repaintInPlace = []
         let stale = sessions.filter { session in
             guard case .awake = session.sleep else { return false }
             return isPaintedForTheOtherAppearance(session)
@@ -4241,24 +4261,24 @@ final class SessionManager {
         // and arms that.
         guard !stale.isEmpty else { return }
         AgentSleepLog.log.notice("the appearance changed: \(stale.count) agents are painted for the other one")
-        // The one in front is offered a restart where it stands, for this
-        // look only: kept below if it may have one now or in a moment, and
-        // taken back if not. One at work in front when the Mac changed is
-        // not restarted under the answer it then gives.
-        let front = stale.first(where: { $0.id == selectedID })?.id
-        repaintInPlace = front
+        // The one in front of each window is offered a restart where it
+        // stands, for this look only: kept below if it may have one now or
+        // in a moment, and taken back if not. One at work in front when the
+        // Mac changed is not restarted under the answer it then gives.
+        let fronts = Set(stale.filter { isFront($0.id) }.map(\.id))
+        repaintInPlace = fronts
         let table = ProcessTable.snapshot()
         let markers = AgentResumeStore.currentMarkers()
         var going: [(Session, SleepCandidate)] = []
-        var frontMayRestart = false
-        defer { if !frontMayRestart, repaintInPlace == front { repaintInPlace = nil } }
+        var mayRestart: Set<Session.ID> = []
+        defer { repaintInPlace.subtract(fronts.subtracting(mayRestart)) }
         for session in stale {
             if let owed = session.owedResume, owed.isOwed(at: Date()) { continue }
             guard let candidate = sleepCandidate(for: session, table: table, markers: markers) else { continue }
             let verdict = AgentSleep.decide(candidate.inputs)
-            if session.id == front {
+            if fronts.contains(session.id) {
                 switch verdict {
-                case .repaint, .notBefore: frontMayRestart = true
+                case .repaint, .notBefore: mayRestart.insert(session.id)
                 case .sleep, .never: break
                 }
             }
@@ -4300,7 +4320,7 @@ final class SessionManager {
         // Working: whatever clock was running towards sleep is off, and so
         // is a restart where it stands.
         sleepTimers.removeValue(forKey: session.id)?.cancel()
-        if repaintInPlace == session.id { repaintInPlace = nil }
+        repaintInPlace.remove(session.id)
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
         guard busyTimers[session.id] == nil, !session.isBusy else { return }
         let id = session.id
@@ -5300,11 +5320,11 @@ final class SessionManager {
 
     /// Give the keyboard back to the selected session: its terminal, when that
     /// is in front of its row; otherwise what is in front of the main area,
-    /// as a switch to it would. Set by the app layer, which owns the window.
-    @ObservationIgnored var onReturnKeyboard: (() -> Void)?
-
+    /// as a switch to it would. The active window's, which the app layer
+    /// sets (`SessionWindow.onReturnKeyboard`): a click or a rename in a
+    /// sidebar made its window the active one.
     func returnKeyboardToSession() {
-        onReturnKeyboard?()
+        activeWindow?.onReturnKeyboard?()
     }
 
     /// Esc, or typing in the terminal: back to the session on screen alone.
@@ -6031,7 +6051,7 @@ final class SessionManager {
                 guard let self, let session else { return }
                 self.lastKeysAt[session.id] = Date()
                 // Somebody is using it: no restart under their hands.
-                if self.repaintInPlace == session.id { self.repaintInPlace = nil }
+                self.repaintInPlace.remove(session.id)
             }
             // A Return of yours: the sidebar's Recent. Saved, so
             // the order survives a relaunch; the save is debounced.

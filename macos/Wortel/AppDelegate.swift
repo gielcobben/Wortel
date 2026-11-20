@@ -112,8 +112,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.onWindowEmptied = { [weak self] home in
             // Its last session went and another window is open: it goes, as
             // an empty Terminal window does. `close`, not `performClose`:
-            // there is nothing left to ask about.
-            self?.controller(for: home)?.window.close()
+            // there is nothing left to ask about. A turn later: it can empty
+            // inside a drop of all its rows onto another window, while its
+            // sidebar is still that drag's source, and closing it there
+            // takes the source down under AppKit's drag.
+            DispatchQueue.main.async {
+                guard let self, self.manager.sessions(in: home).isEmpty else { return }
+                self.controller(for: home)?.window.close()
+            }
         }
         let first = addController(for: manager.windows[0])
         #if DEBUG
@@ -271,17 +277,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let self else { return false }
             // Held over a window behind, it comes forward (`SpringLoading`).
             if phase == .moved { SpringLoading.hover(at: point, dragging: window) } else { SpringLoading.end() }
-            // Each window asked once. Not `lazy.compactMap(...).first`: that
-            // runs the closure again for the one it finds, and asking twice
-            // is dropping twice; the second found nothing, and the force
-            // unwrap inside `compactMap` took the app down on every drop
-            // into a window after the first.
+            // Each window asked once, and every one asked: a window the
+            // pointer isn't over takes down a landing spot it showed (the
+            // drag went over it on the way). Not `lazy.compactMap(...).first`:
+            // that runs the closure again for the one it finds, and asking
+            // twice is dropping twice; the second found nothing, and the
+            // force unwrap inside `compactMap` took the app down on every
+            // drop into a window after the first.
             var found: (controller: MainWindowController, landing: (region: TabRegion, index: Int))?
-            for controller in self.controllers where found == nil {
-                if let landing = controller.split.dockWindowDrag(
-                    phase, url: document.url, dragged: window, at: point) {
-                    found = (controller, landing)
-                }
+            for controller in self.controllers {
+                let landing = controller.split.dockWindowDrag(phase, url: document.url,
+                                                              dragged: window, at: point)
+                if found == nil, let landing { found = (controller, landing) }
             }
             guard let (controller, landing) = found else {
                 // Over no main window: whichever showed a docking spot lets go of it.
@@ -726,6 +733,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func windowClosed(_ controller: MainWindowController) {
         controllers.removeAll { $0 === controller }
+        // Its views stay alive a moment past the close: a drag that began in
+        // its sidebar (every row dropped on another window) is still told
+        // it ended, and a source released before then is a dangling one.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { withExtendedLifetime(controller) {} }
         guard !controllers.isEmpty else {
             // Previews are accessories: without this, closing the last window
             // would leave a preview standing, which both keeps the app alive

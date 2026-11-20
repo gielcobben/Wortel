@@ -332,9 +332,6 @@ enum SessionOrigin: String {
     case terminal
 }
 
-/// What opened the inspector. The toolbar and the shortcut are different
-/// habits, and which one people reach for decides whether the segments earn
-/// their space in a toolbar this small.
 /// How sessions got to another window.
 enum WindowMoveOrigin: String {
     /// Dropped on another window's sidebar.
@@ -347,6 +344,9 @@ enum WindowMoveOrigin: String {
     case merge
 }
 
+/// What opened the inspector. The toolbar and the shortcut are different
+/// habits, and which one people reach for decides whether the segments earn
+/// their space in a toolbar this small.
 enum PanelOrigin: String {
     case toolbar
     case shortcut

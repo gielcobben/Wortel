@@ -28,7 +28,7 @@ enum WortelCommand: Codable, Equatable {
     /// session; an unknown case is refused, which says what happened.
     case newFromPullRequest(cwd: String?, name: String?, pr: String)
     /// `new --worktree`: a session in a worktree of its own on a new branch
-    /// Wortel names, as ⇧⌘N makes one. Its own case for the reason
+    /// Wortel names, as ⌥⇧⌘N makes one. Its own case for the reason
     /// `newFromPullRequest` is.
     case newWorktree(cwd: String?, name: String?)
     /// `new … -- <command>`: any of the three above, with `argv` typed into

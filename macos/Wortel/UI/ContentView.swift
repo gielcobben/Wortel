@@ -798,7 +798,7 @@ func newSessionOnBranch(_ manager: SessionManager, for session: Session? = nil,
     }
 }
 
-/// ⇧⌘N: New Worktree Session, as a sheet with a placeholder branch already
+/// ⌥⇧⌘N: New Worktree Session, as a sheet with a placeholder branch already
 /// in it, selected, so Return makes the session at once and typing names
 /// the branch. The From and Location rows are there to change when the
 /// default branch or Wortel's folder isn't the one. Outside a repository

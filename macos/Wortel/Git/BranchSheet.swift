@@ -34,11 +34,11 @@ struct BranchSheetAnswer {
     let location: String??
 }
 
-/// New Worktree Session (⇧⌘N) and "New Branch From…": a name, the ref it
+/// New Worktree Session (⌥⇧⌘N) and "New Branch From…": a name, the ref it
 /// forks from, and where the worktree goes. Or a pull request, by `#123` or
 /// its URL, typed into the same field.
 ///
-/// ⇧⌘N arrives with a placeholder name selected, so Return makes the same
+/// ⌥⇧⌘N arrives with a placeholder name selected, so Return makes the same
 /// session it used to make with no sheet at all, and typing replaces it.
 ///
 /// Three inputs, a line saying what the button will do, and the two buttons.
@@ -342,7 +342,7 @@ final class BranchSheet: NSViewController, NSTextFieldDelegate {
             return "\u{201c}\(branch)\u{201d} is on \(remotes.joined(separator: " and ")). "
                 + "Check out the one you want first."
         }
-        // The placeholder ⇧⌘N fills in isn't worth reading out: say what
+        // The placeholder ⌥⇧⌘N fills in isn't worth reading out: say what
         // becomes of it instead.
         if GitWorktree.isGenerated(branch) {
             guard let base = baseChooser.branch else {

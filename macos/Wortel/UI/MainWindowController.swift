@@ -101,7 +101,10 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     func place(cascadingFrom other: NSWindow?) {
         if let topLeft = home.requestedTopLeft {
             home.requestedTopLeft = nil
-            if let other { window.setContentSize(other.contentLayoutRect.size) }
+            // The frame's size, not the content layout rect's: with a
+            // full-size content view that leaves out the titlebar, and each
+            // window torn off came up a titlebar shorter than the last.
+            if let other { window.setFrame(NSRect(origin: window.frame.origin, size: other.frame.size), display: false) }
             window.setFrameTopLeftPoint(NSPoint(x: topLeft.x - 40, y: topLeft.y + 20))
         } else if let frame = home.frame {
             window.setFrame(from: frame)

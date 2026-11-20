@@ -77,8 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Debug build is also what runs every day.
         if DataDirectory.custom != nil { ResizeBench.install() }
         #endif
-        // Saved screens that no session took: it did not come back.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { SavedScreens.clearLeftovers() }
+        // Saved screens of sessions that did not come back.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            guard let manager = self?.manager else { return }
+            SavedScreens.clearLeftovers(keeping: Set(manager.sessions.map(\.id)))
+        }
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
             DropPasteboard.sweepOldImages()
@@ -1100,22 +1103,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         cli?.stop()
         Telemetry.capture(
             .appQuit(uptime: DurationBucket(seconds: Date().timeIntervalSince(launchedAt))))
-        guard Telemetry.hasWorkBeforeQuit else { return .terminateNow }
-        Telemetry.drainBeforeQuit { NSApp.reply(toApplicationShouldTerminate: true) }
+        // What every session's terminal shows, for the next launch to put
+        // back (`SavedScreens`), and the usage events still on their way: the
+        // quit goes ahead when both are done. Neither waits on the main
+        // thread, and the screens have a second and a half at most.
+        var waitingFor = 2
+        let oneDone: @MainActor () -> Void = {
+            waitingFor -= 1
+            if waitingFor == 0 { NSApp.reply(toApplicationShouldTerminate: true) }
+        }
+        SavedScreens.saveAll(manager?.sessions.compactMap(\.surfaceView) ?? [],
+                             dark: GhosttyRuntime.systemIsDark, then: oneDone)
+        if Telemetry.hasWorkBeforeQuit { Telemetry.drainBeforeQuit(then: oneDone) } else { oneDone() }
         return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // What every session's terminal shows, for the next launch to put
-        // back (`SavedScreens`). First, while the terminals are all there.
-        if let manager {
-            let started = DispatchTime.now()
-            let dark = GhosttyRuntime.systemIsDark
-            let terminals = manager.sessions.compactMap(\.surfaceView)
-            terminals.forEach { $0.saveScreenForQuit(dark: dark) }
-            let ms = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e6
-            SavedScreens.log.notice("saved \(terminals.count) screens at quit in \(ms, format: .fixed(precision: 1)) ms")
-        }
         manager?.saveNow()
         TerminalModeRecorder.shared.save()
         // The socket's name is a file, and it outlives the process that made

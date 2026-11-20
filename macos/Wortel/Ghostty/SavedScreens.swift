@@ -84,8 +84,54 @@ enum SavedScreens {
         return (screen, meta)
     }
 
-    /// Whatever was not taken: sessions that did not come back.
-    static func clearLeftovers() {
-        try? FileManager.default.removeItem(at: folder)
+    /// Screens of sessions that are no more. A session that is still there
+    /// keeps its file until its terminal is made, which for one past the
+    /// first twenty at launch is when it is first shown; a file left from an
+    /// older quit is refused then anyway (`savedBy`).
+    static func clearLeftovers(keeping sessions: Set<UUID>) {
+        let keep = Set(sessions.map(\.uuidString))
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in names where !keep.contains((name as NSString).deletingPathExtension) {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+        }
+    }
+
+    /// Every terminal's screen, for the next launch, as the app quits: each
+    /// put to sleep the way one out of sight is (`SurfaceView.hibernateForQuit`),
+    /// then what it holds written down (`screenForQuit`). Nothing here waits
+    /// on the main thread, which the terminals' own work needs: it looks again
+    /// every few milliseconds, and gives up on what is not done within
+    /// `budget`, so a quit never hangs on a busy agent. Those are not saved,
+    /// and come back the old way.
+    @MainActor
+    static func saveAll(_ terminals: [SurfaceView], dark: Bool, budget: TimeInterval = 1.5,
+                        then done: @escaping @MainActor () -> Void) {
+        let started = DispatchTime.now()
+        var waiting = terminals.filter(\.savesScreenAtQuit)
+        let total = waiting.count
+        var saved = 0, asked = Set<ObjectIdentifier>(), answered = 0
+        waiting.forEach { $0.hibernateForQuit() }
+        func look() {
+            for terminal in waiting where terminal.isHibernated && !asked.contains(ObjectIdentifier(terminal)) {
+                asked.insert(ObjectIdentifier(terminal))
+                guard let session = terminal.keeperSession else { answered += 1; continue }
+                terminal.screenForQuit(dark: dark) { result in
+                    answered += 1
+                    if let (screen, meta) = result {
+                        save(screen, meta: meta, for: session)
+                        saved += 1
+                    }
+                }
+            }
+            waiting.removeAll { !$0.savesScreenAtQuit }
+            let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e9
+            if answered >= waiting.count || elapsed >= budget {
+                log.notice("saved \(saved) of \(total) screens at quit in \(elapsed * 1000, format: .fixed(precision: 1)) ms")
+                done()
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { look() }
+        }
+        look()
     }
 }

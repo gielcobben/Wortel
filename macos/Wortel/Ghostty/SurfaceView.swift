@@ -233,8 +233,9 @@ final class SurfaceView: NSView {
     /// libghostty's placeholder of 45 columns by 15 rows, because most are
     /// made out of sight (every session's at launch, a hibernated one when it
     /// wakes, a new session made from the command line) and an agent in one
-    /// works at whatever width it is given. A terminal is never resized while
-    /// hidden, so this first size is the one it works at until it is shown.
+    /// works at whatever width it is given. Out of sight it changes only with
+    /// the window (`followWindow`), so this first size is the one it works at
+    /// until then or until it is shown.
     private static var firstSize: NSSize? = {
         guard let stored = UserDefaults.standard.array(forKey: firstSizeKey) as? [Double],
               stored.count == 2, stored[0] >= 40, stored[1] >= 20 else { return nil }
@@ -970,7 +971,7 @@ final class SurfaceView: NSView {
 
     /// Free this terminal, keeping its shell. Only a keeper session whose shell
     /// is alive: on the exec backend the terminal *is* the shell's parent.
-    func hibernate() {
+    func hibernate(forQuit: Bool = false) {
         guard let surface, let pty = ptyHost, let session = keeperSession,
               hibernation == nil, !isHibernating, !processFinished else {
             HibernationLog.log.debug("""
@@ -981,6 +982,7 @@ final class SurfaceView: NSView {
             return
         }
         isHibernating = true
+        hibernatingForQuit = forQuit
         let missed = MissedOutput()
         let started = DispatchTime.now()
         // The output turns away from the terminal first, on the queue that
@@ -1052,7 +1054,7 @@ final class SurfaceView: NSView {
                 pty.onOutput = live
             }
         }
-        guard isHidden || superview == nil else { return stayAwake() }
+        guard isHidden || superview == nil || hibernatingForQuit else { return stayAwake() }
 
         // The cursor is read against the screen's bottom, so the view goes
         // there first; this terminal is about to go anyway.
@@ -1232,7 +1234,7 @@ final class SurfaceView: NSView {
     /// while the terminal takes that size on libghostty's IO thread some 25 ms
     /// later (it gathers resizes for that long). On a terminal nothing has
     /// been written into, which it leaves as it found it, cursor at home.
-    private static func actualGrid(of surface: ghostty_surface_t) -> (columns: Int, rows: Int)? {
+    static func actualGrid(of surface: ghostty_surface_t) -> (columns: Int, rows: Int)? {
         func cursor(after sequence: String) -> (x: Double, y: Double) {
             Array(sequence.utf8).withUnsafeBufferPointer { raw in
                 guard let base = raw.baseAddress else { return }
@@ -1309,76 +1311,56 @@ final class SurfaceView: NSView {
     /// Woken, and the screen not yet all back. Reading it now reads part of it.
     private(set) var isRestoring = false
 
+    /// Put to sleep because the app is quitting (`hibernateForQuit`): on
+    /// screen or not.
+    private var hibernatingForQuit = false
+
     // MARK: - Saving the screen at quit
 
-    /// Write what this terminal shows, scrollback and all, for the terminal
-    /// that takes its place at the next launch (`SavedScreens`). As the app
-    /// quits, on the main thread. A session's own terminal on the keeper only:
-    /// a side terminal is told no size until it is shown, so there would be
-    /// nothing to write it back at, and a shell of the app's own ends with it.
-    ///
-    /// The pty stops being read first, so the screen written is everything
-    /// the app read: what comes after stays in the kernel's buffer and is the
-    /// keeper's replay at the next launch. A hibernated terminal's saved
-    /// screen is its snapshot and what it missed since.
-    func saveScreenForQuit(dark: Bool) {
-        guard isSessionTerminal, let pty = ptyHost, let session = keeperSession, !processFinished else { return }
-        pty.pauseReading()
-        // A read already under way finishes and is written in; waiting for it
-        // costs the main thread nothing it is not about to give up anyway.
-        // Bounded, as anything that waits at quit must be.
-        let drained = DispatchSemaphore(value: 0)
-        pty.enqueue { drained.signal() }
-        guard drained.wait(timeout: .now() + 0.3) == .success else {
-            SavedScreens.log.notice("\(session.uuidString, privacy: .public): its pty was busy at quit; not saved")
-            return
-        }
-        let meta = { (told: (width: UInt32, height: UInt32), columns: Int, rows: Int) in
-            SavedScreens.Meta(width: told.width, height: told.height, columns: columns, rows: rows,
-                              dark: dark, savedBy: getpid(), savedAt: Date())
-        }
-        if let hibernation {
-            guard let told = hibernation.told,
-                  let snapshot = try? Data(contentsOf: hibernation.snapshot) else { return }
-            var screen = SnapshotPalette.restoringIndices(Self.withoutColourSettings(snapshot))
-            screen.append(contentsOf: Self.cursorRestore(snapshot: snapshot, hibernation: hibernation))
-            let missed = hibernation.missed
-            let taken = DispatchSemaphore(value: 0)
-            var held = Data()
-            pty.enqueue {
-                // Run over: its start is gone, and written back it would be
-                // the end of a drawing on an old screen. The old way instead.
-                if missed.buffer.dropped == 0 {
-                    held = missed.buffer.take()
-                    held.append(contentsOf: missed.scanner.unfinished)
-                }
-                taken.signal()
+    /// Whether this terminal's screen is kept through a quit (`SavedScreens`):
+    /// a session's own, on the keeper. A side terminal is told no size until it
+    /// is shown, so there would be nothing to write it back at; a shell of the
+    /// app's own ends with it.
+    var savesScreenAtQuit: Bool {
+        isSessionTerminal && ptyHost != nil && keeperSession != nil && !processFinished
+    }
+
+    /// Put to sleep for the quit, the way it is put to sleep out of sight:
+    /// the same dump, with the palette as markers so it comes back in the
+    /// theme of the day, and the modes it was in. Shown or not.
+    func hibernateForQuit() {
+        guard savesScreenAtQuit, hibernation == nil, !isHibernating else { return }
+        hibernate(forQuit: true)
+    }
+
+    /// What a hibernated terminal would be written back with at the next
+    /// launch: its modes at the time, its screen, and what it missed since.
+    /// The pty stops being read first, on its own queue, so what comes after
+    /// stays in the kernel's buffer and is the keeper's replay. nil for one
+    /// whose missed output ran over: its start is gone.
+    func screenForQuit(dark: Bool, then deliver: @escaping @MainActor ((Data, SavedScreens.Meta)?) -> Void) {
+        guard savesScreenAtQuit, let hibernation, let told = hibernation.told, let pty = ptyHost,
+              let snapshot = try? Data(contentsOf: hibernation.snapshot) else { return deliver(nil) }
+        let missed = hibernation.missed
+        var screen = Data(missed.prelude)
+        screen.append(SnapshotPalette.restoringIndices(Self.withoutColourSettings(snapshot)))
+        screen.append(contentsOf: Self.cursorRestore(snapshot: snapshot, hibernation: hibernation))
+        let meta = SavedScreens.Meta(width: told.width, height: told.height,
+                                     columns: hibernation.columns, rows: hibernation.rows,
+                                     dark: dark, savedBy: getpid(), savedAt: Date())
+        pty.enqueue {
+            pty.pauseReading()
+            guard missed.buffer.dropped == 0 else {
+                DispatchQueue.main.async { deliver(nil) }
+                return
             }
-            guard taken.wait(timeout: .now() + 0.3) == .success, missed.buffer.dropped == 0 else { return }
-            screen.append(held)
-            SavedScreens.save(screen, meta: meta(told, hibernation.columns, hibernation.rows), for: session)
-            return
+            var held = missed.buffer.take()
+            held.append(contentsOf: missed.scanner.unfinished)
+            DispatchQueue.main.async {
+                screen.append(held)
+                deliver((screen, meta))
+            }
         }
-        guard let surface, let told = toldSize else { return }
-        let bottom = "scroll_to_bottom"
-        _ = bottom.withCString { ghostty_surface_binding_action(surface, $0, UInt(bottom.utf8.count)) }
-        var path: String?
-        screenFileCapture = { path = $0 }
-        let action = "write_screen_file:copy,vt"
-        _ = action.withCString { ghostty_surface_binding_action(surface, $0, UInt(action.utf8.count)) }
-        screenFileCapture = nil
-        guard let path, let snapshot = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return }
-        try? FileManager.default.removeItem(atPath: path)
-        _ = rmdir(URL(fileURLWithPath: path).deletingLastPathComponent().path)
-        let size = ghostty_surface_size(surface)
-        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
-        let shape = Hibernation(snapshot: URL(fileURLWithPath: path), columns: Int(size.columns), rows: Int(size.rows),
-                                blankRowsAtBottom: Self.blankRowsAtBottom(of: surface, size: size),
-                                cursor: Self.cursorCell(of: surface, size: size, scale: scale),
-                                fontSize: 0, missed: MissedOutput())
-        var screen = Self.withoutColourSettings(snapshot)
-        screen.append(contentsOf: Self.cursorRestore(snapshot: snapshot, hibernation: shape))
-        SavedScreens.save(screen, meta: meta(told, Int(size.columns), Int(size.rows)), for: session)
     }
 
     /// Whoever asked to be told when the restore now under way is done.
@@ -1610,6 +1592,9 @@ final class SurfaceView: NSView {
         let width = max(40 * scale, CGFloat(told.width) + dw)
         let height = max(20 * scale, CGFloat(told.height) + dh)
         setSurfaceSize(width: UInt32(width), height: UInt32(height))
+        // What a change of scale or screen passes on again
+        // (`viewDidChangeBackingProperties`): this size, not the one before.
+        contentSize = NSSize(width: width / scale, height: height / scale)
         LayoutLog.log.debug("followed the window out of sight: \(told.width)x\(told.height) to \(UInt32(width))x\(UInt32(height)) px")
     }
 
@@ -1684,7 +1669,9 @@ final class SurfaceView: NSView {
         // re-wrapped and its program got a SIGWINCH, so every agent in the
         // sidebar redrew its whole screen, for a width that wasn't even its
         // own (it gets resized back when you return to it). It takes whatever
-        // size is current when it's shown again (`isHidden` below).
+        // size is current when it's shown again (`isHidden` below). A
+        // session's own terminal out of sight does follow the window, by the
+        // window's change, once a resize ends (`followWindow`).
         if Self.resizeHolds > 0 || isHidden {
             if !resizePending {
                 resizePending = true

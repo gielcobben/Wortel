@@ -153,7 +153,8 @@ pause 2
 wide=$(tail -1 "$data/wide.log")
 w new --cwd "$data" --name narrow >/dev/null
 pause 1.5
-w send "$(w list --json | /usr/bin/python3 -c 'import json,sys; print([s["id"] for s in json.load(sys.stdin) if s["name"]=="narrow"][0])')" "seq 1 200" --enter
+narrow_id=$(w list --json | /usr/bin/python3 -c 'import json,sys; print([s["id"] for s in json.load(sys.stdin) if s["name"]=="narrow"][0])')
+w send $narrow_id "seq 1 200; printf '\\033[31mPALETTE-RED\\033[0m\\n'" --enter
 pause 1
 probe column
 probe report
@@ -162,6 +163,24 @@ pause 6                                   # "asleep" goes to sleep; the sizes ar
 quit
 print "before the relaunch: wide shown at $wide, narrow shown last at $narrow (side column open)"
 print "MARK" >> "$data/wide.log"
+# A colour from the palette is saved as the palette's, so it follows the
+# next light or dark change; as its 24-bit value it would stay in the theme
+# of the day it was saved.
+saved="$data/saved-screens/$narrow_id.vt"
+if [[ ! -s $saved ]]; then
+  print "WRONG narrow's screen was not saved at the quit"; colour_failure=1
+else
+  # The output line, not the command typed above it.
+  colour=$(/usr/bin/python3 -c "
+d = open('$saved', 'rb').read(); i = d.rfind(b'PALETTE-RED')
+before = d[max(0, i - 20):i]
+print('palette' if before.endswith(b'\x1b[38;5;1m') else 'fixed' if b'\x1b[38;2;' in before else repr(before))")
+  if [[ $colour == palette ]]; then
+    print "ok    a palette colour is saved as the palette's, not as a fixed colour"
+  else
+    print "WRONG a palette colour was saved as: $colour"; colour_failure=1
+  fi
+fi
 pause 13                                  # the drawer draws while the copy is gone
 
 launch
@@ -169,11 +188,19 @@ pause 4
 after=$(sed -n '/MARK/,$p' "$data/wide.log" | grep -v MARK | tr '\n' ' ')
 print "after the relaunch, out of sight, wide was given: ${after:-nothing}"
 last=$(sed -n '/MARK/,$p' "$data/wide.log" | grep -v MARK | tail -1)
-failures=0
+failures=${colour_failure:-0}
+wide_id=$(w list --json | /usr/bin/python3 -c 'import json,sys; print([s["id"] for s in json.load(sys.stdin) if s["name"]=="wide"][0])')
+restored=$(/usr/bin/log show --last 2m --info --predicate "processID == $apppid AND category == \"saved-screens\"" --style compact 2>/dev/null \
+  | grep -c "$wide_id: its screen comes back as it was saved")
 if [[ -z $after ]]; then
   # Its screen was put back as it was saved: nothing to repaint, and its pty
-  # kept the size it had, its own.
-  print "ok    wide was given its own width (kept it: its screen came back as saved)"
+  # kept the size it had, its own. Only if the log says so: given nothing
+  # without a saved screen is the bug of 2026-11-19.
+  if [[ $restored -ge 1 ]]; then
+    print "ok    wide was given its own width (kept it: its screen came back as saved)"
+  else
+    print "WRONG wide was given no size at all, and its screen was not put back"; failures=1
+  fi
 elif print -- "$after" | tr ' ' '\n' | grep -q -x "$narrow"; then
   print "WRONG wide was given the narrow session's width"; failures=1
 elif [[ $last != $wide ]]; then

@@ -469,6 +469,8 @@ final class GhosttyRuntime {
             ? SavedScreens.take(for: session, dark: Self.systemIsDark) : nil
         let savedScreen = attachment.replay.starts(with: ReplayBuffer.resync) ? nil : saved
         if let savedScreen {
+            // Taken back below if the surface is not made: it would hold the
+            // view's own size off for good (`viewDidChangeBackingProperties`).
             view.restoreSize = (savedScreen.meta.width, savedScreen.meta.height)
             SavedScreens.log.notice("""
                 \(session.uuidString, privacy: .public): its screen comes back as it was saved, \
@@ -480,6 +482,7 @@ final class GhosttyRuntime {
 
         guard let surface = ghostty_surface_new(app, &cfg) else {
             NSLog("wortel: host-managed surface could not be created")
+            view.restoreSize = nil
             return nil
         }
 
@@ -543,6 +546,7 @@ final class GhosttyRuntime {
         // survived: a fresh shell's few bytes were written a moment ago, and
         // whatever it asked it is still waiting on.
         let screen = savedScreen?.screen
+        let savedGrid = savedScreen.map { (columns: $0.meta.columns, rows: $0.meta.rows) }
         let muteAnswers = resumed && (!replay.isEmpty || screen != nil)
         // What the program drew while nobody was attached is drawn for its
         // pty's size, and an agent draws in place: written into the 45
@@ -558,15 +562,30 @@ final class GhosttyRuntime {
                     NSLog("wortel: %@ replayed before its terminal took its size", session.uuidString)
                 }
             }
-            // The saved screen first, then what came after it. Only the
-            // keeper's part is read for modes: the saved screen is the
-            // terminal's own dump of itself, which the record already has.
+            // The saved screen only at the grid it was saved at: a different
+            // scale or font size makes another of the same pixels, and the
+            // screen's cursor and what the program drew after it would land
+            // in the wrong cells. Then the old way: the replay, and a repaint.
+            var screen = screen
+            if let savedGrid, let grid = SurfaceView.actualGrid(of: surface),
+               grid.columns != savedGrid.columns || grid.rows != savedGrid.rows {
+                SavedScreens.log.notice("""
+                    \(session.uuidString, privacy: .public): saved at \(savedGrid.columns)x\(savedGrid.rows), \
+                    the terminal is \(grid.columns)x\(grid.rows); not used
+                    """)
+                screen = nil
+            }
+            // The saved screen first, then what came after it. It brings the
+            // modes it was saved in, in front of it, as a wake does; the
+            // record's are for a terminal starting empty. Only the keeper's
+            // part is read for modes: the rest is the terminal's own dump.
             if screen != nil { TerminalModeRecorder.shared.feed(session: session, replay: replay) }
-            Self.restore(surface: surface, pty: pty, session: session, prelude: prelude,
+            Self.restore(surface: surface, pty: pty, session: session, prelude: screen == nil ? prelude : [],
                          replay: (screen ?? Data()) + replay, recordReplay: screen == nil,
                          muteAnswers: muteAnswers,
                          colorScheme: resumed ? (dark: dark, agent: agent) : nil,
                          status: status)
+            if savedGrid != nil, screen == nil { pty.repaintNow() }
             // Last, so the shell's prompt and whatever preceded it are on
             // screen before the command appears under them. See `newSurface`.
             if let resumeAgain {

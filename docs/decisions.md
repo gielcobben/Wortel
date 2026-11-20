@@ -360,6 +360,23 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the relaunch, its conversation once, its pty untouched; saved in the other
   appearance, not used, and repainted the old way. Saving five screens at
   quit took 8 ms.
+  **After its review, the same day:** the save is a hibernation, not a dump
+  of its own. At quit every session's terminal is put to sleep the way one
+  out of sight is (`hibernateForQuit`, shown or not), and what is saved is
+  that sleep: the modes it was in, its screen with palette colours kept as
+  the palette's (a dump of its own wrote them as fixed colours, so restored
+  text stayed in the theme of the day), and what it missed. Nothing waits on
+  the main thread, which the terminals' own work needs (the 2026-10-07
+  deadlock): the quit is answered later, looks every 10 ms, and gives up
+  after 1.5 s on what is not done, which then comes back the old way
+  (`SavedScreens.saveAll`). At launch the screen is used only at the grid it
+  was saved at (a different display scale or font size makes another grid
+  of the same pixels), else the old way with a repaint. Files of sessions
+  still there are kept until their terminal is made; only those of sessions
+  gone are deleted. `try-relaunch-size.sh` checks a palette colour is saved
+  as the palette's, and that a hidden session given no size had its screen
+  put back (the log says so), not just nothing. A saved grid changed by hand
+  to 999 columns: refused, repainted. Saving five screens took 25 ms.
 - **2026-11-20. A terminal out of sight follows its window, once a resize
   ends.** It kept its size while hidden, so what its agent printed after a
   window resize was laid out for a width it would never be shown at, and
@@ -371,7 +388,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   that is the size it will be shown at. One SIGWINCH a window resize, none
   for a switch. `macos/scripts/try-hidden-resize.sh`: two drags of 20 steps,
   and the hidden session was given one size after each, after the drag, the
-  same as the shown one. **Not covered:** a terminal made at launch and not
+  same as the shown one. Its view keeps that size, so a change of display
+  or scale passes on the followed size, not the old one. **Not covered:** a terminal made at launch and not
   shown since is not in the window and does not follow; it is told its own
   last size when it is made.
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal

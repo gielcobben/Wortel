@@ -271,40 +271,29 @@ final class KeeperTests: XCTestCase {
 
     // MARK: - Ending for a resume
 
-    /// A stand-in for an interactive zsh, in the shape that matters: a
-    /// process group of its own (so a hangup sent to `login`'s group misses
-    /// it, and it outlives `login`), the agent as the foreground job in
-    /// another, the agent's marker written as the shell integration writes it
-    /// (`shellpid=` its own pid), and, a moment after the agent ends, its last
-    /// prompt: the marker removed, its history saved (`cleaned`). A hangup
-    /// sent to it ends it, as it ends zsh, with no prompt. The agent prints
-    /// its pid. Always under `login`, as every session runs: it is `login`
-    /// that is the session leader and gets the hangup.
+    /// An interactive zsh (`-i`: it takes the terminal and runs jobs in groups
+    /// of their own, as only an interactive one does) with no startup files
+    /// (`-f`, so no history file at all), in the shape that matters: a process
+    /// group of its own, so a hangup sent to `login`'s group misses it and it
+    /// outlives `login`; the agent as its foreground job; the agent's marker
+    /// written as the shell integration writes it (`shellpid=` its own pid);
+    /// and, a moment after the agent ends, what its last prompt does: the
+    /// marker removed, its history saved (`cleaned`). The agent prints its
+    /// pid. Under `login`, as every session runs.
     private static let standInShell = #"""
-        use strict; use POSIX qw(setpgid tcsetpgrp);
-        my ($marker, $cleaned) = @ARGV;
-        $SIG{TTOU} = 'IGNORE'; $SIG{TTIN} = 'IGNORE';
-        setpgid(0, 0);
-        open(my $tty, "+<", "/dev/tty") or die "no tty";
-        my $agent = fork();
-        if ($agent == 0) { setpgid(0, 0); exec("/bin/sleep", "60"); }
-        setpgid($agent, $agent);
-        tcsetpgrp(fileno($tty), $agent);
-        open(my $m, ">", $marker); print $m "agent=claude\nargv=claude\nshellpid=$$\n"; close $m;
-        $| = 1; print "AGENT-$agent\n";
-        1 while waitpid($agent, 0) == -1 && $!{EINTR};
-        select(undef, undef, undef, 0.3);
-        unlink $marker;
-        open(my $c, ">", $cleaned); print $c "cleaned\n"; close $c;
-        exit 0;
+        print -r -- "agent=claude"$'\n'"argv=claude"$'\n'"shellpid=$$" > $1
+        sh -c 'echo AGENT-$$; exec sleep 60'
+        sleep 0.3
+        rm -f $1
+        print cleaned > $2
         """#
 
     private func shellWithAgent(marker: URL, cleaned: String, in dir: URL) throws -> KeeperSpawnPlan {
-        let script = dir.appendingPathComponent("shell.pl")
+        let script = dir.appendingPathComponent("shell.zsh")
         try Data(Self.standInShell.utf8).write(to: script)
-        let shell = ["/usr/bin/perl", script.path, marker.path, cleaned]
         return KeeperSpawnPlan(
-            executable: "/usr/bin/login", arguments: ["-flp", NSUserName()] + shell,
+            executable: "/usr/bin/login",
+            arguments: ["-flp", NSUserName(), "/bin/zsh", "-f", "-i", script.path, marker.path, cleaned],
             environment: ["PATH": "/usr/bin:/bin", "TERM": "xterm-ghostty"],
             workingDirectory: nil, initialInput: nil)
     }
@@ -391,6 +380,27 @@ final class KeeperTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: dir.appendingPathComponent(rewritten)), Data("new".utf8))
         let left = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
         XCTAssertEqual(left, [gone, rewritten, "exits.log"].sorted(), "a staging file was left behind")
+    }
+
+    /// A stale marker's `shellpid=` can be someone else's process by now: one
+    /// of this user's that is no shell (here, this test), or root's, which
+    /// `kill` answers with EPERM. Neither is waited for: only a shell runs a
+    /// last prompt. Waiting on them cost the whole patience at every launch
+    /// that replaced a keeper (review, 2026-11-20).
+    func testOnlyShellsAreWaitedFor() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("hold-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let me = ProcessInfo.processInfo.processIdentifier
+        for pid in [me, 1] {
+            try Data("agent=claude\nshellpid=\(pid)\n".utf8).write(to: dir.appendingPathComponent(UUID().uuidString))
+        }
+        let hold = AgentMarkerHold(in: dir)
+        XCTAssertEqual(hold.count, 2)
+        let started = Date()
+        XCTAssertEqual(hold.waitForShells(patience: 5), 0)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
     }
 
     /// Where the hold looks is where the shell integration writes and the

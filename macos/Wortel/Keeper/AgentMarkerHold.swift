@@ -67,12 +67,28 @@ struct AgentMarkerHold {
         var waiting = shells
         let deadline = Date().addingTimeInterval(patience)
         while !waiting.isEmpty {
-            waiting.removeAll { kill($0, 0) != 0 && errno == ESRCH }
+            waiting.removeAll { !Self.isLiveShell($0) }
             guard !waiting.isEmpty, Date() < deadline else { break }
             usleep(20_000)
         }
         return waiting.count
     }
+
+    /// Whether `pid` is a shell of this user's that is still running. A stale
+    /// marker's pid can be anyone's by now: another of this user's processes,
+    /// or root's (`kill` then says EPERM), and neither runs a last prompt.
+    /// Waiting on one cost the whole patience (review, 2026-11-20).
+    static func isLiveShell(_ pid: pid_t) -> Bool {
+        guard kill(pid, 0) == 0 else { return false }
+        var name = [CChar](repeating: 0, count: 64)
+        guard proc_name(pid, &name, UInt32(name.count)) > 0 else { return false }
+        return shellNames.contains(String(cString: name))
+    }
+
+    /// What a shell the integration runs in is called (`p_comm`, which says
+    /// `zsh` for a login `-zsh`). As `ProcessTable.isShell`, which the keeper
+    /// does not have.
+    private static let shellNames: Set<String> = ["zsh", "bash", "fish", "sh", "dash", "ksh", "mksh", "tcsh", "csh"]
 
     /// Put back each marker that is gone, as it was. Never over one that is
     /// there: a marker written since is newer than this one. Written beside

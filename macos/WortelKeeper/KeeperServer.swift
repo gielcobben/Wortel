@@ -197,14 +197,21 @@ final class KeeperServer: @unchecked Sendable {
         }
     }
 
-    func stop() {
+    /// Stop, ending every session. `endingShellsForResume`: the keeper is
+    /// ending on a signal (an update replacing it, a logout), not because
+    /// anyone closed these sessions, so their agents are to be resumed
+    /// (`PtyHost.endShellForResume`). Otherwise each is hung up, as a session
+    /// someone closed is.
+    func stop(endingShellsForResume: Bool = false) {
         compression?.cancel()
         compression = nil
         listener?.cancel()
         listener = nil
         descriptor = -1
         state.sync {
-            for session in sessions.values { session.pty.stop() }
+            for session in sessions.values {
+                if endingShellsForResume { session.pty.endForResume() } else { session.pty.stop() }
+            }
             sessions = [:]
         }
         try? FileManager.default.removeItem(atPath: path)

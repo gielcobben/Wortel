@@ -80,7 +80,8 @@ for terminating in [SIGTERM, SIGINT] {
             keeper \(getpid(), privacy: .public) ending on signal \(terminating, privacy: .public), \
             closing \(server.sessionCount, privacy: .public) sessions
             """)
-        server.stop()
+        // Nobody closed these sessions: their agents are owed a resume.
+        server.stop(endingShellsForResume: true)
         exit(0)
     }
     source.resume()

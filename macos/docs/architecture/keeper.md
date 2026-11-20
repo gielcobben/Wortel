@@ -88,6 +88,16 @@ and whatever sequence the program was in the middle of.
   the same protocol: a stale binary is never worth a live shell. One that speaks
   another protocol is replaced, which ends its shells. Protocol 2 (2026-11)
   replaced every protocol 1 keeper once, at that update.
+- **A keeper ending on a signal kills each shell outright; closing a session
+  hangs it up.** A hung-up agent ends cleanly, and its shell then reaches one
+  more prompt, whose hook removes the agent's marker: to the next launch that
+  is an agent the person quit, owed nothing. So on SIGTERM or SIGINT (an
+  update replacing it, a logout) each shell is sent SIGKILL first, then
+  `login`, and the agent, hung up by its terminal, still ends and saves its
+  conversation (`PtyHost.endShellForResume`). The app does the same to an
+  older keeper's shells before it replaces one, because that keeper only
+  knows how to hang up. Before this, the protocol 2 update lost every running
+  agent (four of four, 2026-11-20).
 - **The signal sources in `main.swift` are kept in an array.** Release them and
   the process ignores every signal short of SIGKILL.
 

@@ -269,6 +269,72 @@ final class KeeperTests: XCTestCase {
         XCTAssertEqual(server?.sessionCount, 0)
     }
 
+    // MARK: - Ending for a resume
+
+    /// A stand-in shell: it handles the hangup rather than dying of it, as
+    /// an interactive shell waiting on a job does, runs an "agent" that does
+    /// die of it, and once that ends writes `cleaned` to `file`, as zsh's
+    /// prompt hook removes the agent's marker. The agent prints its pid. (A
+    /// handler, not `trap ''`: an ignored signal is inherited and cannot be
+    /// undone in a child, so the agent would ignore it too.)
+    private func shellWithAgent(writing file: String, underLogin: Bool) -> KeeperSpawnPlan {
+        let script = "trap 'true' HUP; sh -c 'echo AGENT-$$; exec sleep 60'; echo cleaned > '\(file)'; sleep 5"
+        guard underLogin else { return plan(script) }
+        return KeeperSpawnPlan(
+            executable: "/usr/bin/login", arguments: ["-flp", NSUserName(), "/bin/sh", "-c", script],
+            environment: ["PATH": "/usr/bin:/bin", "TERM": "xterm-ghostty"],
+            workingDirectory: nil, initialInput: nil)
+    }
+
+    /// What a keeper ending leaves behind: whether the shell got to clean up
+    /// after its agent, and whether the agent ended too.
+    private func endKeeper(forResume: Bool, underLogin: Bool) throws -> (cleaned: Bool, agentEnded: Bool) {
+        let server = try startServer()
+        let client = try connect()
+        let file = NSTemporaryDirectory() + "cleaned-\(UInt32.random(in: 0..<0xFFFF_FFFF))"
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let opened = try XCTUnwrap(try terminal(client, "s", shellWithAgent(writing: file, underLogin: underLogin)))
+        let said = read(opened.channel, until: "AGENT-")
+        let agent = try XCTUnwrap(said.range(of: #"AGENT-(\d+)"#, options: .regularExpression)
+            .flatMap { pid_t(said[$0].dropFirst(6)) }, said)
+        usleep(200_000)
+        if forResume { server.stop(endingShellsForResume: true) } else { server.stop() }
+        self.server = nil
+        var agentAlive = true
+        for _ in 0..<30 where agentAlive {
+            usleep(100_000)
+            agentAlive = kill(agent, 0) == 0
+        }
+        usleep(500_000) // time for a shell that survived to write
+        return (FileManager.default.fileExists(atPath: file), !agentAlive)
+    }
+
+    /// The control: a session closed politely hangs up, its agent ends, and
+    /// its shell lives to tidy up after it, the marker included. Right for a
+    /// session someone closed, and what lost every agent at an update.
+    func testAPoliteStopLetsTheShellCleanUpAfterItsAgent() throws {
+        let ended = try endKeeper(forResume: false, underLogin: false)
+        XCTAssertTrue(ended.agentEnded)
+        XCTAssertTrue(ended.cleaned, "the stand-in shell never cleaned up; this test proves nothing")
+    }
+
+    /// A keeper ending on a signal (an update replacing it, a logout) ends
+    /// each shell before it can reach a prompt, so the agent's marker stays
+    /// and the agent is resumed; the agent itself still hangs up and ends.
+    func testEndingForAResumeLeavesTheShellNoChanceToCleanUp() throws {
+        let ended = try endKeeper(forResume: true, underLogin: false)
+        XCTAssertTrue(ended.agentEnded, "the agent outlived its keeper")
+        XCTAssertFalse(ended.cleaned, "the shell cleaned up: its agent's marker would be gone")
+    }
+
+    /// The same under `/usr/bin/login`, which is how every session runs: the
+    /// shell is login's child, and it is the shell that has to go first.
+    func testEndingForAResumeUnderLogin() throws {
+        let ended = try endKeeper(forResume: true, underLogin: true)
+        XCTAssertTrue(ended.agentEnded, "the agent outlived its keeper")
+        XCTAssertFalse(ended.cleaned, "the shell under login cleaned up: its agent's marker would be gone")
+    }
+
     /// A keeper already listening must not be displaced by a second one: that
     /// would orphan every shell the first is holding.
     func testASecondKeeperWillNotTakeTheSocket() throws {

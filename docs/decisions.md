@@ -1098,6 +1098,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `program_status` callback is set. Its reply lists the states and kinds
   rather than the bare `?` Wortel sent; the lists are the same ones. A side
   effect: an agent started while Wortel is closed is answered too.
+- **2026-11-20. A keeper that ends on a signal kills its shells; one replaced
+  by the app has its shells killed by the app first.** The protocol 2 update
+  resumed none of the agents that were running: four of four lost in a copy
+  going from 2026.47.2 to this build, and seven sessions on a real machine.
+  The old keeper hung its shells up, each agent ended cleanly, its shell
+  reached a prompt, and the prompt hook removed the agent's marker, as when
+  the person quits it. A second cause in the same place: a busy agent took
+  two seconds to end, and the app, restoring meanwhile, saw it running and
+  owed it nothing. With the shell killed first, the marker stays, and an agent
+  whose shell is dead counts as gone however long it takes to exit. Closing
+  one session still hangs it up: that is the person's choice, and nothing is
+  owed. Verified with four real Claude Codes across the update and across a
+  keeper stopped while the app was closed: four of four resumed both times.
 - **2026-10-07. Tried and dropped, twice: moving the keeper out of the app's
   reach.** As a launchd agent, then as a background-only helper app. The Dock
   still offered "Stop Running in Background" both times. Real separation needs

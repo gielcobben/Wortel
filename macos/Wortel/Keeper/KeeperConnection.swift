@@ -185,6 +185,13 @@ final class KeeperConnection {
         let pid = client.peerProcessID()
         client.disconnect()
         if let pid, pid > 1 {
+            // Its shells first, so their agents are resumed: a keeper of
+            // another protocol is an older build, which only hangs them up,
+            // and a hung-up agent's shell removes its marker on the way out
+            // (`PtyHost.endShellForResume`). Its children are its sessions.
+            for session in PtyHost.childProcesses(of: pid) {
+                PtyHost.endShellForResume(sessionProcess: session)
+            }
             kill(pid, SIGTERM)
             for _ in 0..<50 where kill(pid, 0) == 0 { usleep(20_000) }
             if kill(pid, 0) == 0 { kill(pid, SIGKILL) }

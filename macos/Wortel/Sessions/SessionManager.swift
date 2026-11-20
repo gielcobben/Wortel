@@ -1223,7 +1223,7 @@ final class SessionManager {
             // was already checked when this was recorded at quit.
             AgentMarker(agent: $0, model: entry.runningModel,
                         cwd: entry.cwd, argv: entry.runningArgv,
-                        shellPID: nil, startedAt: entry.runningStartedAt)
+                        shellPID: nil, startedAt: nil)
         }
         // Where to resume, best evidence first (`AgentConversation.resumePoint`).
         // What the agent said it was in: from its process if it is still

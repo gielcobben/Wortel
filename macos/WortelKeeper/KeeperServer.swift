@@ -60,6 +60,8 @@ final class KeeperServer: @unchecked Sendable {
     }
 
     private let path: String
+    /// The shell integration's agent markers (`AgentMarkerHold`).
+    private let agentMarkers: URL
     private let replayLimit: Int
     /// Which keeper this is, for `ping`. See `KeeperResponse.build`.
     private let executable: String?
@@ -97,8 +99,10 @@ final class KeeperServer: @unchecked Sendable {
     /// running keeper, and reading it later would report the new build for a
     /// process still running the old one.
     init(path: String = Keeper.socketPath, replayLimit: Int = Keeper.replayLimit,
-         executable: String? = Bundle.main.executableURL?.resolvingSymlinksInPath().path) {
+         executable: String? = Bundle.main.executableURL?.resolvingSymlinksInPath().path,
+         agentMarkers: URL = AgentMarkerHold.directory) {
         self.path = path
+        self.agentMarkers = agentMarkers
         self.replayLimit = replayLimit
         self.executable = executable
         self.build = executable.flatMap(Self.build(ofExecutable:))
@@ -197,22 +201,33 @@ final class KeeperServer: @unchecked Sendable {
         }
     }
 
-    /// Stop, ending every session. `endingShellsForResume`: the keeper is
-    /// ending on a signal (an update replacing it, a logout), not because
-    /// anyone closed these sessions, so their agents are to be resumed
-    /// (`PtyHost.endShellForResume`). Otherwise each is hung up, as a session
-    /// someone closed is.
+    /// Stop, ending every session: each is hung up, as a session someone
+    /// closed is. `endingShellsForResume`: the keeper is ending on a signal
+    /// (an update replacing it, a logout), not because anyone closed these
+    /// sessions, so their agents are to be resumed. Their markers are held
+    /// aside first and put back once the shells have ended (`AgentMarkerHold`),
+    /// which means waiting for them, `Keeper.shellPatience` at most.
     func stop(endingShellsForResume: Bool = false) {
         compression?.cancel()
         compression = nil
         listener?.cancel()
         listener = nil
         descriptor = -1
-        state.sync {
-            for session in sessions.values {
-                if endingShellsForResume { session.pty.endForResume() } else { session.pty.stop() }
-            }
+        let hold = endingShellsForResume ? AgentMarkerHold(in: agentMarkers) : nil
+        let ended: [PtyHost] = state.sync {
+            let ptys = sessions.values.map(\.pty)
+            ptys.forEach { $0.stop() }
             sessions = [:]
+            return ptys
+        }
+        if let hold, hold.count > 0 {
+            // Their last prompts run before they end; a marker put back
+            // before that would be removed again. `stop` sends SIGKILL after
+            // its own two seconds to whatever ignores the hangup.
+            let deadline = Date().addingTimeInterval(Keeper.shellPatience)
+            while Date() < deadline, ended.contains(where: { !$0.hasExited }) { usleep(20_000) }
+            let restored = hold.restore()
+            KeeperLog.log.notice("kept \(restored, privacy: .public) agents to be resumed")
         }
         try? FileManager.default.removeItem(atPath: path)
     }

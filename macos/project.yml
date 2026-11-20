@@ -336,6 +336,7 @@ targets:
       # by design, so a mismatch here is not hypothetical.
       - path: Wortel/Keeper/KeeperProtocol.swift
       - path: Wortel/Keeper/OutputTail.swift
+      - path: Wortel/Keeper/AgentMarkerHold.swift
       - path: Wortel/Keeper/FileDescriptorChannel.swift
       - path: Wortel/Ghostty/PtyHost.swift
       - path: Wortel/CLI/WortelCommand.swift
@@ -655,6 +656,7 @@ targets:
       - path: WortelKeeper/KeeperOutputChannel.swift
       - path: Wortel/Keeper/KeeperChannelReader.swift
       - path: Wortel/Keeper/OutputTail.swift
+      - path: Wortel/Keeper/AgentMarkerHold.swift
       - path: Wortel/Ghostty/TerminalTheme.swift
       - path: Wortel/Keeper/KeeperClient.swift
       - path: Wortel/Keeper/KeeperConnection.swift

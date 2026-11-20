@@ -270,6 +270,38 @@ final class AgentResumeStoreTests: XCTestCase {
         XCTAssertEqual(pid, agent.processIdentifier, "a helper under the agent was taken for it")
     }
 
+    /// A wrapper that stays as Claude's parent (`caffeinate -i claude`, `npx
+    /// @anthropic-ai/claude-code`) names it too, and is nearer the shell. Of
+    /// a wrapper, the agent and its helper, the one that is the agent wins
+    /// (`isTheAgent`: for Claude, the one with its own process file); with
+    /// nothing to tell them apart, the nearest.
+    func testLocateTakesTheAgentBetweenAWrapperAndAHelper() throws {
+        let wrapper = Process()
+        wrapper.executableURL = URL(fileURLWithPath: "/bin/sh")
+        wrapper.arguments = ["-c", "sh -c \"sh -c 'sleep 30; true' wortel-liveness-probe; true\" wortel-liveness-probe; true",
+                             "wortel-liveness-probe"]
+        try wrapper.run()
+        defer { wrapper.terminate() }
+        let me = ProcessInfo.processInfo.processIdentifier
+        var table: [ProcessEntry] = []
+        var agent: pid_t?
+        for _ in 0..<40 {
+            table = ProcessTable.snapshot()
+            agent = table.first { $0.ppid == wrapper.processIdentifier }?.pid
+            if let agent, table.contains(where: { $0.ppid == agent }) { break }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        let theAgent = try XCTUnwrap(agent, "the agent never started")
+        guard case .running(let chosen) = AgentLiveness.locate(
+            agent: "wortel-liveness-probe", shellPID: me, table: table, isTheAgent: { $0 == theAgent })
+        else { return XCTFail("not located") }
+        XCTAssertEqual(chosen, theAgent, "the wrapper or the helper was taken for the agent")
+        guard case .running(let nearest) = AgentLiveness.locate(
+            agent: "wortel-liveness-probe", shellPID: me, table: table, isTheAgent: { _ in false })
+        else { return XCTFail("not located") }
+        XCTAssertEqual(nearest, wrapper.processIdentifier, "with nothing to tell them apart, the nearest")
+    }
+
     /// What counts as the agent inside an argument: a path component that is the
     /// name, or a package/file named after it. Never a substring — `pi` inside
     /// `pipx` or `api` is not Pi.

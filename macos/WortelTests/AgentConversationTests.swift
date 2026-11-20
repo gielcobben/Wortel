@@ -311,6 +311,11 @@ final class AgentConversationTests: XCTestCase {
         XCTAssertEqual(AgentResumeStore.resumeInput(for: marker("claude"), at: .fresh), "claude\n")
         XCTAssertEqual(AgentResumeStore.resumeInput(for: marker("claude", argv: "claude; rm -rf build"), at: .fresh),
                        "claude; rm -rf build")
+        // A new conversation: "continue the latest" would be someone else's.
+        XCTAssertEqual(AgentResumeStore.resumeInput(for: marker("claude", argv: "claude -c"), at: .fresh), "claude\n")
+        XCTAssertEqual(AgentResumeStore.resumeInput(for: marker("claude", argv: "claude --resume"), at: .fresh), "claude\n")
+        XCTAssertEqual(AgentResumeStore.resumeInput(
+            for: marker("claude", argv: "claude --resume \(a) --model haiku"), at: .fresh), "claude --model haiku\n")
         XCTAssertEqual(AgentResumeStore.resumeInput(for: marker("claude", argv: "claude"), at: .unknown),
                        AgentResumeStore.resumeInput(for: marker("claude", argv: "claude"), knownConversationID: nil))
     }

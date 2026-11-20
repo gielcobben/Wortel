@@ -650,52 +650,8 @@ final class PtyHost: @unchecked Sendable {
         }
     }
 
-    /// End the session so that the agent in it is **resumed**, not taken for
-    /// one the person quit: for a keeper ending on a signal (`KeeperServer
-    /// .stop(endingShellsForResume:)`). See `endShellForResume`.
-    func endForResume() {
-        takeReader()?.cancel()
-        closeTyping()
-        guard ownsProcess, pid > 0 else { return }
-        let target = pid
-        // Under the lock, as `signalGroup` is: never a pid already reaped.
-        shared.withLock { state in
-            guard !state.hasExited else { return }
-            Self.endShellForResume(sessionProcess: target)
-        }
-    }
-
-    /// End the shell of a session whose process is `pid` (the child the
-    /// keeper forked: `/usr/bin/login`, with the shell under it, or the shell
-    /// itself) with SIGKILL, shell first, then `login`.
-    ///
-    /// **Why not a hangup.** An agent hung up ends cleanly, and its shell then
-    /// reaches one more prompt, whose hook removes the agent's marker: the
-    /// same as an agent the person quit, so nothing is owed a resume. That
-    /// lost every running agent at the protocol 2 update (2026-11-20, four of
-    /// four in `try-update-restart.sh`). A shell killed first never gets to that
-    /// prompt. The agent is not signalled here: with its session leader gone
-    /// the terminal hangs up and it ends on its own, saving its conversation.
-    ///
-    /// Static, for the app too: it ends an older keeper's shells this way
-    /// before replacing it (`KeeperConnection.replaceKeeper`), since that
-    /// keeper only knows how to hang up.
-    static func endShellForResume(sessionProcess pid: pid_t) {
-        guard pid > 1 else { return }
-        var path = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-        if proc_pidpath(pid, &path, UInt32(path.count)) > 0,
-           String(cString: path) == "/usr/bin/login" {
-            for shell in childProcesses(of: pid) { kill(shell, SIGKILL) }
-        }
-        kill(pid, SIGKILL)
-    }
-
-    /// The direct children of `pid`, as the kernel lists them.
-    static func childProcesses(of pid: pid_t) -> [pid_t] {
-        var children = [pid_t](repeating: 0, count: 256)
-        let count = proc_listchildpids(pid, &children, Int32(children.count * MemoryLayout<pid_t>.size))
-        return count > 0 ? Array(children.prefix(Int(count))).filter { $0 > 1 } : []
-    }
+    /// Whether the child has exited and been collected.
+    var hasExited: Bool { shared.withLock { $0.hasExited } }
 
     /// Let go of the pty without ending the session — the app detaching. The
     /// descriptor is closed (ours was a `dup`; the keeper still holds one) and

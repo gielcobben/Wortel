@@ -77,8 +77,16 @@ enum AgentLiveness {
         case unknown
     }
 
+    /// `isTheAgent`: of several matches, which is the agent itself. By
+    /// default, for Claude, the one with its own process file
+    /// (`~/.claude/sessions/<pid>.json`), which is what the pid is wanted
+    /// for. Neither what Claude runs (its helpers are its own binary,
+    /// `…/claude/versions/2.1.329`, so they name `claude` too) nor what runs
+    /// Claude (`caffeinate -i claude`, `npx @anthropic-ai/claude-code`) has
+    /// one. For other agents, nothing reads the pid's files.
     static func locate(agent: String, shellPID: pid_t?,
-                       table: [ProcessEntry]? = nil) -> Located {
+                       table: [ProcessEntry]? = nil,
+                       isTheAgent: ((pid_t) -> Bool)? = nil) -> Located {
         guard let shellPID else { return .unknown }
         let table = table ?? ProcessTable.snapshot()
         guard !table.isEmpty else { return .unknown }  // couldn't read — no claim
@@ -89,32 +97,47 @@ enum AgentLiveness {
         // The shell itself is gone, so nothing can still be running under it.
         guard parentOf[shellPID] != nil else { return .gone }
 
-        // **The match nearest the shell**, in both passes. The agent is the
-        // shell's child (or a shim's), and what it runs is further down:
-        // Claude Code runs its helpers (its grep) as its own binary, whose
-        // path names `claude` too. Taking the first match in the table took a
-        // helper whenever one was running, which is during a turn, which is
-        // when the conversation is read; a helper has no process file, so the
-        // conversation went unread (2026-11-20).
-        func depth(of pid: pid_t) -> Int? {
-            ProcessTable.depth(of: pid, below: shellPID, parentOf: parentOf)
+        // **Nearest the shell first**, in both passes, and of several matches
+        // the agent itself (`isTheAgent`), else the nearest. Taking the first
+        // match in the table, which lists the newest first, took one of
+        // Claude's helpers whenever one was running: during a turn, which is
+        // when the conversation is read. A helper has no process file, so the
+        // conversation went unread (2026-11-20). Nearest alone then took a
+        // wrapper above Claude, which has none either.
+        let isTheAgent = isTheAgent ?? (agent == "claude"
+            ? { AgentResumeStore.claudeConversationID(pid: $0) != nil } : nil)
+        var nearest: pid_t?
+        /// The answer, if `pid` settles it; else it is remembered as a match.
+        func settles(_ pid: pid_t) -> Located? {
+            guard let isTheAgent else { return .running(pid) }
+            if isTheAgent(pid) { return .running(pid) }
+            if nearest == nil { nearest = pid }
+            return nil
         }
+        let descendants = table
+            .compactMap { entry in
+                ProcessTable.depth(of: entry.pid, below: shellPID, parentOf: parentOf).map { (entry: entry, depth: $0) }
+            }
+            .sorted { $0.depth < $1.depth }
+            .map(\.entry)
+
         let needle = String(agent.prefix(ProcessTable.maxCommandNameLength - 1))
-        let named = table
-            .filter { $0.name == agent || $0.name == needle }
-            .compactMap { entry in depth(of: entry.pid).map { (pid: entry.pid, depth: $0) } }
-            .min { $0.depth < $1.depth }
-        if let named { return .running(named.pid) }
+        var named: Set<pid_t> = []
+        for entry in descendants where entry.name == agent || entry.name == needle {
+            named.insert(entry.pid)
+            if let answer = settles(entry.pid) { return answer }
+        }
         // Not every agent is a process by its own name. Pi, Gemini and Amp are
         // node scripts, aider is a Python one, and a version-manager shim can put
         // a `sh` in between: `p_comm` then says `node` or `python3`, and the
         // agent is only visible in the arguments (`…/pi-coding-agent/dist/cli.js`,
-        // `…/bin/aider`). Reading arguments is a sysctl per process, so it is
-        // done only for the shell's own descendants, which is a handful at most,
-        // and only after the cheap name pass has failed. Before this pass, a
-        // marker for any script-based agent was swept as stale within a minute
-        // of launch, which took the sidebar badge, the resume, and the screen
-        // sampler's interest in the session with it.
+        // `…/bin/aider`). Native Claude Code is named after its version. Reading
+        // arguments is a sysctl per process, so it is done only for the shell's
+        // own descendants, which is a handful at most, and only after the cheap
+        // name pass has not settled it. Before this pass, a marker for any
+        // script-based agent was swept as stale within a minute of launch, which
+        // took the sidebar badge, the resume, and the screen sampler's interest
+        // in the session with it.
         //
         // A read that *fails* is not a process that doesn't match: `KERN_PROCARGS2`
         // probes for a size and then reads, and a live process can grow its argv
@@ -125,18 +148,17 @@ enum AgentLiveness {
         // back. So an unreadable descendant makes the whole answer `.unknown`,
         // which the caller already knows to treat as "still alive".
         var unreadable = false
-        let descendants = table
-            .compactMap { entry in depth(of: entry.pid).map { (pid: entry.pid, depth: $0) } }
-            .sorted { $0.depth < $1.depth }
-        for entry in descendants {
+        for entry in descendants where !named.contains(entry.pid) {
             guard let arguments = ProcessTable.argumentsIfReadable(of: entry.pid) else {
                 unreadable = true
                 continue
             }
-            if arguments.contains(where: { argumentNames(agent, $0) }) {
-                return .running(entry.pid)
+            if arguments.contains(where: { argumentNames(agent, $0) }),
+               let answer = settles(entry.pid) {
+                return answer
             }
         }
+        if let nearest { return .running(nearest) }
         return unreadable ? .unknown : .gone
     }
 
@@ -346,10 +368,14 @@ enum AgentResumeStore {
         case .conversation(let id): return resumeInput(for: marker, knownConversationID: id)
         case .unknown: return resumeInput(for: marker, knownConversationID: nil)
         case .fresh:
-            // Started again the way it was started: no conversation to name,
-            // and "continue the latest" would be someone else's.
-            let command = marker.argv ?? marker.agent
-            return AgentCommandLine.isSimple(command) ? command + "\n" : command
+            // Started again the way it was started, but as a new conversation:
+            // its own flags kept, any "continue" or "resume" in it dropped,
+            // since the latest would be someone else's. A command line that is
+            // more than one command is typed as it was and left at the prompt.
+            guard let argv = marker.argv, !AgentCommandLine.isSimple(argv) else {
+                return AgentCommandLine.command(agent: marker.agent, argv: marker.argv, resume: []) + "\n"
+            }
+            return argv
         }
     }
 

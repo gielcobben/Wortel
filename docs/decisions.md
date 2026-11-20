@@ -1099,7 +1099,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   rather than the bare `?` Wortel sent; the lists are the same ones. A side
   effect: an agent started while Wortel is closed is answered too.
 - **2026-11-20. A keeper that ends on a signal kills its shells; one replaced
-  by the app has its shells killed by the app first.** The protocol 2 update
+  by the app has its shells killed by the app first.** **Replaced the same day,
+  below:** a killed shell never saves its history. The protocol 2 update
   resumed none of the agents that were running: four of four lost in a copy
   going from 2026.47.2 to this build, and seven sessions on a real machine.
   The old keeper hung its shells up, each agent ended cleanly, its shell
@@ -1135,6 +1136,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   saved with the id Claude has before a conversation is picked, never
   written, and came back to the picker. Measured on the live session: the
   helper before, Claude itself and its conversation after.
+- **2026-11-20. Shells are hung up as always, and the agents' markers are put
+  back after.** Replaces killing the shells outright, which a review found
+  costs every session's command history at each update and logout (zsh and
+  bash write it as they exit; macOS's `/etc/zshrc` appends nothing before
+  that) and leaves background jobs running without their shell. Now the
+  keeper ending on a signal, and the app replacing an older keeper, read every
+  agent marker, end the shells the polite way, wait for them (3 s at most,
+  past the SIGKILL `PtyHost.stop` sends at two), and put back each marker a
+  last prompt removed, never over one that is there (`AgentMarkerHold`).
+  The same review, also fixed: of several processes naming Claude, the one
+  with its own process file is the agent, so a wrapper (`caffeinate -i
+  claude`) is passed over as a helper is; a fresh start drops `--continue`
+  and `--resume`; a session restored with no marker is not given the
+  start-time guess; a terminal still being restored is not dropped, and
+  closing one tells whoever waits on it.
 - **2026-10-07. Tried and dropped, twice: moving the keeper out of the app's
   reach.** As a launchd agent, then as a background-only helper app. The Dock
   still offered "Stop Running in Background" both times. Real separation needs

@@ -618,6 +618,14 @@ final class SurfaceView: NSView {
             ptyHost?.stop()
         }
         keeperSession = nil
+        // Whoever waits on a restore under way is told now: the terminal is
+        // gone, which `wortel read` answers as a session that has closed.
+        if isRestoring {
+            isRestoring = false
+            let waiting = restoreWaiters
+            restoreWaiters = []
+            waiting.forEach { $0() }
+        }
         let pty = ptyHost
         ptyHost = nil
         // Nothing more goes into the surface from the channel, from the next
@@ -939,7 +947,9 @@ final class SurfaceView: NSView {
     /// being read for the program's status; its screen is the keeper's, and
     /// comes back exactly when it is shown (`wakeKeptSurface`).
     private func dropKeptSurface() {
-        guard let old = surface, let pty = ptyHost, let feed = keptFeed, keptDrop == nil,
+        // Not one still being restored: what waits on its restore (`wortel
+        // read`, `wait`) would wait for a surface that is gone.
+        guard let old = surface, let pty = ptyHost, let feed = keptFeed, keptDrop == nil, !isRestoring,
               !processFinished, isHidden || superview == nil else { return }
         let fontSize = ghostty_surface_inherited_config(old, GHOSTTY_SURFACE_CONTEXT_WINDOW).font_size
         confirmCloseWhileHibernated = ghostty_surface_needs_confirm_quit(old)

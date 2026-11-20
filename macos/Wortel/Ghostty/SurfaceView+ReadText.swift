@@ -59,17 +59,20 @@ extension SurfaceView {
 
     /// Run `body` on the main thread once everything already handed to this
     /// terminal has reached its screen: on the pty's queue (`PtyHost.enqueue`),
-    /// behind what is being written into it. On the exec backend, which has
-    /// no such queue, at once.
+    /// behind what is being written into it, and after a woken surface has
+    /// been restored from the keeper's terminal (`afterRestore`). Until then
+    /// a woken surface is blank, and `wortel read` read it as that: the first
+    /// read of a dropped terminal came back empty and the second did not
+    /// (2026-11-20). On the exec backend, which has no such queue, at once.
     func afterPendingOutput(_ body: @escaping @MainActor () -> Void) {
         guard let pty = ptyHost else { return body() }
         pty.enqueue {
-            DispatchQueue.main.async { MainActor.assumeIsolated { body() } }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.afterRestore { body() } } }
         }
     }
 
     /// Run `body(true)` once a paste would reach the program as it should:
-    /// after the pending output, and after a woken surface has been restored
+    /// after the pending output, which includes a woken surface being restored
     /// from the keeper's terminal (`wake`). Before that, the surface does not
     /// yet know the program asked for bracketed paste, so a multi-line prompt
     /// would land as one submission per line.
@@ -84,7 +87,7 @@ extension SurfaceView {
         DispatchQueue.main.asyncAfter(deadline: .now() + patience) {
             MainActor.assumeIsolated { once.call(false) }
         }
-        afterPendingOutput { self.afterRestore { once.call(true) } }
+        afterPendingOutput { once.call(true) }
     }
 
     /// The first answer of the two that race, the deadline's or the ready one.

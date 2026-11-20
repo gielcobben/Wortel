@@ -88,8 +88,9 @@ private struct RepoView: View {
     /// Persisted height of the changes list; the diff fills the rest. Replaces
     /// VSplitView (whose divider position SwiftUI never exposes) so the split
     /// survives hide/show and relaunch. Clamped against the live container
-    /// height so the diff keeps a usable minimum. See DragDivider.
-    @AppStorage("git.listHeight") private var listHeightStore: Double = 200
+    /// height so the diff keeps a usable minimum. See DragDivider. Not
+    /// `@AppStorage`: see `StoredHeight`.
+    private let listHeightStore = StoredHeight.changesList
     private static let listMin: CGFloat = 80
     private static let diffMin: CGFloat = 120
 
@@ -103,8 +104,8 @@ private struct RepoView: View {
             GeometryReader { geo in
                 let maxList = max(Self.listMin, geo.size.height - Self.diffMin)
                 let listHeight = Binding(
-                    get: { min(max(CGFloat(listHeightStore), Self.listMin), maxList) },
-                    set: { listHeightStore = Double($0) }
+                    get: { min(max(CGFloat(listHeightStore.value), Self.listMin), maxList) },
+                    set: { listHeightStore.value = Double($0) }
                 )
                 VStack(spacing: 0) {
                     changesList

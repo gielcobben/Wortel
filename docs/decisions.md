@@ -196,9 +196,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   worktree being made, the attention ring) are a SwiftUI view on top that
   takes clicks only while a page is up. Same script: 0 of 72, the terminal
   in the same place to the point (221,0 438x660 with the column, 879x660
-  without), and the keyboard on it after a relaunch. It also took SwiftUI
-  out of every step of a resize: 5.0 to 3.8 ms a step with the column shut,
-  7.9 to 6.6 ms on the divider. **The side column followed the same day**
+  without), and the keyboard on it after a relaunch. What it saves a step
+  of a resize was only measured from a window that was partly covered, so
+  it is not given. **The side column followed the same day**
   (`SideColumnController`, built as the strip's `BottomPaneController`
   already was): its terminals were the last ones a SwiftUI view placed. It
   was never caught a layout behind (`try-switch.sh --side`, 0 of 72 before
@@ -207,25 +207,37 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   pane to no height: the page's hosting view was pinned to the column, and
   with a terminal in front the page is empty and asked for none. A hosting
   view that fills a pane takes `sizingOptions = []`.
-- **2026-11-19. A pane's SwiftUI page follows no safe area.** With the side
-  column open, a plain window resize cost 8.7 ms a step and with it shut
-  5.2, though the column's width was not changing (counted: 0 of 480
-  steps). A hosting view works out its safe area again whenever it moves in
-  the window and lays its whole content out for the answer, so the
-  source-control panel was laid out at every step for having been moved
-  three points. The answer was always nothing: read from a running copy,
-  every pane's page has insets of 0 on all four sides, because each sits
-  below its own row. So the four of them (the column's, the main area's,
-  the strip's, the pages over the terminal) take `safeAreaRegions = []`.
-  Same benchmark, old and new frame rule turn about: 8.7 to 5.4 ms a step
-  with the column open, and from about 110 steps in 240 over 8.3 ms to
-  about 8. A capture of the copy's window before and after is the same to
-  the pixel but for a status dot in the sidebar's footer. The sidebar's own
-  hosting views are left as they are: it runs under the title bar.
-  **Before that was found** the benchmark was squeezing the terminal below
-  the 320 points the column leaves it, so for 52 steps of a round it was
-  the column that gave, and the figure was partly the panel's layout; it
-  now leaves the terminal room.
+- **2026-11-19. A height kept in defaults is not `@AppStorage`.** With the
+  side column open, a plain window resize cost 8.4 ms a step against 4.7
+  with it shut, and about 110 steps in 240 ran over the 8.3 ms a frame
+  lasts, though the column's width was not changing (counted: 0 of 480
+  steps). Logging who asked the column's hosting view for layout named it:
+  `UserDefaultObserver.noteChange`, 57 times in a round. A view with an
+  `@AppStorage` property is told about every write to defaults, whatever the
+  key, and starts a transaction for each; AppKit writes to defaults at
+  every step of a resize (the window's frame and the split view's dividers
+  are both autosaved); and the source-control panel kept its list's height
+  that way. So the panel was laid out at every step for a value nobody was
+  changing. The two heights (the changes list, the history list) are now a
+  `StoredHeight`: one observable object each, written to defaults when
+  dragged. Same benchmark, old and new frame rule turn about, the window on
+  screen: 8.4 to 5.2 ms a step with the column open, and the divider 7.5 to
+  5.3. **Tried and dropped on the way, each measured:** `safeAreaRegions =
+  []` on the panes' hosting views (their insets are 0 on all sides, so it
+  cannot move anything, and it changes nothing: 7.4 and 8.0 against 7.5 and
+  7.9); setting the column's maximum width only when it would bite instead
+  of at every step (8.4 to 9.7 against 8.4 to 9.3).
+- **2026-11-19. A benchmark's window is on screen, or it is not a
+  measurement.** A window that is covered is cheaper: SwiftUI lays nothing
+  out for one nobody can see. The same build read 5.5 ms a step with the
+  copy's window behind another and 8 ms with it in front, minutes apart, and
+  most of a day's figures for this work had been taken from a copy behind
+  the windows of whoever was working: a change that did nothing looked like
+  3.5 ms a step, and went as far as a commit. `ResizeBench` now floats the
+  copy's window over everything, on every Space, for the seconds a round
+  takes, counts the steps it was on screen for, and a round seen for fewer
+  than all of them prints "NOT A MEASUREMENT". Every figure in the entries
+  around this one is from a window on screen; where one is not, it says.
 - **2026-11-19. A woken terminal is written into only once it has its
   size.** A new surface is 45 columns by 15 rows, libghostty's own, whatever
   it is told as it is made: libghostty gathers resizes for 25 ms and takes
@@ -291,14 +303,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   is in the same commit as the size. Under a drag it is paid at every step,
   and a step has 8.3 ms at 120 Hz. Measured with `macos/scripts/bench-resize.sh`
   (a Debug build resizing its own window 480 times at 120 Hz, the time the
-  run loop is awake per step, old and new turn about in one app): 7.4 ms a
-  step with the column shut and one step in ten too late; 12.7 ms dragging
-  the divider beside an open column, six in seven too late. Now a size that
-  follows another within 50 ms skips the frame and takes the renderer's own
-  a frame later, a frame of an older size stays up for 30 ms at most, and
-  the drag's last size is checked once it ends
-  (`SurfaceView.frameForNewSize`). Same benchmark: 5.0 ms and one step in
-  thirty with the column shut, 7.9 ms and two in five on the divider. The
+  run loop is awake per step, old and new turn about in one app, the window
+  on screen): with a frame at every step, 6.8 ms a step with the column shut
+  and one step in eight too late, 6.9 ms with it open, 7.3 ms dragging the
+  divider. Now a size that follows another within 50 ms skips the frame and
+  takes the renderer's own a frame later, a frame of an older size stays up
+  for 30 ms at most, and the drag's last size is checked once it ends
+  (`SurfaceView.frameForNewSize`). Same benchmark: 4.5 ms and one step in
+  eighty, 5.2 ms, 5.3 ms. A pane sliding open or shut, held at its size as
+  before, had 10 to 15 turns of the run loop over 8.3 ms and has 1.
+  The
   frame that was dropped rarely showed anything new: the terminal re-wraps
   on its own thread after it is told, so the frame in the same commit was
   mostly the old screen at the new size, which the layer shows anyway by

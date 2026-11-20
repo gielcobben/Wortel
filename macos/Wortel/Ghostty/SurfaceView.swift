@@ -650,9 +650,9 @@ final class SurfaceView: NSView {
     /// For one change of size that is the right trade: a session switch, a
     /// pane landing. Under a drag it is paid at every step. Measured over
     /// 480 steps of a window resize at 120 Hz (`scripts/bench-resize.sh`,
-    /// 2026-11-19), a step cost 7.4 ms with it and 5.0 without, and with a
-    /// pane open beside the terminal most steps took longer than the 8.3 ms
-    /// a frame lasts: the edge stood still.
+    /// 2026-11-19, the window on screen), a step cost 6.8 ms with it and 4.5
+    /// without, and one step in eight took longer than the 8.3 ms a frame
+    /// lasts, against one in eighty: the edge stood still.
     ///
     /// The frame it buys is rarely a new picture. The terminal re-wraps on
     /// its own thread after the size is told, so the frame drawn in the same

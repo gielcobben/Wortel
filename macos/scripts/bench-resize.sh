@@ -4,7 +4,11 @@
 #
 #   scripts/bench-resize.sh [path/to/Wortel.app] [--column] [--file] [--panes] [--compare] [--runs N] [--keep]
 #
-# Runs a copy beside yours, never your Wortel. A Debug build resizes its own
+# Runs a copy beside yours, never your Wortel. **Its window comes to the
+# front and floats there while a round runs**, a few seconds at a time: a
+# covered window is cheaper (SwiftUI lays nothing out for one nobody can
+# see), and a round that was not on screen at every step is marked as no
+# measurement. A Debug build resizes its own
 # window 480 times at 120 Hz when asked by a notification addressed to its pid
 # (`ResizeBench`): 3 points of width a step, then width and height together,
 # then (with --column) the divider between the terminal and the column.
@@ -149,7 +153,8 @@ if "faults" in result:
         r = result[name]
         print(f"run {sys.argv[3]} {result['mode']:6s} {name:8s} {r['slides']} slides: {r['turns']} turns, worst {r['worstMs']:6.2f} ms,"
               f" over 8.3 ms: {r['over']}, main thread busy a slide: mean {r['meanSlideMs']:6.2f} ms, most {r['busiestSlideMs']:6.2f} ms")
-    print(f"run {sys.argv[3]} {result['mode']:6s} terminal wrong after a slide: {len(result['faults'])}" + "".join("\n     " + f for f in result["faults"][:6]))
+    print(f"run {sys.argv[3]} {result['mode']:6s} terminal wrong after a slide: {len(result['faults'])}" + "".join("\n     " + f for f in result["faults"][:6])
+          + ("" if result.get("seenSlides") == 12 else f"   NOT A MEASUREMENT: on screen for {result.get('seenSlides')} of 12 slides"))
     sys.exit(0)
 signals = [line.split()[1:] for line in open(sys.argv[2]) if line.startswith("winch")]
 grids = sum(1 for a, b in zip([None] + signals, signals) if a is None or a[:2] != b[:2])
@@ -158,7 +163,8 @@ def cell(label, r):
     return f" | {label}: mean {r['meanMs']:5.2f} p95 {r['p95Ms']:5.2f} over {r['overBudget']:3d}/{r['steps']}"
 print(f"run {sys.argv[3]} {result.get('mode',''):6s}" + cell("width", result["widthOnly"])
       + cell("width+height", result["widthAndHeight"]) + cell("divider", result.get("divider"))
-      + f" | stale {result.get('staleFrames','?')} late {result.get('lateTerminal','?')} beside {result.get('besideResized','?')} winch {len(signals)}/{grids}")
+      + f" | stale {result.get('staleFrames','?')} late {result.get('lateTerminal','?')} beside {result.get('besideResized','?')} winch {len(signals)}/{grids}"
+      + ("" if result.get("seenSteps") == result.get("steps") else f"   NOT A MEASUREMENT: on screen for {result.get('seenSteps')} of {result.get('steps')} steps"))
 EOF
  done
 done

@@ -39,16 +39,6 @@ final class SideColumnController: NSViewController {
         // hosting view asks for no height at all: pinned to this view's
         // edges, that took the whole row of panes down to nothing.
         pageHost.sizingOptions = []
-        // And it has no safe area to follow. A hosting view works out its
-        // safe area again whenever it moves in the window, and lays its
-        // whole content out again for the answer: with the column open that
-        // was the source-control panel at every step of a window resize,
-        // 3.5 ms of a step's 8.7, for a column whose width was not changing
-        // (`scripts/bench-resize.sh --column`, 2026-11-19). The answer is
-        // always nothing: every pane's page sits below its row, and its
-        // insets read 0 on all four sides. The same for the main area's
-        // page, the strip's and the pages over the terminal.
-        pageHost.safeAreaRegions = []
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }

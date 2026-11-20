@@ -17,6 +17,14 @@ import IOSurface
 /// server is not holding the screen for it), so it measures the app's own
 /// work and nothing else.
 ///
+/// **The window is put in front of everything for the round**, floating, and
+/// every step counts whether it was on screen. A window that is covered is
+/// cheaper: SwiftUI lays nothing out for one nobody can see, and a round
+/// with the side column open read 5.5 ms a step covered and 8 ms seen
+/// (2026-11-19, the same build, minutes apart). A day of numbers taken from
+/// a copy behind the person's own windows had to be thrown away for it. A
+/// round that was not seen at every step is not a measurement, and says so.
+///
 /// Debug builds only, and only a copy with a data folder of its own
 /// (`WORTEL_DATA_DIR`): it takes the window out of the person's hands.
 /// Addressed by pid like `AppearanceTestHook`. The object
@@ -102,6 +110,7 @@ enum ResizeBench {
         // older size: the one for the step before had not landed.
         var stale = 0
         var late = 0
+        var seen = 0
         // Steps of the two window rounds in which the pane beside the
         // terminal changed its width: it should only move.
         var besideResized = 0
@@ -142,6 +151,14 @@ enum ResizeBench {
             return (IOSurfaceGetWidth(surface), IOSurfaceGetHeight(surface)) != wanted
         }
 
+        // In front of everything, on whichever Space is up, over a full
+        // screen app too: seen, or it is not a measurement.
+        let level = window.level
+        let spaces = window.collectionBehavior
+        window.level = .floating
+        window.collectionBehavior.formUnion([.canJoinAllSpaces, .fullScreenAuxiliary])
+        window.orderFrontRegardless()
+
         let source = DispatchSource.makeTimerSource(queue: .main)
         source.schedule(deadline: .now() + 0.5, repeating: interval)
         source.setEventHandler {
@@ -163,17 +180,22 @@ enum ResizeBench {
                     timer = nil
                     CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes)
                     window.setFrame(original, display: true)
+                    window.level = level
+                    window.collectionBehavior = spaces
+                    window.orderBack(nil)
                     let mode = SurfaceView.frameOnEveryResize ? "before" : "now"
                     // Whatever a round sets, the copy is left on Wortel's own rule.
                     if SurfaceView.frameOnEveryResize { SurfaceView.frameOnEveryResize = false }
                     write(["widthOnly": summary(widthOnly), "widthAndHeight": summary(both),
                            "divider": summary(divider),
                            "budgetMs": interval * 1000, "staleFrames": stale, "lateTerminal": late,
+                           "seenSteps": seen, "steps": total,
                            "besideResized": besideResized,
                            "mode": mode], to: path)
                     return
                 }
                 if isStale() { stale += 1 }
+                if window.occlusionState.contains(.visible) { seen += 1 }
                 let phase = step / (reach * 2)
                 let within = step % (reach * 2)
                 let distance = CGFloat(within < reach ? within + 1 : reach * 2 - within - 1)
@@ -250,6 +272,17 @@ enum ResizeBench {
             up = current.superview
         }
 
+        let level = window.level
+        let spaces = window.collectionBehavior
+        window.level = .floating
+        window.collectionBehavior.formUnion([.canJoinAllSpaces, .fullScreenAuxiliary])
+        window.orderFrontRegardless()
+        defer {
+            window.level = level
+            window.collectionBehavior = spaces
+            window.orderBack(nil)
+        }
+        var seenSlides = 0
         var result: [String: Any] = [:]
         var faults: [String] = []
         let moves: [(String, () -> Void)] = [
@@ -264,6 +297,7 @@ enum ResizeBench {
                 move()
                 await pause(0.4)
                 slides.append(turns)
+                if window.occlusionState.contains(.visible) { seenSlides += 1 }
                 // Landed, and the one size it was owed taken.
                 await pause(0.5)
                 let state = terminal.debugState
@@ -294,6 +328,7 @@ enum ResizeBench {
             result[name] = stats
         }
         result["faults"] = faults
+        result["seenSlides"] = seenSlides
         result["mode"] = SurfaceView.frameOnEveryResize ? "before" : "now"
         if SurfaceView.frameOnEveryResize { SurfaceView.frameOnEveryResize = false }
         write(result, to: path)

@@ -20,8 +20,8 @@ struct HistoryView: View {
 
     /// Height of the commit list; the diff takes the rest. Separate key from the
     /// Changes pane's split — the panes are read differently, so their splits
-    /// shouldn't drag each other around.
-    @AppStorage("git.historyListHeight") private var listHeightStore: Double = 220
+    /// shouldn't drag each other around. Not `@AppStorage`: see `StoredHeight`.
+    private let listHeightStore = StoredHeight.historyList
     private static let listMin: CGFloat = 80
     private static let diffMin: CGFloat = 120
 
@@ -33,8 +33,8 @@ struct HistoryView: View {
             GeometryReader { geo in
                 let maxList = max(Self.listMin, geo.size.height - Self.diffMin)
                 let listHeight = Binding(
-                    get: { min(max(CGFloat(listHeightStore), Self.listMin), maxList) },
-                    set: { listHeightStore = Double($0) }
+                    get: { min(max(CGFloat(listHeightStore.value), Self.listMin), maxList) },
+                    set: { listHeightStore.value = Double($0) }
                 )
                 VStack(spacing: 0) {
                     commitList

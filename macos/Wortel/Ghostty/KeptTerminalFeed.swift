@@ -20,6 +20,10 @@ final class KeptTerminalFeed {
     private var awaitingSnapshot = true
     private var waitsForSize = false
     private var restored: ((Bool) -> Void)?
+    /// A snapshot that came with no surface to show it in, kept until output
+    /// makes it stale: the one the keeper sends as a session ends, which is
+    /// all there is to show of a session whose surface was dropped by then.
+    private var held: Data?
     /// While there is no surface: reads what the surface would have raised
     /// (titles, the working directory, bells, progress, a command ending).
     /// Fresh each time the surface goes; with a surface, libghostty does it.
@@ -49,6 +53,10 @@ final class KeptTerminalFeed {
         self.awaitingSnapshot = true
         self.waitsForSize = waitsForSize
         self.restored = restored
+        if let held {
+            self.held = nil
+            apply(held)
+        }
     }
 
     /// The surface has taken over from the scanner: from its snapshot on, what
@@ -69,30 +77,17 @@ final class KeptTerminalFeed {
         reader.feed(bytes, count: count) { piece in
             switch piece {
             case .snapshot(let snapshot):
-                // One nobody is waiting for (a request crossed a drop) is a
-                // point already shown; what follows it still is.
-                guard let surface, awaitingSnapshot else { return }
-                if waitsForSize, !SurfaceView.waitForToldGrid(surface).reached {
-                    KeeperLog.log.notice("session \(self.session.uuidString, privacy: .public) restored before its terminal took its size")
+                // With no surface, kept for one that comes (see `held`). With
+                // a surface already restored, a point already shown.
+                guard surface != nil else {
+                    held = snapshot
+                    return
                 }
-                let ok = snapshot.withUnsafeBytes { raw -> Bool in
-                    guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return false }
-                    return ghostty_surface_restore_snapshot(surface, base, UInt(raw.count))
-                }
-                if !ok {
-                    KeeperLog.log.error("""
-                        session \(self.session.uuidString, privacy: .public): a snapshot of \
-                        \(snapshot.count) bytes would not restore
-                        """)
-                }
-                awaitingSnapshot = false
-                waitsForSize = false
-                surfaceTookOver()
-                let restored = self.restored
-                self.restored = nil
-                restored?(ok)
+                guard awaitingSnapshot else { return }
+                apply(snapshot)
             case .output(let output):
                 guard let base = output.baseAddress else { return }
+                held = nil
                 // The record of the program's modes, which agent sleep and
                 // the light/dark handling read (`TerminalModes`).
                 TerminalModeRecorder.shared.feed(session: session, bytes: base, count: output.count)
@@ -111,5 +106,29 @@ final class KeptTerminalFeed {
                 KeeperLog.log.error("session \(self.session.uuidString, privacy: .public): its channel is not a keeper's")
             }
         }
+    }
+
+    /// Restore the surface from `snapshot`, and go live after it.
+    private func apply(_ snapshot: Data) {
+        guard let surface else { return }
+        if waitsForSize, !SurfaceView.waitForToldGrid(surface).reached {
+            KeeperLog.log.notice("session \(self.session.uuidString, privacy: .public) restored before its terminal took its size")
+        }
+        let ok = snapshot.withUnsafeBytes { raw -> Bool in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return false }
+            return ghostty_surface_restore_snapshot(surface, base, UInt(raw.count))
+        }
+        if !ok {
+            KeeperLog.log.error("""
+                session \(self.session.uuidString, privacy: .public): a snapshot of \
+                \(snapshot.count) bytes would not restore
+                """)
+        }
+        awaitingSnapshot = false
+        waitsForSize = false
+        surfaceTookOver()
+        let restored = self.restored
+        self.restored = nil
+        restored?(ok)
     }
 }

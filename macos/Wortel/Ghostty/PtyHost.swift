@@ -598,16 +598,23 @@ final class PtyHost: @unchecked Sendable {
         }
     }
 
-    /// Take the read source out of `shared`, resuming it first if it is
-    /// suspended: a suspended source cannot be cancelled — the cancel handler
-    /// would never run and the descriptor would leak. Resume and removal happen
-    /// together under the lock so two callers cannot both resume it.
+    /// Take the read source out of `shared`, under the lock, so of two
+    /// callers only one gets it, and owns the ending.
+    ///
+    /// Reading stops with it: a read loop already running checks `isReading`
+    /// before every read, so it ends at the next one, not when a flood does.
+    ///
+    /// No reader at all (a host let go of before it began reading) means no
+    /// cancel handler to close the descriptor, so it is closed here.
     private func takeReader() -> DispatchSourceRead? {
         shared.withLock { state -> DispatchSourceRead? in
-            guard let reader = state.reader else { return nil }
-            if !state.isReading {
-                state.isReading = true
-                reader.resume()
+            state.isReading = false
+            guard let reader = state.reader else {
+                if state.master >= 0 {
+                    close(state.master)
+                    state.master = -1
+                }
+                return nil
             }
             state.reader = nil
             return reader

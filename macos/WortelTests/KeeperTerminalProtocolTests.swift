@@ -241,6 +241,41 @@ final class KeeperTerminalProtocolTests: XCTestCase {
         XCTAssertTrue(ended, "a channel that fell behind should end")
     }
 
+    /// A shell that writes a flood and ends while its app is not reading:
+    /// everything it wrote still reaches the app, then the terminal as it
+    /// ended, then the channel's end. The keeper lets go of the channel as
+    /// the session ends; what it had queued must not go with it.
+    func testAChannelEndingWithOutputQueuedDeliversAllOfIt() throws {
+        try startServer()
+        let opened = try terminal(try connect(), "brief-flood",
+                                  "seq 1 600000 | sed 's/^/line /'; echo LAST-LINE")
+        // ~6 MB, more than the socket's buffers hold, so most of it is queued
+        // in the keeper; the shell is long gone before anything is read.
+        usleep(3_000_000)
+        var reader = KeeperChannelReader()
+        var output = Data(), snapshots = 0, ended = false
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline, !ended {
+            var poller = pollfd(fd: opened.channel, events: Int16(POLLIN), revents: 0)
+            guard poll(&poller, 1, 100) > 0 else { continue }
+            let count = Darwin.read(opened.channel, &buffer, buffer.count)
+            if count <= 0 { ended = true; break }
+            buffer.withUnsafeBufferPointer { raw in
+                reader.feed(raw.baseAddress!, count: count) { piece in
+                    switch piece {
+                    case .snapshot: snapshots += 1
+                    case .output(let bytes): output.append(bytes)
+                    case .invalid: XCTFail("not a channel")
+                    }
+                }
+            }
+        }
+        XCTAssertTrue(ended, "the channel never ended")
+        XCTAssertTrue(String(decoding: output, as: UTF8.self).contains("LAST-LINE"), "the end of the output was lost")
+        XCTAssertEqual(snapshots, 2, "the first snapshot and the one as it ended")
+    }
+
     // MARK: - Answers with no app
 
     /// A program asks the terminal who it is while nobody is attached, and is

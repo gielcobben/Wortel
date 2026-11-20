@@ -43,6 +43,16 @@ final class KeeperPartsTests: XCTestCase {
         XCTAssertEqual(text(tail), "twice")
     }
 
+    /// Taking it empties it: what one app was given, the next is not, or a
+    /// report it acted on would be raised again after a relaunch.
+    func testTakingEmptiesIt() {
+        var tail = OutputTail(limit: 64)
+        append("once", to: &tail)
+        XCTAssertEqual(String(decoding: tail.take(), as: UTF8.self), "once")
+        XCTAssertTrue(tail.take().isEmpty)
+        XCTAssertTrue(tail.isEmpty)
+    }
+
     func testAZeroLimitKeepsNothingRatherThanCrashing() {
         var tail = OutputTail(limit: 0)
         append("anything", to: &tail)

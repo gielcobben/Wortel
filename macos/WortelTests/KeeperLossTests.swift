@@ -37,6 +37,22 @@ final class KeeperLossTests: XCTestCase {
         XCTAssertFalse(KeeperConnection.isOutdated(old, appBuild: nil))
     }
 
+    /// A keeper whose terminals are another Ghostty's cannot hand this app a
+    /// snapshot it can read: replaced, like one of another protocol. Not when
+    /// either side cannot say which Ghostty it is.
+    func testAKeeperOfAnotherGhosttyIsReplaced() {
+        let same = KeeperResponse.success(version: Keeper.version, build: "42", ghostty: "5ebe501a6")
+        let other = KeeperResponse.success(version: Keeper.version, build: "42", ghostty: "0123abcd9")
+        XCTAssertFalse(KeeperConnection.shouldReplace(afterPing: same, appGhostty: "5ebe501a6"))
+        XCTAssertTrue(KeeperConnection.shouldReplace(afterPing: other, appGhostty: "5ebe501a6"))
+        XCTAssertFalse(KeeperConnection.shouldReplace(afterPing: other, appGhostty: nil))
+        XCTAssertFalse(KeeperConnection.shouldReplace(
+            afterPing: .success(version: Keeper.version, build: "42"), appGhostty: "5ebe501a6"))
+        XCTAssertEqual(Keeper.ghosttyCommit(inVersion: "1.0.2-dev+5ebe501a6"), "5ebe501a6")
+        XCTAssertEqual(Keeper.ghosttyCommit(inVersion: "1.4.0-dev+5ebe501a6"), "5ebe501a6")
+        XCTAssertNil(Keeper.ghosttyCommit(inVersion: "1.4.0"))
+    }
+
     /// A keeper of protocol 1 (before the keeper kept the terminal) cannot
     /// serve this app, which no longer reads a pty: it is replaced, once,
     /// at the update that brings protocol 2 (`docs/decisions.md`, 2026-11-20).

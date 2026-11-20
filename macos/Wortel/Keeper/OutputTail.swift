@@ -1,10 +1,13 @@
 import Foundation
 
-/// The last `limit` bytes a session's program wrote, kept by the keeper beside
-/// its terminal. An app that attaches reads it for what the program said
-/// about itself lately (`ProgramStatusWatch`: an agent's working and done, a
-/// notification); it is never written into a terminal, whose snapshot has all
-/// of it. A ring: the oldest go first, in at most two copies a write.
+/// The last `limit` bytes a session's program wrote **while no app had a
+/// channel to it**, kept by the keeper beside its terminal and taken by the
+/// next app that attaches, which reads it for what the program said about
+/// itself meanwhile (`ProgramStatusWatch`: an agent's working and done, a
+/// notification). Only what that app has not heard: a report it already
+/// acted on before it quit, read again, would be raised twice. Never written
+/// into a terminal, whose snapshot has all of it. A ring: the oldest go
+/// first, in at most two copies a write.
 struct OutputTail {
     let limit: Int
     private var storage: [UInt8] = []
@@ -38,6 +41,15 @@ struct OutputTail {
             ring.baseAddress!.update(from: incoming + filling + first, count: rest - first)
         }
         self.head = (head + rest) % limit
+    }
+
+    /// Everything held, oldest first, and empty after.
+    mutating func take() -> Data {
+        defer {
+            storage = []
+            head = 0
+        }
+        return copy()
     }
 
     /// What is held, oldest first.

@@ -32,6 +32,9 @@ final class KeeperOutputChannel {
     private var writerRunning = false
     /// Set by `finish`: close once everything queued has been written.
     private var finishing = false
+    /// Itself, while finishing: whoever finished it has let go, and what is
+    /// still queued must not go with the last reference (`deinit` closes).
+    private var keepAlive: KeeperOutputChannel?
     private(set) var isClosed = false
 
     /// A connected pair: the keeper's end, wrapped here, and the app's end,
@@ -67,7 +70,7 @@ final class KeeperOutputChannel {
     /// channel is closed or the app has fallen `limit` behind; the channel is
     /// closed then, and the caller lets go of it.
     @discardableResult
-    private func sendRaw(_ bytes: UnsafeRawPointer, count: Int) -> Bool {
+    private func sendRaw(_ bytes: UnsafeRawPointer, count: Int, bounded: Bool = true) -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
         guard !isClosed, !finishing else { return false }
         guard count > 0 else { return true }
@@ -88,7 +91,7 @@ final class KeeperOutputChannel {
             }
             if offset == count { return true }
         }
-        guard pendingBytes + (count - offset) <= Self.limit else {
+        guard !bounded || pendingBytes + (count - offset) <= Self.limit else {
             let behind = pendingBytes + count - offset
             KeeperLog.log.error("an app fell \(behind, privacy: .public) bytes behind a session's output; closing its channel")
             closeNow()
@@ -102,16 +105,22 @@ final class KeeperOutputChannel {
 
     /// Send one frame (`KeeperChannel`): its header and its payload, in one
     /// `writev` while the socket has room, so a read of the pty costs one
-    /// system call here and no copy. What does not go now is queued, as by
-    /// `send`, and the same bound applies.
+    /// system call here and no copy. What does not go now is queued.
+    ///
+    /// The bound (`limit`) is for output: an app that falls that far behind
+    /// the program loses its channel. A snapshot is not held to it. It is
+    /// bounded by the terminal itself (its scrollback and images), it is
+    /// asked for by an app that is reading, and refusing it would leave that
+    /// app with no way to show the session at all.
     @discardableResult
     func send(_ frame: KeeperChannel.Frame, _ payload: UnsafeRawPointer, count: Int) -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
         guard !isClosed, !finishing else { return false }
         var header = KeeperChannel.header(frame, length: count)
+        let bounded = frame != .snapshot
         guard pending.isEmpty else {
-            return header.withUnsafeBytes { sendRaw($0.baseAddress!, count: $0.count) }
-                && sendRaw(payload, count: count)
+            return header.withUnsafeBytes { sendRaw($0.baseAddress!, count: $0.count, bounded: bounded) }
+                && sendRaw(payload, count: count, bounded: bounded)
         }
         let total = header.count + count
         var written = 0
@@ -134,10 +143,10 @@ final class KeeperOutputChannel {
         // Queue the rest: what is left of the header, then of the payload.
         if written < header.count {
             let rest = header.count - written
-            let ok = header.withUnsafeBytes { sendRaw($0.baseAddress! + written, count: rest) }
-            return ok && sendRaw(payload, count: count)
+            let ok = header.withUnsafeBytes { sendRaw($0.baseAddress! + written, count: rest, bounded: bounded) }
+            return ok && sendRaw(payload, count: count, bounded: bounded)
         }
-        return sendRaw(payload + (written - header.count), count: total - written)
+        return sendRaw(payload + (written - header.count), count: total - written, bounded: bounded)
     }
 
     @discardableResult
@@ -161,6 +170,7 @@ final class KeeperOutputChannel {
         guard !isClosed else { return }
         guard !pending.isEmpty else { return closeNow() }
         finishing = true
+        keepAlive = self
         queue.asyncAfter(deadline: .now() + Self.finishPatience) { [weak self] in self?.closeNow() }
     }
 
@@ -170,6 +180,7 @@ final class KeeperOutputChannel {
         isClosed = true
         pending = []
         pendingBytes = 0
+        defer { keepAlive = nil }
         if let writer {
             // A suspended source cannot be cancelled; resume it first.
             if !writerRunning { writer.resume() }

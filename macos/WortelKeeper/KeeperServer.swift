@@ -296,7 +296,8 @@ final class KeeperServer: @unchecked Sendable {
         switch command {
         case .ping:
             reply(.success(message: "wortel-keeper", version: Keeper.version,
-                           build: build, executable: executable), to: client)
+                           build: build, executable: executable,
+                           ghostty: KeeperTerminal.ghosttyCommit), to: client)
 
         case .close(let id):
             let found: Bool = state.sync {
@@ -454,7 +455,7 @@ final class KeeperServer: @unchecked Sendable {
             session.channel = channel
         }
 
-        let (tail, delivered) = state.sync { (session.tail.copy(), session.inputDelivered) }
+        let (tail, delivered) = state.sync { (session.tail.take(), session.inputDelivered) }
         reply(.success(pid: session.pty.pid, replay: tail.isEmpty ? nil : tail,
                        existing: existing ? true : nil, inputDelivered: delivered,
                        startedAt: session.startedAt.timeIntervalSince1970),
@@ -487,13 +488,13 @@ final class KeeperServer: @unchecked Sendable {
         }
         pty.onOutput = { [weak self, weak session] bytes, count in
             // The read queue. The terminal first: it is the session's record.
-            // Then the app's copy, if one is attached. Then the tail kept for
-            // what the program said about itself.
+            // Then the app's copy, if one is attached; if none, the tail.
             guard let self, let session else { return }
             session.terminal?.write(bytes, count: count)
-            if let channel = session.channel, !channel.send(.output, bytes, count: count) {
-                session.channel = nil
-            }
+            if let channel = session.channel, channel.send(.output, bytes, count: count) { return }
+            // No app is reading (or the one that was just lost its channel):
+            // kept for the next one to hear what the program said meanwhile.
+            session.channel = nil
             self.state.sync { session.tail.append(bytes, count: count) }
         }
         pty.onExit = { [weak self, weak session] _, _ in
@@ -513,6 +514,11 @@ final class KeeperServer: @unchecked Sendable {
             // still in the pty; they reach the terminal and the app's copy
             // before the channel ends, and its end is how the app hears.
             session.pty.readWhatIsLeft()
+            // And the terminal as it ended, for an app whose copy of it has
+            // no surface: there will be no session to ask once this is over.
+            if let channel = session.channel, let final = session.terminal?.snapshot() {
+                channel.send(.snapshot, final)
+            }
             session.channel?.finish()
             session.channel = nil
             session.pty.stop()

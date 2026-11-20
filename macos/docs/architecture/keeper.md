@@ -68,9 +68,12 @@ and whatever sequence the program was in the middle of.
   program are written off the read queue.
 - **What Wortel writes into a terminal goes through the keeper** (`inject`: the
   modes taken back from an agent it ends), so the two copies stay one.
-- **A tail of each session's output is kept** (`OutputTail`, 512 KB), and given
-  to an app that attaches for what the program said about itself
-  (`ProgramStatusWatch`). It is never written into a terminal.
+- **What a program writes while no app is attached is kept as well**
+  (`OutputTail`, 512 KB), and taken by the next app that attaches, for what
+  the program said about itself meanwhile (`ProgramStatusWatch`). Only that:
+  a report the app heard before it quit, heard again, would be raised twice
+  (`verify-agent-status.py`, "relaunch: still blocked"). It is never written
+  into a terminal.
 - **The connection is held open for the whole run.** Closing it tells the keeper
   the app has gone, and the keeper lets go of that app's channels. Quitting,
   crashing and `kill -9` all look the same, and all three keep every terminal.

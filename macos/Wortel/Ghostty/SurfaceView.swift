@@ -841,7 +841,12 @@ final class SurfaceView: NSView {
     /// Nobody is told the old session closed. Its keeper is gone, and a
     /// `close` sent to the new one, under the same id, would end the shell
     /// this is about to get.
-    func restartShell(workingDirectory: String?, sessionID: UUID, initialInput: String?) {
+    ///
+    /// `isNewShell: false` is the same session attached to again (its channel
+    /// was let go while it runs, `GhosttyRuntime.keeperTerminalSurface`): the
+    /// keeper forks nothing, and what the program set stays on record.
+    func restartShell(workingDirectory: String?, sessionID: UUID, initialInput: String?,
+                      isNewShell: Bool = true) {
         guard let runtime else { return }
         if let feed = keptFeed, let old = ptyHost { old.enqueue { feed.hide() } }
         keptFeed = nil
@@ -856,8 +861,8 @@ final class SurfaceView: NSView {
         processFinished = false
         shellStartedAt = Date()
         // Whatever the old program told its terminal is not true of a new
-        // shell, and a relaunch would otherwise replay it into one.
-        TerminalModeRecorder.shared.forget(session: sessionID)
+        // shell.
+        if isNewShell { TerminalModeRecorder.shared.forget(session: sessionID) }
         if let old = surface {
             surface = nil
             // Off the view at once and held past the old surface's free, as
@@ -945,9 +950,12 @@ final class SurfaceView: NSView {
         retireLayer()
         // Out of the feed first, on the queue that writes into it; freed
         // after, on main, once nothing can be writing into it.
+        // `self` and `pty` are held until the free: the surface's userdata
+        // points at the view, its `receive_userdata` at the pty, both
+        // unretained, as in `close`.
         pty.enqueue {
             feed.hide()
-            DispatchQueue.main.async { ghostty_surface_free(old) }
+            DispatchQueue.main.async { withExtendedLifetime((self, pty)) { ghostty_surface_free(old) } }
         }
         HibernationLog.log.notice("dropped the terminal of \(self.keeperSession?.uuidString ?? "?", privacy: .public); the keeper keeps it")
     }
@@ -998,9 +1006,26 @@ final class SurfaceView: NSView {
             }
         }
         // After the feed is waiting for it: the snapshot comes down the same
-        // channel, read on the same queue, so it cannot arrive first.
-        GhosttyRuntime.keeper?.resync(session: session)
+        // channel, read on the same queue, so it cannot arrive first. A
+        // session whose shell has ended is no longer the keeper's to snapshot:
+        // its last snapshot came down the channel as it ended, and the feed
+        // shows that (`KeptTerminalFeed.show`).
+        if !processFinished { GhosttyRuntime.keeper?.resync(session: session) }
+        // And if no snapshot comes (the keeper went, or would not say), this
+        // terminal is not left restoring for good: what waits on it goes on.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.restorePatience) { [weak self] in
+            guard let self, self.surface == new, self.isRestoring else { return }
+            HibernationLog.log.error("no snapshot came for \(session.uuidString, privacy: .public); shown as it is")
+            if self.processFinished { ghostty_surface_process_exit(new, 0, 0) }
+            self.isRestoring = false
+            let waiting = self.restoreWaiters
+            self.restoreWaiters = []
+            waiting.forEach { $0() }
+        }
     }
+
+    /// The longest a woken terminal waits for its snapshot.
+    private static let restorePatience: TimeInterval = 3
 
     /// The grid a terminal has, asked of the terminal: where its cursor ends
     /// up when sent to the far corner, counted in cells by sending it one

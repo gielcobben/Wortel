@@ -58,10 +58,11 @@ final class KeeperConnection {
         guard connectStarting() else { return false }
         var ping = (try? client.send(.ping))?.response
         if Self.shouldReplace(afterPing: ping) {
-            NSLog("wortel: keeper speaks a different protocol; replacing it")
+            NSLog("wortel: keeper speaks a different protocol or Ghostty; replacing it")
             KeeperLog.log.notice("""
                 keeper \(self.keeperPID ?? -1, privacy: .public) speaks protocol \
-                \(ping?.version ?? "?", privacy: .public), not \(Keeper.version, privacy: .public); replacing it
+                \(ping?.version ?? "?", privacy: .public) with Ghostty \(ping?.ghostty ?? "?", privacy: .public), \
+                not \(Keeper.version, privacy: .public) with \(Self.appGhostty ?? "?", privacy: .public); replacing it
                 """)
             ping = replaceKeeper()
             guard ping?.version == Keeper.version else { return false }
@@ -119,10 +120,24 @@ final class KeeperConnection {
     /// costs every shell it holds, so "it didn't answer" is not reason enough:
     /// a reply that timed out or came back garbled says nothing about its
     /// sessions. Until 2026-10-08 any failed ping counted as a mismatch.
-    static func shouldReplace(afterPing response: KeeperResponse?) -> Bool {
+    ///
+    /// **Or another Ghostty.** The snapshots the app restores its terminals
+    /// from are only readable by a Ghostty of the same commit, so a keeper of
+    /// another one is as unusable as one of another protocol: an update that
+    /// moves Ghostty replaces it, which ends its shells once, agents resumed
+    /// (`docs/decisions.md`, 2026-11-20). Judged only when both say which
+    /// commit they are: an app that cannot tell kills nothing for it.
+    static func shouldReplace(afterPing response: KeeperResponse?, appGhostty: String? = appGhostty) -> Bool {
         guard let response, response.ok else { return false }
-        return response.version != Keeper.version
+        if response.version != Keeper.version { return true }
+        if let appGhostty, let keeper = response.ghostty, keeper != appGhostty { return true }
+        return false
     }
+
+    /// The Ghostty commit this app's GhosttyKit was built from, set at launch
+    /// by `GhosttyRuntime` (this file is also the tests', which have no
+    /// GhosttyKit). nil until then, or when it does not say.
+    nonisolated(unsafe) static var appGhostty: String?
 
     /// The keeper process, as the kernel names the other end of the socket.
     var keeperPID: pid_t? { client.peerProcessID() }
@@ -258,9 +273,9 @@ final class KeeperConnection {
         /// read: the keeper is its one reader.
         let typingDescriptor: Int32
         let pid: Int32
-        /// The keeper's tail of the session's recent output, for what the
-        /// program said about itself (`ProgramStatusWatch`). Never written
-        /// into a terminal: the snapshot has all of it.
+        /// What the program wrote while no app was attached, for what it said
+        /// about itself meanwhile (`ProgramStatusWatch`). Never written into a
+        /// terminal: the snapshot has all of it.
         let replay: Data
         /// True when this attached to a shell that was already running — i.e.
         /// the session survived, which is the whole feature.

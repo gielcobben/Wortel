@@ -484,6 +484,10 @@ final class GhosttyRuntime {
         Self.keptTerminal(&cfg, pty: pty)
         guard let surface = ghostty_surface_new(app, &cfg) else {
             NSLog("wortel: host-managed surface could not be created")
+            // Let go of the channel and the pty, or the keeper goes on
+            // queueing output for a reader that never came.
+            pty.release()
+            view.ptyHost = nil
             return nil
         }
         ghostty_surface_set_responds(surface, false)
@@ -495,12 +499,17 @@ final class GhosttyRuntime {
         feed.show(in: surface, waitsForSize: view.expectsFirstSize)
         pty.onOutput = { bytes, count in feed.feed(bytes, count: count) }
         // The channel ends after the shell does, or when the keeper lets this
-        // copy go (it fell far behind). Only the first is the shell's end.
+        // copy go because it fell far behind (a main thread stalled through a
+        // flood). Only the first is the shell's end; the second is attached
+        // to again, which starts from a fresh snapshot and changes nothing
+        // about the shell.
         pty.onHangup = { [weak view, weak pty] in
             DispatchQueue.main.async {
                 guard let view, let pty, view.ptyHost === pty else { return }
                 if GhosttyRuntime.keeper?.running().contains(where: { $0.session == session.uuidString }) == true {
-                    KeeperLog.log.error("session \(session.uuidString, privacy: .public): its channel ended while it runs")
+                    KeeperLog.log.error("session \(session.uuidString, privacy: .public): its channel ended while it runs; attaching again")
+                    view.restartShell(workingDirectory: view.pwd, sessionID: session, initialInput: nil,
+                                      isNewShell: false)
                     return
                 }
                 if let shellEnded = view.onShellEnded { shellEnded() } else { view.finishProcess() }
@@ -621,6 +630,14 @@ final class GhosttyRuntime {
     static var onKeeperLost: ((pid_t) -> Void)?
 
     private static func connectKeeper() -> KeeperConnection? {
+        // Which Ghostty this app is, for telling a keeper of another apart
+        // (`KeeperConnection.shouldReplace`).
+        let info = ghostty_info()
+        if let version = Optional(info.version), info.version_len > 0 {
+            let string = String(decoding: UnsafeRawBufferPointer(start: version, count: Int(info.version_len)),
+                                as: UTF8.self)
+            KeeperConnection.appGhostty = Keeper.ghosttyCommit(inVersion: string)
+        }
         guard !PtyHost.isDisabled else {
             NSLog("wortel: keeper disabled; sessions will not survive a quit")
             return nil

@@ -320,6 +320,10 @@ final class KeeperTerminal {
         GhosttyColorRgb(r: UInt8((value >> 16) & 0xFF), g: UInt8((value >> 8) & 0xFF), b: UInt8(value & 0xFF))
     }
 
+    /// The Ghostty commit this libghostty-vt was built from: what follows the
+    /// `+` in its version (`1.0.2-dev+5ebe501a6`). nil when it does not say.
+    static let ghosttyCommit: String? = Keeper.ghosttyCommit(inVersion: libraryVersion)
+
     /// The version libghostty-vt was built as, which is the app's Ghostty's.
     private static let libraryVersion: String = {
         var string = GhosttyString(ptr: nil, len: 0)

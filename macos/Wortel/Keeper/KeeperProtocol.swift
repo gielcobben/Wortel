@@ -174,9 +174,10 @@ struct KeeperResponse: Codable, Equatable {
     var message: String?
     /// The shell's pid — what you check with `ps` to see it outlive the app.
     var pid: Int32?
-    /// For `terminal`: the session's latest output (`Keeper.replayLimit`),
-    /// oldest first, for what the program said about itself. Base64 in the
-    /// JSON, which is what `Data`'s Codable conformance does.
+    /// For `terminal`: what the program wrote while no app was attached
+    /// (`Keeper.replayLimit` at most), oldest first, for what it said about
+    /// itself. Base64 in the JSON, which is what `Data`'s Codable conformance
+    /// does.
     var replay: Data?
     /// For `list`.
     var sessions: [KeeperSessionState]?
@@ -191,6 +192,11 @@ struct KeeperResponse: Codable, Equatable {
     /// For `ping`: the keeper's own executable, for the log line that says
     /// which keeper an app found.
     var executable: String?
+    /// For `ping`: the Ghostty commit the keeper's terminals were built from.
+    /// A snapshot is only readable by a Ghostty of the same commit, so an app
+    /// of another one cannot show the keeper's terminals at all, and replaces
+    /// it (`KeeperConnection.shouldReplace`).
+    var ghostty: String?
     /// For `terminal`: the session already existed and this attached to it,
     /// so nothing was forked and the plan, `initialInput` included, was
     /// ignored.
@@ -213,12 +219,12 @@ struct KeeperResponse: Codable, Equatable {
     static func success(
         message: String? = nil, pid: Int32? = nil, replay: Data? = nil,
         sessions: [KeeperSessionState]? = nil, version: String? = nil,
-        build: String? = nil, executable: String? = nil, existing: Bool? = nil,
+        build: String? = nil, executable: String? = nil, ghostty: String? = nil, existing: Bool? = nil,
         inputDelivered: Bool? = nil, startedAt: Double? = nil, modes: [Bool]? = nil
     ) -> KeeperResponse {
         KeeperResponse(ok: true, message: message, pid: pid, replay: replay,
                        sessions: sessions, version: version,
-                       build: build, executable: executable, existing: existing,
+                       build: build, executable: executable, ghostty: ghostty, existing: existing,
                        inputDelivered: inputDelivered, startedAt: startedAt, modes: modes)
     }
 }
@@ -265,11 +271,20 @@ enum Keeper {
     /// to clear it.
     static let maximumLineBytes = replayLimit * 2
 
-    /// How much of a session's latest output the keeper keeps beside its
-    /// terminal, for an app that attaches to read what the program said about
-    /// itself (`ProgramStatusWatch`), never to write into a terminal: the
-    /// snapshot has all of it. Not scrollback.
+    /// How much of what a session's program wrote while no app was attached
+    /// the keeper keeps beside its terminal (`OutputTail`), for the next app
+    /// to read what the program said about itself meanwhile, never to write
+    /// into a terminal: the snapshot has all of it. Not scrollback.
     static let replayLimit = 512 * 1024
+
+    /// The commit in a Ghostty version string (`1.4.0-dev+5ebe501a6`), which
+    /// both of Wortel's Ghostty libraries carry when built from a checkout
+    /// (`scripts/build-ghostty.sh`). nil for a version without one.
+    static func ghosttyCommit(inVersion version: String) -> String? {
+        guard let plus = version.lastIndex(of: "+") else { return nil }
+        let commit = version[version.index(after: plus)...]
+        return commit.count >= 7 && commit.allSatisfy(\.isHexDigit) ? String(commit) : nil
+    }
 
     /// Scrollback the keeper's terminal keeps for each session, in bytes: the
     /// same as the app's (`scrollback-limit-bytes` in `wortel.conf`), whose

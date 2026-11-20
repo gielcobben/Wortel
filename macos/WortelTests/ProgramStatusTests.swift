@@ -150,12 +150,10 @@ final class ProgramStatusTests: XCTestCase {
                        ProgramStatus(state: .done))
     }
 
-    /// A program waiting on its own background work says `working` itself.
-    /// The pieces being listed changes nothing.
     /// A finished turn with a background command still going is still at
     /// work; once the command is gone it is the finished turn again.
     func testWorkingChildrenKeepTheProgramAtWork() {
-        var records = records("state=done:app=claude-code", "state=working:id=bash-1")
+        var records = records("state=working:id=bash-1", "state=done:app=claude-code")
         XCTAssertEqual(records.effective, ProgramStatus(state: .working, app: "claude-code"))
         XCTAssertEqual(records.root, ProgramStatus(state: .done, app: "claude-code"))
         records.apply(.clearRecord("bash-1"))

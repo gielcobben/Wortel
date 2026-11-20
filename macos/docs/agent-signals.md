@@ -124,12 +124,16 @@ its work that is, which is the program waiting on you whatever the root says
 meanwhile (Claude Code's root reads `done` while a remote agent it started
 waits for an answer). They are kept apart so that one changing never looks
 like the other: a background task's question, once answered, must not
-announce the finished turn behind it a second time. A child that is `working`
-keeps the session at work: a root at rest (`done` or `idle`) with any piece of
-its work still going is shown working (`ProgramRecords.standing`), and the
-turn is announced finished when the last piece ends. Claude Code ends a turn
-with `done` while a background command it started still runs, and carries on
-by itself when it ends. `blocked` and `error` stand over it: they are news.
+announce the finished turn behind it a second time. A turn that says `done`
+while a piece of its work is still unfinished (`working`, or `blocked` on a
+question) is held open (`ProgramRecords.standing`, `finishHeld`): the spinner
+stays, and the turn is announced finished once the last of those pieces has
+ended, after 3 s instead of 0.4 s (`settleAfterWork`), because Claude Code
+carries on by itself with what a background command left. Only a `done` is
+held (an `idle` is a stop, Esc), and work listed after a turn was over changes
+nothing. Deep sleep, a half-typed prompt's protection and what a relaunch
+remembers (`said`) go by the root, so nothing restored can spin with no record
+left to end it.
 
 **What a report comes to** is `ReportedStatus.effects`, pure and tested:
 

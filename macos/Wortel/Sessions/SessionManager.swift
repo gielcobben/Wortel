@@ -4542,9 +4542,9 @@ final class SessionManager {
         // ending it to repaint it goes by (`sleepCandidate`). A replay's
         // `working` is not counted as work begun: it was written while
         // nobody was here, and when is not known.
-        switch after?.standing?.state {
+        switch after?.root?.state {
         case .working?:
-            if before?.standing?.state != .working, !replayed { workBeganAt[id] = Date() }
+            if before?.root?.state != .working, !replayed { workBeganAt[id] = Date() }
             reportedRestSince[id] = nil
         case .some:
             if reportedRestSince[id] == nil { reportedRestSince[id] = Date() }
@@ -4552,7 +4552,7 @@ final class SessionManager {
             reportedRestSince[id] = nil
         }
         // Remembered across a relaunch (`PersistedSession.reportedState`).
-        if before?.effective?.state != after?.effective?.state { scheduleSave() }
+        if before?.said?.state != after?.said?.state { scheduleSave() }
         // A program that never says `done` ends its turns by going idle
         // (opencode). One that has said it, or is known to, does not. Only
         // after two seconds of work, so a command that flickers `working` is
@@ -4585,6 +4585,8 @@ final class SessionManager {
                 announceBlock(session, words: words)
             case .announce(let kind, let words):
                 announceTurnEnd(session, kind: kind, words: words)
+            case .announceAfterWork(let kind):
+                announceTurnEnd(session, kind: kind, words: nil, settle: ReportedStatus.settleAfterWork)
             case .mark(let kind, let words):
                 raiseReported(session, kind: kind, body: words ?? Self.fixedWords(for: kind),
                               source: "status-replayed", quietly: true)
@@ -4679,7 +4681,8 @@ final class SessionManager {
     /// `ReportedStatus.settle`: one that finishes and starts its next queued
     /// message at once passed through `done` without wanting anyone. A
     /// `working` or `idle` before then cancels it (`programStatus`).
-    private func announceTurnEnd(_ session: Session, kind: AttentionKind, words: String?) {
+    private func announceTurnEnd(_ session: Session, kind: AttentionKind, words: String?,
+                                 settle: TimeInterval = ReportedStatus.settle) {
         let id = session.id
         quiesceTimers[id]?.cancel()
         // Since when its conversation is this turn's, for the answer to
@@ -4700,7 +4703,7 @@ final class SessionManager {
             self.announceFinishedTurn(session, startedAt: startedAt)
         }
         quiesceTimers[id] = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + ReportedStatus.settle, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + settle, execute: work)
         // Must not be put off by App Nap.
         updateAgentActivityAssertion()
     }
@@ -5774,7 +5777,7 @@ final class SessionManager {
             // A program that reports and has said nothing that amounts to a
             // state is at rest.
             reportedState: agent == nil ? nil : programRecords[session.id].map {
-                ($0.effective?.state ?? .idle).rawValue
+                ($0.said?.state ?? .idle).rawValue
             },
             agentPaintedDark: session.runningAgent == nil ? nil : session.agentPaintedDark)
     }

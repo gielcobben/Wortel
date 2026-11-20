@@ -382,14 +382,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   background was still running dropped the spinner, and said "finished",
   though Claude Code carries on by itself when the command ends. Claude Code
   reports each background command, monitor and remote agent as a child
-  record, `working` until it ends; they were kept and ignored. Now a root at
-  rest with a working child is working (`ProgramRecords.standing`), and the
-  turn is announced finished when the last child ends. Chosen by the person
-  over announcing the turn's end and keeping the spinner, and over a quieter
-  mark of its own, knowing a monitor that runs for hours keeps the spinner on
-  for hours. `blocked` and `error` are still announced at once.
-  `verify-agent-status.py` has a scenario for it: main before failed it
-  (turn-done while the command ran), after passed, 48 of 48.
+  record, `working` until it ends; they were kept and ignored. Now a `done`
+  said while a piece of work is unfinished (working, or blocked on a
+  question) holds the turn open (`ProgramRecords.standing`, `finishHeld`),
+  and it is announced finished 3 s after the last piece ends, since Claude
+  Code carries on with what the command left. Chosen by the person over
+  announcing the turn's end and keeping the spinner, and over a quieter mark
+  of its own, knowing a monitor that runs for hours keeps the spinner on for
+  hours. Narrowed after its review: only a `done` holds (Esc's `idle` does
+  not), work listed after a turn was over changes nothing, a background
+  agent's question does not end the turn, and sleep, a typed draft's
+  protection and what a relaunch remembers go by the root alone.
+  `verify-agent-status.py` has four scenarios for it: main before failed the
+  first two, after passed 50 of 50. A real Claude Code 2.1.329 ending its
+  turn with a 25 s command in the background stayed working until it
+  replied to the result, then was finished once.
 - **2026-11-20. A terminal out of sight follows its window, once a resize
   ends.** It kept its size while hidden, so what its agent printed after a
   window resize was laid out for a width it would never be shown at, and

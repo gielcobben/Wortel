@@ -21,6 +21,10 @@ enum ReportedStatus {
         /// has stood for `settle`, with these words (nil: the agent's own
         /// last answer, read from its conversation, or the fixed words).
         case announce(AttentionKind, words: String?)
+        /// A turn held open by its background work, now that the work has
+        /// ended: the same, after `settleAfterWork`, because the program
+        /// usually carries on with what the work gave it.
+        case announceAfterWork(AttentionKind)
         /// The same, about something that happened while nobody was attached:
         /// the dot, with no banner and no sound for old news.
         case mark(AttentionKind, words: String?)
@@ -38,6 +42,12 @@ enum ReportedStatus {
     /// the next queued message, passes through a state without ever having
     /// wanted anyone. Short, because past it every moment is a late banner.
     static let settle: TimeInterval = 0.4
+
+    /// How long a turn held open by background work waits, once the work has
+    /// ended, before it is announced finished. Claude Code takes up what a
+    /// background command left within a second or two; a banner before then
+    /// would be followed by the spinner and a second banner.
+    static let settleAfterWork: TimeInterval = 3
 
     /// What follows from a program's records going from `before` to `after`
     /// (nil: it has said nothing, or has gone). `gone`: it cleared everything
@@ -85,7 +95,8 @@ enum ReportedStatus {
             case .done:
                 // Its message is not quoted: where there is one it names the
                 // session (Pi), which the banner's title already does.
-                effects += [.resting, tell(.turnDone, nil)]
+                let workEnded = was?.state == .working && before?.root == after?.root
+                effects += [.resting, workEnded && !replayed ? .announceAfterWork(.turnDone) : tell(.turnDone, nil)]
             case .error:
                 effects += [.resting, tell(.failed, root.message.map(banner))]
             }

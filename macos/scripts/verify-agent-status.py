@@ -407,15 +407,22 @@ scenario("claude: a background agent asks after the turn finished", "claude",
          "turn-done, then needs-input, cleared when answered, and no second turn-done")
 scenario("claude: background commands listed", "claude",
          ["tui", "r:working", "child:bash_1:working:-:npm run build:", "child:bash_2:working:-:tests:", "s:3",
-          "clearid:bash_1", "r:done", "s:1", "clearid:bash_2", "hold:3"], 9,
+          "clearid:bash_1", "r:done", "s:1", "clearid:bash_2", "hold:5"], 11,
          lambda ev, st: kinds(ev) == ["turnDone"] and order(ev, ("S", "done"), ("S", "clearRecord"), ("R", "turnDone")),
          "one turn-done, once the last command has ended")
 scenario("claude: a turn ends while a background command runs", "claude",
          ["tui", "r:working", "s:2", "child:bash_1:working:-:release.sh:", "s:1", "r:done", "s:4",
-          "clearid:bash_1", "hold:3"], 13,
+          "clearid:bash_1", "hold:5"], 15,
          lambda ev, st: kinds(ev) == ["turnDone"] and order(ev, ("S", "clearRecord"), ("R", "turnDone"))
              and st == "finished",
          "no turn-done while the command runs; one when it ends; state finished")
+scenario("claude: background command ends, and it carries on", "claude",
+         ["tui", "r:working", "s:2", "child:bash_1:working:-:release.sh:", "s:1", "r:done", "s:3",
+          "clearid:bash_1", "s:1.5", "r:working", "s:3", "r:done", "hold:3"], 17,
+         lambda ev, st: kinds(ev) == ["turnDone"], "one turn-done, at the real end; none when the command ended")
+scenario("claude: work listed after the turn", "claude",
+         ["tui", "r:working", "s:3", "r:done", "s:2", "child:bash_9:working:-:late:", "s:2", "clearid:bash_9", "hold:5"], 15,
+         lambda ev, st: kinds(ev) == ["turnDone"], "one turn-done; the late work neither takes it back nor repeats it")
 scenario("unknown program learns to say done", None,
          ["r:working", "s:3", "r:idle", "s:3", "r:working", "s:3", "r:done", "s:3", "r:working", "s:3", "r:idle", "hold:2"], 21,
          lambda ev, st: kinds(ev)[:2] == ["turnDone", "turnDone"] and "turnDone" not in kinds(ev)[2:],

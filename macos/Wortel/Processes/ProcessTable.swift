@@ -326,6 +326,18 @@ enum ProcessTable {
 
     /// Walk up the parent chain, bounded so a cycle in a torn process table
     /// can't spin here — this runs on the main thread during termination.
+    /// How many generations `pid` is below `ancestor`: 1 for a child. nil when
+    /// it is not below it. Bounded like `isDescendant`.
+    static func depth(of pid: pid_t, below ancestor: pid_t, parentOf: [pid_t: pid_t]) -> Int? {
+        var current = pid
+        for generation in 1...64 {
+            guard let parent = parentOf[current], parent > 0 else { return nil }
+            if parent == ancestor { return generation }
+            current = parent
+        }
+        return nil
+    }
+
     static func isDescendant(_ pid: pid_t, of ancestor: pid_t,
                              parentOf: [pid_t: pid_t]) -> Bool {
         var current = pid

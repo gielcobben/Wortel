@@ -159,7 +159,9 @@ final class KeeperTerminalProtocolTests: XCTestCase {
         firstChannel.output.withUnsafeBytes { raw in
             replayed.write(raw.bindMemory(to: UInt8.self).baseAddress!, count: raw.count)
         }
-        let secondChannel = readChannel(second.channel, timeout: 0.2)
+        // Until its snapshot is in, not for a fixed time: under the load of
+        // the whole suite a fixed 0.2 s read nothing now and then.
+        let secondChannel = readChannel(second.channel, timeout: 5) { _ in true }
         let cut = try decode(secondChannel.snapshot)
         XCTAssertEqual(replayed.text(), cut.text(),
                        "snapshot one + channel one is not snapshot two: bytes were lost or repeated")
@@ -331,7 +333,9 @@ final class KeeperTerminalProtocolTests: XCTestCase {
         let read = readChannel(opened.channel) { self.text($0).contains("SIZE-30 100") }
         XCTAssertTrue(text(read.output).contains("SIZE-30 100"))
         let again = try terminal(client, "sized", "unused")
-        let cut = try decode(readChannel(again.channel, timeout: 0.5).snapshot)
+        // Until its snapshot is in: a fixed 0.5 s read nothing now and then
+        // under the load of the whole suite (2026-11-20).
+        let cut = try decode(readChannel(again.channel, timeout: 5) { _ in true }.snapshot)
         XCTAssertEqual(cut.columns, 100)
         XCTAssertEqual(cut.rows, 30)
     }

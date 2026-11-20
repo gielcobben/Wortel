@@ -89,12 +89,22 @@ enum AgentLiveness {
         // The shell itself is gone, so nothing can still be running under it.
         guard parentOf[shellPID] != nil else { return .gone }
 
-        let needle = String(agent.prefix(ProcessTable.maxCommandNameLength - 1))
-        for entry in table where entry.name == agent || entry.name == needle {
-            if ProcessTable.isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
-                return .running(entry.pid)
-            }
+        // **The match nearest the shell**, in both passes. The agent is the
+        // shell's child (or a shim's), and what it runs is further down:
+        // Claude Code runs its helpers (its grep) as its own binary, whose
+        // path names `claude` too. Taking the first match in the table took a
+        // helper whenever one was running, which is during a turn, which is
+        // when the conversation is read; a helper has no process file, so the
+        // conversation went unread (2026-11-20).
+        func depth(of pid: pid_t) -> Int? {
+            ProcessTable.depth(of: pid, below: shellPID, parentOf: parentOf)
         }
+        let needle = String(agent.prefix(ProcessTable.maxCommandNameLength - 1))
+        let named = table
+            .filter { $0.name == agent || $0.name == needle }
+            .compactMap { entry in depth(of: entry.pid).map { (pid: entry.pid, depth: $0) } }
+            .min { $0.depth < $1.depth }
+        if let named { return .running(named.pid) }
         // Not every agent is a process by its own name. Pi, Gemini and Amp are
         // node scripts, aider is a Python one, and a version-manager shim can put
         // a `sh` in between: `p_comm` then says `node` or `python3`, and the
@@ -115,8 +125,10 @@ enum AgentLiveness {
         // back. So an unreadable descendant makes the whole answer `.unknown`,
         // which the caller already knows to treat as "still alive".
         var unreadable = false
-        for entry in table
-        where ProcessTable.isDescendant(entry.pid, of: shellPID, parentOf: parentOf) {
+        let descendants = table
+            .compactMap { entry in depth(of: entry.pid).map { (pid: entry.pid, depth: $0) } }
+            .sorted { $0.depth < $1.depth }
+        for entry in descendants {
             guard let arguments = ProcessTable.argumentsIfReadable(of: entry.pid) else {
                 unreadable = true
                 continue

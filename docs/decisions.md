@@ -1126,6 +1126,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   four, across the update and a keeper stop, came back one in its own
   conversation and three started afresh; then, with a second one used, two
   in their own.
+- **2026-11-20. The agent under a shell is the match nearest the shell.**
+  Claude Code runs its helpers (its grep) as its own binary, whose path names
+  `claude` too, and `AgentLiveness.locate` took the first match in the process
+  table, which lists the newest first: during a turn, a helper. A helper has
+  no `~/.claude/sessions/<pid>.json`, so the conversation went unread exactly
+  when it is read, and a session started with a bare `claude --resume` was
+  saved with the id Claude has before a conversation is picked, never
+  written, and came back to the picker. Measured on the live session: the
+  helper before, Claude itself and its conversation after.
 - **2026-10-07. Tried and dropped, twice: moving the keeper out of the app's
   reach.** As a launchd agent, then as a background-only helper app. The Dock
   still offered "Stop Running in Background" both times. Real separation needs

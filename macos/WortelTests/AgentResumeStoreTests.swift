@@ -242,6 +242,34 @@ final class AgentResumeStoreTests: XCTestCase {
         XCTAssertEqual(pid, child.processIdentifier)
     }
 
+    /// Claude Code runs its helpers (its grep, for one) by running its own
+    /// binary, `…/claude/versions/2.1.329`, which names the agent too. A
+    /// helper found first was taken for the agent, it has no process file, and
+    /// the conversation could not be read during a turn, which is when it is
+    /// read (2026-11-20: a session resumed into the picker). The agent is the
+    /// match nearest the shell. The helper is spawned after it, so it has the
+    /// higher pid, and the process table lists it first.
+    func testLocateTakesTheAgentNotAHelperThatNamesItToo() throws {
+        let agent = Process()
+        agent.executableURL = URL(fileURLWithPath: "/bin/sh")
+        agent.arguments = ["-c", "sh -c 'sleep 30; true' wortel-liveness-probe; true", "wortel-liveness-probe"]
+        try agent.run()
+        defer { agent.terminate() }
+        let me = ProcessInfo.processInfo.processIdentifier
+        var located = AgentLiveness.Located.unknown
+        for _ in 0..<40 {
+            // Both up: the helper under the agent is what makes this a test.
+            let table = ProcessTable.snapshot()
+            if table.contains(where: { $0.ppid == agent.processIdentifier }) {
+                located = AgentLiveness.locate(agent: "wortel-liveness-probe", shellPID: me, table: table)
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard case .running(let pid) = located else { return XCTFail("not located: \(located)") }
+        XCTAssertEqual(pid, agent.processIdentifier, "a helper under the agent was taken for it")
+    }
+
     /// What counts as the agent inside an argument: a path component that is the
     /// name, or a package/file named after it. Never a substring — `pi` inside
     /// `pipx` or `api` is not Pi.

@@ -31,7 +31,7 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | New session | ⌘N | Codex, Claude, cmux |
 | New terminal (only while Settings names a command for new sessions) | ⌃⌘N | |
 | New session at home | ⌥⌘N | |
-| New worktree session | ⇧⌘N | |
+| New worktree session | ⌥⇧⌘N | |
 | Open folder | ⌘O | Codex, cmux, every Mac app |
 | Close session | ⇧⌘W | iTerm, Ghostty, Warp, VS Code (close window) |
 | Next / previous session | ⌥⌘↓ / ⌥⌘↑ | Arc (its sidebar's tabs) |
@@ -56,6 +56,23 @@ that want you at the top of each section.
 and any project (this one's first), and puts the one you pick in the
 session's input without sending it. ⌃R stays the shell's own history
 search, and the agent's.
+
+## Windows
+
+Each window has its own sidebar, and a session is in one window at a time.
+⌘N is a session, so a window is ⇧⌘N, as in apps whose ⌘N makes something
+smaller than a window.
+
+| Action | Shortcut | Same as |
+|---|---|---|
+| New window (with a new session at home) | ⇧⌘N | VS Code, Zed, cmux |
+| Close the window and its sessions (asks if something runs) | the window's close button | Terminal |
+| Move a session to another window | drag its row onto the other sidebar | cmux, Arc, Warp (tabs) |
+| Move a session to a new window | drag its row out of the window, or Window ▸ Move Session to New Window | Safari, Arc, Warp (tabs) |
+| Put every session in this window | Window ▸ Merge All Windows | every Mac app with tabs |
+
+A row's right-click menu has Move to New Window and Move to Window ▸ too.
+Before 2026-11-19, ⇧⌘N was New Worktree Session; that is ⌥⇧⌘N now.
 
 ## The layout
 

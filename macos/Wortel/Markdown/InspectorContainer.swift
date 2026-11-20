@@ -25,12 +25,15 @@ final class SideColumnController: NSViewController {
     private let pageHost: NSHostingController<SideColumnPage>
     private let runtime: GhosttyRuntime
     private let manager: SessionManager
+    /// The window this column is in: whose session it shows.
+    private let home: SessionWindow
     private let git: GitPanelModel
 
-    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
+    init(runtime: GhosttyRuntime, manager: SessionManager, home: SessionWindow, git: GitPanelModel,
          files: FileTreeModel, previewTabs: PreviewTabs) {
         self.runtime = runtime
         self.manager = manager
+        self.home = home
         self.git = git
         pageHost = NSHostingController(rootView: SideColumnPage(git: git, files: files,
                                                                 previewTabs: previewTabs))
@@ -83,7 +86,7 @@ final class SideColumnController: NSViewController {
         // selected before the panel is given it), and a terminal made then
         // would be the old session's tab on the new session: a second reader
         // on that shell's pty.
-        let session = manager.selected
+        let session = home.selected
         let surface = git.session === session
             ? terminal.flatMap { id in session?.ensureSideSurface(id, runtime: runtime) } : nil
         host.show(surface, focusRequest: git.terminalFocusRequest,

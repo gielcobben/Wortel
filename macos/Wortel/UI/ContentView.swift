@@ -48,6 +48,8 @@ func chooseDirectory(title: String, startingAt current: String? = nil,
 /// the system material, and painting over it would block the glass.
 struct SidebarPane: View {
     @Bindable var manager: SessionManager
+    /// The window this sidebar lists the sessions of.
+    let home: SessionWindow
 
     var body: some View {
         // The session list is a native NSOutlineView (SidebarOutlineView), not a
@@ -58,7 +60,8 @@ struct SidebarPane: View {
         // attention dots, and inline rename are unchanged.
         SidebarOutlineView(
             manager: manager,
-            snapshot: manager.sidebarGroups.map {
+            home: home,
+            snapshot: manager.sidebarGroups(in: home).map {
                 SidebarSnapshotGroup(
                     folder: $0.folder, sessionIDs: $0.sessions.map(\.id),
                     tallIDs: Set($0.sessions.filter(\.hasSecondLine).map(\.id)),
@@ -367,7 +370,7 @@ struct SidebarRowContent: View {
     /// same conditions SessionStatusIndicator draws under, its ⌘-number
     /// included, or that draws over the end of the name.
     private var showsStatus: Bool {
-        let selected = manager.selectedID == session.id
+        let selected = manager.isFront(session.id)
         return manager.shortcutNumber(for: session.id) != nil
             || session.attention != nil || session.isBusy
             || (session.unread != nil && (!selected || session.markedUnread))
@@ -377,7 +380,7 @@ struct SidebarRowContent: View {
     var body: some View {
         SessionRow(
             session: session,
-            isSelected: manager.selectedID == session.id,
+            isSelected: manager.isFront(session.id),
             isEditing: manager.editingID == session.id,
             isInWorktree: session.isInWorktree,
             isHovered: session.isSidebarRowHovered,
@@ -552,7 +555,7 @@ enum SessionActions {
         let menu = NSMenu()
         // Shortcuts act on the selected session, so they're shown only on its
         // menu: on another row's they'd promise to act on that one.
-        let selected = manager.selectedID == session.id
+        let selected = manager.isFront(session.id)
         func item(_ title: String, _ glyph: String, key: String = "",
                   _ modifiers: NSEvent.ModifierFlags = [.command],
                   _ handler: @escaping () -> Void) -> NSMenuItem {
@@ -602,6 +605,8 @@ enum SessionActions {
             }
         }
 
+        windowItems(for: [session], manager: manager).forEach(menu.addItem)
+
         menu.addItem(.separator())
         // In a worktree, closing archives (`SessionManager.end`): the
         // session waits to be restored from ⌘P, and its worktree goes
@@ -640,10 +645,49 @@ enum SessionActions {
         }
         menu.addItem(SessionColourMenu.item(for: sessions, manager: manager))
         ReminderMenu.items(for: sessions, manager: manager).forEach(menu.addItem)
+        windowItems(for: sessions, manager: manager).forEach(menu.addItem)
         menu.addItem(.separator())
         // Worktree sessions archive, as closing one does (`SessionManager.end`).
         item("Close \(sessions.count) Sessions", "xmark.square") { manager.requestClose(sessions) }
         return menu
+    }
+
+    /// Move to New Window, and Move to Window ▸ with the other windows by
+    /// the name of the session each has in front (its title). The way to
+    /// what a drag between sidebars does, for anyone who doesn't drag. New
+    /// Window is left out when it would only swap one window for another:
+    /// these are all the sessions their window has.
+    static func windowItems(for sessions: [Session], manager: SessionManager) -> [NSMenuItem] {
+        guard let first = sessions.first else { return [] }
+        let home = manager.window(of: first)
+        let ids = sessions.map(\.id)
+        var items: [NSMenuItem] = [.separator()]
+        let everything = manager.sessions(in: home).allSatisfy { ids.contains($0.id) }
+        if !everything {
+            let item = ClosureMenuItem(title: "Move to New Window") {
+                if manager.moveSessions(ids, toWindow: nil) != nil {
+                    Telemetry.capture(.sessionMovedWindow(via: .menu))
+                }
+            }
+            item.setGlyph("macwindow.badge.plus")
+            items.append(item)
+        }
+        let others = manager.windows.filter { $0 !== home }
+        if !others.isEmpty {
+            let parent = NSMenuItem(title: "Move to Window", action: nil, keyEquivalent: "")
+            parent.setGlyph("macwindow")
+            let submenu = NSMenu()
+            for window in others {
+                submenu.addItem(ClosureMenuItem(title: window.selected?.name ?? "Wortel") {
+                    if manager.moveSessions(ids, toWindow: window) != nil {
+                        Telemetry.capture(.sessionMovedWindow(via: .menu))
+                    }
+                })
+            }
+            parent.submenu = submenu
+            items.append(parent)
+        }
+        return items.count > 1 ? items : []
     }
 
 }
@@ -1269,7 +1313,7 @@ struct SessionStatusIndicator: View {
     let manager: SessionManager
     let session: Session
 
-    private var isSelected: Bool { manager.selectedID == session.id }
+    private var isSelected: Bool { manager.isFront(session.id) }
 
     /// This row's ⌘1…⌘9, while ⌘ is held: its place in the drawn order.
     private var shortcutHint: String? {
@@ -1662,15 +1706,19 @@ private struct AttentionFlashOverlay: View {
 final class TerminalPaneController: NSViewController {
     private let runtime: GhosttyRuntime
     private let manager: SessionManager
+    /// The window this pane is in: its session is the one shown.
+    private let home: SessionWindow
     private let host = TerminalHostViewController()
     private let pages: PagesView
 
-    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel, files: FileTreeModel) {
+    init(runtime: GhosttyRuntime, manager: SessionManager, home: SessionWindow,
+         git: GitPanelModel, files: FileTreeModel) {
         self.runtime = runtime
         self.manager = manager
-        pages = PagesView(rootView: TerminalPages(manager: manager, git: git, files: files))
+        self.home = home
+        pages = PagesView(rootView: TerminalPages(manager: manager, git: git, files: files, home: home))
         super.init(nibName: nil, bundle: nil)
-        TerminalHostViewController.main = host
+        TerminalHostViewController.register(host)
     }
 
     @available(*, unavailable)
@@ -1700,7 +1748,7 @@ final class TerminalPaneController: NSViewController {
     /// is still being made: there is no shell to show, and the one shown
     /// before it is put away so it can't be typed into by mistake.
     private func showSelected() {
-        let session = manager.selected
+        let session = home.selected
         let preparing = session?.preparation != nil
         pages.takesClicks = manager.sessions.isEmpty || preparing
         if preparing {
@@ -1715,7 +1763,7 @@ final class TerminalPaneController: NSViewController {
     /// same turn (`MainSplitViewController.show`), and this finds it shown.
     private func follow() {
         withObservationTracking {
-            _ = manager.selected?.preparation != nil
+            _ = home.selected?.preparation != nil
             _ = manager.sessions.isEmpty
         } onChange: { [weak self] in
             DispatchQueue.main.async {
@@ -1746,6 +1794,8 @@ private struct TerminalPages: View {
     @Bindable var manager: SessionManager
     @Bindable var git: GitPanelModel
     @Bindable var files: FileTreeModel
+    /// The window this pane is in: its session is the one shown.
+    let home: SessionWindow
 
     var body: some View {
         Color.clear
@@ -1756,7 +1806,7 @@ private struct TerminalPages: View {
                 }
             }
             .overlay {
-                if let session = manager.selected, let preparation = session.preparation {
+                if let session = home.selected, let preparation = session.preparation {
                     WorktreePreparingPage(
                         preparation: preparation,
                         retry: { manager.retryWorktree(session) },
@@ -1764,13 +1814,13 @@ private struct TerminalPages: View {
                         close: { manager.close(session) })
                 }
             }
-            .overlay { AttentionFlashOverlay(flash: manager.attentionFlash) }
+            .overlay { AttentionFlashOverlay(flash: home.attentionFlash) }
             .onAppear { focusInspector() }
-            .onChange(of: manager.selectedID) { _, _ in focusInspector() }
-            .onChange(of: manager.selected?.cwd) { _, _ in focusInspector() }
+            .onChange(of: home.selectedID) { _, _ in focusInspector() }
+            .onChange(of: home.selected?.cwd) { _, _ in focusInspector() }
             // The git panes follow where the session started (`homeFolder`),
             // which a worktree being attached or restored moves.
-            .onChange(of: manager.selected?.originCwd) { _, _ in focusInspector() }
+            .onChange(of: home.selected?.originCwd) { _, _ in focusInspector() }
             // The repo resolves a beat after the cwd (a work-tree root has to be
             // walked to), and the tree roots on it — so re-root when it lands,
             // or a session would show its cwd where its repo root belongs until
@@ -1786,8 +1836,8 @@ private struct TerminalPages: View {
     }
 
     private func focusInspector() {
-        git.focus(session: manager.selected)
-        files.focus(session: manager.selected)
+        git.focus(session: home.selected)
+        files.focus(session: home.selected)
     }
 }
 

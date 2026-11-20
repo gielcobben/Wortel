@@ -44,6 +44,7 @@ final class TelemetryTests: XCTestCase {
             "where", "area", "result", "message",
             "first", "previous_exit", "notifications", "agent", "cause",
             "signal", "exception", "site", "signature", "crashed_version", "crashed_arch",
+            "windows",
         ]
         for event in Self.everyEvent {
             for key in event.properties.keys {
@@ -457,6 +458,10 @@ final class TelemetryTests: XCTestCase {
 
         events.append(.agentJumpUsed)
         events.append(.globalHotkeyUsed)
+        for bucket in CountBucket.allCases { events.append(.windowOpened(windows: bucket)) }
+        for origin in [WindowMoveOrigin.drag, .dragOut, .menu, .merge] {
+            events.append(.sessionMovedWindow(via: origin))
+        }
         events.append(.reportingDisabled)
         return events
     }

@@ -1,6 +1,6 @@
 ---
 name: Wortel
-description: A native macOS terminal for working next to coding agents. One window, glass chrome, opaque pages, almost no colour.
+description: A native macOS terminal for working next to coding agents. A fixed frame per window, glass chrome, opaque pages, almost no colour.
 sources:
   app: macos/Wortel/UI/Chrome.swift
   terminal: macos/Resources/wortel.conf
@@ -99,10 +99,12 @@ of that into something that still reads as a terminal, with next to no
 preferences to lean on.
 These are the ideas that do it.
 
-**One window, a fixed frame.** There are four places and only four: sessions on
-the left, the terminal in the middle, the repository beside it, a second shell
-underneath. Tabs live inside those places. There is no grid of splits to
-arrange, so there is no layout to configure and none to get wrong.
+**A fixed frame, in every window.** There are four places and only four:
+sessions on the left, the terminal in the middle, the repository beside it, a
+second shell underneath. Tabs live inside those places. There is no grid of
+splits to arrange, so there is no layout to configure and none to get wrong.
+A second window (⇧⌘N) is the same frame again, with a sidebar of its own
+sessions: windows are how work is set apart, never how a layout is built.
 
 **Glass for the frame, pages for the work.** The whole window sits on one
 behind-window material, so the desktop tints it. The titlebar band and the

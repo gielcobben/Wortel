@@ -61,6 +61,11 @@ final class Session: Identifiable {
     /// edge. Persisted, and only ever changed by hand: opening the session
     /// leaves it, which is the point of a "come back to this".
     var colour: SessionColour?
+    /// The main window this session is in (`SessionWindow.id`). Each window's
+    /// sidebar lists only its own; moving a session to another window is
+    /// changing this. Persisted. nil only between being made and being
+    /// placed, which the manager does in the same turn.
+    var windowID: UUID?
     /// The worktree this session is waiting for, while git makes it. The row
     /// and the page are there from the moment the session is asked for; the shell
     /// starts once its folder exists. In a large repository the checkout is

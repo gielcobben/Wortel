@@ -203,8 +203,8 @@ shell adds nothing on top.
 
 ## How the app is put together
 
-One window. One libghostty runtime. A list of sessions, each owning exactly one
-terminal surface.
+One libghostty runtime. A list of sessions, each owning exactly one terminal
+surface, each in one window.
 
 - **`GhosttyRuntime`** owns the single libghostty process state and every C
   callback. Callbacks can arrive on libghostty's IO and render threads; each one
@@ -267,7 +267,8 @@ feature is held to.
 | Keys | Action |
 | --- | --- |
 | `⌘N` | New session (`⌥⌘N` at home) |
-| `⇧⌘N` / `⌘O` | New worktree session / open folder |
+| `⌥⇧⌘N` / `⌘O` | New worktree session / open folder |
+| `⇧⌘N` | New window: its own sidebar; drag a row between windows to move it |
 | `⌥⌘R` | Rename session |
 | `⌘W` / `⇧⌘W` | Close the tab you are in / close the session |
 | `⌘1`…`⌘9` | Select session by position |

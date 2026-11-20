@@ -474,6 +474,10 @@ targets:
       # DTO with a hand-written decoder whose defaults are the app's file-format
       # migrations, and it drags in nothing (Foundation only).
       - path: Wortel/Sessions/SessionStore.swift
+      # Which window each session opens in, and which windows come back:
+      # `windows.json` against `sessions.json`, where an older build's file
+      # has no windows at all (Foundation only).
+      - path: Wortel/Sessions/WindowStore.swift
       # What a session's colour can be, which both the file format above and
       # `wortel mark`'s answer depend on (Foundation only).
       - path: Wortel/Sessions/SessionColour.swift

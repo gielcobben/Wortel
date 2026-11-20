@@ -12,9 +12,26 @@ import AppKit
 /// a few milliseconds late instead of on an empty terminal.
 final class TerminalHostViewController: NSViewController {
     private(set) weak var currentView: SurfaceView?
-    /// The main window's, for a session switch laid out in one go
+    /// Every main window's host, for a session switch laid out in one go
     /// (`MainSplitViewController.show`), which runs outside SwiftUI's update.
-    static weak var main: TerminalHostViewController?
+    private static let hosts = NSHashTable<TerminalHostViewController>.weakObjects()
+
+    /// Register a host made for a main window's terminal area.
+    static func register(_ host: TerminalHostViewController) { hosts.add(host) }
+
+    /// The host in `window`'s terminal area.
+    static func main(in window: NSWindow?) -> TerminalHostViewController? {
+        guard let window else { return nil }
+        return hosts.allObjects.first { $0.view.window === window }
+    }
+
+    /// The terminal on screen here, unless another window has taken it (a
+    /// session moved there): an NSView has one parent, and a terminal that
+    /// went is no longer this host's to hide.
+    private var ownCurrentView: SurfaceView? {
+        guard let currentView, currentView.superview === view else { return nil }
+        return currentView
+    }
     /// Resizes are held while a terminal wakes (`holdForWake`).
     private var holdsForWake = false
     /// Waking, to be shown as soon as its screen has been written back.
@@ -48,7 +65,7 @@ final class TerminalHostViewController: NSViewController {
             HibernationPolicy.shared.hidden(waking)
         }
 
-        guard surfaceView !== currentView else { return releaseWakeHold() }
+        guard surfaceView !== ownCurrentView else { return releaseWakeHold() }
 
         // Asleep, or woken out of sight a moment ago and still being written
         // back: either way it is shown when its screen is whole.
@@ -97,9 +114,9 @@ final class TerminalHostViewController: NSViewController {
         // After the swap: the terminal being left is hidden by then, so only
         // the one arriving takes a size when the hold lets go.
         defer { releaseWakeHold() }
-        guard surfaceView !== currentView else { return }
+        guard surfaceView !== ownCurrentView else { return }
         Signposts.interval("session-switch") {
-            if let currentView {
+            if let currentView = ownCurrentView {
                 currentView.isHidden = true
                 currentView.occlusionDidChange(visible: false)
                 HibernationPolicy.shared.hidden(currentView)
@@ -131,7 +148,7 @@ final class TerminalHostViewController: NSViewController {
             wakingView = nil
             HibernationPolicy.shared.hidden(waking)
         }
-        guard let currentView else { return }
+        guard let currentView = ownCurrentView else { self.currentView = nil; return }
         currentView.isHidden = true
         currentView.occlusionDidChange(visible: false)
         HibernationPolicy.shared.hidden(currentView)
@@ -147,7 +164,7 @@ final class TerminalHostViewController: NSViewController {
     /// terminal that draws but does not take a keystroke.
     override func viewDidAppear() {
         super.viewDidAppear()
-        if let currentView { focusTerminal(currentView) }
+        if let currentView = ownCurrentView { focusTerminal(currentView) }
         SurfaceView.settleSoon("the window appeared")
     }
 
@@ -156,7 +173,7 @@ final class TerminalHostViewController: NSViewController {
     /// agree, and nothing while a pane is animating.
     override func viewDidLayout() {
         super.viewDidLayout()
-        currentView?.reconcileSize("its area was laid out")
+        ownCurrentView?.reconcileSize("its area was laid out")
     }
 
     /// Make the terminal first responder so keystrokes land.

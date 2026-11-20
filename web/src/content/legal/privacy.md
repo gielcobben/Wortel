@@ -1,7 +1,7 @@
 ---
 title: Privacy
 description: What Wortel and wortel.sh record, what they never record, and how to turn the app's reporting off.
-updated: 2026-11-10
+updated: 2026-11-19
 nav: Privacy
 order: 10
 ---
@@ -101,6 +101,9 @@ about the thing it happened to:
 - a session in a worktree was archived, or brought back from the archive
 - the jump-to-next-waiting shortcut was used
 - the shortcut that shows and hides Wortel from any app was used
+- a window was opened, and roughly how many are open (never an exact count)
+- sessions were moved to another window, and how: dragged onto another
+  window, dragged out to a new one, from a menu, or by merging all windows
 - a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`,
   `mark`, `list`, `read`, `send`, `wait`, `version`)
 - one last message when you turn reporting off, and then silence

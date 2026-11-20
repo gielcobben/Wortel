@@ -32,6 +32,10 @@ struct PersistedSession: Codable {
     /// string like `nameSource`: a colour only a newer build knows is read as
     /// none by `restore`, without failing the decode.
     let colour: String?
+    /// The main window the session is in (`Session.windowID`), matched
+    /// against `windows.json`. Absent in older files and in any written by an
+    /// older build, which drops it: the session then opens in the first window.
+    var windowID: UUID?
     /// Whether the source-control panel is open for this session. Per-session
     /// because whether you want it depends on the session: a manager sitting in
     /// your home directory never needs it, the one in a repo always does.
@@ -157,7 +161,7 @@ struct PersistedSession: Codable {
 
     // Tolerate older files without a `name` / `nameSource` field.
     enum CodingKeys: String, CodingKey {
-        case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch, colour
+        case id, name, title, cwd, originCwd, selected, nameSource, worktreeBranch, colour, windowID
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
@@ -173,7 +177,7 @@ struct PersistedSession: Codable {
     }
     init(id: UUID, name: String, title: String, cwd: String?, originCwd: String? = nil,
          selected: Bool, nameSource: String, worktreeBranch: String? = nil,
-         colour: String? = nil,
+         colour: String? = nil, windowID: UUID? = nil,
          gitPanelVisible: Bool?, inspectorPane: String? = nil,
          sideTabs: [String]? = nil, activeSideTab: String? = nil,
          sideColumnWidth: Double? = nil,
@@ -194,6 +198,7 @@ struct PersistedSession: Codable {
         self.selected = selected; self.nameSource = nameSource
         self.worktreeBranch = worktreeBranch
         self.colour = colour
+        self.windowID = windowID
         self.gitPanelVisible = gitPanelVisible
         self.inspectorPane = inspectorPane
         self.sideTabs = sideTabs
@@ -256,6 +261,7 @@ struct PersistedSession: Codable {
         // Absent for every session never given a colour, and in every file
         // written before there were any: both mean none.
         colour = try c.decodeIfPresent(String.self, forKey: .colour)
+        windowID = try c.decodeIfPresent(UUID.self, forKey: .windowID)
         // Left nil for older files rather than defaulted here: what an absent
         // field should fall back to is a migration decision, and this type stays
         // a plain reading of the file. `SessionManager.restore` resolves it.

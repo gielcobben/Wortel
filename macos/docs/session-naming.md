@@ -110,7 +110,7 @@ hosted SwiftUI row can't change on its own. Sessions persisted before the
 branch was recorded ask git for it once at restore.
 
 **The branch follows the name, once.** A worktree made without a branch name
-(⇧⌘N, `wortel new --worktree`) starts on a placeholder, `worktree/brave-river-1a2f`.
+(⌥⇧⌘N, `wortel new --worktree`) starts on a placeholder, `worktree/brave-river-1a2f`.
 When the session gets a real name from any source, the branch is renamed for
 it (`fix-login-redirect`), but only while nobody else can know the old one:
 Wortel made it, it was never pushed, and it's checked out in that worktree

@@ -246,7 +246,7 @@ enum MainMenu {
 
         // -- Start a session ---------------------------------------------------
         // Here (⌘N, in the folder you're in), out of every folder (⌥⌘N, at
-        // home), here on a branch of its own (⇧⌘N), or somewhere else (⌘O).
+        // home), here on a branch of its own (⌥⇧⌘N), or somewhere else (⌘O).
         // Fork, Open Branch and New Folder were cut: seven ways to start
         // something was more than anyone could keep apart. Archived sessions
         // are found with ⌘P. Each of the four starts the command Settings
@@ -275,9 +275,12 @@ enum MainMenu {
         // ⌘N's isolated sibling: the same repository, in a worktree and on a
         // branch of its own. A sheet with a placeholder name selected, so
         // Return is as quick as the no-dialog version was, and From and
-        // Location are there when they aren't the defaults.
+        // Location are there when they aren't the defaults. ⌥⇧⌘N since
+        // 2026-11-19: ⇧⌘N is New Window, as in VS Code, Zed and cmux, whose
+        // ⌘N also makes something smaller than a window. Still in the N
+        // family, and free of a wortel.conf keybind.
         let newWorktree = sessionMenu.addItem(withTitle: "New Worktree Session\u{2026}", action: #selector(AppDelegate.newWorktreeSession(_:)), keyEquivalent: "n")
-        newWorktree.keyEquivalentModifierMask = [.command, .shift]
+        newWorktree.keyEquivalentModifierMask = [.command, .option, .shift]
         // ⌘O is every Mac app's "open", and a directory is the only thing
         // Wortel opens. Files are opened by the tree and by ⌘-clicking a path,
         // which are both already in front of the file you mean. It files the
@@ -656,6 +659,16 @@ enum MainMenu {
         main.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
         windowItem.submenu = windowMenu
+        // Windows of sessions: each has its own sidebar, and a session is in
+        // one of them. ⇧⌘N because ⌘N is a session, as VS Code, Zed and cmux
+        // keep ⌘N for the thing inside and ⇧⌘N for a window. Moving and
+        // merging have no key, as AppKit's Merge All Windows has none: a
+        // drag between sidebars is the quick way.
+        let newWindow = windowMenu.addItem(withTitle: "New Window", action: #selector(AppDelegate.newWindow(_:)), keyEquivalent: "n")
+        newWindow.keyEquivalentModifierMask = [.command, .shift]
+        windowMenu.addItem(withTitle: "Move Session to New Window", action: #selector(AppDelegate.moveSessionToNewWindow(_:)), keyEquivalent: "")
+        windowMenu.addItem(withTitle: "Merge All Windows", action: #selector(AppDelegate.mergeAllWindows(_:)), keyEquivalent: "")
+        windowMenu.addItem(.separator())
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         windowMenu.addItem(.separator())

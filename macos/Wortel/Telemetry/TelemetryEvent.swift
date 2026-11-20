@@ -141,6 +141,14 @@ enum TelemetryEvent: Equatable {
     /// nobody presses is a chord that should be given back to the system.
     case globalHotkeyUsed
 
+    /// A main window was opened (⇧⌘N, or sessions dragged out of one), with
+    /// how many are open now. Whether people want more than one window at
+    /// all, which is a question the app was built for a year without.
+    case windowOpened(windows: CountBucket)
+
+    /// Sessions were moved to another window, and how.
+    case sessionMovedWindow(via: WindowMoveOrigin)
+
     /// A `wortel` command was served over the socket.
     case commandRun(verb: CommandVerb)
 
@@ -189,6 +197,8 @@ enum TelemetryEvent: Equatable {
         case .reminderSet: return "reminder_set"
         case .appCrashed: return "app_crashed"
         case .globalHotkeyUsed: return "global_hotkey_used"
+        case .windowOpened: return "window_opened"
+        case .sessionMovedWindow: return "session_moved_window"
         case .commandRun: return "command_run"
         case .reportingDisabled: return "reporting_disabled"
         }
@@ -241,6 +251,10 @@ enum TelemetryEvent: Equatable {
             return [:]
         case let .commandRun(verb):
             return ["verb": verb.rawValue]
+        case let .windowOpened(windows):
+            return ["windows": windows.rawValue]
+        case let .sessionMovedWindow(via):
+            return ["via": via.rawValue]
         }
     }
 }
@@ -321,6 +335,18 @@ enum SessionOrigin: String {
 /// What opened the inspector. The toolbar and the shortcut are different
 /// habits, and which one people reach for decides whether the segments earn
 /// their space in a toolbar this small.
+/// How sessions got to another window.
+enum WindowMoveOrigin: String {
+    /// Dropped on another window's sidebar.
+    case drag
+    /// Let go outside every window: a new window there.
+    case dragOut = "drag_out"
+    /// Move to New Window, or Move to Window ▸.
+    case menu
+    /// Window ▸ Merge All Windows.
+    case merge
+}
+
 enum PanelOrigin: String {
     case toolbar
     case shortcut

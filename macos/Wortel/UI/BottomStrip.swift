@@ -204,12 +204,14 @@ final class BottomPaneController: NSViewController {
     private let paneHost: NSHostingController<BottomAreaPane>
     private let runtime: GhosttyRuntime
     private let manager: SessionManager
+    private let home: SessionWindow
     private let git: GitPanelModel
 
-    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
+    init(runtime: GhosttyRuntime, manager: SessionManager, home: SessionWindow, git: GitPanelModel,
          files: FileTreeModel, previewTabs: PreviewTabs) {
         self.runtime = runtime
         self.manager = manager
+        self.home = home
         self.git = git
         paneHost = NSHostingController(rootView: BottomAreaPane(git: git, files: files,
                                                                 previewTabs: previewTabs))
@@ -250,7 +252,7 @@ final class BottomPaneController: NSViewController {
         strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
         strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.manager.selected) }
+        strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.home.selected) }
         observe()
     }
 
@@ -268,7 +270,7 @@ final class BottomPaneController: NSViewController {
     }
 
     private func sync() {
-        let session = manager.selected
+        let session = home.selected
         bar.strip.update(items: git.bottomTabs.map { TitleBarController.stripItem(for: $0, in: session) },
                          active: git.activeBottomTab)
         let active = git.bottomVisible ? git.activeBottomTab : nil

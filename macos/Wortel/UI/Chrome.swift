@@ -52,6 +52,13 @@ enum Chrome {
     static let raisedOnBand = NSColor(name: nil) { appearance in
         isDark(appearance) ? .white.withAlphaComponent(0.08) : .black.withAlphaComponent(0.08)
     }
+    /// The sidebar's section headers (folders, Pinned, Sessions): between the
+    /// tertiary label grey, which was too faint to read on the glass (2.2:1
+    /// in dark, 1.9:1 in light), and the secondary, which was too close to
+    /// the rows under it. Chosen by eye on 2026-11-19.
+    static let sectionHeader = NSColor(name: nil) { appearance in
+        isDark(appearance) ? .white.withAlphaComponent(0.45) : .black.withAlphaComponent(0.38)
+    }
     static let hairline = NSColor(name: nil) { appearance in
         isDark(appearance) ? .white.withAlphaComponent(0.08) : .black.withAlphaComponent(0.07)
     }

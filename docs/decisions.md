@@ -1175,6 +1175,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   "What's new" icon after an update was dropped (`9c72bcf`, `5f99cb2`).
 - **2026-11-09. A publish runs the tests, refuses uncommitted changes, and
   builds against tracked package versions** (`1f55136`, `38a56b0`).
+- **2026-11-20. Restart to Update quits Wortel itself if Sparkle hasn't
+  after 3 seconds.** On a laptop a click did nothing: Sparkle's installer had
+  the click, but the quit request its helper sends never arrived, and only a
+  ⌘Q finished the update. The cause did not reproduce in test copies, so
+  the click no longer depends on that request. The fallback quits from a
+  run-loop timer: started from a `Task` it deadlocked against the deferred
+  quit.
 
 ## Telemetry and privacy
 

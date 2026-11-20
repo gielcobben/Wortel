@@ -335,12 +335,9 @@ targets:
       # and the pty, so the two ends cannot drift. The keeper outlives the app
       # by design, so a mismatch here is not hypothetical.
       - path: Wortel/Keeper/KeeperProtocol.swift
-      - path: Wortel/Keeper/ReplayBuffer.swift
-      # The replay reads the modes out of what it drops.
-      - path: Wortel/Ghostty/TerminalModes.swift
+      - path: Wortel/Keeper/OutputTail.swift
       - path: Wortel/Keeper/FileDescriptorChannel.swift
       - path: Wortel/Ghostty/PtyHost.swift
-      - path: Wortel/Ghostty/ReplayAnswers.swift
       - path: Wortel/CLI/WortelCommand.swift
       - path: Wortel/Sessions/ReminderTime.swift
       - path: Wortel/CLI/WortelCLIClient.swift
@@ -460,7 +457,6 @@ targets:
       # A hibernated screen's palette colours, kept as palette colours through
       # libghostty's dump, which only writes them resolved. Pure byte work, and
       # wrong in a way nobody sees until the appearance next changes.
-      - path: Wortel/Ghostty/SnapshotPalette.swift
       # Where TerminalModes, SessionStore and AgentResumeStore keep their files.
       - path: Wortel/DataDirectory.swift
       # The font-size clamp, which is a `didSet` that assigns to its own
@@ -658,17 +654,16 @@ targets:
       - path: WortelKeeper/KeeperTerminal.swift
       - path: WortelKeeper/KeeperOutputChannel.swift
       - path: Wortel/Keeper/KeeperChannelReader.swift
+      - path: Wortel/Keeper/OutputTail.swift
       - path: Wortel/Ghostty/TerminalTheme.swift
       - path: Wortel/Keeper/KeeperClient.swift
       - path: Wortel/Keeper/KeeperConnection.swift
-      - path: Wortel/Keeper/ReplayBuffer.swift
       - path: Wortel/Keeper/FileDescriptorChannel.swift
       - path: Wortel/Ghostty/PtyHost.swift
       # What the terminal answers while a replay goes through it, and the
       # marker that ends that. Pure, and wrong in both directions without a
       # sound: an answer let through is typed into an agent's prompt, a window
       # that never closes swallows every key.
-      - path: Wortel/Ghostty/ReplayAnswers.swift
       # The signals read off a hibernated session's output, and taken out of
       # what is written back into its terminal. A signal missed is a dot that
       # never lights; one let through is raised a second time, late.

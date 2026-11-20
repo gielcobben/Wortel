@@ -14,11 +14,11 @@ import os
 /// One class, two roles, because both ends share this file:
 ///
 /// - **In the keeper** it forks (`start`): it owns the child, reaps it, and
-///   reads the pty only while no app is attached (`pauseReading`).
-/// - **In the app** it only ever *adopts* the descriptor the keeper passed
-///   (`init(adopting:)`): it reads and writes it, and never signals or reaps a
-///   process that isn't its own. It learns the shell ended from the pty
-///   hanging up (`onHangup`).
+///   is the pty's one reader, always.
+/// - **In the app** it reads the session's output channel from the keeper
+///   and types into the pty (`init(channel:typing:)`), and never signals or
+///   reaps a process that isn't its own. It learns the shell ended from the
+///   channel ending (`onHangup`).
 ///
 /// What the exec backend did for a child beyond forking it (`/usr/bin/login`,
 /// TERM and terminfo, the shell integration) is `ShellSpawn`'s, and arrives
@@ -79,16 +79,10 @@ final class PtyHost: @unchecked Sendable {
         /// system is free to hand to someone else.
         var hasExited = false
         var reader: DispatchSourceRead?
-        /// Owed a forced repaint once the real window size has been applied.
-        /// See `ignoreSizesUntilTold`.
-        var needsRedraw = false
         /// The terminal reading this pty has not been given a size yet, so
         /// what it reports is libghostty's own placeholder. See
         /// `ignoreSizesUntilTold`.
         var awaitingSize = false
-        /// Set one column narrow for a forced repaint, owing the true size
-        /// (`checkRepaint`). Cleared by any newer size.
-        var narrowed: Narrowing?
     }
     /// `uncheckedState` only because `DispatchSourceRead` is not Sendable; it
     /// never leaves the lock except to be cancelled by the one caller that took
@@ -106,11 +100,6 @@ final class PtyHost: @unchecked Sendable {
         get { tap.withLock { $0 } }
         set { tap.withLock { $0 = newValue } }
     }
-
-    /// While a reattach's replay is going through the terminal, what the
-    /// terminal answers is held back from the program (`ReplayAnswers`). nil
-    /// the rest of the time, which costs `writeFromTerminal` one lock take.
-    private let replayAnswers = OSAllocatedUnfairLock<ReplayAnswers?>(initialState: nil)
 
     /// How many reads of the program's output have reached `onOutput`. Only
     /// ever compared with an earlier value of itself: a `wortel wait --for`
@@ -242,24 +231,6 @@ final class PtyHost: @unchecked Sendable {
         return queue.sync(execute: work)
     }
 
-    /// Wait until a read already under way has delivered its bytes.
-    ///
-    /// `pauseReading` stops the next read, not the current one: suspending a
-    /// source does not interrupt a handler that is running. The keeper's
-    /// handover needs both, or a chunk read just before the pause lands in the
-    /// replay buffer *after* the app has taken it, and turns up stale in the
-    /// next replay instead of this one. The read loop checks `isReading` before
-    /// every `read`, so once this returns nothing more is read until
-    /// `resumeReading`.
-    ///
-    /// Never call it on `queue`, or while holding anything a read hands its
-    /// bytes to (the keeper's state queue): the read being waited for may be
-    /// waiting on exactly that.
-    func finishReadInFlight() {
-        dispatchPrecondition(condition: .notOnQueue(queue))
-        queue.sync {}
-    }
-
     /// A descriptor of our own for the pty, or nil once it has closed.
     ///
     /// Duplicated under the lock the read source's cancel handler closes the
@@ -371,10 +342,8 @@ final class PtyHost: @unchecked Sendable {
         source.setEventHandler { [weak self] in
             guard let self else { return }
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-            // Asked before every read, not once: the keeper pauses this source
-            // to hand the pty to the app, and a suspended source does not stop
-            // a handler already in this loop. Without the check it went on
-            // reading beside the app, two readers splitting one stream.
+            // Asked before every read, not once: a host let go of (`release`)
+            // stops at the next read, not at the end of a flood.
             while self.shared.withLock({ $0.isReading }) {
                 let count = read(fd, &buffer, buffer.count)
                 if count > 0 {
@@ -383,7 +352,6 @@ final class PtyHost: @unchecked Sendable {
                         self.onOutput?(base, count)
                     }
                     self.outputReads.withLock { $0 &+= 1 }
-                    self.noteOutputWhileNarrowed()
                     // A short read means the pty had nothing more; going round
                     // again would just return EAGAIN.
                     if count < buffer.count { return }
@@ -543,58 +511,6 @@ final class PtyHost: @unchecked Sendable {
         }
     }
 
-    /// What the terminal sends the program: the user's keys, and its answers
-    /// to the program's queries. The terminal's `receive_buffer` comes here,
-    /// Wortel's own writes (a resume, the light/dark catch-up) go to `write`.
-    ///
-    /// The difference is the replay. While one is muted (`muteReplayAnswers`)
-    /// these bytes stop here, before the taps as well as the pty: an old
-    /// answer is neither the program's business nor a line the user typed.
-    func writeFromTerminal(_ bytes: UnsafePointer<UInt8>, count: Int) {
-        let now = DispatchTime.now().uptimeNanoseconds
-        let (pass, dropped) = replayAnswers.withLock { gate -> (Range<Int>?, Int?) in
-            guard var answers = gate else { return (0..<count, nil) }
-            let pass = answers.admit(UnsafeBufferPointer(start: bytes, count: count), now: now)
-            gate = answers.isOpen ? nil : answers
-            return (pass, answers.isOpen ? answers.dropped : nil)
-        }
-        if let dropped, dropped > 0 {
-            NSLog("wortel: dropped %d replies the terminal made to the replay", dropped)
-        }
-        guard let pass, !pass.isEmpty else { return }
-        write(bytes + pass.lowerBound, count: pass.count)
-    }
-
-    /// Whether what the terminal sends the program is still being held back
-    /// for a replay. A `wortel send` waits this out: its paste reaches the pty
-    /// by the terminal's road, and would be dropped with the old answers.
-    var holdsReplayAnswers: Bool {
-        let now = DispatchTime.now().uptimeNanoseconds
-        return replayAnswers.withLock { gate in
-            guard let answers = gate, !answers.isOpen else { return false }
-            return now < answers.deadline
-        }
-    }
-
-    /// Start holding back the terminal's answers: the replay is about to be
-    /// written. Called on `queue`, just before it is.
-    func muteReplayAnswers() {
-        let now = DispatchTime.now().uptimeNanoseconds
-        replayAnswers.withLock { $0 = ReplayAnswers(now: now) }
-    }
-
-    /// The replay is written, and the marker after it if one could be
-    /// (`ReplayAnswers.endsCleanly`). The window now closes when the marker's
-    /// answer comes back, or shortly without one.
-    func replayWritten(markerSent: Bool) {
-        let now = DispatchTime.now().uptimeNanoseconds
-        replayAnswers.withLock { gate in
-            guard var answers = gate else { return }
-            answers.replayWritten(markerSent: markerSent, now: now)
-            gate = answers
-        }
-    }
-
     /// How long a write waits for a program to take any of its input.
     private static let inputPatience: Int32 = 5_000 // ms
 
@@ -619,179 +535,26 @@ final class PtyHost: @unchecked Sendable {
         }
     }
 
-    /// The window changed shape. This is what sends SIGWINCH, which is how every
-    /// full-screen program learns to redraw.
-    ///
-    /// Each write to the pty's size is made under the lock that decides it,
-    /// so a resize and a forced repaint's return to the true size (on the
-    /// read queue) can't land in the other's order: the pty is always at the
-    /// last size decided.
+    /// The terminal's grid changed shape: libghostty's `receive_resize`. The
+    /// keeper keeps the terminal, so the size is its to apply, to the pty and
+    /// its own terminal at one point in the stream (`resizeInKeeper`).
     func resize(columns: UInt16, rows: UInt16, widthPx: UInt32, heightPx: UInt32) {
-        // The keeper keeps this terminal: the size is its to apply, to the
-        // pty and its own terminal at once. Still not libghostty's placeholder.
-        if let resizeInKeeper {
-            let send = shared.withLock { state -> Bool in
-                guard !state.awaitingSize, state.typing >= 0 else { return false }
-                return true
-            }
-            if send { resizeInKeeper(columns, rows, widthPx, heightPx) }
-            return
-        }
-        let size = winsize(
-            ws_row: rows, ws_col: columns,
-            ws_xpixel: UInt16(truncatingIfNeeded: widthPx),
-            ws_ypixel: UInt16(truncatingIfNeeded: heightPx))
-        let narrowed = shared.withLock { state -> Bool in
-            guard !state.awaitingSize, state.master >= 0 else { return false }
-            // A newer size: any repaint still waiting to put the old one back
-            // is over.
-            state.narrowed = nil
-            var told = size
-            _ = ioctl(state.master, TIOCSWINSZ, &told)
-            guard state.needsRedraw, columns > 1 else { return false }
-            state.needsRedraw = false
-            // Report one column fewer, and the true size again once the
-            // program has finished answering it. Each is a real change, so
-            // the program cannot dismiss either as a resize that wasn't one,
-            // and it lands on the size it started from. Claude Code answers a
-            // change of width by printing its whole conversation again, which
-            // is what fills a new terminal; a change of height only redraws
-            // the part still live.
-            //
-            // **Not back to back, and not cut short.** Written one after the
-            // other, the two reached a program as one SIGWINCH that read the
-            // final size: no change, nothing repainted (measured 2026-11-19
-            // with a program logging each SIGWINCH and the size it read).
-            // Brought back after a fixed 150 ms, or at the program's first
-            // output, the true size landed in the middle of a reprint: of six
-            // idle Claude Codes relaunched out of sight four came back blank,
-            // and a screen on show was left with only its coloured words.
-            var narrower = size
-            narrower.ws_col = columns - 1
-            _ = ioctl(state.master, TIOCSWINSZ, &narrower)
-            let now = DispatchTime.now()
-            state.narrowed = Narrowing(trueSize: size, since: now, lastOutput: nil)
-            return true
-        }
-        if narrowed { checkRepaint(after: Self.repaintQuiet) }
+        guard let resizeInKeeper, !shared.withLock({ $0.awaitingSize }) else { return }
+        resizeInKeeper(columns, rows, widthPx, heightPx)
     }
 
-    /// Make the program repaint, at the size its pty has now: one column
-    /// narrow and back, as a relaunched terminal's first size does (`resize`).
-    /// For a terminal that has its size already and whose screen turns out
-    /// not to be the one the program left. Not yet told a size, it is left to
-    /// that first size instead.
-    func repaintNow() {
-        let narrowed = shared.withLock { state -> Bool in
-            guard state.master >= 0, state.narrowed == nil else { return false }
-            guard !state.awaitingSize else {
-                state.needsRedraw = true
-                return false
-            }
-            var size = winsize()
-            guard ioctl(state.master, TIOCGWINSZ, &size) == 0, size.ws_col > 1 else { return false }
-            var narrower = size
-            narrower.ws_col -= 1
-            _ = ioctl(state.master, TIOCSWINSZ, &narrower)
-            state.narrowed = Narrowing(trueSize: size, since: .now(), lastOutput: nil)
-            return true
-        }
-        if narrowed { checkRepaint(after: Self.repaintQuiet) }
-    }
-
-    /// A pty set one column narrow to make its program repaint, and what is
-    /// needed to know when to put the true size back.
-    struct Narrowing {
-        var trueSize: winsize
-        var since: DispatchTime
-        /// When the program last wrote, nil until it has: its answer.
-        var lastOutput: DispatchTime?
-    }
-
-    /// Output read while narrowed is the program answering. One lock take
-    /// per read, and nothing more: the decision is `checkRepaint`'s.
-    private func noteOutputWhileNarrowed() {
-        shared.withLock { state in
-            if state.narrowed != nil { state.narrowed?.lastOutput = .now() }
-        }
-    }
-
-    /// Put the true size back once the program has been quiet for
-    /// `repaintQuiet` after answering, after `repaintPatience` if it never
-    /// writes at all, or after `repaintLongest` whatever it is doing;
-    /// otherwise look again when that could next be true. One timer at a
-    /// time, on the read queue, re-armed by itself.
-    private func checkRepaint(after delay: TimeInterval) {
-        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
-            let next = self.shared.withLock { state -> TimeInterval? in
-                guard let narrowing = state.narrowed, state.master >= 0 else { return nil }
-                let now = DispatchTime.now()
-                func seconds(since time: DispatchTime) -> TimeInterval {
-                    Double(now.uptimeNanoseconds - time.uptimeNanoseconds) / 1e9
-                }
-                let narrowedFor = seconds(since: narrowing.since)
-                let wait: TimeInterval
-                if narrowedFor >= Self.repaintLongest {
-                    wait = 0
-                } else if let last = narrowing.lastOutput {
-                    wait = Self.repaintQuiet - seconds(since: last)
-                } else {
-                    wait = Self.repaintPatience - narrowedFor
-                }
-                guard wait <= 0 else { return wait }
-                var size = narrowing.trueSize
-                _ = ioctl(state.master, TIOCSWINSZ, &size)
-                state.narrowed = nil
-                return nil
-            }
-            if let next { self.checkRepaint(after: next) }
-        }
-    }
-
-    /// How long a program must have written nothing before a forced repaint's
-    /// true size comes back: it has finished answering the narrower one.
-    private static let repaintQuiet: TimeInterval = 0.3
-    /// The longest the narrower size stands for a program that writes
-    /// nothing in answer to it.
-    private static let repaintPatience: TimeInterval = 1.5
-    /// The longest it stands at all, for a program that never stops writing.
-    private static let repaintLongest: TimeInterval = 5
-
-    /// A new terminal is about to be put on this pty (a launch, a wake, a
-    /// restarted shell): pass on none of its sizes until it has been told one,
-    /// and with `repaint`, make the program repaint once it has.
+    /// A new surface is about to be put on this session: pass on none of its
+    /// sizes until it has been told one.
     ///
     /// A surface reports its grid as soon as it exists, before anyone has
     /// told it a size, and that grid is libghostty's placeholder: 45 columns
     /// by 15 rows. Passed on, every session not yet looked at since a
     /// relaunch had its pty set to 45x15, and its agent went on working at
-    /// that width. What an agent prints is wrapped by the agent, so its
-    /// output stayed 45 columns wide in a full-width page for good
-    /// (2026-11-19: eight of twelve Claude Code ptys at 45x15). Until it is
-    /// told, the pty keeps the size it has, which for a session that
-    /// survived a relaunch is the one it was last shown at. The report has
-    /// been seen to come during `ghostty_surface_new` only: in every test of
-    /// this, no program was ever told 15x45.
-    ///
-    /// **A repaint, for a terminal that starts empty** (a session that
-    /// survived a relaunch; not a woken one, which gets its screen back
-    /// whole). The keeper only buffers while
-    /// detached, so a program that sat idle while the app was gone comes back
-    /// with no bytes at all, and a program at rest does not reprint itself
-    /// unasked. It used to be the placeholder that made it: 45x15 and then the
-    /// real size were two changes of width. Without it the pty is set to the
-    /// size it already has and nothing is sent (blank screens, 2026-11-19, the
-    /// first build of this). Why a size change and not a bare `SIGWINCH`:
-    /// measured across nine real sessions, exactly one answered a bare one,
-    /// because a TUI that tracks its own size treats a resize that isn't one
-    /// as nothing to do. So the first size passed on goes one column narrow
-    /// and back (`resize`). A new session has nothing to repaint.
-    func ignoreSizesUntilTold(repaint: Bool) {
-        shared.withLock {
-            $0.awaitingSize = true
-            if repaint { $0.needsRedraw = true }
-        }
+    /// that width, for good (2026-11-19: eight of twelve Claude Code ptys at
+    /// 45x15). Until the surface is told, the pty keeps the size the keeper
+    /// has for it.
+    func ignoreSizesUntilTold() {
+        shared.withLock { $0.awaitingSize = true }
     }
 
     /// The terminal has been given a real size: what it reports from now on
@@ -809,33 +572,6 @@ final class PtyHost: @unchecked Sendable {
             var size = winsize(ws_row: rows, ws_col: columns,
                                ws_xpixel: UInt16(clamping: widthPx), ws_ypixel: UInt16(clamping: heightPx))
             _ = ioctl(state.master, TIOCSWINSZ, &size)
-        }
-    }
-
-    /// Stop reading without giving up the pty.
-    ///
-    /// **The load-bearing rule of the whole design**: exactly one process may
-    /// read a pty at a time. Two readers split the byte stream between them, and
-    /// the corruption is intermittent and unreproducible. So the keeper pauses
-    /// before handing the descriptor to the app, and resumes when the app lets
-    /// go. Anything that arrives in the gap stays in the kernel's buffer, which
-    /// is why nothing is lost between the two.
-    ///
-    /// This stops the *next* read; one already under way finishes first. A
-    /// handover that must not race it follows this with `finishReadInFlight`.
-    func pauseReading() {
-        shared.withLock { state in
-            guard let reader = state.reader, state.isReading else { return }
-            state.isReading = false
-            reader.suspend()
-        }
-    }
-
-    func resumeReading() {
-        shared.withLock { state in
-            guard let reader = state.reader, !state.isReading else { return }
-            state.isReading = true
-            reader.resume()
         }
     }
 

@@ -4,12 +4,12 @@ import XCTest
 /// What the keeper keeping the terminal costs on the hottest path a terminal
 /// has: a program writing as fast as it can.
 ///
-/// Protocol 1 passed the pty and the keeper did nothing per byte. With the
-/// keeper keeping the terminal it reads every byte, parses it into its own
-/// terminal and forwards it to the app through a socket. The app's own work
-/// is the same either way (it parses the same bytes into its surface), so
-/// this measures exactly what is added: the keeper's read, parse and copy,
-/// in wall time to the last byte and in CPU.
+/// The keeper reads every byte, parses it into its own terminal and forwards
+/// it to the app through a socket. The app's own work is what it always was
+/// (it parses the same bytes into its surface), so this measures what the
+/// keeper adds: its read, parse and copy, in wall time to the last byte and
+/// in CPU. Numbers, and the protocol 1 baseline they were taken against, are
+/// in `bench/BENCHMARKS.md`; this prints them and checks nothing is lost.
 final class KeeperTerminalThroughputTests: XCTestCase {
     private var path = ""
     private var server: KeeperServer?
@@ -80,16 +80,10 @@ final class KeeperTerminalThroughputTests: XCTestCase {
         XCTAssertTrue(try client.connect())
         let marker = Array("THROUGHPUT-END".utf8)
 
-        func run(_ terminal: Bool, _ id: String) throws -> (mbps: Double, cpuPerMB: Double, bytes: Int) {
-            let fd: Int32
-            if terminal {
-                let (_, fds) = try client.sendForDescriptors(.terminal(session: id, plan: plan(), columns: 160, rows: 48))
-                fd = try XCTUnwrap(fds.first)
-                fds.dropFirst().forEach { close($0) }
-            } else {
-                let (_, passed) = try client.send(.open(session: id, plan: plan(), columns: 160, rows: 48))
-                fd = try XCTUnwrap(passed)
-            }
+        func run(_ id: String) throws -> (mbps: Double, cpuPerMB: Double, bytes: Int) {
+            let (_, fds) = try client.sendForDescriptors(.terminal(session: id, plan: plan(), columns: 160, rows: 48))
+            let fd = try XCTUnwrap(fds.first)
+            fds.dropFirst().forEach { close($0) }
             defer { close(fd) }
             let cpu = cpuSeconds(), start = Date()
             let bytes = drain(fd, until: marker)
@@ -98,18 +92,11 @@ final class KeeperTerminalThroughputTests: XCTestCase {
             return (mb / seconds, used / mb, bytes)
         }
 
-        // Alternated, twice each, so a busy moment lands on both.
-        var direct: [(mbps: Double, cpuPerMB: Double, bytes: Int)] = []
         var kept: [(mbps: Double, cpuPerMB: Double, bytes: Int)] = []
-        for round in 0..<2 {
-            direct.append(try run(false, "direct\(round)"))
-            kept.append(try run(true, "kept\(round)"))
-        }
-        for (name, runs) in [("pty passed (protocol 1)", direct), ("terminal kept", kept)] {
-            for r in runs {
-                print(String(format: "THROUGHPUT %@: %.0f MB/s, %.2f ms CPU per MB, %d bytes",
-                             name, r.mbps, r.cpuPerMB * 1000, r.bytes))
-            }
+        for round in 0..<3 { kept.append(try run("kept\(round)")) }
+        for r in kept {
+            print(String(format: "THROUGHPUT terminal kept: %.0f MB/s, %.2f ms CPU per MB, %d bytes",
+                         r.mbps, r.cpuPerMB * 1000, r.bytes))
         }
         XCTAssertTrue(kept.allSatisfy { $0.bytes > 60 * 1_048_576 }, "the kept terminal's channel lost output")
     }
@@ -118,7 +105,7 @@ final class KeeperTerminalThroughputTests: XCTestCase {
 extension KeeperTerminalThroughputTests {
     /// A key's round trip: typed into the pty, echoed by the program, back
     /// to the app. Keys go straight to the pty either way; the echo now comes
-    /// through the keeper. 2000 trips each, alternated in blocks.
+    /// through the keeper. 2000 trips.
     func testWhatKeepingTheTerminalCostsAKeystroke() throws {
         let server = KeeperServer(path: path)
         try server.start()
@@ -130,16 +117,10 @@ extension KeeperTerminalThroughputTests {
 
         func waitReadable(_ fd: Int32) { var p = pollfd(fd: fd, events: Int16(POLLIN), revents: 0); _ = poll(&p, 1, 1000) }
 
-        func trips(terminal: Bool, id: String, count: Int) throws -> [Double] {
-            var readFD: Int32 = -1, writeFD: Int32 = -1
-            if terminal {
-                let (_, fds) = try client.sendForDescriptors(.terminal(session: id, plan: echo, columns: 80, rows: 24))
-                readFD = fds[0]; writeFD = fds[1]
-            } else {
-                let (_, fd) = try client.send(.open(session: id, plan: echo, columns: 80, rows: 24))
-                readFD = try XCTUnwrap(fd); writeFD = readFD
-            }
-            defer { close(readFD); if writeFD != readFD { close(writeFD) } }
+        func trips(id: String, count: Int) throws -> [Double] {
+            let (_, fds) = try client.sendForDescriptors(.terminal(session: id, plan: echo, columns: 80, rows: 24))
+            let readFD = fds[0], writeFD = fds[1]
+            defer { close(readFD); close(writeFD) }
             var reader = KeeperChannelReader()
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
             // Let the shell settle, and take the snapshot off the channel.
@@ -149,7 +130,7 @@ extension KeeperTerminalThroughputTests {
                 guard poll(&p, 1, 50) > 0 else { break }
                 let n = read(readFD, &buffer, buffer.count)
                 if n <= 0 { break }
-                if terminal { buffer.withUnsafeBufferPointer { b in reader.feed(b.baseAddress!, count: n) { _ in } } }
+                buffer.withUnsafeBufferPointer { b in reader.feed(b.baseAddress!, count: n) { _ in } }
             }
             var samples: [Double] = []
             var key: UInt8 = 0x61
@@ -161,26 +142,20 @@ extension KeeperTerminalThroughputTests {
                     waitReadable(readFD)
                     let n = read(readFD, &buffer, buffer.count)
                     guard n > 0 else { continue }
-                    if terminal {
-                        buffer.withUnsafeBufferPointer { b in
-                            reader.feed(b.baseAddress!, count: n) { piece in if case .output = piece { got = true } }
-                        }
-                    } else { got = true }
+                    buffer.withUnsafeBufferPointer { b in
+                        reader.feed(b.baseAddress!, count: n) { piece in if case .output = piece { got = true } }
+                    }
                 }
                 samples.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1000)
             }
             return samples.sorted()
         }
 
-        var direct: [Double] = [], kept: [Double] = []
-        for round in 0..<4 {
-            direct += try trips(terminal: false, id: "d\(round)", count: 500)
-            kept += try trips(terminal: true, id: "k\(round)", count: 500)
-        }
-        direct.sort(); kept.sort()
+        var kept: [Double] = []
+        for round in 0..<4 { kept += try trips(id: "k\(round)", count: 500) }
+        kept.sort()
         func at(_ a: [Double], _ q: Double) -> Double { a[min(a.count - 1, Int(Double(a.count) * q))] }
-        print(String(format: "KEYSTROKE pty passed: median %.0f µs, p99 %.0f µs; terminal kept: median %.0f µs, p99 %.0f µs",
-                     at(direct, 0.5), at(direct, 0.99), at(kept, 0.5), at(kept, 0.99)))
+        print(String(format: "KEYSTROKE terminal kept: median %.0f µs, p99 %.0f µs", at(kept, 0.5), at(kept, 0.99)))
         XCTAssertEqual(kept.count, 2000)
     }
 }

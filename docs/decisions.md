@@ -122,7 +122,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-09-29. Tried and dropped: search in the terminal's scrollback.** Added
   and removed the same day. Agents run in the alternate screen, so it saw one
   screen (`39cc6fa`, `07b4af6`).
+- **2026-11-20. A terminal out of sight gives back its surface after a minute,
+  whatever its program is doing, and comes back exactly.** The keeper keeps
+  the terminal, so the surface (about 70 MB) holds nothing that can be lost:
+  shown again, it asks the keeper for a snapshot down its channel and goes on
+  from it, 30 to 45 ms. Meanwhile the channel is still read, for the
+  program's status and for what the surface would have raised (titles, the
+  working directory, progress, a command ending), and a window resize still
+  reaches it through the keeper. Memory pressure drops every hidden one at
+  once, as before.
 - **2026-11-17. A terminal out of sight for ten minutes hibernates.** Every
+  **Replaced 2026-11-20:** the keeper keeps every terminal, so a surface out of sight
+  goes after a minute and comes back from a snapshot; see "The keeper keeps each
+  session's terminal" under Keeper. Kept here for what was measured.
   hidden terminal kept its frames and scrollback, about 70 MB a session, so the
   app's memory grew with the number of sessions. Now the surface is freed (on
   a macOS memory warning, every hidden one at once) and the shell keeps
@@ -176,6 +188,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   left there by SwiftUI, and was told exactly its size. See the entry on the
   terminal's pane. The too-narrow case was the placeholder grid, also above.
 - **2026-11-19. A new terminal starts at the size a session's terminal last
+  **Partly replaced 2026-11-20:** the placeholder rule stands; the forced repaint
+  (one column narrow and back) is gone, as a relaunched terminal is no longer empty.
   had on screen, and its pty ignores it until it is told one.** Agents in
   sessions not looked at since a relaunch printed everything 45 columns wide,
   in a full-width page, for good (an agent wraps its own output, so nothing
@@ -271,6 +285,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   than all of them prints "NOT A MEASUREMENT". Every figure in the entries
   around this one is from a window on screen; where one is not, it says.
 - **2026-11-19. A woken terminal is written into only once it has its
+  **Replaced 2026-11-20:** nothing is written back into a woken terminal; it is
+  restored from the keeper's snapshot (still waiting for its size first).
   size.** A new surface is 45 columns by 15 rows, libghostty's own, whatever
   it is told as it is made: libghostty gathers resizes for 25 ms and takes
   the size on its IO thread, while what the host writes is parsed at once.
@@ -307,6 +323,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   quarter second. **A relaunch's replay waits the same way since the same
   evening**: see the next entry but one.
 - **2026-11-19. A terminal made out of sight is told its own session's size,
+  **Partly replaced 2026-11-20:** each session's own size stands; there is no
+  keeper replay to wait.
   and the keeper's replay waits for it.** After a relaunch, scrolled up, an
   agent's conversation was wrapped at 70 columns in a window of 114, and at
   the very top of the scrollback was its footer in pieces. The running app's
@@ -333,6 +351,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   started empty, so scrolling up stopped at the relaunch; see "Every
   terminal's screen is kept through a relaunch".
 - **2026-11-20. Every terminal's screen is kept through a relaunch.** A
+  **Replaced the same day, by the next build:** nothing is saved at quit; the
+  keeper keeps every terminal (`SavedScreens` removed).
   relaunched terminal started empty: all it got was what the keeper buffered
   while the app was gone, then its program was made to repaint by a change of
   width. A shell's scrollback was lost at every update, and an agent's screen
@@ -413,6 +433,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   shown since is not in the window and does not follow; it is told its own
   last size when it is made.
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
+  **Replaced 2026-11-20:** nothing is lost by dropping a terminal now, so one
+  whose agent is at work goes like any other.
   keeps what its program writes meanwhile, up to 512 KB. An agent's output
   is drawing, each piece placed from where the last ended, so with the start
   gone the rest lands on an old screen in pieces. Seen: a Claude Code
@@ -515,6 +537,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   call has nothing left to do here. To check again on a libghostty update:
   `macos/scripts/try-appearance.sh`.
 - **2026-11-19. A hibernated screen keeps its palette colours as palette
+  **Replaced 2026-11-20:** a snapshot keeps every cell's style as it is.
   colours.** It reverses the last line of the 2026-11-17 hibernation entry
   ("keeps the theme it was saved in"). libghostty's dump writes them as the
   24-bit values of the moment, so the palette is swapped for marker colours
@@ -1007,20 +1030,65 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 ## Keeper
 
 - **2026-08-09. The keeper passes the pty's descriptor and never forwards
+  **Reversed 2026-11-20:** the keeper reads every pty and forwards it; below.
   bytes.** Exactly one reader per pty. Throughput measured the same as a local
   pty (`2f5f2f1`).
 - **2026-09-14. Repaint after a reattach by a real size change.** SIGWINCH
+  **Gone 2026-11-20:** a reattached terminal is restored, not repainted.
   alone repainted one session in nine (`9eb98e5`).
 - **2026-09-17. Terminal modes are recorded by the app and declared again
+  **Replaced 2026-11-20:** modes travel in the keeper's snapshot
+  (`macos/docs/terminal-modes.md`).
   before the replay.** The keeper cannot do it: while attached, the app is the
   one reading (`cd53f94`, `e14c917`).
 - **2026-10-07. The replay is written off the main thread** (`2c3303d`).
+- **2026-11-20. The keeper keeps each session's terminal, and the app shows a
+  copy.** Every terminal bug of 2026-11-18/20 was in a path that rebuilt a
+  terminal in the app: the keeper's 512 KB replay, hibernation's VT dump,
+  screens saved at quit, forced repaints. Each could land at the wrong size or
+  moment, and an agent never redraws its history, so the damage stayed. Now
+  the keeper reads every pty, always, into a libghostty-vt terminal per
+  session at the pty's own size, and the app's surface is restored from an
+  exact snapshot of it (Wortel's Ghostty patch,
+  `ghostty_surface_restore_snapshot`) and fed the same bytes over a framed
+  channel. Nothing is replayed, saved or repainted; `ReplayAnswers`,
+  `SavedScreens`, the hibernation dump and the forced repaints are gone. The
+  keeper answers the program's queries, with or without the app; the
+  surface answers nothing. Options weighed: the keeper rendering into an
+  IOSurface, and the app rendering a state it does not own; libghostty offers
+  neither without forking its renderer. Measured on Release builds: `cat` of
+  64 MB through a shown session 99 to 110 MB/s against 97 to 103 before (the
+  keeper parses in parallel), 0.46 s more CPU per 64 MB in the keeper; a
+  keystroke's round trip 42 µs at the median against 28; the keeper 0.5 MB a
+  session idle, a full 10 MB scrollback compressed to about 2 MB once quiet.
+  Verified with `macos/scripts/try-app-crash.sh` (an agent drawing in place
+  through a `kill -9`, a quit and a dropped terminal, read back exactly) and
+  real vim, Codex, Pi and Claude Code through a `kill -9`. **What it costs:** a
+  keeper crash now loses the terminals as well as the shells (accepted;
+  saving snapshots to disk is the follow-up if it matters).
+- **2026-11-20. Protocol "2", and the update that brought it ended every shell,
+  once.** A protocol 1 keeper cannot serve an app that no longer reads the pty.
+  Moving running sessions onto a new keeper live (passing each pty across,
+  then `SIGKILL` to the old one) was weighed and not chosen: the person chose a
+  clean restart over migration code, with agents resumed by their exact
+  conversation and the release note saying so.
+- **2026-11-20. Ghostty is built here, from source.** The snapshot format is only
+  defined within one Ghostty commit, so the app's GhosttyKit and the keeper's
+  libghostty-vt are built from one patched tree (`macos/scripts/build-ghostty.sh`:
+  Ghostty `5ebe501`, libghostty-spm's patch stack, Wortel's patch). Moving from
+  Ghostty 1.3.1 changed the old rebuild paths' results (a replayed in-place
+  drawing gained three stray lines), so the upgrade ships only with the
+  keeper's terminal. `scrollback-limit-bytes` is pinned at 1.3's 10 MB.
+- **2026-11-20. A quiet terminal's scrollback is compressed by the keeper**,
+  after a 15 s look that finds it unchanged. 108 MB to 23 MB for ten full
+  scrollbacks; decompressed when touched.
 - **2026-10-07. Tried and dropped, twice: moving the keeper out of the app's
   reach.** As a launchd agent, then as a background-only helper app. The Dock
   still offered "Stop Running in Background" both times. Real separation needs
   private API, which is not used. The answer is recovery (`da09bc4`/`0066004`,
   `6a09af8`/`3500073`, `198a870`).
 - **2026-10-07. The protocol version stays "1".** A bump ends every running
+  **Bumped 2026-11-20 to "2"**, on purpose; below.
   shell on update. Every addition is optional, both ways (`c9b9713`).
 - **2026-10-08. A keeper holding shells is never replaced because a ping
   failed or its build is older.** Only when it answers and names another

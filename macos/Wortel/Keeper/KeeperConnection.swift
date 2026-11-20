@@ -247,20 +247,20 @@ final class KeeperConnection {
         }
     }
 
-    /// What the app gets back for a session: a pty to read, and whatever
-    /// happened while it wasn't watching.
+    /// What the app gets back for a session: its terminal's channel, its pty
+    /// to type into, and what the program said about itself lately.
     struct Attachment {
         let session: UUID
-        /// What the app reads: the pty itself (protocol 1), or the session's
-        /// output channel from the keeper's terminal (`KeeperCommand.terminal`).
+        /// The session's output channel from the keeper's terminal
+        /// (`KeeperChannel`): a snapshot, then every byte after it.
         let descriptor: Int32
-        /// The pty, for typing into, when the keeper keeps the terminal and
-        /// `descriptor` is its channel. nil when `descriptor` is the pty.
-        var typingDescriptor: Int32? = nil
-        /// The keeper keeps this session's terminal, and `descriptor` starts
-        /// with a snapshot of it (`KeeperChannel`).
-        var keepsTerminal: Bool { typingDescriptor != nil }
+        /// The pty, for typing into and asking who is in the foreground. Never
+        /// read: the keeper is its one reader.
+        let typingDescriptor: Int32
         let pid: Int32
+        /// The keeper's tail of the session's recent output, for what the
+        /// program said about itself (`ProgramStatusWatch`). Never written
+        /// into a terminal: the snapshot has all of it.
         let replay: Data
         /// True when this attached to a shell that was already running — i.e.
         /// the session survived, which is the whole feature.
@@ -299,66 +299,31 @@ final class KeeperConnection {
         }
     }
 
-    /// Get a pty for `session`: the one it already has if it survived, a new one
-    /// otherwise.
-    ///
-    /// One call for both, because the keeper's `open` already means "attach if
-    /// it exists". That is what makes a relaunch idempotent — restoring a
-    /// session list must not fork a second shell for every session that never
-    /// stopped running.
+    /// The session's terminal from the keeper: the one it already keeps if
+    /// the session survived, a new session with a new shell otherwise. One
+    /// call for both, which is what makes a relaunch idempotent: restoring
+    /// the session list never forks a second shell for one still running.
     func attachOrOpen(
         session: UUID, plan: ShellSpawn.Plan, workingDirectory: String?,
         initialInput: String? = nil, columns: UInt16, rows: UInt16
     ) -> Attachment? {
         guard client.isConnected else { return nil }
         let id = session.uuidString
-
-        if Self.keepsTerminals {
-            let keeperPlan = KeeperSpawnPlan(
-                executable: plan.executable, arguments: plan.arguments,
-                environment: plan.environment, workingDirectory: workingDirectory,
-                initialInput: initialInput)
-            guard let (response, descriptors) = try? client.sendForDescriptors(
-                .terminal(session: id, plan: keeperPlan, columns: columns, rows: rows)) else { return nil }
-            guard response.ok, descriptors.count == 2 else {
-                descriptors.forEach { Darwin.close($0) }
-                let reason = response.message ?? "no reason"
-                KeeperLog.log.error("keeper would not give session \(id, privacy: .public) its terminal: \(reason, privacy: .public)")
-                return nil
-            }
-            return Attachment(session: session, descriptor: descriptors[0], typingDescriptor: descriptors[1],
-                              pid: response.pid ?? -1,
-                              replay: response.replay ?? Data(), resumed: response.existing ?? false,
-                              inputDelivered: response.inputDelivered ?? false,
-                              startedAt: response.startedAt.map(Date.init(timeIntervalSince1970:)))
-        }
-
-        // Ask to attach first purely so we can *tell* whether it survived —
-        // `open` would do both, but silently, and "your agent is still running"
-        // is worth knowing.
-        if let (response, descriptor) = try? client.send(.attach(session: id)),
-           response.ok, let descriptor {
-            return Attachment(session: session, descriptor: descriptor,
-                              pid: response.pid ?? -1,
-                              replay: response.replay ?? Data(), resumed: true,
-                              inputDelivered: response.inputDelivered ?? false,
-                              startedAt: response.startedAt.map(Date.init(timeIntervalSince1970:)))
-        }
-
         let keeperPlan = KeeperSpawnPlan(
             executable: plan.executable, arguments: plan.arguments,
             environment: plan.environment, workingDirectory: workingDirectory,
             initialInput: initialInput)
-        guard let (response, descriptor) = try? client.send(
-            .open(session: id, plan: keeperPlan, columns: columns, rows: rows)),
-            response.ok, let descriptor
-        else { return nil }
-        // `open` attaches when the session exists after all: another attach
-        // let go of it in between, or the attach above failed for a reason
-        // that has passed. Then nothing was forked and nothing typed, and
-        // treating it as a fresh shell would type a resume into a live agent.
-        // A keeper too old to say is taken at its old word: fresh.
-        return Attachment(session: session, descriptor: descriptor,
+        guard let (response, descriptors) = try? client.sendForDescriptors(
+            .terminal(session: id, plan: keeperPlan, columns: columns, rows: rows)) else { return nil }
+        guard response.ok, descriptors.count == 2 else {
+            descriptors.forEach { Darwin.close($0) }
+            let reason = response.message ?? "no reason"
+            KeeperLog.log.error("keeper would not give session \(id, privacy: .public) its terminal: \(reason, privacy: .public)")
+            return nil
+        }
+        // `existing`: nothing was forked and nothing typed, so a resume must
+        // not be taken for a fresh shell's and typed into a live agent.
+        return Attachment(session: session, descriptor: descriptors[0], typingDescriptor: descriptors[1],
                           pid: response.pid ?? -1,
                           replay: response.replay ?? Data(), resumed: response.existing ?? false,
                           inputDelivered: response.inputDelivered ?? false,
@@ -385,16 +350,6 @@ final class KeeperConnection {
     }
 
     // MARK: - Terminals the keeper keeps
-
-    /// Whether sessions' terminals live in the keeper (`KeeperCommand.terminal`).
-    /// The default; `WORTEL_KEEPER_TERMINAL=0` at launch puts it back on
-    /// protocol 1 while both paths exist.
-    private static let terminalsFlag = OSAllocatedUnfairLock(initialState: true)
-    static var keepsTerminals: Bool { terminalsFlag.withLock { $0 } }
-    static func readTerminalsFlag() {
-        let off = ProcessInfo.processInfo.environment["WORTEL_KEEPER_TERMINAL"] == "0"
-        terminalsFlag.withLock { $0 = !off }
-    }
 
     /// The session's pty and the keeper's terminal for it take this size.
     /// Main thread, like every request on this connection.

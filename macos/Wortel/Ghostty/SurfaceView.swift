@@ -454,10 +454,6 @@ final class SurfaceView: NSView {
     /// session's, and nothing else outlives both the surface and the shell.
     var ptyHost: PtyHost?
 
-    /// Set while this terminal is hibernated: its surface is gone, its shell
-    /// is not. See `hibernate`.
-    private(set) var hibernation: Hibernation?
-
     /// The keeper keeps this terminal: where its channel goes, surface or not
     /// (`KeptTerminalFeed`). nil for one the app keeps itself.
     var keptFeed: KeptTerminalFeed?
@@ -505,7 +501,7 @@ final class SurfaceView: NSView {
     /// shell, and true once there is no surface at all.
     var shellHasExited: Bool {
         // Hibernated is not gone: the shell is alive until the pty hangs up.
-        guard let surface else { return hibernation == nil || processFinished }
+        guard let surface else { return keptDrop == nil || processFinished }
         return processFinished || ghostty_surface_process_exited(surface)
     }
 
@@ -597,7 +593,7 @@ final class SurfaceView: NSView {
     /// warrants a confirmation before closing (per `confirm-close-surface`).
     /// False once the child has exited, or before the shell has spawned.
     var needsConfirmClose: Bool {
-        guard let surface else { return hibernation != nil && confirmCloseWhileHibernated }
+        guard let surface else { return keptDrop != nil && confirmCloseWhileHibernated }
         return ghostty_surface_needs_confirm_quit(surface)
     }
 
@@ -613,7 +609,7 @@ final class SurfaceView: NSView {
         guard !processFinished else { return }
         guard let surface else {
             // Hibernated: the terminal is told when it wakes (`wake`).
-            if hibernation != nil { processFinished = true }
+            if keptDrop != nil { processFinished = true }
             return
         }
         processFinished = true
@@ -623,7 +619,6 @@ final class SurfaceView: NSView {
     /// Explicit teardown (deinit ordering with AppKit view hierarchies is
     /// unreliable; call this when the session closes).
     func close() {
-        discardHibernation()
         // Closing a *session* is the user saying they are done with it, so the
         // shell goes too — unlike quitting the app, which deliberately leaves it
         // running and is handled by the connection simply dropping.
@@ -861,7 +856,9 @@ final class SurfaceView: NSView {
     /// this is about to get.
     func restartShell(workingDirectory: String?, sessionID: UUID, initialInput: String?) {
         guard let runtime else { return }
-        discardHibernation()
+        if let feed = keptFeed, let old = ptyHost { old.enqueue { feed.hide() } }
+        keptFeed = nil
+        keptDrop = nil
         let pty = ptyHost
         pty?.release() // let go of, not hung up: no `onShellEnded` for it
         ptyHost = nil
@@ -914,348 +911,37 @@ final class SurfaceView: NSView {
         updateFocus()
     }
 
-    // MARK: - Hibernation
+    // MARK: - Out of sight
 
-    /// A hidden session can give back its terminal: the renderer's frames, the
-    /// scrollback, the font atlas, about 70 MB a session (measured 2026-11-17).
-    /// The shell and whatever runs in it carry on; the app keeps reading the
-    /// pty, so nothing is asked of the keeper. The screen goes to a file as
-    /// escape sequences, the output that arrives meanwhile into a bounded
-    /// buffer, and both are written into a new terminal when it is shown.
-    final class Hibernation {
-        let snapshot: URL
-        /// The grid the snapshot was taken at, its total lines with history,
-        /// and the cursor: enough to put the cursor back where the program
-        /// left it, which an agent's next repaint counts on.
-        let columns: Int, rows: Int
-        /// Empty rows under the last line with text: the dump leaves them out.
-        let blankRowsAtBottom: Int
-        let cursor: (row: Int, column: Int)?
-        let fontSize: Float
-        /// What came while there was no terminal. Only touched on the pty queue.
-        let missed: MissedOutput
-        /// The size it was told, in pixels: the one it is woken at, since what
-        /// it holds and what came meanwhile were drawn for it.
-        var told: (width: UInt32, height: UInt32)?
+    /// A session's terminal out of sight gives back its surface: the
+    /// renderer's frames, the scrollback, the font atlas, about 70 MB
+    /// (measured 2026-11-17). Nothing is saved and nothing can be lost: the
+    /// keeper keeps the session's terminal, and a surface shown again is
+    /// restored from a snapshot of it (`KeeperCommand.resync`). The channel
+    /// goes on being read meanwhile (`KeptTerminalFeed`), for the program's
+    /// status and for what the surface would have raised (`raise`).
+    var isHibernated: Bool { keptDrop != nil }
 
-        init(snapshot: URL, columns: Int, rows: Int, blankRowsAtBottom: Int,
-             cursor: (row: Int, column: Int)?, fontSize: Float, missed: MissedOutput) {
-            self.snapshot = snapshot
-            self.columns = columns
-            self.rows = rows
-            self.blankRowsAtBottom = blankRowsAtBottom
-            self.cursor = cursor
-            self.fontSize = fontSize
-            self.missed = missed
-        }
-    }
-
-    /// The pty queue's buffer for a session with no terminal. A class so the
-    /// output closure and the hibernation share one; confined to that queue.
-    final class MissedOutput: @unchecked Sendable {
-        var buffer = ReplayBuffer(limit: HibernationPolicy.missedOutputLimit)
-        /// Bytes kept since the terminal was last asked back
-        /// (`HibernationPolicy.outrunning`). Asked once `buffer` is half
-        /// full, and again at every sixteenth of it written after that: the
-        /// answer changes when an agent that was resting starts a turn.
-        var sinceAsked = 0
-        /// The modes the program believed in at the moment its output turned
-        /// away from the terminal: the ones that go with the snapshot. What
-        /// it changed after is in `buffer`. Read on the pty queue at the
-        /// switch, so the two meet exactly.
-        var prelude: [UInt8] = []
-        /// Raises what the terminal would have, and keeps it out of `buffer`.
-        var scanner = SignalScanner()
-    }
-
-    var isHibernated: Bool { hibernation != nil || keptDrop != nil }
-
-    /// The keeper keeps this terminal, so dropping its surface loses nothing
-    /// and needs no reason to wait.
+    /// The keeper keeps this terminal, so its surface can go. nil feed: the
+    /// exec backend, where the terminal *is* the shell's parent.
     var keepsTerminalInKeeper: Bool { keptFeed != nil }
-
-    /// Hibernating: the output has been turned away from the terminal and the
-    /// screen is about to be written out. Neither hibernated nor awake.
-    private(set) var isHibernating = false
-
-    /// Set while a screen dump is taken: libghostty hands the dump's path to
-    /// the clipboard callback, which gives it here instead of the pasteboard.
-    var screenFileCapture: ((String) -> Void)?
-
-    /// Asked when the timer comes due: whoever owns the session may know a
-    /// reason to keep the terminal (an agent that only the screen shows
-    /// working). nil means yes.
-    var mayHibernate: (() -> Bool)?
 
     /// `needsConfirmClose` for a terminal that isn't there to ask: what it
     /// said when it went, until the shell is seen back at its prompt.
     private var confirmCloseWhileHibernated = false
 
-    /// Free this terminal, keeping its shell. Only a keeper session whose shell
-    /// is alive: on the exec backend the terminal *is* the shell's parent.
-    func hibernate(forQuit: Bool = false) {
-        // The keeper keeps this terminal: nothing to save, at a quit or ever.
-        if keptFeed != nil {
-            if !forQuit { dropKeptSurface() }
-            return
-        }
-        guard let surface, let pty = ptyHost, let session = keeperSession,
-              hibernation == nil, !isHibernating, !processFinished else {
-            HibernationLog.log.debug("""
-                not hibernating: surface \(self.surface != nil), pty \(self.ptyHost != nil), \
-                keeper \(self.keeperSession != nil), hibernated \(self.hibernation != nil), \
-                hibernating \(self.isHibernating), finished \(self.processFinished)
-                """)
-            return
-        }
-        isHibernating = true
-        hibernatingForQuit = forQuit
-        let missed = MissedOutput()
-        let started = DispatchTime.now()
-        // The output turns away from the terminal first, on the queue that
-        // writes into it, so the screen written out below has everything that
-        // went into the terminal and the buffer everything after.
-        pty.enqueue { [weak self] in
-            missed.prelude = TerminalModeRecorder.shared.modes(for: session).prelude
-            let status = self?.programStatusWatch
-            pty.onOutput = { [weak self, weak pty] bytes, count in
-                TerminalModeRecorder.shared.feed(session: session, bytes: bytes, count: count)
-                // Heard here as it is with a terminal. It stays in what is
-                // kept: the terminal that comes back ignores it, and the
-                // replay into that terminal is not listened to again.
-                status?.output(bytes, count: count, pty: pty)
-                var kept: [UInt8] = []
-                kept.reserveCapacity(count)
-                let signals = missed.scanner.scan(UnsafeBufferPointer(start: bytes, count: count),
-                                                  now: DispatchTime.now().uptimeNanoseconds, output: &kept)
-                kept.withUnsafeBufferPointer { raw in
-                    guard let base = raw.baseAddress, raw.count > 0 else { return }
-                    missed.buffer.append(base, count: raw.count)
-                }
-                missed.sinceAsked += kept.count
-                // Not once it has run over: there is no start left to save,
-                // and a shell printing a log would be asking for good.
-                if missed.buffer.dropped == 0, missed.buffer.count >= missed.buffer.limit / 2,
-                   missed.sinceAsked >= max(1, missed.buffer.limit / 16) {
-                    missed.sinceAsked = 0
-                    DispatchQueue.main.async {
-                        if let self { HibernationPolicy.shared.outrunning(self) }
-                    }
-                }
-                guard !signals.isEmpty else { return }
-                DispatchQueue.main.async { self?.raise(signals) }
-            }
-            // Nothing else is written into this terminal from here on, so its
-            // palette can stand in for itself in the dump: each entry a marker
-            // that is turned back into its index on waking, or the screen
-            // would come back frozen in today's theme (`SnapshotPalette`).
-            SnapshotPalette.install.withUnsafeBufferPointer { raw in
-                guard let base = raw.baseAddress else { return }
-                ghostty_surface_write_buffer(surface, base, UInt(raw.count))
-            }
-            DispatchQueue.main.async {
-                self?.finishHibernating(surface: surface, pty: pty, session: session,
-                                        missed: missed, started: started)
-            }
-        }
+    /// Give back the surface, keeping everything else. Only out of sight.
+    func hibernate() {
+        dropKeptSurface()
     }
 
-    private func finishHibernating(surface old: ghostty_surface_t, pty: PtyHost, session: UUID,
-                                   missed: MissedOutput, started: DispatchTime) {
-        isHibernating = false
-        // Closed or restarted meanwhile: that already let the surface go.
-        guard surface == old, ptyHost === pty else { return }
-
-        // Shown again in the moment it took to get here: it stays awake, and
-        // gets back what was held from it. Signals already raised from those
-        // bytes are not in them.
-        func stayAwake() {
-            let live = GhosttyRuntime.liveOutput(surface: old, session: session, view: self)
-            pty.enqueue {
-                // Its own palette back first, in place of the markers.
-                let held = SnapshotPalette.remove + missed.buffer.take() + missed.scanner.unfinished
-                held.withUnsafeBytes { raw in
-                    guard let base = raw.bindMemory(to: UInt8.self).baseAddress, raw.count > 0 else { return }
-                    ghostty_surface_write_buffer(old, base, UInt(raw.count))
-                }
-                pty.onOutput = live
-            }
-        }
-        guard isHidden || superview == nil || hibernatingForQuit else { return stayAwake() }
-
-        // The cursor is read against the screen's bottom, so the view goes
-        // there first; this terminal is about to go anyway.
-        let bottom = "scroll_to_bottom"
-        _ = bottom.withCString { ghostty_surface_binding_action(old, $0, UInt(bottom.utf8.count)) }
-
-        var path: String?
-        screenFileCapture = { path = $0 }
-        let action = "write_screen_file:copy,vt"
-        _ = action.withCString { ghostty_surface_binding_action(old, $0, UInt(action.utf8.count)) }
-        screenFileCapture = nil
-
-        guard let path else {
-            HibernationLog.log.error("no screen dump for \(session.uuidString, privacy: .public); staying awake")
-            return stayAwake()
-        }
-
-        let size = ghostty_surface_size(old)
-        // The scale the surface was made at: `newSurface` and `wakeSurface`
-        // take the window's, or the main screen's before there is a window.
-        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
-        let cursor = Self.cursorCell(of: old, size: size, scale: scale)
-        let fontSize = ghostty_surface_inherited_config(old, GHOSTTY_SURFACE_CONTEXT_WINDOW).font_size
-        confirmCloseWhileHibernated = ghostty_surface_needs_confirm_quit(old)
-        let snapshot = Self.keepSnapshot(at: path, session: session)
-
-        hibernation = Hibernation(
-            snapshot: snapshot, columns: Int(size.columns), rows: Int(size.rows),
-            blankRowsAtBottom: Self.blankRowsAtBottom(of: old, size: size),
-            cursor: cursor, fontSize: fontSize, missed: missed)
-        hibernation?.told = toldSize
-        surface = nil
-        focused = false
-        ghostty_surface_free(old)
-        retireLayer()
-
-        let bytes = (try? FileManager.default.attributesOfItem(atPath: snapshot.path)[.size] as? Int) ?? -1
-        let ms = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e6
-        HibernationLog.log.notice("""
-            hibernated \(session.uuidString, privacy: .public): snapshot \(bytes) bytes, \
-            \(size.columns)x\(size.rows), blank below \(self.hibernation?.blankRowsAtBottom ?? 0), \
-            cursor \(cursor.map { "\($0.row),\($0.column)" } ?? "?", privacy: .public), \
-            \(ms, format: .fixed(precision: 1)) ms
-            """)
-    }
-
-    /// Bring back a hibernated terminal: a new surface around the same pty,
-    /// the snapshot and the missed output written into it, then the live
-    /// output switched back. Called before the view is shown.
-    ///
-    /// `onRestored` runs on the main thread once the screen is back *and* the
-    /// terminal has stopped holding back what it sends the program
-    /// (`ReplayAnswers`): a key typed before then is dropped with the
-    /// answers, so a host shows the terminal only after it.
+    /// Bring the surface back, restored from the keeper's terminal. Called
+    /// before the view is shown. `onRestored` runs on the main thread once
+    /// the screen is back, at once if it never went.
     func wake(onRestored: (() -> Void)? = nil) {
-        if keptDrop != nil { return wakeKeptSurface(onRestored: onRestored) }
-        guard let hibernation, let runtime, let pty = ptyHost, let session = keeperSession else {
-            // Awake, or being woken by someone else (out of sight because
-            // its program outran what is kept, or to be read): then when
-            // that is done, not now, or it is shown half written back.
-            afterRestore(onRestored)
-            return
-        }
-        let started = DispatchTime.now()
-        guard let new = runtime.wakeSurface(view: self, pty: pty, fontSize: hibernation.fontSize) else {
-            HibernationLog.log.error("could not wake \(session.uuidString, privacy: .public)")
-            onRestored?()
-            return
-        }
-        self.hibernation = nil
-        isRestoring = true
-        surface = new
-        // A new terminal: whatever the old one was told, this one wasn't.
-        toldSize = nil
-        // Told first the size it went to sleep at, not the size its view has
-        // now: what it holds was drawn for that. Its view's size follows once
-        // it is whole (`reconcileSize("woken")`), as a resize the program sees.
-        restoreSize = hibernation.told
-        layerReplaced()
-        if let window { ghostty_surface_set_display_id(new, window.screen?.displayID ?? 0) }
-        viewDidChangeBackingProperties()
-        tellFirstSize()
-        runtime.syncColorScheme(because: "a terminal woke")
-        ghostty_surface_set_occlusion(new, !isHidden)
-        updateFocus()
-
-        let live = GhosttyRuntime.liveOutput(surface: new, session: session, view: self)
-        let dark = GhosttyRuntime.systemIsDark
-        let created = DispatchTime.now()
-        // The grid it has just been told, which is the one it went away with:
-        // what was kept for it was drawn for that grid and no other.
-        let told = toldSize == nil ? nil : Optional(ghostty_surface_size(new))
-        // On the pty queue, as every write into a terminal is: the parser
-        // waits on the main thread for room, so the main thread must not be
-        // the one writing (the beach ball of 2026-10-07).
-        pty.enqueue { [weak self] in
-            let missed = hibernation.missed
-            // Nothing goes in before the terminal is that size. See
-            // `waitForGrid`. A grid of one row or one column cannot be
-            // measured (the cursor has nowhere to step to) and is not one an
-            // agent draws on: written as it comes.
-            var gridMs = 0.0
-            var wrongGrid = false
-            if let told, told.columns > 1, told.rows > 1 {
-                let wait = Self.waitForGrid(new, columns: Int(told.columns), rows: Int(told.rows))
-                gridMs = wait.ms
-                wrongGrid = !wait.reached
-                if !wait.reached {
-                    HibernationLog.log.notice("""
-                        \(session.uuidString, privacy: .public) is written back at \
-                        \(wait.grid.map { "\($0.columns)x\($0.rows)" } ?? "an unknown grid", privacy: .public), \
-                        not the \(told.columns)x\(told.rows) it was told: its program is asked to repaint
-                        """)
-                }
-            }
-            var paletteColours = 0
-            let snapshot = SnapshotPalette.restoringIndices(
-                Self.withoutColourSettings((try? Data(contentsOf: hibernation.snapshot)) ?? Data()),
-                restored: &paletteColours)
-            // The snapshot, the empty rows and cursor it leaves out, what came
-            // since, and last a sequence the output was in the middle of, for
-            // the live output to finish.
-            var replay = snapshot
-            replay.append(contentsOf: Self.cursorRestore(snapshot: snapshot, hibernation: hibernation))
-            // Asked here, on the queue that fills it, and not when the wake
-            // began: it can run over in the moment between the two.
-            let cutShort = missed.buffer.dropped > 0
-            let held = missed.buffer.take()
-            replay.append(held)
-            replay.append(contentsOf: missed.scanner.unfinished)
-            GhosttyRuntime.restore(surface: new, pty: pty, session: session, prelude: missed.prelude,
-                                   replay: replay, recordReplay: false, muteAnswers: true,
-                                   colorScheme: (dark: dark, agent: nil))
-            pty.onOutput = live
-            // The two wakes that cannot be trusted: more came than is kept,
-            // so its start is gone, or the terminal never took its size and
-            // all of it went in at another. Only the program can put either
-            // right, by painting again.
-            if cutShort || wrongGrid { pty.repaintNow() }
-            try? FileManager.default.removeItem(at: hibernation.snapshot)
-
-            let done = DispatchTime.now()
-            let createMs = Double(created.uptimeNanoseconds - started.uptimeNanoseconds) / 1e6
-            let writeMs = Double(done.uptimeNanoseconds - created.uptimeNanoseconds) / 1e6
-            HibernationLog.log.notice("""
-                woke \(session.uuidString, privacy: .public): surface \(createMs, format: .fixed(precision: 1)) ms, \
-                its size after \(gridMs, format: .fixed(precision: 1)) ms, \
-                restore \(snapshot.count) + \(held.count) bytes in \(writeMs - gridMs, format: .fixed(precision: 1)) ms, \
-                \(paletteColours) palette colours
-                """)
-
-            DispatchQueue.main.async {
-                guard let self else {
-                    onRestored?()
-                    return
-                }
-                // The shell ended while there was no terminal to tell.
-                if self.processFinished, self.surface == new { ghostty_surface_process_exit(new, 0, 0) }
-                self.whenPasteReachesProgram(within: Self.restorePatience) { _ in
-                    if self.surface == new { self.isRestoring = false }
-                    onRestored?()
-                    let waiting = self.restoreWaiters
-                    self.restoreWaiters = []
-                    waiting.forEach { $0() }
-                    // It came back at the size it went away with. If its
-                    // view changed meanwhile and nothing noted it (it joined
-                    // the window with no terminal to tell), this does.
-                    self.reconcileSize("woken")
-                }
-            }
-        }
+        guard keptDrop != nil else { return afterRestore(onRestored) }
+        wakeKeptSurface(onRestored: onRestored)
     }
-
-    // MARK: - A terminal the keeper keeps
 
     /// Free the surface of a terminal the keeper keeps. Its channel goes on
     /// being read for the program's status; its screen is the keeper's, and
@@ -1410,78 +1096,22 @@ final class SurfaceView: NSView {
         }
     }
 
-    /// Woken, and the screen not yet all back. Reading it now reads part of it.
+    /// Woken, and the screen not yet back. Reading it now reads the old one.
     private(set) var isRestoring = false
-
-    /// Put to sleep because the app is quitting (`hibernateForQuit`): on
-    /// screen or not.
-    private var hibernatingForQuit = false
-
-    // MARK: - Saving the screen at quit
-
-    /// Whether this terminal's screen is kept through a quit (`SavedScreens`):
-    /// a session's own, on the keeper. A side terminal is told no size until it
-    /// is shown, so there would be nothing to write it back at; a shell of the
-    /// app's own ends with it.
-    var savesScreenAtQuit: Bool {
-        isSessionTerminal && ptyHost != nil && keeperSession != nil && !processFinished && keptFeed == nil
-    }
-
-    /// Put to sleep for the quit, the way it is put to sleep out of sight:
-    /// the same dump, with the palette as markers so it comes back in the
-    /// theme of the day, and the modes it was in. Shown or not.
-    func hibernateForQuit() {
-        guard savesScreenAtQuit, hibernation == nil, !isHibernating else { return }
-        hibernate(forQuit: true)
-    }
-
-    /// What a hibernated terminal would be written back with at the next
-    /// launch: its modes at the time, its screen, and what it missed since.
-    /// The pty stops being read first, on its own queue, so what comes after
-    /// stays in the kernel's buffer and is the keeper's replay. nil for one
-    /// whose missed output ran over: its start is gone.
-    func screenForQuit(dark: Bool, then deliver: @escaping @MainActor ((Data, SavedScreens.Meta)?) -> Void) {
-        guard savesScreenAtQuit, let hibernation, let told = hibernation.told, let pty = ptyHost,
-              let snapshot = try? Data(contentsOf: hibernation.snapshot) else { return deliver(nil) }
-        let missed = hibernation.missed
-        var screen = Data(missed.prelude)
-        screen.append(SnapshotPalette.restoringIndices(Self.withoutColourSettings(snapshot)))
-        screen.append(contentsOf: Self.cursorRestore(snapshot: snapshot, hibernation: hibernation))
-        let meta = SavedScreens.Meta(width: told.width, height: told.height,
-                                     columns: hibernation.columns, rows: hibernation.rows,
-                                     dark: dark, savedBy: getpid(), savedAt: Date())
-        pty.enqueue {
-            pty.pauseReading()
-            guard missed.buffer.dropped == 0 else {
-                DispatchQueue.main.async { deliver(nil) }
-                return
-            }
-            var held = missed.buffer.take()
-            held.append(contentsOf: missed.scanner.unfinished)
-            DispatchQueue.main.async {
-                screen.append(held)
-                deliver((screen, meta))
-            }
-        }
-    }
 
     /// Whoever asked to be told when the restore now under way is done.
     private var restoreWaiters: [() -> Void] = []
 
     /// Run `block` once this terminal is whole: now, unless a wake is still
-    /// writing its screen back.
-    private func afterRestore(_ block: (() -> Void)?) {
+    /// waiting for its snapshot.
+    func afterRestore(_ block: (() -> Void)?) {
         guard let block else { return }
         if isRestoring { restoreWaiters.append(block) } else { block() }
     }
 
-    /// The longest a wake waits for the terminal to stop holding back its
-    /// answers before calling itself done.
-    private static let restorePatience: TimeInterval = 2
-
     /// What the terminal would have told the app, told by the scanner instead:
     /// the same callbacks, so nothing downstream knows the difference.
-    private func raise(_ signals: [SignalScanner.Signal]) {
+    func raise(_ signals: [SignalScanner.Signal]) {
         for signal in signals {
             switch signal {
             case .title(let title): onTitleChange?(title)
@@ -1495,120 +1125,6 @@ final class SurfaceView: NSView {
             // (`ProgramStatusWatch`): raised here as well it would be twice.
             case .notification: break
             }
-        }
-    }
-
-    /// Forget a hibernation without waking: the session closed or its shell
-    /// was replaced. The buffer goes with the object; the file is removed.
-    private func discardHibernation() {
-        guard let hibernation else { return }
-        self.hibernation = nil
-        try? FileManager.default.removeItem(at: hibernation.snapshot)
-    }
-
-    /// The cursor's cell, from the IME point. libghostty gives the middle of
-    /// the cursor's cell across and its bottom edge down, padding included,
-    /// in points. The left padding is where column 0 starts (`tl_px_x` of a
-    /// read at 0,0); the top padding is what is left over after whole cells.
-    private static func cursorCell(of surface: ghostty_surface_t, size: ghostty_surface_size_s,
-                                   scale: CGFloat) -> (row: Int, column: Int)? {
-        let cellWidth = Double(size.cell_width_px) / Double(scale)
-        let cellHeight = Double(size.cell_height_px) / Double(scale)
-        guard cellWidth > 0, cellHeight > 0 else { return nil }
-        var x = 0.0, y = 0.0, w = 0.0, h = 0.0
-        ghostty_surface_ime_point(surface, &x, &y, &w, &h)
-
-        let origin = ghostty_point_s(tag: GHOSTTY_POINT_ACTIVE, coord: GHOSTTY_POINT_COORD_EXACT, x: 0, y: 0)
-        var text = ghostty_text_s()
-        var paddingLeft = 0.0
-        if ghostty_surface_read_text(surface, ghostty_selection_s(top_left: origin, bottom_right: origin,
-                                                                  rectangle: false), &text) {
-            paddingLeft = max(0, text.tl_px_x)
-            ghosttyFreeText(&text)
-        }
-        let paddingTop = y.truncatingRemainder(dividingBy: cellHeight)
-
-        let column = Int(((x - paddingLeft - cellWidth / 2) / cellWidth).rounded())
-        let row = Int(((y - paddingTop) / cellHeight).rounded()) - 1
-        guard row >= 0, column >= 0 else { return nil }
-        return (min(row, Int(size.rows) - 1), min(column, Int(size.columns) - 1))
-    }
-
-    /// After the snapshot: the empty rows it left off the bottom, as line
-    /// feeds, so the screen stands where it stood, then the cursor where it
-    /// was. A line feed at the bottom scrolls; above it, it only moves down.
-    private static func cursorRestore(snapshot: Data, hibernation: Hibernation) -> [UInt8] {
-        var bytes = Array("\u{1B}[0m".utf8)
-        bytes += Array(repeating: 0x0A, count: hibernation.blankRowsAtBottom)
-        if let cursor = hibernation.cursor {
-            bytes += Array("\u{1B}[\(cursor.row + 1);\(cursor.column + 1)H".utf8)
-        }
-        return bytes
-    }
-
-    /// How many rows at the bottom of the screen (not the scrolled view) are
-    /// empty. Read one row at a time from the bottom; it stops at text.
-    private static func blankRowsAtBottom(of surface: ghostty_surface_t, size: ghostty_surface_size_s) -> Int {
-        let rows = Int(size.rows), columns = Int(size.columns)
-        var blank = 0
-        for row in stride(from: rows - 1, through: 0, by: -1) {
-            func point(_ x: Int) -> ghostty_point_s {
-                ghostty_point_s(tag: GHOSTTY_POINT_ACTIVE, coord: GHOSTTY_POINT_COORD_EXACT,
-                                x: UInt32(x), y: UInt32(row))
-            }
-            var text = ghostty_text_s()
-            let region = ghostty_selection_s(top_left: point(0), bottom_right: point(max(0, columns - 1)),
-                                             rectangle: false)
-            guard ghostty_surface_read_text(surface, region, &text) else { break }
-            let empty = text.text_len == 0 || (text.text.map {
-                String(decoding: UnsafeRawBufferPointer(start: $0, count: Int(text.text_len)), as: UTF8.self)
-                    .allSatisfy(\.isWhitespace)
-            } ?? true)
-            ghosttyFreeText(&text)
-            guard empty else { break }
-            blank += 1
-        }
-        return blank
-    }
-
-    /// The dump opens by setting the terminal's foreground and background
-    /// colours (OSC 10, 11) to the theme's at the time. Written back they
-    /// would pin them, and the next light/dark switch would not reach this
-    /// terminal. Only the run of OSC sequences at the very start goes.
-    static func withoutColourSettings(_ dump: Data) -> Data {
-        var index = dump.startIndex
-        while index + 1 < dump.endIndex, dump[index] == 0x1B, dump[index + 1] == 0x5D {
-            var end = index + 2
-            var terminated = false
-            while end < dump.endIndex {
-                if dump[end] == 0x07 { end += 1; terminated = true; break }
-                if dump[end] == 0x1B, end + 1 < dump.endIndex, dump[end + 1] == 0x5C { end += 2; terminated = true; break }
-                end += 1
-            }
-            guard terminated else { break }
-            index = end
-        }
-        return dump.subdata(in: index..<dump.endIndex)
-    }
-
-    /// Move libghostty's temporary dump into the data folder, readable by this
-    /// user only. Where it stands if that fails.
-    private static func keepSnapshot(at path: String, session: UUID) -> URL {
-        let source = URL(fileURLWithPath: path)
-        let folder = DataDirectory.file("hibernated")
-        let destination = folder.appendingPathComponent("\(session.uuidString).vt")
-        do {
-            try FileManager.default.createDirectory(
-                at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: source, to: destination)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
-            // libghostty makes a directory per dump. `rmdir` takes it only
-            // if it is empty, so a shared temporary folder is never touched.
-            _ = rmdir(source.deletingLastPathComponent().path)
-            return destination
-        } catch {
-            return source
         }
     }
 

@@ -16,8 +16,9 @@
 #      one first.
 #   2. The same for terminals that have not been in the window since launch.
 #   3. A session started after a change comes up in the new theme.
-#   4. A hibernated screen is saved with its palette colours as palette
-#      colours, wakes into the theme of the day, and its program is told.
+#   4. A terminal dropped out of sight in one appearance comes back in the
+#      other, and a program that listens is told, by the keeper, while it
+#      has no surface.
 #
 # Needs the screen unlocked: with it locked there is no display, libghostty
 # cannot make a surface, nothing reads the ptys and nothing runs. --keep leaves
@@ -71,7 +72,7 @@ wait_for() { # seconds, then a command that succeeds when ready
   for _ in $(seq 1 $((s * 4))); do "$@" >/dev/null 2>&1 && return 0; pause 0.25; done
   return 1
 }
-launch() { # the hibernation clock, in seconds
+launch() { # how long a terminal out of sight keeps its surface, in seconds
   rm -f "$data/instance.lock"
   open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 --env WORTEL_HIBERNATE_AFTER=$1 "$copy"
   wait_for 20 test -s "$data/instance.lock" || { print -u2 "the copy did not start"; cleanup; exit 2; }
@@ -175,43 +176,31 @@ else
   failures=$((failures + 1))
 fi
 
-print "A terminal that hibernated"
+print "A terminal dropped out of sight"
 quit
 launch 4
 appear dark
-# Painted now, not before the relaunch: a reattached terminal starts with only
-# what its shell wrote while nobody was attached.
 session painted sh -c "sh '$data/colours.sh'; exec python3 '$probe' '$data/painted.log' --no-subscribe --poll 0.25"
 session cover python3 "$probe" "$data/cover.log" --poll 0.25
 painted_id=$(w list --json | python3 -c "import json,sys; print([s['id'] for s in json.load(sys.stdin) if s['name']=='painted'][0])")
 listens_id=$(w list --json | python3 -c "import json,sys; print([s['id'] for s in json.load(sys.stdin) if s['name']=='listens'][0])")
-if wait_for 90 test -s "$data/hibernated/$painted_id.vt" && wait_for 90 test -s "$data/hibernated/$listens_id.vt"; then
-  # Palette colours are saved as markers (165;90;index), never as the theme's
-  # own values, and a colour the program chose is saved as itself.
-  dump="$data/hibernated/$painted_id.vt"
-  if grep -q $'\033\\[38;2;165;90;1mred' "$dump" && grep -q $'\033\\[48;2;165;90;7m white' "$dump" \
-     && grep -q $'\033\\[38;2;63;185;80mits own green' "$dump"; then
-    print "  ok    its palette colours are saved as palette colours"
-  else
-    print "  FAIL  its palette colours are saved as today's colours"
-    failures=$((failures + 1))
-  fi
+dropped() {
+  /usr/bin/log show --last 2m --predicate "processID == $apppid AND category == \"hibernation\"" 2>/dev/null \
+    | grep -q "dropped the terminal of $1"
+}
+if wait_for 90 dropped $painted_id && wait_for 90 dropped $listens_id; then
+  print "  ok    both terminals were dropped out of sight"
+  # The keeper keeps their terminals, palette colours as palette colours
+  # (a snapshot stores each cell's style as it is), and tells the one that
+  # listens (`?2031`) itself, with no surface in the app.
   change_to light
   w read listens >/dev/null 2>&1
   w read painted >/dev/null 2>&1
   pause 3
-  expect "woken, listening" listens light told
-  expect "woken, not listening" painted light untold
-  restored=$(/usr/bin/log show --last 1m --info --predicate "processID == $apppid AND category == \"hibernation\"" 2>/dev/null \
-    | grep "woke $painted_id" | sed -n 's/.* \([0-9][0-9]*\) palette colours.*/\1/p' | tail -1)
-  if [[ ${restored:-0} -ge 9 ]]; then
-    print "  ok    $restored palette colours went back as palette colours"
-  else
-    print "  FAIL  ${restored:-no} palette colours went back as palette colours (9 were saved)"
-    failures=$((failures + 1))
-  fi
+  expect "dropped, listening" listens light told
+  expect "dropped, not listening" painted light untold
 else
-  print "  FAIL  nothing hibernated in three minutes"
+  print "  FAIL  nothing was dropped in a minute and a half"
   failures=$((failures + 1))
 fi
 

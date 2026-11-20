@@ -27,13 +27,23 @@ final class KeeperLossTests: XCTestCase {
         XCTAssertTrue(KeeperConnection.isOutdated(.success(version: Keeper.version, build: "41"),
                                                   appBuild: "42"))
 
-        let previousRelease = Data(#"{"ok":true,"message":"wortel-keeper","version":"1"}"#.utf8)
-        let old = try JSONDecoder().decode(KeeperResponse.self, from: previousRelease)
+        // A keeper of this protocol too old to name its build is talked to.
+        let unnamed = Data(#"{"ok":true,"message":"wortel-keeper","version":"\#(Keeper.version)"}"#.utf8)
+        let old = try JSONDecoder().decode(KeeperResponse.self, from: unnamed)
         XCTAssertFalse(KeeperConnection.shouldReplace(afterPing: old), "a working keeper was killed")
         XCTAssertTrue(KeeperConnection.isOutdated(old, appBuild: "42"))
 
         // An app that can't name its own build has nothing to compare with.
         XCTAssertFalse(KeeperConnection.isOutdated(old, appBuild: nil))
+    }
+
+    /// A keeper of protocol 1 (before the keeper kept the terminal) cannot
+    /// serve this app, which no longer reads a pty: it is replaced, once,
+    /// at the update that brings protocol 2 (`docs/decisions.md`, 2026-11-20).
+    func testAProtocolOneKeeperIsReplaced() throws {
+        let previousRelease = Data(#"{"ok":true,"message":"wortel-keeper","version":"1","build":"5100"}"#.utf8)
+        let old = try JSONDecoder().decode(KeeperResponse.self, from: previousRelease)
+        XCTAssertTrue(KeeperConnection.shouldReplace(afterPing: old))
     }
 
     func testAShellIsGoneOnlyOnTheTablesWord() {

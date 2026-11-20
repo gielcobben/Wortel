@@ -53,6 +53,9 @@ final class KeeperAgentTests: XCTestCase {
         var buffer = [UInt8](repeating: 0, count: 16 * 1024)
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
+            // The channel blocks; never wait on it past the deadline.
+            var poller = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            guard poll(&poller, 1, 100) > 0 else { continue }
             let count = read(fd, &buffer, buffer.count)
             if count > 0 {
                 text += String(decoding: buffer[0..<count], as: UTF8.self)
@@ -131,7 +134,7 @@ final class KeeperAgentTests: XCTestCase {
         let first = try connect()
         openedSessions.append("agent")
         // A login shell running the agent, the way a session does.
-        let (opened, fd) = try first.send(.open(
+        let (opened, fds) = try first.sendForDescriptors(.terminal(
             session: "agent",
             plan: KeeperSpawnPlan(
                 executable: "/bin/zsh",
@@ -146,7 +149,9 @@ final class KeeperAgentTests: XCTestCase {
                 workingDirectory: NSTemporaryDirectory()),
             columns: 120, rows: 40))
         XCTAssertTrue(opened.ok, opened.message ?? "")
-        let descriptor = try XCTUnwrap(fd)
+        XCTAssertEqual(fds.count, 2)
+        let descriptor = try XCTUnwrap(fds.first)
+        fds.dropFirst().forEach { close($0) }
         let shellPID = try XCTUnwrap(opened.pid)
 
         // Wait for it to actually draw something — a TUI, not a prompt.
@@ -168,7 +173,7 @@ final class KeeperAgentTests: XCTestCase {
             agentPIDs.isEmpty,
             "no \(name) process in the session; tree was \(tree.map { "\($0):\(command(of: $0))" })")
 
-        // The app vanishes: descriptor closed, connection dropped, no detach.
+        // The app vanishes: descriptors closed, connection dropped, nothing said.
         close(descriptor)
         first.disconnect()
         usleep(500_000)
@@ -180,17 +185,23 @@ final class KeeperAgentTests: XCTestCase {
 
         // A new launch picks it up.
         let second = try connect()
-        let (attached, again) = try second.send(.attach(session: "agent"))
+        let (attached, again) = try second.sendForDescriptors(.terminal(
+            session: "agent", plan: KeeperSpawnPlan(executable: "/usr/bin/false", arguments: [],
+                                                    environment: [:], workingDirectory: nil),
+            columns: 120, rows: 40))
         XCTAssertTrue(attached.ok, attached.message ?? "")
+        XCTAssertEqual(attached.existing, true)
         XCTAssertEqual(attached.pid, shellPID, "attached to a different shell")
-        let reattached = try XCTUnwrap(again)
-        descriptors.append(reattached)
+        XCTAssertEqual(again.count, 2)
+        descriptors += again
+        let reattached = try XCTUnwrap(again.first)
+        // What it drew while nobody was attached is in the snapshot.
+        _ = drain(reattached, seconds: 1)
 
         // And it is still a live terminal: a resize makes any TUI redraw, which
         // is the cheapest way to ask "are you still there" without typing
         // anything into someone's agent.
-        var size = winsize(ws_row: 41, ws_col: 121, ws_xpixel: 0, ws_ypixel: 0)
-        XCTAssertEqual(ioctl(reattached, TIOCSWINSZ, &size), 0)
+        _ = try second.send(.resize(session: "agent", columns: 121, rows: 41, cellWidth: 8, cellHeight: 16))
         let afterResize = drain(reattached, until: "\u{1B}[", seconds: 15)
         XCTAssertFalse(afterResize.isEmpty,
                        "the agent stopped responding after reattach — it did not redraw")

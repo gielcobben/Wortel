@@ -1,11 +1,12 @@
 #!/bin/zsh
-# Every test of how a terminal is sized, shown, put to sleep and brought back,
-# in one go, against throwaway copies of a Debug build. About eight minutes.
+# Every test of how a terminal is sized, shown, dropped and brought back, and
+# kept through a crash or a quit, in one go, against throwaway copies of a
+# Debug build. About eight minutes.
 #
 #   scripts/check-terminals.sh [path/to/Wortel.app]
 #
 # Run it before merging anything that touches `Wortel/Ghostty/`, a terminal's
-# host or pane, hibernation, the keeper's replay, or appearance. Each of these
+# host or pane, dropping terminals out of sight, the keeper, or appearance. Each of these
 # was written after a bug that a person found first; together they are what
 # "it still works" means for terminals. Nothing here touches your own Wortel.
 #
@@ -50,9 +51,9 @@ run "switching sessions"                         "$here/try-switch.sh" "$app"
 run "switching, with a side terminal and widths" "$here/try-switch.sh" "$app" --side --widths
 run "switching into sleeping terminals"          env HIBERNATE_AFTER=0.3 "$here/try-switch.sh" "$app" --side
 run "the pages in front of a terminal"           "$here/try-switch.sh" "$app" --pages
-run "a sleeping agent's screen"                  "$here/try-hibernate-screen.sh" "$app"
-run "a relaunch: sizes, replay, saved screens"   "$here/try-relaunch-size.sh" "$app"
+run "a crash, a quit, a terminal dropped"        "$here/try-app-crash.sh" "$app"
 run "a window resize, sessions out of sight"     "$here/try-hidden-resize.sh" "$app"
+run "a window resize, terminals dropped"         env HIBERNATE_AFTER=2 "$here/try-hidden-resize.sh" "$app"
 run "light and dark"                             "$here/try-appearance.sh" "$app"
 run "panes sliding, terminal after"              "$here/bench-resize.sh" "$app" --panes --runs 1
 

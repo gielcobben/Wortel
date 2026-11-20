@@ -1,159 +1,72 @@
 import Darwin
 import XCTest
 
-/// The two pieces the keeper is built from, tested apart from it: the buffer
-/// that holds what you missed, and the descriptor passing that makes the whole
-/// design affordable.
+/// Pieces the keeper is built from, tested apart from it: the tail of a
+/// session's output, and the descriptor passing that hands the app its
+/// channel and its pty.
 final class KeeperPartsTests: XCTestCase {
 
-    // MARK: - ReplayBuffer
+    // MARK: - OutputTail
 
-    private func append(_ text: String, to buffer: inout ReplayBuffer) {
-        buffer.append(Data(text.utf8))
+    private func append(_ text: String, to tail: inout OutputTail) {
+        Array(text.utf8).withUnsafeBufferPointer { tail.append($0.baseAddress!, count: $0.count) }
     }
 
-    /// What `take` hands back for a replay whose start was dropped.
-    private func cut(_ text: String) -> String {
-        String(decoding: ReplayBuffer.resync + Data(text.utf8), as: UTF8.self)
-    }
+    private func text(_ tail: OutputTail) -> String { String(decoding: tail.copy(), as: UTF8.self) }
 
     func testItKeepsWhatFits() {
-        var buffer = ReplayBuffer(limit: 64)
-        append("hello", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), "hello")
+        var tail = OutputTail(limit: 64)
+        append("hello", to: &tail)
+        XCTAssertEqual(text(tail), "hello")
     }
 
-    /// **Drops the oldest, not the newest.** The useful end of a terminal's
-    /// output is the end: if an agent produced 40MB overnight, what you want on
-    /// reattach is how it finished.
+    /// **Drops the oldest, not the newest.** What a program said about itself
+    /// last is what an app that attaches needs to read.
     func testOverflowDropsFromTheFront() {
-        var buffer = ReplayBuffer(limit: 8)
-        append("0123456789ab", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), cut("456789ab"))
+        var tail = OutputTail(limit: 8)
+        append("0123456789ab", to: &tail)
+        XCTAssertEqual(text(tail), "456789ab")
     }
 
     func testOverflowAcrossSeveralWrites() {
-        var buffer = ReplayBuffer(limit: 6)
-        append("abcd", to: &buffer)
-        append("efgh", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), cut("cdefgh"))
+        var tail = OutputTail(limit: 6)
+        append("abcd", to: &tail)
+        append("efgh", to: &tail)
+        XCTAssertEqual(text(tail), "cdefgh")
     }
 
-    /// A single write bigger than the whole buffer is the `cat` of a large file
-    /// case, and it must not allocate the whole thing to then throw it away.
-    func testAWriteLargerThanTheBufferKeepsOnlyItsTail() {
-        var buffer = ReplayBuffer(limit: 4)
-        append("abcdefghij", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), cut("ghij"))
-        XCTAssertEqual(buffer.count, 0)
-    }
-
-    /// Taking empties it. Replaying the same screenful twice is what a reattach
-    /// loop would do otherwise.
-    func testTakingEmptiesIt() {
-        var buffer = ReplayBuffer(limit: 64)
-        append("once", to: &buffer)
-        XCTAssertFalse(buffer.take().isEmpty)
-        XCTAssertTrue(buffer.take().isEmpty)
-        XCTAssertTrue(buffer.isEmpty)
-    }
-
-    /// The dropped count is the difference between "you have everything" and
-    /// "you have the tail" — a replay that silently omits the start looks
-    /// exactly like one that didn't.
-    func testItRecordsWhatItThrewAway() {
-        var buffer = ReplayBuffer(limit: 4)
-        append("abcdef", to: &buffer)
-        XCTAssertEqual(buffer.dropped, 2)
+    /// A copy leaves it as it was: every app that attaches reads the same.
+    func testCopyingLeavesItWhole() {
+        var tail = OutputTail(limit: 64)
+        append("twice", to: &tail)
+        XCTAssertEqual(text(tail), "twice")
+        XCTAssertEqual(text(tail), "twice")
     }
 
     func testAZeroLimitKeepsNothingRatherThanCrashing() {
-        var buffer = ReplayBuffer(limit: 0)
-        append("anything", to: &buffer)
-        XCTAssertTrue(buffer.isEmpty)
-        XCTAssertTrue(buffer.take().isEmpty)
+        var tail = OutputTail(limit: 0)
+        append("anything", to: &tail)
+        XCTAssertTrue(tail.isEmpty)
+        XCTAssertTrue(tail.copy().isEmpty)
     }
 
-    /// The ring has to be indistinguishable from the plain "keep the last
-    /// `limit` bytes" it replaced, wherever the writes happen to fall against
-    /// the wrap: short ones, ones that straddle it, ones that fill it exactly.
+    /// The ring has to be indistinguishable from "keep the last `limit`
+    /// bytes", wherever the writes fall against the wrap: short ones, ones
+    /// that straddle it, ones larger than all of it.
     func testTheRingKeepsExactlyTheTailOverManyWrites() {
         var generator = SystemRandomNumberGenerator()
         for limit in [1, 7, 64, 1000] {
-            var buffer = ReplayBuffer(limit: limit)
+            var tail = OutputTail(limit: limit)
             var everything: [UInt8] = []
             for round in 0..<300 {
                 let size = Int.random(in: 1...(limit * 2), using: &generator)
                 let chunk = (0..<size).map { UInt8(truncatingIfNeeded: round &* 31 &+ $0) }
-                chunk.withUnsafeBufferPointer { buffer.append($0.baseAddress!, count: size) }
+                chunk.withUnsafeBufferPointer { tail.append($0.baseAddress!, count: size) }
                 everything += chunk
-                XCTAssertEqual(buffer.count, min(everything.count, limit))
+                XCTAssertEqual(tail.count, min(everything.count, limit))
             }
-            let expected = ReplayBuffer.resync + Data(everything.suffix(limit))
-            XCTAssertEqual(buffer.dropped, everything.count - limit)
-            XCTAssertEqual(buffer.take(), expected, "limit \(limit)")
+            XCTAssertEqual(tail.copy(), Data(everything.suffix(limit)), "limit \(limit)")
         }
-    }
-
-    /// The modes a program set in what was dropped go in front of the replay.
-    /// Codex resumed while nobody was attached turns on the alternate screen,
-    /// the mouse and the keyboard protocol, then reprints a long conversation:
-    /// without this, the terminal it was reattached to had none of them, and
-    /// scrolling and selecting in Codex did nothing.
-    func testModesSetInWhatWasDroppedAreKept() {
-        var buffer = ReplayBuffer(limit: 16)
-        append("\u{1B}[?1049h\u{1B}[>7u\u{1B}[?1000h\u{1B}[?1006h", to: &buffer)
-        append(String(repeating: "x", count: 40), to: &buffer)
-        let modes = "\u{1B}[?1000h\u{1B}[?1006h\u{1B}[?1049h\u{1B}[>7u"
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self),
-                       modes + cut(String(repeating: "x", count: 16)))
-    }
-
-    /// Read in the order written, across the ring's wrap and a sequence split
-    /// between two writes; and a mode turned off later in the dropped part is
-    /// off, not on.
-    func testDroppedModesAreReadInOrder() {
-        var buffer = ReplayBuffer(limit: 8)
-        append("abcdefgh", to: &buffer)
-        append("\u{1B}[?20", to: &buffer)
-        append("04h\u{1B}[?1000h", to: &buffer)
-        append("\u{1B}[?1000l", to: &buffer)
-        append("12345678", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self),
-                       "\u{1B}[?1000l\u{1B}[?2004h" + cut("12345678"))
-    }
-
-    /// What's still in the tail is replayed as it is, and isn't said twice.
-    func testModesInTheTailAreNotRepeated() {
-        var buffer = ReplayBuffer(limit: 16)
-        append("0123456789", to: &buffer)
-        append("\u{1B}[?2004h", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), cut("23456789\u{1B}[?2004h"))
-    }
-
-    /// A take starts over: modes dropped before it aren't put in front of the
-    /// next replay, which the app's own record covers from then on.
-    func testTakingForgetsTheDroppedModes() {
-        var buffer = ReplayBuffer(limit: 4)
-        append("\u{1B}[?2004habcd", to: &buffer)
-        _ = buffer.take()
-        append("abcdef", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), cut("cdef"))
-    }
-
-    /// Nothing dropped, nothing put in front: a replay that is all there needs
-    /// no resync, and the bytes go to the terminal exactly as the shell wrote
-    /// them.
-    func testOnlyACutReplayStartsWithTheResync() {
-        var buffer = ReplayBuffer(limit: 8)
-        append("12345678", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), "12345678")
-        append("123456789", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), cut("23456789"))
-        // And a take starts a new round: what was dropped before it is not
-        // counted against what comes after.
-        append("abc", to: &buffer)
-        XCTAssertEqual(String(decoding: buffer.take(), as: UTF8.self), "abc")
     }
 
     // MARK: - Passing a descriptor
@@ -185,6 +98,29 @@ final class KeeperPartsTests: XCTestCase {
         var buffer = [UInt8](repeating: 0, count: 16)
         let count = read(passed, &buffer, buffer.count)
         XCTAssertEqual(String(decoding: buffer[0..<max(0, count)], as: UTF8.self), "through")
+    }
+
+    /// A session's channel and its pty cross in one message, in order.
+    func testTwoDescriptorsCrossTogetherInOrder() throws {
+        var pair: [Int32] = [0, 0]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair), 0)
+        defer { close(pair[0]); close(pair[1]) }
+        var first: [Int32] = [0, 0], second: [Int32] = [0, 0]
+        XCTAssertEqual(pipe(&first), 0)
+        XCTAssertEqual(pipe(&second), 0)
+        defer { [first[0], first[1], second[0], second[1]].forEach { close($0) } }
+
+        try FileDescriptorChannel.send(Data("two\n".utf8), descriptors: [first[0], second[0]], over: pair[0])
+        let received = try XCTUnwrap(FileDescriptorChannel.receiveLine(from: pair[1]))
+        XCTAssertEqual(received.descriptors.count, 2)
+        defer { received.descriptors.forEach { close($0) } }
+        _ = write(first[1], "one", 3)
+        _ = write(second[1], "two", 3)
+        var buffer = [UInt8](repeating: 0, count: 8)
+        var n = read(received.descriptors[0], &buffer, 8)
+        XCTAssertEqual(String(decoding: buffer[0..<max(0, n)], as: UTF8.self), "one")
+        n = read(received.descriptors[1], &buffer, 8)
+        XCTAssertEqual(String(decoding: buffer[0..<max(0, n)], as: UTF8.self), "two")
     }
 
     /// Most messages carry no descriptor, and must not invent one.

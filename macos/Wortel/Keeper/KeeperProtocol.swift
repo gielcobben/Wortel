@@ -24,40 +24,30 @@ enum KeeperLog {
 /// so the app becomes something that *attaches* to work already in progress
 /// rather than something the work depends on.
 ///
-/// **Why the app still reads the pty itself.** The obvious design has the keeper
-/// read the pty and forward everything over this socket, and it would cost a
-/// copy, a context switch and a wakeup on the hottest path in a terminal — the
-/// one thing Wortel is not allowed to be slow at. So the keeper passes the
-/// *descriptor* instead (`SCM_RIGHTS`), and while a session is attached the app
-/// reads it directly, exactly as it does today. The keeper's `dup` is what keeps
-/// the pty alive when the app lets go.
+/// **The keeper keeps each session's terminal, and is its pty's one reader.**
+/// It parses every byte the program writes into a terminal of its own
+/// (libghostty-vt, no renderer), at the size the pty has, and forwards the
+/// bytes to the app over a channel per session (`KeeperChannel`). The app's
+/// surface is a copy of that terminal: restored from a snapshot of it, then
+/// fed the same bytes. So nothing the app does or suffers (a quit, an update,
+/// a crash, a surface dropped while out of sight) rebuilds a terminal. Until
+/// protocol 2 (2026-11) the keeper passed the pty itself, the app read it, and
+/// every relaunch and wake rebuilt the screen from a replay; every terminal
+/// bug of 2026-11-18/20 was in one of those rebuilds.
 ///
-/// That leaves one rule the whole design rests on: **only one process may read a
-/// pty at a time.** Two readers would split the bytes between them, and the
-/// corruption would be intermittent and unreproducible. So the keeper reads only
-/// while detached, the app only while attached, and `attach`/`detach` are the
-/// handover — anything that arrives between the keeper's last read and the app's
-/// first stays in the kernel's buffer, which is why nothing is lost in the gap.
+/// One process reads a pty, the keeper, always: two readers would split the
+/// bytes between them, and the corruption would be intermittent. The app
+/// holds a copy of the pty's descriptor only to type into and to ask who is
+/// in the foreground.
 enum KeeperCommand: Codable, Equatable {
     /// Is anyone there, and which build?
     case ping
-    /// Start a session: a pty, and a shell on the end of it. Replies with the
-    /// pty descriptor attached.
-    case open(session: String, plan: KeeperSpawnPlan, columns: UInt16, rows: UInt16)
-    /// Take over reading a session that already exists. Replies with whatever
-    /// was buffered while nobody was attached, and the descriptor.
-    case attach(session: String)
-    /// Hand reading back. Implied by disconnecting, which is what a crash looks
-    /// like, and that is the only way the app ever detaches: it never sends
-    /// this. Kept because a keeper has to understand every verb an app it may
-    /// meet could send, and removing one is a protocol change.
-    case detach(session: String)
     /// End it: SIGHUP the shell and forget the session.
     case close(session: String)
     /// What is still running.
     case list
-    /// Open a session whose terminal the keeper keeps, or attach to one that
-    /// is already running (the plan is then ignored, as for `open`).
+    /// Open a session, or attach to one that is already running, in which
+    /// case the plan is ignored and `existing` says so.
     ///
     /// The keeper reads the pty itself and goes on reading: the app is given
     /// two descriptors, the session's **output channel** and the pty. The
@@ -91,9 +81,6 @@ enum KeeperCommand: Codable, Equatable {
     var verb: String {
         switch self {
         case .ping: return "ping"
-        case .open: return "open"
-        case .attach: return "attach"
-        case .detach: return "detach"
         case .close: return "close"
         case .list: return "list"
         case .terminal: return "terminal"
@@ -187,8 +174,9 @@ struct KeeperResponse: Codable, Equatable {
     var message: String?
     /// The shell's pid — what you check with `ps` to see it outlive the app.
     var pid: Int32?
-    /// Output that arrived while nobody was attached, oldest first. Base64 in
-    /// the JSON, which is what `Data`'s Codable conformance does.
+    /// For `terminal`: the session's latest output (`Keeper.replayLimit`),
+    /// oldest first, for what the program said about itself. Base64 in the
+    /// JSON, which is what `Data`'s Codable conformance does.
     var replay: Data?
     /// For `list`.
     var sessions: [KeeperSessionState]?
@@ -203,16 +191,14 @@ struct KeeperResponse: Codable, Equatable {
     /// For `ping`: the keeper's own executable, for the log line that says
     /// which keeper an app found.
     var executable: String?
-    /// For `open`: the session already existed and this attached to it, so
-    /// nothing was forked and the plan, `initialInput` included, was ignored.
-    /// nil from a keeper that predates the field.
+    /// For `terminal`: the session already existed and this attached to it,
+    /// so nothing was forked and the plan, `initialInput` included, was
+    /// ignored.
     var existing: Bool?
-    /// For `open` and `attach`: whether this keeper typed the session's
-    /// `initialInput` into the pty when it forked the shell. nil from a keeper
-    /// that predates the field, which the app reads as "don't know", never as
-    /// "no".
+    /// For `terminal`: whether this keeper typed the session's `initialInput`
+    /// into the pty when it forked the shell.
     var inputDelivered: Bool?
-    /// For `open` and `attach`: when the shell was forked, as seconds since
+    /// For `terminal`: when the shell was forked, as seconds since
     /// 1970. A shell young enough to still be reading its rc files has not had
     /// time to run what was typed into it; this is how the app tells that from
     /// an agent that ran and ended.
@@ -260,27 +246,29 @@ enum Keeper {
     /// expensive change in the app, and only a change in the wire's shape
     /// warrants it.
     ///
-    /// Still "1" after `initialInput`, `inputDelivered`, `startedAt`, `build`,
-    /// `executable` and `existing` were added, deliberately: all are optional
-    /// both ways, so an old keeper decodes a new request and a new app reads an
-    /// old reply. The app handles an old keeper by typing the resume itself
-    /// (see `newSurface`).
+    /// "2" since the keeper keeps the terminal (2026-11): the app no longer
+    /// reads the pty, so a keeper of protocol 1 cannot serve it, and the
+    /// update that brought it ended every running shell, once, its agents
+    /// resumed (`docs/decisions.md`). Before that it stayed "1" through every
+    /// optional field added both ways (`initialInput`, `inputDelivered`,
+    /// `startedAt`, `build`, `executable`, `existing`).
     ///
     /// A matching protocol says nothing about how old the keeper *binary* is,
     /// and that matters on its own: updating the app does not restart the
     /// keeper, and one keeper ran for days across four updates, so every shell
     /// it forked ran under an old binary that macOS's privacy grants (Full
     /// Disk Access) did not cover. That is `KeeperResponse.build`'s job.
-    static let version = "1"
+    static let version = "2"
 
-    /// A JSON reply is small; anything near this is a confused peer. The replay
-    /// payload is base64 inside that JSON, so the ceiling has to clear it.
+    /// A JSON reply is small; anything near this is a confused peer. The tail
+    /// of a session's output is base64 inside that JSON, so the ceiling has
+    /// to clear it.
     static let maximumLineBytes = replayLimit * 2
 
-    /// A session's output is buffered only while nobody is attached, so this
-    /// bounds "what you missed", not scrollback. Big enough for a build log,
-    /// small enough that a runaway process detached overnight can't grow the
-    /// keeper without limit.
+    /// How much of a session's latest output the keeper keeps beside its
+    /// terminal, for an app that attaches to read what the program said about
+    /// itself (`ProgramStatusWatch`), never to write into a terminal: the
+    /// snapshot has all of it. Not scrollback.
     static let replayLimit = 512 * 1024
 
     /// Scrollback the keeper's terminal keeps for each session, in bytes: the

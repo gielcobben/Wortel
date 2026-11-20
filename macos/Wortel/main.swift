@@ -5,8 +5,6 @@ import AppKit
 // prefix InheritedEnvironment throws away — so a flag read any later is always
 // unset, and the escape hatch would silently do nothing.
 PtyHost.readEnableFlag()
-// And WORTEL_KEEPER_TERMINAL=1: the session's terminal lives in the keeper.
-KeeperConnection.readTerminalsFlag()
 
 // Where this launch keeps its state, read before the scrub for the same reason
 // (WORTEL_DATA_DIR), and then claimed: one Wortel per data folder, settled
@@ -15,10 +13,9 @@ KeeperConnection.readTerminalsFlag()
 _ = DataDirectory.url
 InstanceLock.acquireOrHandOff()
 
-// Same reason: WORTEL_HIBERNATE_AFTER shortens hibernation for a test, and
-// WORTEL_MISSED_OUTPUT_LIMIT what is kept for a terminal while it is away.
+// Same reason: WORTEL_HIBERNATE_AFTER shortens how long a terminal out of
+// sight keeps its surface, for a test.
 _ = HibernationPolicy.after
-_ = HibernationPolicy.missedOutputLimit
 
 // And the two clocks of deep sleep (WORTEL_SLEEP_AFTER,
 // WORTEL_SLEEP_WAITING_AFTER). Read later, a test's thirty seconds is the

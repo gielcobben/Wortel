@@ -20,6 +20,12 @@ final class KeptTerminalFeed {
     private var awaitingSnapshot = true
     private var waitsForSize = false
     private var restored: ((Bool) -> Void)?
+    /// While there is no surface: reads what the surface would have raised
+    /// (titles, the working directory, bells, progress, a command ending).
+    /// Fresh each time the surface goes; with a surface, libghostty does it.
+    private var scanner: SignalScanner?
+    /// Where the scanner's signals go, on the main thread (`SurfaceView.raise`).
+    var onSignals: (([SignalScanner.Signal]) -> Void)?
 
     private let session: UUID
     private let status: ProgramStatusWatch
@@ -45,11 +51,18 @@ final class KeptTerminalFeed {
         self.restored = restored
     }
 
+    /// The surface has taken over from the scanner: from its snapshot on, what
+    /// the program says reaches the app through it.
+    private func surfaceTookOver() {
+        scanner = nil
+    }
+
     /// Stop writing into the surface; it is about to be freed.
     func hide() {
         surface = nil
         awaitingSnapshot = true
         restored = nil
+        scanner = SignalScanner()
     }
 
     func feed(_ bytes: UnsafePointer<UInt8>, count: Int) {
@@ -74,6 +87,7 @@ final class KeptTerminalFeed {
                 }
                 awaitingSnapshot = false
                 waitsForSize = false
+                surfaceTookOver()
                 let restored = self.restored
                 self.restored = nil
                 restored?(ok)
@@ -83,6 +97,13 @@ final class KeptTerminalFeed {
                 // the light/dark handling read (`TerminalModes`).
                 TerminalModeRecorder.shared.feed(session: session, bytes: base, count: output.count)
                 status.output(base, count: output.count, pty: pty)
+                if scanner != nil {
+                    var passed: [UInt8] = []
+                    let signals = scanner!.scan(output, now: DispatchTime.now().uptimeNanoseconds, output: &passed)
+                    if !signals.isEmpty, let onSignals {
+                        DispatchQueue.main.async { onSignals(signals) }
+                    }
+                }
                 guard let surface, !awaitingSnapshot else { return }
                 ghostty_surface_write_buffer_replay(surface, base, UInt(output.count))
                 accessibility.outputArrived()

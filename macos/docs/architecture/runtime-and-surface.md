@@ -28,12 +28,21 @@ would draw a frame on the main thread at every change of its bounds, and
 `frameForNewSize` asks for that frame only for a single change of size, not
 at every step of a drag (`../../../docs/decisions.md`, 2026-11-19; measure
 with `scripts/bench-resize.sh` before changing it). A terminal's size
-otherwise comes from one of three places, in this order: a size to restore
-at (`restoreSize`: a hibernated terminal's, or a screen saved at the last
-quit, `SavedScreens`), its view when shown, and for one made out of sight its
+otherwise comes from its view when shown, and for one made out of sight its
 session's last size on screen (`shownSizes`); one out of sight follows the
-window by the window's change (`followWindow`). Anything written into a new
-surface waits until it has taken its size (`waitForGrid`, `waitForToldGrid`).
+window by the window's change (`followWindow`), through the keeper when it has
+no surface. The size is the keeper's to apply (`PtyHost.resizeInKeeper`):
+libghostty's placeholder grid, reported before the surface is told a size,
+never reaches it (`ignoreSizesUntilTold`).
+
+**The surface is a copy of the keeper's terminal** (`docs/architecture/keeper.md`).
+It is restored from a snapshot (`KeptTerminalFeed`, waiting for its first size
+with `waitForToldGrid` so the copy is not re-wrapped twice on its way), fed the
+session's output from the keeper's channel, and answers nothing. Out of sight
+for a minute its surface goes (`HibernationPolicy`, `SurfaceView.hibernate`)
+and comes back from a fresh snapshot when shown (`wake`); meanwhile the feed
+reads what the surface would have raised (`SignalScanner`: titles, the working
+directory, bells, progress, a command ending).
 `scripts/check-terminals.sh` is the test for all of it. The keyboard path is subtle —
 `keyDown`/`performKeyEquivalent`/`doCommand` coordinate via `lastPerformKeyEvent`
 and `keyTextAccumulator` to make IME (Korean/Japanese) and unclaimed command

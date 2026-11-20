@@ -58,15 +58,9 @@ extension SurfaceView {
     var outputGeneration: UInt64? { ptyHost?.outputGeneration }
 
     /// Run `body` on the main thread once everything already handed to this
-    /// terminal has reached its screen.
-    ///
-    /// A terminal warmed a moment ago is still being given the keeper's
-    /// replay and the saved modes, on the pty's queue (`PtyHost.enqueue`).
-    /// Reading it now would read a blank screen, and pasting into it now
-    /// would paste into a terminal that doesn't yet know the program asked
-    /// for bracketed paste, so a multi-line prompt would land as one
-    /// submission per line. Queued behind them instead, and on the exec
-    /// backend, which has no such queue, at once.
+    /// terminal has reached its screen: on the pty's queue (`PtyHost.enqueue`),
+    /// behind what is being written into it. On the exec backend, which has
+    /// no such queue, at once.
     func afterPendingOutput(_ body: @escaping @MainActor () -> Void) {
         guard let pty = ptyHost else { return body() }
         pty.enqueue {
@@ -74,14 +68,11 @@ extension SurfaceView {
         }
     }
 
-    /// Run `body(true)` once a paste would reach the program: after the
-    /// pending output, and after a reattach has stopped holding back the
-    /// terminal's answers to its replay (`PtyHost.holdsReplayAnswers`). A
-    /// paste takes the same road as those answers, so sent in between it
-    /// would be dropped with them. The wait is microseconds when the replay's
-    /// marker comes back, a couple of seconds when it doesn't, and up to
-    /// `ReplayAnswers.writingPatience` more while a big replay is still being
-    /// written.
+    /// Run `body(true)` once a paste would reach the program as it should:
+    /// after the pending output, and after a woken surface has been restored
+    /// from the keeper's terminal (`wake`). Before that, the surface does not
+    /// yet know the program asked for bracketed paste, so a multi-line prompt
+    /// would land as one submission per line.
     ///
     /// Or `body(false)` once `patience` has run out, and then never
     /// `body(true)`: the caller (`wortel send`) has a deadline of its own to
@@ -90,19 +81,10 @@ extension SurfaceView {
     func whenPasteReachesProgram(within patience: TimeInterval,
                                  _ body: @escaping @MainActor (_ ready: Bool) -> Void) {
         let once = Once(body)
-        let deadline = Date().addingTimeInterval(patience)
         DispatchQueue.main.asyncAfter(deadline: .now() + patience) {
             MainActor.assumeIsolated { once.call(false) }
         }
-        afterPendingOutput { self.afterReplayAnswersSettle(until: deadline, once) }
-    }
-
-    private func afterReplayAnswersSettle(until deadline: Date, _ once: Once) {
-        guard let pty = ptyHost, pty.holdsReplayAnswers else { return once.call(true) }
-        guard Date() < deadline else { return once.call(false) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-            MainActor.assumeIsolated { self.afterReplayAnswersSettle(until: deadline, once) }
-        }
+        afterPendingOutput { self.afterRestore { once.call(true) } }
     }
 
     /// The first answer of the two that race, the deadline's or the ready one.

@@ -77,11 +77,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Debug build is also what runs every day.
         if DataDirectory.custom != nil { ResizeBench.install() }
         #endif
-        // Saved screens of sessions that did not come back.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
-            guard let manager = self?.manager else { return }
-            SavedScreens.clearLeftovers(keeping: Set(manager.sessions.map(\.id)))
-        }
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
             DropPasteboard.sweepOldImages()
@@ -1103,18 +1098,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         cli?.stop()
         Telemetry.capture(
             .appQuit(uptime: DurationBucket(seconds: Date().timeIntervalSince(launchedAt))))
-        // What every session's terminal shows, for the next launch to put
-        // back (`SavedScreens`), and the usage events still on their way: the
-        // quit goes ahead when both are done. Neither waits on the main
-        // thread, and the screens have a second and a half at most.
-        var waitingFor = 2
-        let oneDone: @MainActor () -> Void = {
-            waitingFor -= 1
-            if waitingFor == 0 { NSApp.reply(toApplicationShouldTerminate: true) }
-        }
-        SavedScreens.saveAll(manager?.sessions.compactMap(\.surfaceView) ?? [],
-                             dark: GhosttyRuntime.systemIsDark, then: oneDone)
-        if Telemetry.hasWorkBeforeQuit { Telemetry.drainBeforeQuit(then: oneDone) } else { oneDone() }
+        // Nothing of the terminals to save: the keeper keeps them. The usage
+        // events still on their way are let finish, without waiting on the
+        // main thread.
+        guard Telemetry.hasWorkBeforeQuit else { return .terminateNow }
+        Telemetry.drainBeforeQuit { NSApp.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
 

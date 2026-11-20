@@ -49,123 +49,38 @@ stayed quiet and the agent went on painting the palette it picked hours earlier:
 dark-background diff blocks on a white screen, or a white prompt box on a dark
 one. Intermittent for the same replay-tail reason, and permanent once it hit.
 
-## What it does now
+## What it does now (since 2026-11, protocol 2)
 
-`TerminalModes` watches the output the app is already handling, records the
-modes worth restoring, and re-declares them into the new terminal on reattach.
+**The modes live in the keeper's terminal, and travel with it.** The keeper
+reads every byte the program writes into a terminal of its own
+(`docs/architecture/keeper.md`), and an app's surface is restored from a
+snapshot of that terminal: every mode, current, saved and default, the kitty
+keyboard stack on both screens, the alternate screen and what is on it, and
+whatever sequence the program was in the middle of. Nothing is recorded to be
+declared again, and there is no replay, so the bug above cannot happen: a
+terminal restored after a quit, a crash or being dropped out of sight
+believes exactly what the program believes.
 
-**In the app, not the keeper.** While a session is attached the app reads the
-pty itself and the keeper sees none of those bytes — which is exactly when a
-program declares its modes. So the watching happens where the bytes are, and
-`TerminalModeStore` writes the result to
-`Application Support/Wortel/terminal-modes.json`, because the process that knows
-is the one about to exit. It is rewritten only when something changes, which in
-practice is once per agent launch.
+**The answers are the keeper's.** A program's queries (cursor position, device
+attributes, OSC 10/11, `?996n`, DECRQM, XTVERSION) are answered by the
+keeper's terminal, with the app open or not, and the app's surface answers
+nothing (`ghostty_surface_set_responds`, `write_buffer_replay`). The old
+problem of a replay's stale answers landing in an agent's prompt
+(`ReplayAnswers`, removed) has no road to happen on.
 
-**And in the keeper, for what it throws away.** While nobody is attached, the
-keeper's replay holds only the last 512 KB, and a program started then declares
-its modes in the first bytes it writes. Codex resumed while Wortel wasn't
-attached turns on the alternate screen, the mouse (`?1000`, `?1002`, `?1003`,
-`?1006`) and the keyboard protocol, then reprints a long conversation, which
-pushes all of that out of the buffer before anyone reads it. Reattached, the
-terminal had none of them: scrolling and selecting in Codex did nothing, since
-in fullscreen Codex does both itself from the mouse reports. So `ReplayBuffer`
-reads the modes out of the bytes it drops and puts them in front of the replay
-it hands over, after the app's prelude (they are newer) and before the tail
-(which is newer still). A keeper started before this keeps the old behaviour
-until it is replaced, which is not on an update: one holding sessions is kept.
+**Light and dark, too.** The app tells the keeper its colours and light or
+dark (`KeeperCommand.appearance`); a program subscribed with `?2031` is sent
+the report by the keeper when it changes, whether or not its terminal has a
+surface, and answered the truth when it asks.
 
-**Modes first, then the replay.** The prelude goes in before the replayed
-output, so anything the program changed while nobody was attached wins over what
-was recorded before it detached — a vim that was quit while you were away sends
-its `?1049l` in that replay.
-
-**An allowlist, and a short one.** A mode replayed into a terminal that never
-asked for it is as wrong as a mode lost. `TerminalModes.restorable` holds the
-sticky ones whose loss you can see: application cursor keys, mouse reporting,
-focus reporting, the alternate screen, bracketed paste, theme reports, the
-keyboard shape.
-Deliberately not `?25` (cursor visibility), `?12` (blink) or `?2026`
-(synchronised output) — a TUI toggles those every frame, so recording them would
-mean writing to disk continuously to restore a state that is already one frame
-old.
-
-**A mode nobody mentioned is not mentioned.** Absent, not false: the default
-belongs to the terminal, and `ESC[?1l` for a mode no program ever touched is
-noise that can only do harm.
-
-**And, for `?2031` alone, what the appearance is now.** Re-declaring the mode
-only re-subscribes the program; it says nothing about what changed while nobody
-was attached, and a Mac left on "Auto" flips at sunset. So a resumed session
-whose program wants theme reports is also sent one, matching the current
-appearance. This is the only thing here written to the *program* rather than to
-the terminal, which is why it goes after the replay has been read for modes: a
-program that turned reporting off while detached said so in there, and must not
-be written to.
-
-It is sent on every resume rather than only when the appearance changed.
-Tracking what each program was last told would mean persisting a second belief
-about the far side and being silently wrong about it, which is the shape of the
-bug this whole file exists for, and a report a program already agrees with costs
-it nothing — it sets the theme it is already painting. Note that a fresh
-surface starts on the app handle's scheme, which is already the current one, so
-ghostty's own `set_color_scheme` sees no change and reports nothing: without
-this a resumed program would never be resynced at all. How a terminal is told
-light or dark in the first place is in `docs/appearance.md`.
-
-**What a running agent is assumed to have set is written down.** An agent's
-startup modes are often not on record (see `TerminalModes.assuming`), so a
-reattach takes them from the agent's marker. `TerminalModeRecorder.assume` also
-records them, because a hibernation takes its prelude from the record: before
-it did, the terminal such a session woke with had no theme reports and no
-bracketed paste.
-
-## The terminal's answers to the replay
-
-The replay goes through libghostty's parser like any output, so every query in
-it is answered: a cursor position report for `ESC[6n`, device attributes for
-`ESC[c`, the colours for OSC 10/11, XTVERSION, the kitty keyboard flags. With a
-host-managed pty those answers go straight into the program
-(`receive_buffer` → `PtyHost`). They are old: the program asked while nobody
-was attached, got no answer (the keeper answers nothing), and moved on. One
-arriving now is read as typed input, which is how `^[[24;1R` or an OSC 11 reply
-could land in an agent's prompt after a relaunch. bb handles the same thing by
-dropping the terminal's writes while it replays.
-
-So, for a resumed session with a replay, `PtyHost.writeFromTerminal` drops what
-the terminal sends from just before the prelude until the replay's answers are
-known to be out (`ReplayAnswers`). Wortel's own writes (the theme report above,
-a resume typed again) go to `PtyHost.write` and are never held, and neither
-does anything dropped reach the prompt taps (`PromptTap`, `DraftTap`).
-
-- **Closed by a marker, not a timer.** libghostty doesn't answer from inside
-  `ghostty_surface_write_buffer`: the parser queues the answer for the surface's
-  IO thread, which writes it a moment later (Ghostty 1.2's
-  `StreamHandler.messageWriter`). So after the replay we parse one query of our
-  own, a DECRQM for a mode no terminal has (`ESC[?64738$p`, answered
-  `ESC[?64738;0$y`). The queue is in order, so its answer coming back means
-  everything the replay produced has gone by; it is dropped too, and anything
-  after it is live. A 2s deadline covers a marker that never comes back.
-- **Not after a replay cut mid-sequence.** The replay and the first live read
-  are one stream; a program drawing as the keeper handed over can leave a
-  sequence half in each. The marker's `ESC` would cut it short and its tail
-  would print as text, so `ReplayAnswers.endsCleanly` checks the replay's last
-  escape (and UTF-8 character) first. If it isn't clean, no marker: the window
-  closes 250ms after the replay was written instead.
-- **Keys can't be told apart**, since they take the same queue as answers, so a
-  key pressed while the replay is being parsed is dropped with them. That is
-  the few milliseconds a surface takes to be built, before it was on screen.
-- **Three reports go through**, because they describe the terminal *now* and
-  the program wants them unasked: focus (`ESC[I`/`ESC[O`, which the prelude's
-  `?1004h` itself produces), the `?2048` size report, and the `?2031` light/dark
-  report.
-- **Not covered: answers that go via the main thread.** An OSC 52 clipboard
-  read, a title report (`CSI 21 t`) and the `?996n` theme query are answered by
-  the app after a hop through the surface's mailbox, and can come back after
-  the marker. The theme answer is harmless (it is the report above). The other
-  two are rare in agents; a late one still goes through.
-- **A fresh shell is never muted**: its few replayed bytes were written a
-  moment ago, and whatever it asked it is still waiting on.
+**The record stays, for its readers in the app.** `TerminalModeRecorder` is
+still fed the live output (`KeptTerminalFeed`) and kept on disk
+(`TerminalModeStore`), because four things read it: whether to bracket a
+prompt Wortel inserts (`insertPrompt`), whether an agent that says nothing is
+at its prompt, whether an agent repaints itself on a theme change, and what to
+take back from an agent agent sleep ends (below). It no longer restores
+anything. Moving those readers to the keeper's terminal (`KeeperCommand.modes`)
+and deleting the record is the next step.
 
 ## The scanner
 
@@ -192,32 +107,22 @@ restarted to repaint it, `appearance.md`) it leaves the shell on the alternate
 screen with mouse reporting and its keyboard flags on. `TerminalModes.undo`
 turns off every mode on record as on, the alternate screen last, pops the
 keyboard flags on both screens, shows the cursor and turns the wheel's
-scrolling of a pager (`?1007`) back on. It is written before the signal, so
+scrolling of a pager (`?1007`) back on. It goes through the keeper (`KeeperCommand.inject`), so its terminal and
+the app's copy both hear it, and it is written before the signal, so
 the shell's next prompt, which switches bracketed paste on for itself, comes
-after it; and if the program does not go, the prelude puts it all back.
+after it; and if the program does not go, the prelude puts it all back the same way.
 
 An agent's startup modes are written down for as long as it runs, seen or not
 (`TerminalModeRecorder.assume`). When its marker goes, the ones still on
 record as on are taken off it (`forgetStartupModes`): an agent that was
 killed, or never set them (`claude -p`), would otherwise have focus reporting
-and theme reports put into a plain shell's terminal at every later wake.
+and theme reports put back into a plain shell's terminal by a later undo.
 Bracketed paste stays, which the shell has on at its prompt itself.
 
 ## Known limits
 
-- **What the program changed and never announced.** Only modes are restored:
-  cursor position, scroll region, the screen's contents, the palette and any
-  `DECSTBM` are still whatever the replay draws.
-- **A mode set before this shipped.** The record starts when a session's output
-  is first watched, so a shell that was already running at the update has
-  nothing written down until the next time a program declares something. In
-  practice that means the first paste in a session that predates the fix can
-  still go through raw.
-- **Keyboard flag stacks.** `CSI > flags u` is recorded; a `CSI < u` pop leaves
-  flags this cannot know, so it claims none rather than asserting what it saw
-  pushed.
-- **A theme report reaches the foreground process group**, which is normally
-  the agent. A session resumed with `vim` or a pager in front hands those nine
-  bytes to that instead, exactly as a live appearance change already would. And
-  a `?2031` recorded as on for a program that has since exited writes them at a
-  shell prompt, the same risk the prelude already takes for every other mode.
+- **Keyboard flag stacks, in the record.** `CSI > flags u` is recorded; a
+  `CSI < u` pop leaves flags the record cannot know, so it claims none. The
+  keeper's terminal has the whole stack; only the app's record is short of it.
+- **A mode set before the record started** (a shell older than the update
+  that brought it) is not in the record. The terminal has it.

@@ -387,12 +387,13 @@ final class KeeperConnection {
     // MARK: - Terminals the keeper keeps
 
     /// Whether sessions' terminals live in the keeper (`KeeperCommand.terminal`).
-    /// Latched from `WORTEL_KEEPER_TERMINAL=1` at launch, while it is proved.
-    private static let terminalsFlag = OSAllocatedUnfairLock(initialState: false)
+    /// The default; `WORTEL_KEEPER_TERMINAL=0` at launch puts it back on
+    /// protocol 1 while both paths exist.
+    private static let terminalsFlag = OSAllocatedUnfairLock(initialState: true)
     static var keepsTerminals: Bool { terminalsFlag.withLock { $0 } }
     static func readTerminalsFlag() {
-        let on = ProcessInfo.processInfo.environment["WORTEL_KEEPER_TERMINAL"] == "1"
-        terminalsFlag.withLock { $0 = on }
+        let off = ProcessInfo.processInfo.environment["WORTEL_KEEPER_TERMINAL"] == "0"
+        terminalsFlag.withLock { $0 = !off }
     }
 
     /// The session's pty and the keeper's terminal for it take this size.
@@ -401,6 +402,20 @@ final class KeeperConnection {
         guard client.isConnected else { return }
         _ = try? client.send(.resize(session: session.uuidString, columns: columns, rows: rows,
                                      cellWidth: cellWidth, cellHeight: cellHeight))
+    }
+
+    /// A snapshot of the session's terminal down its channel, for a surface
+    /// shown again (`KeeperCommand.resync`).
+    func resync(session: UUID) {
+        guard client.isConnected else { return }
+        _ = try? client.send(.resync(session: session.uuidString))
+    }
+
+    /// Write into a session's terminal as though its program had
+    /// (`KeeperCommand.inject`).
+    func inject(session: UUID, _ bytes: [UInt8]) {
+        guard client.isConnected, !bytes.isEmpty else { return }
+        _ = try? client.send(.inject(session: session.uuidString, bytes: Data(bytes)))
     }
 
     /// What terminals are shown in, for the keeper to answer programs with.

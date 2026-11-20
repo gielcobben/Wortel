@@ -65,8 +65,8 @@ enum KeeperCommand: Codable, Equatable {
     /// (`KeeperChannel`), then carries every byte the program writes after
     /// it, so nothing is lost or seen twice between the two. The pty is for
     /// typing, and for asking who is in the foreground; the app never reads
-    /// it. Attaching again (a terminal shown after being dropped) ends the
-    /// previous channel after its last byte and starts a new one.
+    /// it. Attaching again ends the previous channel after its last byte and
+    /// starts a new one; a terminal shown again asks for `resync` instead.
     case terminal(session: String, plan: KeeperSpawnPlan, columns: UInt16, rows: UInt16)
     /// A new size for a session's pty and terminal, applied between two reads
     /// of its output, so what came before is parsed at the old size and what
@@ -78,6 +78,15 @@ enum KeeperCommand: Codable, Equatable {
     /// Whether each of `modes` (DEC private mode numbers) is set in a
     /// session's terminal. Replied in `modes`, in the same order.
     case modes(session: String, modes: [UInt16])
+    /// Send a snapshot of the session's terminal down its channel, between
+    /// the next two reads (`KeeperChannel`): for a terminal the app shows
+    /// again after dropping it.
+    case resync(session: String)
+    /// Write `bytes` into the session's terminal as though the program had
+    /// written them, between two reads, and down its channel like any
+    /// output: for what Wortel has to say to the terminal about a program it
+    /// is ending (`TerminalModes.undo`), so both copies hear it.
+    case inject(session: String, bytes: Data)
 
     var verb: String {
         switch self {
@@ -91,6 +100,8 @@ enum KeeperCommand: Codable, Equatable {
         case .resize: return "resize"
         case .appearance: return "appearance"
         case .modes: return "modes"
+        case .resync: return "resync"
+        case .inject: return "inject"
         }
     }
 }
@@ -109,29 +120,45 @@ struct KeeperAppearance: Codable, Equatable, Sendable {
     var palette: [UInt32] = []
 }
 
-/// The start of a session's output channel (`KeeperCommand.terminal`): a
-/// header, then a snapshot of the keeper's terminal as libghostty-vt encodes
-/// it, then the program's output, raw, from the byte after the snapshot on.
+/// A session's output channel (`KeeperCommand.terminal`), keeper to app, as
+/// frames: a type, a length, the bytes.
 ///
-///     "WKT1"  UInt64 big-endian snapshot length  snapshot bytes  output...
+///     type (1 byte)  length (UInt32, big-endian)  payload
 ///
-/// The snapshot is only meaningful to a Ghostty built from the same commit as
+/// - `snapshot`: the keeper's terminal for the session, as libghostty-vt
+///   encodes it. The first frame, and again whenever the app asks
+///   (`KeeperCommand.resync`), always at a point between two reads of the
+///   pty: what follows it is exactly what the program wrote after.
+/// - `output`: what the program wrote, one read of the pty a frame.
+///
+/// In-band, so a snapshot can come at any point of a session's life without
+/// the app ever having to line two streams up: a terminal shown again after
+/// being dropped asks, and goes on from where its snapshot leaves off, while
+/// whatever reads the session's output for its status never misses a byte.
+/// A snapshot is only meaningful to a Ghostty built from the same commit as
 /// the keeper's, which is the one in this app bundle.
 enum KeeperChannel {
-    static let magic: [UInt8] = Array("WKT1".utf8)
-    static let headerSize = 12
-
-    static func header(snapshotLength: Int) -> [UInt8] {
-        var length = UInt64(snapshotLength).bigEndian
-        return magic + withUnsafeBytes(of: &length) { Array($0) }
+    enum Frame: UInt8 {
+        case output = 1
+        case snapshot = 2
     }
 
-    /// The snapshot length a complete header says, or nil for one that is not
-    /// a header at all.
-    static func snapshotLength(header bytes: some Collection<UInt8>) -> Int? {
-        guard bytes.count == headerSize, bytes.prefix(4).elementsEqual(magic) else { return nil }
-        let length = bytes.dropFirst(4).reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
-        return length <= UInt64(Int.max) ? Int(length) : nil
+    static let headerSize = 5
+    /// One frame's most, for a peer that is not a keeper.
+    static let maximumFrame = 1 << 30
+
+    static func header(_ frame: Frame, length: Int) -> [UInt8] {
+        precondition(length <= maximumFrame)
+        let n = UInt32(length)
+        return [frame.rawValue, UInt8(n >> 24), UInt8(n >> 16 & 0xFF), UInt8(n >> 8 & 0xFF), UInt8(n & 0xFF)]
+    }
+
+    /// The frame and length a complete header says, or nil for one that is
+    /// not a header at all.
+    static func parse(header bytes: some Collection<UInt8>) -> (frame: Frame, length: Int)? {
+        guard bytes.count == headerSize, let frame = Frame(rawValue: bytes[bytes.startIndex]) else { return nil }
+        let length = bytes.dropFirst().reduce(0) { $0 << 8 | Int($1) }
+        return length <= maximumFrame ? (frame, length) : nil
     }
 }
 

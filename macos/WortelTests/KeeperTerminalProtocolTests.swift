@@ -73,6 +73,7 @@ final class KeeperTerminalProtocolTests: XCTestCase {
     /// One reader per channel, so a second read of it goes on where the
     /// first stopped.
     private var readers: [Int32: KeeperChannelReader] = [:]
+    private var snapshotSeen: Set<Int32> = []
 
     private func readChannel(_ fd: Int32, timeout: TimeInterval = 10,
                              until done: (Data) -> Bool = { _ in false })
@@ -92,13 +93,15 @@ final class KeeperTerminalProtocolTests: XCTestCase {
             buffer.withUnsafeBufferPointer { raw in
                 reader.feed(raw.baseAddress!, count: count) { piece in
                     switch piece {
-                    case .snapshot(let data): snapshot = data
+                    case .snapshot(let data):
+                        snapshot = data
+                        self.snapshotSeen.insert(fd)
                     case .output(let bytes): output.append(bytes)
-                    case .invalid: XCTFail("the channel did not start with a snapshot")
+                    case .invalid: XCTFail("the channel is not a keeper's")
                     }
                 }
             }
-            if reader.isLive, done(output) { return (snapshot, output, false) }
+            if snapshotSeen.contains(fd), done(output) { return (snapshot, output, false) }
         }
         return (snapshot, output, false)
     }
@@ -160,6 +163,47 @@ final class KeeperTerminalProtocolTests: XCTestCase {
         let cut = try decode(secondChannel.snapshot)
         XCTAssertEqual(replayed.text(), cut.text(),
                        "snapshot one + channel one is not snapshot two: bytes were lost or repeated")
+    }
+
+    /// The same, within one channel: a snapshot asked for while the program
+    /// floods (a terminal shown again) must be exactly the first snapshot
+    /// plus every output frame between the two.
+    func testAResyncIsExactInTheMiddleOfAFlood() throws {
+        try startServer()
+        let client = try connect()
+        let script = "i=0; while [ $i -lt 30000 ]; do echo \"line $i of the flood\"; i=$((i+1)); done; sleep 30"
+        let opened = try terminal(client, "flood", script, columns: 60, rows: 20)
+
+        var reader = KeeperChannelReader()
+        var snapshots: [Data] = []
+        var between = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        var asked = false
+        let deadline = Date().addingTimeInterval(20)
+        while snapshots.count < 2, Date() < deadline {
+            var poller = pollfd(fd: opened.channel, events: Int16(POLLIN), revents: 0)
+            guard poll(&poller, 1, 50) > 0 else { continue }
+            let count = Darwin.read(opened.channel, &buffer, buffer.count)
+            guard count > 0 else { break }
+            buffer.withUnsafeBufferPointer { raw in
+                reader.feed(raw.baseAddress!, count: count) { piece in
+                    switch piece {
+                    case .snapshot(let data): snapshots.append(data)
+                    case .output(let bytes): if snapshots.count == 1 { between.append(bytes) }
+                    case .invalid: XCTFail("not a channel")
+                    }
+                }
+            }
+            if !asked, between.count > 200_000 {
+                asked = true
+                XCTAssertTrue(try client.send(.resync(session: "flood")).response.ok)
+            }
+        }
+        XCTAssertEqual(snapshots.count, 2, "the resync's snapshot never came")
+        let replayed = try decode(snapshots.first)
+        between.withUnsafeBytes { replayed.write($0.bindMemory(to: UInt8.self).baseAddress!, count: $0.count) }
+        XCTAssertEqual(replayed.text(), try decode(snapshots.last).text(),
+                       "snapshot one + the output between is not snapshot two")
     }
 
     // MARK: - Never waiting on the app

@@ -109,6 +109,12 @@ final class SurfaceView: NSView {
     /// ending (`TerminalModes.undo`). On the pty's queue, as every write into
     /// a terminal is.
     func writeAsOutput(_ bytes: [UInt8]) {
+        // The keeper keeps this terminal: it writes them, so its terminal and
+        // this copy of it stay one. The channel is frames, not output.
+        if keptFeed != nil, let keeperSession {
+            GhosttyRuntime.keeper?.inject(session: keeperSession, bytes)
+            return
+        }
         guard !bytes.isEmpty, let pty = ptyHost else { return }
         pty.enqueue { [weak pty] in
             bytes.withUnsafeBufferPointer { raw in
@@ -452,6 +458,13 @@ final class SurfaceView: NSView {
     /// is not. See `hibernate`.
     private(set) var hibernation: Hibernation?
 
+    /// The keeper keeps this terminal: where its channel goes, surface or not
+    /// (`KeptTerminalFeed`). nil for one the app keeps itself.
+    var keptFeed: KeptTerminalFeed?
+    /// Set while a terminal the keeper keeps has no surface: what to make the
+    /// next one with. Nothing about the screen is kept here; the keeper has it.
+    private var keptDrop: (fontSize: Float, dropped: DispatchTime)?
+
     /// The keeper's id for this session, when its shell belongs to the keeper
     /// rather than to us. Closing the session has to tell the keeper so; the app
     /// merely *quitting* must not, which is the difference the whole feature
@@ -625,6 +638,11 @@ final class SurfaceView: NSView {
         keeperSession = nil
         let pty = ptyHost
         ptyHost = nil
+        // Nothing more goes into the surface from the channel, from the next
+        // read on (none come after the release above).
+        if let feed = keptFeed { pty?.enqueue { feed.hide() } }
+        keptFeed = nil
+        keptDrop = nil
         guard let surface else { return }
         self.surface = nil
         // Off the view now, held past the free: see `retireLayer`. Taken here
@@ -950,7 +968,11 @@ final class SurfaceView: NSView {
         var scanner = SignalScanner()
     }
 
-    var isHibernated: Bool { hibernation != nil }
+    var isHibernated: Bool { hibernation != nil || keptDrop != nil }
+
+    /// The keeper keeps this terminal, so dropping its surface loses nothing
+    /// and needs no reason to wait.
+    var keepsTerminalInKeeper: Bool { keptFeed != nil }
 
     /// Hibernating: the output has been turned away from the terminal and the
     /// screen is about to be written out. Neither hibernated nor awake.
@@ -972,9 +994,11 @@ final class SurfaceView: NSView {
     /// Free this terminal, keeping its shell. Only a keeper session whose shell
     /// is alive: on the exec backend the terminal *is* the shell's parent.
     func hibernate(forQuit: Bool = false) {
-        // The keeper keeps this terminal: nothing to save, and dropping it
-        // will be a restore from the keeper (prototype: not dropped yet).
-        guard !KeeperConnection.keepsTerminals else { return }
+        // The keeper keeps this terminal: nothing to save, at a quit or ever.
+        if keptFeed != nil {
+            if !forQuit { dropKeptSurface() }
+            return
+        }
         guard let surface, let pty = ptyHost, let session = keeperSession,
               hibernation == nil, !isHibernating, !processFinished else {
             HibernationLog.log.debug("""
@@ -1113,6 +1137,7 @@ final class SurfaceView: NSView {
     /// (`ReplayAnswers`): a key typed before then is dropped with the
     /// answers, so a host shows the terminal only after it.
     func wake(onRestored: (() -> Void)? = nil) {
+        if keptDrop != nil { return wakeKeptSurface(onRestored: onRestored) }
         guard let hibernation, let runtime, let pty = ptyHost, let session = keeperSession else {
             // Awake, or being woken by someone else (out of sight because
             // its program outran what is kept, or to be read): then when
@@ -1230,6 +1255,79 @@ final class SurfaceView: NSView {
         }
     }
 
+    // MARK: - A terminal the keeper keeps
+
+    /// Free the surface of a terminal the keeper keeps. Its channel goes on
+    /// being read for the program's status; its screen is the keeper's, and
+    /// comes back exactly when it is shown (`wakeKeptSurface`).
+    private func dropKeptSurface() {
+        guard let old = surface, let pty = ptyHost, let feed = keptFeed, keptDrop == nil,
+              !processFinished, isHidden || superview == nil else { return }
+        let fontSize = ghostty_surface_inherited_config(old, GHOSTTY_SURFACE_CONTEXT_WINDOW).font_size
+        confirmCloseWhileHibernated = ghostty_surface_needs_confirm_quit(old)
+        keptDrop = (fontSize, .now())
+        surface = nil
+        focused = false
+        retireLayer()
+        // Out of the feed first, on the queue that writes into it; freed
+        // after, on main, once nothing can be writing into it.
+        pty.enqueue {
+            feed.hide()
+            DispatchQueue.main.async { ghostty_surface_free(old) }
+        }
+        HibernationLog.log.notice("dropped the terminal of \(self.keeperSession?.uuidString ?? "?", privacy: .public); the keeper keeps it")
+    }
+
+    /// A new surface for a terminal the keeper keeps, restored from a
+    /// snapshot the keeper sends down its channel. `onRestored` runs on main
+    /// once it is.
+    private func wakeKeptSurface(onRestored: (() -> Void)?) {
+        guard let drop = keptDrop, let runtime, let pty = ptyHost, let feed = keptFeed,
+              let session = keeperSession else { return afterRestore(onRestored) }
+        let started = DispatchTime.now()
+        guard let new = runtime.keptSurface(view: self, pty: pty, fontSize: drop.fontSize) else {
+            HibernationLog.log.error("could not wake \(session.uuidString, privacy: .public)")
+            onRestored?()
+            return
+        }
+        keptDrop = nil
+        confirmCloseWhileHibernated = false
+        isRestoring = true
+        surface = new
+        toldSize = nil
+        layerReplaced()
+        if let window { ghostty_surface_set_display_id(new, window.screen?.displayID ?? 0) }
+        viewDidChangeBackingProperties()
+        tellFirstSize()
+        runtime.syncColorScheme(because: "a terminal woke")
+        ghostty_surface_set_occlusion(new, !isHidden)
+        updateFocus()
+
+        let waitsForSize = expectsFirstSize
+        pty.enqueue { [weak self] in
+            feed.show(in: new, waitsForSize: waitsForSize) { restored in
+                let ms = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e6
+                HibernationLog.log.notice("""
+                    woke \(session.uuidString, privacy: .public) from the keeper's terminal \
+                    in \(ms, format: .fixed(precision: 1)) ms\(restored ? "" : ", but its snapshot would not restore", privacy: .public)
+                    """)
+                DispatchQueue.main.async {
+                    guard let self else { onRestored?(); return }
+                    if self.processFinished, self.surface == new { ghostty_surface_process_exit(new, 0, 0) }
+                    if self.surface == new { self.isRestoring = false }
+                    onRestored?()
+                    let waiting = self.restoreWaiters
+                    self.restoreWaiters = []
+                    waiting.forEach { $0() }
+                    self.reconcileSize("woken")
+                }
+            }
+        }
+        // After the feed is waiting for it: the snapshot comes down the same
+        // channel, read on the same queue, so it cannot arrive first.
+        GhosttyRuntime.keeper?.resync(session: session)
+    }
+
     /// The grid a terminal has, asked of the terminal: where its cursor ends
     /// up when sent to the far corner, counted in cells by sending it one
     /// cell from home first. `ghostty_surface_size` is no answer to this: it
@@ -1325,7 +1423,7 @@ final class SurfaceView: NSView {
     /// is shown, so there would be nothing to write it back at; a shell of the
     /// app's own ends with it.
     var savesScreenAtQuit: Bool {
-        isSessionTerminal && ptyHost != nil && keeperSession != nil && !processFinished
+        isSessionTerminal && ptyHost != nil && keeperSession != nil && !processFinished && keptFeed == nil
     }
 
     /// Put to sleep for the quit, the way it is put to sleep out of sight:

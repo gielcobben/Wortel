@@ -24,7 +24,9 @@ final class HibernationPolicy {
     static let after: TimeInterval = {
         if let value = ProcessInfo.processInfo.environment["WORTEL_HIBERNATE_AFTER"],
            let seconds = TimeInterval(value), seconds > 0 { return seconds }
-        return 10 * 60
+        // A terminal the keeper keeps loses nothing by going: it comes back
+        // from the keeper's copy, exactly, so it goes after a minute.
+        return KeeperConnection.keepsTerminals ? 60 : 10 * 60
     }()
 
     /// How long a terminal that has never been shown waits: one made at
@@ -82,7 +84,7 @@ final class HibernationPolicy {
         let work = DispatchWorkItem { [weak self, weak view] in
             self?.timers[key] = nil
             guard let view, view.isHidden || view.superview == nil else { return }
-            if view.mayHibernate?() ?? true {
+            if view.keepsTerminalInKeeper || (view.mayHibernate?() ?? true) {
                 view.hibernate()
             } else {
                 // Not now: look again after another while out of sight.
@@ -127,7 +129,8 @@ final class HibernationPolicy {
     private func memoryIsShort() {
         let level = pressure?.data ?? []
         let views = hidden.allObjects.filter {
-            !$0.isHibernated && ($0.isHidden || $0.superview == nil) && ($0.mayHibernate?() ?? true)
+            !$0.isHibernated && ($0.isHidden || $0.superview == nil)
+                && ($0.keepsTerminalInKeeper || ($0.mayHibernate?() ?? true))
         }
         HibernationLog.log.notice("""
             memory pressure (\(level.contains(.critical) ? "critical" : "warning", privacy: .public)): \

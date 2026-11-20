@@ -324,6 +324,35 @@ final class KeeperServer: @unchecked Sendable {
             }
             reply(.success(), to: client)
 
+        case .resync(let id):
+            guard let session = state.sync(execute: { sessions[id] }) else {
+                return reply(.failure("no such session"), to: client)
+            }
+            // Between two reads, like the first: the channel goes on with
+            // exactly what the program wrote after it.
+            session.pty.enqueue { [weak session] in
+                guard let session, let channel = session.channel, let terminal = session.terminal else { return }
+                guard let snapshot = terminal.snapshot() else {
+                    return KeeperLog.log.error("session \(session.id, privacy: .public): its terminal would not snapshot")
+                }
+                if !channel.send(.snapshot, snapshot) { session.channel = nil }
+            }
+            reply(.success(), to: client)
+
+        case .inject(let id, let bytes):
+            guard let session = state.sync(execute: { sessions[id] }) else {
+                return reply(.failure("no such session"), to: client)
+            }
+            // Through the same road the pty's output takes, so the terminal,
+            // the app's copy and the status tail all hear it, in order.
+            session.pty.enqueue { [weak session] in
+                guard let session, !bytes.isEmpty else { return }
+                bytes.withUnsafeBytes { raw in
+                    session.pty.onOutput?(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count)
+                }
+            }
+            reply(.success(), to: client)
+
         case .modes(let id, let modes):
             guard let session = state.sync(execute: { sessions[id] }), let terminal = session.terminal else {
                 return reply(.failure("no such session"), to: client)
@@ -390,8 +419,7 @@ final class KeeperServer: @unchecked Sendable {
                 KeeperLog.log.error("session \(session.id, privacy: .public): its terminal would not snapshot")
                 return channel.closeNow()
             }
-            guard channel.send(KeeperChannel.header(snapshotLength: snapshot.count)),
-                  channel.send(snapshot) else { return }
+            guard channel.send(.snapshot, snapshot) else { return }
             session.channel = channel
         }
 
@@ -472,7 +500,7 @@ final class KeeperServer: @unchecked Sendable {
             // what the program said about itself (`buffer`).
             guard let self, let session else { return }
             session.terminal?.write(bytes, count: count)
-            if let channel = session.channel, !channel.send(bytes, count: count) {
+            if let channel = session.channel, !channel.send(.output, bytes, count: count) {
                 session.channel = nil
             }
             self.state.sync { session.buffer.append(bytes, count: count) }

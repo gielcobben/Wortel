@@ -16,7 +16,10 @@
 # - "sizes", a program that writes down every size its pty is given: a
 #   relaunch must not resize anyone (a resize is a repaint to an agent).
 #
-# Then the same through an ordinary quit and launch.
+# Then the same through an ordinary quit and launch. And last, a drawer
+# whose terminal is dropped while out of sight (a two-second clock here, a
+# minute in use) and goes on drawing with no terminal in the app: woken by a
+# read, its screen must be exactly what it drew.
 #
 # Needs the display awake.
 set -u
@@ -65,7 +68,8 @@ wait_for() {
 }
 launch() {
   local before=$(cat "$data/instance.lock" 2>/dev/null)
-  open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 --env WORTEL_KEEPER_TERMINAL=1 "$copy"
+  open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 --env WORTEL_KEEPER_TERMINAL=1 \
+    --env WORTEL_HIBERNATE_AFTER=${1:-600} "$copy"
   started() { local now=$(cat "$data/instance.lock" 2>/dev/null); [[ -n $now && $now != $before ]] && kill -0 $now; }
   wait_for 20 started || { print -u2 "the copy did not start"; cleanup; exit 2; }
   apppid=$(cat "$data/instance.lock")
@@ -197,6 +201,22 @@ count=$(w read $shell --lines 10000 | grep -c '^numbered ')
 sizes_after=$(wc -l < "$data/sizes.log")
 (( sizes_after == sizes_before )) && ok "after a quit: no program was resized" \
   || wrong "after a quit: sizes given: $(tail -n +$((sizes_before + 1)) "$data/sizes.log" | tr '\n' ' ')"
+
+# --- 3. dropped out of sight while it draws -------------------------------
+quit
+launch 2
+pause 2
+w new --cwd "$data" --name drawer3 -- "$data/drawer" 2400 "$data/drawer-3.done" >/dev/null
+drawer3=$(id_of drawer3)
+pause 1
+w new --cwd "$data" --name front >/dev/null    # drawer3 goes out of sight
+wait_for 60 test -s "$data/drawer-3.done" || wrong "drawer3 never finished"
+dropped=$(/usr/bin/log show --last 2m --predicate "processID == $apppid AND category == \"hibernation\"" 2>/dev/null \
+  | grep -c "dropped the terminal of $drawer3")
+(( dropped > 0 )) && ok "dropped out of sight: its terminal was dropped while it drew" \
+  || wrong "dropped out of sight: its terminal was never dropped, so this tested nothing"
+w wait $drawer3 --for "DONE" --from-start --timeout 20s >/dev/null 2>&1
+check_drawer "dropped out of sight, then read" $drawer3 "$data/drawer-3.done"
 
 cleanup
 print "$failures wrong"

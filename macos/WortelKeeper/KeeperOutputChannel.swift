@@ -63,11 +63,11 @@ final class KeeperOutputChannel {
         if !isClosed { closeNow() }
     }
 
-    /// Send bytes, or queue what the socket will not take now. False when the
+    /// Send raw bytes, or queue what the socket will not take now. False when the
     /// channel is closed or the app has fallen `limit` behind; the channel is
     /// closed then, and the caller lets go of it.
     @discardableResult
-    func send(_ bytes: UnsafeRawPointer, count: Int) -> Bool {
+    private func sendRaw(_ bytes: UnsafeRawPointer, count: Int) -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
         guard !isClosed, !finishing else { return false }
         guard count > 0 else { return true }
@@ -100,17 +100,53 @@ final class KeeperOutputChannel {
         return true
     }
 
+    /// Send one frame (`KeeperChannel`): its header and its payload, in one
+    /// `writev` while the socket has room, so a read of the pty costs one
+    /// system call here and no copy. What does not go now is queued, as by
+    /// `send`, and the same bound applies.
     @discardableResult
-    func send(_ bytes: [UInt8]) -> Bool {
-        bytes.withUnsafeBytes { send($0.baseAddress!, count: $0.count) }
+    func send(_ frame: KeeperChannel.Frame, _ payload: UnsafeRawPointer, count: Int) -> Bool {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard !isClosed, !finishing else { return false }
+        var header = KeeperChannel.header(frame, length: count)
+        guard pending.isEmpty else {
+            return header.withUnsafeBytes { sendRaw($0.baseAddress!, count: $0.count) }
+                && sendRaw(payload, count: count)
+        }
+        let total = header.count + count
+        var written = 0
+        header.withUnsafeMutableBytes { head in
+            var vectors = [iovec(iov_base: head.baseAddress, iov_len: head.count),
+                           iovec(iov_base: UnsafeMutableRawPointer(mutating: payload), iov_len: count)]
+            while true {
+                let result = writev(descriptor, &vectors, Int32(vectors.count))
+                if result >= 0 { written = result; return }
+                if errno == EINTR { continue }
+                written = errno == EAGAIN ? 0 : -1
+                return
+            }
+        }
+        if written < 0 {
+            closeNow() // the app has gone
+            return false
+        }
+        if written == total { return true }
+        // Queue the rest: what is left of the header, then of the payload.
+        if written < header.count {
+            let rest = header.count - written
+            let ok = header.withUnsafeBytes { sendRaw($0.baseAddress! + written, count: rest) }
+            return ok && sendRaw(payload, count: count)
+        }
+        return sendRaw(payload + (written - header.count), count: total - written)
     }
 
     @discardableResult
-    func send(_ data: Data) -> Bool {
-        data.withUnsafeBytes { raw in
-            guard let base = raw.baseAddress else { return true }
-            return send(base, count: raw.count)
+    func send(_ frame: KeeperChannel.Frame, _ data: Data) -> Bool {
+        guard !data.isEmpty else {
+            var nothing: UInt8 = 0
+            return withUnsafeBytes(of: &nothing) { send(frame, $0.baseAddress!, count: 0) }
         }
+        return data.withUnsafeBytes { send(frame, $0.baseAddress!, count: $0.count) }
     }
 
     /// How long a finished channel waits for its app to take what is queued.

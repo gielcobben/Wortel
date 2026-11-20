@@ -635,9 +635,9 @@ final class GhosttyRuntime {
     /// byte the program wrote, at the size its pty had; the channel it hands
     /// over starts with a snapshot of that terminal and goes on with every
     /// byte after it. So the surface is restored from the snapshot, exactly,
-    /// and then fed what follows. It answers nothing (the keeper does), and
-    /// its size goes to the keeper, which resizes the pty and its own
-    /// terminal at one point in the stream.
+    /// and then fed what follows (`KeptTerminalFeed`). It answers nothing
+    /// (the keeper does), and its size goes to the keeper, which resizes the
+    /// pty and its own terminal at one point in the stream.
     private func keeperTerminalSurface(
         view: SurfaceView, config cfg: inout ghostty_surface_config_s,
         attachment: KeeperConnection.Attachment, keeper: KeeperConnection, resumeAgain: String?
@@ -650,22 +650,6 @@ final class GhosttyRuntime {
         view.keeperSession = session
         view.keeperPID = keeper.keeperPID
         view.shellPID = attachment.pid > 0 ? attachment.pid : nil
-
-        cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
-        cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
-        // Only the user's keys reach here: the surface answers nothing.
-        cfg.receive_buffer = { userdata, bytes, length in
-            guard let userdata else { return }
-            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue().write(bytes, count: length)
-        }
-        cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
-            guard let userdata else { return }
-            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
-                .resize(columns: columns, rows: rows, widthPx: widthPx, heightPx: heightPx)
-        }
-        // Its first report, before it is told a size, is libghostty's
-        // placeholder, and never reaches the keeper.
-        pty.ignoreSizesUntilTold(repaint: false)
         pty.resizeInKeeper = { [weak keeper] columns, rows, widthPx, heightPx in
             guard columns > 0, rows > 0 else { return }
             let cellWidth = widthPx / UInt32(columns), cellHeight = heightPx / UInt32(rows)
@@ -676,48 +660,18 @@ final class GhosttyRuntime {
                                cellWidth: cellWidth, cellHeight: cellHeight)
             }
         }
-
+        Self.keptTerminal(&cfg, pty: pty)
         guard let surface = ghostty_surface_new(app, &cfg) else {
             NSLog("wortel: host-managed surface could not be created")
             return nil
         }
         ghostty_surface_set_responds(surface, false)
 
-        let status = view.programStatusWatch
-        let accessibility = view.accessibilityWatch
-        let waitsForSize = view.expectsFirstSize
-        var reader = KeeperChannelReader()
-        pty.onOutput = { [weak pty] bytes, count in
-            reader.feed(bytes, count: count) { piece in
-                switch piece {
-                case .snapshot(let snapshot):
-                    // At the size the view is about to give it, when one is
-                    // coming: restored into libghostty's placeholder grid, the
-                    // copy would be re-wrapped twice on its way to the right
-                    // one. A quarter of a second at most.
-                    if waitsForSize, !SurfaceView.waitForToldGrid(surface).reached {
-                        NSLog("wortel: %@ restored before its terminal took its size", session.uuidString)
-                    }
-                    let restored = snapshot.withUnsafeBytes { raw -> Bool in
-                        guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return false }
-                        return ghostty_surface_restore_snapshot(surface, base, UInt(raw.count))
-                    }
-                    if !restored {
-                        KeeperLog.log.error("""
-                            session \(session.uuidString, privacy: .public): its snapshot \
-                            (\(snapshot.count) bytes) would not restore
-                            """)
-                    }
-                case .output(let output):
-                    guard let base = output.baseAddress else { return }
-                    status.output(base, count: output.count, pty: pty)
-                    ghostty_surface_write_buffer_replay(surface, base, UInt(output.count))
-                    accessibility.outputArrived()
-                case .invalid:
-                    KeeperLog.log.error("session \(session.uuidString, privacy: .public): its channel did not start with a snapshot")
-                }
-            }
-        }
+        let feed = KeptTerminalFeed(session: session, status: view.programStatusWatch,
+                                    accessibility: view.accessibilityWatch, pty: pty)
+        view.keptFeed = feed
+        feed.show(in: surface, waitsForSize: view.expectsFirstSize)
+        pty.onOutput = { bytes, count in feed.feed(bytes, count: count) }
         // The channel ends after the shell does, or when the keeper lets this
         // copy go (it fell far behind). Only the first is the shell's end.
         pty.onHangup = { [weak view, weak pty] in
@@ -734,6 +688,7 @@ final class GhosttyRuntime {
         // What the program said about itself lately, for the dots: read as a
         // replay, never written into the terminal (the snapshot has it).
         let tail = attachment.replay
+        let status = view.programStatusWatch
         if !tail.isEmpty { pty.enqueue { status.replay(tail) } }
         if let resumeAgain {
             let bytes = Array(resumeAgain.utf8)
@@ -746,6 +701,44 @@ final class GhosttyRuntime {
         }
         pty.beginReading()
         return surface
+    }
+
+    /// A surface for a terminal the keeper keeps, shown again after it was
+    /// dropped (`SurfaceView.wake`): made around the channel the view still
+    /// reads. The caller hands it to the feed and asks the keeper for a
+    /// snapshot (`KeeperConnection.resync`).
+    func keptSurface(view: SurfaceView, pty: PtyHost, fontSize: Float) -> ghostty_surface_t? {
+        var cfg = ghostty_surface_config_new()
+        cfg.platform_tag = GHOSTTY_PLATFORM_MACOS
+        cfg.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
+            nsview: Unmanaged.passUnretained(view).toOpaque()))
+        cfg.userdata = Unmanaged.passUnretained(view).toOpaque()
+        cfg.scale_factor = Double(view.window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 2.0))
+        cfg.font_size = fontSize
+        cfg.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
+        Self.keptTerminal(&cfg, pty: pty)
+        guard let surface = ghostty_surface_new(app, &cfg) else { return nil }
+        ghostty_surface_set_responds(surface, false)
+        return surface
+    }
+
+    /// Point a surface config at a terminal the keeper keeps: the user's keys
+    /// go to the pty, its size to the keeper (`PtyHost.resizeInKeeper`). Its
+    /// first report, made before it is told a size, is libghostty's
+    /// placeholder and never reaches the keeper.
+    private static func keptTerminal(_ cfg: inout ghostty_surface_config_s, pty: PtyHost) {
+        cfg.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
+        cfg.receive_userdata = Unmanaged.passUnretained(pty).toOpaque()
+        cfg.receive_buffer = { userdata, bytes, length in
+            guard let userdata else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue().write(bytes, count: length)
+        }
+        cfg.receive_resize = { userdata, columns, rows, widthPx, heightPx in
+            guard let userdata else { return }
+            Unmanaged<PtyHost>.fromOpaque(userdata).takeUnretainedValue()
+                .resize(columns: columns, rows: rows, widthPx: widthPx, heightPx: heightPx)
+        }
+        pty.ignoreSizesUntilTold(repaint: false)
     }
 
     /// Write a session's past into a new terminal: the modes the program

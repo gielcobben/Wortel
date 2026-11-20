@@ -47,10 +47,13 @@ final class KeeperServer: @unchecked Sendable {
         /// keeper reading its output, and each would wait on the other.
         let replies: DispatchQueue
 
-        init(id: String, pty: PtyHost, limit: Int, columns: UInt16, rows: UInt16) {
+        init(id: String, pty: PtyHost, limit: Int, columns: UInt16, rows: UInt16, replays: Bool) {
             self.id = id
             self.pty = pty
-            self.buffer = ReplayBuffer(limit: limit)
+            // Opened for the keeper to keep its terminal, the buffer is only a
+            // tail for what the program said about itself, never a replay, so
+            // it reads nothing of what it drops (`readsDroppedModes`).
+            self.buffer = ReplayBuffer(limit: limit, readsDroppedModes: replays)
             self.terminal = KeeperTerminal(columns: columns, rows: rows, scrollbackBytes: Keeper.scrollbackBytes)
             self.replies = DispatchQueue(label: "sh.wortel.keeper.replies", qos: .userInitiated)
         }
@@ -297,6 +300,12 @@ final class KeeperServer: @unchecked Sendable {
             session.pty.enqueue { [weak session] in
                 guard let session else { return }
                 let columns = max(columns, 1), rows = max(rows, 1)
+                // The size it has: nothing to tell anyone. A relaunched app
+                // tells every terminal its size, and a program asked for
+                // in-band reports (`?2048`) would get one per relaunch.
+                if let terminal = session.terminal, terminal.columns == columns, terminal.rows == rows,
+                   terminal.cellWidth == cellWidth, terminal.cellHeight == cellHeight { return }
+                KeeperLog.log.debug("session \(session.id, privacy: .public) resized to \(columns)x\(rows)")
                 session.pty.setWindowSize(
                     columns: columns, rows: rows,
                     widthPx: UInt32(columns) &* cellWidth, heightPx: UInt32(rows) &* cellHeight)
@@ -344,7 +353,7 @@ final class KeeperServer: @unchecked Sendable {
                 return .attached(session, existing: true)
             }
             guard !stopping else { return .refused("this keeper is shutting down") }
-            guard let session = startSession(id: id, plan: plan, columns: columns, rows: rows),
+            guard let session = startSession(id: id, plan: plan, columns: columns, rows: rows, replays: false),
                   session.terminal != nil else {
                 return .refused("could not start \(plan.executable)")
             }
@@ -438,11 +447,11 @@ final class KeeperServer: @unchecked Sendable {
     /// A new session with its shell running, or nil if it could not be forked.
     /// Called on `state`.
     private func startSession(
-        id: String, plan: KeeperSpawnPlan, columns: UInt16, rows: UInt16
+        id: String, plan: KeeperSpawnPlan, columns: UInt16, rows: UInt16, replays: Bool = true
     ) -> Session? {
         let pty = PtyHost()
         let session = Session(id: id, pty: pty, limit: replayLimit,
-                              columns: max(columns, 1), rows: max(rows, 1))
+                              columns: max(columns, 1), rows: max(rows, 1), replays: replays)
         // Answers the terminal gives the program, copied out of the callback
         // and written off the read queue (see `Session.replies`).
         session.terminal?.reply = { [weak pty, replies = session.replies] bytes, count in

@@ -48,8 +48,16 @@ struct ReplayBuffer {
     /// style whose start was cut off and would otherwise bleed over the screen.
     static let resync = Data("\u{18}\u{1b}[0m".utf8)
 
-    init(limit: Int = Keeper.replayLimit) {
+    /// Whether what is dropped is read for the modes it set, to be put in
+    /// front of a replay (`take`). Only a replay written into a terminal
+    /// needs it; a tail kept beside the keeper's own terminal (`copy`) is
+    /// never written into one, and reading every byte it drops is most of
+    /// what the buffer would cost under a flood.
+    let readsDroppedModes: Bool
+
+    init(limit: Int = Keeper.replayLimit, readsDroppedModes: Bool = true) {
         self.limit = max(0, limit)
+        self.readsDroppedModes = readsDroppedModes
     }
 
     var isEmpty: Bool { storage.isEmpty }
@@ -132,14 +140,14 @@ struct ReplayBuffer {
     }
 
     private mutating func noteDropped(_ bytes: UnsafePointer<UInt8>, count: Int) {
-        guard count > 0 else { return }
+        guard readsDroppedModes, count > 0 else { return }
         droppedModes.feed(bytes, count: count, parser: &droppedScanner)
     }
 
     /// Read the `count` oldest bytes, about to be dropped, in the order they
     /// were written: from `head`, wrapping.
     private mutating func noteDropped(oldestFirst count: Int) {
-        guard count > 0 else { return }
+        guard readsDroppedModes, count > 0 else { return }
         // Moved out and back so reading the ring isn't an access to `self`
         // overlapping the one that updates them.
         var modes = TerminalModes()

@@ -463,7 +463,7 @@ final class SurfaceView: NSView {
     var keptFeed: KeptTerminalFeed?
     /// Set while a terminal the keeper keeps has no surface: what to make the
     /// next one with. Nothing about the screen is kept here; the keeper has it.
-    private var keptDrop: (fontSize: Float, dropped: DispatchTime)?
+    private var keptDrop: (fontSize: Float, dropped: DispatchTime, size: ghostty_surface_size_s, scale: CGFloat)?
 
     /// The keeper's id for this session, when its shell belongs to the keeper
     /// rather than to us. Closing the session has to tell the keeper so; the app
@@ -1265,7 +1265,8 @@ final class SurfaceView: NSView {
               !processFinished, isHidden || superview == nil else { return }
         let fontSize = ghostty_surface_inherited_config(old, GHOSTTY_SURFACE_CONTEXT_WINDOW).font_size
         confirmCloseWhileHibernated = ghostty_surface_needs_confirm_quit(old)
-        keptDrop = (fontSize, .now())
+        keptDrop = (fontSize, .now(), ghostty_surface_size(old),
+                    window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
         surface = nil
         focused = false
         retireLayer()
@@ -1659,7 +1660,7 @@ final class SurfaceView: NSView {
     private var followWork: DispatchWorkItem?
 
     @objc private func windowDidResize(_ notification: Notification) {
-        guard isHidden, surface != nil else { return }
+        guard isHidden, surface != nil || keptDrop != nil else { return }
         followWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.followWork = nil
@@ -1679,7 +1680,7 @@ final class SurfaceView: NSView {
     /// made when every hidden terminal took the shown one's size. This is
     /// once a window resize, and to a terminal's own size.
     private func followWindow() {
-        guard isSessionTerminal, isHidden, surface != nil, let told = toldSize,
+        guard isSessionTerminal, isHidden, surface != nil || keptDrop != nil, let told = toldSize,
               let then = windowSizeWhenTold, let now = window?.contentLayoutRect.size else { return }
         guard Self.resizeHolds == 0 else {
             // A pane is moving: after it lands.
@@ -1692,12 +1693,69 @@ final class SurfaceView: NSView {
         guard abs(dw) >= 1 || abs(dh) >= 1 else { return }
         let width = max(40 * scale, CGFloat(told.width) + dw)
         let height = max(20 * scale, CGFloat(told.height) + dh)
+        guard surface != nil else { return followWindowWithoutSurface(width: UInt32(width), height: UInt32(height)) }
         setSurfaceSize(width: UInt32(width), height: UInt32(height))
         // What a change of scale or screen passes on again
         // (`viewDidChangeBackingProperties`): this size, not the one before.
         contentSize = NSSize(width: width / scale, height: height / scale)
         LayoutLog.log.debug("followed the window out of sight: \(told.width)x\(told.height) to \(UInt32(width))x\(UInt32(height)) px")
     }
+
+    /// `followWindow` for a terminal the keeper keeps whose surface was
+    /// dropped: the grid libghostty would make of the new size goes to the
+    /// keeper, which resizes the pty and its terminal, so the program works
+    /// at the width it will be shown at. The surface made when it is shown
+    /// gets the same grid, and nothing is resized then.
+    private func followWindowWithoutSurface(width: UInt32, height: UInt32) {
+        guard let drop = keptDrop, let session = keeperSession,
+              let grid = Self.grid(width: width, height: height, cell: drop.size, scale: drop.scale)
+        else { return }
+        toldSize = (width, height)
+        windowSizeWhenTold = window?.contentLayoutRect.size
+        guard grid.columns != drop.size.columns || grid.rows != drop.size.rows else { return }
+        var size = drop.size
+        size.columns = grid.columns
+        size.rows = grid.rows
+        size.width_px = width
+        size.height_px = height
+        keptDrop?.size = size
+        GhosttyRuntime.keeper?.resize(session: session, columns: grid.columns, rows: grid.rows,
+                                      cellWidth: drop.size.cell_width_px, cellHeight: drop.size.cell_height_px)
+        LayoutLog.log.debug("followed the window with no terminal: \(grid.columns)x\(grid.rows), told the keeper")
+    }
+
+    /// The grid libghostty makes of a surface `width` by `height` pixels:
+    /// what is left after the padding (`window-padding-x`, `-y` in
+    /// `wortel.conf`, in points on each side), in whole cells. nil when the
+    /// same sum does not give back the grid the surface had, which means it
+    /// is not libghostty's sum any more and must not be guessed at.
+    static func grid(width: UInt32, height: UInt32, cell: ghostty_surface_size_s, scale: CGFloat)
+        -> (columns: UInt16, rows: UInt16)? {
+        guard cell.cell_width_px > 0, cell.cell_height_px > 0 else { return nil }
+        func fit(_ pixels: UInt32, padding: CGFloat, cellSize: UInt32) -> UInt16 {
+            let free = max(0, Int(pixels) - Int((2 * padding * scale).rounded(.down)))
+            return UInt16(clamping: max(1, free / Int(cellSize)))
+        }
+        let check = (fit(cell.width_px, padding: Self.padding.x, cellSize: cell.cell_width_px),
+                     fit(cell.height_px, padding: Self.padding.y, cellSize: cell.cell_height_px))
+        guard check.0 == cell.columns, check.1 == cell.rows else {
+            LayoutLog.log.error("""
+                the grid sum gives \(check.0)x\(check.1) for a surface of \(cell.columns)x\(cell.rows); \
+                not following the window without it
+                """)
+            return nil
+        }
+        return (fit(width, padding: Self.padding.x, cellSize: cell.cell_width_px),
+                fit(height, padding: Self.padding.y, cellSize: cell.cell_height_px))
+    }
+
+    /// `window-padding-x` and `-y` from the bundled config, in points.
+    private static let padding: (x: CGFloat, y: CGFloat) = {
+        let conf = Bundle.main.resourceURL.flatMap { TerminalTheme.settings(at: $0.appendingPathComponent("wortel.conf")) }
+        let x = conf?["window-padding-x"]?.last.flatMap(Double.init) ?? 2
+        let y = conf?["window-padding-y"]?.last.flatMap(Double.init) ?? 2
+        return (CGFloat(x), CGFloat(y))
+    }()
 
     @objc private func windowKeyStateChanged(_ notification: Notification) {
         updateFocus()

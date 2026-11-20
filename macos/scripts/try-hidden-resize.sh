@@ -70,7 +70,7 @@ while True:
     time.sleep(3600)
 PY
 
-open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 "$copy"
+open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 --env WORTEL_HIBERNATE_AFTER=${HIBERNATE_AFTER:-600} "$copy"
 wait_for 20 test -s "$data/instance.lock" || { print -u2 "the copy did not start"; cleanup; exit 2; }
 apppid=$(cat "$data/instance.lock")
 wait_for 20 w list || { print -u2 "the copy does not answer"; cleanup; exit 2; }
@@ -78,6 +78,9 @@ w new --cwd "$data" --name hidden -- /usr/bin/python3 "$data/sizes.py" "$data/hi
 pause 2
 w new --cwd "$data" --name front -- /usr/bin/python3 "$data/sizes.py" "$data/front.log" >/dev/null
 pause 2
+# With HIBERNATE_AFTER, "hidden" has no terminal in the app by the drag: a
+# terminal the keeper keeps follows the window through the keeper.
+[[ -n ${HIBERNATE_AFTER:-} ]] && pause $((HIBERNATE_AFTER + 2))
 
 failures=0
 drag() { # width, height to end at

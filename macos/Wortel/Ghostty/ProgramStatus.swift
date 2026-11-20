@@ -257,6 +257,11 @@ struct ProgramRecords: Equatable {
 
     private(set) var root: ProgramStatus?
     private(set) var children: [String: ProgramStatus] = [:]
+    /// The root said `done` while a piece of its work was still unfinished,
+    /// and that work has not all ended since: the turn is held open
+    /// (`standing`). Set only by the `done` itself, so work listed after a
+    /// turn was over changes nothing.
+    private(set) var finishHeld = false
     /// Child ids, least recently updated first.
     private var order: [String] = []
 
@@ -277,19 +282,23 @@ struct ProgramRecords: Equatable {
             root = nil
             children = [:]
             order = []
+            finishHeld = false
         case .clearRecord(let id):
             let beneath = id + "/"
             order.removeAll { $0 == id || $0.hasPrefix(beneath) }
             children = children.filter { $0.key != id && !$0.key.hasPrefix(beneath) }
+            if !hasUnfinishedWork { finishHeld = false }
         case .status(let status):
             guard let id = status.id else {
                 root = status
+                finishHeld = status.state == .done && hasUnfinishedWork
                 return
             }
             children[id] = status
             order.removeAll { $0 == id }
             order.append(id)
             if order.count > Self.maximumChildren { children[order.removeFirst()] = nil }
+            if !hasUnfinishedWork { finishHeld = false }
         }
     }
 
@@ -315,11 +324,39 @@ struct ProgramRecords: Equatable {
                              message: words.isEmpty ? nil : words)
     }
 
+    /// Whether the program is at work, as the person is shown it: its own
+    /// record, except that one at rest (`done` or `idle`) with a piece of its
+    /// work still `working` is working. Claude Code ends a turn with `done`
+    /// while a background command, a monitor or a remote agent it started is
+    /// still going, and when that ends it carries on by itself; its root
+    /// says `working` for that wait only sometimes. So the turn is not over,
+    /// and the row keeps its spinner until everything is done
+    /// (2026-11-20, chosen by the person: busy until all done, even for a
+    /// monitor that runs for hours). Only a `done` holds, and only with work
+    /// unfinished at that moment (`finishHeld`): `idle` is a stop (Esc), and
+    /// work listed after a turn was announced does not take the
+    /// announcement back. `blocked` and `error` stand as they are: they are
+    /// news.
+    var standing: ProgramStatus? {
+        guard let root, root.state == .done, finishHeld, hasUnfinishedWork else { return root }
+        return ProgramStatus(state: .working, app: root.app)
+    }
+
+    /// A piece of work still going, or waiting on the person: a background
+    /// agent that asked a question carries on once answered.
+    var hasUnfinishedWork: Bool {
+        children.values.contains { $0.state == .working || $0.state == .blocked }
+    }
+
     /// What the session comes to, in one status: blocked if anything in it
-    /// is, else what the program says of itself. Other child states change
-    /// nothing: a program waiting on its own background work says `working`
-    /// at the root itself.
-    var effective: ProgramStatus? { block ?? root }
+    /// is, else whether it is at work (`standing`).
+    var effective: ProgramStatus? { block ?? standing }
+
+    /// What the program said of itself, and what it waits on the person for:
+    /// what is kept across a relaunch (`PersistedSession.reportedState`).
+    /// Not `standing`: the pieces of work are not kept, so a turn held open
+    /// by them would be restored working with nothing left to end it.
+    var said: ProgramStatus? { block ?? root }
 }
 
 /// Something a program said to its terminal that Wortel acts on.

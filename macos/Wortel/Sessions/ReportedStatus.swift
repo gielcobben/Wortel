@@ -21,6 +21,10 @@ enum ReportedStatus {
         /// has stood for `settle`, with these words (nil: the agent's own
         /// last answer, read from its conversation, or the fixed words).
         case announce(AttentionKind, words: String?)
+        /// A turn held open by its background work, now that the work has
+        /// ended: the same, after `settleAfterWork`, because the program
+        /// usually carries on with what the work gave it.
+        case announceAfterWork(AttentionKind)
         /// The same, about something that happened while nobody was attached:
         /// the dot, with no banner and no sound for old news.
         case mark(AttentionKind, words: String?)
@@ -39,13 +43,20 @@ enum ReportedStatus {
     /// wanted anyone. Short, because past it every moment is a late banner.
     static let settle: TimeInterval = 0.4
 
+    /// How long a turn held open by background work waits, once the work has
+    /// ended, before it is announced finished. Claude Code takes up what a
+    /// background command left within a second or two; a banner before then
+    /// would be followed by the spinner and a second banner.
+    static let settleAfterWork: TimeInterval = 3
+
     /// What follows from a program's records going from `before` to `after`
     /// (nil: it has said nothing, or has gone). `gone`: it cleared everything
     /// and left. `replayed`: read from what it wrote while nobody was
     /// attached, so it is what is true now and not an event.
     ///
     /// Two things are read, apart. The root record says whether the program
-    /// is working or has finished. The block (`ProgramRecords.block`: the
+    /// is working or has finished, with its background work counted as work
+    /// (`ProgramRecords.standing`). The block (`ProgramRecords.block`: the
     /// root, or a piece of its work) says whether it wants an answer. A block
     /// coming or going is never a turn starting or ending, so a question a
     /// background task asked, once answered, does not announce the finished
@@ -65,7 +76,7 @@ enum ReportedStatus {
 
         // The program itself. Said again, nothing changed: a program that
         // repeats itself per tool call must not be a banner per tool call.
-        let was = before?.root, root = after?.root
+        let was = before?.standing, root = after?.standing
         if let root, root != was {
             func tell(_ kind: AttentionKind, _ words: String?) -> Effect {
                 replayed ? .mark(kind, words: words) : .announce(kind, words: words)
@@ -84,7 +95,8 @@ enum ReportedStatus {
             case .done:
                 // Its message is not quoted: where there is one it names the
                 // session (Pi), which the banner's title already does.
-                effects += [.resting, tell(.turnDone, nil)]
+                let workEnded = was?.state == .working && before?.root == after?.root
+                effects += [.resting, workEnded && !replayed ? .announceAfterWork(.turnDone) : tell(.turnDone, nil)]
             case .error:
                 effects += [.resting, tell(.failed, root.message.map(banner))]
             }

@@ -186,7 +186,47 @@ final class SurfaceView: NSView {
     /// nothing until it is shown.
     private let isSessionTerminal: Bool
 
+    /// The session a session's own terminal belongs to, for its size on
+    /// screen (`shownSizes`). nil for a side terminal.
+    private let shownSizeOwner: String?
+
     private static let firstSizeKey = "terminal.lastShownSize"
+    private static let shownSizesKey = "terminal.shownSizes"
+
+    /// The size, in points, each session's own terminal last had on screen,
+    /// by session, kept across launches. What a terminal made or woken out of
+    /// sight is told first, before `firstSize`, which is any session's.
+    ///
+    /// One size for every session was the size of whichever was shown last,
+    /// and sessions differ: one has the side column open and another not.
+    /// After a relaunch every session's terminal was told the last one's, so
+    /// with the column open there, every agent out of sight was given 70
+    /// columns in a window of 114. Claude Code answers a relaunch's repaint
+    /// by printing its whole conversation again, at that width; shown later
+    /// at its own width it redraws only what is on screen, so everything
+    /// above was left wrapped at 70 for good (2026-11-19, the running app's
+    /// log: every hidden terminal at 70x37 a minute after launch). Its own
+    /// size is the one it will have when it is shown.
+    private static var shownSizes: [String: NSSize] = {
+        let stored = UserDefaults.standard.dictionary(forKey: shownSizesKey) as? [String: [Double]] ?? [:]
+        return stored.compactMapValues { pair in
+            pair.count == 2 && pair[0] >= 40 && pair[1] >= 20 ? NSSize(width: pair[0], height: pair[1]) : nil
+        }
+    }()
+
+    /// Sizes of sessions that are no more, let go: called with every session
+    /// there is, open or archived, once they are known at launch.
+    static func keepShownSizes(only sessions: Set<UUID>) {
+        let keep = Set(sessions.map(\.uuidString))
+        let before = shownSizes.count
+        shownSizes = shownSizes.filter { keep.contains($0.key) }
+        if shownSizes.count != before { saveShownSizes() }
+    }
+
+    private static func saveShownSizes() {
+        UserDefaults.standard.set(shownSizes.mapValues { [Double($0.width), Double($0.height)] },
+                                  forKey: shownSizesKey)
+    }
 
     /// The size, in points, a session's terminal last had on screen, kept
     /// across launches. A new terminal starts at it rather than at
@@ -203,13 +243,16 @@ final class SurfaceView: NSView {
 
     /// Held in memory as it changes, which during a window drag is every
     /// frame, and written to defaults once it has settled for a second.
-    private static func rememberShownSize(_ size: NSSize) {
-        guard size != firstSize else { return }
+    private static func rememberShownSize(_ size: NSSize, for owner: String?) {
+        let owned = owner.map { shownSizes[$0] != size } ?? false
+        guard size != firstSize || owned else { return }
         firstSize = size
+        if let owner { shownSizes[owner] = size }
         saveFirstSize?.cancel()
         let work = DispatchWorkItem {
             saveFirstSize = nil
             UserDefaults.standard.set([Double(size.width), Double(size.height)], forKey: firstSizeKey)
+            saveShownSizes()
         }
         saveFirstSize = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
@@ -217,8 +260,17 @@ final class SurfaceView: NSView {
 
     private static var saveFirstSize: DispatchWorkItem?
 
+    /// Whether a new surface on this view is about to be told a size of its
+    /// own as it is set up (`tellFirstSize`), so that what is written into
+    /// it can wait for that size (`waitForToldGrid`). Not a side terminal's,
+    /// which is told nothing until it is shown.
+    var expectsFirstSize: Bool {
+        isSessionTerminal && (shownSizeOwner.flatMap { Self.shownSizes[$0] } ?? Self.firstSize) != nil
+    }
+
     /// A new surface that nothing has told a size yet (made out of sight, or
-    /// woken without ever having been shown) is told `firstSize`. One that has
+    /// woken without ever having been shown) is told its session's last size
+    /// on screen (`shownSizes`), or `firstSize` for a session never shown. One that has
     /// been on screen was told its own last size by
     /// `viewDidChangeBackingProperties` already. With neither, it is told
     /// nothing, and its pty keeps the size it has (`PtyHost.ignoreSizesUntilTold`).
@@ -227,7 +279,8 @@ final class SurfaceView: NSView {
         // of a drag: the size its view gives it next, however soon, gets its
         // frame in the same commit (`frameForNewSize`).
         defer { sizedAt = nil }
-        guard isSessionTerminal, surface != nil, toldSize == nil, let size = Self.firstSize else { return }
+        guard isSessionTerminal, surface != nil, toldSize == nil,
+              let size = shownSizeOwner.flatMap({ Self.shownSizes[$0] }) ?? Self.firstSize else { return }
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         setSurfaceSize(width: UInt32(size.width * scale), height: UInt32(size.height * scale))
     }
@@ -454,6 +507,7 @@ final class SurfaceView: NSView {
         self.runtime = runtime
         self.environment = environment
         self.isSessionTerminal = isSessionTerminal
+        shownSizeOwner = isSessionTerminal ? sessionID?.uuidString : nil
 
         // Non-zero initial frame so the renderer's layer bounds are non-zero.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -1177,6 +1231,28 @@ final class SurfaceView: NSView {
                 Int(((far.y - home.y) / cell.height).rounded()) + 1)
     }
 
+    /// Hold the pty's queue until a new terminal has been told a size and has
+    /// taken it, for a terminal whose size is told on the main thread after
+    /// it is made (`tellFirstSize`), so after whatever was queued for it.
+    /// `ghostty_surface_size` says what it was told; until then it is
+    /// libghostty's placeholder. See `waitForGrid` for why it matters.
+    static func waitForToldGrid(_ surface: ghostty_surface_t, patience: TimeInterval = 0.25)
+        -> (ms: Double, reached: Bool) {
+        let started = DispatchTime.now().uptimeNanoseconds
+        while true {
+            let told = ghostty_surface_size(surface)
+            let waited = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e6
+            let placeholder = told.columns == 45 && told.rows == 15
+            if !placeholder, told.columns > 1, told.rows > 1 {
+                let rest = max(0, patience - waited / 1000)
+                let wait = waitForGrid(surface, columns: Int(told.columns), rows: Int(told.rows), patience: rest)
+                return (waited + wait.ms, wait.reached)
+            }
+            if waited > patience * 1000 { return (waited, false) }
+            usleep(1000)
+        }
+    }
+
     /// Hold the pty's queue until a new terminal has the grid it was told.
     ///
     /// A new surface is 45 columns by 15 rows, libghostty's own, whatever it
@@ -1195,7 +1271,7 @@ final class SurfaceView: NSView {
     ///
     /// Asked every millisecond, for a quarter of a second at the most: the
     /// size lands after about 25 ms. Only this session's queue waits.
-    private static func waitForGrid(
+    static func waitForGrid(
         _ surface: ghostty_surface_t, columns: Int, rows: Int, patience: TimeInterval = 0.25
     ) -> (ms: Double, reached: Bool, grid: (columns: Int, rows: Int)?) {
         let started = DispatchTime.now().uptimeNanoseconds
@@ -1481,7 +1557,7 @@ final class SurfaceView: NSView {
         if reflowed {
             onSizeChange?()
             accessibilityWatch.outputArrived()
-            if isSessionTerminal, window != nil { Self.rememberShownSize(size) }
+            if isSessionTerminal, window != nil { Self.rememberShownSize(size, for: shownSizeOwner) }
         }
         let scaled = convertToBacking(size)
         setSurfaceSize(width: UInt32(max(0, scaled.width)), height: UInt32(max(0, scaled.height)))

@@ -29,6 +29,7 @@ xcodegen generate            # after a fresh checkout or any change to project.y
 xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug build
 xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # about 85s
 ../scripts/check.sh macos    # generate, then the same tests, in one command
+scripts/check-terminals.sh   # every terminal test, in throwaway copies, about 7 minutes
 ```
 
 - The `.xcodeproj` is generated and gitignored. `project.yml` is the source of
@@ -47,7 +48,7 @@ xcodebuild -project Wortel.xcodeproj -scheme WortelTests test    # about 85s
 
 | You are changing | Read first |
 | --- | --- |
-| `Wortel/Ghostty/` | `docs/architecture/runtime-and-surface.md`, and `docs/terminal-modes.md` or `docs/accessibility.md` for those parts |
+| `Wortel/Ghostty/` | `docs/architecture/runtime-and-surface.md`, and `docs/terminal-modes.md` or `docs/accessibility.md` for those parts. Run `scripts/check-terminals.sh` before it is merged |
 | Light and dark: a theme, a layer colour, what a program is told | `docs/appearance.md`. Run `scripts/try-appearance.sh` |
 | `Wortel/Sessions/` | `docs/architecture/sessions.md`, `docs/session-naming.md` |
 | Busy state, dots, notifications | `docs/agent-signals.md`. Run `scripts/verify-agent-status.py` before it ships |

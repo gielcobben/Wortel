@@ -527,7 +527,20 @@ final class GhosttyRuntime {
         // survived: a fresh shell's few bytes were written a moment ago, and
         // whatever it asked it is still waiting on.
         let muteAnswers = resumed && !replay.isEmpty
+        // What the program drew while nobody was attached is drawn for its
+        // pty's size, and an agent draws in place: written into the 45
+        // columns a new surface has before it takes its size, it landed in
+        // pieces at the top of the scrollback (2026-11-19, after a relaunch).
+        // So it waits, on this queue, for the size the view tells it in a
+        // moment (`SurfaceView.tellFirstSize`). As a wake does.
+        let waitsForSize = resumed && !replay.isEmpty && view.expectsFirstSize
         pty.enqueue {
+            if waitsForSize {
+                let wait = SurfaceView.waitForToldGrid(surface)
+                if !wait.reached {
+                    NSLog("wortel: %@ replayed before its terminal took its size", session.uuidString)
+                }
+            }
             Self.restore(surface: surface, pty: pty, session: session, prelude: prelude,
                          replay: replay, recordReplay: true, muteAnswers: muteAnswers,
                          colorScheme: resumed ? (dark: dark, agent: agent) : nil,

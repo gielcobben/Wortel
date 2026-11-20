@@ -1038,6 +1038,8 @@ final class SessionManager {
         let archivedIDs = Set(archived.map(\.id))
         persisted.removeAll { archivedIDs.contains($0.id) }
         hasRestored = true
+        // Sizes on screen are kept for sessions that are still somewhere.
+        SurfaceView.keepShownSizes(only: Set(persisted.map(\.id)).union(archivedIDs))
         if store.loadedCleanly { Self.retireDeadDefaults(persisted: persisted) }
         // Once launch has settled: the keeper is asked what it holds, which is
         // a round trip, and nothing about it is urgent.

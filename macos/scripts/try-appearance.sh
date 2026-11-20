@@ -38,8 +38,11 @@ if [[ -z $app ]]; then
 fi
 [[ -d $app ]] || { print -u2 "no app at $app"; exit 2; }
 
-locked=$(swift -e 'import CoreGraphics; let d = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]; print((d["CGSSessionScreenIsLocked"] as? Int) ?? 0)' 2>/dev/null)
-[[ $locked == 1 ]] && { print -u2 "the screen is locked; unlock it and run again"; exit 2; }
+# A display that is asleep gives a terminal nothing to draw on. A locked
+# screen with the display awake does (measured 2026-11-19), so it is the
+# display that is asked about: `caffeinate -u -t 5` wakes it.
+displays=$(swift -e 'import CoreGraphics; var n: UInt32 = 0; CGGetActiveDisplayList(0, nil, &n); print(n)' 2>/dev/null)
+[[ $displays == 0 ]] && { print -u2 "the display is asleep; wake it and run again"; exit 2; }
 
 work=$(mktemp -d /tmp/wortel-ap.XXXXXX)
 data=$HOME/.wap-$$                       # short: the sockets live here

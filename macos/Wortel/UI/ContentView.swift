@@ -469,16 +469,23 @@ struct SidebarSectionLabel: View {
             // The same size as the rows under it, and set apart by colour alone:
             // a small bold header is a second type size and a second weight
             // doing a job the grey already does.
+            // The label colour itself, not SwiftUI's `.tertiary`: that one is
+            // drawn vibrantly on the sidebar's glass, and the vibrancy is lost
+            // under SidebarScrollView's fade mask (on while the list runs past
+            // the window), which left the headers dark grey on dark. The same
+            // holds for every grey inside the list: use NSColor's label
+            // colours there, never `.secondary`/`.tertiary`. The branch line
+            // learned this first (`SessionRow.secondLineColor`).
             Text(title)
                 .font(.system(size: 13))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                 .lineLimit(1)
             // Open or collapsed, after the name rather than as a triangle in
             // front of it: down when open, turned to point at the name's end
             // when collapsed. The whole header is the button (SidebarOutline).
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                 .rotationEffect(.degrees(collapsed ? -90 : 0))
                 .animation(.easeOut(duration: 0.15), value: collapsed)
             // What the section is hiding. Same dot as a session row's, so it
@@ -942,7 +949,7 @@ struct SessionRow: View {
             if isInWorktree && !isEditing && !session.showsBranchLine {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
             }
             VStack(alignment: .leading, spacing: 1) {
                 if isEditing {
@@ -967,7 +974,7 @@ struct SessionRow: View {
                     HStack(spacing: 3) {
                         Image(systemName: "folder.badge.minus")
                             .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                         TruncatingLabel(text: "Folder is gone", font: .systemFont(ofSize: 11),
                                         color: .tertiaryLabelColor)
                     }
@@ -1274,7 +1281,7 @@ struct SessionStatusIndicator: View {
             if let shortcutHint {
                 Text(verbatim: shortcutHint)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                     .transition(.opacity)
             } else {
                 status.transition(.opacity)

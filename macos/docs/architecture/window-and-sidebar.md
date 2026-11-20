@@ -16,7 +16,11 @@ right clear them (`leadingClearance`). The reason for the own titlebar is
 that on macOS 26+ every toolbar item, custom views included, sits on a Liquid
 Glass capsule, and AppKit has no switch to stop that. The window's vibrancy is
 one behind-window material under everything (`BackdropController`); only the
-pages (terminal, column) are opaque. Sidebar selection is a custom neutral
+pages (terminal, column) are opaque. While the list runs past the window its
+bottom edge fades (`SidebarScrollView`, a layer mask), and the mask takes
+vibrancy away from everything in the list: a grey there is an NSColor label
+colour, never SwiftUI's `.secondary`/`.tertiary`, or it draws dark on dark
+(the headers did, 2026-11-19). Sidebar selection is a custom neutral
 pill rather than `List(selection:)` because the sidebar never holds keyboard
 focus (the terminal does). That is enforced, not assumed: `SidebarOutline`
 refuses first responder. A table takes the keyboard on any press its own code

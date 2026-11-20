@@ -661,6 +661,10 @@ final class SidebarOutline: NSOutlineView {
 /// Kept current from the two places every change passes: `tile` (a resize,
 /// rows added, folded or grown) and `reflectScrolledClipView` (a scroll),
 /// which also settles each row's hover.
+///
+/// The mask takes away the vibrancy of everything under it: SwiftUI's
+/// `.secondary`/`.tertiary` then draw as their raw vibrant grey, dark on the
+/// dark glass. Greys in the list are NSColor's label colours for that reason.
 final class SidebarScrollView: NSScrollView {
     static let fade: CGFloat = 20
 

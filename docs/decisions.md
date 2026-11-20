@@ -403,6 +403,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   a new session is on top by Recent or Created anyway. Sort
   Unread First still puts its band over whichever order a section has. The
   choice is view state, like a fold, not a setting.
+- **2026-11-19. Greys in the sidebar's list are NSColor's label colours,
+  never SwiftUI's `.secondary` or `.tertiary`.** Those two are drawn
+  vibrantly, blended with the glass, and the list's fade mask (on while the
+  rows run past the window) takes the blend away: the section headers went
+  dark grey on dark. Plain `tertiaryLabelColor` is what DESIGN.md already
+  named for headers and branch lines, mask or not.
 
 ## Sessions
 

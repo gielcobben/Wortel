@@ -42,6 +42,11 @@ struct TruncatingLabel: NSViewRepresentable {
 /// The label itself: re-decides its tooltip whenever it is laid out, since a
 /// sidebar resize is what turns a name that fit into one that doesn't.
 final class TruncationAwareField: NSTextField {
+    /// Drawn in its own colour, not blended with the glass: the sidebar's fade
+    /// mask (`SidebarScrollView`) takes vibrancy away, and a label that relied
+    /// on it went dark on dark beside a glyph that didn't.
+    override var allowsVibrancy: Bool { false }
+
     override func layout() {
         super.layout()
         refreshToolTip()

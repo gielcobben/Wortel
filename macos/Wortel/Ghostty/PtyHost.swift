@@ -650,9 +650,6 @@ final class PtyHost: @unchecked Sendable {
         }
     }
 
-    /// Whether the child has exited and been collected.
-    var hasExited: Bool { shared.withLock { $0.hasExited } }
-
     /// Let go of the pty without ending the session — the app detaching. The
     /// descriptor is closed (ours was a `dup`; the keeper still holds one) and
     /// the shell carries on with nobody watching. `onHangup` does not fire.

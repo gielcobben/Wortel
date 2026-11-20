@@ -214,20 +214,16 @@ final class KeeperServer: @unchecked Sendable {
         listener = nil
         descriptor = -1
         let hold = endingShellsForResume ? AgentMarkerHold(in: agentMarkers) : nil
-        let ended: [PtyHost] = state.sync {
-            let ptys = sessions.values.map(\.pty)
-            ptys.forEach { $0.stop() }
+        state.sync {
+            for session in sessions.values { session.pty.stop() }
             sessions = [:]
-            return ptys
         }
         if let hold, hold.count > 0 {
             // Their last prompts run before they end; a marker put back
-            // before that would be removed again. `stop` sends SIGKILL after
-            // its own two seconds to whatever ignores the hangup.
-            let deadline = Date().addingTimeInterval(Keeper.shellPatience)
-            while Date() < deadline, ended.contains(where: { !$0.hasExited }) { usleep(20_000) }
+            // before that would be removed again.
+            let lingering = hold.waitForShells(patience: Keeper.shellPatience)
             let restored = hold.restore()
-            KeeperLog.log.notice("kept \(restored, privacy: .public) agents to be resumed")
+            KeeperLog.log.notice("kept \(restored, privacy: .public) agents to be resumed; \(lingering, privacy: .public) shells still running")
         }
         try? FileManager.default.removeItem(atPath: path)
     }

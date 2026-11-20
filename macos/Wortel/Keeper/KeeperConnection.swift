@@ -188,7 +188,6 @@ final class KeeperConnection {
         // of this build does itself (`AgentMarkerHold`). A keeper of an older
         // build only hangs its shells up, and each one's last prompt removes
         // its agent's marker.
-        let shells = heldSessions()?.map(\.pid).filter { $0 > 1 } ?? []
         let hold = AgentMarkerHold()
         client.disconnect()
         if let pid, pid > 1 {
@@ -197,11 +196,10 @@ final class KeeperConnection {
             if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
         }
         if hold.count > 0 {
-            // Hung up as its keeper went; its `login` ends once its shell has.
-            let deadline = Date().addingTimeInterval(Keeper.shellPatience + 2)
-            while Date() < deadline, shells.contains(where: { kill($0, 0) == 0 }) { usleep(20_000) }
+            // Hung up as its keeper went; see `AgentMarkerHold.waitForShells`.
+            let lingering = hold.waitForShells(patience: Keeper.shellPatience)
             let restored = hold.restore()
-            KeeperLog.log.notice("replaced keeper: kept \(restored, privacy: .public) agents to be resumed")
+            KeeperLog.log.notice("replaced keeper: kept \(restored, privacy: .public) agents to be resumed; \(lingering, privacy: .public) shells still running")
         }
         try? FileManager.default.removeItem(atPath: Keeper.socketPath)
         guard connectStarting() else { return nil }

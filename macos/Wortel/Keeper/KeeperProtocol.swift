@@ -241,9 +241,9 @@ struct KeeperSessionState: Codable, Equatable {
 
 enum Keeper {
     /// How long ending shells for a resume waits for them to end
-    /// (`AgentMarkerHold`): past `PtyHost.stop`'s SIGKILL at two seconds, so
-    /// only a process stuck in the kernel outlasts it.
-    static let shellPatience: TimeInterval = 3
+    /// (`AgentMarkerHold.waitForShells`): a hung-up agent saves and ends well
+    /// inside it (two seconds for a busy Claude Code, measured 2026-11-20).
+    static let shellPatience: TimeInterval = 5
 
     /// Beside the CLI socket, and for the same reason: it is app state, and both
     /// ends can derive the path without being told.

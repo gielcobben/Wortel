@@ -271,17 +271,40 @@ final class KeeperTests: XCTestCase {
 
     // MARK: - Ending for a resume
 
-    /// A stand-in shell: it handles the hangup rather than dying of it, as
-    /// an interactive shell waiting on a job does, runs an "agent" that does
-    /// die of it, and once that ends does what zsh does on its way out: its
-    /// last prompt removes the agent's marker, and it saves its history
-    /// (`cleaned`). The agent prints its pid. (A handler, not `trap ''`: an
-    /// ignored signal is inherited and cannot be undone in a child.)
-    private func shellWithAgent(marker: URL, cleaned: String, underLogin: Bool) -> KeeperSpawnPlan {
-        let script = "trap 'true' HUP; sh -c 'echo AGENT-$$; exec sleep 60'; rm -f '\(marker.path)'; echo cleaned > '\(cleaned)'"
-        guard underLogin else { return plan(script) }
+    /// A stand-in for an interactive zsh, in the shape that matters: a
+    /// process group of its own (so a hangup sent to `login`'s group misses
+    /// it, and it outlives `login`), the agent as the foreground job in
+    /// another, the agent's marker written as the shell integration writes it
+    /// (`shellpid=` its own pid), and, a moment after the agent ends, its last
+    /// prompt: the marker removed, its history saved (`cleaned`). A hangup
+    /// sent to it ends it, as it ends zsh, with no prompt. The agent prints
+    /// its pid. Always under `login`, as every session runs: it is `login`
+    /// that is the session leader and gets the hangup.
+    private static let standInShell = #"""
+        use strict; use POSIX qw(setpgid tcsetpgrp);
+        my ($marker, $cleaned) = @ARGV;
+        $SIG{TTOU} = 'IGNORE'; $SIG{TTIN} = 'IGNORE';
+        setpgid(0, 0);
+        open(my $tty, "+<", "/dev/tty") or die "no tty";
+        my $agent = fork();
+        if ($agent == 0) { setpgid(0, 0); exec("/bin/sleep", "60"); }
+        setpgid($agent, $agent);
+        tcsetpgrp(fileno($tty), $agent);
+        open(my $m, ">", $marker); print $m "agent=claude\nargv=claude\nshellpid=$$\n"; close $m;
+        $| = 1; print "AGENT-$agent\n";
+        1 while waitpid($agent, 0) == -1 && $!{EINTR};
+        select(undef, undef, undef, 0.3);
+        unlink $marker;
+        open(my $c, ">", $cleaned); print $c "cleaned\n"; close $c;
+        exit 0;
+        """#
+
+    private func shellWithAgent(marker: URL, cleaned: String, in dir: URL) throws -> KeeperSpawnPlan {
+        let script = dir.appendingPathComponent("shell.pl")
+        try Data(Self.standInShell.utf8).write(to: script)
+        let shell = ["/usr/bin/perl", script.path, marker.path, cleaned]
         return KeeperSpawnPlan(
-            executable: "/usr/bin/login", arguments: ["-flp", NSUserName(), "/bin/sh", "-c", script],
+            executable: "/usr/bin/login", arguments: ["-flp", NSUserName()] + shell,
             environment: ["PATH": "/usr/bin:/bin", "TERM": "xterm-ghostty"],
             workingDirectory: nil, initialInput: nil)
     }
@@ -289,16 +312,14 @@ final class KeeperTests: XCTestCase {
     /// What a keeper ending leaves behind: whether the shell ended its own
     /// way (`cleaned`), whether the agent's marker is there, as it was, and
     /// whether the agent ended too.
-    private func endKeeper(forResume: Bool, underLogin: Bool) throws
-        -> (cleaned: Bool, marker: Data?, agentEnded: Bool, written: Data) {
+    private func endKeeper(forResume: Bool) throws
+        -> (cleaned: Bool, marker: Data?, agentEnded: Bool, written: Data?) {
         let markers = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("markers-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: markers, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: markers) }
         let session = UUID().uuidString
         let marker = markers.appendingPathComponent(session)
-        let written = Data("agent=claude\nargv=claude\nshellpid=1\n".utf8)
-        try written.write(to: marker)
         let cleaned = markers.appendingPathComponent("cleaned").path
 
         let server = KeeperServer(path: path, agentMarkers: markers)
@@ -306,10 +327,15 @@ final class KeeperTests: XCTestCase {
         self.server = server
         let client = try connect()
         let opened = try XCTUnwrap(try terminal(
-            client, session, shellWithAgent(marker: marker, cleaned: cleaned, underLogin: underLogin)))
+            client, session, shellWithAgent(marker: marker, cleaned: cleaned, in: markers),
+            track: false))
         let said = read(opened.channel, until: "AGENT-")
         let agent = try XCTUnwrap(said.range(of: #"AGENT-(\d+)"#, options: .regularExpression)
             .flatMap { pid_t(said[$0].dropFirst(6)) }, said)
+        let written = try? Data(contentsOf: marker)
+        // The app is gone, as at an update: its descriptors with it.
+        close(opened.channel)
+        close(opened.pty)
         usleep(200_000)
         server.stop(endingShellsForResume: forResume)
         self.server = nil
@@ -318,7 +344,7 @@ final class KeeperTests: XCTestCase {
             usleep(100_000)
             agentAlive = kill(agent, 0) == 0
         }
-        usleep(300_000)
+        usleep(800_000) // past the stand-in's last prompt
         return (FileManager.default.fileExists(atPath: cleaned), try? Data(contentsOf: marker), !agentAlive, written)
     }
 
@@ -326,7 +352,7 @@ final class KeeperTests: XCTestCase {
     /// its shell's last prompt removes the marker. Right for a session someone
     /// closed, and what lost every agent at an update.
     func testAPoliteStopLetsTheShellRemoveItsAgentsMarker() throws {
-        let ended = try endKeeper(forResume: false, underLogin: false)
+        let ended = try endKeeper(forResume: false)
         XCTAssertTrue(ended.agentEnded)
         XCTAssertTrue(ended.cleaned, "the stand-in shell never ran its last prompt; this test proves nothing")
         XCTAssertNil(ended.marker)
@@ -335,19 +361,13 @@ final class KeeperTests: XCTestCase {
     /// A keeper ending on a signal (an update replacing it, a logout) hangs
     /// its shells up all the same, so each ends its own way (history saved,
     /// jobs told), and then puts back the markers their last prompts removed:
-    /// the agents are resumed.
+    /// the agents are resumed. The shell outlives `login`, so it is the
+    /// shell that is waited for, not `login` (review, 2026-11-20).
     func testEndingForAResumeKeepsTheMarkerAndLetsTheShellEndItsOwnWay() throws {
-        let ended = try endKeeper(forResume: true, underLogin: false)
-        XCTAssertTrue(ended.agentEnded, "the agent outlived its keeper")
-        XCTAssertTrue(ended.cleaned, "the shell was not let end its own way: its history would be lost")
-        XCTAssertEqual(ended.marker, ended.written, "the agent's marker is not back as it was")
-    }
-
-    /// The same under `/usr/bin/login`, which is how every session runs.
-    func testEndingForAResumeUnderLogin() throws {
-        let ended = try endKeeper(forResume: true, underLogin: true)
+        let ended = try endKeeper(forResume: true)
         XCTAssertTrue(ended.agentEnded, "the agent outlived its keeper")
         XCTAssertTrue(ended.cleaned, "the shell under login was not let end its own way")
+        XCTAssertNotNil(ended.written)
         XCTAssertEqual(ended.marker, ended.written, "the agent's marker is not back as it was")
     }
 

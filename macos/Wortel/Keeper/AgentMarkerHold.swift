@@ -27,7 +27,8 @@ struct AgentMarkerHold {
     private let directory: URL
     private let held: [String: Data]
 
-    /// Every marker there is now, read while the agents still run.
+    /// Every marker there is now, read while the agents still run. Then end
+    /// the shells, `waitForShells`, and `restore`.
     init(in directory: URL = AgentMarkerHold.directory) {
         self.directory = directory
         var held: [String: Data] = [:]
@@ -41,6 +42,37 @@ struct AgentMarkerHold {
     }
 
     var count: Int { held.count }
+
+    /// The shells the held markers were written by (`shellpid=`).
+    var shells: [pid_t] {
+        held.values.compactMap { data in
+            String(decoding: data, as: UTF8.self).split(separator: "\n")
+                .first { $0.hasPrefix("shellpid=") }
+                .flatMap { pid_t($0.dropFirst("shellpid=".count)) }
+        }
+        .filter { $0 > 1 }
+    }
+
+    /// Wait until every held marker's shell has ended, `patience` at most,
+    /// and say how many have not. **The shells, not what the keeper forked**:
+    /// that is `/usr/bin/login`, and an interactive zsh puts itself in a
+    /// process group of its own, so the hangup sent to `login`'s group misses
+    /// it and it outlives `login`. Its foreground agent gets the hangup as
+    /// `login` goes and ends, and the shell's last prompt comes after that.
+    /// Waiting on `login` put the markers back before those prompts removed
+    /// them (review, 2026-11-20). A shell ends just after that prompt, when
+    /// it reads its gone terminal, so its end is the moment to wait for.
+    @discardableResult
+    func waitForShells(patience: TimeInterval) -> Int {
+        var waiting = shells
+        let deadline = Date().addingTimeInterval(patience)
+        while !waiting.isEmpty {
+            waiting.removeAll { kill($0, 0) != 0 && errno == ESRCH }
+            guard !waiting.isEmpty, Date() < deadline else { break }
+            usleep(20_000)
+        }
+        return waiting.count
+    }
 
     /// Put back each marker that is gone, as it was. Never over one that is
     /// there: a marker written since is newer than this one. Written beside

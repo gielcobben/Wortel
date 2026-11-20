@@ -1151,6 +1151,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   and `--resume`; a session restored with no marker is not given the
   start-time guess; a terminal still being restored is not dropped, and
   closing one tells whoever waits on it.
+  A second review then found the wait was for `login`, which the keeper forks,
+  while an interactive zsh puts itself in a process group of its own,
+  outlives `login`, and reaches its last prompt after: the markers were put
+  back too early and removed again. The wait is now for the shells the held
+  markers name (`shellpid=`), 5 s at most. The test's stand-in shell had the
+  same blind spot (`sh -c` stays in `login`'s group); it is now shaped like
+  zsh, and failed before the change.
 - **2026-10-07. Tried and dropped, twice: moving the keeper out of the app's
   reach.** As a launchd agent, then as a background-only helper app. The Dock
   still offered "Stop Running in Background" both times. Real separation needs

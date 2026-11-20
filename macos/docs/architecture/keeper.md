@@ -93,8 +93,10 @@ and whatever sequence the program was in the middle of.
   the agent's marker: to the next launch that is an agent the person quit,
   owed nothing. So on SIGTERM or SIGINT (an update replacing it, a logout) the
   keeper reads every marker first, hangs its shells up as it always has, waits
-  for them to end (`Keeper.shellPatience`, 3 s), and puts back each marker a
-  last prompt removed (`AgentMarkerHold`). The app does the same around an
+  for the shells those markers name to end (`Keeper.shellPatience`, 5 s), and
+  puts back each marker a last prompt removed (`AgentMarkerHold`). The shells,
+  not `login`: an interactive zsh has a process group of its own, outlives
+  `login`, and reaches its last prompt after. The app does the same around an
   older keeper it replaces, which only knows how to hang up. Before this, the
   protocol 2 update lost every running agent (four of four, 2026-11-20).
   Killing the shells outright instead was tried the same day and taken out:

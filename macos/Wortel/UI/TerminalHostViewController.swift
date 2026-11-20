@@ -34,10 +34,10 @@ final class TerminalHostViewController: NSViewController {
     func show(_ session: Session, runtime: GhosttyRuntime) {
         let surfaceView = session.ensureSurfaceView(runtime: runtime)
 
-        // SwiftUI calls updateNSViewController on any observable change (pwd,
-        // rename, bell…), not just session switches. If we're already showing
-        // this surface, do nothing — re-running would steal first responder
-        // back from the rename field.
+        // Called on a session switch and whenever the pane looks again
+        // (`TerminalPaneController.showSelected`), not only when the session
+        // changed. If we're already showing this surface, do nothing:
+        // re-running would steal first responder back from the rename field.
         guard surfaceView !== wakingView else { return }
 
         // Another session chosen while one was waking, the one on screen
@@ -50,7 +50,9 @@ final class TerminalHostViewController: NSViewController {
 
         guard surfaceView !== currentView else { return releaseWakeHold() }
 
-        guard surfaceView.isHibernated else {
+        // Asleep, or woken out of sight a moment ago and still being written
+        // back: either way it is shown when its screen is whole.
+        guard surfaceView.isHibernated || surfaceView.isRestoring else {
             HibernationPolicy.shared.shown(surfaceView)
             swap(to: surfaceView)
             return
@@ -139,8 +141,8 @@ final class TerminalHostViewController: NSViewController {
 
     /// The window arriving is the other chance to focus, and the reliable one.
     ///
-    /// `show` runs from SwiftUI's `updateNSViewController`, which during launch
-    /// can happen before this controller's view is in a window at all. When it
+    /// `show` first runs as the pane loads (`TerminalPaneController`), which
+    /// during launch is before this controller's view is in a window. When it
     /// does, the retry below is the only thing standing between the user and a
     /// terminal that draws but does not take a keystroke.
     override func viewDidAppear() {

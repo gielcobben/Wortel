@@ -695,9 +695,17 @@ final class GhosttyRuntime {
         cfg.scale_factor = Double(view.window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 2.0))
         cfg.font_size = fontSize
         cfg.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
-        // Woken: the screen comes back from the snapshot, but not what had
-        // scrolled off it, and the program repaints that.
-        Self.hostManaged(&cfg, pty: pty, repaint: true)
+        // Woken: nothing to repaint. The snapshot is the whole screen, what
+        // had scrolled off it included, and it is written back at the size
+        // it was taken at with what was missed after it
+        // (`SurfaceView.waitForGrid`), so the terminal is as the program
+        // left it. Asked to repaint, Claude Code clears it and prints its
+        // conversation again, which costs the shell's lines above it and a
+        // moment at one column narrow for nothing (it was asked until
+        // 2026-11-19, when a woken screen could not be trusted). The wakes
+        // that cannot be trusted still ask for themselves, once they know
+        // (`SurfaceView.wake`, `PtyHost.repaintNow`).
+        Self.hostManaged(&cfg, pty: pty, repaint: false)
         return ghostty_surface_new(app, &cfg)
     }
 

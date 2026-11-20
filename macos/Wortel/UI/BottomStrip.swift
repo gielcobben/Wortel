@@ -272,7 +272,9 @@ final class BottomPaneController: NSViewController {
         bar.strip.update(items: git.bottomTabs.map { TitleBarController.stripItem(for: $0, in: session) },
                          active: git.activeBottomTab)
         let active = git.bottomVisible ? git.activeBottomTab : nil
-        let surface = active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) }
+        // Only for the session the panel is pointed at: see `SideColumnController.sync`.
+        let surface = git.session === session
+            ? active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) } : nil
         host.show(surface, focusRequest: git.bottomFocusRequest, handBack: { [weak git] in git?.focusFront(of: .main) })
         paneHost.view.isHidden = active == nil || active?.terminalID != nil
     }

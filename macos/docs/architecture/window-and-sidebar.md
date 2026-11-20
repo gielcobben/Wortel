@@ -34,10 +34,14 @@ area if a tab covers it), and so does ending a rename with Return or Esc, or
 by a press elsewhere in the list. `TerminalHostViewController` is the key trick: it keeps **every**
 session's `SurfaceView` in the hierarchy and switches via
 `isHidden`/occlusion/first-responder — never `removeFromSuperview`, never a
-rebuild — so switching back is instant with no flash. `updateNSViewController`
-fires on any observable change, so `show()` early-returns when already showing
-the surface (otherwise it would steal focus from the rename field). A session
-switch doesn't wait for SwiftUI, though: `SessionManager.onSwitch` runs
+rebuild — so switching back is instant with no flash. Its pane is AppKit
+(`TerminalPaneController`): the host fills it by its autoresizing mask, and
+the pages that can stand in for a terminal are a SwiftUI view on top that
+takes no clicks unless one is up. The pane calls `show()` again whenever the
+selected session, its being prepared or there being no sessions changes, so
+`show()` early-returns when already showing the surface (otherwise it would
+steal focus from the rename field). A session switch doesn't wait for that,
+though: `SessionManager.onSwitch` runs
 `MainSplitViewController.show` in the same turn as the selection, which lays
 out the session's column and strip first and only then shows its terminal,
 with resizes held throughout, so the terminal is shown at its final size and

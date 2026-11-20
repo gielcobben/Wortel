@@ -93,6 +93,7 @@ final class MainSplitViewController: NSSplitViewController {
     private weak var terminalAreaView: NSView?
     private weak var workspace: TerminalWorkspaceController?
     private weak var columnContentView: NSView?
+    private weak var sideColumn: SideColumnController?
     private weak var blinkView: NSView?
 
     private let previewTabs: PreviewTabs
@@ -159,8 +160,7 @@ final class MainSplitViewController: NSSplitViewController {
         let bottomPane = BottomPaneController(runtime: runtime, manager: manager, git: git,
                                               files: files, previewTabs: previewTabs)
         let mainArea = MainAreaController(
-            terminal: NSHostingController(rootView: DetailPane(
-                runtime: runtime, manager: manager, git: git, files: files)),
+            terminal: TerminalPaneController(runtime: runtime, manager: manager, git: git, files: files),
             runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs)
         let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
         bottomAreaView = bottomPane.view
@@ -176,8 +176,9 @@ final class MainSplitViewController: NSSplitViewController {
 
         // The side column. collapseBehavior keeps the *window* still when the
         // column opens/closes, resizing the terminal instead.
-        let inspectorContent = NSHostingController(rootView: InspectorContainer(
-            runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs))
+        let inspectorContent = SideColumnController(
+            runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs)
+        sideColumn = inspectorContent
         let inspector = ChromePaneController(
             bar: titleBars.sideBar, content: inspectorContent, bodyColor: Chrome.content)
         columnContentView = inspectorContent.view
@@ -420,6 +421,7 @@ final class MainSplitViewController: NSSplitViewController {
         files.focus(session: session)
         applyLayout()
         workspace?.applyNow()
+        sideColumn?.applyNow()
         // The terminal's own area only. The sidebar and the column lay out
         // with everything else when the frame is drawn; the whole window laid
         // out here as well made a switch up to 130 ms slower (measured).
@@ -738,10 +740,11 @@ extension MainSplitViewController {
             return
         }
         blinkView?.removeFromSuperview()
-        // The column's content is SwiftUI's hosting view, which doesn't draw a
-        // view added inside it: that edge goes over it from its container
-        // instead, at its frame and resized with it (the container is a plain
-        // view, not a split view, so the extra subview doesn't become a pane).
+        // The column's content has SwiftUI's hosting view in front, which
+        // doesn't draw a view added inside it: that edge goes over it from
+        // its container instead, at its frame and resized with it (the
+        // container is a plain view, not a split view, so the extra subview
+        // doesn't become a pane).
         let hostedColumn = region == .side
         guard let container = hostedColumn ? target.superview : target else { return }
         let area = hostedColumn ? target.frame : target.bounds

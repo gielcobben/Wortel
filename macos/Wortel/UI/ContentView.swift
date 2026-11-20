@@ -1642,25 +1642,114 @@ private struct AttentionFlashOverlay: View {
     }
 }
 
-/// The middle pane: just the terminal. The git panel is a sibling split item now
-/// rather than a child of this view, and the window owns the title and toolbar —
-/// so neither .navigationTitle nor .toolbar belongs here any more. Pane width is
-/// the split item's business too (see MainSplitViewController), not a .frame.
-/// The git and file-tree models are still here only to keep the inspector
-/// pointed at the selected session — visibility, pane, repo and tree root all
-/// follow from that — which is naturally expressed as a SwiftUI onChange.
-struct DetailPane: View {
-    let runtime: GhosttyRuntime
+/// The middle pane: the terminal, and over it the few pages that can stand in
+/// for one.
+///
+/// AppKit, and sized by AppKit: the terminals' host fills this view by its
+/// autoresizing mask, so a terminal is as wide as its pane the moment the
+/// pane is. It used to be a SwiftUI view with the host inside it as a
+/// representable, and SwiftUI placed the host. On a session switch that
+/// brought the side column back, SwiftUI took the pane's new width and did
+/// not move the host: it applied that placement only at the next change of
+/// size. Until then the terminal was as wide as the page without the column,
+/// ran under it and was cut off by it, with its program wrapping for a width
+/// nobody could see (2026-11-18, and measured 2026-11-19 with
+/// `scripts/try-switch.sh`: 61 of 72 returns, and not one since). Laying the
+/// hosting view out again did not flush it; only a change of its size did.
+///
+/// SwiftUI still draws what it is good at here, in a view of its own on top
+/// (`TerminalPages`): it takes no clicks unless one of its pages is up.
+final class TerminalPaneController: NSViewController {
+    private let runtime: GhosttyRuntime
+    private let manager: SessionManager
+    private let host = TerminalHostViewController()
+    private let pages: PagesView
+
+    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel, files: FileTreeModel) {
+        self.runtime = runtime
+        self.manager = manager
+        pages = PagesView(rootView: TerminalPages(manager: manager, git: git, files: files))
+        super.init(nibName: nil, bundle: nil)
+        TerminalHostViewController.main = host
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    override func loadView() {
+        let root = NSView()
+        addChild(host)
+        // The pages size themselves to nothing in particular: this view's
+        // size is the pane's, not theirs to have a say in.
+        pages.sizingOptions = []
+        for filling in [host.view, pages] as [NSView] {
+            filling.frame = root.bounds
+            filling.autoresizingMask = [.width, .height]
+            root.addSubview(filling)
+        }
+        view = root
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        showSelected()
+        follow()
+    }
+
+    /// The selected session's terminal in front, or none while its worktree
+    /// is still being made: there is no shell to show, and the one shown
+    /// before it is put away so it can't be typed into by mistake.
+    private func showSelected() {
+        let session = manager.selected
+        let preparing = session?.preparation != nil
+        pages.takesClicks = manager.sessions.isEmpty || preparing
+        if preparing {
+            host.showNothing()
+        } else if let session {
+            host.show(session, runtime: runtime)
+        }
+    }
+
+    /// Again whenever any of what `showSelected` read has changed. A session
+    /// switch does not wait for this: the window shows the terminal in the
+    /// same turn (`MainSplitViewController.show`), and this finds it shown.
+    private func follow() {
+        withObservationTracking {
+            _ = manager.selected?.preparation != nil
+            _ = manager.sessions.isEmpty
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                self?.showSelected()
+                self?.follow()
+            }
+        }
+    }
+
+    /// SwiftUI's view over the terminal. It is in front of it, so it would
+    /// take every click meant for it; it takes them only while a page is up.
+    private final class PagesView: NSHostingView<TerminalPages> {
+        var takesClicks = false
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            takesClicks ? super.hitTest(point) : nil
+        }
+    }
+}
+
+/// What can stand in front of the terminal: the page for no sessions, the
+/// page for a worktree still being made, and the ring that flashes when you
+/// land on a session that was waiting. Nothing of it is the terminal's
+/// layout. The git and file-tree models are here only to keep the inspector
+/// pointed at the selected session (visibility, pane, repo and tree root all
+/// follow from that), which is naturally expressed as a SwiftUI onChange.
+private struct TerminalPages: View {
     @Bindable var manager: SessionManager
     @Bindable var git: GitPanelModel
     @Bindable var files: FileTreeModel
 
     var body: some View {
-        TerminalContainer(runtime: runtime, session: manager.selected,
-                          preparing: manager.selected?.preparation != nil)
+        Color.clear
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Over the terminals rather than instead of them: the host keeps
-            // every session's view alive, and taking it out would rebuild them.
             .overlay {
                 if manager.sessions.isEmpty {
                     EmptySessionsPage(manager: manager)
@@ -1699,32 +1788,6 @@ struct DetailPane: View {
     private func focusInspector() {
         git.focus(session: manager.selected)
         files.focus(session: manager.selected)
-    }
-}
-
-/// Hosts the terminal. Reuses TerminalHostViewController so every session's
-/// SurfaceView stays alive across switches (no rebuild). SwiftUI updates the
-/// existing controller — makeNSViewController runs once — so the host and its
-/// live views persist.
-private struct TerminalContainer: NSViewControllerRepresentable {
-    let runtime: GhosttyRuntime
-    let session: Session?
-    /// The session's worktree isn't there yet: no shell to show, and the one
-    /// shown before it is put away so it can't be typed into by mistake.
-    let preparing: Bool
-
-    func makeNSViewController(context: Context) -> TerminalHostViewController {
-        let host = TerminalHostViewController()
-        TerminalHostViewController.main = host
-        return host
-    }
-
-    func updateNSViewController(_ controller: TerminalHostViewController, context: Context) {
-        if preparing {
-            controller.showNothing()
-        } else if let session {
-            controller.show(session, runtime: runtime)
-        }
     }
 }
 

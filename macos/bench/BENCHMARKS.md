@@ -65,6 +65,30 @@ Clone `github.com/const-void/DOOM-fire-zig`, run it in both terminals side by
 side (needs Zig). Equal FPS/smoothness by eye; confirm with Instruments →
 Core Animation FPS.
 
+## Resizing
+
+`./scripts/bench-resize.sh` (a Debug build, in a throwaway copy): the window
+resized 480 times at 120 Hz, then with `--column` the divider beside the side
+column. It prints what a step cost the main thread and how many steps took
+longer than the 8.3 ms a frame lasts. `--compare` runs each round twice in
+the same app, with libghostty's frame at every step and with Wortel's rule,
+because two runs minutes apart differ by more than most changes do. **It
+puts the copy's window in front of everything while a round runs**, and a
+round the window was not on screen for at every step prints "NOT A
+MEASUREMENT": a covered window is cheaper (SwiftUI lays nothing out for one
+nobody can see), by a third with the side column open, and a day of figures
+taken from behind other windows had to be thrown away. On 2026-11-19 (Debug,
+a 120 Hz built-in display, the window on screen, a load of about 5): 4.5 ms a
+step with the column shut, 5.2 ms with it open, 5.3 ms on the divider, with
+libghostty's frame at every step 6.8, 6.9 and 7.3. `--panes`: a pane sliding
+open or shut has about one turn of the run loop over 8.3 ms, where it had
+10 to 15. A machine that is busy moves every figure: at a load of 20 they
+double.
+
+`./scripts/try-switch.sh` is the same idea for a session switch: 72 returns
+to a session with the side column open, at six paces, and where its terminal
+was after each. Every one should be where it started.
+
 ## Typing latency
 
 [Typometer](https://pavelfatin.com/typometer/): run ≥5 passes in Wortel and in

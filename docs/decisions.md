@@ -140,7 +140,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   not known**: it was not reproduced in a test copy (three relaunches, right
   size each time). Every catch is logged in the `layout` category with what
   it found, so the next one names its cause; this entry should be replaced by
-  that fix.
+  that fix. **2026-11-19:** the too-wide case was not a dropped size at all,
+  which is why this net never caught it: the terminal's view was that wide,
+  left there by SwiftUI, and was told exactly its size. See the entry on the
+  terminal's pane. The too-narrow case was the placeholder grid, also above.
 - **2026-11-19. A new terminal starts at the size a session's terminal last
   had on screen, and its pty ignores it until it is told one.** Agents in
   sessions not looked at since a relaunch printed everything 45 columns wide,
@@ -172,6 +175,159 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   screen. Verified in a copy: seven idle Claude Codes, six out of sight, came
   back after a relaunch with the same text at the same width, and the one on
   screen was screenshotted correct.
+- **2026-11-19. The terminal's pane is AppKit, and SwiftUI draws only what
+  stands in front of it.** The pane was a SwiftUI view with the terminals'
+  host inside it as a representable, so SwiftUI decided where the host was.
+  On a session switch that brought the side column back, SwiftUI took the
+  pane's new width and did not move the host: it applied that placement at
+  the next change of size and not before. Until then the terminal was as
+  wide as the page without the column, ran under the column and was cut off
+  by it, and its program wrapped for a width nobody could see. Seen on
+  2026-11-18 (the entry on a terminal checking its size) and in a recording
+  on 2026-11-19. Made to happen on demand with `macos/scripts/try-switch.sh`
+  (a Debug build switching sessions itself at six paces and writing down
+  where the terminal is): 61 of 72 returns ended under the column by its
+  full 440 points, with libghostty's frame rule or ours, so not that. The
+  split view and the hosting view were right every time; only the host
+  inside was a layout behind. Laying the hosting view out again did not
+  flush it, a change of its size by one point did. Now
+  `TerminalPaneController` holds the host and sizes it by its autoresizing
+  mask, and the pages that can stand in for a terminal (no sessions, a
+  worktree being made, the attention ring) are a SwiftUI view on top that
+  takes clicks only while a page is up. Same script: 0 of 72, the terminal
+  in the same place to the point (221,0 438x660 with the column, 879x660
+  without), and the keyboard on it after a relaunch. What it saves a step
+  of a resize was only measured from a window that was partly covered, so
+  it is not given. **The side column followed the same day**
+  (`SideColumnController`, built as the strip's `BottomPaneController`
+  already was): its terminals were the last ones a SwiftUI view placed. It
+  was never caught a layout behind (`try-switch.sh --side`, 0 of 72 before
+  and after, with the divider moving on the switch as well), so this is the
+  rule being kept, not a fault being fixed. The first try at it took every
+  pane to no height: the page's hosting view was pinned to the column, and
+  with a terminal in front the page is empty and asked for none. A hosting
+  view that fills a pane takes `sizingOptions = []`.
+- **2026-11-19. A height kept in defaults is not `@AppStorage`.** With the
+  side column open, a plain window resize cost 8.4 ms a step against 4.7
+  with it shut, and about 110 steps in 240 ran over the 8.3 ms a frame
+  lasts, though the column's width was not changing (counted: 0 of 480
+  steps). Logging who asked the column's hosting view for layout named it:
+  `UserDefaultObserver.noteChange`, 57 times in a round. A view with an
+  `@AppStorage` property is told about every write to defaults, whatever the
+  key, and starts a transaction for each; AppKit writes to defaults at
+  every step of a resize (the window's frame and the split view's dividers
+  are both autosaved); and the source-control panel kept its list's height
+  that way. So the panel was laid out at every step for a value nobody was
+  changing. The two heights (the changes list, the history list) are now a
+  `StoredHeight`: one observable object each, written to defaults when
+  dragged. Same benchmark, old and new frame rule turn about, the window on
+  screen: 8.4 to 5.2 ms a step with the column open, and the divider 7.5 to
+  5.3. **Tried and dropped on the way, each measured:** `safeAreaRegions =
+  []` on the panes' hosting views (their insets are 0 on all sides, so it
+  cannot move anything, and it changes nothing: 7.4 and 8.0 against 7.5 and
+  7.9); setting the column's maximum width only when it would bite instead
+  of at every step (8.4 to 9.7 against 8.4 to 9.3).
+- **2026-11-19. A benchmark's window is on screen, or it is not a
+  measurement.** A window that is covered is cheaper: SwiftUI lays nothing
+  out for one nobody can see. The same build read 5.5 ms a step with the
+  copy's window behind another and 8 ms with it in front, minutes apart, and
+  most of a day's figures for this work had been taken from a copy behind
+  the windows of whoever was working: a change that did nothing looked like
+  3.5 ms a step, and went as far as a commit. `ResizeBench` now floats the
+  copy's window over everything, on every Space, for the seconds a round
+  takes, counts the steps it was on screen for, and a round seen for fewer
+  than all of them prints "NOT A MEASUREMENT". Every figure in the entries
+  around this one is from a window on screen; where one is not, it says.
+- **2026-11-19. A woken terminal is written into only once it has its
+  size.** A new surface is 45 columns by 15 rows, libghostty's own, whatever
+  it is told as it is made: libghostty gathers resizes for 25 ms and takes
+  the size on its IO thread, while what the host writes is parsed at once.
+  A wake wrote the saved screen and what had been missed about 6 ms after
+  making the surface, so into 45 columns. A saved screen survives that (its
+  lines re-wrap when the size lands), which is why this passed every check
+  that read a woken screen back. What a program wrote meanwhile does not:
+  an agent draws in place, and at 45 columns a line of 78 is two rows, so
+  "up three and clear" clears a line and a half. Found by
+  `macos/scripts/try-hibernate-screen.sh`, a stand-in agent whose screen is
+  compared with what it drew: woken as it began to write, with nothing lost
+  (422 + 3167 bytes), it had 3 lines of 120 missing and 18 left over, its
+  status line cut at exactly column 45. That is the picture of the session
+  seen mid-turn on 2026-11-19, more than the 512 KB below: its second wake
+  that day replayed 17 KB, well inside what is kept. Now the wake asks the
+  terminal itself for its grid (the cursor sent to the far corner, read
+  back with `ghostty_surface_ime_point`; `ghostty_surface_size` only knows
+  what was told) every millisecond and writes nothing until it is the grid
+  it was told, a quarter of a second at the most
+  (`SurfaceView.waitForGrid`). Same script after: every line, once, in
+  order, and "its size after 26.6 ms" in the log. The cost is those 26 ms
+  on every wake, on that session's queue only. **And a woken terminal's
+  program is no longer made to repaint.** It was asked to, like a relaunched
+  one, by going one column narrow and back, on the belief that a snapshot
+  lacks what had scrolled off; it holds all of it (a shell's `seq 1 300`
+  read back whole after a wake, 303 lines for 303). The repaint cost a
+  moment at the wrong width and had Claude Code clear the terminal and print
+  its conversation again over a screen that was already right. Checked with
+  a real Claude Code: its pty stays 34x102 through a wake and its screen
+  reads the same before and after. Only the two wakes that cannot be
+  trusted are still asked, by the wake itself once it knows
+  (`PtyHost.repaintNow`): one whose missed output outran what is kept, so
+  its start is gone, and one whose terminal never took its size within the
+  quarter second. **Not changed:** a
+  relaunch writes the keeper's replay into a new surface the same way; there
+  the terminal starts empty and the program is made to repaint once it is
+  quiet (above).
+- **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
+  keeps what its program writes meanwhile, up to 512 KB. An agent's output
+  is drawing, each piece placed from where the last ended, so with the start
+  gone the rest lands on an old screen in pieces. Seen: a Claude Code
+  hibernated mid-turn by a memory warning, away nine and a half minutes,
+  woken with exactly 512 KB of the more it had written, its screen scattered
+  words until the turn ended and the repaint of 2026-11-19 put it right. So
+  a terminal whose agent is at work is not hibernated, by the clock or by a
+  memory warning, and hibernates when the turn is over. And a hibernated one
+  whose agent starts a turn by itself (a task of its own finishing, a
+  wake-up, another session writing to it) is woken out of sight once half
+  of what can be kept is used, while nothing is lost yet, and goes back on
+  the clock (`HibernationPolicy.outrunning`). A shell printing a log is left
+  asleep: what it loses is the oldest lines. Verified in a test copy with a
+  six second clock: a Claude Code at work for 45 s stayed awake and
+  hibernated 7 s after it finished; a hibernated one stayed asleep through
+  5.8 KB written while resting, was woken on reporting work and writing
+  more (the limit set to 6 KB), stayed awake while working and hibernated
+  again when it rested. The cost is the terminals of agents at work, about
+  70 MB each, for as long as they work.
+- **2026-11-19. A terminal's new size waits for its frame only when it is
+  one change, not a drag.** libghostty's layer draws a frame on the main
+  thread at every change of its bounds and waits for the GPU to finish it.
+  That is right for one change (a session switch, a pane landing): the frame
+  is in the same commit as the size. Under a drag it is paid at every step,
+  and a step has 8.3 ms at 120 Hz. Measured with `macos/scripts/bench-resize.sh`
+  (a Debug build resizing its own window 480 times at 120 Hz, the time the
+  run loop is awake per step, old and new turn about in one app, the window
+  on screen): with a frame at every step, 6.8 ms a step with the column shut
+  and one step in eight too late, 6.9 ms with it open, 7.3 ms dragging the
+  divider. Now a size that follows another within 50 ms skips the frame and
+  takes the renderer's own a frame later, a frame of an older size stays up
+  for 30 ms at most, and the drag's last size is checked once it ends
+  (`SurfaceView.frameForNewSize`). Same benchmark: 4.5 ms and one step in
+  eighty, 5.2 ms, 5.3 ms. A pane sliding open or shut, held at its size as
+  before, had 10 to 15 turns of the run loop over 8.3 ms and has 1.
+  The
+  frame that was dropped rarely showed anything new: the terminal re-wraps
+  on its own thread after it is told, so the frame in the same commit was
+  mostly the old screen at the new size, which the layer shows anyway by
+  pinning what it has to the top left. **Tried and dropped the same day:**
+  a frame only when a row or a column is gained (the average fell, the late
+  steps did not: they are the ones with a new column); never a frame (a drag
+  in step with the renderer loses every one of its frames to libghostty's
+  size check, 391 of 480 steps began on an old one); a `GeometryReader`
+  around the changes list and the diff replaced by a height reading (no
+  change measured, taken out). And a guess that did not hold: a change of
+  pixels alone does not reach the program, SIGWINCH came only with a new
+  grid (125 for 123 changes over 480 steps). **What is left** with the
+  column open is not the terminal: over half of a step is SwiftUI, in the
+  column's panel and in the view the terminal sits in. A new terminal
+  engine would not touch that either.
 - **2026-11-18. A session switches on mouse-down**, as in Finder's sidebar.
   It switched on mouse-up, after AppKit had ruled out a drag, so the time the
   button was held (115 ms a click on average, sampled) came before every

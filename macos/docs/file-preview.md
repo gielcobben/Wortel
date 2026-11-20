@@ -254,7 +254,8 @@ Following the bar the rest of `WortelTests` sets:
 
 Within v1, the Markdown migration lands **last**, because it is the only part
 that can break something in daily use — it touches the split controller, the
-toolbar and `InspectorContainer`, where everything else is additive.
+toolbar and the side column's content (`InspectorContainer` then,
+`SideColumnController` since 2026-11-19), where everything else is additive.
 
 1. Window shell, Source mode, images, live reload — **done**
 2. Diff mode, and the entry points from the Changes list and History — **done**

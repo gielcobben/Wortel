@@ -44,6 +44,16 @@ Things that look like detours and aren't:
   that hide rather than remove; moving a terminal between rows is `addSubview`
   into the other host. The session's own terminal stays mounted in the main
   area and a pane in front of it is a cover that takes the keyboard away from it.
+- **A terminal's host is never inside a SwiftUI view.** All four places a
+  terminal can be (the session's own pane, the main area's row, the side
+  column, the strip) are AppKit controllers that size the host themselves,
+  with SwiftUI's page in a view of its own on top, hidden or taking no
+  clicks while a terminal is in front. Inside a representable it is SwiftUI
+  that places the host, and SwiftUI can be a layout behind: the session's
+  terminal ran under the side column that way (`TerminalPaneController`,
+  `../../../docs/decisions.md` 2026-11-19). A hosting view pinned to a pane
+  takes `sizingOptions = []`, or an empty page asks for no height and takes
+  the pane with it. `scripts/try-switch.sh` is the test.
 - **The titlebar tabs are NSControls and the window is `isMovable = false`.** The
   window server moves a window from any press in a transparent titlebar that
   isn't on a control, whatever `mouseDownCanMoveWindow` says; the rows start

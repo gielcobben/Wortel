@@ -620,6 +620,29 @@ final class PtyHost: @unchecked Sendable {
         if narrowed { checkRepaint(after: Self.repaintQuiet) }
     }
 
+    /// Make the program repaint, at the size its pty has now: one column
+    /// narrow and back, as a relaunched terminal's first size does (`resize`).
+    /// For a terminal that has its size already and whose screen turns out
+    /// not to be the one the program left. Not yet told a size, it is left to
+    /// that first size instead.
+    func repaintNow() {
+        let narrowed = shared.withLock { state -> Bool in
+            guard state.master >= 0, state.narrowed == nil else { return false }
+            guard !state.awaitingSize else {
+                state.needsRedraw = true
+                return false
+            }
+            var size = winsize()
+            guard ioctl(state.master, TIOCGWINSZ, &size) == 0, size.ws_col > 1 else { return false }
+            var narrower = size
+            narrower.ws_col -= 1
+            _ = ioctl(state.master, TIOCSWINSZ, &narrower)
+            state.narrowed = Narrowing(trueSize: size, since: .now(), lastOutput: nil)
+            return true
+        }
+        if narrowed { checkRepaint(after: Self.repaintQuiet) }
+    }
+
     /// A pty set one column narrow to make its program repaint, and what is
     /// needed to know when to put the true size back.
     struct Narrowing {
@@ -696,7 +719,8 @@ final class PtyHost: @unchecked Sendable {
     /// this, no program was ever told 15x45.
     ///
     /// **A repaint, for a terminal that starts empty** (a session that
-    /// survived a relaunch, a woken one). The keeper only buffers while
+    /// survived a relaunch; not a woken one, which gets its screen back
+    /// whole). The keeper only buffers while
     /// detached, so a program that sat idle while the app was gone comes back
     /// with no bytes at all, and a program at rest does not reprint itself
     /// unasked. It used to be the placeholder that made it: 45x15 and then the

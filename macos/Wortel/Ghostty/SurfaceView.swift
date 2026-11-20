@@ -1,5 +1,6 @@
 import AppKit
 import GhosttyKit
+import IOSurface
 import os
 
 /// A terminal found at a size that is not its view's, and put right.
@@ -222,6 +223,10 @@ final class SurfaceView: NSView {
     /// `viewDidChangeBackingProperties` already. With neither, it is told
     /// nothing, and its pty keeps the size it has (`PtyHost.ignoreSizesUntilTold`).
     private func tellFirstSize() {
+        // What a new surface is told as it is set up is not the first step
+        // of a drag: the size its view gives it next, however soon, gets its
+        // frame in the same commit (`frameForNewSize`).
+        defer { sizedAt = nil }
         guard isSessionTerminal, surface != nil, toldSize == nil, let size = Self.firstSize else { return }
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         setSurfaceSize(width: UInt32(size.width * scale), height: UInt32(size.height * scale))
@@ -247,6 +252,12 @@ final class SurfaceView: NSView {
     /// that says whether it is the size of its view. nil for a surface that
     /// has not been told yet (a new one, after a wake or a restart).
     private var toldSize: (width: UInt32, height: UInt32)?
+
+    /// When the terminal was last given a size, and since when the frame on
+    /// its layer has been one of an older size (`frameForNewSize`).
+    private var sizedAt: CFTimeInterval?
+    private var staleSince: CFTimeInterval?
+    private var frameCheck: DispatchWorkItem?
 
     /// When the hold count last left zero: the hold now in force began then,
     /// however many holds and releases have come and gone inside it. nil
@@ -464,6 +475,8 @@ final class SurfaceView: NSView {
             initialInput: initialInput,
             environment: environment,
             fontSize: fontSize)
+        // The layer first: the size is what asks it for a frame.
+        layerReplaced()
         tellFirstSize()
 
         NotificationCenter.default.addObserver(
@@ -604,6 +617,143 @@ final class SurfaceView: NSView {
     /// last one was, if a size is still waiting for it (`setFrameSize`).
     private func layerReplaced() {
         if resizePending { layer?.contentsGravity = .topLeft }
+        sizedAt = nil
+        staleSince = nil
+        // libghostty's layer draws a frame on the main thread every time its
+        // bounds change. We ask for that frame ourselves, when it is worth
+        // stopping for: see `frameForNewSize`.
+        layer?.needsDisplayOnBoundsChange = Self.frameOnEveryResize
+        // A frame of an older size is shown at its own size, pinned to the
+        // top left, until the next one arrives. Never over what is beside it.
+        layer?.masksToBounds = true
+    }
+
+    /// The pixel size of the frame the layer is showing, if it has one.
+    private var shownFrameSize: (width: UInt32, height: UInt32)? {
+        guard let contents = layer?.contents,
+              CFGetTypeID(contents as CFTypeRef) == IOSurfaceGetTypeID() else { return nil }
+        let frame = contents as! IOSurfaceRef
+        return (UInt32(IOSurfaceGetWidth(frame)), UInt32(IOSurfaceGetHeight(frame)))
+    }
+
+    /// How long ago the last size must be for this one to count as part of
+    /// the same drag, and how long a frame of an older size may stay up.
+    private static let dragGap: CFTimeInterval = 0.05
+    private static let longestStale: CFTimeInterval = 0.03
+
+    /// Whether the terminal's new size gets a frame now, on the main thread,
+    /// or the one the renderer draws on its own thread a moment later.
+    ///
+    /// A frame now is what libghostty does for every change of size. It puts
+    /// the frame in the same commit as the new size, so nothing is seen in
+    /// between, and it stops the main thread until the GPU has finished it.
+    /// For one change of size that is the right trade: a session switch, a
+    /// pane landing. Under a drag it is paid at every step. Measured over
+    /// 480 steps of a window resize at 120 Hz (`scripts/bench-resize.sh`,
+    /// 2026-11-19, the window on screen), a step cost 6.8 ms with it and 4.5
+    /// without, and one step in eight took longer than the 8.3 ms a frame
+    /// lasts, against one in eighty: the edge stood still.
+    ///
+    /// The frame it buys is rarely a new picture. The terminal re-wraps on
+    /// its own thread after the size is told, so the frame drawn in the same
+    /// commit mostly shows the screen as it was, which the layer does without
+    /// being asked: it pins the frame it has to the top left at its own size
+    /// (the padding does not move, `window-padding-balance` is off, and the
+    /// strip a smaller frame leaves uncovered shows the page behind the
+    /// terminal, which is the colour the terminal draws its own background
+    /// in: `Chrome.content`, kept equal by `PageColourTests`).
+    ///
+    /// So a size that follows another within `dragGap` skips the frame, and
+    /// the renderer's own one shows the new screen a frame later. One thing
+    /// can go wrong with that: libghostty throws the renderer's frame away
+    /// if the layer has another size by the time it arrives, and a drag that
+    /// stays in step with the renderer loses them all. So a frame of an
+    /// older size stays up for `longestStale` at most, and then this size
+    /// gets its frame now; and one is asked for when the drag ends on a
+    /// frame that never came (`checkFrameAfterDrag`).
+    private func frameForNewSize(sizeBefore: (width: UInt32, height: UInt32)?) {
+        guard !Self.frameOnEveryResize else { return }
+        let now = CACurrentMediaTime()
+        let inDrag = sizedAt.map { now - $0 < Self.dragGap } ?? false
+        sizedAt = now
+        guard inDrag, let sizeBefore, let shown = shownFrameSize else {
+            staleSince = nil
+            layer?.setNeedsDisplay()
+            return
+        }
+        checkFrameAfterDrag()
+        guard shown != sizeBefore else {
+            staleSince = nil
+            return
+        }
+        guard let since = staleSince else {
+            staleSince = now
+            return
+        }
+        if now - since >= Self.longestStale {
+            staleSince = nil
+            layer?.setNeedsDisplay()
+        }
+    }
+
+    /// The drag's last size, a moment after it: if its frame never came, it
+    /// gets one now. One check for however many steps the drag had.
+    private func checkFrameAfterDrag() {
+        frameCheck?.cancel()
+        let check = DispatchWorkItem { [weak self] in
+            guard let self, self.surface != nil, let told = self.toldSize else { return }
+            self.frameCheck = nil
+            self.staleSince = nil
+            if let shown = self.shownFrameSize, shown == told { return }
+            self.layer?.setNeedsDisplay()
+        }
+        frameCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.dragGap * 2, execute: check)
+    }
+
+    #if DEBUG
+    /// What the terminal has been told against what it is, for `SwitchProbe`.
+    struct DebugState {
+        var told: (UInt32, UInt32)?
+        var columns: UInt16 = 0
+        var rows: UInt16 = 0
+        /// The width its columns take, without padding.
+        var gridWidthPx = 0
+        var shown: (UInt32, UInt32)?
+        var layerPx = (0, 0)
+        var pending = false
+        var holds = 0
+        var hidden = false
+    }
+
+    var debugState: DebugState {
+        var state = DebugState(told: toldSize.map { ($0.width, $0.height) }, shown: shownFrameSize.map { ($0.width, $0.height) },
+                               pending: resizePending, holds: Self.resizeHolds, hidden: isHidden)
+        if let surface {
+            let size = ghostty_surface_size(surface)
+            state.columns = size.columns
+            state.rows = size.rows
+            state.gridWidthPx = Int(size.columns) * Int(size.cell_width_px)
+        }
+        if let layer {
+            state.layerPx = (Int(layer.bounds.width * layer.contentsScale), Int(layer.bounds.height * layer.contentsScale))
+        }
+        return state
+    }
+    #endif
+
+    /// A frame on every change of size, as libghostty has it. Never set by
+    /// the app: `ResizeBench` flips it to measure the two against each other.
+    nonisolated(unsafe) static var frameOnEveryResize = false {
+        didSet {
+            for window in NSApp.windows {
+                func visit(_ view: NSView) {
+                    if let terminal = view as? SurfaceView, terminal.surface != nil { terminal.layerReplaced() }
+                    view.subviews.forEach(visit)
+                }
+                window.contentView.map(visit)
+            }
+        }
     }
 
     private static func holdRetiredLayer(_ layer: CALayer) {
@@ -714,7 +864,12 @@ final class SurfaceView: NSView {
     /// The pty queue's buffer for a session with no terminal. A class so the
     /// output closure and the hibernation share one; confined to that queue.
     final class MissedOutput: @unchecked Sendable {
-        var buffer = ReplayBuffer()
+        var buffer = ReplayBuffer(limit: HibernationPolicy.missedOutputLimit)
+        /// Bytes kept since the terminal was last asked back
+        /// (`HibernationPolicy.outrunning`). Asked once `buffer` is half
+        /// full, and again at every sixteenth of it written after that: the
+        /// answer changes when an agent that was resting starts a turn.
+        var sinceAsked = 0
         /// The modes the program believed in at the moment its output turned
         /// away from the terminal: the ones that go with the snapshot. What
         /// it changed after is in `buffer`. Read on the pty queue at the
@@ -777,6 +932,16 @@ final class SurfaceView: NSView {
                 kept.withUnsafeBufferPointer { raw in
                     guard let base = raw.baseAddress, raw.count > 0 else { return }
                     missed.buffer.append(base, count: raw.count)
+                }
+                missed.sinceAsked += kept.count
+                // Not once it has run over: there is no start left to save,
+                // and a shell printing a log would be asking for good.
+                if missed.buffer.dropped == 0, missed.buffer.count >= missed.buffer.limit / 2,
+                   missed.sinceAsked >= max(1, missed.buffer.limit / 16) {
+                    missed.sinceAsked = 0
+                    DispatchQueue.main.async {
+                        if let self { HibernationPolicy.shared.outrunning(self) }
+                    }
                 }
                 guard !signals.isEmpty else { return }
                 DispatchQueue.main.async { self?.raise(signals) }
@@ -873,7 +1038,10 @@ final class SurfaceView: NSView {
     /// answers, so a host shows the terminal only after it.
     func wake(onRestored: (() -> Void)? = nil) {
         guard let hibernation, let runtime, let pty = ptyHost, let session = keeperSession else {
-            onRestored?()
+            // Awake, or being woken by someone else (out of sight because
+            // its program outran what is kept, or to be read): then when
+            // that is done, not now, or it is shown half written back.
+            afterRestore(onRestored)
             return
         }
         let started = DispatchTime.now()
@@ -898,11 +1066,32 @@ final class SurfaceView: NSView {
         let live = GhosttyRuntime.liveOutput(surface: new, session: session, view: self)
         let dark = GhosttyRuntime.systemIsDark
         let created = DispatchTime.now()
+        // The grid it has just been told, which is the one it went away with:
+        // what was kept for it was drawn for that grid and no other.
+        let told = toldSize == nil ? nil : Optional(ghostty_surface_size(new))
         // On the pty queue, as every write into a terminal is: the parser
         // waits on the main thread for room, so the main thread must not be
         // the one writing (the beach ball of 2026-10-07).
         pty.enqueue { [weak self] in
             let missed = hibernation.missed
+            // Nothing goes in before the terminal is that size. See
+            // `waitForGrid`. A grid of one row or one column cannot be
+            // measured (the cursor has nowhere to step to) and is not one an
+            // agent draws on: written as it comes.
+            var gridMs = 0.0
+            var wrongGrid = false
+            if let told, told.columns > 1, told.rows > 1 {
+                let wait = Self.waitForGrid(new, columns: Int(told.columns), rows: Int(told.rows))
+                gridMs = wait.ms
+                wrongGrid = !wait.reached
+                if !wait.reached {
+                    HibernationLog.log.notice("""
+                        \(session.uuidString, privacy: .public) is written back at \
+                        \(wait.grid.map { "\($0.columns)x\($0.rows)" } ?? "an unknown grid", privacy: .public), \
+                        not the \(told.columns)x\(told.rows) it was told: its program is asked to repaint
+                        """)
+                }
+            }
             var paletteColours = 0
             let snapshot = SnapshotPalette.restoringIndices(
                 Self.withoutColourSettings((try? Data(contentsOf: hibernation.snapshot)) ?? Data()),
@@ -912,6 +1101,9 @@ final class SurfaceView: NSView {
             // the live output to finish.
             var replay = snapshot
             replay.append(contentsOf: Self.cursorRestore(snapshot: snapshot, hibernation: hibernation))
+            // Asked here, on the queue that fills it, and not when the wake
+            // began: it can run over in the moment between the two.
+            let cutShort = missed.buffer.dropped > 0
             let held = missed.buffer.take()
             replay.append(held)
             replay.append(contentsOf: missed.scanner.unfinished)
@@ -919,6 +1111,11 @@ final class SurfaceView: NSView {
                                    replay: replay, recordReplay: false, muteAnswers: true,
                                    colorScheme: (dark: dark, agent: nil))
             pty.onOutput = live
+            // The two wakes that cannot be trusted: more came than is kept,
+            // so its start is gone, or the terminal never took its size and
+            // all of it went in at another. Only the program can put either
+            // right, by painting again.
+            if cutShort || wrongGrid { pty.repaintNow() }
             try? FileManager.default.removeItem(at: hibernation.snapshot)
 
             let done = DispatchTime.now()
@@ -926,7 +1123,8 @@ final class SurfaceView: NSView {
             let writeMs = Double(done.uptimeNanoseconds - created.uptimeNanoseconds) / 1e6
             HibernationLog.log.notice("""
                 woke \(session.uuidString, privacy: .public): surface \(createMs, format: .fixed(precision: 1)) ms, \
-                restore \(snapshot.count) + \(held.count) bytes in \(writeMs, format: .fixed(precision: 1)) ms, \
+                its size after \(gridMs, format: .fixed(precision: 1)) ms, \
+                restore \(snapshot.count) + \(held.count) bytes in \(writeMs - gridMs, format: .fixed(precision: 1)) ms, \
                 \(paletteColours) palette colours
                 """)
 
@@ -940,6 +1138,9 @@ final class SurfaceView: NSView {
                 self.whenPasteReachesProgram(within: Self.restorePatience) { _ in
                     if self.surface == new { self.isRestoring = false }
                     onRestored?()
+                    let waiting = self.restoreWaiters
+                    self.restoreWaiters = []
+                    waiting.forEach { $0() }
                     // It came back at the size it went away with. If its
                     // view changed meanwhile and nothing noted it (it joined
                     // the window with no terminal to tell), this does.
@@ -949,8 +1150,77 @@ final class SurfaceView: NSView {
         }
     }
 
+    /// The grid a terminal has, asked of the terminal: where its cursor ends
+    /// up when sent to the far corner, counted in cells by sending it one
+    /// cell from home first. `ghostty_surface_size` is no answer to this: it
+    /// is worked out from the size the surface was last *told*, at once,
+    /// while the terminal takes that size on libghostty's IO thread some 25 ms
+    /// later (it gathers resizes for that long). On a terminal nothing has
+    /// been written into, which it leaves as it found it, cursor at home.
+    private static func actualGrid(of surface: ghostty_surface_t) -> (columns: Int, rows: Int)? {
+        func cursor(after sequence: String) -> (x: Double, y: Double) {
+            Array(sequence.utf8).withUnsafeBufferPointer { raw in
+                guard let base = raw.baseAddress else { return }
+                ghostty_surface_write_buffer(surface, base, UInt(raw.count))
+            }
+            var x = 0.0, y = 0.0, width = 0.0, height = 0.0
+            ghostty_surface_ime_point(surface, &x, &y, &width, &height)
+            return (x, y)
+        }
+        let home = cursor(after: "\u{1B}[1;1H")
+        let step = cursor(after: "\u{1B}[2;2H")
+        let far = cursor(after: "\u{1B}[999;999H")
+        _ = cursor(after: "\u{1B}[1;1H")
+        let cell = (width: step.x - home.x, height: step.y - home.y)
+        guard cell.width > 0, cell.height > 0 else { return nil }
+        return (Int(((far.x - home.x) / cell.width).rounded()) + 1,
+                Int(((far.y - home.y) / cell.height).rounded()) + 1)
+    }
+
+    /// Hold the pty's queue until a new terminal has the grid it was told.
+    ///
+    /// A new surface is 45 columns by 15 rows, libghostty's own, whatever it
+    /// is told the moment it exists: the size is taken a little later, on
+    /// another thread. A wake wrote the saved screen and what had been missed
+    /// into it about 6 ms after making it, so into those 45 columns. A saved
+    /// screen survives that, because its lines are re-wrapped when the real
+    /// size lands. What the program wrote meanwhile does not: an agent draws
+    /// in place, each piece from where the last ended, and at 45 columns a
+    /// line of 78 is two rows, so "up three and clear" clears a line and a
+    /// half. Found with `scripts/try-hibernate-screen.sh` on 2026-11-19: an
+    /// agent woken as it began to write had 3 lines of 120 missing and 18
+    /// left over, with nothing lost, and its status line cut at exactly
+    /// column 45. It is also what a session looked like when it was shown
+    /// mid-turn after a hibernation.
+    ///
+    /// Asked every millisecond, for a quarter of a second at the most: the
+    /// size lands after about 25 ms. Only this session's queue waits.
+    private static func waitForGrid(
+        _ surface: ghostty_surface_t, columns: Int, rows: Int, patience: TimeInterval = 0.25
+    ) -> (ms: Double, reached: Bool, grid: (columns: Int, rows: Int)?) {
+        let started = DispatchTime.now().uptimeNanoseconds
+        var grid = actualGrid(of: surface)
+        while true {
+            let waited = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e6
+            if let grid, grid.columns == columns, grid.rows == rows { return (waited, true, grid) }
+            if waited > patience * 1000 { return (waited, false, grid) }
+            usleep(1000)
+            grid = actualGrid(of: surface)
+        }
+    }
+
     /// Woken, and the screen not yet all back. Reading it now reads part of it.
     private(set) var isRestoring = false
+
+    /// Whoever asked to be told when the restore now under way is done.
+    private var restoreWaiters: [() -> Void] = []
+
+    /// Run `block` once this terminal is whole: now, unless a wake is still
+    /// writing its screen back.
+    private func afterRestore(_ block: (() -> Void)?) {
+        guard let block else { return }
+        if isRestoring { restoreWaiters.append(block) } else { block() }
+    }
 
     /// The longest a wake waits for the terminal to stop holding back its
     /// answers before calling itself done.
@@ -1221,8 +1491,10 @@ final class SurfaceView: NSView {
         guard let surface else { return }
         // Before the size, so the grid it makes of it reaches the program.
         ptyHost?.sizeWasTold()
+        let before = toldSize
         ghostty_surface_set_size(surface, width, height)
         toldSize = (width, height)
+        frameForNewSize(sizeBefore: before)
     }
 
     override func viewDidChangeBackingProperties() {

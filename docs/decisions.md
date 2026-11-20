@@ -1111,6 +1111,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   one session still hangs it up: that is the person's choice, and nothing is
   owed. Verified with four real Claude Codes across the update and across a
   keeper stopped while the app was closed: four of four resumed both times.
+- **2026-11-20. An agent that never wrote its conversation starts afresh; a
+  saved id for this run beats a guess by start time.** With that fix, four
+  Claudes opened in one folder, one used, all came back in the used one's
+  conversation. The three unused ones had never written theirs (Claude writes
+  its transcript at the first message, though its process file names the id
+  from the start), so the next evidence was tried: a transcript born within two
+  minutes of their start, which was the used one's, and failing that "continue
+  the latest", which is too. Now what the agent said it was in decides; one
+  never written means it starts again with its own command line. And the id
+  saved at quit is used before the start-time guess, but only for the same
+  run, by its start time (`runningStartedAt`, new), so a crash that left a
+  marker for a later run still falls through to the guess. Verified: the same
+  four, across the update and a keeper stop, came back one in its own
+  conversation and three started afresh; then, with a second one used, two
+  in their own.
 - **2026-10-07. Tried and dropped, twice: moving the keeper out of the app's
   reach.** As a launchd agent, then as a background-only helper app. The Dock
   still offered "Stop Running in Background" both times. Real separation needs

@@ -329,6 +329,18 @@ enum AgentResumeStore {
     /// command line re-run as typed that is more than one simple command: that
     /// is typed and left at the prompt, because running it again would also
     /// run whatever came after the agent (`ollama run x; rm -rf build`).
+    static func resumeInput(for marker: AgentMarker, at point: AgentConversation.ResumePoint) -> String? {
+        switch point {
+        case .conversation(let id): return resumeInput(for: marker, knownConversationID: id)
+        case .unknown: return resumeInput(for: marker, knownConversationID: nil)
+        case .fresh:
+            // Started again the way it was started: no conversation to name,
+            // and "continue the latest" would be someone else's.
+            let command = marker.argv ?? marker.agent
+            return AgentCommandLine.isSimple(command) ? command + "\n" : command
+        }
+    }
+
     static func resumeInput(for marker: AgentMarker, knownConversationID: String? = nil) -> String? {
         guard let command = resumeCommand(for: marker, knownConversationID: knownConversationID)
         else { return nil }

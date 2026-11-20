@@ -274,16 +274,65 @@ final class AgentConversationTests: XCTestCase {
     /// 2026-10-10: started as `claude --resume A`, then `/clear` into B. The
     /// command line still said A, and the keeper's loss resumed A.
     func testWhatTheProcessSaidBeatsTheCommandLine() {
-        let id = AgentConversation.afterExit(
-            live: b, observed: AgentResumeStore.claudeResumeTarget(argv: "claude --resume \(a)"),
-            last: a, exists: { _ in true })
-        XCTAssertEqual(id, b)
+        let point = AgentConversation.resumePoint(
+            said: b, named: AgentResumeStore.claudeResumeTarget(argv: "claude --resume \(a)"),
+            guessed: a, last: a, exists: { _ in true })
+        XCTAssertEqual(point, .conversation(b))
     }
 
-    func testAConversationThatCanNoLongerBeResumedIsPassedOver() {
-        XCTAssertEqual(AgentConversation.afterExit(live: b, observed: a, last: nil, exists: { $0 != b }), a)
-        XCTAssertEqual(AgentConversation.afterExit(live: nil, observed: nil, last: a, exists: { _ in true }), a)
-        XCTAssertNil(AgentConversation.afterExit(live: nil, observed: nil, last: a, exists: { _ in false }))
+    /// 2026-11-20: four Claudes opened in one folder, one used. The other
+    /// three said which conversation they were in, but never wrote it; the
+    /// start-time guess then gave all three the used one's, and they resumed
+    /// into it. One that never had a conversation starts afresh.
+    func testAnAgentThatNeverWroteItsConversationStartsAfresh() {
+        let point = AgentConversation.resumePoint(
+            said: b, named: nil, guessed: a, last: a, exists: { $0 == a })
+        XCTAssertEqual(point, .fresh)
+    }
+
+    /// The guess, and then the last one seen, only when the agent said
+    /// nothing; and only a conversation that can still be resumed.
+    func testWithoutTheAgentsWordTheRestIsTriedInOrder() {
+        XCTAssertEqual(AgentConversation.resumePoint(said: nil, named: a, guessed: b, last: b,
+                                                     exists: { _ in true }), .conversation(a))
+        XCTAssertEqual(AgentConversation.resumePoint(said: nil, named: nil, guessed: b, last: a,
+                                                     exists: { _ in true }), .conversation(b))
+        XCTAssertEqual(AgentConversation.resumePoint(said: nil, named: a, guessed: nil, last: b,
+                                                     exists: { $0 == b }), .conversation(b))
+        XCTAssertEqual(AgentConversation.resumePoint(said: nil, named: nil, guessed: nil, last: a,
+                                                     exists: { _ in false }), .unknown)
+    }
+
+    /// A fresh start runs the command the agent was started with; a command
+    /// line that is more than one command is typed and left at the prompt.
+    func testAFreshStartRunsWhatStartedIt() {
+        XCTAssertEqual(AgentResumeStore.resumeInput(for: marker("claude", argv: "claude --model haiku"), at: .fresh),
+                       "claude --model haiku\n")
+        XCTAssertEqual(AgentResumeStore.resumeInput(for: marker("claude"), at: .fresh), "claude\n")
+        XCTAssertEqual(AgentResumeStore.resumeInput(for: marker("claude", argv: "claude; rm -rf build"), at: .fresh),
+                       "claude; rm -rf build")
+        XCTAssertEqual(AgentResumeStore.resumeInput(for: marker("claude", argv: "claude"), at: .unknown),
+                       AgentResumeStore.resumeInput(for: marker("claude", argv: "claude"), knownConversationID: nil))
+    }
+
+    /// The conversation saved at quit is this run's only if the marker is of
+    /// the same run: a crash can leave a marker for a later one.
+    func testASavedConversationCountsOnlyForTheSameRun() {
+        let started = Date(timeIntervalSince1970: 1_795_000_000)
+        func entry(startedAt: Date?, argv: String = "claude") -> PersistedSession {
+            PersistedSession(id: UUID(), name: "s", title: "", cwd: "/p", selected: false, nameSource: "user",
+                             gitPanelVisible: nil, runningAgent: "claude", runningArgv: argv,
+                             runningConversationID: a, runningStartedAt: startedAt)
+        }
+        func run(at date: Date?, argv: String = "claude") -> AgentMarker {
+            AgentMarker(agent: "claude", model: nil, cwd: "/p", argv: argv, shellPID: 1, startedAt: date)
+        }
+        XCTAssertEqual(entry(startedAt: started).savedConversation(forRunOf: run(at: started)), a)
+        XCTAssertNil(entry(startedAt: started).savedConversation(forRunOf: run(at: started.addingTimeInterval(60))))
+        XCTAssertEqual(entry(startedAt: started).savedConversation(forRunOf: nil), a)
+        // Saved by a build that kept no start time: by its command line.
+        XCTAssertEqual(entry(startedAt: nil).savedConversation(forRunOf: run(at: started)), a)
+        XCTAssertNil(entry(startedAt: nil).savedConversation(forRunOf: run(at: started, argv: "claude -c")))
     }
 
     func testTheRunningAgentIsOwedItsResume() throws {

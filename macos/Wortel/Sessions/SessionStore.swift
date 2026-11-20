@@ -114,6 +114,9 @@ struct PersistedSession: Codable {
     /// it's what lets a repo with two agent sessions resume each into the right
     /// conversation. nil when it couldn't be observed; the guess still applies.
     let runningConversationID: String?
+    /// When that agent started, as its marker says: which run the saved
+    /// conversation is of (`SessionManager.savedConversation`).
+    let runningStartedAt: Date?
     /// Set when the agent named by `runningAgent` was asleep at the save
     /// (`AgentSleep`): "finished" or "waiting", for which clock it was on.
     /// The next launch then leaves it asleep, and resumes it when the session
@@ -165,7 +168,7 @@ struct PersistedSession: Codable {
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
-        case runningAgent, runningModel, runningArgv, runningConversationID
+        case runningAgent, runningModel, runningArgv, runningConversationID, runningStartedAt
         case lastConversationID, portBase, remindAt, agentAsleep, lastTypedAt
         case createdAt, lastSentAt
         case reportedState, agentPaintedDark
@@ -189,7 +192,8 @@ struct PersistedSession: Codable {
          gitCheckout: String? = nil,
          tabHabits: [String: String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
-         runningConversationID: String? = nil, lastConversationID: String? = nil,
+         runningConversationID: String? = nil, runningStartedAt: Date? = nil,
+         lastConversationID: String? = nil,
          portBase: Int? = nil, remindAt: Date? = nil, agentAsleep: String? = nil,
          lastTypedAt: Date? = nil, createdAt: Date? = nil, lastSentAt: Date? = nil,
          reportedState: String? = nil, agentPaintedDark: Bool? = nil) {
@@ -217,6 +221,7 @@ struct PersistedSession: Codable {
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
+        self.runningStartedAt = runningStartedAt
         self.lastConversationID = lastConversationID
         self.portBase = portBase
         self.remindAt = remindAt
@@ -290,6 +295,7 @@ struct PersistedSession: Codable {
         runningModel = try c.decodeIfPresent(String.self, forKey: .runningModel)
         runningArgv = try c.decodeIfPresent(String.self, forKey: .runningArgv)
         runningConversationID = try c.decodeIfPresent(String.self, forKey: .runningConversationID)
+        runningStartedAt = try c.decodeIfPresent(Date.self, forKey: .runningStartedAt)
         // Older files never recorded it; the running id, when there is one, is
         // the same fact for a session whose agent was alive at quit.
         lastConversationID = try c.decodeIfPresent(String.self, forKey: .lastConversationID)

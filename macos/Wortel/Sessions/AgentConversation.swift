@@ -36,9 +36,11 @@ enum AgentConversation {
     /// nothing says, which leaves the caller with what it already knew.
     ///
     /// `livePID` is the agent's process when it could be found; only Claude
-    /// has anything to read from it.
+    /// has anything to read from it. `guessing: false` keeps to what is
+    /// exact: the process's own word and a command line that names its
+    /// conversation, never a start time or the newest file in the folder.
     static func observe(agent: String, livePID: pid_t?, cwd: String,
-                        argv: String?, startedAt: Date?) -> String? {
+                        argv: String?, startedAt: Date?, guessing: Bool = true) -> String? {
         switch agent {
         case "claude":
             // The process file is exact, whatever started it; the command line
@@ -47,6 +49,7 @@ enum AgentConversation {
             // for --continue, the newest is the one being appended to now.
             if let pid = livePID, let id = AgentResumeStore.claudeConversationID(pid: pid) { return id }
             if let id = AgentResumeStore.claudeResumeTarget(argv: argv) { return id }
+            guard guessing else { return nil }
             if let startedAt, let id = AgentResumeStore.claudeConversationID(cwd: cwd, startedAt: startedAt) {
                 return id
             }
@@ -54,11 +57,13 @@ enum AgentConversation {
             return AgentResumeStore.latestClaudeSessionID(cwd: cwd)
         case "pi":
             if let id = Pi.target(argv: argv, cwd: cwd) { return id }
+            guard guessing else { return nil }
             if let startedAt, let id = Pi.started(near: startedAt, cwd: cwd) { return id }
             guard Pi.continuesLatest(argv: argv) else { return nil }
             return Pi.latest(cwd: cwd)
         case "codex":
             if let id = Codex.target(argv: argv) { return id }
+            guard guessing else { return nil }
             if let startedAt, let id = Codex.started(near: startedAt, cwd: cwd) { return id }
             guard Codex.resumesLatest(argv: argv) else { return nil }
             return Codex.latest(cwd: cwd)
@@ -191,18 +196,46 @@ enum AgentConversation {
         endedAt <= lostAt.addingTimeInterval(keeperLossSettles) || (isSessionTerminal && agentRunning)
     }
 
-    /// The conversation to resume an agent into once its process is gone,
-    /// best evidence first: what the process itself last said (exact, and the
-    /// only thing that follows a `/clear` or `/resume` inside Claude, after
-    /// which the command line names the conversation it *started* in); what
-    /// can still be read without it; the one this session was last seen in.
-    /// A remembered id is offered only if it can still be resumed.
-    static func afterExit(live: String?, observed: @autoclosure () -> String?,
-                          last: String?, exists: (String) -> Bool) -> String? {
-        if let live, exists(live) { return live }
-        if let observed = observed() { return observed }
-        if let last, exists(last) { return last }
-        return nil
+    /// Where an agent whose process is gone picks up again.
+    enum ResumePoint: Equatable {
+        /// This conversation.
+        case conversation(String)
+        /// None: it never had one. Started again as it was started.
+        case fresh
+        /// Nothing says; the agent's own "continue the latest" decides.
+        case unknown
+
+        var conversationID: String? {
+            if case .conversation(let id) = self { return id }
+            return nil
+        }
+    }
+
+    /// Where to resume an agent once its process is gone, best evidence first:
+    ///
+    /// 1. `said`: what the process itself said it was in, while it ran (exact,
+    ///    and the only thing that follows a `/clear` or `/resume` inside
+    ///    Claude, after which the command line names the conversation it
+    ///    *started* in). **If that conversation was never written, it never
+    ///    had one**: an agent opened and never typed into. It starts afresh.
+    ///    Passing over to the next evidence instead is what put such agents
+    ///    into another session's conversation: the guess below, and "continue
+    ///    the latest", both land on whatever else in the folder was busy
+    ///    (2026-11-20: four sessions resumed into one).
+    /// 2. `named`: the conversation its command line names.
+    /// 3. `guessed`: by its start time, which another session's conversation
+    ///    can match.
+    /// 4. `last`: the one this session was last seen in.
+    ///
+    /// Only a conversation that can still be resumed (`exists`) is returned.
+    static func resumePoint(said: String?, named: @autoclosure () -> String?,
+                            guessed: @autoclosure () -> String?, last: String?,
+                            exists: (String) -> Bool) -> ResumePoint {
+        if let said { return exists(said) ? .conversation(said) : .fresh }
+        if let named = named(), exists(named) { return .conversation(named) }
+        if let guessed = guessed(), exists(guessed) { return .conversation(guessed) }
+        if let last, exists(last) { return .conversation(last) }
+        return .unknown
     }
 
     /// Whether the agent a session ran ended with its shell rather than at your
@@ -627,5 +660,22 @@ struct OwedResume {
     /// starting.
     func isOwed(at now: Date) -> Bool {
         typedAt.map { now.timeIntervalSince($0) < Self.answerWithin } ?? true
+    }
+}
+
+extension PersistedSession {
+    /// The conversation saved for this session's running agent, if the save
+    /// was of the run `marker` records: a crash can leave a marker for a run
+    /// that began after the last save, and the saved id is then another
+    /// run's. The same run by its start time; a save from before start times
+    /// were kept (2026.47 and older) by its agent and command line. With no
+    /// marker, the saved run is the only one there is.
+    func savedConversation(forRunOf marker: AgentMarker?) -> String? {
+        guard let saved = runningConversationID else { return nil }
+        guard let marker else { return saved }
+        if let savedStart = runningStartedAt, let started = marker.startedAt {
+            return abs(savedStart.timeIntervalSince(started)) < 2 ? saved : nil
+        }
+        return runningAgent == marker.agent && runningArgv == marker.argv ? saved : nil
     }
 }

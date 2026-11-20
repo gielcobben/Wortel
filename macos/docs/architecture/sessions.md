@@ -88,6 +88,17 @@ the branch for a worktree session). Worktree sessions are named for their task
 and carry the branch on a second row line. See `docs/session-naming.md` for
 the reasoning, the privacy scoping of the tap, and what the other tools do.
 
+**Which conversation an agent comes back in** is one decision,
+`AgentConversation.resumePoint`, used at launch and after a lost keeper. What
+the agent itself said it was in comes first: its process file while it runs
+(Claude's `~/.claude/sessions/<pid>.json`), or as saved at quit, if the save
+was of the same run (`runningStartedAt`, `PersistedSession.savedConversation`).
+If that conversation was never written, the agent was opened and never used,
+and it is started again with its own command line, not resumed: anything
+after this step can land on another session's conversation. Then the
+conversation its command line names, then a match by start time, then the last
+one the session was seen in, then the agent's own "continue the latest".
+
 **Deep sleep** (`AgentSleep`, and the "Deep sleep" section of `SessionManager`)
 ends an idle agent and resumes it when its session is selected. The rule and
 what was seen with a real agent are in `docs/decisions.md` (2026-11-18); how

@@ -1223,45 +1223,42 @@ final class SessionManager {
             // was already checked when this was recorded at quit.
             AgentMarker(agent: $0, model: entry.runningModel,
                         cwd: entry.cwd, argv: entry.runningArgv,
-                        shellPID: nil, startedAt: nil)
+                        shellPID: nil, startedAt: entry.runningStartedAt)
         }
-        // Which conversation to resume, best evidence first. A surviving
-        // marker knows when its agent started, and a fresh `claude` creates
-        // its transcript at that moment: that is exact, and it is newer than
-        // anything saved, which matters after a crash where a new
-        // conversation began after the last save. A resume appends instead
-        // of creating, so nothing is found and the saved ids stand: the one
-        // recorded at quit, else the last one this session was ever seen
-        // in, before the newest-file guess as the last resort.
-        //
-        // The marker's command line counts as evidence too: a resume names
-        // its conversation there. And the last id only counts in the
-        // directory it belongs to; Claude can't resume it anywhere else.
+        // Where to resume, best evidence first (`AgentConversation.resumePoint`).
+        // What the agent said it was in: from its process if it is still
+        // running, else as saved, if the save was of this same run (a crash
+        // can leave a marker for a run that began after the last save).
+        // Then what its command line names; then its start time, which a
+        // fresh `claude` creates its transcript at, but which another
+        // session's conversation can match; then the last one this session
+        // was ever seen in. An id only counts in the directory it belongs to;
+        // Claude can't resume it anywhere else.
         //
         // Claude, Pi and Codex alike: see `AgentConversation`.
         var agentIsRunning = false
-        let observedID: String? = {
-            guard let marker, AgentConversation.exact.contains(marker.agent),
-                  let cwd = marker.cwd else { return nil }
+        var point = AgentConversation.ResumePoint.unknown
+        if let agent, AgentConversation.exact.contains(agent.agent), let cwd = agent.cwd ?? entry.cwd {
             // A surviving marker is an agent still running (the snapshot
             // drops the rest), so whatever it can tell about itself counts.
-            var livePID: pid_t?
-            if case .running(let pid) = AgentLiveness.locate(
+            var said: String?
+            if let marker, case .running(let pid) = AgentLiveness.locate(
                 agent: marker.agent, shellPID: marker.shellPID, table: table()) {
-                livePID = pid
                 agentIsRunning = true
+                said = AgentConversation.observe(agent: marker.agent, livePID: pid, cwd: cwd,
+                                                 argv: nil, startedAt: nil, guessing: false)
             }
-            return AgentConversation.observe(agent: marker.agent, livePID: livePID, cwd: cwd,
-                                             argv: marker.argv, startedAt: marker.startedAt)
-        }()
-        let resumingAgent = marker?.agent ?? entry.runningAgent
-        let lastID = entry.lastConversationID.flatMap { id -> String? in
-            guard let agent = resumingAgent, let cwd = marker?.cwd ?? entry.cwd,
-                  AgentConversation.exists(agent: agent, id: id, cwd: cwd) else { return nil }
-            return id
+            point = AgentConversation.resumePoint(
+                said: said ?? entry.savedConversation(forRunOf: marker),
+                named: AgentConversation.observe(agent: agent.agent, livePID: nil, cwd: cwd,
+                                                 argv: agent.argv, startedAt: nil, guessing: false),
+                guessed: AgentConversation.observe(agent: agent.agent, livePID: nil, cwd: cwd,
+                                                   argv: agent.argv, startedAt: agent.startedAt),
+                last: entry.lastConversationID,
+                exists: { AgentConversation.exists(agent: agent.agent, id: $0, cwd: cwd) })
         }
-        let conversationID = observedID ?? entry.runningConversationID ?? lastID
-        session.lastConversationID = observedID ?? entry.lastConversationID
+        let conversationID = point.conversationID
+        session.lastConversationID = conversationID ?? entry.lastConversationID
         session.portBase = entry.portBase
         // An agent that reported its state and is still running is still
         // taken at its word. It says nothing new until its state changes, so
@@ -1296,7 +1293,7 @@ final class SessionManager {
         // is in. Anything less certain is owed, and the shell decides
         // whether to type it (`Attachment.resumeIsOwed`).
         if let agent, !agentIsRunning,
-           let input = AgentResumeStore.resumeInput(for: agent, knownConversationID: conversationID) {
+           let input = AgentResumeStore.resumeInput(for: agent, at: point) {
             // It was asleep when this was saved: still asleep, and resumed
             // when the session is selected, not typed with the rest at
             // launch. Only with no marker (the agent really is gone) and its
@@ -1699,7 +1696,7 @@ final class SessionManager {
     /// moments before the keeper went (`AgentConversation.lostWithKeeper`).
     /// The conversation is what the agent was last seen in while it ran, then
     /// what its files or command line still say, then the one this session
-    /// was last seen in (`AgentConversation.afterExit`). Never the newest file
+    /// was last seen in (`AgentConversation.resumePoint`). Never the newest file
     /// in the folder while anything better is known: that can be another
     /// session's.
     private func owedResume(forLostShellOf session: Session, lostAt: Date) -> OwedResume? {
@@ -1713,18 +1710,19 @@ final class SessionManager {
             ended: session.endedAgent, keeperLostAt: lostAt)
         else { return nil }
         session.endedAgent = nil
-        var conversationID: String?
+        var point = AgentConversation.ResumePoint.unknown
         if AgentConversation.exact.contains(marker.agent), let cwd = marker.cwd ?? session.cwd {
-            conversationID = AgentConversation.afterExit(
-                live: live,
-                observed: AgentConversation.observe(
-                    agent: marker.agent, livePID: nil, cwd: cwd,
-                    argv: marker.argv, startedAt: marker.startedAt),
+            point = AgentConversation.resumePoint(
+                said: live,
+                named: AgentConversation.observe(agent: marker.agent, livePID: nil, cwd: cwd,
+                                                 argv: marker.argv, startedAt: nil, guessing: false),
+                guessed: AgentConversation.observe(agent: marker.agent, livePID: nil, cwd: cwd,
+                                                   argv: marker.argv, startedAt: marker.startedAt),
                 last: session.lastConversationID,
                 exists: { AgentConversation.exists(agent: marker.agent, id: $0, cwd: cwd) })
         }
-        guard let input = AgentResumeStore.resumeInput(for: marker, knownConversationID: conversationID)
-        else { return nil }
+        let conversationID = point.conversationID
+        guard let input = AgentResumeStore.resumeInput(for: marker, at: point) else { return nil }
         if let conversationID { session.lastConversationID = conversationID }
         return OwedResume(agent: marker, conversationID: conversationID, input: input)
     }
@@ -5767,6 +5765,7 @@ final class SessionManager {
             runningAgent: agent?.agent, runningModel: agent?.model,
             runningArgv: agent?.argv,
             runningConversationID: agent == nil ? nil : conversationID,
+            runningStartedAt: agent == nil ? nil : agent?.startedAt,
             lastConversationID: session.lastConversationID,
             portBase: session.portBase,
             remindAt: session.remindAt,
@@ -5819,7 +5818,7 @@ final class SessionManager {
                 // be another agent's, or another folder's.
                 return (AgentMarker(agent: running, model: session.runningModel,
                                     cwd: session.runningCwd ?? session.cwd, argv: session.runningArgv,
-                                    shellPID: nil, startedAt: nil),
+                                    shellPID: nil, startedAt: session.runningStartedAt),
                         session.liveConversationID)
             }
         }

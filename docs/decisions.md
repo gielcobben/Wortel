@@ -143,7 +143,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   minute instead, so a relaunch doesn't hold every session's frames for ten.
 - **2026-09-29. A terminal resizes once per pane animation and never while
   hidden.** Every resize re-wraps the screen and sends SIGWINCH to the agent
-  (`2dfae43`, `c20f403`).
+  (`2dfae43`, `c20f403`). **Since 2026-11-20 a hidden one follows a window
+  resize, once:** see "A terminal out of sight follows its window".
 - **2026-11-18. A session switch lays out the column and strip before it shows
   the terminal.** SwiftUI showed the terminal first, in the previous session's
   layout, and the column followed 10 to 85 ms later: the terminal was drawn
@@ -328,8 +329,69 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   last with the column open, a stand-in agent drawing in place while the
   copy is quit. Main before: the wide one was given 49 then 50 columns, and
   the drawing came back as 361 lines for 61. After: 101 then 102, and every
-  line once. **Still true:** a relaunched terminal starts empty, so
-  scrolling up stops at the relaunch.
+  line once. **No longer true by the next morning:** a relaunched terminal
+  started empty, so scrolling up stopped at the relaunch; see "Every
+  terminal's screen is kept through a relaunch".
+- **2026-11-20. Every terminal's screen is kept through a relaunch.** A
+  relaunched terminal started empty: all it got was what the keeper buffered
+  while the app was gone, then its program was made to repaint by a change of
+  width. A shell's scrollback was lost at every update, and an agent's screen
+  was whatever it printed again, with what it had printed before laid out as
+  it was then (the same message twice, once narrow, seen the same evening).
+  Now each session's own terminal writes its screen and scrollback to the
+  data folder as the app quits (`SurfaceView.saveScreenForQuit`, the
+  hibernation dump; for a hibernated one its snapshot and what it missed),
+  after its pty stops being read, so what comes later is the keeper's. At
+  the next launch the screen is written back first, at the size it was saved
+  at, then the keeper's replay, and nothing is asked of the program: no
+  repaint (`SavedScreens`). Used only when it can be trusted, the old way
+  otherwise: the app that saved it is the last one that ran on the data
+  folder (`InstanceLock.previousOwner`, read before the lock is written), the
+  Mac is in the same light or dark, and the keeper's replay did not lose its
+  start. A side terminal is not saved: it is told no size until it is shown.
+  The files are 0600 in the data folder, taken once, and whatever is left a
+  minute after launch is deleted. A woken terminal is now told the size it
+  went to sleep at, for the same reason, and its view's size after.
+  `macos/scripts/try-relaunch-size.sh`: a shell awake at the quit and one
+  asleep each keep all their numbered lines through a relaunch (200 and 250;
+  before, none), a stand-in agent's screen from before the quit is there
+  with what it drew meanwhile under it, and the hidden session is not made
+  to repaint. A real Claude Code: the same 21 lines before the quit and after
+  the relaunch, its conversation once, its pty untouched; saved in the other
+  appearance, not used, and repainted the old way. Saving five screens at
+  quit took 8 ms.
+  **After its review, the same day:** the save is a hibernation, not a dump
+  of its own. At quit every session's terminal is put to sleep the way one
+  out of sight is (`hibernateForQuit`, shown or not), and what is saved is
+  that sleep: the modes it was in, its screen with palette colours kept as
+  the palette's (a dump of its own wrote them as fixed colours, so restored
+  text stayed in the theme of the day), and what it missed. Nothing waits on
+  the main thread, which the terminals' own work needs (the 2026-10-07
+  deadlock): the quit is answered later, looks every 10 ms, and gives up
+  after 1.5 s on what is not done, which then comes back the old way
+  (`SavedScreens.saveAll`). At launch the screen is used only at the grid it
+  was saved at (a different display scale or font size makes another grid
+  of the same pixels), else the old way with a repaint. Files of sessions
+  still there are kept until their terminal is made; only those of sessions
+  gone are deleted. `try-relaunch-size.sh` checks a palette colour is saved
+  as the palette's, and that a hidden session given no size had its screen
+  put back (the log says so), not just nothing. A saved grid changed by hand
+  to 999 columns: refused, repainted. Saving five screens took 25 ms.
+- **2026-11-20. A terminal out of sight follows its window, once a resize
+  ends.** It kept its size while hidden, so what its agent printed after a
+  window resize was laid out for a width it would never be shown at, and
+  stayed so in the scrollback. The rule against it was for a storm: every
+  hidden terminal took the shown one's size at every session switch. Now a
+  session's own terminal that is out of sight takes the window's change of
+  size, 0.4 s after the window stops changing, on top of its own size
+  (`SurfaceView.followWindow`): the panes beside it keep their width, so
+  that is the size it will be shown at. One SIGWINCH a window resize, none
+  for a switch. `macos/scripts/try-hidden-resize.sh`: two drags of 20 steps,
+  and the hidden session was given one size after each, after the drag, the
+  same as the shown one. Its view keeps that size, so a change of display
+  or scale passes on the followed size, not the old one. **Not covered:** a terminal made at launch and not
+  shown since is not in the window and does not follow; it is told its own
+  last size when it is made.
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
   keeps what its program writes meanwhile, up to 512 KB. An agent's output
   is drawing, each piece placed from where the last ended, so with the start

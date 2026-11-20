@@ -122,7 +122,7 @@ export const SECTIONS: Section[] = [
     lead: 'A tab is a number you have to remember. A session is a name you chose.',
     blocks: [
       {
-        p: 'Name a session and it keeps the name. Put a slash in it and everything before the slash becomes a section, so twelve shells across four projects read as four groups. Names, directories and selection come back on launch.',
+        p: 'Name a session and it keeps the name. Put a slash in it and everything before the slash becomes a section, so twelve shells across four projects read as four groups. Each section sorts by recent activity, date created, name or by hand, from Sort By in its “…”. Names, directories and selection come back on launch.',
       },
       {
         p: 'Switching costs a single frame, because every surface stays alive inside the window.',
@@ -182,7 +182,7 @@ export const SECTIONS: Section[] = [
     lead: 'Your shells are not the app’s children. They run under a small process beside it, so closing the window stops being a decision about the work.',
     blocks: [
       {
-        p: 'An agent that was thinking when you quit is still thinking when you come back, and the session reattaches to the shell it already had, scrollback included. A crash is the same story. This is on by default and there is nothing to switch on.',
+        p: 'An agent that was thinking when you quit is still thinking when you come back, and the session reattaches to the shell it already had. Each terminal’s screen and scrollback are kept when Wortel quits and put back exactly as they were. After a crash the shells and agents are still there, and the agent draws its screen again. This is on by default and there is nothing to switch on.',
       },
     ],
   },

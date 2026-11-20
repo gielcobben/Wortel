@@ -35,7 +35,7 @@ run() { # name, then the command; passes when it prints none of `bad`
   out=$("$@" 2>&1); local code=$?
   print -- "$out" >> "$log"
   local wrong
-  wrong=$(print -- "$out" | grep -E "WRONG|FAIL|NOT A MEASUREMENT|no result|did not start|asleep|returns wrong" \
+  wrong=$(print -- "$out" | grep -E "WRONG|FAIL|NOT A MEASUREMENT|no result|did not start|display is asleep|returns wrong" \
     | grep -v -E " 0 of [0-9]+ returns wrong|came back wrong as expected")
   if [[ $code -ne 0 || -n $wrong ]]; then
     print "FAILED  $name"
@@ -51,7 +51,8 @@ run "switching, with a side terminal and widths" "$here/try-switch.sh" "$app" --
 run "switching into sleeping terminals"          env HIBERNATE_AFTER=0.3 "$here/try-switch.sh" "$app" --side
 run "the pages in front of a terminal"           "$here/try-switch.sh" "$app" --pages
 run "a sleeping agent's screen"                  "$here/try-hibernate-screen.sh" "$app"
-run "a relaunch: sizes and the replay"           "$here/try-relaunch-size.sh" "$app"
+run "a relaunch: sizes, replay, saved screens"   "$here/try-relaunch-size.sh" "$app"
+run "a window resize, sessions out of sight"     "$here/try-hidden-resize.sh" "$app"
 run "light and dark"                             "$here/try-appearance.sh" "$app"
 run "panes sliding, terminal after"              "$here/bench-resize.sh" "$app" --panes --runs 1
 

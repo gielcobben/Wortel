@@ -22,6 +22,12 @@ enum InstanceLock {
     /// Held open for the life of the process: closing it releases the lock.
     nonisolated(unsafe) private static var descriptor: Int32 = -1
 
+    /// The process that had the folder before this one, read from the lock
+    /// file before this one writes its own: the last app to run here,
+    /// whichever build it was. `SavedScreens` uses a screen only if this is
+    /// the app that saved it.
+    nonisolated(unsafe) private(set) static var previousOwner: Int32?
+
     /// Take the data folder, or hand off to whoever has it and exit. Called
     /// first thing in main.swift, before anything reads or writes the folder.
     static func acquireOrHandOff() {
@@ -39,6 +45,7 @@ enum InstanceLock {
             close(fd)
             handOff(to: owner)
         }
+        previousOwner = ownerPID(fd).map { Int32($0) }
         // Who has it, for the next copy to bring forward.
         ftruncate(fd, 0)
         let pid = "\(getpid())\n"

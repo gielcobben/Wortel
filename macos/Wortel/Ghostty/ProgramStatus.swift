@@ -315,11 +315,25 @@ struct ProgramRecords: Equatable {
                              message: words.isEmpty ? nil : words)
     }
 
+    /// Whether the program is at work, as the person is shown it: its own
+    /// record, except that one at rest (`done` or `idle`) with a piece of its
+    /// work still `working` is working. Claude Code ends a turn with `done`
+    /// while a background command, a monitor or a remote agent it started is
+    /// still going, and when that ends it carries on by itself; its root
+    /// says `working` for that wait only sometimes. So the turn is not over,
+    /// and the row keeps its spinner until everything is done
+    /// (2026-11-20, chosen by the person: busy until all done, even for a
+    /// monitor that runs for hours). `blocked` and `error` stand as they are:
+    /// they are news.
+    var standing: ProgramStatus? {
+        guard let root, root.state == .done || root.state == .idle,
+              children.values.contains(where: { $0.state == .working }) else { return root }
+        return ProgramStatus(state: .working, app: root.app)
+    }
+
     /// What the session comes to, in one status: blocked if anything in it
-    /// is, else what the program says of itself. Other child states change
-    /// nothing: a program waiting on its own background work says `working`
-    /// at the root itself.
-    var effective: ProgramStatus? { block ?? root }
+    /// is, else whether it is at work (`standing`).
+    var effective: ProgramStatus? { block ?? standing }
 }
 
 /// Something a program said to its terminal that Wortel acts on.

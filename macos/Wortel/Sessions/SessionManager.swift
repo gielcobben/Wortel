@@ -4542,9 +4542,9 @@ final class SessionManager {
         // ending it to repaint it goes by (`sleepCandidate`). A replay's
         // `working` is not counted as work begun: it was written while
         // nobody was here, and when is not known.
-        switch after?.root?.state {
+        switch after?.standing?.state {
         case .working?:
-            if before?.root?.state != .working, !replayed { workBeganAt[id] = Date() }
+            if before?.standing?.state != .working, !replayed { workBeganAt[id] = Date() }
             reportedRestSince[id] = nil
         case .some:
             if reportedRestSince[id] == nil { reportedRestSince[id] = Date() }

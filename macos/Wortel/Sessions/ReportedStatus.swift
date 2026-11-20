@@ -45,7 +45,8 @@ enum ReportedStatus {
     /// attached, so it is what is true now and not an event.
     ///
     /// Two things are read, apart. The root record says whether the program
-    /// is working or has finished. The block (`ProgramRecords.block`: the
+    /// is working or has finished, with its background work counted as work
+    /// (`ProgramRecords.standing`). The block (`ProgramRecords.block`: the
     /// root, or a piece of its work) says whether it wants an answer. A block
     /// coming or going is never a turn starting or ending, so a question a
     /// background task asked, once answered, does not announce the finished
@@ -65,7 +66,7 @@ enum ReportedStatus {
 
         // The program itself. Said again, nothing changed: a program that
         // repeats itself per tool call must not be a banner per tool call.
-        let was = before?.root, root = after?.root
+        let was = before?.standing, root = after?.standing
         if let root, root != was {
             func tell(_ kind: AttentionKind, _ words: String?) -> Effect {
                 replayed ? .mark(kind, words: words) : .announce(kind, words: words)

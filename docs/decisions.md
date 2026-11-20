@@ -377,6 +377,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   as the palette's, and that a hidden session given no size had its screen
   put back (the log says so), not just nothing. A saved grid changed by hand
   to 999 columns: refused, repainted. Saving five screens took 25 ms.
+- **2026-11-20. An agent with background work still going is busy until it
+  ends.** A Claude Code turn that ended while a command it started in the
+  background was still running dropped the spinner, and said "finished",
+  though Claude Code carries on by itself when the command ends. Claude Code
+  reports each background command, monitor and remote agent as a child
+  record, `working` until it ends; they were kept and ignored. Now a root at
+  rest with a working child is working (`ProgramRecords.standing`), and the
+  turn is announced finished when the last child ends. Chosen by the person
+  over announcing the turn's end and keeping the spinner, and over a quieter
+  mark of its own, knowing a monitor that runs for hours keeps the spinner on
+  for hours. `blocked` and `error` are still announced at once.
+  `verify-agent-status.py` has a scenario for it: main before failed it
+  (turn-done while the command ran), after passed, 48 of 48.
 - **2026-11-20. A terminal out of sight follows its window, once a resize
   ends.** It kept its size while hidden, so what its agent printed after a
   window resize was laid out for a width it would never be shown at, and

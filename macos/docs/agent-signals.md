@@ -124,9 +124,12 @@ its work that is, which is the program waiting on you whatever the root says
 meanwhile (Claude Code's root reads `done` while a remote agent it started
 waits for an answer). They are kept apart so that one changing never looks
 like the other: a background task's question, once answered, must not
-announce the finished turn behind it a second time. Other child states change
-nothing, because a program waiting on its own work says `working` at the root
-itself.
+announce the finished turn behind it a second time. A child that is `working`
+keeps the session at work: a root at rest (`done` or `idle`) with any piece of
+its work still going is shown working (`ProgramRecords.standing`), and the
+turn is announced finished when the last piece ends. Claude Code ends a turn
+with `done` while a background command it started still runs, and carries on
+by itself when it ends. `blocked` and `error` stand over it: they are news.
 
 **What a report comes to** is `ReportedStatus.effects`, pure and tested:
 

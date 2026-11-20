@@ -153,15 +153,59 @@ final class ReportedStatusTests: XCTestCase {
                        [.resting, .announce(.turnDone, words: nil)])
     }
 
-    /// Children that are only working change nothing at all.
-    func testWorkingChildrenAreNoNews() {
+    /// A turn that ends while a background command it started still runs is
+    /// not over: the spinner stays, and "finished" comes when the command
+    /// has ended too.
+    func testATurnWithBackgroundWorkEndsWhenTheWorkDoes() {
+        var running = records(status(.working))
+        running.apply(.status(status(.working, id: "bash_1")))
+        var turnEnded = running
+        turnEnded.apply(.status(status(.done)))
+        // Nothing to say: it was working and still is.
+        XCTAssertEqual(ReportedStatus.effects(from: running, to: turnEnded), [])
+        XCTAssertEqual(turnEnded.effective?.state, .working)
+        var allDone = turnEnded
+        allDone.apply(.clearRecord("bash_1"))
+        XCTAssertEqual(ReportedStatus.effects(from: turnEnded, to: allDone),
+                       [.resting, .announce(.turnDone, words: nil)])
+        XCTAssertEqual(allDone.effective?.state, .done)
+    }
+
+    /// Two pieces of work: the turn is over when the last one is.
+    func testTheLastPieceOfWorkEndsTheTurn() {
+        var turnEnded = records(status(.working, id: "bash_1"), status(.working, id: "monitor_2"),
+                                status(.done))
+        var one = turnEnded
+        one.apply(.clearRecord("bash_1"))
+        XCTAssertEqual(ReportedStatus.effects(from: turnEnded, to: one), [])
+        turnEnded = one
+        one.apply(.clearRecord("monitor_2"))
+        XCTAssertEqual(ReportedStatus.effects(from: turnEnded, to: one),
+                       [.resting, .announce(.turnDone, words: nil)])
+    }
+
+    /// Background work listed after a turn has finished puts the spinner back
+    /// until it ends; an agent at rest with nothing going stays at rest.
+    func testWorkStartedAfterTheTurnIsWork() {
         let finished = records(status(.done))
         var listed = finished
         listed.apply(.status(status(.working, id: "bash_1")))
-        XCTAssertEqual(ReportedStatus.effects(from: finished, to: listed), [])
-        var cleared = listed
-        cleared.apply(.clearRecord("bash_1"))
-        XCTAssertEqual(ReportedStatus.effects(from: listed, to: cleared), [])
+        XCTAssertEqual(ReportedStatus.effects(from: finished, to: listed), [.working])
+        let resting = records(status(.idle))
+        XCTAssertEqual(resting.effective?.state, .idle)
+    }
+
+    /// A failed turn and a question are news even with work still going.
+    func testErrorAndBlockStandOverBackgroundWork() {
+        var running = records(status(.working, id: "bash_1"), status(.working))
+        var failed = running
+        failed.apply(.status(status(.error, message: "Rate limit reached")))
+        XCTAssertEqual(ReportedStatus.effects(from: running, to: failed),
+                       [.resting, .announce(.failed, words: "Rate limit reached")])
+        running = records(status(.working, id: "bash_1"), status(.working))
+        var asking = running
+        asking.apply(.status(status(.blocked, kind: .permission)))
+        XCTAssertEqual(asking.effective?.state, .blocked)
     }
 
     // MARK: - Repeats, and the program leaving

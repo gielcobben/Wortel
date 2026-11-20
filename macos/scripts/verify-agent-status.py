@@ -408,7 +408,14 @@ scenario("claude: a background agent asks after the turn finished", "claude",
 scenario("claude: background commands listed", "claude",
          ["tui", "r:working", "child:bash_1:working:-:npm run build:", "child:bash_2:working:-:tests:", "s:3",
           "clearid:bash_1", "r:done", "s:1", "clearid:bash_2", "hold:3"], 9,
-         lambda ev, st: kinds(ev) == ["turnDone"], "one turn-done; the list changes nothing")
+         lambda ev, st: kinds(ev) == ["turnDone"] and order(ev, ("S", "done"), ("S", "clearRecord"), ("R", "turnDone")),
+         "one turn-done, once the last command has ended")
+scenario("claude: a turn ends while a background command runs", "claude",
+         ["tui", "r:working", "s:2", "child:bash_1:working:-:release.sh:", "s:1", "r:done", "s:4",
+          "clearid:bash_1", "hold:3"], 13,
+         lambda ev, st: kinds(ev) == ["turnDone"] and order(ev, ("S", "clearRecord"), ("R", "turnDone"))
+             and st == "finished",
+         "no turn-done while the command runs; one when it ends; state finished")
 scenario("unknown program learns to say done", None,
          ["r:working", "s:3", "r:idle", "s:3", "r:working", "s:3", "r:done", "s:3", "r:working", "s:3", "r:idle", "hold:2"], 21,
          lambda ev, st: kinds(ev)[:2] == ["turnDone", "turnDone"] and "turnDone" not in kinds(ev)[2:],

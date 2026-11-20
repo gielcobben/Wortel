@@ -257,17 +257,10 @@ final class MainSplitViewController: NSSplitViewController {
             guard case .file(let path) = tab else { return }
             self?.previewTabs.openInWindow(path, at: topLeft)
         }
-        // A file dragged out of a list in this window gets the tab drag's
-        // landing spots too.
-        // One hook for the app, so each window's split chains to the one
-        // before it: a drag in another window is that window's.
-        let previous = RowClickCatcher.onFileDrag
-        RowClickCatcher.onFileDrag = { [weak self, weak drag] phase, urls, window, point in
-            guard let self, window === self.view.window else {
-                previous?(phase, urls, window, point)
-                return
-            }
-            drag?.handleFileDrag(phase, urls: urls, window: window, point: point)
+        // A tab dragged out of this window: the other windows' rows, asked
+        // by the app, which knows them.
+        drag.elsewhere = { [weak self] phase, tab, dragged, point, picture in
+            self?.tabDragElsewhere(phase, tab, dragged, point, picture) ?? .nothing
         }
         titleBars.mainBar.strip.onDrag = { [weak drag] phase, tab, view, point in
             drag?.handle(phase, tab: tab, view: view, point: point)
@@ -286,19 +279,44 @@ final class MainSplitViewController: NSSplitViewController {
     /// Returns the row and place it's over; on `.ended`, where the tab goes.
     func dockWindowDrag(_ phase: TabDragController.DockPhase, url: URL,
                         dragged: NSWindow, at screenPoint: NSPoint) -> (region: TabRegion, index: Int)? {
+        let tab = SideTab.file(url.resolvingSymlinksInPath().standardizedFileURL.path)
+        return dock(phase, tab: tab, dragged: dragged, at: screenPoint, picture: nil)
+    }
+
+    /// A tab from somewhere else over this window: a preview window dragged
+    /// by its row, or a file or browser tab dragged out of another window.
+    /// Shows where it would land in this window's rows; on `.ended`, says
+    /// where it goes. `picture` is the tab as it will look, or nil to draw
+    /// it as this window's session would.
+    func dock(_ phase: TabDragController.DockPhase, tab: SideTab, dragged: NSWindow?,
+              at screenPoint: NSPoint, picture: NSImage?) -> (region: TabRegion, index: Int)? {
         guard let window = view.window, let tabDrag else { return nil }
         // The window under the pointer, looking past the one being dragged,
         // which is under the pointer by definition.
-        let under = NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: dragged.windowNumber)
-        guard under == window.windowNumber else {
-            return tabDrag.handleDock(.cancelled, url: url, window: window, point: .zero) { nil }
+        let under = NSWindow.windowNumber(at: screenPoint,
+                                          belowWindowWithWindowNumber: dragged?.windowNumber ?? 0)
+        guard phase != .cancelled, under == window.windowNumber else {
+            return tabDrag.handleDock(.cancelled, tab: tab, window: window, point: .zero) { nil }
         }
         let point = window.convertPoint(fromScreen: screenPoint)
-        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
-        return tabDrag.handleDock(phase, url: url, window: window, point: point) { [manager] in
-            let item = TitleBarController.stripItem(for: .file(path), in: home.selected)
+        return tabDrag.handleDock(phase, tab: tab, window: window, point: point) { [home] in
+            if let picture { return picture }
+            let item = TitleBarController.stripItem(for: tab, in: home.selected)
             return SideTabStrip.picture(of: item, in: window)
         }
+    }
+
+    /// Set by AppDelegate: the other windows, for a tab dragged out of this one
+    /// (`TabDragController.elsewhere`).
+    var tabDragElsewhere: (TabDragController.DockPhase, SideTab, NSWindow?, NSPoint, NSImage?)
+        -> TabDragController.Elsewhere = { _, _, _, _, _ in .nothing }
+
+    /// A file dragged out of a list, over this window: the tab drag's landing
+    /// spots, at `point` in this window. AppDelegate says which window it is
+    /// over (`RowClickCatcher.onFileDrag`).
+    func fileDrag(_ phase: RowClickCatcher.FileDragPhase, urls: [URL], at point: NSPoint) {
+        guard let window = view.window else { return }
+        tabDrag?.handleFileDrag(phase, urls: urls, window: window, point: point)
     }
 
     /// A tab dropped somewhere that means "the column": already there, it

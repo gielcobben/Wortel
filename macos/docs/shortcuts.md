@@ -72,6 +72,10 @@ smaller than a window.
 | Put every session in this window | Window ▸ Merge All Windows | every Mac app with tabs |
 
 A row's right-click menu has Move to New Window and Move to Window ▸ too.
+A file or web page tab dragged onto another window's tab row moves there.
+Hold any drag still over a window behind and it comes forward, after the
+Mac's spring-loading delay (System Settings ▸ Accessibility ▸ Pointer
+Control).
 Before 2026-11-19, ⇧⌘N was New Worktree Session; that is ⌥⇧⌘N now.
 
 ## The layout

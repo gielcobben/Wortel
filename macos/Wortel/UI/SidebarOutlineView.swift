@@ -555,6 +555,19 @@ final class SidebarOutline: NSOutlineView {
     /// clicked (measured 2026-11-19). A rename field in a row is its own
     /// control and still takes it.
     override var acceptsFirstResponder: Bool { false }
+
+    /// A row dragged out of this list: held over a window behind, that window
+    /// comes forward (`SpringLoading`), so its sidebar can take the row.
+    ///
+    /// No `super`: NSTableView declares this (it is an NSDraggingSource) but
+    /// doesn't implement it, so the call raised an unrecognized selector on
+    /// every move, which AppKit swallows by ending the drag ("Ignoring
+    /// exception raised by SidebarOutline during a dragging session").
+    /// Session rows couldn't be dragged anywhere.
+    override func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+        SpringLoading.hover(at: screenPoint)
+    }
+
     /// Mouse-*down* on a folder header, outside the disclosure chevron.
     var onHeaderPressed: ((Any) -> Void)?
     /// Mouse-*down* on a session's row, a plain press: the switch happens
@@ -1657,6 +1670,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// ours (a drop refused, or back where it began) is not out.
         func outlineView(_ outlineView: NSOutlineView, draggingSession session: NSDraggingSession,
                          endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+            SpringLoading.end()
             guard operation.isEmpty,
                   let ids = session.draggingPasteboard.string(forType: Self.sessionDragType).map(Self.ids),
                   !ids.isEmpty,

@@ -269,6 +269,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // the way back does too.
         previewWindows.onDock = { [weak self] phase, document, window, point in
             guard let self else { return false }
+            // Held over a window behind, it comes forward (`SpringLoading`).
+            if phase == .moved { SpringLoading.hover(at: point, dragging: window) } else { SpringLoading.end() }
             // Each window asked once. Not `lazy.compactMap(...).first`: that
             // runs the closure again for the one it finds, and asking twice
             // is dropping twice; the second found nothing, and the force
@@ -303,6 +305,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         previewWindows.onOpenFile = { [weak self] url in
             self?.openPreview(url)
+        }
+        // Drags between windows: the main windows are what springs forward,
+        // and a file out of a list goes to the window it's over.
+        SpringLoading.raisable = { [weak self] window in
+            self?.controllers.contains { $0.window === window } ?? false
+        }
+        RowClickCatcher.onFileDrag = { [weak self] phase, urls, window, point in
+            self?.fileDrag(phase, urls: urls, from: window, at: window.convertPoint(toScreen: point))
         }
         manager.onAttentionCleared = { session in
             // The user answered (or the session closed) — pull the banner out
@@ -676,6 +686,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             window.makeFirstResponder(view)
         }
 
+        controller.split.tabDragElsewhere = { [weak self, weak controller] phase, tab, dragged, point, picture in
+            guard let self, let controller else { return .nothing }
+            return self.tabDragElsewhere(from: controller, phase, tab, dragged: dragged,
+                                         at: point, picture: picture)
+        }
         controller.onBecameKey = { [weak self] controller in
             self?.manager.activate(controller.home)
         }
@@ -722,6 +737,116 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         manager.removeWindow(controller.home)
+    }
+
+    // MARK: - Drags between windows
+
+    /// The main window a drag is over: the one in front at that point,
+    /// looking past `dragged` (a window that follows the pointer). Not one
+    /// with a preview window, Settings or another app over it there.
+    private func controller(at screenPoint: NSPoint, dragged: NSWindow? = nil) -> MainWindowController? {
+        let under = NSWindow.windowNumber(at: screenPoint,
+                                          belowWindowWithWindowNumber: dragged?.windowNumber ?? 0)
+        return controllers.first { $0.window.windowNumber == under }
+    }
+
+    /// The window a file dragged out of a list is being offered to: where
+    /// it began, until it's over another.
+    private weak var fileDragTarget: MainWindowController?
+
+    /// A file out of a list (Changes, History, the file tree) gets the tab
+    /// rows' landing spots in whichever window it's over, so it can be
+    /// opened in another window's session. Let go there, that window comes
+    /// forward with it, as a window a file is dropped on does.
+    private func fileDrag(_ phase: RowClickCatcher.FileDragPhase, urls: [URL],
+                          from window: NSWindow, at screenPoint: NSPoint) {
+        let home = controllers.first { $0.window === window }
+        if case .began = phase {
+            fileDragTarget = home
+            home?.split.fileDrag(.began, urls: urls, at: window.convertPoint(fromScreen: screenPoint))
+            return
+        }
+        // Over no main window (the desktop, another app, a preview window),
+        // the one it was last over keeps it, as one window alone always did.
+        let over = controller(at: screenPoint) ?? fileDragTarget
+        if let over, over !== fileDragTarget {
+            // The window it left lets go of what it showed, and the one it's
+            // over starts showing where it would land.
+            fileDragTarget?.split.fileDrag(.ended(accepted: true), urls: urls, at: .zero)
+            over.split.fileDrag(.began, urls: urls, at: over.window.convertPoint(fromScreen: screenPoint))
+            fileDragTarget = over
+        }
+        guard let target = fileDragTarget else { return }
+        switch phase {
+        case .began:
+            break
+        case .moved:
+            SpringLoading.hover(at: screenPoint)
+            target.split.fileDrag(.moved, urls: urls, at: target.window.convertPoint(fromScreen: screenPoint))
+        case .ended:
+            SpringLoading.end()
+            fileDragTarget = nil
+            // The window opening it is the active one, so the tab is in its
+            // session (`openPreview` places it in the active window's). The
+            // landing is the last one shown there, which a release just past
+            // its edge still is. Taken by something else (a terminal types
+            // its path, the Finder copies it), it's that one's.
+            if target.window !== window, case .ended(accepted: false) = phase {
+                manager.activate(target.home)
+                target.window.makeKeyAndOrderFront(nil)
+            }
+            target.split.fileDrag(phase, urls: urls, at: target.window.convertPoint(fromScreen: screenPoint))
+        }
+    }
+
+    /// A tab dragged out of `source`, at `screenPoint`: which other window
+    /// it's over, and that window's rows show where it would land. Files
+    /// and web pages can go; a terminal stays in its own window (its shell
+    /// belongs to its session's folder) and so does a pane. On `.ended`
+    /// over a row, the tab moves there.
+    private func tabDragElsewhere(from source: MainWindowController, _ phase: TabDragController.DockPhase,
+                                  _ tab: SideTab, dragged: NSWindow?, at screenPoint: NSPoint,
+                                  picture: NSImage?) -> TabDragController.Elsewhere {
+        let others = controllers.filter { $0 !== source }
+        let over = phase == .cancelled ? nil : controller(at: screenPoint, dragged: dragged)
+        let target = over === source ? nil : over
+        // Every other window lets go of what it showed.
+        for other in others where other !== target {
+            _ = other.split.dock(.cancelled, tab: tab, dragged: nil, at: .zero, picture: nil)
+        }
+        guard let target else { return .nothing }
+        let moves = tab.filePath != nil || tab.browserID != nil
+        guard moves, let owner = source.home.selected, let receiver = target.home.selected,
+              owner !== receiver,
+              let landing = target.split.dock(phase, tab: tab, dragged: dragged, at: screenPoint,
+                                               picture: picture)
+        else {
+            _ = target.split.dock(.cancelled, tab: tab, dragged: nil, at: .zero, picture: nil)
+            return .window
+        }
+        if phase == .ended {
+            moveTab(tab, from: owner, in: source, to: receiver, in: target,
+                    region: landing.region, index: landing.index)
+        }
+        return .row
+    }
+
+    /// A file or browser tab from one window's session into another's, at
+    /// `index` in `region`'s row. The same tab: a browser keeps its page (its
+    /// address goes with it), a file its document, diff and view.
+    private func moveTab(_ tab: SideTab, from owner: Session, in source: MainWindowController,
+                         to receiver: Session, in target: MainWindowController,
+                         region: TabRegion, index: Int) {
+        if let id = tab.browserID, let address = owner.browserAddresses[id] {
+            receiver.browserAddresses[id] = address
+        }
+        manager.activate(target.home)
+        target.window.makeKeyAndOrderFront(nil)
+        target.gitPanel.openDropped(tab, in: region, at: index, isNew: false)
+        // Out of where it was only once it's in: a file let go of first would
+        // have its document forgotten.
+        source.gitPanel.handOver(tab, from: owner)
+        if let id = tab.browserID { owner.browserAddresses[id] = nil }
     }
 
     /// ⇧⌘N: a new window, with a new session at home in it, as ⌥⌘N makes.

@@ -87,6 +87,10 @@ final class TabTearOffGhost {
 
     var isShown: Bool { panel.isVisible && panel.alphaValue > 0 }
 
+    /// The ghost's own window: under the pointer, so looked past when asking
+    /// what else is there.
+    var window: NSWindow { panel }
+
     /// Follow the pointer, given in screen coordinates.
     func move(to pointer: NSPoint) {
         panel.setFrameOrigin(NSPoint(x: pointer.x - tabOrigin.x - grab.x,

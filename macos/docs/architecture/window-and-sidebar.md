@@ -86,6 +86,17 @@ would draw the session you are in.
   (`WindowStore.assign`, tested). The sidebar's width is still the split's one
   autosave, shared by all windows. The first window is placed before restore,
   so no terminal is laid out at a size it is about to leave.
+- **Spring-loading** (`SpringLoading`): a drag held still over a main
+  window that another main window is in front of brings it forward, as the
+  Finder's windows do, after the Mac's own spring-loading delay and only
+  while its setting is on (`com.apple.springing.enabled` and `.delay`, the
+  Accessibility ▸ Pointer Control switch). Every drag that can end in
+  another window reports the pointer: session rows (`SidebarOutline`), tabs
+  (`TabDragController`), files out of a list (`AppDelegate.fileDrag`) and a
+  preview window dragged by its row (`previewWindows.onDock`). It looks at
+  the window a click would land in (`NSWindow.windowNumber(at:)`), so a
+  window covered there by another app, or by a preview window, stays where
+  it is, and it does nothing once the button is up.
 - **A declared, empty folder** is drawn in the first window only
   (`sidebarGroups(in:)`); a folder with sessions is drawn in each window that
   has some.

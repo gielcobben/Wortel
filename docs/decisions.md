@@ -82,6 +82,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   model; it was not chosen, because an NSView has one parent and dragging
   between windows would have meant nothing. Every window is the same fixed
   frame of four places. See `macos/docs/architecture/window-and-sidebar.md`.
+- **2026-11-19. Drags between windows: spring-loading, and tabs that move.**
+  A drag held over a window behind brings it forward, as in the Finder, on
+  the Mac's own spring-loading setting and delay rather than one of ours.
+  A file or browser tab let go on another window's row moves into that
+  window's session, keeping its page or document. Terminal tabs don't: a
+  side shell belongs to its session's folder, and no tab moves between
+  sessions inside one window either.
 - **2026-11-19. ⇧⌘N is New Window; New Worktree Session is ⌥⇧⌘N.** Apple's
   own apps use ⌘N for a window, but where ⌘N makes something smaller than a
   window (VS Code, Zed, cmux) a window is ⇧⌘N, and Wortel's ⌘N is a session.

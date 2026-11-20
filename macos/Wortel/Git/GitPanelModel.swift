@@ -826,6 +826,20 @@ final class GitPanelModel {
         }
     }
 
+    /// A tab gone to another session, dragged to another window's row: out
+    /// of `owner`'s rows as a close takes it, but not closed. Its page or
+    /// document goes on in the other session, so nothing is let go of
+    /// (`onTabClosed`), and it isn't put on the reopen stack: ⇧⌘T here
+    /// would make a second tab of the same page.
+    func handOver(_ tab: SideTab, from owner: Session) {
+        guard tab != .session, change(owner, { $0.detach(tab) }) != nil else { return }
+        if let pane = owner.activeSideTab?.pane, owner.inspectorPane != pane { owner.inspectorPane = pane }
+        onStateChanged?()
+        guard owner === session else { return }
+        mirror(owner, animated: false)
+        resolveCurrent()
+    }
+
     /// A close the user asked for: the × on a tab, ⌘W in a side terminal. A
     /// terminal still running a program asks first; everything else just goes.
     func requestClose(_ tab: SideTab) {
@@ -915,13 +929,16 @@ final class GitPanelModel {
     /// A tab dragged in from outside the rows (a file out of a list) and dropped
     /// at `index` in `region`'s row: opened there, the way a dragged tab lands.
     /// One that's already open somewhere is moved there instead.
-    func openDropped(_ tab: SideTab, in region: TabRegion, at index: Int) {
+    ///
+    /// `isNew` is false for a tab that only changed windows (`handOver`): it
+    /// was opened once already, where it came from.
+    func openDropped(_ tab: SideTab, in region: TabRegion, at index: Int, isNew: Bool = true) {
         guard let session else { return }
         guard session.workspace.region(of: tab) == nil else {
             move(tab, to: region, at: index)
             return
         }
-        reportOpened(tab, in: region)
+        if isNew { reportOpened(tab, in: region) }
         change(session) { $0.placeDropped(tab, in: region, at: index) }
         settle(tab, in: session)
     }

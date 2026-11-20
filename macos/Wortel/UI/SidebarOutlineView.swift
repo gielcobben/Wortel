@@ -492,7 +492,7 @@ final class SidebarCellView: NSTableCellView {
                     NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
                     let attrs: [NSAttributedString.Key: Any] = [
                         .font: NSFont.systemFont(ofSize: 13),
-                        .foregroundColor: NSColor.tertiaryLabelColor]
+                        .foregroundColor: Chrome.sectionHeader]
                     (title as NSString).draw(at: NSPoint(x: card.minX + 10, y: card.midY - 8), withAttributes: attrs)
                     return
                 }

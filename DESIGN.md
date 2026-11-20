@@ -184,7 +184,8 @@ selection) 6%, all of the label colour.
 | --- | --- | --- | --- | --- |
 | `foreground` | `labelColor` | black 70% | white 90% | Text |
 | `muted-foreground` | `secondaryLabelColor` | black 50% | white 55% | Quieter text, glyphs on a page |
-| `sidebar-primary-foreground` | `tertiaryLabelColor` | black 27.5% | white 35% | Section headers, branch lines, line numbers |
+| `sidebar-section-foreground` | `Chrome.sectionHeader` | black 38% | white 45% | Section headers in the sidebar |
+| `sidebar-primary-foreground` | `tertiaryLabelColor` | black 27.5% | white 35% | Branch lines, line numbers |
 | `sidebar-accent-foreground` | secondary glyph | black 55% | white 66% | Toolbar and row glyphs on the glass |
 | `sidebar-ring` | disabled glyph | black 14% | white 18% | Back and Forward with nowhere to go |
 
@@ -211,7 +212,10 @@ the app.
 ## Type
 
 - **Interface:** the system font. Titles and rows 13pt regular. Folder headers
-  are the same 13pt in the tertiary colour, not smaller and not bold.
+  are the same 13pt in a grey of their own (`Chrome.sectionHeader`), not
+  smaller and not bold. Between the tertiary, too faint on the glass (2.2:1
+  in dark, 1.9:1 in light), and the secondary, too close to the rows (4.5:1,
+  3.9:1). It measures 3.2:1 and 2.6:1, chosen by eye.
 - **Terminal:** SF Mono Medium 14pt on cells of 8.5 by 19pt, padding 5 by 2, a
   block cursor that does not blink. Regular weight at 14 with taller cells was
   tried; Medium stayed.

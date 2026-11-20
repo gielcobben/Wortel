@@ -595,6 +595,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   rows run past the window) takes the blend away: the section headers went
   dark grey on dark. Plain `tertiaryLabelColor` is what DESIGN.md already
   named for headers and branch lines, mask or not.
+- **2026-11-19. Section headers have a grey of their own, between the
+  tertiary and the secondary.** Still hard to read after the fix above, said
+  the person using it, and measured so: on the sidebar, in a capture of a
+  copy with the list running past the window, the tertiary grey was 2.2:1 in
+  dark and 1.9:1 in light, where the session names are 10.8 and 8.0. The
+  secondary (4.5:1, 3.9:1) was tried and was too light: the headers came too
+  close to the rows. Halfway, white at 45% in dark and black at 38% in light
+  (`Chrome.sectionHeader`), measures 3.2:1 and 2.6:1, chosen by eye in the
+  running app. Branch lines stay tertiary: a small second line under a name,
+  read after it.
 
 ## Sessions
 

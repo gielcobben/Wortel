@@ -471,7 +471,10 @@ struct SidebarSectionLabel: View {
         HStack(spacing: 6) {
             // The same size as the rows under it, and set apart by colour alone:
             // a small bold header is a second type size and a second weight
-            // doing a job the grey already does.
+            // doing a job the grey already does. Its own grey, between the
+            // tertiary (too faint on the glass) and the secondary (too close
+            // to the rows): `Chrome.sectionHeader`. A plain colour, not a
+            // vibrant one: see below.
             // The label colour itself, not SwiftUI's `.tertiary`: that one is
             // drawn vibrantly on the sidebar's glass, and the vibrancy is lost
             // under SidebarScrollView's fade mask (on while the list runs past
@@ -481,14 +484,14 @@ struct SidebarSectionLabel: View {
             // learned this first (`SessionRow.secondLineColor`).
             Text(title)
                 .font(.system(size: 13))
-                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                .foregroundStyle(Color(nsColor: Chrome.sectionHeader))
                 .lineLimit(1)
             // Open or collapsed, after the name rather than as a triangle in
             // front of it: down when open, turned to point at the name's end
             // when collapsed. The whole header is the button (SidebarOutline).
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                .foregroundStyle(Color(nsColor: Chrome.sectionHeader))
                 .rotationEffect(.degrees(collapsed ? -90 : 0))
                 .animation(.easeOut(duration: 0.15), value: collapsed)
             // What the section is hiding. Same dot as a session row's, so it

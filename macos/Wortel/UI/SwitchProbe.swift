@@ -45,6 +45,15 @@ enum SwitchProbe {
         defer { if SurfaceView.frameOnEveryResize { SurfaceView.frameOnEveryResize = false } }
         // "report": where the terminal in front is now, and who has the
         // keyboard, with nothing switched.
+        // "column": open the side column of the session in front, and no more.
+        if parts.contains("column") && !parts.contains("side") && !parts.contains("widths") {
+            if state(of: home).columnShut {
+                NSApp.sendAction(#selector(AppDelegate.toggleSideColumn(_:)), to: nil, from: nil)
+                try? await Task.sleep(nanoseconds: 800_000_000)
+            }
+            try? Data(#"{"column":"open"}"#.utf8).write(to: URL(fileURLWithPath: path))
+            return
+        }
         if parts.contains("report") {
             var report = state(of: home).json
             // Every SwiftUI hosting view in the window, where it is and the

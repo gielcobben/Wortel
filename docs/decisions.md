@@ -186,7 +186,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `PtyHost.ignoreSizesUntilTold` drops a new surface's reports until
   `setSurfaceSize`, and a surface made or woken out of sight is told the last
   size a session's terminal was shown at (kept in defaults,
-  `terminal.lastShownSize`). Same test after: every pty kept 34x102, and no
+  `terminal.lastShownSize`; since the same evening that session's own, see
+  "A terminal made out of sight is told its own session's size"). Same test after: every pty kept 34x102, and no
   program was ever told 15x45. It may also be the "too narrow" case above.
   **The placeholder was also what repainted a relaunched terminal**, which
   starts empty: 45 then the real width was a change of width, and Claude Code
@@ -302,10 +303,33 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   trusted are still asked, by the wake itself once it knows
   (`PtyHost.repaintNow`): one whose missed output outran what is kept, so
   its start is gone, and one whose terminal never took its size within the
-  quarter second. **Not changed:** a
-  relaunch writes the keeper's replay into a new surface the same way; there
-  the terminal starts empty and the program is made to repaint once it is
-  quiet (above).
+  quarter second. **A relaunch's replay waits the same way since the same
+  evening**: see the next entry but one.
+- **2026-11-19. A terminal made out of sight is told its own session's size,
+  and the keeper's replay waits for it.** After a relaunch, scrolled up, an
+  agent's conversation was wrapped at 70 columns in a window of 114, and at
+  the very top of the scrollback was its footer in pieces. The running app's
+  log: a minute after launch every hidden terminal hibernated at 70x37. Two
+  causes. One size was kept for every session, the last one shown, and that
+  one had its side column open: every agent out of sight was given 70
+  columns, and Claude Code answers a relaunch's repaint by printing its whole
+  conversation again at the width it is given; shown later at its own width
+  it redraws only the screen, so everything above stayed at 70. And the
+  keeper's replay, what an agent drew while the app was gone, was written
+  into the new surface before it took its size, into 45 columns, where
+  drawing in place lands in pieces: the wake's fault (above), on the other
+  path. Now each session's own size on screen is kept as well
+  (`SurfaceView.shownSizes`, by session, in defaults, let go with the
+  session), and a terminal made or woken out of sight is told its own, the
+  shared one only for a session never shown; and the replay waits on the
+  pty's queue until the terminal has been told a size and taken it
+  (`SurfaceView.waitForToldGrid`, a quarter second at most). New test,
+  `macos/scripts/try-relaunch-size.sh`: a session shown wide, another shown
+  last with the column open, a stand-in agent drawing in place while the
+  copy is quit. Main before: the wide one was given 49 then 50 columns, and
+  the drawing came back as 361 lines for 61. After: 101 then 102, and every
+  line once. **Still true:** a relaunched terminal starts empty, so
+  scrolling up stops at the relaunch.
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
   keeps what its program writes meanwhile, up to 512 KB. An agent's output
   is drawing, each piece placed from where the last ended, so with the start

@@ -184,7 +184,7 @@ final class SurfaceView: NSView {
     /// size on screen is what a new one starts at (`firstSize`). A side
     /// terminal's page is the column's, a different size, and it is told
     /// nothing until it is shown.
-    private let isSessionTerminal: Bool
+    let isSessionTerminal: Bool
 
     /// The session a session's own terminal belongs to, for its size on
     /// screen (`shownSizes`). nil for a side terminal.
@@ -260,12 +260,20 @@ final class SurfaceView: NSView {
 
     private static var saveFirstSize: DispatchWorkItem?
 
+    /// The size, in pixels, a new surface is told before anything else,
+    /// because what is about to be written into it was drawn for that size:
+    /// a hibernated terminal's, or a screen saved at the last quit
+    /// (`SavedScreens`). Taken by `tellFirstSize`. While it is waiting, the
+    /// view's own size is not passed on (`viewDidChangeBackingProperties`).
+    var restoreSize: (width: UInt32, height: UInt32)?
+
     /// Whether a new surface on this view is about to be told a size of its
     /// own as it is set up (`tellFirstSize`), so that what is written into
     /// it can wait for that size (`waitForToldGrid`). Not a side terminal's,
     /// which is told nothing until it is shown.
     var expectsFirstSize: Bool {
-        isSessionTerminal && (shownSizeOwner.flatMap { Self.shownSizes[$0] } ?? Self.firstSize) != nil
+        restoreSize != nil
+            || isSessionTerminal && (shownSizeOwner.flatMap { Self.shownSizes[$0] } ?? Self.firstSize) != nil
     }
 
     /// A new surface that nothing has told a size yet (made out of sight, or
@@ -279,6 +287,11 @@ final class SurfaceView: NSView {
         // of a drag: the size its view gives it next, however soon, gets its
         // frame in the same commit (`frameForNewSize`).
         defer { sizedAt = nil }
+        if let restore = restoreSize, surface != nil {
+            restoreSize = nil
+            setSurfaceSize(width: restore.width, height: restore.height)
+            return
+        }
         guard isSessionTerminal, surface != nil, toldSize == nil,
               let size = shownSizeOwner.flatMap({ Self.shownSizes[$0] }) ?? Self.firstSize else { return }
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
@@ -902,6 +915,9 @@ final class SurfaceView: NSView {
         let fontSize: Float
         /// What came while there was no terminal. Only touched on the pty queue.
         let missed: MissedOutput
+        /// The size it was told, in pixels: the one it is woken at, since what
+        /// it holds and what came meanwhile were drawn for it.
+        var told: (width: UInt32, height: UInt32)?
 
         init(snapshot: URL, columns: Int, rows: Int, blankRowsAtBottom: Int,
              cursor: (row: Int, column: Int)?, fontSize: Float, missed: MissedOutput) {
@@ -1067,6 +1083,7 @@ final class SurfaceView: NSView {
             snapshot: snapshot, columns: Int(size.columns), rows: Int(size.rows),
             blankRowsAtBottom: Self.blankRowsAtBottom(of: old, size: size),
             cursor: cursor, fontSize: fontSize, missed: missed)
+        hibernation?.told = toldSize
         surface = nil
         focused = false
         ghostty_surface_free(old)
@@ -1109,6 +1126,10 @@ final class SurfaceView: NSView {
         surface = new
         // A new terminal: whatever the old one was told, this one wasn't.
         toldSize = nil
+        // Told first the size it went to sleep at, not the size its view has
+        // now: what it holds was drawn for that. Its view's size follows once
+        // it is whole (`reconcileSize("woken")`), as a resize the program sees.
+        restoreSize = hibernation.told
         layerReplaced()
         if let window { ghostty_surface_set_display_id(new, window.screen?.displayID ?? 0) }
         viewDidChangeBackingProperties()
@@ -1287,6 +1308,78 @@ final class SurfaceView: NSView {
 
     /// Woken, and the screen not yet all back. Reading it now reads part of it.
     private(set) var isRestoring = false
+
+    // MARK: - Saving the screen at quit
+
+    /// Write what this terminal shows, scrollback and all, for the terminal
+    /// that takes its place at the next launch (`SavedScreens`). As the app
+    /// quits, on the main thread. A session's own terminal on the keeper only:
+    /// a side terminal is told no size until it is shown, so there would be
+    /// nothing to write it back at, and a shell of the app's own ends with it.
+    ///
+    /// The pty stops being read first, so the screen written is everything
+    /// the app read: what comes after stays in the kernel's buffer and is the
+    /// keeper's replay at the next launch. A hibernated terminal's saved
+    /// screen is its snapshot and what it missed since.
+    func saveScreenForQuit(dark: Bool) {
+        guard isSessionTerminal, let pty = ptyHost, let session = keeperSession, !processFinished else { return }
+        pty.pauseReading()
+        // A read already under way finishes and is written in; waiting for it
+        // costs the main thread nothing it is not about to give up anyway.
+        // Bounded, as anything that waits at quit must be.
+        let drained = DispatchSemaphore(value: 0)
+        pty.enqueue { drained.signal() }
+        guard drained.wait(timeout: .now() + 0.3) == .success else {
+            SavedScreens.log.notice("\(session.uuidString, privacy: .public): its pty was busy at quit; not saved")
+            return
+        }
+        let meta = { (told: (width: UInt32, height: UInt32), columns: Int, rows: Int) in
+            SavedScreens.Meta(width: told.width, height: told.height, columns: columns, rows: rows,
+                              dark: dark, savedBy: getpid(), savedAt: Date())
+        }
+        if let hibernation {
+            guard let told = hibernation.told,
+                  let snapshot = try? Data(contentsOf: hibernation.snapshot) else { return }
+            var screen = SnapshotPalette.restoringIndices(Self.withoutColourSettings(snapshot))
+            screen.append(contentsOf: Self.cursorRestore(snapshot: snapshot, hibernation: hibernation))
+            let missed = hibernation.missed
+            let taken = DispatchSemaphore(value: 0)
+            var held = Data()
+            pty.enqueue {
+                // Run over: its start is gone, and written back it would be
+                // the end of a drawing on an old screen. The old way instead.
+                if missed.buffer.dropped == 0 {
+                    held = missed.buffer.take()
+                    held.append(contentsOf: missed.scanner.unfinished)
+                }
+                taken.signal()
+            }
+            guard taken.wait(timeout: .now() + 0.3) == .success, missed.buffer.dropped == 0 else { return }
+            screen.append(held)
+            SavedScreens.save(screen, meta: meta(told, hibernation.columns, hibernation.rows), for: session)
+            return
+        }
+        guard let surface, let told = toldSize else { return }
+        let bottom = "scroll_to_bottom"
+        _ = bottom.withCString { ghostty_surface_binding_action(surface, $0, UInt(bottom.utf8.count)) }
+        var path: String?
+        screenFileCapture = { path = $0 }
+        let action = "write_screen_file:copy,vt"
+        _ = action.withCString { ghostty_surface_binding_action(surface, $0, UInt(action.utf8.count)) }
+        screenFileCapture = nil
+        guard let path, let snapshot = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return }
+        try? FileManager.default.removeItem(atPath: path)
+        _ = rmdir(URL(fileURLWithPath: path).deletingLastPathComponent().path)
+        let size = ghostty_surface_size(surface)
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let shape = Hibernation(snapshot: URL(fileURLWithPath: path), columns: Int(size.columns), rows: Int(size.rows),
+                                blankRowsAtBottom: Self.blankRowsAtBottom(of: surface, size: size),
+                                cursor: Self.cursorCell(of: surface, size: size, scale: scale),
+                                fontSize: 0, missed: MissedOutput())
+        var screen = Self.withoutColourSettings(snapshot)
+        screen.append(contentsOf: Self.cursorRestore(snapshot: snapshot, hibernation: shape))
+        SavedScreens.save(screen, meta: meta(told, Int(size.columns), Int(size.rows)), for: session)
+    }
 
     /// Whoever asked to be told when the restore now under way is done.
     private var restoreWaiters: [() -> Void] = []
@@ -1474,6 +1567,52 @@ final class SurfaceView: NSView {
         focusDidChange(isFirstResponder && (window?.isKeyWindow ?? false))
     }
 
+    // MARK: Following the window while out of sight
+
+    /// The window's content size when this terminal was last told a size,
+    /// for one that is out of sight to follow the window by the same amount
+    /// (`followWindow`).
+    private var windowSizeWhenTold: NSSize?
+    private var followWork: DispatchWorkItem?
+
+    @objc private func windowDidResize(_ notification: Notification) {
+        guard isHidden, surface != nil else { return }
+        followWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.followWork = nil
+            self?.followWindow()
+        }
+        followWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    /// A session's terminal out of sight takes the window's change of size,
+    /// once the window has stopped changing: the size it will have when it
+    /// is shown, since the panes beside it keep theirs and the terminal is
+    /// what gives (`MainSplitViewController`). Left at the old size, what its
+    /// agent prints meanwhile is laid out for a width it will never be shown
+    /// at, and stays so in the scrollback; that was the rule ("never resized
+    /// while hidden", 2026-09-29) for the storm of resizes a session switch
+    /// made when every hidden terminal took the shown one's size. This is
+    /// once a window resize, and to a terminal's own size.
+    private func followWindow() {
+        guard isSessionTerminal, isHidden, surface != nil, let told = toldSize,
+              let then = windowSizeWhenTold, let now = window?.contentLayoutRect.size else { return }
+        guard Self.resizeHolds == 0 else {
+            // A pane is moving: after it lands.
+            followWork = DispatchWorkItem { [weak self] in self?.followWindow() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: followWork!)
+            return
+        }
+        let scale = window?.backingScaleFactor ?? 2
+        let dw = (now.width - then.width) * scale, dh = (now.height - then.height) * scale
+        guard abs(dw) >= 1 || abs(dh) >= 1 else { return }
+        let width = max(40 * scale, CGFloat(told.width) + dw)
+        let height = max(20 * scale, CGFloat(told.height) + dh)
+        setSurfaceSize(width: UInt32(width), height: UInt32(height))
+        LayoutLog.log.debug("followed the window out of sight: \(told.width)x\(told.height) to \(UInt32(width))x\(UInt32(height)) px")
+    }
+
     @objc private func windowKeyStateChanged(_ notification: Notification) {
         updateFocus()
     }
@@ -1502,11 +1641,16 @@ final class SurfaceView: NSView {
         let center = NotificationCenter.default
         center.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
         center.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
+        center.removeObserver(self, name: NSWindow.didResizeNotification, object: nil)
         if let window {
             center.addObserver(self, selector: #selector(windowKeyStateChanged(_:)),
                                name: NSWindow.didBecomeKeyNotification, object: window)
             center.addObserver(self, selector: #selector(windowKeyStateChanged(_:)),
                                name: NSWindow.didResignKeyNotification, object: window)
+            if isSessionTerminal {
+                center.addObserver(self, selector: #selector(windowDidResize(_:)),
+                                   name: NSWindow.didResizeNotification, object: window)
+            }
         }
         guard let window, let surface else { return }
         ghostty_surface_set_display_id(surface, window.screen?.displayID ?? 0)
@@ -1570,6 +1714,7 @@ final class SurfaceView: NSView {
         let before = toldSize
         ghostty_surface_set_size(surface, width, height)
         toldSize = (width, height)
+        windowSizeWhenTold = window?.contentLayoutRect.size
         frameForNewSize(sizeBefore: before)
     }
 
@@ -1594,7 +1739,8 @@ final class SurfaceView: NSView {
             fbFrame.size.width / frame.size.width,
             fbFrame.size.height / frame.size.height)
 
-        if contentSize != .zero {
+        // Not while a size to restore at is waiting to be told: see `restoreSize`.
+        if contentSize != .zero, restoreSize == nil {
             let scaled = convertToBacking(contentSize)
             setSurfaceSize(width: UInt32(max(0, scaled.width)), height: UInt32(max(0, scaled.height)))
         }

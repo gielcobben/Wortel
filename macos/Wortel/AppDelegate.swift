@@ -77,6 +77,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Debug build is also what runs every day.
         if DataDirectory.custom != nil { ResizeBench.install() }
         #endif
+        // Saved screens that no session took: it did not come back.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { SavedScreens.clearLeftovers() }
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
             DropPasteboard.sweepOldImages()
@@ -1104,6 +1106,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // What every session's terminal shows, for the next launch to put
+        // back (`SavedScreens`). First, while the terminals are all there.
+        if let manager {
+            let started = DispatchTime.now()
+            let dark = GhosttyRuntime.systemIsDark
+            let terminals = manager.sessions.compactMap(\.surfaceView)
+            terminals.forEach { $0.saveScreenForQuit(dark: dark) }
+            let ms = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e6
+            SavedScreens.log.notice("saved \(terminals.count) screens at quit in \(ms, format: .fixed(precision: 1)) ms")
+        }
         manager?.saveNow()
         TerminalModeRecorder.shared.save()
         // The socket's name is a file, and it outlives the process that made

@@ -27,7 +27,14 @@ geometry (size/scale → libghostty; light and dark are told by the runtime,
 would draw a frame on the main thread at every change of its bounds, and
 `frameForNewSize` asks for that frame only for a single change of size, not
 at every step of a drag (`../../../docs/decisions.md`, 2026-11-19; measure
-with `scripts/bench-resize.sh` before changing it). The keyboard path is subtle —
+with `scripts/bench-resize.sh` before changing it). A terminal's size
+otherwise comes from one of three places, in this order: a size to restore
+at (`restoreSize`: a hibernated terminal's, or a screen saved at the last
+quit, `SavedScreens`), its view when shown, and for one made out of sight its
+session's last size on screen (`shownSizes`); one out of sight follows the
+window by the window's change (`followWindow`). Anything written into a new
+surface waits until it has taken its size (`waitForGrid`, `waitForToldGrid`).
+`scripts/check-terminals.sh` is the test for all of it. The keyboard path is subtle —
 `keyDown`/`performKeyEquivalent`/`doCommand` coordinate via `lastPerformKeyEvent`
 and `keyTextAccumulator` to make IME (Korean/Japanese) and unclaimed command
 keys work; preserve the upstream comments when touching it. `GhosttyInput.swift`

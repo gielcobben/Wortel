@@ -83,12 +83,13 @@ final class WortelCLIService {
             reply(open(path))
 
         case .newSession, .newWorktree, .newFromPullRequest:
-            start(command, typing: nil, reply: reply)
+            manager.inWindow(callerWindow(caller)) { start(command, typing: nil, reply: reply) }
 
         case .newRunning(let new, let argv):
             // Checked again here: the socket is also spoken to directly.
             do {
-                start(new, typing: try WortelCommandParser.startupLine(argv), reply: reply)
+                let line = try WortelCommandParser.startupLine(argv)
+                manager.inWindow(callerWindow(caller)) { start(new, typing: line, reply: reply) }
             } catch {
                 reply(.failure("\(error)"))
             }
@@ -189,6 +190,22 @@ final class WortelCLIService {
         return .success(value: path)
     }
 
+    /// The window of the session the command was run in, when it was run in
+    /// one: a `wortel new` from a terminal in a window behind lands beside
+    /// it, not in whichever window was last in front. Found by the caller's
+    /// ancestry, as its jobs are (`RunningJobs`); nil from outside Wortel,
+    /// and then the session goes to the active window.
+    private func callerWindow(_ caller: WortelCLIServer.Caller) -> SessionWindow? {
+        guard manager.windows.count > 1, let pid = caller.pid else { return nil }
+        let table = ProcessTable.snapshot()
+        let parentOf = Dictionary(table.map { ($0.pid, $0.ppid) }, uniquingKeysWith: { first, _ in first })
+        let session = manager.sessions.first { session in
+            let shells = [session.shellPID].compactMap { $0 } + session.sideShells.map(\.pid)
+            return shells.contains { pid == $0 || ProcessTable.isDescendant(pid, of: $0, parentOf: parentOf) }
+        }
+        return session.map(manager.window(of:))
+    }
+
     /// One of the `new`s, with `input` for its first shell to run. A worktree
     /// session is handed its line while it's still being made, before its
     /// row is selected: its shell starts once git is done, and the line is
@@ -200,7 +217,7 @@ final class WortelCLIService {
             newSession(cwd: cwd, name: name, branch: branch, base: base, typing: input, reply: reply)
 
         case .newWorktree(let cwd, let name):
-            guard let cwd = cwd ?? manager.selected?.cwd else {
+            guard let cwd = cwd ?? manager.placingSelected?.cwd else {
                 return reply(.failure("No session to take a repository from."))
             }
             _ = manager.newWorktreeSession(
@@ -213,7 +230,7 @@ final class WortelCLIService {
             guard let pr = PullRequestRef.parse(text) else {
                 return reply(.failure("\u{201c}\(text)\u{201d} isn't a pull request: give its number or its URL."))
             }
-            guard let cwd = cwd ?? manager.selected?.cwd else {
+            guard let cwd = cwd ?? manager.placingSelected?.cwd else {
                 return reply(.failure("No session to take a repository from."))
             }
             _ = manager.newSession(
@@ -260,7 +277,7 @@ final class WortelCLIService {
         // a script in one repo must not open a worktree of whichever repo the
         // sidebar happens to be pointing at. The row is on screen meanwhile,
         // saying it's preparing, as it is for the sheet.
-        guard let cwd = cwd ?? manager.selected?.cwd else {
+        guard let cwd = cwd ?? manager.placingSelected?.cwd else {
             return reply(.failure("No session to take a repository from."))
         }
         let created = manager.newSession(
@@ -367,7 +384,8 @@ final class WortelCLIService {
     /// the sessions in no folder, each section by its Sort By.
     private func list(caller: String?) -> WortelResponse {
         let you = caller.flatMap(UUID.init(uuidString:)).flatMap(manager.session(id:))
-        let selected = manager.selected
+        // Each window's in turn, the one in front first; `selected` is the
+        // session in front in its window, so with two windows two are.
         let sessions = manager.sessionsInSidebarOrder.map { session in
             WortelSessionInfo(
                 id: session.id.uuidString, name: session.name, folder: session.folderPath,
@@ -377,7 +395,7 @@ final class WortelCLIService {
                 // An agent asleep is still this session's agent: sleep is
                 // Wortel's business, and a script should not have to know.
                 agent: session.runningAgent ?? session.sleep.agent?.marker.agent, state: state(of: session),
-                selected: session === selected, caller: session === you)
+                selected: manager.isFront(session), caller: session === you)
         }
         guard let data = try? JSONEncoder().encode(sessions) else {
             return .failure("Couldn't describe the sessions.")

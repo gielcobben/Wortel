@@ -149,7 +149,7 @@ Look over, with the git panel open (⌃⌘1):
       "Merged · branch too"; calm-test says "Branch kept"
   [ ] Open worktree/squashed: Changes says "Merged into main"
   [ ] echo $WORTEL_PORT in two sessions: different; after a relaunch, the same
-  [ ] New Worktree Session (⇧⌘N): the row's shell starts in its worktree,
+  [ ] New Worktree Session (⌥⇧⌘N): the row's shell starts in its worktree,
       not /, in this folder; ask the agent something and the branch is
       renamed for the session's name (git branch)
   [ ] Close (⇧⌘W) a worktree session with changes: it leaves the sidebar;
@@ -158,8 +158,8 @@ Look over, with the git panel open (⌃⌘1):
   [ ] Close a fresh, untouched worktree session: its folder is in the Trash
       a moment later, and ⌘P doesn't list it
   [ ] exit in a worktree session: archived, like closing it
-  [ ] New Worktree Session (⇧⌘N) › Location, pick ../shop-trees: the next
-      ⇧⌘N lands there; Wortel's Worktree Folder puts it back
+  [ ] New Worktree Session (⌥⇧⌘N) › Location, pick ../shop-trees: the next
+      ⌥⇧⌘N lands there; Wortel's Worktree Folder puts it back
   [ ] ⌘O on ../shop-toolbar-proposal: lands in the shop folder, not a new
       one, named for its branch; rename it and the branch shows under it
   [ ] cd ../shop-toolbar-clean in a session: the branch line appears

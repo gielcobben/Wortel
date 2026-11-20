@@ -43,7 +43,7 @@ extension GitWorktree {
             .appendingPathComponent(".wortel/worktrees", isDirectory: true)
     }
 
-    /// The namespace every branch Wortel generates lives in (⇧⌘N names its
+    /// The namespace every branch Wortel generates lives in (⌥⇧⌘N names its
     /// branch `worktree/<adjective>-<noun>-<hex>` until the work has a name). It exists to group them
     /// under one heading in `git branch`, where they are disposable and you will
     /// want to sweep them later. One constant, because the half that makes the

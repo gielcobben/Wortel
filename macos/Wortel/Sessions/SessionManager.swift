@@ -12,66 +12,236 @@ final class SessionManager {
 
     private(set) var sessions: [Session] = []
 
-    /// Bound to the sidebar List's selection. `didSet` lazily creates the
-    /// selected session's surface and clears its bell — so both user clicks
-    /// and programmatic selection (menu shortcuts) go through one path.
-    var selectedID: Session.ID? {
-        didSet {
-            // The lead moved from somewhere that isn't a ⌘-click inside the
-            // selection (a plain click, ⌘2, a notification): one row again.
-            if selectedID != oldValue, !(selectedID.map(sidebarSelection.ids.contains) ?? false) {
-                var collapsed = sidebarSelection
-                collapsed.collapse(to: selectedID)
-                if collapsed != sidebarSelection { sidebarSelection = collapsed }
-            }
-            guard selectedID != oldValue, let session = selected else { return }
-            // The selected row is always drawn: ⌘-number, a notification or
-            // Next Waiting Session can pick a session inside a folded section.
-            reveal(session)
-            // Where you were in the session you left, read before anything
-            // else moves; a session that just closed is gone from `sessions`
-            // and is nowhere to go back to.
-            noteVisit(from: sessions.first { $0.id == oldValue }.map(currentPlace(of:)))
-            // The tab you land on, held from now: the first tab brought forward
-            // here is a stop away from it, and by the time the panel reports
-            // that one the rows already show the new tab.
-            if currentTabs[session.id] == nil {
-                currentTabs[session.id] = session.workspace.front(of: .main) ?? .session
-            }
-            // Gone to another session: the one just made is one among the
-            // rest now, and closing it later is not a way back.
-            if justMade?.session != session.id { justMade = nil }
-            // Most recent first, for ⌘P's list.
-            recentSessionIDs.removeAll { $0 == session.id }
-            recentSessionIDs.insert(session.id, at: 0)
-            // Switching into a waiting session: flash a ring in the detail view
-            // to orient the eye before the dot clears.
-            if let kind = session.attention {
-                attentionFlash = AttentionFlash(kind: kind)
-            }
-            clearAttention(session)
-            // Coming back to a session marked unread: that's the "later" it was
-            // marked for, so it clears the usual way from here.
-            session.markedUnread = false
-            // A reminder that went off for it has been answered the same way.
-            answerReminder(session)
-            // Left the previous session before it could count as read; start the
-            // caught-up clock on the one you just landed on.
-            cancelCaughtUp(oldValue)
-            scheduleCaughtUp(session)
-            // Not while its worktree is still being made: there's no folder
-            // for the shell to start in yet (see `prepareWorktree`).
-            if session.preparation == nil { session.ensureSurfaceView(runtime: runtime) }
-            scheduleSave()
-            onSwitch?(session)
-            noteSelectionForSleep(left: oldValue, arrived: session)
+    // MARK: Windows
+
+    /// The main windows, in the order they were opened. Never empty once the
+    /// app is up: the first is made with the manager.
+    private(set) var windows: [SessionWindow] = []
+
+    /// The main window last made key: what "the selected session" means for
+    /// every command (⌘W, ⌘R, ⌘P's current row, a new session's folder).
+    /// Set by the app layer as a window becomes key, and by the manager when
+    /// a selection goes to a session in another window.
+    private(set) var activeWindow: SessionWindow!
+
+    /// A selection went to a session in a window that isn't the active one
+    /// (a notification, ⌘P, Next Waiting Session): the app brings that window
+    /// forward. The manager has already made it the active one.
+    @ObservationIgnored var onActivateWindow: ((SessionWindow) -> Void)?
+    /// A window's last session went, and another window is still open: it
+    /// closes, as an empty Terminal window does. The last window keeps its
+    /// empty page instead (`onAllClosed`).
+    @ObservationIgnored var onWindowEmptied: ((SessionWindow) -> Void)?
+    /// A window was added by the manager (moving a session to a new one,
+    /// restore): the app makes its NSWindow.
+    @ObservationIgnored var onWindowAdded: ((SessionWindow) -> Void)?
+
+    /// A new, empty window, made active. The app shows it.
+    @discardableResult
+    func addWindow(id: UUID = UUID()) -> SessionWindow {
+        let window = SessionWindow(id: id, manager: self)
+        windows.append(window)
+        if activeWindow == nil { activeWindow = window }
+        return window
+    }
+
+    /// A window that has closed. Its sessions must already be gone or moved.
+    func removeWindow(_ window: SessionWindow) {
+        guard windows.count > 1 else { return }
+        windows.removeAll { $0 === window }
+        if activeWindow === window { activeWindow = windows.last }
+        scheduleSave()
+    }
+
+    /// `window` became key: it is what commands act on from now.
+    func activate(_ window: SessionWindow) {
+        guard activeWindow !== window, windows.contains(where: { $0 === window }) else { return }
+        activeWindow = window
+        // A multiple selection belongs to the sidebar it was made in.
+        if sidebarSelection.isMultiple {
+            var collapsed = sidebarSelection
+            collapsed.collapse(to: window.selectedID)
+            sidebarSelection = collapsed
         }
     }
 
-    /// Run at the end of every change of the selected session, in the same
-    /// turn: the window lays the whole switch out at once (`MainSplitViewController.show`)
-    /// instead of leaving it to observers that each run a turn later.
-    @ObservationIgnored var onSwitch: ((Session) -> Void)?
+    /// Move sessions to `target`, or to a new window when nil, and show the
+    /// first of them there. Their terminals go with them as they are: the
+    /// same shells, the same agents, nothing restarted. A window left with
+    /// nothing in it closes. Returns the window they went to, or nil when
+    /// there was nothing to move (all of them already there, or a new window
+    /// asked for every session of the only one).
+    @discardableResult
+    func moveSessions(_ ids: [Session.ID], toWindow target: SessionWindow?,
+                      topLeft: CGPoint? = nil) -> SessionWindow? {
+        let moving = ids.compactMap { id in sessions.first { $0.id == id } }
+            .filter { target == nil || window(of: $0) !== target }
+        guard !moving.isEmpty else { return nil }
+        let movingIDs = Set(moving.map(\.id))
+        let sources = windows.filter { window in moving.contains { self.window(of: $0) === window } }
+        // A new window for everything a window has would only swap one empty
+        // window for another.
+        if target == nil, sources.count == 1, sessions(in: sources[0]).allSatisfy({ movingIDs.contains($0.id) }) {
+            return nil
+        }
+        let destination: SessionWindow
+        if let target {
+            destination = target
+        } else {
+            destination = addWindow()
+            destination.requestedTopLeft = topLeft
+            onWindowAdded?(destination)
+        }
+        // The windows they leave show their next row first, so a terminal is
+        // never on screen in two windows at once.
+        for source in sources {
+            guard let current = source.selectedID, movingIDs.contains(current) else { continue }
+            let staying = drawnRows(in: source).filter { !movingIDs.contains($0) }
+            let index = drawnRows(in: source).firstIndex(of: current) ?? 0
+            let rows = drawnRows(in: source)
+            let above = rows[..<min(index, rows.count)].last { !movingIDs.contains($0) }
+            let pick = above ?? staying.first ?? sessions(in: source).first { !movingIDs.contains($0.id) }?.id
+            select(pick, in: source)
+        }
+        for session in moving { session.windowID = destination.id }
+        normalizeOrder()
+        activate(destination)
+        select(moving[0].id, in: destination)
+        onActivateWindow?(destination)
+        for source in sources where sessions(in: source).isEmpty {
+            onWindowEmptied?(source)
+        }
+        scheduleSave()
+        return destination
+    }
+
+    /// Window ▸ Merge All Windows: every session into the active window.
+    func mergeAllWindows() {
+        guard let activeWindow, windows.count > 1 else { return }
+        let others = sessions.filter { window(of: $0) !== activeWindow }.map(\.id)
+        let front = activeWindow.selectedID
+        moveSessions(others, toWindow: activeWindow)
+        // Merging brings sessions in; it doesn't take you away from yours.
+        if let front { select(front, in: activeWindow) }
+    }
+
+    /// The window `session` is in.
+    func window(of session: Session) -> SessionWindow {
+        session.windowID.flatMap { id in windows.first { $0.id == id } } ?? windows[0]
+    }
+
+    func window(id: UUID) -> SessionWindow? {
+        windows.first { $0.id == id }
+    }
+
+    /// The sessions in `window`, in stored order.
+    func sessions(in window: SessionWindow) -> [Session] {
+        let first = windows.first === window
+        let known = Set(windows.map(\.id))
+        return sessions.filter { session in
+            guard let id = session.windowID, known.contains(id) else { return first }
+            return id == window.id
+        }
+    }
+
+    /// Whether `session` is the one in front in its window.
+    func isFront(_ session: Session) -> Bool {
+        window(of: session).selectedID == session.id
+    }
+
+    func isFront(_ id: Session.ID) -> Bool {
+        windows.contains { $0.selectedID == id }
+    }
+
+    /// The selected session of the active window: what the commands act on.
+    /// Assigning it selects that session in *its* window, which becomes the
+    /// active one and is brought forward when it wasn't already.
+    var selectedID: Session.ID? {
+        get { activeWindow?.selectedID }
+        set {
+            guard let newValue, let session = sessions.first(where: { $0.id == newValue }) else {
+                if let activeWindow { select(nil, in: activeWindow) }
+                return
+            }
+            let target = window(of: session)
+            if target !== activeWindow {
+                activate(target)
+                onActivateWindow?(target)
+                // Already in front there: nothing switches, but you have
+                // come to it (⌘P, its banner, Next Waiting Session), which
+                // is what clears its dot, its unread mark and its reminder.
+                if target.selectedID == newValue {
+                    arrive(at: session, in: target)
+                    scheduleCaughtUp(session)
+                    return
+                }
+            }
+            select(newValue, in: target)
+        }
+    }
+
+    /// Change `window`'s front session: everything a switch means, in one
+    /// path, for clicks and for programmatic selection alike. Lazily creates
+    /// the session's surface and clears its bell.
+    func select(_ id: Session.ID?, in window: SessionWindow) {
+        let oldValue = window.selectedID
+        guard id != oldValue else { return }
+        window.selectedID = id
+        // The lead moved from somewhere that isn't a ⌘-click inside the
+        // selection (a plain click, ⌘2, a notification): one row again.
+        if window === activeWindow, !(id.map(sidebarSelection.ids.contains) ?? false) {
+            var collapsed = sidebarSelection
+            collapsed.collapse(to: id)
+            if collapsed != sidebarSelection { sidebarSelection = collapsed }
+        }
+        guard let id, let session = sessions.first(where: { $0.id == id }) else { return }
+        // The selected row is always drawn: ⌘-number, a notification or
+        // Next Waiting Session can pick a session inside a folded section.
+        reveal(session)
+        // Where you were in the session you left, read before anything
+        // else moves; a session that just closed is gone from `sessions`
+        // and is nowhere to go back to.
+        noteVisit(from: sessions.first { $0.id == oldValue }.map(currentPlace(of:)))
+        // The tab you land on, held from now: the first tab brought forward
+        // here is a stop away from it, and by the time the panel reports
+        // that one the rows already show the new tab.
+        if currentTabs[session.id] == nil {
+            currentTabs[session.id] = session.workspace.front(of: .main) ?? .session
+        }
+        // Gone to another session: the one just made is one among the
+        // rest now, and closing it later is not a way back.
+        if justMade?.session != session.id { justMade = nil }
+        arrive(at: session, in: window)
+        // Left the previous session before it could count as read; start the
+        // caught-up clock on the one you just landed on.
+        cancelCaughtUp(oldValue)
+        scheduleCaughtUp(session)
+        // Not while its worktree is still being made: there's no folder
+        // for the shell to start in yet (see `prepareWorktree`).
+        if session.preparation == nil { session.ensureSurfaceView(runtime: runtime) }
+        scheduleSave()
+        window.onSwitch?(session)
+        noteSelectionForSleep(left: oldValue, arrived: session)
+    }
+
+    /// What coming to a session means, whether it was switched to or was
+    /// already in front of the window brought forward for it.
+    private func arrive(at session: Session, in window: SessionWindow) {
+        // Most recent first, for ⌘P's list.
+        recentSessionIDs.removeAll { $0 == session.id }
+        recentSessionIDs.insert(session.id, at: 0)
+        // Switching into a waiting session: flash a ring in the detail view
+        // to orient the eye before the dot clears.
+        if let kind = session.attention {
+            window.attentionFlash = AttentionFlash(kind: kind)
+        }
+        clearAttention(session)
+        // Coming back to a session marked unread: that's the "later" it was
+        // marked for, so it clears the usual way from here.
+        session.markedUnread = false
+        // A reminder that went off for it has been answered the same way.
+        answerReminder(session)
+    }
 
     /// Sessions in the order they were last selected, most recent first: what
     /// ⌘P lists before you type (SessionSwitcherMatch).
@@ -123,6 +293,8 @@ final class SessionManager {
     /// one of the session's rows.
     private func isOpen(_ place: WorkspacePlace) -> Bool {
         guard let session = sessions.first(where: { $0.id == place.session }) else { return false }
+        // Only this window's: Back never reaches into another window.
+        guard activeWindow == nil || window(of: session) === activeWindow else { return false }
         return session.workspace.region(of: place.tab) != nil
     }
 
@@ -174,11 +346,6 @@ final class SessionManager {
         bringForward(session, target.tab)
     }
 
-    /// The most recent "switched into a waiting session" event; the detail view
-    /// flashes an orienting ring on each fresh value. Never cleared — at rest
-    /// the overlay is simply invisible.
-    private(set) var attentionFlash: AttentionFlash?
-
     /// The session whose name is being edited inline (nil = none). Observed by
     /// the sidebar so double-click, the context menu, and ⌘R all drive one path.
     var editingID: Session.ID?
@@ -197,18 +364,16 @@ final class SessionManager {
     /// sessions close. See `SessionSelection` for the rules.
     private(set) var sidebarSelection = SessionSelection()
 
-    /// The sessions as the sidebar draws them, top to bottom, folded sections
-    /// left out: what a ⇧-click's range runs over and the order a bulk action
-    /// applies in. Written by the outline after each change, never read for
-    /// drawing, so not observed.
-    @ObservationIgnored var sidebarRowOrder: [Session.ID] = []
+    /// The active window's sessions as its sidebar draws them, top to
+    /// bottom, folded sections left out: what a ⇧-click's range runs over
+    /// and the order a bulk action applies in (`SessionWindow.sidebarRowOrder`).
+    var sidebarRowOrder: [Session.ID] { activeWindow?.sidebarRowOrder ?? [] }
 
-    /// ⌘1…⌘9's sessions: the first nine rows as the sidebar draws them
-    /// (Pinned first, Sort Unread First applied, folded sections left out),
-    /// so the number on a row is the one that selects it. Observed, unlike
-    /// `sidebarRowOrder`, so the numbers shown while ⌘ is held follow a
-    /// re-sort. nil until the sidebar has drawn, when it's the stored order.
-    private(set) var shortcutIDs: [Session.ID]?
+    /// ⌘1…⌘9's sessions in the active window: the first nine rows as its
+    /// sidebar draws them (Pinned first, Sort Unread First applied, folded
+    /// sections left out), so the number on a row is the one that selects
+    /// it. nil until the sidebar has drawn, when it's the stored order.
+    var shortcutIDs: [Session.ID]? { activeWindow?.shortcutIDs }
 
     /// View ▸ Sort Unread First: within each section, sessions that want you
     /// are drawn first (`SidebarSort`). Only how the rows are drawn: the
@@ -285,10 +450,6 @@ final class SessionManager {
     /// attention — they can see it. Set by the app layer on activate/resign.
     @ObservationIgnored var appIsActive = true
 
-    /// Whether the main window is actually on screen (not miniaturized or
-    /// fully occluded). An active app with a minimized window is *not*
-    /// "actively viewing" anything. Set by the app layer on occlusion changes.
-    @ObservationIgnored var windowIsVisible = true
 
     /// Busy is shown only after a command has been running this long, so
     /// instant commands (ls, cd, git status) never flash the spinner.
@@ -445,8 +606,15 @@ final class SessionManager {
     /// without Sort Unread First's band, which only moves rows while it's on.
     /// For what walks "the sidebar" without drawing it: `wortel list`, the
     /// jump to the next waiting session, the menu bar's list.
+    /// With several windows, each window's in turn, the active one first.
     var sessionsInSidebarOrder: [Session] {
-        sidebarGroups.flatMap { group -> [Session] in
+        let ordered = activeWindow.map { [$0] + windows.filter { $0 !== activeWindow } } ?? windows
+        return ordered.flatMap(sessionsInSidebarOrder(in:))
+    }
+
+    /// `sessionsInSidebarOrder` for one window's sidebar.
+    func sessionsInSidebarOrder(in window: SessionWindow) -> [Session] {
+        sidebarGroups(in: window).flatMap { group -> [Session] in
             guard let order = sortedOrder(of: group) else { return group.sessions }
             let byID = Dictionary(group.sessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             return order.compactMap { byID[$0] }
@@ -571,6 +739,9 @@ final class SessionManager {
         pinnedIDs = (UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? [])
             .compactMap(UUID.init(uuidString:))
         sortUnreadFirst = UserDefaults.standard.bool(forKey: Self.sortUnreadFirstKey)
+        // The first window, there before anything is restored: the app builds
+        // its NSWindow around it. `restore` gives it its saved id.
+        addWindow()
         // Delivered on the main queue by the keeper's process source.
         GhosttyRuntime.onKeeperLost = { [weak self] pid in
             MainActor.assumeIsolated { self?.keeperDidExit(pid: pid) }
@@ -593,6 +764,22 @@ final class SessionManager {
         return SidebarLayout.groups(
             rows: sessions.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
             pinned: pinnedIDs, folderOrder: folderOrder, declaredFolders: declaredFolders
+        ).map { group in
+            SidebarGroup(folder: group.folder, sessions: group.ids.compactMap { byID[$0] },
+                         isPinned: group.isPinned)
+        }
+    }
+
+    /// `sidebarGroups` for one window: its own sessions only. A folder made
+    /// on purpose and left empty is drawn in the first window, where folders
+    /// always were, and not in every window at once.
+    func sidebarGroups(in window: SessionWindow) -> [SidebarGroup] {
+        let mine = sessions(in: window)
+        let byID = Dictionary(mine.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return SidebarLayout.groups(
+            rows: mine.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
+            pinned: pinnedIDs, folderOrder: folderOrder,
+            declaredFolders: windows.first === window ? declaredFolders : []
         ).map { group in
             SidebarGroup(folder: group.folder, sessions: group.ids.compactMap { byID[$0] },
                          isPinned: group.isPinned)
@@ -883,10 +1070,62 @@ final class SessionManager {
         // still running is one nobody is about to write to.
         refreshAgentActivity()
         resolveWorktreeBranches()
-        selectedID = (persisted.first(where: \.selected) ?? persisted[0]).id
+        restoreWindows(persisted)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.warmRemainingSurfaces()
         }
+    }
+
+    /// Put the saved windows back, each with its sessions and the one it had
+    /// in front. The first window already exists (the app built it); it
+    /// takes the first saved window's id. The window whose front session the
+    /// file marks `selected` is the active one, as it was at quit.
+    private func restoreWindows(_ persisted: [PersistedSession]) {
+        let saved = WindowStore.load()
+        let first = windows[0]
+        let ids = saved.isEmpty ? [first.id] : saved.map(\.id)
+        let (kept, owner) = WindowStore.assign(
+            sessions: persisted.map { (id: $0.id, window: $0.windowID) }, windows: ids)
+        first.id = kept[0]
+        first.frame = saved.first(where: { $0.id == first.id })?.frame
+        for id in kept.dropFirst() {
+            let window = addWindow(id: id)
+            window.frame = saved.first(where: { $0.id == id })?.frame
+            onWindowAdded?(window)
+        }
+        for session in sessions { session.windowID = owner[session.id] ?? first.id }
+        let active = persisted.first(where: \.selected).flatMap { owner[$0.id] }.flatMap(window(id:)) ?? first
+        for window in windows where window !== active {
+            let mine = sessions(in: window)
+            let wanted = saved.first(where: { $0.id == window.id })?.selected
+            guard let pick = mine.first(where: { $0.id == wanted }) ?? mine.first else { continue }
+            select(pick.id, in: window)
+        }
+        activeWindow = active
+        let mine = sessions(in: active)
+        let wanted = persisted.first(where: \.selected)?.id ?? saved.first(where: { $0.id == active.id })?.selected
+        if let pick = mine.first(where: { $0.id == wanted }) ?? mine.first {
+            select(pick.id, in: active)
+        }
+        onActivateWindow?(active)
+    }
+
+    /// The window new sessions go into while it is set: `inWindow`.
+    @ObservationIgnored private var placingWindow: SessionWindow?
+
+    /// Run `body` with every session it makes placed in `window`, rather
+    /// than in the active one: a new window's first session, `wortel new`
+    /// from a session in a window behind.
+    /// The session in front of the window new sessions go into now: what a
+    /// new one takes its folder or repository from when given none.
+    var placingSelected: Session? { (placingWindow ?? activeWindow)?.selected }
+
+    func inWindow<T>(_ window: SessionWindow?, _ body: () -> T) -> T {
+        guard let window else { return body() }
+        let previous = placingWindow
+        placingWindow = window
+        defer { placingWindow = previous }
+        return body()
     }
 
     /// A session as `entry` saved it, agent resume owed and all: what launch
@@ -907,6 +1146,7 @@ final class SessionManager {
         noteCheckout(session)
         // A colour only a newer build knows reads as none.
         session.colour = entry.colour.flatMap(SessionColour.init(rawValue:))
+        session.windowID = entry.windowID
         // One already past is due now: `syncReminders` fires it once launch is done.
         session.remindAt = entry.remindAt
         session.createdAt = entry.createdAt
@@ -1150,7 +1390,7 @@ final class SessionManager {
                 // of now. An agent that survived the last quit keeps what was
                 // saved for it: it drew itself before this launch.
                 workBeganAt[session.id] = nil
-                if repaintInPlace == session.id { repaintInPlace = nil }
+                repaintInPlace.remove(session.id)
                 if marker == nil {
                     session.agentPaintedDark = nil
                 } else if agentMarkersBaselined || session.agentPaintedDark == nil {
@@ -1582,6 +1822,7 @@ final class SessionManager {
                     via origin: SessionOrigin = .menu, starting start: SessionStart) -> Session {
         // New sessions land next to what you're looking at: the explicit folder
         // (header context menu) or the selected session's folder, else top level.
+        let selected = (placingWindow ?? activeWindow)?.selected
         let dir = folder ?? selected?.folderPath
         // Each remembered answer is checked before it's used, so a project that
         // moved on disk falls through to the next one rather than starting a
@@ -1673,6 +1914,9 @@ final class SessionManager {
         session.startedWithSettingsCommand = usesCommand
         session.createdAt = Date()
         prepare?(session)
+        // In the window it was asked for in: the one being placed into
+        // (`placing`), else the one you're in.
+        session.windowID = (placingWindow ?? activeWindow)?.id
         // Where it goes in the stored order, which is what a Manual section
         // draws (a sorted one puts it by its sort: on top, for Recent and
         // Created). At the top level, on top: a list nobody
@@ -1683,9 +1927,9 @@ final class SessionManager {
         // folder, so it is no anchor for one.
         let index = SidebarLayout.indexForNew(
             inFolder: dir, rows: sessions.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
-            selected: selectedID, pinned: pinnedIDs)
+            selected: (placingWindow ?? activeWindow)?.selectedID, pinned: pinnedIDs)
         sessions.insert(session, at: index)
-        let madeFrom = selectedID
+        let madeFrom = (placingWindow ?? activeWindow)?.selectedID
         normalizeOrder() // slot the new row into its folder's contiguous block
         // Never select into a hidden row.
         if let dir { collapsedFolders.remove(dir) } else { setLooseCollapsed(false) }
@@ -1949,7 +2193,7 @@ final class SessionManager {
         // given a command (`wortel new -- …`, or the one in Settings): a
         // caller is told it started, and a command waiting for a click is
         // one a quit would lose.
-        if session.id == selectedID || session.startupInput != nil {
+        if isFront(session.id) || session.startupInput != nil {
             session.ensureSurfaceView(runtime: runtime)
         }
         scheduleSave()
@@ -2439,12 +2683,14 @@ final class SessionManager {
             session \(session.id.uuidString, privacy: .public) closed\
             \(session.runningAgent.map { ", ending its \($0)" } ?? "", privacy: .public)
             """)
-        let wasSelected = session.id == selectedID
+        let home = window(of: session)
+        let wasSelected = session.id == home.selectedID
         // Over the rows as drawn, so it is the row above on screen, sorted
         // or not, and never one inside a folded section. Or the session this
         // one was made from, when you never left it.
         let drawnNeighbour = SidebarStep.afterClosing(
-            session.id, in: drawnRows, madeFrom: justMade?.session == session.id ? justMade?.from : nil)
+            session.id, in: drawnRows(in: home),
+            madeFrom: justMade?.session == session.id ? justMade?.from : nil)
         if justMade?.session == session.id || justMade?.from == session.id { justMade = nil }
         let hadAttention = session.needsAttention
         sleepTimers.removeValue(forKey: session.id)?.cancel()
@@ -2453,7 +2699,7 @@ final class SessionManager {
         lastKeysAt.removeValue(forKey: session.id)
         workBeganAt.removeValue(forKey: session.id)
         reportedRestSince.removeValue(forKey: session.id)
-        if repaintInPlace == session.id { repaintInPlace = nil }
+        repaintInPlace.remove(session.id)
         cancelMove(session)
         sleptAt.removeValue(forKey: session.id)
         sleepSurvivors.removeValue(forKey: session.id)
@@ -2516,10 +2762,18 @@ final class SessionManager {
         // session that no longer exists.
         onAttentionCleared?(session)
 
-        guard !sessions.isEmpty else {
-            selectedID = nil
-            saveNow()
-            onAllClosed?()
+        let left = sessions(in: home)
+        guard !left.isEmpty else {
+            select(nil, in: home)
+            if windows.count > 1 {
+                // Another window is open: this one goes, as an empty
+                // Terminal window does.
+                scheduleSave()
+                onWindowEmptied?(home)
+            } else {
+                saveNow()
+                onAllClosed?()
+            }
             return
         }
 
@@ -2527,9 +2781,11 @@ final class SessionManager {
         // on the session the closed one was made from, if you never left it.
         // Otherwise the row *above*, not the one that slid into the closed
         // row's slot. Only the topmost row has nothing above it, and there
-        // the row below is the only answer.
+        // the row below is the only answer. Within the window it was in.
         if wasSelected {
-            selectedID = drawnNeighbour ?? sessions[max(index - 1, 0)].id
+            let neighbour = drawnNeighbour.flatMap { id in left.contains { $0.id == id } ? id : nil }
+            let above = sessions[..<min(index, sessions.count)].last { window(of: $0) === home }
+            select(neighbour ?? above?.id ?? left[0].id, in: home)
         }
         scheduleSave()
     }
@@ -2599,11 +2855,16 @@ final class SessionManager {
             return
         }
         let closingIDs = Set(closing.map(\.id))
-        if let current = selectedID, closingIDs.contains(current),
-           let index = sessions.firstIndex(where: { $0.id == current }),
-           let survivor = sessions[..<index].last(where: { !closingIDs.contains($0.id) })
-            ?? sessions[index...].first(where: { !closingIDs.contains($0.id) }) {
-            selectedID = survivor.id
+        for window in windows {
+            guard let current = window.selectedID, closingIDs.contains(current) else { continue }
+            let mine = sessions(in: window)
+            guard let index = mine.firstIndex(where: { $0.id == current }) else { continue }
+            // None left in it (the window is closing with all of them):
+            // nothing in front, rather than each next one's shell started
+            // only to be closed.
+            let survivor = mine[..<index].last(where: { !closingIDs.contains($0.id) })
+                ?? mine[index...].first(where: { !closingIDs.contains($0.id) })
+            select(survivor?.id, in: window)
         }
         let items = closing.compactMap(archivedEntry(for:))
         if !items.isEmpty {
@@ -2628,7 +2889,7 @@ final class SessionManager {
     /// seconds at most), named for now with a placeholder, and for the work
     /// once the session has a name (`nameBranchForWork`). The repository is
     /// the selected session's, as for any new branch (`branchSource`).
-    /// `wortel new --worktree`, and what ⇧⌘N's sheet does when Return is
+    /// `wortel new --worktree`, and what ⌥⇧⌘N's sheet does when Return is
     /// pressed on it as it opens (`newWorktreeSessionFromSheet`).
     @discardableResult
     func newWorktreeSession(from directory: String? = nil, inFolder folder: String? = nil,
@@ -2855,6 +3116,8 @@ final class SessionManager {
         if session.cwd != start { session.cwd = start }
         if inside(session.originCwd) == nil { session.originCwd = item.checkout }
         noteCheckout(session)
+        // Back in the window you're in, wherever it was archived from.
+        session.windowID = (placingWindow ?? activeWindow)?.id
         appendRestored(session)
         normalizeOrder()
         assignPortBlocks()
@@ -3061,8 +3324,10 @@ final class SessionManager {
     func select(index: Int) {
         // Closed since the sidebar last drew: left out, so the rest move up
         // as their rows already have.
-        let live = Set(sessions.map(\.id))
-        let order = (shortcutIDs ?? sessions.prefix(9).map(\.id)).filter(live.contains)
+        guard let activeWindow else { return }
+        let mine = sessions(in: activeWindow)
+        let live = Set(mine.map(\.id))
+        let order = (shortcutIDs ?? mine.prefix(9).map(\.id)).filter(live.contains)
         guard order.indices.contains(index) else { return }
         selectedID = order[index]
     }
@@ -3073,10 +3338,12 @@ final class SessionManager {
         return index + 1
     }
 
-    /// The outline drew its rows: the first nine are ⌘1…⌘9's from now on.
-    func noteDrawnRows(_ drawn: [Session.ID]) {
+    /// A window's outline drew its rows: the first nine are ⌘1…⌘9's there
+    /// from now on.
+    func noteDrawnRows(_ drawn: [Session.ID], in window: SessionWindow) {
+        window.sidebarRowOrder = drawn
         let first = Array(drawn.prefix(9))
-        if first != shortcutIDs { shortcutIDs = first }
+        if first != window.shortcutIDs { window.shortcutIDs = first }
     }
 
     /// Select a session by id (e.g. from tapping its attention notification).
@@ -3086,6 +3353,7 @@ final class SessionManager {
         // clicked, with Wortel behind another app): nothing changes hands,
         // so the reminder is answered here, ring and banner both.
         if id == selectedID, answerReminder(session) { session.markedUnread = false }
+        // In front of another window, the setter's arrival answers it.
         selectedID = id
     }
 
@@ -3155,9 +3423,16 @@ final class SessionManager {
     /// sections left out when it has published nothing (before the first
     /// draw, or with every section folded, when that is empty too).
     private var drawnRows: [Session.ID] {
-        let live = Set(sessions.map(\.id))
-        let drawn = sidebarRowOrder.filter(live.contains)
-        return drawn.isEmpty ? sessions.filter(isVisibleInSidebar).map(\.id) : drawn
+        drawnRows(in: activeWindow)
+    }
+
+    /// `window`'s rows, as `drawnRows` is the active window's.
+    private func drawnRows(in window: SessionWindow?) -> [Session.ID] {
+        guard let window else { return [] }
+        let mine = sessions(in: window)
+        let live = Set(mine.map(\.id))
+        let drawn = window.sidebarRowOrder.filter(live.contains)
+        return drawn.isEmpty ? mine.filter(isVisibleInSidebar).map(\.id) : drawn
     }
 
     /// Create surfaces for restored sessions that don't have one yet, one per
@@ -3211,10 +3486,11 @@ final class SessionManager {
     @ObservationIgnored private var workBeganAt: [Session.ID: Date] = [:]
     /// Since when each reporting agent has not said `working`.
     @ObservationIgnored private var reportedRestSince: [Session.ID: Date] = [:]
-    /// The session that was in front when light and dark last changed, while
-    /// its agent is still owed a restart where it stands. Given up the moment
-    /// anything happens in it: the selection moving, text going in, work.
-    @ObservationIgnored private var repaintInPlace: Session.ID?
+    /// The sessions that were in front (one per window) when light and dark
+    /// last changed, while their agents are still owed a restart where they
+    /// stand. Each given up the moment anything happens in it: its window
+    /// moving on, text going in, work.
+    @ObservationIgnored private var repaintInPlace: Set<Session.ID> = []
     @ObservationIgnored private var appearanceObserver: NSObjectProtocol?
 
     /// Start the clock for `session`'s agent, unless one is running already.
@@ -3388,7 +3664,7 @@ final class SessionManager {
             launchIsSimple: AgentCommandLine.isSimple(session.runningArgv ?? agent),
             resumable: resumable,
             inHomeFolder: marker.cwd.map { AgentSleep.isHomeFolder($0) } ?? false,
-            selected: id == selectedID,
+            selected: isFront(id),
             busy: session.isBusy || busyTimers[id] != nil || quiesceTimers[id] != nil,
             rest: rest,
             quietSince: lastBusyInterval[id]?.cleared,
@@ -3398,7 +3674,7 @@ final class SessionManager {
             remoteControl: remoteControl,
             repaint: isPaintedForTheOtherAppearance(session),
             keysSinceWork: keysSinceWork,
-            inPlace: repaintInPlace == id,
+            inPlace: repaintInPlace.contains(id),
             now: Date())
         return SleepCandidate(inputs: inputs, marker: marker, conversationID: conversationID,
                               input: input ?? "", group: group,
@@ -3476,10 +3752,10 @@ final class SessionManager {
         guard case .ending(let sleeper, _) = session.sleep else { return }
         // In front, only the one being restarted where it stands, which
         // `commitSleep` brings straight back, or one being moved: you asked.
-        let inPlace = cause == .appearance && repaintInPlace == id
-        if inPlace { repaintInPlace = nil }
+        let inPlace = cause == .appearance && repaintInPlace.contains(id)
+        if inPlace { repaintInPlace.remove(id) }
         guard session.surfaceView?.ptyHost?.foregroundProcessGroup() == group,
-              !session.isBusy, id != selectedID || inPlace || moving else {
+              !session.isBusy, !isFront(id) || inPlace || moving else {
             session.sleep = .awake
             sleepSurvivors[id] = nil
             scheduleSave()
@@ -3570,7 +3846,7 @@ final class SessionManager {
         // Asked for while it was going (selected, or sent to): it comes
         // straight back. Without this the session someone is looking at sat
         // on a bare shell until they left it and returned.
-        if wantsWake.remove(id) != nil || id == selectedID {
+        if wantsWake.remove(id) != nil || isFront(id) {
             DispatchQueue.main.asyncAfter(deadline: .now() + AgentSleep.wakeDwell) { [weak self, weak session] in
                 guard let self, let session else { return }
                 self.wake(session)
@@ -3642,7 +3918,7 @@ final class SessionManager {
     /// selection has stayed a moment (so stepping past rows starts nothing).
     private func noteSelectionForSleep(left: Session.ID?, arrived: Session) {
         // No longer in front: its agent goes by the rule for one out of sight.
-        if repaintInPlace != arrived.id { repaintInPlace = nil }
+        if let left, left != arrived.id { repaintInPlace.remove(left) }
         if let left, left != arrived.id, let old = sessions.first(where: { $0.id == left }) {
             hiddenSince[left] = Date()
             armSleep(old, replacing: true)
@@ -3655,7 +3931,7 @@ final class SessionManager {
         guard arrived.sleep.sleeper != nil else { return }
         let id = arrived.id
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.selectedID == id,
+            guard let self, self.isFront(id),
                   let session = self.sessions.first(where: { $0.id == id }) else { return }
             self.wake(session)
         }
@@ -3975,7 +4251,7 @@ final class SessionManager {
     /// touched, and is looked at again when it next comes to rest or its
     /// session is left (`armSleep`).
     private func appearanceChanged() {
-        repaintInPlace = nil
+        repaintInPlace = []
         let stale = sessions.filter { session in
             guard case .awake = session.sleep else { return false }
             return isPaintedForTheOtherAppearance(session)
@@ -3985,24 +4261,24 @@ final class SessionManager {
         // and arms that.
         guard !stale.isEmpty else { return }
         AgentSleepLog.log.notice("the appearance changed: \(stale.count) agents are painted for the other one")
-        // The one in front is offered a restart where it stands, for this
-        // look only: kept below if it may have one now or in a moment, and
-        // taken back if not. One at work in front when the Mac changed is
-        // not restarted under the answer it then gives.
-        let front = stale.first(where: { $0.id == selectedID })?.id
-        repaintInPlace = front
+        // The one in front of each window is offered a restart where it
+        // stands, for this look only: kept below if it may have one now or
+        // in a moment, and taken back if not. One at work in front when the
+        // Mac changed is not restarted under the answer it then gives.
+        let fronts = Set(stale.filter { isFront($0.id) }.map(\.id))
+        repaintInPlace = fronts
         let table = ProcessTable.snapshot()
         let markers = AgentResumeStore.currentMarkers()
         var going: [(Session, SleepCandidate)] = []
-        var frontMayRestart = false
-        defer { if !frontMayRestart, repaintInPlace == front { repaintInPlace = nil } }
+        var mayRestart: Set<Session.ID> = []
+        defer { repaintInPlace.subtract(fronts.subtracting(mayRestart)) }
         for session in stale {
             if let owed = session.owedResume, owed.isOwed(at: Date()) { continue }
             guard let candidate = sleepCandidate(for: session, table: table, markers: markers) else { continue }
             let verdict = AgentSleep.decide(candidate.inputs)
-            if session.id == front {
+            if fronts.contains(session.id) {
                 switch verdict {
-                case .repaint, .notBefore: frontMayRestart = true
+                case .repaint, .notBefore: mayRestart.insert(session.id)
                 case .sleep, .never: break
                 }
             }
@@ -4044,7 +4320,7 @@ final class SessionManager {
         // Working: whatever clock was running towards sleep is off, and so
         // is a restart where it stands.
         sleepTimers.removeValue(forKey: session.id)?.cancel()
-        if repaintInPlace == session.id { repaintInPlace = nil }
+        repaintInPlace.remove(session.id)
         quiesceTimers.removeValue(forKey: session.id)?.cancel()
         guard busyTimers[session.id] == nil, !session.isBusy else { return }
         let id = session.id
@@ -4548,7 +4824,11 @@ final class SessionManager {
         // and raised nothing for it, however long you were elsewhere. Found
         // 2026-11-19 running a background copy: the selected session's
         // question raised nothing while another app was being typed in.
-        (NSApp?.isActive ?? appIsActive) && windowIsVisible && session.id == selectedID
+        // Every window's front session counts: two windows side by side are
+        // two sessions in view.
+        guard NSApp?.isActive ?? appIsActive else { return false }
+        let window = window(of: session)
+        return window.isVisible && window.selectedID == session.id
     }
 
     /// How long the Mac has to go without a key, a click, a scroll or the
@@ -4966,7 +5246,7 @@ final class SessionManager {
             scheduleSave()
             if !launching, isActivelyViewing(session) {
                 // You're already here: the ring flashes, and that's all.
-                attentionFlash = AttentionFlash(kind: .finished)
+                window(of: session).attentionFlash = AttentionFlash(kind: .finished)
                 onReminderChanged?(session, nil)
             } else {
                 markUnread(session)
@@ -5040,11 +5320,11 @@ final class SessionManager {
 
     /// Give the keyboard back to the selected session: its terminal, when that
     /// is in front of its row; otherwise what is in front of the main area,
-    /// as a switch to it would. Set by the app layer, which owns the window.
-    @ObservationIgnored var onReturnKeyboard: (() -> Void)?
-
+    /// as a switch to it would. The active window's, which the app layer
+    /// sets (`SessionWindow.onReturnKeyboard`): a click or a rename in a
+    /// sidebar made its window the active one.
     func returnKeyboardToSession() {
-        onReturnKeyboard?()
+        activeWindow?.onReturnKeyboard?()
     }
 
     /// Esc, or typing in the terminal: back to the session on screen alone.
@@ -5074,9 +5354,9 @@ final class SessionManager {
 
     /// The rows drawn changed (a section folded): what's no longer drawn
     /// leaves the selection.
-    func pruneSidebarSelection(toDrawn drawn: [Session.ID]) {
-        sidebarRowOrder = drawn
-        guard sidebarSelection.isMultiple else { return }
+    func pruneSidebarSelection(toDrawn drawn: [Session.ID], in window: SessionWindow) {
+        window.sidebarRowOrder = drawn
+        guard window === activeWindow, sidebarSelection.isMultiple else { return }
         var pruned = sidebarSelection
         pruned.prune(to: Set(drawn), lead: selectedID)
         if pruned != sidebarSelection { sidebarSelection = pruned }
@@ -5125,7 +5405,8 @@ final class SessionManager {
     func appDidBecomeActive() {
         appIsActive = true
         checkFolders()
-        if let selected {
+        for window in windows where window.isVisible {
+            guard let selected = window.selected else { continue }
             clearAttentionOnShow(selected)
             scheduleCaughtUp(selected)
         }
@@ -5133,7 +5414,7 @@ final class SessionManager {
 
     func appDidResignActive() {
         appIsActive = false
-        cancelCaughtUp(selectedID)
+        windows.forEach { cancelCaughtUp($0.selectedID) }
     }
 
     /// The main window's on-screen visibility changed (occlusion state /
@@ -5141,13 +5422,13 @@ final class SessionManager {
     /// now see the selected session — clear its attention, same as activate,
     /// with the same exception: a display waking from sleep uncovers the
     /// window too, and is not someone reading it.
-    func windowVisibilityChanged(_ visible: Bool) {
-        windowIsVisible = visible
-        if visible, appIsActive, let selected {
+    func windowVisibilityChanged(_ window: SessionWindow, visible: Bool) {
+        window.isVisible = visible
+        if visible, appIsActive, let selected = window.selected {
             clearAttentionOnShow(selected)
             scheduleCaughtUp(selected)
         } else {
-            cancelCaughtUp(selectedID)
+            cancelCaughtUp(window.selectedID)
         }
     }
 
@@ -5461,7 +5742,7 @@ final class SessionManager {
             originCwd: session.originCwd,
             selected: session.id == selectedID, nameSource: session.nameSource.rawValue,
             worktreeBranch: session.worktreeBranch,
-            colour: session.colour?.rawValue,
+            colour: session.colour?.rawValue, windowID: session.windowID,
             gitPanelVisible: session.gitPanelVisible,
             inspectorPane: session.inspectorPane?.rawValue,
             sideTabs: session.sideTabs.map(\.rawValue),
@@ -5558,7 +5839,18 @@ final class SessionManager {
     private func scheduleSave() {
         guard hasRestored else { return }
         rememberProjectRoots()
-        store.scheduleSave { [weak self] in self?.persistedSessions() ?? [] }
+        store.scheduleSave { [weak self] in
+            self?.saveWindows()
+            return self?.persistedSessions() ?? []
+        }
+    }
+
+    /// `windows.json`: each window's place and the session it had in front,
+    /// in the order they were opened. Beside `sessions.json`, written with it.
+    private func saveWindows() {
+        WindowStore.save(windows.map {
+            PersistedWindow(id: $0.id, frame: $0.frame, selected: $0.selectedID)
+        })
     }
 
     /// Whether `restore` has read the saved sessions. Nothing is saved before
@@ -5624,6 +5916,7 @@ final class SessionManager {
 
     func saveNow() {
         guard hasRestored else { return }
+        saveWindows()
         store.saveNow(persistedSessions(vouching: true))
     }
 
@@ -5758,7 +6051,7 @@ final class SessionManager {
                 guard let self, let session else { return }
                 self.lastKeysAt[session.id] = Date()
                 // Somebody is using it: no restart under their hands.
-                if self.repaintInPlace == session.id { self.repaintInPlace = nil }
+                self.repaintInPlace.remove(session.id)
             }
             // A Return of yours: the sidebar's Recent. Saved, so
             // the order survives a relaunch; the save is debounced.

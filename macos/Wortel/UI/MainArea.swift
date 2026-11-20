@@ -16,13 +16,15 @@ final class MainAreaController: NSViewController {
     private let tabHost = SideTerminalHostController()
     private let runtime: GhosttyRuntime
     private let manager: SessionManager
+    private let home: SessionWindow
     private let git: GitPanelModel
 
-    init(terminal: NSViewController, runtime: GhosttyRuntime, manager: SessionManager,
+    init(terminal: NSViewController, runtime: GhosttyRuntime, manager: SessionManager, home: SessionWindow,
          git: GitPanelModel, files: FileTreeModel, previewTabs: PreviewTabs) {
         self.terminal = terminal
         self.runtime = runtime
         self.manager = manager
+        self.home = home
         self.git = git
         paneHost = NSHostingController(rootView: MainAreaPane(git: git, files: files,
                                                               previewTabs: previewTabs))
@@ -57,7 +59,7 @@ final class MainAreaController: NSViewController {
     }
 
     private func sync() {
-        let session = manager.selected
+        let session = home.selected
         let active = git.activeMainTab
         // A pane, a file, a web page: anything that isn't a terminal is drawn
         // by the SwiftUI cover.
@@ -82,7 +84,7 @@ final class MainAreaController: NSViewController {
     /// the session's terminal takes the keyboard at launch and on a switch.
     private func keepKeyboardOffCoveredTerminal() {
         guard git.activeMainTab != nil, let window = view.window,
-              let main = manager.selected?.surfaceView, window.firstResponder === main else { return }
+              let main = home.selected?.surfaceView, window.firstResponder === main else { return }
         window.makeFirstResponder(nil)
         git.focusFront(of: .main)
     }

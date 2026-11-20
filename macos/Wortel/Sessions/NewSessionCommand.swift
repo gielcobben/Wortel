@@ -48,7 +48,7 @@ enum NewSessionCommand {
 /// compiler lists each place that has to decide. A wrong guess either starts
 /// an agent nobody asked for or leaves out the one that was.
 enum SessionStart: Equatable {
-    /// What Settings says: the app's own ways in (⌘N, ⌥⌘N, ⇧⌘N, ⌘O, a
+    /// What Settings says: the app's own ways in (⌘N, ⌥⌘N, ⌥⇧⌘N, ⌘O, a
     /// folder's +, a folder dropped on the window).
     case preferred
     /// A shell and nothing typed: New Terminal, `wortel new` without a

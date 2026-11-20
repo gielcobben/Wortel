@@ -9,9 +9,13 @@ then kept alive until the session closes; switching sessions never rebuilds a
 view.
 
 **`SessionManager`** (`Wortel/Sessions/SessionManager.swift`) — `@Observable
-@MainActor`, the single source of truth for the session list, `selectedID`, and
-inline-rename `editingID`. Setting `selectedID` (from a click *or* a menu
-shortcut) is the one code path that lazily spawns the selected surface. On
+@MainActor`, the single source of truth for the session list, the windows
+(`SessionWindow`, each with the session in front there), and inline-rename
+`editingID`. `selectedID` is the active window's; selecting goes through
+`select(_:in:)` (from a click *or* a menu shortcut), the one code path that
+lazily spawns the selected surface. "Is it on screen" is per window
+(`isFront`, `isOnScreen`): two windows side by side show two sessions, and
+neither raises attention or goes to sleep while it is shown. On
 launch, `restore()` spawns only the selected session's shell before the first
 frame, then `warmRemainingSurfaces()` warms the rest one-per-runloop-turn so
 launch stays lean. `wire()` connects each surface's callbacks (title/pwd/bell/

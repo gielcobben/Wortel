@@ -87,7 +87,7 @@ paste the URL where the branch name goes.
 wortel new --pr 1482 --name "review 1482"
 ```
 
-`--worktree` is ⇧⌘N from a script: a worktree of its own on a new branch
+`--worktree` is ⌥⇧⌘N from a script: a worktree of its own on a new branch
 Wortel names, from the default branch. The branch starts as a placeholder
 (`worktree/brave-river-1a2f`) and is renamed for the session once it has a
 name, as long as it hasn't been pushed.

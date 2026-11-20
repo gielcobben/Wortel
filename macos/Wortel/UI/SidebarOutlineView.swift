@@ -555,6 +555,19 @@ final class SidebarOutline: NSOutlineView {
     /// clicked (measured 2026-11-19). A rename field in a row is its own
     /// control and still takes it.
     override var acceptsFirstResponder: Bool { false }
+
+    /// A row dragged out of this list: held over a window behind, that window
+    /// comes forward (`SpringLoading`), so its sidebar can take the row.
+    ///
+    /// No `super`: NSTableView declares this (it is an NSDraggingSource) but
+    /// doesn't implement it, so the call raised an unrecognized selector on
+    /// every move, which AppKit swallows by ending the drag ("Ignoring
+    /// exception raised by SidebarOutline during a dragging session").
+    /// Session rows couldn't be dragged anywhere.
+    override func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+        SpringLoading.hover(at: screenPoint)
+    }
+
     /// Mouse-*down* on a folder header, outside the disclosure chevron.
     var onHeaderPressed: ((Any) -> Void)?
     /// Mouse-*down* on a session's row, a plain press: the switch happens
@@ -763,6 +776,9 @@ struct SidebarFolding: Equatable {
 
 struct SidebarOutlineView: NSViewRepresentable {
     let manager: SessionManager
+    /// The window this sidebar is in: its sessions are the rows, and its
+    /// front session has the pill.
+    let home: SessionWindow
     /// The sections in their stored (manual) order, each with its Sort By
     /// order. The coordinator decides the order they're drawn in (that, and
     /// `sortKeys` over it).
@@ -773,7 +789,7 @@ struct SidebarOutlineView: NSViewRepresentable {
     /// reaches the outline.
     let sortKeys: [UUID: SidebarSort.Key]?
 
-    func makeCoordinator() -> Coordinator { Coordinator(manager: manager) }
+    func makeCoordinator() -> Coordinator { Coordinator(manager: manager, home: home) }
 
     func makeNSView(context: Context) -> SidebarScrollView {
         let outline = SidebarOutline()
@@ -826,6 +842,8 @@ struct SidebarOutlineView: NSViewRepresentable {
         // And folders from Finder, which open as ⌘O opens one.
         outline.registerForDraggedTypes([Coordinator.sessionDragType, Coordinator.folderDragType, .fileURL])
         outline.setDraggingSourceOperationMask(.move, forLocal: true)
+        // Nothing outside the app takes a session; let go out there, it gets
+        // a window of its own (`draggingSession(_:endedAt:operation:)`).
         outline.setDraggingSourceOperationMask([], forLocal: false)
         // We draw our own insertion indicator (depth-aware, never clipped) —
         // see SidebarInsertionLine — so suppress AppKit's default drop feedback.
@@ -898,6 +916,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         }
 
         let manager: SessionManager
+        let home: SessionWindow
         weak var outline: NSOutlineView?
         var scrollObserver: NSObjectProtocol?
         weak var insertionLine: SidebarInsertionLine?
@@ -936,8 +955,9 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// press wasn't a drag. See `headerPressed`.
         private var pressedFolder: FolderItem?
 
-        init(manager: SessionManager) {
+        init(manager: SessionManager, home: SessionWindow) {
             self.manager = manager
+            self.home = home
             super.init()
             // A hover left set as the app went to the back (the row never hears
             // the pointer leave while inactive) must not hold the order.
@@ -1004,7 +1024,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                 let key = Self.drawnKey(group)
                 let drawn = SidebarSort.draw(manual: group.sessionIDs, base: group.sortedIDs, keys: keys,
                                              previous: drawnBefore[key],
-                                             holding: manager.selectedID, frozen: frozen)
+                                             holding: home.selectedID, frozen: frozen)
                 next[key] = drawn
                 return SidebarSnapshotGroup(folder: group.folder, sessionIDs: drawn.drawn,
                                             tallIDs: group.tallIDs, isPinned: group.isPinned)
@@ -1168,14 +1188,14 @@ struct SidebarOutlineView: NSViewRepresentable {
             for row in 0..<outline.numberOfRows {
                 if let session = outline.item(atRow: row) as? SessionItem { ids.append(session.id) }
             }
-            manager.sidebarRowOrder = ids
+            home.sidebarRowOrder = ids
             // A turn later: this runs inside SwiftUI's update, and the ⌘
             // numbers and the selection are observed state.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.manager.noteDrawnRows(self.manager.sidebarRowOrder)
+                self.manager.noteDrawnRows(self.home.sidebarRowOrder, in: self.home)
                 guard self.manager.sidebarSelection.isMultiple else { return }
-                self.manager.pruneSidebarSelection(toDrawn: self.manager.sidebarRowOrder)
+                self.manager.pruneSidebarSelection(toDrawn: self.home.sidebarRowOrder, in: self.home)
             }
         }
 
@@ -1422,13 +1442,13 @@ struct SidebarOutlineView: NSViewRepresentable {
         private func showsPill(_ item: Any) -> Bool {
             guard let session = item as? SessionItem else { return false }
             // While renaming, the row draws its editing pill instead.
-            return manager.selectedID == session.id && manager.editingID != session.id
+            return home.selectedID == session.id && manager.editingID != session.id
         }
 
         /// In a selection of several, and not the lead (which has the pill).
         private func showsAlsoSelected(_ item: Any) -> Bool {
             guard let session = item as? SessionItem, manager.sidebarSelection.isMultiple else { return false }
-            return manager.sidebarSelection.ids.contains(session.id) && manager.selectedID != session.id
+            return manager.sidebarSelection.ids.contains(session.id) && home.selectedID != session.id
                 && manager.editingID != session.id
         }
 
@@ -1442,7 +1462,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// on their own; the AppKit row views need this explicit loop.
         func observeSelection() {
             withObservationTracking {
-                _ = manager.selectedID
+                _ = home.selectedID
                 _ = manager.editingID
                 _ = manager.sidebarSelection
             } onChange: { [weak self] in
@@ -1499,7 +1519,7 @@ struct SidebarOutlineView: NSViewRepresentable {
         /// screen already, back into its terminal. Nothing switches then, so
         /// nothing else would give the terminal the keyboard.
         private func pressed(_ id: Session.ID) {
-            let switches = manager.selectedID != id
+            let switches = home.selectedID != id
             manager.clickSidebarRow(id, .plain)
             if !switches { manager.returnKeyboardToSession() }
         }
@@ -1645,6 +1665,25 @@ struct SidebarOutlineView: NSViewRepresentable {
             return nil
         }
 
+        /// Sessions let go of outside every Wortel window go to a new window
+        /// there, as a tab torn out of Safari does. Let go over a window of
+        /// ours (a drop refused, or back where it began) is not out.
+        func outlineView(_ outlineView: NSOutlineView, draggingSession session: NSDraggingSession,
+                         endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+            SpringLoading.end()
+            guard operation.isEmpty,
+                  let ids = session.draggingPasteboard.string(forType: Self.sessionDragType).map(Self.ids),
+                  !ids.isEmpty,
+                  !NSApp.windows.contains(where: { $0.isVisible && $0.frame.contains(screenPoint) })
+            else { return }
+            // A turn later: the drag is still unwinding, and a window made
+            // inside it is ordered behind the one the drag began in.
+            DispatchQueue.main.async { [manager] in
+                if manager.moveSessions(ids, toWindow: nil, topLeft: screenPoint) != nil {
+                    Telemetry.capture(.sessionMovedWindow(via: .dragOut))
+                }
+            }
+        }
 
         // MARK: Drop validation
         //
@@ -1696,6 +1735,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                    Self.ids(dragged).allSatisfy({ id in
                        manager.sessions.first { $0.id == id }.map {
                            $0.folderPath == drop.onFolder?.name && !manager.isPinned($0)
+                               && manager.window(of: $0) === home
                        } ?? true
                    }) {
                     hideInsertion()
@@ -1752,6 +1792,12 @@ struct SidebarOutlineView: NSViewRepresentable {
                 let moving = ids.compactMap { byID[$0] }
                 guard !moving.isEmpty else { return false }
                 let movingIDs = Set(moving.map(\.id))
+                // From another window's sidebar: into this window first, the
+                // terminals with them, then placed as any drop is.
+                let foreign = moving.filter { manager.window(of: $0) !== home }
+                if !foreign.isEmpty, manager.moveSessions(foreign.map(\.id), toWindow: home) != nil {
+                    Telemetry.capture(.sessionMovedWindow(via: .drag))
+                }
                 // Where it lands is named by the row drawn just below the drop
                 // line (not a dragged one), or nil for the end of the section.
                 // An index would mean something else in the stored order than
@@ -1765,7 +1811,7 @@ struct SidebarOutlineView: NSViewRepresentable {
                 // is. First as stored, not as drawn: with Sort Unread First on,
                 // the top row drawn can be anywhere in the stored order.
                 func top(pinned: Bool, folder: String? = nil) -> Session.ID? {
-                    manager.sidebarGroups
+                    manager.sidebarGroups(in: home)
                         .first { $0.isPinned == pinned && (pinned || $0.folder == folder) }?
                         .sessions.first { !movingIDs.contains($0.id) }?.id
                 }

@@ -48,6 +48,62 @@ with resizes held throughout, so the terminal is shown at its final size and
 the one being left is never resized. Waking a hibernated terminal holds
 resizes until it is swapped in, for the same reason.
 
+**Several windows** (`MainWindowController`, `SessionWindow`, `WindowStore`,
+since 2026-11-19). Each main window is a `MainWindowController`: its NSWindow,
+split, titlebar rows, git panel and file tree, all one per window, wired to
+the app by `AppDelegate.wire`. Its share of the session list is a
+`SessionWindow`: the session in front there, its ⌘1…⌘9, its drawn row order,
+its attention flash and whether it is on screen. The views of a window read
+*its* `SessionWindow` (`home`), never `manager.selected`, or the window behind
+would draw the session you are in.
+
+- **The active window** (`SessionManager.activeWindow`) is the main window last
+  made key. `manager.selectedID` is its selection, so the menu commands, ⌘P's
+  current row and a new session's folder keep meaning "where you are".
+  Assigning `selectedID` a session in another window selects it there, makes
+  that window active and brings it forward (`onActivateWindow`): that is how a
+  notification, ⌘P and Next Waiting Session reach another window. The
+  delegate's `window`, `gitPanel`, `fileTree` and `splitController` are the
+  active window's.
+- **Moving** is `SessionManager.moveSessions(_:toWindow:)`: the window left
+  shows its next row first, then the session's `windowID` changes and the
+  new window shows it. The terminal is re-parented by that window's
+  `TerminalHostViewController`, which never hides a view another host has
+  taken (`ownCurrentView`); nothing is restarted. A window left empty closes
+  (`onWindowEmptied`). Sidebar drops from another window move first and are
+  then placed as any drop; a drag that ends outside every Wortel window makes
+  a new window there (`draggingSession(_:endedAt:operation:)`, operation none).
+  An Esc-cancelled drag ends the same way, which is left as it is, as Safari's
+  tab drag is.
+- **Closing** a window that isn't the last closes its sessions through
+  `requestClose` (the usual question if something runs, worktree sessions
+  archived); it goes when the last has. The last window closes as the one
+  window always did: the app quits and the sessions live on in the keeper.
+- **Saved** in `windows.json` beside `sessions.json`, in the order opened:
+  each window's id, frame and front session. Each session carries its
+  `windowID`. An older build drops that field, so the next launch puts
+  everything in the first window and drops the windows left empty
+  (`WindowStore.assign`, tested). The sidebar's width is still the split's one
+  autosave, shared by all windows. The first window is placed before restore,
+  so no terminal is laid out at a size it is about to leave.
+- **Spring-loading** (`SpringLoading`): a drag held still over a main
+  window that another main window is in front of brings it forward, as the
+  Finder's windows do, after the Mac's own spring-loading delay and only
+  while its setting is on (`com.apple.springing.enabled` and `.delay`, the
+  Accessibility ▸ Pointer Control switch). Every drag that can end in
+  another window reports the pointer: session rows (`SidebarOutline`), tabs
+  (`TabDragController`), files out of a list (`AppDelegate.fileDrag`) and a
+  preview window dragged by its row (`previewWindows.onDock`). It looks at
+  the window a click would land in (`NSWindow.windowNumber(at:)`), so a
+  window covered there by another app, or by a preview window, stays where
+  it is, and it does nothing once the button is up.
+- **A declared, empty folder** is drawn in the first window only
+  (`sidebarGroups(in:)`); a folder with sessions is drawn in each window that
+  has some.
+- Still one of each, app-wide: the ⌘P panel (shown over the active window),
+  the preview windows, Settings, and the anchors of the sidebar's popovers
+  (update, permissions, telemetry), which are the sidebar made last.
+
 **Sidebar selection and order** (`SidebarOutlineView`, `SessionSelection`,
 `SidebarSort`, both pure and in `WortelTests`). A plain press on a session
 switches to it on mouse-down, as Finder's sidebar does (`SidebarOutline.mouseDown`

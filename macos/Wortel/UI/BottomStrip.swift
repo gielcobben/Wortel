@@ -204,12 +204,14 @@ final class BottomPaneController: NSViewController {
     private let paneHost: NSHostingController<BottomAreaPane>
     private let runtime: GhosttyRuntime
     private let manager: SessionManager
+    private let home: SessionWindow
     private let git: GitPanelModel
 
-    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
+    init(runtime: GhosttyRuntime, manager: SessionManager, home: SessionWindow, git: GitPanelModel,
          files: FileTreeModel, previewTabs: PreviewTabs) {
         self.runtime = runtime
         self.manager = manager
+        self.home = home
         self.git = git
         paneHost = NSHostingController(rootView: BottomAreaPane(git: git, files: files,
                                                                 previewTabs: previewTabs))
@@ -250,7 +252,7 @@ final class BottomPaneController: NSViewController {
         strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
         strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.manager.selected) }
+        strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.home.selected) }
         observe()
     }
 
@@ -268,7 +270,7 @@ final class BottomPaneController: NSViewController {
     }
 
     private func sync() {
-        let session = manager.selected
+        let session = home.selected
         bar.strip.update(items: git.bottomTabs.map { TitleBarController.stripItem(for: $0, in: session) },
                          active: git.activeBottomTab)
         let active = git.bottomVisible ? git.activeBottomTab : nil
@@ -332,9 +334,22 @@ final class TabDragController {
         case swap(leading: Bool, area: NSRect)
         /// Outside the window: a window of its own.
         case tearOff
+        /// A row in another main window: it moves to that window's session
+        /// (`elsewhere`).
+        case otherWindow
     }
 
     enum DockPhase { case moved, ended, cancelled }
+
+    /// What is under the pointer outside this window, for a tab drag.
+    enum Elsewhere {
+        /// Nothing of ours: this window, the desktop, another app.
+        case nothing
+        /// Another main window, not over a row that takes this tab.
+        case window
+        /// A row in another main window that takes it, now showing where.
+        case row
+    }
 
     var strips: [StripTarget] = []
     /// The session terminal's area, in window coordinates.
@@ -355,6 +370,12 @@ final class TabDragController {
     /// A file tab let go outside the window: open it in a window whose
     /// top-left is at this point, in screen coordinates.
     var onTearOff: (SideTab, NSPoint) -> Void = { _, _ in }
+    /// The other main windows, asked where a tab dragged out of this one
+    /// is, at a point in screen coordinates. `dragged` is the tab's ghost
+    /// window, to look past; the picture is what another row shows standing
+    /// in for the tab. On `.ended` over a row, that window takes the tab;
+    /// `.cancelled` takes down whatever another window showed.
+    var elsewhere: (DockPhase, SideTab, _ dragged: NSWindow?, NSPoint, NSImage?) -> Elsewhere = { _, _, _, _, _ in .nothing }
 
     private var overlay: TabDragOverlay?
     /// The tab's picture, kept so the overlay can stop drawing it while the
@@ -367,6 +388,11 @@ final class TabDragController {
     private weak var dragWindow: NSWindow?
     private var target: Target?
     private weak var source: NSView?
+    /// The tab being dragged, for `finish` to tell the other windows the
+    /// drag is over.
+    private var draggedTab: SideTab?
+    /// Another window was asked about this drag, so it is told when it ends.
+    private var askedElsewhere = false
 
     func handle(_ phase: SideTabStrip.DragPhase, tab: SideTab, view: NSView, point: NSPoint) {
         switch phase {
@@ -383,6 +409,7 @@ final class TabDragController {
             self.overlay = overlay
             dragWindow = window
             canTearOff = { if case .file = tab { return true } else { return false } }()
+            draggedTab = tab
             source = view
             view.alphaValue = 0.35
             update(tab: tab, point: point)
@@ -390,8 +417,12 @@ final class TabDragController {
             update(tab: tab, point: point)
         case .ended:
             let landing = target
-            let topLeft = view.window.flatMap { window in
-                tearOff?.windowTopLeft(for: window.convertPoint(toScreen: point))
+            let screen = view.window?.convertPoint(toScreen: point)
+            let topLeft = screen.flatMap { tearOff?.windowTopLeft(for: $0) }
+            if case .otherWindow? = landing, let screen {
+                // Before `finish`: the ghost is still there to look past.
+                _ = elsewhere(.ended, tab, tearOff?.window, screen, tabPicture)
+                askedElsewhere = false
             }
             finish()
             switch landing {
@@ -399,7 +430,7 @@ final class TabDragController {
             case .zone(let region, _): onDrop(tab, region, .max)
             case .swap(let leading, _): onSwap(tab, leading)
             case .tearOff: if let topLeft { onTearOff(tab, topLeft) }
-            case nil: break
+            case .otherWindow, nil: break
             }
         case .cancelled:
             finish()
@@ -449,7 +480,7 @@ final class TabDragController {
             switch landing {
             case .strip(let region, let index, _): onFileDrop(files, region, index)
             case .zone(let region, _): onFileDrop(files, region, .max)
-            case .swap, .tearOff, nil: break
+            case .swap, .tearOff, .otherWindow, nil: break
             }
         }
     }
@@ -462,9 +493,8 @@ final class TabDragController {
     /// aside while the tab stands in for it; on `.ended`, where the tab goes.
     /// Making it is the caller's: it has the window's diff and view to keep.
     @discardableResult
-    func handleDock(_ phase: DockPhase, url: URL, window: NSWindow, point: NSPoint,
+    func handleDock(_ phase: DockPhase, tab: SideTab, window: NSWindow, point: NSPoint,
                     picture: () -> NSImage?) -> (region: TabRegion, index: Int)? {
-        let tab = SideTab.file(url.resolvingSymlinksInPath().standardizedFileURL.path)
         switch phase {
         case .moved:
             guard let landing = stripLanding(tab: tab, point: point),
@@ -518,8 +548,29 @@ final class TabDragController {
 
     private func update(tab: SideTab, point: NSPoint) {
         draggingSession = tab == .session
-        target = resolve(tab: tab, point: point)
-        updateTearOff(point: point)
+        // A tab's drag (not a list's file, which `AppDelegate` takes to the
+        // window it's over): another window in front of the pointer has it,
+        // even inside this window's frame, as it is once that window sprang
+        // forward over this one.
+        var away = Elsewhere.nothing
+        if !draggingFile, let window = dragWindow {
+            let screen = window.convertPoint(toScreen: point)
+            SpringLoading.hover(at: screen, dragging: tearOff?.window)
+            away = elsewhere(.moved, tab, tearOff?.window, screen, tabPicture)
+            askedElsewhere = true
+        }
+        if away == .row {
+            target = .otherWindow
+            // That window's row draws the tab now.
+            tearOff?.hide()
+            overlay?.ghost = nil
+            overlay?.marker = nil
+            overlay?.zone = nil
+            overlay?.redraw()
+            return
+        }
+        target = away == .window ? nil : resolve(tab: tab, point: point)
+        updateTearOff(point: point, covered: away == .window)
         if draggingFile {
             // Never "move the column" for a file, and nothing over a terminal:
             // that drop is the terminal's (it types the path).
@@ -563,7 +614,7 @@ final class TabDragController {
                 overlay.zoneLabel = leading ? "Move Column to the Left" : "Move Column to the Right"
                 overlay.zoneEdge = leading ? .maxX : .minX
             }
-        case .tearOff, nil:
+        case .tearOff, .otherWindow, nil:
             overlay.marker = nil
             overlay.zone = nil
         }
@@ -662,9 +713,15 @@ final class TabDragController {
 
     /// Outside the window, a file tab becomes a window of its own: the
     /// ghost in the overlay gives way to one that can leave the window.
-    private func updateTearOff(point: NSPoint) {
-        guard canTearOff, let window = dragWindow else { return }
-        let outside = !NSRect(origin: .zero, size: window.frame.size).contains(point)
+    private func updateTearOff(point: NSPoint, covered: Bool) {
+        guard canTearOff, let window = dragWindow else {
+            // Nothing to show past the window's edge: the tab's picture
+            // stays in the overlay, which is clipped to it.
+            if !draggingFile, overlay?.ghost == nil { overlay?.ghost = tabPicture }
+            return
+        }
+        // Past the edge, or over another window in front of this one.
+        let outside = covered || !NSRect(origin: .zero, size: window.frame.size).contains(point)
         if outside, tearOff == nil {
             tearOff = TabTearOffGhost(tab: tabPicture, grab: overlay?.grabOffset ?? .zero,
                                       appearance: window.effectiveAppearance)
@@ -675,13 +732,23 @@ final class TabDragController {
             overlay?.ghost = nil
             tearOff.move(to: window.convertPoint(toScreen: point))
             tearOff.show()
-        } else if tearOff.isShown {
-            tearOff.hide()
+        } else {
+            // Back in: the overlay draws it again, also after another
+            // window's row stood in for it.
+            if tearOff.isShown { tearOff.hide() }
             overlay?.ghost = tabPicture
         }
     }
 
     private func finish() {
+        if let tab = draggedTab {
+            // This window's own tab drag: a window that only showed where a
+            // drag from elsewhere would land leaves both to that one.
+            if askedElsewhere { _ = elsewhere(.cancelled, tab, nil, .zero, nil) }
+            SpringLoading.end()
+        }
+        askedElsewhere = false
+        draggedTab = nil
         docking = false
         tearOff?.hide()
         tearOff = nil

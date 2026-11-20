@@ -72,6 +72,36 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 
 ## Window, terminal and keys
 
+- **2026-11-19. Several windows, each with its own sessions.** "One window"
+  had been a principle of design, never something tried and taken out. A
+  window owns its sessions (`Session.windowID`), its sidebar lists only
+  those, and a session moves between windows with its terminal running: a
+  drag onto another sidebar, a drag out of every window (a new one there, as
+  Safari, Arc and Warp tear off tabs), or Move to New Window / Move to Window ▸
+  / Merge All Windows. Two windows showing the same session was the other
+  model; it was not chosen, because an NSView has one parent and dragging
+  between windows would have meant nothing. Every window is the same fixed
+  frame of four places. See `macos/docs/architecture/window-and-sidebar.md`.
+- **2026-11-19. Drags between windows: spring-loading, and tabs that move.**
+  A drag held over a window behind brings it forward, as in the Finder, on
+  the Mac's own spring-loading setting and delay rather than one of ours.
+  A file or browser tab let go on another window's row moves into that
+  window's session, keeping its page or document. Terminal tabs don't: a
+  side shell belongs to its session's folder, and no tab moves between
+  sessions inside one window either.
+- **2026-11-19. ⇧⌘N is New Window; New Worktree Session is ⌥⇧⌘N.** Apple's
+  own apps use ⌘N for a window, but where ⌘N makes something smaller than a
+  window (VS Code, Zed, cmux) a window is ⇧⌘N, and Wortel's ⌘N is a session.
+  ⌥⇧⌘N keeps the worktree in the N family. A new window starts with a session
+  at home, as ⌥⌘N makes, so it is not a fifth way to start a session: it is
+  the fourth, somewhere new.
+- **2026-11-19. Closing a window closes its sessions, with the usual
+  question.** Only while another window stays open; the last one closes as
+  the one window always did, the app quitting and every session kept. Moving
+  the sessions into another window instead was the safe choice, and was not
+  the one chosen: a window you close is work you are done with, as in
+  Terminal. Worktree sessions archive, as ⇧⌘W does.
+
 - **2026-07-08. The window paints the background; the terminal is transparent
   with no blur.** Blur costs the compositor every frame (`1206fcc`). Since
   2026-11-19 the terminal is opaque and draws the page itself, in the page's

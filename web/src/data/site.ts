@@ -267,7 +267,8 @@ export const DOCS_SECTIONS: Section[] = [
           rows: [
             ['New session', '⌘N'],
             ['New session at home', '⌥⌘N'],
-            ['New worktree session / open folder', '⇧⌘N / ⌘O'],
+            ['New worktree session / open folder', '⌥⇧⌘N / ⌘O'],
+            ['New window', '⇧⌘N'],
             ['New terminal, without the command Settings starts', '⌃⌘N'],
             ['Go to a session, or bring back an archived one', '⌘P'],
             ['Run a command', '⇧⌘P'],
@@ -327,7 +328,7 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'Starting an agent in every new session',
     blocks: [
       {
-        p: 'In Settings (⌘,), “New sessions start with” takes any command. Type one, like claude or codex, or pick one of the agents Wortel finds on your Mac from the menu beside it, and every new session starts with it: ⌘N, ⌥⌘N, ⇧⌘N, ⌘O, a folder’s + and a folder dropped on the sidebar. Session ▸ New Terminal (⌃⌘N) opens one without it, and only exists while the field is filled. Left empty, a new session is a plain terminal. wortel new and the sessions brought back at launch never use it.',
+        p: 'In Settings (⌘,), “New sessions start with” takes any command. Type one, like claude or codex, or pick one of the agents Wortel finds on your Mac from the menu beside it, and every new session starts with it: ⌘N, ⌥⌘N, ⌥⇧⌘N, ⌘O, a folder’s + and a folder dropped on the sidebar. Session ▸ New Terminal (⌃⌘N) opens one without it, and only exists while the field is filled. Left empty, a new session is a plain terminal. wortel new and the sessions brought back at launch never use it.',
       },
       {
         p: 'An agent session that would start in your home folder gets a folder of its own instead, in ~/Wortel, named for the day: ~/Wortel/2026-11-19/1, then 2. Files the agent makes for you are there. Claude Code asks whether to trust a folder the first time it runs in it, and never remembers the answer for your home folder, so the first one starts in ~/Wortel itself and asks once. Every one after that is covered by that answer. When a conversation there turns to a project somewhere else, Claude offers to move the session to it, and once you agree, the same conversation carries on in that folder, with its git. Claude Code learns what it can ask Wortel for from a skill Wortel puts in ~/.claude/skills/wortel. Edit it and Wortel leaves it alone; delete it and it stays deleted.',

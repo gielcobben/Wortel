@@ -3,8 +3,11 @@
 Part of the app's architecture record; the index is in `macos/AGENTS.md`.
 Paths are relative to `macos/`.
 
-One window. One `GhosttyRuntime`. A list of sessions, each owning exactly one
-terminal surface.
+One `GhosttyRuntime`. A list of sessions, each owning exactly one terminal
+surface, each in one main window (`docs/architecture/window-and-sidebar.md`,
+Several windows). A surface moving to another window is re-parented into
+that window's `TerminalHostViewController`; `SurfaceView.viewDidMoveToWindow`
+re-registers what depends on the window.
 
 **`GhosttyRuntime`** (`Wortel/Ghostty/GhosttyRuntime.swift`) — owns the single
 libghostty process state: `ghostty_init`, the config, the `ghostty_app_t`, and

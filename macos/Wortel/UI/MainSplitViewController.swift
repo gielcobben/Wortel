@@ -58,6 +58,8 @@ final class MainSplitViewController: NSSplitViewController {
 
     private let runtime: GhosttyRuntime
     private let manager: SessionManager
+    /// The window's share of the sessions: whose session this split shows.
+    let home: SessionWindow
     private let git: GitPanelModel
     private let files: FileTreeModel
 
@@ -98,11 +100,12 @@ final class MainSplitViewController: NSSplitViewController {
 
     private let previewTabs: PreviewTabs
 
-    init(runtime: GhosttyRuntime, manager: SessionManager, git: GitPanelModel,
+    init(runtime: GhosttyRuntime, manager: SessionManager, home: SessionWindow, git: GitPanelModel,
          files: FileTreeModel, titleBars: TitleBarController, previewTabs: PreviewTabs) {
         self.previewTabs = previewTabs
         self.runtime = runtime
         self.manager = manager
+        self.home = home
         self.git = git
         self.files = files
         self.titleBars = titleBars
@@ -136,7 +139,7 @@ final class MainSplitViewController: NSSplitViewController {
         // stack of rows (the Needs You section) rather than only a scrolling
         // list, those fought the split and squeezed the terminal to a few
         // columns in a corner: every session came up blank.
-        let sidebarHost = NSHostingController(rootView: SidebarPane(manager: manager))
+        let sidebarHost = NSHostingController(rootView: SidebarPane(manager: manager, home: home))
         sidebarHost.sizingOptions = []
         let sidebar = ChromePaneController(
             bar: titleBars.sidebarBar,
@@ -157,11 +160,11 @@ final class MainSplitViewController: NSSplitViewController {
         // their width, the terminal gives. An 80pt floor keeps the window
         // shrinkable; ghostty reflows to whatever width it gets, so a narrow
         // terminal is cramped rather than broken.
-        let bottomPane = BottomPaneController(runtime: runtime, manager: manager, git: git,
+        let bottomPane = BottomPaneController(runtime: runtime, manager: manager, home: home, git: git,
                                               files: files, previewTabs: previewTabs)
         let mainArea = MainAreaController(
-            terminal: TerminalPaneController(runtime: runtime, manager: manager, git: git, files: files),
-            runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs)
+            terminal: TerminalPaneController(runtime: runtime, manager: manager, home: home, git: git, files: files),
+            runtime: runtime, manager: manager, home: home, git: git, files: files, previewTabs: previewTabs)
         let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
         bottomAreaView = bottomPane.view
         terminalAreaView = workspace.terminalView
@@ -177,14 +180,14 @@ final class MainSplitViewController: NSSplitViewController {
         // The side column. collapseBehavior keeps the *window* still when the
         // column opens/closes, resizing the terminal instead.
         let inspectorContent = SideColumnController(
-            runtime: runtime, manager: manager, git: git, files: files, previewTabs: previewTabs)
+            runtime: runtime, manager: manager, home: home, git: git, files: files, previewTabs: previewTabs)
         sideColumn = inspectorContent
         let inspector = ChromePaneController(
             bar: titleBars.sideBar, content: inspectorContent, bodyColor: Chrome.content)
         columnContentView = inspectorContent.view
-        let width = ColumnWidth.width(for: manager.selected)
+        let width = ColumnWidth.width(for: home.selected)
         inspector.view.setFrameSize(NSSize(width: width, height: inspector.view.frame.height))
-        lastOwner = manager.selectedID
+        lastOwner = home.selectedID
         lastAppliedWidth = width
         let item = NSSplitViewItem(viewController: inspector)
         item.minimumThickness = ColumnWidth.minimum
@@ -254,11 +257,10 @@ final class MainSplitViewController: NSSplitViewController {
             guard case .file(let path) = tab else { return }
             self?.previewTabs.openInWindow(path, at: topLeft)
         }
-        // A file dragged out of a list in this window gets the tab drag's
-        // landing spots too.
-        RowClickCatcher.onFileDrag = { [weak self, weak drag] phase, urls, window, point in
-            guard let self, window === self.view.window else { return }
-            drag?.handleFileDrag(phase, urls: urls, window: window, point: point)
+        // A tab dragged out of this window: the other windows' rows, asked
+        // by the app, which knows them.
+        drag.elsewhere = { [weak self] phase, tab, dragged, point, picture in
+            self?.tabDragElsewhere(phase, tab, dragged, point, picture) ?? .nothing
         }
         titleBars.mainBar.strip.onDrag = { [weak drag] phase, tab, view, point in
             drag?.handle(phase, tab: tab, view: view, point: point)
@@ -277,19 +279,44 @@ final class MainSplitViewController: NSSplitViewController {
     /// Returns the row and place it's over; on `.ended`, where the tab goes.
     func dockWindowDrag(_ phase: TabDragController.DockPhase, url: URL,
                         dragged: NSWindow, at screenPoint: NSPoint) -> (region: TabRegion, index: Int)? {
+        let tab = SideTab.file(url.resolvingSymlinksInPath().standardizedFileURL.path)
+        return dock(phase, tab: tab, dragged: dragged, at: screenPoint, picture: nil)
+    }
+
+    /// A tab from somewhere else over this window: a preview window dragged
+    /// by its row, or a file or browser tab dragged out of another window.
+    /// Shows where it would land in this window's rows; on `.ended`, says
+    /// where it goes. `picture` is the tab as it will look, or nil to draw
+    /// it as this window's session would.
+    func dock(_ phase: TabDragController.DockPhase, tab: SideTab, dragged: NSWindow?,
+              at screenPoint: NSPoint, picture: NSImage?) -> (region: TabRegion, index: Int)? {
         guard let window = view.window, let tabDrag else { return nil }
         // The window under the pointer, looking past the one being dragged,
         // which is under the pointer by definition.
-        let under = NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: dragged.windowNumber)
-        guard under == window.windowNumber else {
-            return tabDrag.handleDock(.cancelled, url: url, window: window, point: .zero) { nil }
+        let under = NSWindow.windowNumber(at: screenPoint,
+                                          belowWindowWithWindowNumber: dragged?.windowNumber ?? 0)
+        guard phase != .cancelled, under == window.windowNumber else {
+            return tabDrag.handleDock(.cancelled, tab: tab, window: window, point: .zero) { nil }
         }
         let point = window.convertPoint(fromScreen: screenPoint)
-        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
-        return tabDrag.handleDock(phase, url: url, window: window, point: point) { [manager] in
-            let item = TitleBarController.stripItem(for: .file(path), in: manager.selected)
+        return tabDrag.handleDock(phase, tab: tab, window: window, point: point) { [home] in
+            if let picture { return picture }
+            let item = TitleBarController.stripItem(for: tab, in: home.selected)
             return SideTabStrip.picture(of: item, in: window)
         }
+    }
+
+    /// Set by AppDelegate: the other windows, for a tab dragged out of this one
+    /// (`TabDragController.elsewhere`).
+    var tabDragElsewhere: (TabDragController.DockPhase, SideTab, NSWindow?, NSPoint, NSImage?)
+        -> TabDragController.Elsewhere = { _, _, _, _, _ in .nothing }
+
+    /// A file dragged out of a list, over this window: the tab drag's landing
+    /// spots, at `point` in this window. AppDelegate says which window it is
+    /// over (`RowClickCatcher.onFileDrag`).
+    func fileDrag(_ phase: RowClickCatcher.FileDragPhase, urls: [URL], at point: NSPoint) {
+        guard let window = view.window else { return }
+        tabDrag?.handleFileDrag(phase, urls: urls, window: window, point: point)
     }
 
     /// A tab dropped somewhere that means "the column": already there, it
@@ -347,7 +374,7 @@ final class MainSplitViewController: NSSplitViewController {
             _ = git.isVisible
             // The width is the session's, so a session switch has to reach here
             // even when the column stays up on both sides of it.
-            _ = manager.selectedID
+            _ = home.selectedID
             _ = git.columnLeading
         } onChange: { [weak self] in
             Task { @MainActor in
@@ -413,7 +440,7 @@ final class MainSplitViewController: NSSplitViewController {
     /// turn later and find nothing left to do.
     func show(_ session: Session) {
         guard isViewLoaded, view.window != nil, session.preparation == nil,
-              let host = TerminalHostViewController.main, host.view.window === view.window
+              let host = TerminalHostViewController.main(in: view.window)
         else { return }
         SurfaceView.holdResizes()
         defer { SurfaceView.releaseResizes() }
@@ -516,7 +543,7 @@ final class MainSplitViewController: NSSplitViewController {
     /// reflow the terminal every frame.
     private func applyInspectorVisibility() {
         let show = git.isVisible
-        let owner = manager.selectedID
+        let owner = home.selectedID
         defer { lastOwner = owner }
         guard let inspectorItem else { return }
 
@@ -533,7 +560,7 @@ final class MainSplitViewController: NSSplitViewController {
         // isn't this session's width we snap instead of animating: sliding open
         // at the wrong width and then jumping to the right one reads as a
         // glitch, where an instant open just reads as instant.
-        let target = ColumnWidth.width(for: manager.selected)
+        let target = ColumnWidth.width(for: home.selected)
         let widthChanges = show && abs(target - lastAppliedWidth) > 1
         let animates = git.animatesVisibilityChange && !widthChanges
 
@@ -575,7 +602,7 @@ final class MainSplitViewController: NSSplitViewController {
         let total = splitView.bounds.width
         guard total > 0, splitViewItems.count >= 2 else { return }
 
-        let target = ColumnWidth.width(for: manager.selected)
+        let target = ColumnWidth.width(for: home.selected)
         guard abs(target - inspectorItem.viewController.view.frame.width) > 0.5 else {
             lastAppliedWidth = target
             return
@@ -621,10 +648,10 @@ final class MainSplitViewController: NSSplitViewController {
               let inspectorItem, !inspectorItem.isCollapsed else { return }
         let width = inspectorItem.viewController.view.frame.width
         guard width > 1, abs(width - lastAppliedWidth) > 1 else { return }
-        let session = manager.selected
+        let session = home.selected
         widthCaptureWork?.cancel()
         let work = DispatchWorkItem { [weak self, weak session] in
-            guard let self, let session, session.id == self.manager.selectedID,
+            guard let self, let session, session.id == self.home.selectedID,
                   let item = self.inspectorItem, !item.isCollapsed else { return }
             let settled = item.viewController.view.frame.width
             guard settled > 1 else { return }

@@ -10,31 +10,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private static let sessionKey = "sessionID"
     private(set) var runtime: GhosttyRuntime!
     private var manager: SessionManager!
-    private var window: NSWindow!
-    /// The one window the app has, for the things that need something to sheet
-    /// onto and aren't held by the delegate — `newSessionOnBranch` is invoked
-    /// from a menu and from a sidebar row, neither of which has a window in
-    /// hand. Deliberately not `NSApp.keyWindow`: a preview window can be key,
-    /// and a sheet about a session belongs on the window the session is in.
-    /// Weak, so this doesn't outlive the window it names.
-    static private(set) weak var mainWindow: NSWindow?
-    /// The window's split: sessions, the main area, the side column. Held so
-    /// the sidebar toggle and a click's area (`region(at:)`) reach it.
-    private var splitController: MainSplitViewController!
-    private var movability: WindowMovability?
-    /// Drives the trailing source-control panel. Whether it's up follows the
-    /// selected session (see GitPanelModel); new sessions start hidden.
-    private let gitPanel = GitPanelModel()
+    /// Every main window, in the order they were opened. One per
+    /// `SessionWindow` of the manager's.
+    private var controllers: [MainWindowController] = []
+    /// The active main window's: what the menu commands act on. A preview or
+    /// Settings being key doesn't change it.
+    private var active: MainWindowController? {
+        controllers.first { $0.home === manager?.activeWindow } ?? controllers.first
+    }
+    private var window: NSWindow? { active?.window }
+    /// The active window, for the things that need something to sheet onto
+    /// and aren't held by the delegate: `newSessionOnBranch` is invoked from
+    /// a menu and from a sidebar row, neither of which has a window in hand.
+    /// Deliberately not `NSApp.keyWindow`: a preview window can be key, and a
+    /// sheet about a session belongs on the window the session is in.
+    static var mainWindow: NSWindow? { (NSApp.delegate as? AppDelegate)?.window }
+    /// The active window's split: sessions, the main area, the side column.
+    private var splitController: MainSplitViewController? { active?.split }
+    /// Drives the active window's side column. Whether it's up follows that
+    /// window's session (see GitPanelModel); new sessions start hidden.
+    private var gitPanel: GitPanelModel { active?.gitPanel ?? idleGitPanel }
+    /// The active window's Files pane.
+    private var fileTree: FileTreeModel { active?.fileTree ?? idleFileTree }
+    /// Stand-ins for the moments there is no window yet (a menu validated
+    /// before launch has finished). Never shown.
+    private let idleGitPanel = GitPanelModel()
+    private lazy var idleFileTree = FileTreeModel(git: idleGitPanel)
+    private var titleBars: TitleBarController? { active?.titleBars }
     /// What every session is still running. Sampled slowly in the background,
     /// and read synchronously by the close sheet.
     private let processes = ProcessMonitor()
     /// The waiting sessions in the menu bar, while there are any.
     private var attentionItem: AttentionStatusItem?
-    /// Drives the Files pane — the third view of the same column. Reads the repo
-    /// the git panel has already resolved, so it costs no extra git work.
-    private lazy var fileTree = FileTreeModel(git: gitPanel)
-    /// The preview windows. Accessories to the main window — they close with it,
-    /// so quitting stays what it has always been.
+    /// The preview windows. Accessories to the main windows: they close with
+    /// the last of them, so quitting stays what it has always been.
     private lazy var previewWindows = PreviewWindows(highlighter: DiffHighlighter.shared)
     /// Files previewed as tabs, the default way a file opens (see PreviewTabs);
     /// a window is one click away from any of them.
@@ -75,87 +84,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let manager = SessionManager(runtime: runtime)
         self.manager = manager
-        #if DEBUG
-        if DataDirectory.custom != nil { SwitchProbe.install(manager: manager, git: gitPanel) }
-        #endif
 
-        // AppKit window hosting a SwiftUI NavigationSplitView (the Opslan
-        // layout). fullSizeContentView so the sidebar runs to the top; SwiftUI
-        // drives the title/toolbar/floating sidebar itself.
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false)
-        // NSWindow's own initializers leave this `true` — only NSWindowController
-        // turns it off, and this window has none. Under ARC that is an unbalanced
-        // release: `close()` frees the window while the strong `window` property
-        // below still points at it, and the next thing to read that property
-        // retains freed memory. It crashed exactly there: closing the last session
-        // changes `manager.selected`, which schedules the title observer's
-        // `Task { @MainActor }`, and `onAllClosed` closes the window before that
-        // task gets its turn — so `applyWindowTitle` segfaulted in `objc_retain`.
-        // `.terminateLater` (telemetry drain) keeps the process alive long enough
-        // to make it likely rather than rare.
-        window.isReleasedWhenClosed = false
-        window.tabbingMode = .disallowed
-        // The titlebar is Wortel's own (see TitleBars.swift): every pane draws
-        // its row of it, and the system draws nothing there but the traffic
-        // lights. Transparent, so clicks reach the rows under it; no title, the
-        // terminal's row shows the session's name itself; no separator, each row
-        // draws its own hairline.
-        //
-        // The toolbar stays, empty, for the one thing only it can do: make the
-        // titlebar tall enough for a row of controls and centre the traffic
-        // lights in it. Compact is 40pt, next to the ChatGPT app's 42.
-        window.titlebarSeparatorStyle = .none
-        window.titlebarAppearsTransparent = true
-        // The window server's own titlebar dragging is off, and the rows start
-        // window moves themselves from their empty space (`performWindowDrag`,
-        // ChromeBarView). Left on, it moved the window from *anywhere* in the
-        // titlebar, tabs included, whatever the view under the pointer said:
-        // a tab drag carried the whole window along under the cursor, so the
-        // tab never moved relative to anything. This is how Electron apps, the
-        // ChatGPT app among them, give their titlebars draggable tabs. Moves
-        // started this way still snap, tile and cross Spaces like any other.
-        // On only for the moments tiling needs it (WindowMovability, installed
-        // once the content is in): a window that's never movable has its whole
-        // tiling set greyed out in the Window menu, fn-⌃C and the rest with it.
-        window.isMovable = false
-        window.titleVisibility = .hidden
-        let toolbar = NSToolbar(identifier: "wortel.main")
-        toolbar.allowsUserCustomization = false
-        window.toolbar = toolbar
-        window.toolbarStyle = .unifiedCompact
-        // The rows are as tall as the titlebar the system made, measured rather
-        // than assumed: it's the system's number and differs across releases.
-        window.contentView?.superview?.layoutSubtreeIfNeeded()
-        let titlebarHeight = window.frame.height - window.contentLayoutRect.height
-        if titlebarHeight > 20 { Chrome.titlebarHeight = titlebarHeight }
-        let titleBars = TitleBarController(manager: manager, git: gitPanel, processes: processes)
-        self.titleBars = titleBars
-        let split = MainSplitViewController(
-            runtime: runtime, manager: manager, git: gitPanel, files: fileTree,
-            titleBars: titleBars, previewTabs: previewTabs)
-        self.splitController = split
-        manager.onSwitch = { [weak split] session in split?.show(session) }
-        // A file dragged out of a list onto a tab row or an area opens there,
-        // through the same opener as a double-click, so it shows the same diff.
-        split.openDroppedFiles = { [weak self] urls, region, index in
-            for (offset, url) in urls.enumerated() {
-                self?.openPreview(url, placement: .dropped(region, index: index == .max ? .max : index + offset))
+        // The windows. The first is built now, around the manager's first
+        // window; `restore` asks for any others it brings back
+        // (`onWindowAdded`), and a selection that goes to another window
+        // brings it forward (`onActivateWindow`).
+        manager.onWindowAdded = { [weak self] home in
+            guard let self else { return }
+            let controller = self.addController(for: home)
+            // Shown now, behind the active one: during launch the active
+            // window is ordered front after restore, and on a move the
+            // selection that follows brings this one forward.
+            controller.window.orderFront(nil)
+            if self.launched {
+                Telemetry.capture(.windowOpened(windows: CountBucket(self.controllers.count)))
             }
         }
-        window.contentViewController = BackdropController(child: split, overlay: titleBars.sidebarControls)
-        movability = WindowMovability(window: window)
-        titleBars.start()
-        window.setFrameAutosaveName("main")
-        if window.frame.height < 320 {
-            window.setContentSize(NSSize(width: 1100, height: 700))
-            window.center()
+        manager.onActivateWindow = { [weak self] home in
+            // During launch the windows are shown once they are placed, below.
+            guard let self, self.launched, let controller = self.controller(for: home) else { return }
+            // Not the app: the `wortel` command must never take the keyboard
+            // from whatever you are doing (`WortelCLIService`). Only this
+            // app's windows change order.
+            if controller.window.isMiniaturized { controller.window.deminiaturize(nil) }
+            controller.window.makeKeyAndOrderFront(nil)
         }
-        self.window = window
-        Self.mainWindow = window
+        manager.onWindowEmptied = { [weak self] home in
+            // Its last session went and another window is open: it goes, as
+            // an empty Terminal window does. `close`, not `performClose`:
+            // there is nothing left to ask about. A turn later: it can empty
+            // inside a drop of all its rows onto another window, while its
+            // sidebar is still that drag's source, and closing it there
+            // takes the source down under AppKit's drag.
+            DispatchQueue.main.async {
+                guard let self, self.manager.sessions(in: home).isEmpty else { return }
+                self.controller(for: home)?.window.close()
+            }
+        }
+        let first = addController(for: manager.windows[0])
+        #if DEBUG
+        // The first window's panel: the probe measures the session in front
+        // of a one-window copy.
+        if DataDirectory.custom != nil { SwitchProbe.install(manager: manager, git: first.gitPanel) }
+        #endif
+        // Where it was, before anything is shown in it: a terminal laid out
+        // at a size the window is about to leave is a resize its program
+        // redraws for. `restore` gives the window this same frame.
+        first.home.frame = WindowStore.load().first?.frame
+        first.place(cascadingFrom: nil)
 
         // Closing the last session leaves the window up on an empty page with
         // Open Folder on it, rather than quitting: the last ⇧⌘W was usually
@@ -164,19 +140,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.onAllClosed = { [weak self] in
             self?.gitPanel.focus(session: nil)
             self?.fileTree.focus(session: nil)
-        }
-        // Previews are accessories: without this, closing the last session would
-        // leave a preview window standing, which both keeps the app alive (the
-        // last window hasn't closed) and leaves a terminal with no terminal in it.
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification, object: window, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.previewWindows.closeAll()
-                // The same goes for Settings: left open, it would be the last
-                // window, and the app would stay up with nothing in it.
-                self?.settingsWindow?.close()
-            }
         }
         manager.confirmClose = { [weak self] session, completion in
             self?.confirmClose(session, completion: completion)
@@ -227,8 +190,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // A command finished in the selected session → refresh the git panel
         // (it debounces and no-ops while hidden).
         manager.onCommandFinished = { [weak self] session in
-            guard let self, session.id == self.manager.selectedID else { return }
-            self.gitPanel.refreshCurrent()
+            guard let self else { return }
+            for controller in self.controllers where controller.home.selectedID == session.id {
+                controller.gitPanel.refreshCurrent()
+            }
         }
         // Everything that opens a file — a ⌘-clicked path in the terminal, a
         // double-clicked row in the tree, a Changes row, a file in a commit —
@@ -250,12 +215,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         manager.onKeeperLost = { [weak self] loss in
             self?.reportKeeperLoss(loss)
-        }
-        fileTree.onOpenPreview = { [weak self] url in
-            self?.openPreview(url)
-        }
-        gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
-            self?.presentPreview(url, diff: diff, hasChanges: hasChanges)
         }
         previewTabs.onOpenFile = { [weak self] url in
             self?.openPreview(url)
@@ -298,10 +257,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     return BrowserServer(url: url, label: job.label, session: session)
                 }
         }
-        gitPanel.onTabClosed = { [weak self] tab in
-            if let path = tab.filePath { self?.releaseFile(path) }
-            if let id = tab.browserID { BrowserTabs.shared.forget(id) }
-        }
         // A closed session's pages and documents go with it: a web view keeps
         // running its scripts and its dev server's socket, and a document
         // keeps watching its file, for as long as anything holds them.
@@ -319,9 +274,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // with the window's diff and on its view: the way out keeps both, so
         // the way back does too.
         previewWindows.onDock = { [weak self] phase, document, window, point in
-            guard let self,
-                  let landing = self.splitController.dockWindowDrag(
-                      phase, url: document.url, dragged: window, at: point) else { return false }
+            guard let self else { return false }
+            // Held over a window behind, it comes forward (`SpringLoading`).
+            if phase == .moved { SpringLoading.hover(at: point, dragging: window) } else { SpringLoading.end() }
+            // Each window asked once, and every one asked: a window the
+            // pointer isn't over takes down a landing spot it showed (the
+            // drag went over it on the way). Not `lazy.compactMap(...).first`:
+            // that runs the closure again for the one it finds, and asking
+            // twice is dropping twice; the second found nothing, and the
+            // force unwrap inside `compactMap` took the app down on every
+            // drop into a window after the first.
+            var found: (controller: MainWindowController, landing: (region: TabRegion, index: Int))?
+            for controller in self.controllers {
+                let landing = controller.split.dockWindowDrag(phase, url: document.url,
+                                                              dragged: window, at: point)
+                if found == nil, let landing { found = (controller, landing) }
+            }
+            guard let (controller, landing) = found else {
+                // Over no main window: whichever showed a docking spot lets go of it.
+                self.controllers.forEach {
+                    _ = $0.split.dockWindowDrag(.cancelled, url: document.url, dragged: window, at: point)
+                }
+                return false
+            }
+            if phase == .ended, self.active !== controller {
+                // That window's session takes the tab: it is the active one
+                // before the tab is placed, not once AppKit says it is key.
+                self.manager.activate(controller.home)
+                controller.window.makeKeyAndOrderFront(nil)
+            }
             if phase == .ended {
                 self.presentPreview(document.requestedURL, diff: document.diffSource,
                                     mode: document.mode,
@@ -331,6 +312,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         previewWindows.onOpenFile = { [weak self] url in
             self?.openPreview(url)
+        }
+        // Drags between windows: the main windows are what springs forward,
+        // and a file out of a list goes to the window it's over.
+        SpringLoading.raisable = { [weak self] window in
+            self?.controllers.contains { $0.window === window } ?? false
+        }
+        RowClickCatcher.onFileDrag = { [weak self] phase, urls, window, point in
+            self?.fileDrag(phase, urls: urls, from: window, at: window.convertPoint(toScreen: point))
         }
         manager.onAttentionCleared = { session in
             // The user answered (or the session closed) — pull the banner out
@@ -346,13 +335,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.onReminderDue = { session in
             Self.postReminder(for: session)
         }
-
-        // Occlusion drives "can the user actually see the window": an active
-        // app with a miniaturized or fully covered window should still get
-        // attention signals for its selected session.
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(windowOcclusionChanged(_:)),
-            name: NSWindow.didChangeOcclusionStateNotification, object: window)
 
         // Native "a session needs you" notifications. The signal is
         // program-authored (e.g. Claude Code emits OSC 777 on a permission/idle
@@ -377,43 +359,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 
-        // Panel visibility and the chosen pane are session state, so a toggle has
-        // to reach sessions.json.
-        gitPanel.onStateChanged = { [weak manager] in manager?.sessionStateChanged() }
-        // Every tab brought forward is a stop on Back and Forward's trail.
-        gitPanel.onTabBroughtForward = { [weak manager] tab, session in
-            manager?.noteTabBroughtForward(tab, in: session)
-        }
-        // Bring Here: an archived session's worktree is in use too, waiting
-        // for it to come back.
-        gitPanel.worktreeUsage = { [weak manager] in
-            manager.map { WorktreeUsage(manager: $0, countingArchived: true) }
-        }
-        // The git panel's worktree list is the manager's: one cached `git
-        // worktree list` per repository, which ⌘P already keeps
-        // (`worktreeListings`), rather than a read of its own on every
-        // session switch.
-        gitPanel.worktreeListing = { [weak manager] home in manager?.worktreeListings[home] }
-        // What the panel calls a checkout: the session in it, live or
-        // archived (`CheckoutPlace`).
-        gitPanel.placeName = { [weak manager] path in
-            guard let manager else { return nil }
-            return CheckoutPlace.sessionName(
-                at: GitWorktree.realPath(path),
-                live: manager.sessions.map {
-                    CheckoutPlace.Live(home: $0.homeCheckout?.root, visiting: $0.linkedCheckout?.root,
-                                       name: $0.leafName)
-                },
-                archived: manager.archived.map { CheckoutPlace.Archived(checkout: $0.checkout, name: $0.leafName) })
-        }
-        // The side column's tabs: a side shell that exits takes its tab with it,
-        // closing one that still runs something asks first, and the tab that had
-        // the keyboard hands it back to the session's own terminal.
+        // The side column's tabs: a side shell that exits takes its tab with
+        // it, in the window its session is in.
         manager.onSideTerminalExited = { [weak self] session, id in
-            self?.gitPanel.close(.terminal(id), in: session)
-        }
-        gitPanel.confirmCloseTerminal = { [weak self] count, proceed in
-            self?.confirmCloseSideTerminal(count: count, proceed)
+            guard let self else { return }
+            let git = self.controller(for: self.manager.window(of: session))?.gitPanel ?? self.gitPanel
+            git.close(.terminal(id), in: session)
         }
         SurfaceView.onKeyboardActivity = { [weak self] surface in
             self?.noteKeyboardActivity(in: surface)
@@ -423,43 +374,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // typing reports, and without this ⌘W after clicking into a browser in
         // the column went to wherever you'd last typed.
         NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
-            guard let self, event.window === self.window,
-                  let region = self.splitController.region(at: event.locationInWindow) else { return event }
-            if self.gitPanel.lastRegion != region { self.gitPanel.lastRegion = region }
+            guard let self, let controller = self.controllers.first(where: { $0.window === event.window }),
+                  let region = controller.split.region(at: event.locationInWindow) else { return event }
+            if controller.gitPanel.lastRegion != region { controller.gitPanel.lastRegion = region }
             return event
-        }
-        gitPanel.onAreaFocused = { [weak self] region in
-            // A turn later: an area the command brought forward has its frame then.
-            DispatchQueue.main.async { self?.splitController.blink(region) }
-        }
-        gitPanel.onClearKeyboard = { [weak self] in
-            guard let window = self?.window, window.firstResponder is SurfaceView else { return }
-            window.makeFirstResponder(nil)
-        }
-        manager.onReturnKeyboard = { [weak self] in
-            guard let self, let window = self.window, let session = self.manager.selected else { return }
-            if session.workspace.showsSessionTerminal {
-                // Its own terminal is in front, wherever its row is: that,
-                // once it is there to take it. One still waking is given the
-                // keyboard as it is shown (`TerminalHostViewController`), and
-                // the area it is in is noted then (`noteKeyboardActivity`).
-                guard let view = session.surfaceView, view.window === window,
-                      !view.isHiddenOrHasHiddenAncestor else { return }
-                window.makeFirstResponder(view)
-            } else {
-                // A file, a page or a pane in front of it: what is in front
-                // of the main area, which is then where you are, so ⌘W and
-                // the rest act there.
-                if self.gitPanel.lastRegion != .main { self.gitPanel.lastRegion = .main }
-                self.gitPanel.focusFront(of: .main)
-            }
-        }
-        gitPanel.onFocusMainTerminal = { [weak self] in
-            // Not while a tab in the main area's row covers the terminal.
-            guard let self, self.gitPanel.activeMainTab == nil,
-                  let view = self.manager.selected?.surfaceView,
-                  view.window === self.window, !view.isHiddenOrHasHiddenAncestor else { return }
-            self.window?.makeFirstResponder(view)
         }
 
         // **Before any surface exists.** `GhosttyRuntime.keeper` is a lazy
@@ -475,14 +393,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // on the Dock icon to launch the app).
         pendingFolders.forEach { manager.openFolder($0, starting: .preferred) }
         pendingFolders = []
-        // Point the panel at the restored selection: it's what raises the panel
-        // if that session had it up, and it seeds the cwd so the first toggle
-        // resolves the right repo (no git work runs while it's hidden).
-        gitPanel.focus(session: manager.selected)
-        fileTree.focus(session: manager.selected)
+        // Point each window's panel at its restored selection: it's what
+        // raises the panel if that session had it up, and it seeds the cwd so
+        // the first toggle resolves the right repo (no git work runs while
+        // it's hidden).
+        for controller in controllers {
+            controller.gitPanel.focus(session: controller.home.selected)
+            controller.fileTree.focus(session: controller.home.selected)
+        }
 
-        window.makeKeyAndOrderFront(nil)
+        first.window.orderFront(nil)
+        active?.window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        launched = true
 
         // The window has to exist before the chord that raises it can be
         // claimed, and nothing after this point is something the hot key needs.
@@ -495,8 +418,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             orderFront: { [weak self] in self?.window?.makeKeyAndOrderFront(nil) })
         cli.start()
         self.cli = cli
-
-        observeWindowTitle()
 
         // Counted here and reported below, because both of these are consumed
         // as the app comes up: a pending resume is cleared the moment its
@@ -551,34 +472,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// When this launch started, for the uptime bucket on quit.
     private let launchedAt = Date()
 
-    /// The window's titlebar rows and what keeps them current.
-    private var titleBars: TitleBarController?
-
-    /// The window title used to come from SwiftUI's .navigationTitle, which only
-    /// exists inside a NavigationSplitView — gone with the AppKit shell, so drive
-    /// NSWindow's own title/subtitle instead. Unified toolbar style puts them in
-    /// the content section, i.e. starting at the sidebar's trailing edge.
-    /// @Observable tracking is one-shot, so the observer re-arms after each change.
-    private func observeWindowTitle() {
-        withObservationTracking {
-            _ = manager.selected?.name
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.applyWindowTitle()
-                self.observeWindowTitle()
-            }
-        }
-        applyWindowTitle()
-    }
-
-    /// The session's name and nothing else. The path used to sit under it as a
-    /// subtitle, which changed on every `cd` and made the titlebar the one piece
-    /// of chrome that moved while you typed; the prompt already says where you
-    /// are.
-    private func applyWindowTitle() {
-        window?.title = manager.selected?.name ?? "Wortel"
-    }
+    /// Whether launch has finished: windows `restore` brings back are not
+    /// windows opened.
+    private var launched = false
 
     // MARK: - Show/hide from anywhere (⌃⌥⌘., see GlobalHotkey)
 
@@ -599,7 +495,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func toggleAppVisibility(_ sender: Any?) {
         Telemetry.capture(.globalHotkeyUsed)
 
-        let onScreen = window.map { $0.isVisible && !$0.isMiniaturized } ?? false
+        let onScreen = controllers.contains { $0.window.isVisible && !$0.window.isMiniaturized }
         if NSApp.isActive, !NSApp.isHidden, onScreen {
             NSApp.hide(nil)
             return
@@ -667,8 +563,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// selection left for an Esc meant for vim, or for an agent's interrupt,
     /// to be swallowed by. Returns whether to take the event.
     private func sidebarSelectionKey(_ event: NSEvent) -> Bool {
-        guard manager.sidebarSelection.isMultiple, event.window === window,
-              window?.attachedSheet == nil, manager.editingID == nil else { return false }
+        guard manager.sidebarSelection.isMultiple, let window, event.window === window,
+              window.attachedSheet == nil, manager.editingID == nil else { return false }
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         // ⌘ shortcuts (Pin, the palette…) are commands, not typing.
         guard !modifiers.contains(.command) else { return false }
@@ -689,9 +585,315 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    @objc private func windowOcclusionChanged(_ notification: Notification) {
-        guard let window else { return }
-        manager?.windowVisibilityChanged(window.occlusionState.contains(.visible))
+    // MARK: - Windows
+
+    private func controller(for home: SessionWindow) -> MainWindowController? {
+        controllers.first { $0.home === home }
+    }
+
+    /// A main window around `home`, wired to the app, placed and in the list.
+    /// Not shown: whoever asked decides when.
+    @discardableResult
+    private func addController(for home: SessionWindow) -> MainWindowController {
+        let controller = MainWindowController(
+            home: home, runtime: runtime, manager: manager, processes: processes, previewTabs: previewTabs)
+        wire(controller)
+        if !controllers.isEmpty { controller.place(cascadingFrom: (active ?? controllers.last)?.window) }
+        controllers.append(controller)
+        return controller
+    }
+
+    /// What one window's models ask of the app: the same for every window,
+    /// each closure about its own.
+    private func wire(_ controller: MainWindowController) {
+        let gitPanel = controller.gitPanel
+        let fileTree = controller.fileTree
+        let window = controller.window
+        let home = controller.home
+        // A file dragged out of a list onto a tab row or an area opens there,
+        // through the same opener as a double-click, so it shows the same diff.
+        controller.split.openDroppedFiles = { [weak self] urls, region, index in
+            for (offset, url) in urls.enumerated() {
+                self?.openPreview(url, placement: .dropped(region, index: index == .max ? .max : index + offset))
+            }
+        }
+        fileTree.onOpenPreview = { [weak self] url in self?.openPreview(url) }
+        gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
+            self?.presentPreview(url, diff: diff, hasChanges: hasChanges)
+        }
+        gitPanel.onTabClosed = { [weak self] tab in
+            if let path = tab.filePath { self?.releaseFile(path) }
+            if let id = tab.browserID { BrowserTabs.shared.forget(id) }
+        }
+        // Panel visibility and the chosen pane are session state, so a toggle has
+        // to reach sessions.json.
+        gitPanel.onStateChanged = { [weak manager] in manager?.sessionStateChanged() }
+        // Every tab brought forward is a stop on Back and Forward's trail.
+        gitPanel.onTabBroughtForward = { [weak manager] tab, session in
+            manager?.noteTabBroughtForward(tab, in: session)
+        }
+        // Bring Here: an archived session's worktree is in use too, waiting
+        // for it to come back.
+        gitPanel.worktreeUsage = { [weak manager] in
+            manager.map { WorktreeUsage(manager: $0, countingArchived: true) }
+        }
+        // The git panel's worktree list is the manager's: one cached `git
+        // worktree list` per repository, which ⌘P already keeps
+        // (`worktreeListings`), rather than a read of its own on every
+        // session switch.
+        gitPanel.worktreeListing = { [weak manager] home in manager?.worktreeListings[home] }
+        // What the panel calls a checkout: the session in it, live or
+        // archived (`CheckoutPlace`).
+        gitPanel.placeName = { [weak manager] path in
+            guard let manager else { return nil }
+            return CheckoutPlace.sessionName(
+                at: GitWorktree.realPath(path),
+                live: manager.sessions.map {
+                    CheckoutPlace.Live(home: $0.homeCheckout?.root, visiting: $0.linkedCheckout?.root,
+                                       name: $0.leafName)
+                },
+                archived: manager.archived.map { CheckoutPlace.Archived(checkout: $0.checkout, name: $0.leafName) })
+        }
+        // Closing a side terminal that still runs something asks first, on
+        // the window it is in.
+        gitPanel.confirmCloseTerminal = { [weak self, weak window] count, proceed in
+            self?.confirmCloseSideTerminal(count: count, on: window, proceed)
+        }
+        gitPanel.onAreaFocused = { [weak controller] region in
+            // A turn later: an area the command brought forward has its frame then.
+            DispatchQueue.main.async { controller?.split.blink(region) }
+        }
+        gitPanel.onClearKeyboard = { [weak window] in
+            guard let window, window.firstResponder is SurfaceView else { return }
+            window.makeFirstResponder(nil)
+        }
+        home.onReturnKeyboard = { [weak window, weak gitPanel, weak home] in
+            guard let window, let gitPanel, let session = home?.selected else { return }
+            if session.workspace.showsSessionTerminal {
+                // Its own terminal is in front, wherever its row is: that,
+                // once it is there to take it. One still waking is given the
+                // keyboard as it is shown (`TerminalHostViewController`), and
+                // the area it is in is noted then (`noteKeyboardActivity`).
+                guard let view = session.surfaceView, view.window === window,
+                      !view.isHiddenOrHasHiddenAncestor else { return }
+                window.makeFirstResponder(view)
+            } else {
+                // A file, a page or a pane in front of it: what is in front
+                // of the main area, which is then where you are, so ⌘W and
+                // the rest act there.
+                if gitPanel.lastRegion != .main { gitPanel.lastRegion = .main }
+                gitPanel.focusFront(of: .main)
+            }
+        }
+        gitPanel.onFocusMainTerminal = { [weak window, weak gitPanel, weak home] in
+            // Not while a tab in the main area's row covers the terminal.
+            guard let window, let gitPanel, gitPanel.activeMainTab == nil,
+                  let view = home?.selected?.surfaceView,
+                  view.window === window, !view.isHiddenOrHasHiddenAncestor else { return }
+            window.makeFirstResponder(view)
+        }
+
+        controller.split.tabDragElsewhere = { [weak self, weak controller] phase, tab, dragged, point, picture in
+            guard let self, let controller else { return .nothing }
+            return self.tabDragElsewhere(from: controller, phase, tab, dragged: dragged,
+                                         at: point, picture: picture)
+        }
+        controller.onBecameKey = { [weak self] controller in
+            self?.manager.activate(controller.home)
+        }
+        controller.onVisibilityChanged = { [weak self] controller, visible in
+            // Occlusion drives "can the user actually see the window": an
+            // active app with a miniaturized or fully covered window should
+            // still get attention signals for its selected session.
+            self?.manager.windowVisibilityChanged(controller.home, visible: visible)
+        }
+        controller.onFrameChanged = { [weak self] _ in self?.manager.sessionStateChanged() }
+        controller.shouldClose = { [weak self] controller in
+            self?.windowShouldClose(controller) ?? true
+        }
+        controller.onClose = { [weak self] controller in
+            self?.windowClosed(controller)
+        }
+    }
+
+    /// The last window closes as the one window always did: the app quits
+    /// and every session survives in the keeper. Any other closes its
+    /// sessions, with the usual question if something runs in them, and goes
+    /// once the last of them has (`onWindowEmptied`). Cancelled, it stays.
+    private func windowShouldClose(_ controller: MainWindowController) -> Bool {
+        // Minimized counts: it is still a window of yours.
+        let others = controllers.filter { $0 !== controller }
+        let sessions = manager.sessions(in: controller.home)
+        guard !others.isEmpty, !sessions.isEmpty else { return true }
+        // Asked on this window, about these sessions, whichever is key.
+        if active !== controller { controller.window.makeKeyAndOrderFront(nil) }
+        manager.requestClose(sessions)
+        return false
+    }
+
+    private func windowClosed(_ controller: MainWindowController) {
+        controllers.removeAll { $0 === controller }
+        // Its views stay alive a moment past the close: a drag that began in
+        // its sidebar (every row dropped on another window) is still told
+        // it ended, and a source released before then is a dangling one.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { withExtendedLifetime(controller) {} }
+        guard !controllers.isEmpty else {
+            // Previews are accessories: without this, closing the last window
+            // would leave a preview standing, which both keeps the app alive
+            // (the last window hasn't closed) and leaves a terminal with no
+            // terminal in it. Settings too: left open, it would be the last
+            // window, and the app would stay up with nothing in it.
+            previewWindows.closeAll()
+            settingsWindow?.close()
+            return
+        }
+        manager.removeWindow(controller.home)
+    }
+
+    // MARK: - Drags between windows
+
+    /// The main window a drag is over: the one in front at that point,
+    /// looking past `dragged` (a window that follows the pointer). Not one
+    /// with a preview window, Settings or another app over it there.
+    private func controller(at screenPoint: NSPoint, dragged: NSWindow? = nil) -> MainWindowController? {
+        let under = NSWindow.windowNumber(at: screenPoint,
+                                          belowWindowWithWindowNumber: dragged?.windowNumber ?? 0)
+        return controllers.first { $0.window.windowNumber == under }
+    }
+
+    /// The window a file dragged out of a list is being offered to: where
+    /// it began, until it's over another.
+    private weak var fileDragTarget: MainWindowController?
+
+    /// A file out of a list (Changes, History, the file tree) gets the tab
+    /// rows' landing spots in whichever window it's over, so it can be
+    /// opened in another window's session. Let go there, that window comes
+    /// forward with it, as a window a file is dropped on does.
+    private func fileDrag(_ phase: RowClickCatcher.FileDragPhase, urls: [URL],
+                          from window: NSWindow, at screenPoint: NSPoint) {
+        let home = controllers.first { $0.window === window }
+        if case .began = phase {
+            fileDragTarget = home
+            home?.split.fileDrag(.began, urls: urls, at: window.convertPoint(fromScreen: screenPoint))
+            return
+        }
+        // Over no main window (the desktop, another app, a preview window),
+        // the one it was last over keeps it, as one window alone always did.
+        let over = controller(at: screenPoint) ?? fileDragTarget
+        if let over, over !== fileDragTarget {
+            // The window it left lets go of what it showed, and the one it's
+            // over starts showing where it would land.
+            fileDragTarget?.split.fileDrag(.ended(accepted: true), urls: urls, at: .zero)
+            over.split.fileDrag(.began, urls: urls, at: over.window.convertPoint(fromScreen: screenPoint))
+            fileDragTarget = over
+        }
+        guard let target = fileDragTarget else { return }
+        switch phase {
+        case .began:
+            break
+        case .moved:
+            SpringLoading.hover(at: screenPoint)
+            target.split.fileDrag(.moved, urls: urls, at: target.window.convertPoint(fromScreen: screenPoint))
+        case .ended:
+            SpringLoading.end()
+            fileDragTarget = nil
+            // The window opening it is the active one, so the tab is in its
+            // session (`openPreview` places it in the active window's). The
+            // landing is the last one shown there, which a release just past
+            // its edge still is. Taken by something else (a terminal types
+            // its path, the Finder copies it), it's that one's.
+            if target.window !== window, case .ended(accepted: false) = phase {
+                manager.activate(target.home)
+                target.window.makeKeyAndOrderFront(nil)
+            }
+            target.split.fileDrag(phase, urls: urls, at: target.window.convertPoint(fromScreen: screenPoint))
+        }
+    }
+
+    /// A tab dragged out of `source`, at `screenPoint`: which other window
+    /// it's over, and that window's rows show where it would land. Files
+    /// and web pages can go; a terminal stays in its own window (its shell
+    /// belongs to its session's folder) and so does a pane. On `.ended`
+    /// over a row, the tab moves there.
+    private func tabDragElsewhere(from source: MainWindowController, _ phase: TabDragController.DockPhase,
+                                  _ tab: SideTab, dragged: NSWindow?, at screenPoint: NSPoint,
+                                  picture: NSImage?) -> TabDragController.Elsewhere {
+        let others = controllers.filter { $0 !== source }
+        let over = phase == .cancelled ? nil : controller(at: screenPoint, dragged: dragged)
+        let target = over === source ? nil : over
+        // Every other window lets go of what it showed.
+        for other in others where other !== target {
+            _ = other.split.dock(.cancelled, tab: tab, dragged: nil, at: .zero, picture: nil)
+        }
+        guard let target else { return .nothing }
+        let moves = tab.filePath != nil || tab.browserID != nil
+        guard moves, let owner = source.home.selected, let receiver = target.home.selected,
+              owner !== receiver,
+              let landing = target.split.dock(phase, tab: tab, dragged: dragged, at: screenPoint,
+                                               picture: picture)
+        else {
+            _ = target.split.dock(.cancelled, tab: tab, dragged: nil, at: .zero, picture: nil)
+            return .window
+        }
+        if phase == .ended {
+            moveTab(tab, from: owner, in: source, to: receiver, in: target,
+                    region: landing.region, index: landing.index)
+        }
+        return .row
+    }
+
+    /// A file or browser tab from one window's session into another's, at
+    /// `index` in `region`'s row. The same tab: a browser keeps its page (its
+    /// address goes with it), a file its document, diff and view.
+    private func moveTab(_ tab: SideTab, from owner: Session, in source: MainWindowController,
+                         to receiver: Session, in target: MainWindowController,
+                         region: TabRegion, index: Int) {
+        if let id = tab.browserID, let address = owner.browserAddresses[id] {
+            receiver.browserAddresses[id] = address
+        }
+        manager.activate(target.home)
+        target.window.makeKeyAndOrderFront(nil)
+        target.gitPanel.openDropped(tab, in: region, at: index, isNew: false)
+        // Out of where it was only once it's in: a file let go of first would
+        // have its document forgotten.
+        source.gitPanel.handOver(tab, from: owner)
+        if let id = tab.browserID { owner.browserAddresses[id] = nil }
+    }
+
+    /// ⇧⌘N: a new window, with a new session at home in it, as ⌥⌘N makes.
+    /// Home rather than the folder you were in: a second window is for
+    /// something else. Not a fifth way to start a session
+    /// (`docs/decisions.md`): it is ⌥⌘N, somewhere new.
+    @objc func newWindow(_ sender: Any?) {
+        let home = manager.addWindow()
+        let controller = addController(for: home)
+        controller.window.makeKeyAndOrderFront(nil)
+        manager.activate(home)
+        manager.inWindow(home) { _ = manager.newHomeSession(starting: .preferred) }
+        controller.gitPanel.focus(session: home.selected)
+        controller.fileTree.focus(session: home.selected)
+        Telemetry.capture(.windowOpened(windows: CountBucket(controllers.count)))
+    }
+
+    /// Window ▸ Move Session to New Window: the session in front, or the
+    /// sidebar's selection of several.
+    @objc func moveSessionToNewWindow(_ sender: Any?) {
+        let ids = sessionsToMove().map(\.id)
+        if manager.moveSessions(ids, toWindow: nil) != nil {
+            Telemetry.capture(.sessionMovedWindow(via: .menu))
+        }
+    }
+
+    /// Window ▸ Merge All Windows: every session into this window.
+    @objc func mergeAllWindows(_ sender: Any?) {
+        guard controllers.count > 1 else { return }
+        manager.mergeAllWindows()
+        Telemetry.capture(.sessionMovedWindow(via: .merge))
+    }
+
+    private func sessionsToMove() -> [Session] {
+        if manager.sidebarSelection.isMultiple { return manager.sidebarSelectedSessions }
+        return manager.selected.map { [$0] } ?? []
     }
 
     // MARK: - Attention notifications
@@ -1206,7 +1408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// front of the area you're in, and the session only when that's the
     /// session's own terminal: the menu item says "Close Tab".
     @objc func closeSession(_ sender: Any?) {
-        if let key = NSApp.keyWindow, key !== window {
+        if let key = NSApp.keyWindow, !controllers.contains(where: { $0.window === key }) {
             key.performClose(sender)
             return
         }
@@ -1234,7 +1436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the command stopped there and never reached the window's split. Nothing
     /// else implements this name, so it arrives here and goes straight to it.
     @objc func toggleSessionSidebar(_ sender: Any?) {
-        splitController.toggleSidebar(sender)
+        splitController?.toggleSidebar(sender)
     }
 
     // MARK: - Side column tabs
@@ -1553,8 +1755,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Ask before a side terminal takes a running program down with it: the
     /// dev server you opened it for is exactly what a stray ⌘W would kill.
-    private func confirmCloseSideTerminal(count: Int, _ proceed: @escaping () -> Void) {
-        guard let window else { return proceed() }
+    private func confirmCloseSideTerminal(count: Int, on window: NSWindow?, _ proceed: @escaping () -> Void) {
+        guard let window = window ?? self.window else { return proceed() }
         let alert = NSAlert()
         if count == 1 {
             alert.messageText = "Close this terminal?"
@@ -1792,7 +1994,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         if menuItem.action == #selector(toggleSessionSidebar(_:)) {
-            menuItem.title = splitController.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+            menuItem.title = splitController?.isSidebarVisible != false ? "Hide Sidebar" : "Show Sidebar"
             return true
         }
         // Nothing to act on without a session, and nowhere to step to with one.
@@ -1894,6 +2096,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return visibleRegions.count > 1 || keyboardBrowserPage != nil
         }
 
+        if menuItem.action == #selector(mergeAllWindows(_:)) {
+            return controllers.count > 1
+        }
+        if menuItem.action == #selector(moveSessionToNewWindow(_:)) {
+            let moving = sessionsToMove()
+            menuItem.title = moving.count > 1
+                ? "Move \(moving.count) Sessions to New Window" : "Move Session to New Window"
+            // Not every session the window has: that would swap one window
+            // for another (`SessionManager.moveSessions`).
+            guard let first = moving.first else { return false }
+            let home = manager.window(of: first)
+            return manager.sessions(in: home).contains { session in !moving.contains { $0 === session } }
+        }
         // Only offer "Next Waiting Session" when something is actually waiting.
         if menuItem.action == #selector(selectNextAttentionSession(_:)) {
             return manager?.hasAttention ?? false

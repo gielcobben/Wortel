@@ -53,6 +53,11 @@ the Trash instead.
 **Owned.** A worktree or branch Wortel made, recorded by a marker in git, never
 guessed from a path. Wortel only ever removes what it owns.
 
+**Window.** A main window: the four places with a sidebar of its own sessions.
+A session is in exactly one window and moves between them with its terminal
+running. The **active window** is the one last in front; the commands act on
+its session. Not a preview window, which shows one file.
+
 **Lead.** In a multiple selection, the one item that is "the" selection: the
 session on screen, or the file whose diff is showing.
 
@@ -116,8 +121,9 @@ is said and infers nothing from a title or a screen.
 **Away.** The Mac has not been touched for a minute. Changes what an attention
 signal does.
 
-**Viewing.** Wortel frontmost, its window on screen, the session selected, and
-not away. Attention is not raised for a session being viewed.
+**Viewing.** Wortel frontmost, the session's window on screen, the session in
+front in it, and not away. With two windows side by side, two sessions are
+viewed. Attention is not raised for a session being viewed.
 
 ## The command
 
@@ -129,7 +135,7 @@ of every shell Wortel starts. It exists inside a session and nowhere else.
 
 ## Configuration and releases
 
-**Settings.** The one window (⌘,) with the few switches that differ per
+**Settings.** The one Settings window (⌘,) with the few switches that differ per
 person. Everything else is decided once: there is no user config file, and
 `wortel.conf` is read-only inside the app. Older notes call this zero-config.
 

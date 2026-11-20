@@ -134,7 +134,7 @@ Ask these before building, and say the answers when you propose it.
 ## Where it sits
 
 - **Ghostty** is the engine and a fine terminal. Wortel is a different app
-  around the same engine: one window, named sessions, worktrees, survival, no
+  around the same engine: a sidebar of named sessions per window, worktrees, survival, no
   configuration.
 - **Agent manager apps** hold worktrees, diffs and a review queue, with a
   terminal as a detail inside. Wortel is the terminal, with the worktrees and

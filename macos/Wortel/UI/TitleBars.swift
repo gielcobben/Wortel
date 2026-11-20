@@ -638,12 +638,15 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     let sidebarControls = SidebarControls()
 
     private let manager: SessionManager
+    /// The window these rows are in: its session's name, tabs and jobs.
+    private let home: SessionWindow
     private let git: GitPanelModel
     private let processes: ProcessMonitor
     private var runningPopover: NSPopover?
 
-    init(manager: SessionManager, git: GitPanelModel, processes: ProcessMonitor) {
+    init(manager: SessionManager, home: SessionWindow, git: GitPanelModel, processes: ProcessMonitor) {
         self.manager = manager
+        self.home = home
         self.git = git
         self.processes = processes
         super.init()
@@ -664,13 +667,13 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         sideBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
         sideBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         sideBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        sideBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.manager.selected) }
+        sideBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
         // The main area's row.
         mainBar.strip.onSelect = { [weak self] tab in self?.git.selectMain(tab) }
         mainBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
         mainBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         mainBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        mainBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.manager.selected) }
+        mainBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
     }
 
     func start() {
@@ -702,10 +705,10 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     private func syncColumn() {
         mainBar.setShowsSideToggle(!git.isVisible)
-        mainBar.title.stringValue = manager.selected?.name ?? "Wortel"
+        mainBar.title.stringValue = home.selected?.name ?? "Wortel"
         // A plain title until the row holds more than the session's terminal.
         mainBar.setShowsTabs(git.mainTabs.count > 1)
-        let session = manager.selected
+        let session = home.selected
         func item(_ tab: SideTab) -> SideTabStrip.Item { Self.stripItem(for: tab, in: session) }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)
         mainBar.strip.update(items: git.mainTabs.map(item), active: git.activeMainTab ?? .session)
@@ -800,7 +803,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     /// it's about this session. Below its own three items it
     /// is the sidebar row's menu (SessionActions), so the two always agree.
     @objc private func presentSessionMenu(_ sender: NSView) {
-        guard let session = manager.selected else { return }
+        guard let session = home.selected else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -850,7 +853,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     /// already left. Leftovers nobody owns are not in it: they would put the
     /// pill in every session, which is the thing this scoping exists to stop.
     private var runningSnapshot: RunningJobsSnapshot {
-        guard let id = manager.selectedID else { return .empty }
+        guard let id = home.selectedID else { return .empty }
         return processes.snapshot.scoped(to: id)
     }
 
@@ -867,7 +870,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     }
 
     @objc private func openRunningJobs(_ sender: NSButton) {
-        guard runningPopover == nil, let session = manager.selectedID else { return }
+        guard runningPopover == nil, let session = home.selectedID else { return }
         // Scan before showing, not after: NSPopover sizes itself to the content
         // it is handed at presentation.
         processes.refresh()

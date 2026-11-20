@@ -83,6 +83,20 @@ there opens the file in a preview window at that spot. The way back is
 `handleDock`: a preview window dragged by its row over a tab row (rows only,
 not the zones) fades out, the tab it would become shows in the row, and
 letting go makes it. The window server still moves the window, so the window
-watches the pointer on a common-modes timer until the button is up. Side
+watches the pointer on a common-modes timer until the button is up.
+
+With several windows (since 2026-11-19), a file or browser tab dragged out of
+one window over another window's row shows there, the same way a docking
+preview window does (`TabDragController.elsewhere`, answered by
+`AppDelegate.tabDragElsewhere` through `MainSplitViewController.dock`), and
+letting go moves it into that window's session: `openDropped` there, then
+`GitPanelModel.handOver` here, which takes it out of this session's rows
+without closing it (no `onTabClosed`, nothing on the reopen stack), so a page
+keeps its web view and a file its document. A browser's address goes with it.
+Terminals and panes stay in their window: a side shell belongs to its
+session's folder, and within one window a tab never changes session either.
+Over another window that is in front of this one, even inside this window's
+frame, the drag is that window's. A file out of a list is offered to the
+window it is over the same way (`AppDelegate.fileDrag`). Side
 terminals' processes count as the session's (`processRoots`); agent tracking, naming and
 resume follow the main shell only.

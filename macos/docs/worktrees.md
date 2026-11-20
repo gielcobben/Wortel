@@ -16,8 +16,8 @@ removes worktrees under them.
 
 | You want to | You do | What happens |
 |---|---|---|
-| Work isolated, beside your checkout | ⇧⌘N New Worktree Session, then Return | A worktree on a new branch from a fresh default branch; the sheet's From and Location rows change either |
-| Work on an existing branch or pull request | ⇧⌘N, its name or `#123` in the name field | Checks it out in a worktree of its own; `wortel new --branch` and `--pr` do the same |
+| Work isolated, beside your checkout | ⌥⇧⌘N New Worktree Session, then Return | A worktree on a new branch from a fresh default branch; the sheet's From and Location rows change either |
+| Work on an existing branch or pull request | ⌥⇧⌘N, its name or `#123` in the name field | Checks it out in a worktree of its own; `wortel new --branch` and `--pr` do the same |
 | Stop | ⇧⌘W, the row's ×, or `exit` | Archived: the worktree and branch stay, the conversation is remembered. Trashed instead when nothing in it is worth keeping |
 | Continue | ⌘P, type its name, pick it under Archived | The shell starts in the worktree and the agent resumes |
 | Find a worktree another tool made | ⌘P, under Not open | Opening it makes a session there; Wortel never deletes it |
@@ -25,7 +25,7 @@ removes worktrees under them.
 
 ## Decisions
 
-- **Four ways in.** ⌘N here, ⌥⌘N at home, ⇧⌘N here on a branch of its own,
+- **Four ways in.** ⌘N here, ⌥⌘N at home, ⌥⇧⌘N here on a branch of its own,
   ⌘O somewhere else. Each starts the command Settings names for new
   sessions, if it names one; New Terminal (⌃⌘N) is ⌘N without it. Open Branch (⇧⌘O, one field for every branch, worktree and pull
   request), Fork Session and Change Directory (`wortel cd`) were built and
@@ -58,9 +58,9 @@ removes worktrees under them.
   place in git config, `wortel.worktreePath`, which `includeIf` can set for a
   whole tree of repositories; inside the repository it goes in `info/exclude`,
   never `.gitignore`. Two repositories with the same name get two folders.
-  ⇧⌘N's sheet shows the place and changes it for the repository, not for one
+  ⌥⇧⌘N's sheet shows the place and changes it for the repository, not for one
   worktree: a place you'd pick once is a place you'd pick every time.
-- **⇧⌘N asks, but Return is the old instant path.** It was a no-sheet
+- **⌥⇧⌘N asks, but Return is the old instant path.** It was a no-sheet
   command for a while (2026.43); choosing the base and the place in one form
   was missed. The placeholder name arrives selected, so the fast path costs
   one keystroke and typing names the branch.

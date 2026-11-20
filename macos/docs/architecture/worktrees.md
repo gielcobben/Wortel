@@ -16,12 +16,12 @@ into. Anything that didn't copy is held on the preparing page
 replacing the page would hide it.
 
 **Worktrees: the session is the unit** (`docs/worktrees.md`). You manage
-sessions; a worktree is where one lives. One way in: ⇧⌘N New Worktree
+sessions; a worktree is where one lives. One way in: ⌥⇧⌘N New Worktree
 Session (`BranchSheet`: a placeholder name selected so Return is instant, From,
 and Location, which writes the repository's `wortel.worktreePath`; an existing
 branch or a `#123` in the name field checks that out; `wortel new --worktree`
 skips it). **Starting a session has four ways and only four** (⌘N, ⌥⌘N at
-home, ⇧⌘N, ⌘O): Open Branch, Fork Session, Change Directory (`wortel cd`) and
+home, ⌥⇧⌘N, ⌘O): Open Branch, Fork Session, Change Directory (`wortel cd`) and
 New Folder were all cut on 2026-11-09 for being more ways in than anyone kept
 apart. Don't add a fifth without that argument. (New Terminal, ⌃⌘N, is ⌘N
 without the command Settings names and exists only while it names one:

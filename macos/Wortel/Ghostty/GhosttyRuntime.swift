@@ -686,7 +686,7 @@ final class GhosttyRuntime {
     /// A new terminal for a hibernated session, around the pty the view still
     /// holds. Nothing is asked of the keeper: the app never stopped reading.
     /// The caller writes the screen back and switches the output to it.
-    func wakeSurface(view: SurfaceView, pty: PtyHost, fontSize: Float, repaint: Bool) -> ghostty_surface_t? {
+    func wakeSurface(view: SurfaceView, pty: PtyHost, fontSize: Float) -> ghostty_surface_t? {
         var cfg = ghostty_surface_config_new()
         cfg.platform_tag = GHOSTTY_PLATFORM_MACOS
         cfg.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
@@ -702,10 +702,10 @@ final class GhosttyRuntime {
         // left it. Asked to repaint, Claude Code clears it and prints its
         // conversation again, which costs the shell's lines above it and a
         // moment at one column narrow for nothing (it was asked until
-        // 2026-11-19, when a woken screen could not be trusted). `repaint`
-        // is for the one wake that cannot be trusted still: more was written
-        // meanwhile than is kept, so its start is gone.
-        Self.hostManaged(&cfg, pty: pty, repaint: repaint)
+        // 2026-11-19, when a woken screen could not be trusted). The wakes
+        // that cannot be trusted still ask for themselves, once they know
+        // (`SurfaceView.wake`, `PtyHost.repaintNow`).
+        Self.hostManaged(&cfg, pty: pty, repaint: false)
         return ghostty_surface_new(app, &cfg)
     }
 

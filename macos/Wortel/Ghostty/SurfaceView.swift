@@ -659,7 +659,9 @@ final class SurfaceView: NSView {
     /// commit mostly shows the screen as it was, which the layer does without
     /// being asked: it pins the frame it has to the top left at its own size
     /// (the padding does not move, `window-padding-balance` is off, and the
-    /// background is not drawn at all, `background-opacity = 0`).
+    /// strip a smaller frame leaves uncovered shows the page behind the
+    /// terminal, which is the colour the terminal draws its own background
+    /// in: `Chrome.content`, kept equal by `PageColourTests`).
     ///
     /// So a size that follows another within `dragGap` skips the frame, and
     /// the renderer's own one shows the new screen a frame later. One thing
@@ -868,10 +870,6 @@ final class SurfaceView: NSView {
         /// full, and again at every sixteenth of it written after that: the
         /// answer changes when an agent that was resting starts a turn.
         var sinceAsked = 0
-        /// More came than `buffer` holds, so its start is gone and what is
-        /// written back cannot be the screen the program left. Set on the
-        /// pty queue, read on the main thread as the terminal is woken.
-        let overflowed = OSAllocatedUnfairLock(initialState: false)
         /// The modes the program believed in at the moment its output turned
         /// away from the terminal: the ones that go with the snapshot. What
         /// it changed after is in `buffer`. Read on the pty queue at the
@@ -935,9 +933,10 @@ final class SurfaceView: NSView {
                     guard let base = raw.baseAddress, raw.count > 0 else { return }
                     missed.buffer.append(base, count: raw.count)
                 }
-                if missed.buffer.dropped > 0 { missed.overflowed.withLock { $0 = true } }
                 missed.sinceAsked += kept.count
-                if missed.buffer.count >= missed.buffer.limit / 2,
+                // Not once it has run over: there is no start left to save,
+                // and a shell printing a log would be asking for good.
+                if missed.buffer.dropped == 0, missed.buffer.count >= missed.buffer.limit / 2,
                    missed.sinceAsked >= max(1, missed.buffer.limit / 16) {
                     missed.sinceAsked = 0
                     DispatchQueue.main.async {
@@ -1039,12 +1038,14 @@ final class SurfaceView: NSView {
     /// answers, so a host shows the terminal only after it.
     func wake(onRestored: (() -> Void)? = nil) {
         guard let hibernation, let runtime, let pty = ptyHost, let session = keeperSession else {
-            onRestored?()
+            // Awake, or being woken by someone else (out of sight because
+            // its program outran what is kept, or to be read): then when
+            // that is done, not now, or it is shown half written back.
+            afterRestore(onRestored)
             return
         }
         let started = DispatchTime.now()
-        guard let new = runtime.wakeSurface(view: self, pty: pty, fontSize: hibernation.fontSize,
-                                            repaint: hibernation.missed.overflowed.withLock { $0 }) else {
+        guard let new = runtime.wakeSurface(view: self, pty: pty, fontSize: hibernation.fontSize) else {
             HibernationLog.log.error("could not wake \(session.uuidString, privacy: .public)")
             onRestored?()
             return
@@ -1073,16 +1074,21 @@ final class SurfaceView: NSView {
         // the one writing (the beach ball of 2026-10-07).
         pty.enqueue { [weak self] in
             let missed = hibernation.missed
-            // Nothing goes in before the terminal is that size. See `waitForGrid`.
+            // Nothing goes in before the terminal is that size. See
+            // `waitForGrid`. A grid of one row or one column cannot be
+            // measured (the cursor has nowhere to step to) and is not one an
+            // agent draws on: written as it comes.
             var gridMs = 0.0
-            if let told {
+            var wrongGrid = false
+            if let told, told.columns > 1, told.rows > 1 {
                 let wait = Self.waitForGrid(new, columns: Int(told.columns), rows: Int(told.rows))
                 gridMs = wait.ms
+                wrongGrid = !wait.reached
                 if !wait.reached {
                     HibernationLog.log.notice("""
                         \(session.uuidString, privacy: .public) is written back at \
                         \(wait.grid.map { "\($0.columns)x\($0.rows)" } ?? "an unknown grid", privacy: .public), \
-                        not the \(told.columns)x\(told.rows) it was told: what it missed may land wrong
+                        not the \(told.columns)x\(told.rows) it was told: its program is asked to repaint
                         """)
                 }
             }
@@ -1095,6 +1101,9 @@ final class SurfaceView: NSView {
             // the live output to finish.
             var replay = snapshot
             replay.append(contentsOf: Self.cursorRestore(snapshot: snapshot, hibernation: hibernation))
+            // Asked here, on the queue that fills it, and not when the wake
+            // began: it can run over in the moment between the two.
+            let cutShort = missed.buffer.dropped > 0
             let held = missed.buffer.take()
             replay.append(held)
             replay.append(contentsOf: missed.scanner.unfinished)
@@ -1102,6 +1111,11 @@ final class SurfaceView: NSView {
                                    replay: replay, recordReplay: false, muteAnswers: true,
                                    colorScheme: (dark: dark, agent: nil))
             pty.onOutput = live
+            // The two wakes that cannot be trusted: more came than is kept,
+            // so its start is gone, or the terminal never took its size and
+            // all of it went in at another. Only the program can put either
+            // right, by painting again.
+            if cutShort || wrongGrid { pty.repaintNow() }
             try? FileManager.default.removeItem(at: hibernation.snapshot)
 
             let done = DispatchTime.now()
@@ -1124,6 +1138,9 @@ final class SurfaceView: NSView {
                 self.whenPasteReachesProgram(within: Self.restorePatience) { _ in
                     if self.surface == new { self.isRestoring = false }
                     onRestored?()
+                    let waiting = self.restoreWaiters
+                    self.restoreWaiters = []
+                    waiting.forEach { $0() }
                     // It came back at the size it went away with. If its
                     // view changed meanwhile and nothing noted it (it joined
                     // the window with no terminal to tell), this does.
@@ -1194,6 +1211,16 @@ final class SurfaceView: NSView {
 
     /// Woken, and the screen not yet all back. Reading it now reads part of it.
     private(set) var isRestoring = false
+
+    /// Whoever asked to be told when the restore now under way is done.
+    private var restoreWaiters: [() -> Void] = []
+
+    /// Run `block` once this terminal is whole: now, unless a wake is still
+    /// writing its screen back.
+    private func afterRestore(_ block: (() -> Void)?) {
+        guard let block else { return }
+        if isRestoring { restoreWaiters.append(block) } else { block() }
+    }
 
     /// The longest a wake waits for the terminal to stop holding back its
     /// answers before calling itself done.

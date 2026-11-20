@@ -17,7 +17,9 @@ import IOSurface
 /// server is not holding the screen for it), so it measures the app's own
 /// work and nothing else.
 ///
-/// Debug builds only, addressed by pid like `AppearanceTestHook`. The object
+/// Debug builds only, and only a copy with a data folder of its own
+/// (`WORTEL_DATA_DIR`): it takes the window out of the person's hands.
+/// Addressed by pid like `AppearanceTestHook`. The object
 /// is the file the result is written to, as JSON:
 ///
 ///     osascript -l JavaScript -e 'ObjC.import("Foundation");
@@ -53,7 +55,7 @@ enum ResizeBench {
         // size, as libghostty has it and Wortel had until 2026-11-19, and
         // "column" to open the side column first.
         let parts = request.split(separator: "|").map(String.init)
-        let path = parts[0]
+        guard let path = parts.first else { return }
         let before = parts.contains("before")
         if SurfaceView.frameOnEveryResize != before { SurfaceView.frameOnEveryResize = before }
         // "panes": the side column and the sidebar sliding open and shut,
@@ -161,11 +163,14 @@ enum ResizeBench {
                     timer = nil
                     CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes)
                     window.setFrame(original, display: true)
+                    let mode = SurfaceView.frameOnEveryResize ? "before" : "now"
+                    // Whatever a round sets, the copy is left on Wortel's own rule.
+                    if SurfaceView.frameOnEveryResize { SurfaceView.frameOnEveryResize = false }
                     write(["widthOnly": summary(widthOnly), "widthAndHeight": summary(both),
                            "divider": summary(divider),
                            "budgetMs": interval * 1000, "staleFrames": stale, "lateTerminal": late,
                            "besideResized": besideResized,
-                           "mode": SurfaceView.frameOnEveryResize ? "before" : "now"], to: path)
+                           "mode": mode], to: path)
                     return
                 }
                 if isStale() { stale += 1 }
@@ -290,6 +295,7 @@ enum ResizeBench {
         }
         result["faults"] = faults
         result["mode"] = SurfaceView.frameOnEveryResize ? "before" : "now"
+        if SurfaceView.frameOnEveryResize { SurfaceView.frameOnEveryResize = false }
         write(result, to: path)
     }
 

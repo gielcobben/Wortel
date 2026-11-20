@@ -62,7 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.runtime = runtime
         #if DEBUG
         AppearanceTestHook.install()
-        ResizeBench.install()
+        // These two drive the app: they resize its window, switch its
+        // sessions and, for one check, close them all. Only ever a
+        // throwaway copy, which is one with a data folder of its own; a
+        // Debug build is also what runs every day.
+        if DataDirectory.custom != nil { ResizeBench.install() }
         #endif
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
@@ -72,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let manager = SessionManager(runtime: runtime)
         self.manager = manager
         #if DEBUG
-        SwitchProbe.install(manager: manager, git: gitPanel)
+        if DataDirectory.custom != nil { SwitchProbe.install(manager: manager, git: gitPanel) }
         #endif
 
         // AppKit window hosting a SwiftUI NavigationSplitView (the Opslan

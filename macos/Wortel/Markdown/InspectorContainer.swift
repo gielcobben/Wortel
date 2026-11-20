@@ -87,7 +87,15 @@ final class SideColumnController: NSViewController {
         let tab = git.activeTab
         // A hidden column shows no terminal: it would keep the keyboard.
         let terminal = git.isVisible ? tab?.terminalID : nil
-        let surface = terminal.flatMap { id in manager.selected?.ensureSideSurface(id, runtime: runtime) }
+        // Only for the session the panel is pointed at: its tabs are that
+        // session's. The two differ for a moment whenever the panel follows
+        // a turn later (a session whose worktree is still being made is
+        // selected before the panel is given it), and a terminal made then
+        // would be the old session's tab on the new session: a second reader
+        // on that shell's pty.
+        let session = manager.selected
+        let surface = git.session === session
+            ? terminal.flatMap { id in session?.ensureSideSurface(id, runtime: runtime) } : nil
         host.show(surface, focusRequest: git.terminalFocusRequest,
                   handBack: { [weak git] in git?.focusFront(of: .main) })
         // In front of the terminals, so out of the way of one: it would take

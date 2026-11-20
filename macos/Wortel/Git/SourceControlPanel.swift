@@ -35,7 +35,7 @@ struct SourceControlPanel: View {
                     emptyState
                 }
             case .files:
-                // Unreachable: InspectorContainer routes the Files pane to
+                // Unreachable: `TabContent` routes the Files pane to
                 // FileTreePanel and only builds this view for the two
                 // source-control panes. Listed so the switch stays exhaustive
                 // over the shared enum rather than swallowing a future case.

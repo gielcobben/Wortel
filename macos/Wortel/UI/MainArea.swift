@@ -66,7 +66,9 @@ final class MainAreaController: NSViewController {
         // by the SwiftUI cover.
         let showsPane = active?.isPage ?? false
         paneHost.view.isHidden = !showsPane
-        let surface = active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) }
+        // Only for the session the panel is pointed at: see `SideColumnController.sync`.
+        let surface = git.session === session
+            ? active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) } : nil
         tabHost.show(surface, focusRequest: git.mainFocusRequest, handBack: { [weak git] in git?.focusFront(of: .main) })
         // Out of the way of clicks when it has nothing to show.
         tabHost.view.isHidden = surface == nil

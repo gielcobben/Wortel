@@ -11,7 +11,10 @@ import GhosttyKit
 /// some switches and not others, so it wants many, at several paces, and a
 /// record of what the terminal was told against where its view is.
 ///
-/// Debug builds only, addressed by pid; the object is the file to write:
+/// Debug builds only, and only a copy with a data folder of its own
+/// (`WORTEL_DATA_DIR`): it switches sessions, opens the column, and for
+/// `pages` closes every session. Addressed by pid; the object is the file to
+/// write:
 ///
 ///     "sh.wortel.test.switch.<pid>", "/tmp/switch.json"
 ///
@@ -37,7 +40,9 @@ enum SwitchProbe {
         running = true
         defer { running = false }
         let parts = request.split(separator: "|").map(String.init)
-        let path = parts[0]
+        guard let path = parts.first else { return }
+        // Whatever a round sets, the copy is left on Wortel's own rule.
+        defer { if SurfaceView.frameOnEveryResize { SurfaceView.frameOnEveryResize = false } }
         // "report": where the terminal in front is now, and who has the
         // keyboard, with nothing switched.
         if parts.contains("report") {

@@ -256,8 +256,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   moment at the wrong width and had Claude Code clear the terminal and print
   its conversation again over a screen that was already right. Checked with
   a real Claude Code: its pty stays 34x102 through a wake and its screen
-  reads the same before and after. Only a wake whose missed output outran
-  what is kept is still asked, since its start is gone. **Not changed:** a
+  reads the same before and after. Only the two wakes that cannot be
+  trusted are still asked, by the wake itself once it knows
+  (`PtyHost.repaintNow`): one whose missed output outran what is kept, so
+  its start is gone, and one whose terminal never took its size within the
+  quarter second. **Not changed:** a
   relaunch writes the keeper's replay into a new surface the same way; there
   the terminal starts empty and the program is made to repaint once it is
   quiet (above).

@@ -3,6 +3,41 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.47.4</title>
+            <pubDate>Fri, 20 Nov 2026 22:50:16 -0500</pubDate>
+            <sparkle:version>2026.47.4</sparkle:version>
+            <sparkle:shortVersionString>2026.47.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Terminals kept whole while Wortel is closed, and agents that come back on their own</h1>
+<p class="date">Wortel 2026.47.4 &middot; 2026-11-20</p>
+<p><strong>This update restarts your shells once.</strong> Installing it ends every session’s shell and starts a new one, once, because the part of Wortel that keeps them running has changed. Claude Code, Codex and Pi come back by themselves, each in its own conversation, and your shell history is saved as usual. Anything else that was running, like a dev server, needs starting again. If Restart Now does nothing, quit Wortel with ⌘Q to finish the update.</p>
+<p><strong>Your terminals are kept whole.</strong> Wortel used to rebuild a terminal’s screen when it opened, and that could come back narrow, doubled or in pieces. The process that keeps your shells running now keeps each terminal as well, so after a quit, an update or even a crash a session is exactly as it was, scrollback included, with whatever an agent drew while Wortel was closed. A session out of sight for a minute gives its memory back and returns the same way when you open it.</p>
+<p><strong>Agents come back where they were.</strong> After a restart each agent resumes its own conversation, even when several share a folder. One you opened and never typed into starts fresh instead of joining someone else’s. An agent that starts while Wortel is closed now tells Wortel what it’s doing, like any other, and so does every agent this update restarts.</p>
+<p><strong>Fixes.</strong> Restart Now in the update dialog sometimes did nothing. Wortel now quits by itself a few seconds after you click it. Claude Code started through another command, like <code>caffeinate -i claude</code>, now resumes its conversation too.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.47.4.zip" length="27492086" type="application/octet-stream" sparkle:edSignature="qFcmofPy+qP5XpyfkDEBu2j3fvZQwGyQHwBnOLGHoPYKee2RMrpJhmGNIRdI0BwqZ5VwSEAf48EfmJePTtYUAw=="/>
+        </item>
+        <item>
             <title>2026.47.3</title>
             <pubDate>Fri, 20 Nov 2026 08:39:32 -0500</pubDate>
             <sparkle:version>2026.47.3</sparkle:version>
@@ -78,41 +113,6 @@
 <p><strong>Faster switching.</strong> A click on a session switches on mouse-down, as Finder’s sidebar does, and its terminal appears at its final size instead of growing into place.</p>
 <p><strong>Smaller things.</strong> The sidebar’s toggle and arrows move with it when it opens or closes. A terminal drawn under the side column or in a corner of its pane is now put right as soon as the layout settles. Usage data now counts whether a new session started with a command and which agent was ended or resumed this way, with nothing about the command you typed, the session or the conversation.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.47.2.zip" length="24122517" type="application/octet-stream" sparkle:edSignature="N/0MufNHs+ZTMSROIA25cLjVcQhahClfAJidl3q3QCvsDabA+RedL5IOMOTcEl4aW/vMofUyztoH6ozjAnLLDg=="/>
-        </item>
-        <item>
-            <title>2026.47.1</title>
-            <pubDate>Tue, 17 Nov 2026 09:10:18 -0500</pubDate>
-            <sparkle:version>2026.47.1</sparkle:version>
-            <sparkle:shortVersionString>2026.47.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>Remind Me brings a session back, and file tabs become windows</h1>
-<p class="date">Wortel 2026.47.1 &middot; 2026-11-17</p>
-<p><strong>Remind Me.</strong> Some sessions you want to come back to later, not now. Choose Remind Me from a session’s menu or the Session menu (⌘P finds it too), then In 30 Minutes, In 1 Hour, In 3 Hours, Tomorrow at 09:00, Monday at 09:00 or Custom… for a day and time of your own. While it waits, the row says when on the small grey line under its name. When the time comes, the session gets the unread ring and a banner, or only a flash of the ring if you’re already looking at it. A reminder that came due while Wortel was closed goes off when you open it. Closing a session ends its reminder. From a terminal, <code>wortel remind 20m</code>, <code>wortel remind fri 9am</code> or <code>wortel remind none</code> does the same. Usage data now counts that a reminder was set, with nothing about the session or the time.</p>
-<p><strong>File tabs and windows.</strong> A file tab dragged past the edge of the window becomes a preview window where you let it go, as Safari’s tabs do. Drag a preview window by its top row onto a tab row and it becomes a tab again, keeping its diff and its view. Preview windows now look like Wortel’s main window, with the file’s name and Diff · Source · Rendered in the top row.</p>
-<p><strong>Files open in the main area.</strong> A file opened from the Files pane, Changes, History or a link in a terminal went to the narrow side column. It now opens in the main area until you drag one elsewhere, and that session remembers. Hold ⌥ to open it in the other place.</p>
-<p><strong>Fixes.</strong> ⌘J, ⇧⌘T, ⌘F and ⌘G typed into the program when a terminal was focused; they reach the menu again. Grabbing a tab just after opening a file sometimes moved the whole window instead. Folded folders in the sidebar now stack close together. A Markdown file with front matter rendered it as a huge heading; it now shows as a block of YAML.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.47.1.zip" length="23674381" type="application/octet-stream" sparkle:edSignature="s2YTXEhNcB8UisJy2P1HYe/tdStL28DvZImFOAZN6B2lZK1f9c+tDASDPTwDArwQ0+2eGrPzZ8cmJeBgVU76BA=="/>
         </item>
     </channel>
 </rss>

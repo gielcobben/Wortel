@@ -1269,6 +1269,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the user configured a textconv for it; that is the price. Filter and merge
   drivers (`git status`, `merge-tree`) can't be turned off by a flag and are
   not covered.
+- **2026-11-21. Every git we run gets `log.showSignature=false`**, so a
+  repository can't make `log` and `show` start its own `gpg.program`.
+  `gpg.program` is not blanked: the Commit button signs with the user's. The
+  filter-driver gap stays, as for any git-aware prompt
+  (`macos/docs/architecture/git-panel.md`).
 
 ## Files, previews, browser
 

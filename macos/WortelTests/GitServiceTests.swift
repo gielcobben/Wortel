@@ -348,6 +348,40 @@ final class GitServiceTests: XCTestCase {
         XCTAssertEqual(files.first?.additions, 1)
     }
 
+    /// The same for signatures: a repository can turn `log.showSignature` on
+    /// and name its own `gpg.program`, and then every `log` and `show` starts it
+    /// for a signed commit. The commit here carries a signature header written
+    /// by hand, which is all git needs to try to verify it.
+    func testHistoryNeverRunsTheRepositorysSignatureProgram() async {
+        repo = GitFixture.newRepo("signatures")
+        let script = repo.appendingPathComponent("gpg.sh")
+        let mark = repo.appendingPathComponent("ran")
+        try? "#!/bin/sh\necho \"$*\" >> '\(mark.path)'\ncat > /dev/null\n"
+            .write(to: script, atomically: true, encoding: .utf8)
+        GitFixture.sh("chmod +x gpg.sh && printf 'gpg.sh\\nran\\n' > .git/info/exclude", in: repo)
+        GitFixture.sh("""
+            printf 'one\\n' > a.txt && git add a.txt && tree=$(git write-tree) && \
+            commit=$(printf 'tree %s\\nauthor t <t@t> 1700000000 +0000\\ncommitter t <t@t> 1700000000 +0000\\ngpgsig -----BEGIN PGP SIGNATURE-----\\n \\n abc\\n -----END PGP SIGNATURE-----\\n\\nsigned\\n' "$tree" \
+              | git hash-object -t commit -w --stdin) && git update-ref refs/heads/main "$commit"
+            """, in: repo)
+        GitFixture.sh("git config log.showSignature true && git config gpg.program "
+                      + GitFixture.shellQuoted(script.path), in: repo)
+        // The fixture is sound: plain git does run it.
+        GitFixture.sh("git log -n 1 --format=%s", in: repo)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: mark.path))
+        try? FileManager.default.removeItem(at: mark)
+
+        let commits = await GitService.log(root: repo.path, limit: 10)
+        let subjects = await GitService.recentCommitSubjects(root: repo.path)
+        let patch = await GitService.commitDiff(root: repo.path, sha: commits.first?.sha ?? "HEAD")
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mark.path),
+                       "git ran the repository's gpg.program")
+        XCTAssertEqual(commits.map(\.subject), ["signed"])
+        XCTAssertEqual(subjects, ["signed"])
+        XCTAssertTrue(patch.contains("+one"))
+    }
+
     /// A path outside the repo, a repo with no commits, a deleted file: none of
     /// these should throw or hang a window that is only asking which view to open
     /// on.

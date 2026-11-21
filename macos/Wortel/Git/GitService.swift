@@ -40,8 +40,23 @@ enum GitService {
     /// never write the index (below), and the git that does write it is
     /// usually the shell's, a different binary with its own daemon. So for us
     /// it's a process left behind per repo for a scan we run anyway.
+    ///
+    /// `log.showSignature=false`: a repository's own config can turn it on
+    /// and name a `gpg.program`, and then every `log` and `show` we run, the
+    /// History pane's included, starts that program to check each signed
+    /// commit (verified with git 2.54; GitServiceTests keeps it so). We never
+    /// show a signature. `gpg.program` itself is left alone: the Commit
+    /// button signs with it when the user's config says to (an ssh signer
+    /// such as 1Password's is common), and nothing else we run verifies.
+    ///
+    /// Not covered, and not coverable with a flag: a filter driver
+    /// (`filter.<name>.clean`, `.process`) that the repository's attributes
+    /// assign runs on `status` and `diff`, as Git LFS's does in the repos that
+    /// use it, and a custom merge driver can run in `merge-tree`. That is the
+    /// same exposure as any git-aware shell prompt in that folder
+    /// (`docs/architecture/git-panel.md`).
     private static func gitArguments(_ args: [String]) -> [String] {
-        ["git", "-c", "core.fsmonitor=false"] + args
+        ["git", "-c", "core.fsmonitor=false", "-c", "log.showSignature=false"] + args
     }
 
     /// What every diff Wortel asks git for is told: print your own diff.

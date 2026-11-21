@@ -68,16 +68,37 @@ a newer read supersedes them or the list closes. Other checkouts are named for
 the session in them (`CheckoutPlace`), not their folder, which keeps the
 placeholder branch's name forever. Every git we run gets `-c core.fsmonitor=false`: with fsmonitor in the
 user's config each repo touched left a daemon running for good, for no gain
-(our reads never write the index the daemon's answers are keyed to). Every
-diff we print gets `--no-ext-diff --no-textconv` (`GitService.diffSafetyFlags`):
-git runs in any folder a terminal reports, and a repository's own config can
-name a program for git to run on a diff (`diff.external`, a driver's `command`
-or `textconv`). With the flags git prints its own diff, so a binary file reads
-as one; `GitServiceTests` configures all three and checks none runs. The Files
+(our reads never write the index the daemon's answers are keyed to). The Files
 tree follows the same rule: it doesn't re-root, re-list or `check-ignore` while
 it's off screen, and catches up when shown. And a hidden terminal takes no
 resize (`SurfaceView.isHidden`): switching between sessions whose columns
 differ used to re-wrap every session's terminal and SIGWINCH every agent.
+
+**What a repository can make our git run.** git runs in any folder a terminal
+reports (OSC 7, which any program's output can send, not only the shell) and
+for a path ⌘-clicked in output, so the folder's own `.git/config` is not ours to
+trust. Two kinds of program it can name are switched off for every git we run,
+each verified with git 2.54 and pinned in `GitServiceTests` by a fixture whose
+program leaves a mark:
+
+- **Diff programs.** Every diff we print gets `--no-ext-diff --no-textconv`
+  (`GitService.diffSafetyFlags`), so `diff.external` and a driver's `command`
+  or `textconv` are not run. git prints its own diff, so a binary file reads as
+  binary even where the user set a textconv for it.
+- **Signature checks.** `-c log.showSignature=false` (`GitService.gitArguments`),
+  so a repository that turns it on with its own `gpg.program` doesn't run that
+  on every `log` and `show`. `gpg.program` itself is left alone: the Commit
+  button signs with it when the user's config says so.
+
+**Known limitation:** a filter driver (`filter.<name>.clean`, `.smudge`,
+`.process`) that the repository's attributes assign runs on our `status` and
+`diff` (verified: `clean` ran on both), and a custom merge driver can run in
+`merge-tree` (the merged-branch check). git has no flag that turns drivers off,
+and turning attributes off would break Git LFS, whose filter is one. This is
+the same exposure as a git-aware shell prompt, which runs `git status` in the
+same folder the moment you `cd` into it. Network commands (fetch, pull, push)
+and Commit use the repository's config as the user's own git does; those only
+run when the user asks.
 
 **The changes list holds a selection, not a selected row.** ⌘ toggles a row, ⇧
 takes the run from the anchor, ⇧↑/⇧↓ do the same from the keyboard, ⌘A takes the

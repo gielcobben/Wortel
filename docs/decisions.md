@@ -674,6 +674,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   be repainted, since when it last set to work was not saved and anything
   typed since it started counts; and zsh says `terminated` for a Codex ended
   this way, which is true.
+- **2026-11-21. A program never reads the clipboard; the user's paste is
+  still not confirmed.** Every clipboard confirmation was approved, so an
+  OSC 52 read in any output (a `cat`ed file, an ssh host) had the clipboard
+  written back into the pty. Now only a paste is approved; an OSC 52 or kitty
+  read is refused through `ghostty_surface_deny_clipboard_request`, which
+  answers the program (empty, or EPERM) so nothing waits. In code, not as
+  `clipboard-read = deny` in wortel.conf: that would answer nothing at all.
+  OSC 52 writes stay on, so planted text can reach the clipboard; the paste
+  approval of 2026-08-10 stands because a paste is the user's keystroke,
+  bracketed paste (zsh, fish, bash 5.1, the agents) makes a newline harmless
+  and ESC is stripped from every paste. A shell without bracketed paste is
+  the case left open.
 
 ## Sidebar
 

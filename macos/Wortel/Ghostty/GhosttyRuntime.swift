@@ -114,25 +114,58 @@ final class GhosttyRuntime {
                 surface, text: payload, available: list ? ["text/plain"] : [], state: state)
             return GHOSTTY_CLIPBOARD_READ_STARTED
         }
-        let confirmReadClipboard: ghostty_runtime_confirm_read_clipboard_cb = { userdata, confirm, state, _ in
-            // Auto-approved, deliberately. libghostty raises this for a paste
-            // that looks unsafe — most often one carrying a newline, i.e. text
-            // that could execute on arrival. The prompt is the right default for
-            // a general terminal and the wrong one here: Wortel exists to sit
+        let confirmReadClipboard: ghostty_runtime_confirm_read_clipboard_cb = { userdata, confirm, state, request in
+            // libghostty asks here before it lets a clipboard read through.
+            // Two kinds of request arrive, and they get opposite answers.
+            //
+            // **A program reading the clipboard is refused.** OSC 52 `?` (and
+            // the kitty protocol's read, OSC 5522) is a request from whatever
+            // is writing to the terminal: a file being `cat`ed, a remote host
+            // over ssh, a log being tailed. `clipboard-read` is left at
+            // Ghostty's `ask`, and this is where the ask lands: approving it
+            // wrote the clipboard, base64'd, into the pty, where the program
+            // that asked could read it. Nobody is asked instead, because the
+            // answer would be no every time and the prompt would arrive from
+            // output nobody is watching. Refused through
+            // `deny_clipboard_request`, not completed unconfirmed (that only
+            // comes back here): an OSC 52 read is answered with an empty
+            // clipboard and a kitty read with EPERM, so a program waiting for
+            // a reply gets one. A write that needs confirmation (only under
+            // `clipboard-write = ask`, which wortel.conf doesn't set) is
+            // refused the same way.
+            //
+            // **The user's own paste is approved**, deliberately. libghostty
+            // asks for a paste that looks unsafe: one carrying a newline into
+            // a program that hasn't turned on bracketed paste, so it could
+            // execute on arrival. The prompt is the right default for a
+            // general terminal and the wrong one here: Wortel exists to sit
             // beside an agent, pasting multi-line output into a prompt is the
             // central gesture, and a confirmation on every one of them trains
             // the reflex that makes the warning useless anyway.
             //
-            // What makes that affordable is that the clipboard is only ever
-            // filled by something the user already ran. If Wortel ever grows a
-            // path that writes the clipboard from remote content, this decision
-            // has to be revisited rather than inherited.
+            // The clipboard is not only filled by the user. OSC 52 *writes*
+            // stay on (Ghostty's `clipboard-write = allow`: it is how a copy
+            // in vim or tmux over ssh reaches the Mac), so a remote program can
+            // put text there. What keeps the approval affordable: a paste is
+            // still the user's keystroke; zsh, fish, bash 5.1 and the agents
+            // turn bracketed paste on, where a newline runs nothing and no
+            // prompt is raised; and libghostty replaces ESC and the other
+            // control bytes in every paste, so a planted `ESC[201~` can't end
+            // the bracket early. What is left is planted text pasted into a
+            // program that reads raw lines (a shell without bracketed paste,
+            // such as macOS's own bash 3.2), which would run it. That is
+            // accepted here knowingly (docs/decisions.md). Revisit it before
+            // approving anything more than the paste.
             //
-            // Completed with exactly what was asked about: the clipboard is
-            // not read again.
+            // A paste is completed with exactly what was asked about: the
+            // clipboard is not read again.
             guard let view = GhosttyRuntime.surfaceView(fromUserdata: userdata),
                   let surface = view.surface
             else { return }
+            guard request == GHOSTTY_CLIPBOARD_REQUEST_PASTE else {
+                ghostty_surface_deny_clipboard_request(surface, state)
+                return
+            }
             var complete = ghostty_clipboard_complete_s(
                 contents: confirm.pointee.contents, contents_len: confirm.pointee.contents_len,
                 available: confirm.pointee.available, available_len: confirm.pointee.available_len,

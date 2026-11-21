@@ -335,7 +335,9 @@ final class KeeperTerminalProtocolTests: XCTestCase {
         let again = try terminal(client, "sized", "unused")
         // Until its snapshot is in: a fixed 0.5 s read nothing now and then
         // under the load of the whole suite (2026-11-20).
-        let cut = try decode(readChannel(again.channel, timeout: 5) { _ in true }.snapshot)
+        let reread = readChannel(again.channel, timeout: 5) { _ in true }
+        XCTAssertNotNil(reread.snapshot, "no snapshot on the new channel: ended \(reread.ended), \(reread.output.count) bytes of output, first channel ended \(readChannel(opened.channel, timeout: 0.5).ended)")
+        let cut = try decode(reread.snapshot)
         XCTAssertEqual(cut.columns, 100)
         XCTAssertEqual(cut.rows, 30)
     }

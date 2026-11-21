@@ -462,14 +462,20 @@ final class KeeperServer: @unchecked Sendable {
         // after it. Nothing is lost or seen twice between the two.
         let channel = pair.channel
         session.pty.enqueue { [weak session] in
-            guard let session, let terminal = session.terminal else { return channel.closeNow() }
+            guard let session, let terminal = session.terminal else {
+                KeeperLog.log.error("session \(id, privacy: .public): gone before its cut")
+                return channel.closeNow()
+            }
             session.channel?.finish()
             session.channel = nil
             guard let snapshot = terminal.snapshot() else {
                 KeeperLog.log.error("session \(session.id, privacy: .public): its terminal would not snapshot")
                 return channel.closeNow()
             }
-            guard channel.send(.snapshot, snapshot) else { return }
+            guard channel.send(.snapshot, snapshot) else {
+                KeeperLog.log.error("session \(session.id, privacy: .public): its snapshot could not be sent (\(snapshot.count, privacy: .public) bytes, errno \(errno, privacy: .public))")
+                return
+            }
             session.channel = channel
         }
 

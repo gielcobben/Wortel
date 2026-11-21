@@ -18,6 +18,17 @@ xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug build
 Don't add `clean`. If the link fails on a tree-sitter scanner symbol, run the
 same build again.
 
+**Which Wortel a Debug build is.** On a Mac where
+`~/Library/Application Support/Wortel/debug-builds-share-this-folder` exists,
+a Debug build is the daily Wortel: the usual data folder and the bundle id
+`com.gielcobben.Wortel`. Anywhere else (a fresh clone, a contributor's Mac) it
+is its own app: `~/Library/Application Support/Wortel Dev` and
+`com.gielcobben.Wortel.dev`, and it never touches the installed Wortel. The
+blocks below find the running copy in whichever folder the build will use.
+Never create that file yourself: it is the owner's choice, made once per Mac.
+A build made before it was created or removed keeps the old bundle id until
+the next build.
+
 ## 2. Were you asked to run it?
 
 - **Asked only to make a change:** stop here. Say it built, give the path of the
@@ -51,8 +62,11 @@ cat > "${TMPDIR:-/tmp}/wortel-swap.sh" <<'EOF'
 #!/bin/zsh
 new=$1
 [[ -d $new ]] || { print -u2 "no app at: $new"; exit 1 }
-# The Wortel that owns the data folder writes its pid here.
-lock="$HOME/Library/Application Support/Wortel/instance.lock"
+# The Wortel that owns the data folder writes its pid here: the usual folder
+# where this Mac shares it with Debug builds, a Debug build's own otherwise.
+base="$HOME/Library/Application Support"
+lock="$base/Wortel Dev/instance.lock"
+[[ -e "$base/Wortel/debug-builds-share-this-folder" ]] && lock="$base/Wortel/instance.lock"
 pid=$(cat "$lock" 2>/dev/null)
 if [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null; then
   running=$(ps -o comm= -p "$pid")
@@ -89,7 +103,9 @@ pid. It reads window metadata only.
 APP="$(xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug \
   -showBuildSettings 2>/dev/null \
   | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')/Wortel.app"
-lock="$HOME/Library/Application Support/Wortel/instance.lock"
+base="$HOME/Library/Application Support"
+lock="$base/Wortel Dev/instance.lock"
+[ -e "$base/Wortel/debug-builds-share-this-folder" ] && lock="$base/Wortel/instance.lock"
 for i in $(seq 1 40); do
   pid=$(cat "$lock" 2>/dev/null)
   [ "$(ps -o comm= -p "$pid" 2>/dev/null)" = "$APP/Contents/MacOS/Wortel" ] && break
@@ -131,6 +147,7 @@ don't screenshot the screen to prove it works.
   from. Ask the person to run it from another terminal.
 - **The installed app is a different app.** The Dock and Spotlight open
   `/Applications/Wortel.app`, so a quit and relaunch from there tests the old
-  build. And an older build saves `sessions.json` back without the fields it
-  doesn't know, so going back to the installed app after working in a newer
-  Debug build can drop tab layout. Install the new version first.
+  build. And where Debug builds share the usual folder, an older build saves
+  `sessions.json` back without the fields it doesn't know, so going back to
+  the installed app after working in a newer Debug build can drop tab layout.
+  Install the new version first.

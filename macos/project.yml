@@ -227,6 +227,18 @@ targets:
         ENABLE_TESTABILITY: true
         # Lets the vendored scanner .c files resolve #include "tree_sitter/...".
         HEADER_SEARCH_PATHS: $(SRCROOT)/Grammars/include
+      configs:
+        # A Debug build is another app from the installed one, with its own
+        # UserDefaults, until this Mac opts in: see scripts/debug-bundle-id.sh
+        # and DataDirectory.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.gielcobben.Wortel.dev
+    # After everything else and before Xcode signs the bundle: the Debug bundle
+    # id, by whether this Mac shares its data folder with Debug builds.
+    postBuildScripts:
+      - name: Debug bundle id
+        script: '"$SRCROOT/scripts/debug-bundle-id.sh"'
+        basedOnDependencyAnalysis: false
     info:
       path: Wortel/Info.plist
       properties:

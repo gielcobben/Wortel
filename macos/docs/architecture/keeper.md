@@ -87,7 +87,10 @@ and whatever sequence the program was in the middle of.
 - **A keeper from an older build is kept while it holds sessions,** if it speaks
   the same protocol: a stale binary is never worth a live shell. One that speaks
   another protocol is replaced, which ends its shells. Protocol 2 (2026-11)
-  replaced every protocol 1 keeper once, at that update.
+  replaced every protocol 1 keeper once, at that update. It is also why a
+  Debug build keeps to a data folder of its own (`Wortel Dev`) unless the Mac
+  opted in (`docs/building.md`): a contributor's build on the installed app's
+  folder would replace that app's keeper whenever the two protocols differ.
 - **A keeper ending on a signal keeps its agents' markers.** A hung-up agent
   ends cleanly, and its shell then reaches one more prompt, whose hook removes
   the agent's marker: to the next launch that is an agent the person quit,

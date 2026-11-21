@@ -1440,3 +1440,20 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   release skill reports how many drawing commits have landed since, and the
   `sync-visuals` skill does the work. That day the site matched the canvas
   byte for byte and the canvas was 52 such commits behind the app.
+
+## Contributing
+
+- **2026-11-21. A Debug build is its own app unless the Mac opted in.** Out
+  of a fresh clone it uses `Wortel Dev` and the bundle id
+  `com.gielcobben.Wortel.dev`, so it can't adopt an installed Wortel's
+  sessions, replace its keeper (which ends every shell when the protocols
+  differ) or prune its UserDefaults. The maintainer's daily Wortel is a Debug
+  build from whichever worktree was built last, so the way back is one file
+  per Mac, `debug-builds-share-this-folder` in the usual data folder, read by
+  `DataDirectory` (the app, the keeper and the `wortel` command) and by
+  `scripts/debug-bundle-id.sh` (the bundle id, at build time). Not a
+  gitignored file in the checkout: every worktree Wortel makes would lack it.
+  Not an environment variable: a launch from the Dock or Finder doesn't carry
+  one, and the keeper and the command must reach the same answer as the app.
+  Not a bundle id from an `xcodebuild` variable: that would be a second
+  opt-in to keep in step with the first.

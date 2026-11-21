@@ -52,7 +52,9 @@ where their sessions already are.
 
 **`SessionStore`** (`Wortel/Sessions/SessionStore.swift`) — debounced JSON
 persistence of the session list (order, names, cwds and origin cwds, selection,
-git-panel visibility) to `~/Library/Application Support/Wortel/sessions.json`.
+git-panel visibility) to `sessions.json` in the data folder (`DataDirectory`:
+`~/Library/Application Support/Wortel`, or `Wortel Dev` for a Debug build
+on a Mac that has not opted in, or `WORTEL_DATA_DIR`).
 This is *app state*, not user config — Wortel stays zero-config. Decoder
 tolerates older files missing fields. `saveNow` runs synchronously on
 termination.

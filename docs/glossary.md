@@ -62,8 +62,9 @@ its session. Not a preview window, which shows one file.
 session on screen, or the file whose diff is showing.
 
 **Data folder.** `~/Library/Application Support/Wortel`, or whatever
-`WORTEL_DATA_DIR` names. Sessions, the keeper's socket and agent markers live
-there. One running Wortel per data folder.
+`WORTEL_DATA_DIR` names. A Debug build uses `Wortel Dev` instead, unless the
+Mac opted in (`macos/docs/building.md`). Sessions, the keeper's socket and
+agent markers live there. One running Wortel per data folder.
 
 ## Survival
 

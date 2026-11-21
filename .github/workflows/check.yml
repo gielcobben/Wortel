@@ -1,0 +1,75 @@
+# What ./scripts/check.sh runs, on every pull request and every push to main.
+# Nothing here signs, deploys or publishes.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  web-and-updates:
+    name: updates + web
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Both package.json files say ">=22.18": type stripping, which
+          # `node --test worker/*.test.ts` depends on, is on by default from there.
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            updates/package-lock.json
+            web/package-lock.json
+      - run: ./scripts/check.sh updates
+      - run: ./scripts/check.sh web
+
+  macos:
+    name: macos
+    # Xcode 26 or later: the app imports FoundationModels, which is only in
+    # the macOS 26 SDK.
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode
+        run: xcodebuild -version
+
+      - name: XcodeGen
+        run: brew install xcodegen
+
+      - name: Zig version
+        id: zig
+        run: echo "version=$(tr -d '[:space:]' < macos/GhosttyKit/zig.version)" >> "$GITHUB_OUTPUT"
+
+      # Exactly the pinned version: scripts/build-ghostty.sh refuses any other.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ steps.zig.outputs.version }}
+
+      - name: Metal toolchain
+        run: |
+          if ! xcrun metal -v >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+
+      # Ghostty from source is about five minutes. build-ghostty.sh keys its
+      # cache on these same inputs (and on itself), and installs from it when
+      # the build is there.
+      - name: Ghostty build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/sh.wortel.ghostty/builds
+          key: ghostty-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/GhosttyKit/ghostty.ref', 'macos/GhosttyKit/spm.ref', 'macos/GhosttyKit/zig.version', 'macos/GhosttyKit/Patches/**', 'macos/scripts/build-ghostty.sh') }}
+
+      - run: ./scripts/check.sh macos

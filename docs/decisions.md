@@ -1262,6 +1262,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   call every minute (`c80edaf`, `3c0646b`).
 - **2026-10-21. The panes show the session's own folder**, not where its shell
   or its agent has gone inside the same repository (`8ffb707`, `c704b8a`).
+- **2026-11-21. Every diff git prints for us is git's own:
+  `--no-ext-diff --no-textconv`.** git runs in any folder a terminal reports
+  (OSC 7, which any output can send), and a repository's config can name a
+  program for git to run on a diff. A binary file shows as binary even where
+  the user configured a textconv for it; that is the price. Filter and merge
+  drivers (`git status`, `merge-tree`) can't be turned off by a flag and are
+  not covered.
 
 ## Files, previews, browser
 

@@ -301,6 +301,53 @@ final class GitServiceTests: XCTestCase {
         XCTAssertEqual(added, ["staged", "unstaged"])
     }
 
+    /// Wortel runs git in any folder a terminal reports, and a repository's own
+    /// config can name a program for git to run on a diff. Every diff Wortel
+    /// shows must be git's own, with none of those programs started: each kind
+    /// of driver is configured here, pointed at a script that leaves a mark.
+    func testNoDiffRunsAProgramTheRepositoryNames() async {
+        repo = GitFixture.newRepo("diff-drivers")
+        let script = repo.appendingPathComponent("driver.sh")
+        let mark = repo.appendingPathComponent("ran")
+        try? "#!/bin/sh\necho \"$*\" >> '\(mark.path)'\necho DRIVER\n"
+            .write(to: script, atomically: true, encoding: .utf8)
+        GitFixture.sh("chmod +x driver.sh && printf 'driver.sh\\nran\\n' > .git/info/exclude", in: repo)
+        GitFixture.sh("printf '*.txt diff=evil\\n' > .gitattributes "
+                      + "&& printf 'one\\n' > a.txt && git add -A && git commit -q -m first "
+                      + "&& printf 'two\\n' > a.txt && git commit -q -am second", in: repo)
+        GitFixture.sh("printf 'staged\\n' >> a.txt && git add a.txt "
+                      + "&& printf 'unstaged\\n' >> a.txt && printf 'new\\n' > fresh.txt", in: repo)
+        let quoted = GitFixture.shellQuoted(script.path)
+        GitFixture.sh("git config diff.external \(quoted) "
+                      + "&& git config diff.evil.command \(quoted) "
+                      + "&& git config diff.evil.textconv \(quoted)", in: repo)
+        let head = GitFixture.sh("git rev-parse HEAD", in: repo)
+
+        let patches = [
+            await GitService.commitDiff(root: repo.path, sha: head),
+            await GitService.commitFileDiff(root: repo.path, sha: head, path: "a.txt",
+                                            originalPath: nil),
+            await GitService.diffAgainstHead(root: repo.path, path: "a.txt"),
+            await GitService.diff(root: repo.path, change: GitFileChange(
+                path: "a.txt", originalPath: nil, statusCode: "M", staged: true, untracked: false)),
+            await GitService.diff(root: repo.path, change: GitFileChange(
+                path: "a.txt", originalPath: nil, statusCode: "M", staged: false, untracked: false)),
+            await GitService.untrackedDiff(root: repo.path, path: "fresh.txt"),
+            await GitService.stagedDiff(root: repo.path)?.patch ?? "",
+        ]
+        let files = await GitService.commitFiles(root: repo.path, sha: head)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mark.path),
+                       "a diff ran the repository's program: "
+                       + ((try? String(contentsOf: mark, encoding: .utf8)) ?? ""))
+        for patch in patches {
+            XCTAssertTrue(patch.contains("diff --git"), "git's own diff, got: \(patch)")
+            XCTAssertFalse(patch.contains("DRIVER"))
+        }
+        XCTAssertEqual(files.map(\.path), ["a.txt"])
+        XCTAssertEqual(files.first?.additions, 1)
+    }
+
     /// A path outside the repo, a repo with no commits, a deleted file: none of
     /// these should throw or hang a window that is only asking which view to open
     /// on.

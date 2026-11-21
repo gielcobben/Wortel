@@ -1321,6 +1321,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   a table like GitHub's (front matter nests) and not hidden (it is part of the
   file). Detection is strict, because `---` is also a rule and a setext
   underline.
+- **2026-11-21. A browser tab hands only a web address to another app.** A
+  page's response the tab can't show went to `NSWorkspace.open` whatever its
+  scheme, so a local page linking to a `.command` file would have run it.
+  Now `http` and `https` go to the browser, a `file:` is shown in the
+  Finder, and anything else stays put. `mailto:` never reaches this point:
+  it is asked about before it loads (2026-11-09).
 
 ## Running processes
 

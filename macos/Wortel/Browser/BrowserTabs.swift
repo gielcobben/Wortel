@@ -397,10 +397,22 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
     }
 
     /// A response the tab can't show (a download) goes to your browser.
+    ///
+    /// Only a web address does. The page chose this URL, and handing any other
+    /// to NSWorkspace opens it with whatever claims it: a local page linking
+    /// to `file:///…/run.command` would have it run in Terminal, unasked. A
+    /// file the tab can't show is shown in the Finder instead, and anything
+    /// else (`data:`, `blob:`) stays where it is. A link to another app
+    /// (`mailto:`) never gets here: it is asked about before it loads
+    /// (`BrowserExternalLink`).
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
                  decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
         if !response.canShowMIMEType, response.isForMainFrame, let url = response.response.url {
-            NSWorkspace.shared.open(url)
+            switch url.scheme?.lowercased() {
+            case "http", "https": NSWorkspace.shared.open(url)
+            case "file": NSWorkspace.shared.activateFileViewerSelecting([url])
+            default: break
+            }
             decisionHandler(.cancel)
             return
         }

@@ -30,14 +30,37 @@ signed and notarized
 
 ## Status and licence
 
-**There is no LICENSE file in this repository yet**, which means the default
-applies: all rights reserved, and you may read this code but not fork,
-redistribute or build on it. That is an omission rather than an intention and it
-is the first thing to fix. Until then, please treat the source as
-look-but-do-not-copy.
+Wortel is free software, under the GNU General Public License, version 3 or
+later:
 
-Third-party dependencies carry their own licences, which are not superseded by
-anything here. See [Third-party code](#third-party-code).
+```text
+Copyright (C) 2026 Giel Cobben
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+```
+
+The licence text is [`LICENSE`](LICENSE). In short: you can use, study, change
+and share it, and sell it too, and if you distribute a build, changed or not,
+you pass on the same freedoms with its source.
+
+Three things sit beside the GPL:
+
+- **Third-party code keeps its own licence.** Ghostty, Sparkle, tree-sitter and
+  the rest are listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md),
+  with their notices. See [Third-party code](#third-party-code).
+- **The name and the icon are not licensed by the GPL.** A build you publish
+  uses its own name, icon and bundle id, and its own update feed and telemetry
+  key. [`TRADEMARKS.md`](TRADEMARKS.md) says what to change.
+- **The official builds** from [wortel.sh](https://wortel.sh) are free, for any
+  use. The [Terms](https://wortel.sh/terms) cover downloading them and the
+  site.
 
 ---
 
@@ -400,5 +423,12 @@ tree-sitter external scanners whose upstream packaging does not build under
 Xcode; [`macos/Grammars/README.md`](macos/Grammars/README.md) explains which and
 why.
 
-Each of these is under its own licence. A `THIRD-PARTY-NOTICES.md` collecting
-them is still to be written, and belongs with the LICENSE file.
+Each of these is under its own licence, and none of it is relicensed by
+Wortel's. [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) lists every
+component in the app and in this repository, with its licence and the full
+notice it asks for: Ghostty and the libraries and fonts its build compiles into
+libghostty, the shell integration (three of whose scripts are GPL, from Kitty),
+the themes, Sparkle, tree-sitter and its grammars, herdr's word lists, and the
+site's photos. The app ships a copy of it, and of `LICENSE`, in
+`Contents/Resources`. When a dependency is added or a pin moves, update it in
+the same commit.

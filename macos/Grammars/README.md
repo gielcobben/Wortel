@@ -56,3 +56,21 @@ the ABI between them can drift. So the three affected packages are pinned with
 version changed). If a newly-added grammar link-fails on a missing
 `*_external_scanner_*` symbol, it has the same bug — vendor its scanner the same
 way and exact-pin it.
+
+## Licences
+
+Everything here is upstream's, under upstream's licence, and `licenses/` holds
+each one, copied from the grammar package at the version `project.yml` pins:
+
+| File | From | Licence |
+| --- | --- | --- |
+| `scanners/css_scanner.c` | tree-sitter-css 0.25.0 | MIT, `licenses/tree-sitter-css.LICENSE` |
+| `scanners/javascript_scanner.c` | tree-sitter-javascript 0.25.0 | MIT, `licenses/tree-sitter-javascript.LICENSE` |
+| `scanners/python_scanner.c` | tree-sitter-python 0.25.0 | MIT, `licenses/tree-sitter-python.LICENSE` |
+| `scanners/yaml_scanner.c`, `include/schema.core.c` | tree-sitter-yaml 0.7.2 | MIT, `licenses/tree-sitter-yaml.LICENSE` |
+| `include/tree_sitter/*.h` | the tree-sitter runtime, as each grammar ships it (byte-identical in all four, checked 2026-11-21) | MIT, `licenses/tree-sitter.LICENSE` |
+
+`licenses/` is not under a compiled path, so nothing in it lands in the app.
+The same notices are in `THIRD-PARTY-NOTICES.md` at the repository root, which
+the app does ship. When a scanner is re-copied for a new version, copy that
+grammar's `LICENSE` beside it again.

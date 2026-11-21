@@ -151,6 +151,14 @@ targets:
       # The Claude Code skill installed at launch (`AgentSkill`).
       - path: Resources/wortel-skill.md
         buildPhase: resources
+      # The licence and the third-party notices, shipped in Contents/Resources:
+      # the GPL and several of the MIT/BSD components ask for their notices to
+      # travel with every copy of the binary. The files at the repository root
+      # are the only copies; keep them there.
+      - path: ../LICENSE
+        buildPhase: resources
+      - path: ../THIRD-PARTY-NOTICES.md
+        buildPhase: resources
     dependencies:
       # The `wortel` command, copied into Contents/Resources/bin. There is no
       # install step: GhosttyRuntime puts that directory on the PATH of every

@@ -1,3 +1,12 @@
+// Portions of this file are ported from Ghostty.app (Ghostty.App.swift,
+// Ghostty v1.3.1, https://github.com/ghostty-org/ghostty):
+//
+//     Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+//     MIT License. The full notice is in THIRD-PARTY-NOTICES.md.
+//
+// Wortel's changes and additions are GPL-3.0-or-later, like the rest of
+// Wortel (LICENSE).
+
 import AppKit
 import GhosttyKit
 import os

@@ -20,12 +20,18 @@ Current (Apple Silicon, Release):
 - Memory: **~92 MB** at 1 session (Metal renderer + atlas included; comparable
   to Ghostty), **~205 MB** at 3.
 
-**Memory is per surface, and the script measures YOUR sessions.json.** Every
-restored session is a live renderer with its own glyph atlas, so the number
-tracks the session count and is not comparable between two machines, or between
-two runs on one machine if the count changed. `measure.sh` prints the count it
-measured for exactly this reason: 205 MB under a label claiming one session
-sends you hunting a leak that is three terminals.
+**Memory is per surface.** Every restored session is a live renderer with its
+own glyph atlas, so the number tracks the session count: 205 MB under a label
+claiming one session sends you hunting a leak that is three terminals.
+`measure.sh` prints the count it measured for that reason. It used to measure
+your own sessions.json, which made the number incomparable between machines.
+
+**It measures a throwaway copy, never your Wortel.** The Release build is
+copied with its own bundle id and data folder, so the memory figure is a first
+launch on an empty folder, and only the copy (and its keeper) is stopped
+between runs. It used to `pkill -9` every running Wortel, the one running the
+script included. Figures above were taken the old way (2026-08) and have not
+been retaken.
 
 Telemetry (`Wortel/Telemetry/`, see `docs/telemetry.md`) was measured both ways
 on the same machine and the same day, because the promise it made was that it

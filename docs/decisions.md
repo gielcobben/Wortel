@@ -1457,3 +1457,6 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   one, and the keeper and the command must reach the same answer as the app.
   Not a bundle id from an `xcodebuild` variable: that would be a second
   opt-in to keep in step with the first.
+- **2026-11-21. `bench/measure.sh` measures a throwaway copy.** It used to
+  `pkill -9` every running Wortel, the one running the script included. A
+  copy with its own bundle id and data folder is stopped by path and pid.

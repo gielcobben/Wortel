@@ -1,7 +1,7 @@
 ---
 title: Privacy
 description: What Wortel and wortel.sh record, what they never record, and how to turn the app's reporting off.
-updated: 2026-11-19
+updated: 2026-11-20
 nav: Privacy
 order: 10
 ---
@@ -99,13 +99,14 @@ about the thing it happened to:
 - the background process that keeps your terminals running stopped
   unexpectedly, and roughly how many sessions it took with it
 - a session in a worktree was archived, or brought back from the archive
+- a reminder was set on a session (never when it is for, or which session)
 - the jump-to-next-waiting shortcut was used
 - the shortcut that shows and hides Wortel from any app was used
 - a window was opened, and roughly how many are open (never an exact count)
 - sessions were moved to another window, and how: dragged onto another
   window, dragged out to a new one, from a menu, or by merging all windows
 - a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`,
-  `mark`, `list`, `read`, `send`, `wait`, `version`)
+  `mark`, `remind`, `cd`, `list`, `read`, `send`, `wait`, `version`)
 - one last message when you turn reporting off, and then silence
 
 Each carries the app version, your macOS version to one decimal place, and

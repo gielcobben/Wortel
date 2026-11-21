@@ -22,13 +22,14 @@ export const GET: APIRoute = () => {
 ${SITE.name} is a fully native macOS terminal emulator built on Ghostty's engine
 (libghostty: VT parser, Metal renderer, glyph atlas), aimed at running several
 coding agents at once. It replaces tabs and splits with a sidebar of named
-sessions that persist across restarts and switch in one frame; gives each session
+sessions that persist across restarts; gives each session
 its own git worktree, so several agents can work one repository without editing
 over each other; runs those shells under a keeper process outside the app, so
-they keep working after you quit or it crashes; and adds a git panel, a project
-file tree, preview windows, and activity detection for coding agents that can
-tell when Claude Code, Codex or Aider has stopped working and is waiting on you,
-without writing anything into any agent's configuration. Free, signed and
+they keep working, screen and scrollback included, after you quit or it
+crashes; and adds a git panel, a project file tree, preview windows, and an
+attention system that shows when Claude Code, Codex, Pi or another agent that
+reports its state has stopped working and is waiting on you, without writing
+anything into any agent's configuration. Free, signed and
 notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
 
 "Wortel" is Dutch for root.

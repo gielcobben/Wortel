@@ -164,7 +164,7 @@ export const AXES: Axis[] = [
     q: 'Knows which agent is waiting on you',
     short: 'knows who is waiting',
     cells: {
-      wortel: { v: 'yes', note: 'Read off the terminal stream' },
+      wortel: { v: 'yes', note: 'The agent says so, no guessing' },
       ghostty: { v: 'no', note: 'A bell, at best' },
       iterm2: { v: 'no', note: 'A bell, at best' },
       warp: { v: 'yes', note: 'Agent notifications, on by default' },

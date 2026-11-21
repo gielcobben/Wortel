@@ -273,7 +273,7 @@ extension GitWorktree {
     /// number you have to read carefully; the hex tail keeps it unique; and the
     /// `worktree/` prefix groups every branch the app made under one heading in
     /// `git branch`. See `worktree.rs:generated_branch_slug` in
-    /// ogulcancelik/herdr, whose word lists these are.
+    /// herdrdev/herdr, whose word lists these are.
     ///
     /// It's a placeholder: once the session has a real name, the branch is
     /// renamed for it (`renamedBranch`).

@@ -290,6 +290,28 @@ final class WortelCLIServerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: path))
     }
 
+    /// Both sockets are ours alone. The file is owner-only, and a process of
+    /// another user that connects anyway is hung up on. Another user can't be
+    /// made here, so the check itself is pinned: a peer of ours passes it, and
+    /// a descriptor whose peer the kernel can't name (a pipe) fails it.
+    func testOnlyThisUserIsServed() throws {
+        try startServer { _, reply in reply(.success()) }
+        let mode = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? Int
+        XCTAssertEqual(mode, 0o600)
+
+        var pair: [Int32] = [0, 0]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair), 0)
+        defer { pair.forEach { close($0) } }
+        XCTAssertTrue(WortelCLIServer.isOwnUser(pair[0]))
+        XCTAssertTrue(KeeperServer.isOwnUser(pair[0]))
+
+        var pipeEnds: [Int32] = [0, 0]
+        XCTAssertEqual(pipe(&pipeEnds), 0)
+        defer { pipeEnds.forEach { close($0) } }
+        XCTAssertFalse(WortelCLIServer.isOwnUser(pipeEnds[0]))
+        XCTAssertFalse(KeeperServer.isOwnUser(pipeEnds[0]))
+    }
+
     /// Nobody home is its own answer, and the message is the one thing the user
     /// will see: "Wortel isn't running", not a bare errno.
     func testConnectingToNothingSaysTheAppIsntRunning() {

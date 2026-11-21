@@ -1347,6 +1347,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **Rejected when the reach verbs were planned:** usage meters and rate-limit
   auto-continue (agents show that themselves), nested child sessions,
   user-named sections.
+- **2026-11-21. Both sockets serve only this user.** The CLI's and the
+  keeper's socket are owner-only from the moment they are bound (the umask is
+  narrowed around `bind`; a chmod after it left a window, and a Unix socket
+  can't be fchmod'ed first), and a connection whose peer is another user, or
+  can't be named, is closed unread (`getpeereid`).
 
 ## Shell integration
 

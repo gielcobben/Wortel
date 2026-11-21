@@ -17,7 +17,7 @@ final class ShellSpawnTests: XCTestCase {
         ShellSpawn.plan(
             shellPath: shell, resourcesDir: resources, terminfoDir: terminfo,
             environment: environment, shellFeatures: "ssh-env,title",
-            binDir: "/App/Contents/MacOS", login: login, userName: "giel")
+            binDir: "/App/Contents/MacOS", login: login, userName: "me")
     }
 
     // MARK: - What every shell gets
@@ -53,8 +53,8 @@ final class ShellSpawnTests: XCTestCase {
     /// The shipped `.zshenv` restores the user's own ZDOTDIR from this. Lose it
     /// and anyone with a custom ZDOTDIR silently loses their entire config.
     func testZshKeepsTheUsersOwnZDOTDIR() {
-        let plan = plan(shell: "/bin/zsh", environment: ["ZDOTDIR": "/Users/giel/.config/zsh"])
-        XCTAssertEqual(plan.environment["GHOSTTY_ZSH_ZDOTDIR"], "/Users/giel/.config/zsh")
+        let plan = plan(shell: "/bin/zsh", environment: ["ZDOTDIR": "/Users/me/.config/zsh"])
+        XCTAssertEqual(plan.environment["GHOSTTY_ZSH_ZDOTDIR"], "/Users/me/.config/zsh")
         XCTAssertEqual(plan.environment["ZDOTDIR"], "\(resources)/shell-integration/zsh")
     }
 
@@ -78,8 +78,8 @@ final class ShellSpawnTests: XCTestCase {
     }
 
     func testBashKeepsAnExistingENV() {
-        let plan = plan(shell: "/bin/bash", environment: ["ENV": "/Users/giel/.env"])
-        XCTAssertEqual(plan.environment["GHOSTTY_BASH_ENV"], "/Users/giel/.env")
+        let plan = plan(shell: "/bin/bash", environment: ["ENV": "/Users/me/.env"])
+        XCTAssertEqual(plan.environment["GHOSTTY_BASH_ENV"], "/Users/me/.env")
     }
 
     // MARK: - fish
@@ -120,7 +120,7 @@ final class ShellSpawnTests: XCTestCase {
         let plan = plan(shell: "/bin/zsh", login: true)
         XCTAssertEqual(plan.executable, "/usr/bin/login")
         XCTAssertEqual(plan.arguments.first, "-flp")
-        XCTAssertTrue(plan.arguments.contains("giel"))
+        XCTAssertTrue(plan.arguments.contains("me"))
         XCTAssertEqual(plan.environment["ZDOTDIR"], "\(resources)/shell-integration/zsh")
     }
 

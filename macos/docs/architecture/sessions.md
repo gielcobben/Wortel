@@ -25,7 +25,7 @@ close) back to session state.
 piece of session handling with a rule worth stating. A sidebar **folder carries a
 directory** (`folderRoots`, UserDefaults beside the other three folder keys) —
 before that it was purely the part of a name before the last slash, so "New
-Session in “GFPC”" filed a session under GFPC and started it wherever the
+Session in “Acme”" filed a session under Acme and started it wherever the
 *selected* session was standing, which looked exactly like it had worked. The
 resolution order is: an explicit `cwd` (the CLI, a worktree, ⌘O), then the named
 folder's directory, then the selected session's **`originCwd`**, then that

@@ -86,8 +86,8 @@ final class AgentCommandLineTests: XCTestCase {
     /// Claude's folder for a project is the physical path, escaped per UTF-16
     /// unit. A wrong folder drops an exact conversation id as "not found".
     func testClaudeProjectFolderName() {
-        XCTAssertEqual(AgentResumeStore.claudeProjectName(for: "/Users/giel/Developer/wortel"),
-                       "-Users-giel-Developer-wortel")
+        XCTAssertEqual(AgentResumeStore.claudeProjectName(for: "/Users/me/Developer/wortel"),
+                       "-Users-me-Developer-wortel")
         XCTAssertEqual(AgentResumeStore.claudeProjectName(for: "/a/é😀"), "-a----")
         XCTAssertEqual(AgentResumeStore.physicalPath("/tmp"), "/private/tmp")
         XCTAssertEqual(AgentConversation.resolved("/tmp"), "/private/tmp")

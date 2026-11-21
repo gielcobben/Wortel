@@ -24,7 +24,7 @@ final class InheritedEnvironmentTests: XCTestCase {
             "CLAUDE_CODE_CHILD_SESSION": "1",
             "CLAUDE_CODE_SESSION_ID": "54c34306-9695-4300-9f03-bb161eb13de4",
             "CLAUDE_CODE_ENTRYPOINT": "cli",
-            "CLAUDE_CODE_EXECPATH": "/Users/giel/.local/share/claude/versions/2.1.220",
+            "CLAUDE_CODE_EXECPATH": "/Users/me/.local/share/claude/versions/2.1.220",
             "CLAUDECODE": "1",
             "CLAUDE_PID": "95075",
             "AI_AGENT": "claude-code_2-1-220_agent",
@@ -40,10 +40,10 @@ final class InheritedEnvironmentTests: XCTestCase {
             "PATH": "/opt/homebrew/bin:/var/folders/wt/4961wd_x4xx1kgr95wm_pxqm0000gn/T//cli-shims/ABC:/usr/bin",
             // Must survive: the user's own shell, tools and preferences.
             "TMPDIR": "/var/folders/wt/4961wd_x4xx1kgr95wm_pxqm0000gn/T/",
-            "HOME": "/Users/giel",
+            "HOME": "/Users/me",
             "SHELL": "/bin/zsh",
             "CLAUDE_EFFORT": "high",
-            "BUN_INSTALL": "/Users/giel/.bun",
+            "BUN_INSTALL": "/Users/me/.bun",
         ]
     }
 
@@ -137,15 +137,15 @@ final class InheritedEnvironmentTests: XCTestCase {
     func testKeepsAgentPreferencesAndTheUsersOwnEnvironment() {
         let result = scrubbed(capturedLaunchEnvironment)
         XCTAssertEqual(result["CLAUDE_EFFORT"], "high")
-        XCTAssertEqual(result["HOME"], "/Users/giel")
+        XCTAssertEqual(result["HOME"], "/Users/me")
         XCTAssertEqual(result["SHELL"], "/bin/zsh")
-        XCTAssertEqual(result["BUN_INSTALL"], "/Users/giel/.bun")
+        XCTAssertEqual(result["BUN_INSTALL"], "/Users/me/.bun")
     }
 
     /// A clean launch (from Finder, or after this fix) must be left exactly alone —
     /// no rewrite, so nothing to reason about in the normal case.
     func testCleanEnvironmentIsUntouched() {
-        let clean = ["PATH": "/opt/homebrew/bin:/usr/bin", "HOME": "/Users/giel",
+        let clean = ["PATH": "/opt/homebrew/bin:/usr/bin", "HOME": "/Users/me",
                      "TMPDIR": "/var/folders/wt/4961wd_x4xx1kgr95wm_pxqm0000gn/T/"]
         let changes = InheritedEnvironment.scrub(clean, temporaryDirectory: temporaryDirectory)
         XCTAssertTrue(changes.isEmpty)

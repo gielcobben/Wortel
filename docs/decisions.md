@@ -20,8 +20,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 ## The product
 
 - **2026-07-10. The name is Wortel.** It was Vellum for the first two days
-  (`240164f`). A rename to Terminaal was built on the branch
-  `rename-to-terminaal` on 2026-07-29 and parked there. `main` is Wortel.
+  (`240164f`). A rename to Terminaal was built on 2026-07-29 and not merged:
+  the name stayed Wortel.
 - **2026-07-08. Configuration is the bundled `wortel.conf` and nothing else.**
   The user's Ghostty config is never loaded, and neither are CLI arguments,
   which on macOS means Xcode's debug flags (`0197ac4`).

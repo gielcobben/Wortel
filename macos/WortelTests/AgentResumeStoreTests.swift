@@ -17,12 +17,12 @@ final class AgentResumeStoreTests: XCTestCase {
         let marker = try XCTUnwrap(AgentResumeStore.parse("""
             agent=claude
             model=opus
-            cwd=/Users/giel/Developer/wortel
+            cwd=/Users/me/Developer/wortel
             argv=claude --model opus
             """))
         XCTAssertEqual(marker.agent, "claude")
         XCTAssertEqual(marker.model, "opus")
-        XCTAssertEqual(marker.cwd, "/Users/giel/Developer/wortel")
+        XCTAssertEqual(marker.cwd, "/Users/me/Developer/wortel")
         XCTAssertEqual(marker.argv, "claude --model opus")
     }
 
@@ -312,7 +312,7 @@ final class AgentResumeStoreTests: XCTestCase {
         XCTAssertTrue(AgentLiveness.argumentNames("aider", "aider.py"))
         XCTAssertTrue(AgentLiveness.argumentNames("cursor-agent", "/opt/cursor-agent"))
         XCTAssertFalse(AgentLiveness.argumentNames("pi", "/usr/bin/pipx"))
-        XCTAssertFalse(AgentLiveness.argumentNames("pi", "/Users/giel/api/server.js"))
+        XCTAssertFalse(AgentLiveness.argumentNames("pi", "/Users/me/api/server.js"))
         XCTAssertFalse(AgentLiveness.argumentNames("pi", "--print"))
     }
 

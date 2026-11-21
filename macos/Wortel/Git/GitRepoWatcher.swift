@@ -112,7 +112,7 @@ extension GitRepoWatcher {
     /// store their `git add`s write to), and every linked worktree of the
     /// repository that lives inside `root`.
     ///
-    /// The second is the cost on the work laptop's monorepo. A repository
+    /// The second is the cost on a large monorepo. A repository
     /// that keeps its worktrees inside itself (`wortel.worktreePath =
     /// .worktrees`, or Claude Code's `.claude/worktrees/<name>`) has every
     /// file an agent writes in one of them land under the main checkout's

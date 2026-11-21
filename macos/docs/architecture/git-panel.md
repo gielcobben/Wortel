@@ -60,8 +60,8 @@ Before this, an agent merging in one worktree woke a full scan in every cached
 checkout at once. The other worktrees are the manager's cached listing
 (`worktreeListings`, no `git worktree list` of the panel's own), and what's in
 them is read **only when asked**: the worktree or branch list opening (they
-open at once, the counts fill in). No watch per worktree and no timer: on the
-work laptop's monorepo (`git status` 7s) both used to run for as long as the
+open at once, the counts fill in). No watch per worktree and no timer: on a
+large monorepo where `git status` takes 7s, both used to run for as long as the
 panel was up. Those reads go through `GitService.backgroundStatus`, one at a
 time app-wide, reuse a cached model's status when it's current, and stop when
 a newer read supersedes them or the list closes. Other checkouts are named for

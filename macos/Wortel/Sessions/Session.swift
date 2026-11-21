@@ -332,8 +332,8 @@ final class Session: Identifiable {
         self.originCwd = originCwd ?? cwd
     }
 
-    /// Sidebar grouping derived from the name: "giel/hello" lives in folder
-    /// "giel" and displays as "hello". nil folder means a top-level session.
+    /// Sidebar grouping derived from the name: "team/hello" lives in folder
+    /// "team" and displays as "hello". nil folder means a top-level session.
     /// Renaming is the only way to move a session between folders — the grouping
     /// is purely a view of the name. See `SessionName` for the split itself.
     var folderPath: String? { SessionName.folder(of: name) }

@@ -105,9 +105,9 @@ extension GitWorktree {
     /// it removed, or nil when there is nothing to repair.
     ///
     /// Until `sessionLeaf` above, a worktree session was named
-    /// "<folder>/<branch>" with the branch whole, so `GFPC` plus
-    /// `worktree/wakker-slide` became a session called `wakker-slide` in a
-    /// folder called `GFPC/worktree`. The agent rename that followed kept the
+    /// "<folder>/<branch>" with the branch whole, so `Acme` plus
+    /// `worktree/menubar-slide` became a session called `menubar-slide` in a
+    /// folder called `Acme/worktree`. The agent rename that followed kept the
     /// folder half (only the leaf changes), which is why the phantom folder
     /// outlives the placeholder that made it and has to be undone here rather
     /// than just stopped.

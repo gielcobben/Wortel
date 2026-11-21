@@ -82,7 +82,7 @@ final class GitRepoWatcherTests: XCTestCase {
 
 /// Worktrees *inside* the checkout: `wortel.worktreePath = .worktrees`, or
 /// Claude Code's `.claude/worktrees/<name>`. Every file an agent writes in one
-/// is under the main checkout's root too, and on the work laptop's monorepo
+/// is under the main checkout's root too, and on a large monorepo
 /// each was a seven-second `git status` there for nothing. The way this goes
 /// wrong is quiet in both directions: leave one in and the cost is back, with
 /// nothing on screen to say so; leave out a folder that holds the repository's

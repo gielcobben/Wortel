@@ -29,7 +29,7 @@ ps eww -p $(pgrep -x Wortel) | tr ' ' '\n' | grep -E '^(CLAUDE|GHOSTTY|NODE_OPTI
 ```
 CLAUDE_CODE_CHILD_SESSION=1
 CLAUDE_CODE_SESSION_ID=54c34306-9695-4300-9f03-bb161eb13de4
-CLAUDE_CODE_EXECPATH=/Users/giel/.local/share/claude/versions/2.1.220
+CLAUDE_CODE_EXECPATH=/Users/me/.local/share/claude/versions/2.1.220
 CLAUDECODE=1
 CLAUDE_PID=95075                      # a process that had already exited
 GHOSTTY_RESOURCES_DIR=/Applications/<other terminal>.app/Contents/Resources/ghostty

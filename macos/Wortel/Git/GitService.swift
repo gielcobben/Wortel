@@ -76,7 +76,7 @@ enum GitService {
 
     /// `path` with the install folders it lacks added **after** its own, so a
     /// `git` already on it stays the one that runs and only what's missing is
-    /// found further along. (A Nix git on the work laptop is a different binary
+    /// found further along. (A git from Nix, say, is a different binary
     /// with its own speed; swapping it in by accident is not this change.)
     static func toolPath(_ path: String?, adding extra: [String] = installDirectories) -> String {
         var entries = (path ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }

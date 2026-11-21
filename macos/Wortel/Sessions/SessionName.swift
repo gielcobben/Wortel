@@ -18,7 +18,7 @@ enum SessionName {
     }
 
     /// The name with any folder prefix stripped — what a sidebar row shows.
-    /// A name that is all prefix ("Wakker/") has no leaf to show, so it falls
+    /// A name that is all prefix ("Acme/") has no leaf to show, so it falls
     /// back to the whole name rather than rendering an empty row.
     static func leaf(of name: String) -> String {
         guard let slash = name.range(of: "/", options: .backwards) else { return name }

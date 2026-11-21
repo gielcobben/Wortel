@@ -112,7 +112,7 @@ final class KeeperAgentTests: XCTestCase {
 
     func testClaudeCodeSurvivesTheAppDisappearing() throws {
         try checkAgentSurvives(named: "claude",
-                               at: "/Users/giel/.local/bin/claude")
+                               at: "/Users/me/.local/bin/claude")
     }
 
     /// A second agent, because "it works with Claude" and "it works with agents"
@@ -120,7 +120,7 @@ final class KeeperAgentTests: XCTestCase {
     func testPiSurvivesTheAppDisappearing() throws {
         try checkAgentSurvives(
             named: "pi",
-            at: "/Users/giel/.local/share/fnm/node-versions/v24.14.0/installation/bin/pi")
+            at: "/Users/me/.local/share/fnm/node-versions/v24.14.0/installation/bin/pi")
     }
 
     private func checkAgentSurvives(named name: String, at agent: String) throws {
@@ -140,8 +140,8 @@ final class KeeperAgentTests: XCTestCase {
                 executable: "/bin/zsh",
                 arguments: ["-lc", "\(agent) 2>&1"],
                 environment: [
-                    "PATH": "/Users/giel/.local/bin:"
-                        + "/Users/giel/.local/share/fnm/node-versions/v24.14.0/installation/bin:"
+                    "PATH": "/Users/me/.local/bin:"
+                        + "/Users/me/.local/share/fnm/node-versions/v24.14.0/installation/bin:"
                         + "/usr/bin:/bin:/usr/sbin:/sbin",
                     "HOME": NSHomeDirectory(),
                     "TERM": "xterm-256color",

@@ -171,13 +171,13 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="worktrees"]'
     [ORDER[0], { dir: 'wortel', branch: 'main', files: rows.map(read), diff: true, screen: term.lines() }],
     [ORDER[1], {
       dir: 'codebase-survey-and-fixes', branch: 'codebase-survey-and-fixes', diff: false,
-      files: [['M', 'IconGrid.swift', 'ikoon/Views'], ['M', 'GridMetrics.swift', 'ikoon/Model'], ['?', 'survey.md', 'docs']],
+      files: [['M', 'IconGrid.swift', 'Icons/Views'], ['M', 'GridMetrics.swift', 'Icons/Model'], ['?', 'survey.md', 'docs']],
       screen: term.compose(() => {
         term.print('You', 'Survey the icon grid and fix what is off.');
         term.gap();
         term.print('Claude', 'Three icons sit half a point low, and the metrics are computed in two places. Fixing both.');
         term.gap();
-        term.print('Tool', '(ikoon/Views/IconGrid.swift)', 'Update');
+        term.print('Tool', '(Icons/Views/IconGrid.swift)', 'Update');
         term.print('Result', 'Updated with 12 additions and 9 removals');
         term.gap();
         term.print('Tool', '(docs/survey.md)', 'Write');

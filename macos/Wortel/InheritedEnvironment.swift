@@ -20,7 +20,7 @@ import Foundation
 ///   Zig core checks the variable before it looks for the `terminfo` sentinel
 ///   (`src/os/resourcesdir.zig`), so we'd load *its* shell integration and
 ///   terminfo instead of the ones we ship — with Wortel being deliberately
-///   bundle-only (see the resources rule in `CLAUDE.md`).
+///   bundle-only (see the resources rule in `macos/AGENTS.md`).
 /// - **A dead session's private files stay on our path.** Per-session CLI shims in
 ///   the temp directory shadow the real binary (`claude` resolving to another
 ///   app's wrapper), and a `NODE_OPTIONS` `--require` pointing there breaks every

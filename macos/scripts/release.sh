@@ -508,8 +508,8 @@ echo "==> Done. Wortel is signed and running from /Applications."
 
 # ----------------------------------------------------------------------------
 # One-time notarization setup (only for --notarize). This keychain profile is
-# tied to your Apple ID + team, so ONE profile notarizes ALL your apps (Wortel,
-# Opslan, …). Get an app-specific password at appleid.apple.com -> Sign-In &
+# tied to your Apple ID + team, so ONE profile notarizes ALL your apps, Wortel
+# and any other. Get an app-specific password at appleid.apple.com -> Sign-In &
 # Security -> App-Specific Passwords, then:
 #
 #   xcrun notarytool store-credentials "notary" \

@@ -182,7 +182,7 @@ export const SECTIONS: Section[] = [
     lead: 'Your shells are not the app’s children. They run under a small process beside it, so closing the window stops being a decision about the work.',
     blocks: [
       {
-        p: 'An agent that was thinking when you quit is still thinking when you come back, and the session reattaches to the shell it already had. Each terminal’s screen and scrollback are kept when Wortel quits and put back exactly as they were. After a crash the shells and agents are still there, and the agent draws its screen again. This is on by default and there is nothing to switch on.',
+        p: 'An agent that was thinking when you quit is still thinking when you come back, and the session reattaches to the shell it already had. Each terminal’s screen and scrollback are kept by the process that keeps the shells while Wortel is closed, so after a quit, an update or a crash they come back exactly as they were, with whatever the agent drew meanwhile. This is on by default and there is nothing to switch on.',
       },
     ],
   },

@@ -9,7 +9,7 @@ final class TerminalModesTests: XCTestCase {
         var modes = TerminalModes()
         var scanner = CSIScanner()
         for chunk in chunks {
-            var bytes = Array(chunk.utf8)
+            let bytes = Array(chunk.utf8)
             bytes.withUnsafeBufferPointer { raw in
                 guard let base = raw.baseAddress else { return }
                 modes.feed(base, count: raw.count, parser: &scanner)
@@ -194,7 +194,7 @@ final class TerminalModesTests: XCTestCase {
         XCTAssertTrue(recorder.modes(for: session).bracketedPaste)
 
         // What the program said itself still wins over what was assumed.
-        var off = Array("\u{1B}[?2031l".utf8)
+        let off = Array("\u{1B}[?2031l".utf8)
         off.withUnsafeBufferPointer { raw in
             recorder.feed(session: session, bytes: raw.baseAddress!, count: raw.count)
         }
@@ -252,7 +252,7 @@ final class TerminalModesTests: XCTestCase {
         let recorder = TerminalModeRecorder(modes: [:])
         let first = UUID(), second = UUID()
         for (session, text) in [(first, "\u{1B}[?2004h"), (second, "\u{1B}[?1049h")] {
-            var bytes = Array(text.utf8)
+            let bytes = Array(text.utf8)
             bytes.withUnsafeBufferPointer { raw in
                 recorder.feed(session: session, bytes: raw.baseAddress!, count: raw.count)
             }

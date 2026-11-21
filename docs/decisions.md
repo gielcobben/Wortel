@@ -1460,3 +1460,6 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-11-21. `bench/measure.sh` measures a throwaway copy.** It used to
   `pkill -9` every running Wortel, the one running the script included. A
   copy with its own bundle id and data folder is stopped by path and pid.
+- **2026-11-21. Contributions are under the project's licence,
+  GPL-3.0-or-later, and there is no contributor licence agreement.** What
+  comes in goes out under the same terms (`CONTRIBUTING.md`).

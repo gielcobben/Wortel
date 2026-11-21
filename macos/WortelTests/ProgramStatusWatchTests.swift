@@ -82,11 +82,34 @@ final class ProgramStatusWatchTests: XCTestCase {
             + "\u{1B}]7501;state=done:app=codex\u{1B}\\"
         watch.replay(Data(replay.utf8))
         wait { heard.reports.count == 2 }
+        // The turn ended while bash_2 ran, so it was held open: the work
+        // comes first, or the app's records would not hold it.
         XCTAssertEqual(heard.reports.map(\.report), [
-            .status(ProgramStatus(state: .done, app: "codex")),
             .status(ProgramStatus(state: .working, id: "bash_2")),
+            .status(ProgramStatus(state: .done, app: "codex")),
         ])
         XCTAssertTrue(heard.reports.allSatisfy(\.replayed))
+    }
+
+    /// A replay leaves a held turn held, and work listed after a finished
+    /// turn unheld, as the records it was folded from had them.
+    func testAReplayKeepsWhetherTheTurnWasHeld() {
+        func applied(_ reports: [ProgramStatusReport]) -> ProgramRecords {
+            var records = ProgramRecords()
+            reports.forEach { records.apply($0) }
+            return records
+        }
+        let (held, heldHeard) = watch()
+        held.replay(Data(("\u{1B}]7501;state=working:app=claude-code:id=a1b2c3d4e\u{1B}\\"
+            + "\u{1B}]7501;state=done:app=claude-code\u{1B}\\").utf8))
+        wait { heldHeard.reports.count == 2 }
+        XCTAssertEqual(applied(heldHeard.reports.map(\.report)).effective?.state, .working)
+
+        let (late, lateHeard) = watch()
+        late.replay(Data(("\u{1B}]7501;state=done:app=claude-code\u{1B}\\"
+            + "\u{1B}]7501;state=working:app=claude-code:id=a1b2c3d4e\u{1B}\\").utf8))
+        wait { lateHeard.reports.count == 2 }
+        XCTAssertEqual(applied(lateHeard.reports.map(\.report)).effective?.state, .done)
     }
 
     /// The program left while nobody was attached: that is what stands.

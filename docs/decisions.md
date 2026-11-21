@@ -417,6 +417,35 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   first two, after passed 50 of 50. A real Claude Code 2.1.329 ending its
   turn with a 25 s command in the background stayed working until it
   replied to the result, then was finished once.
+- **2026-11-21. Of Claude Code's background work, only a subagent keeps its
+  turn open; a server does not.** A dev server Claude Code started in the
+  background is a child record `working` for as long as it runs, so the rule
+  above kept the row's spinner on for hours and no turn of that session was
+  ever announced finished. A server already has its place in the running
+  processes popover. Read in Claude Code 2.1.330's own code: its root
+  already says `working` ("1 shell still running") for a command it waits
+  on, one started since your last message that it does not read as a server
+  or watcher (`vite`, `next dev`, `npm run dev`, `serve`, `uvicorn`…), and
+  for a monitor, and says `done` beside a server. And its record ids name
+  the kind of task: a letter and eight of `[0-9a-z]`, `a`, `r`, `t`, `w` for
+  its agents, `b` for a background command. So a `working` piece of Claude
+  Code's work holds the turn only when its id is an agent's
+  (`ProgramRecords.holdsTurnOpen`), and the root speaks for the rest. A
+  piece blocked on a question still holds, and another program's pieces are
+  held as before. Chosen by the person: only subagents are busy. What it
+  gives up: a server Claude Code does not read as one (`python3 -m
+  http.server`, `rails s`) is still a command it says it waits on, so the
+  spinner stays until your next message. Deep sleep is unchanged: an agent
+  with a server running is not put to sleep, since ending it would end the
+  server. `verify-agent-status.py`: three new scenarios (a server beside a
+  finished turn, a question after it, a command Claude Code waits on), the
+  background command ones now use agent ids, 53 of 53 pass. With `--real`,
+  the real Claude Code 2.1.330 waiting on a `sleep 20` it started stayed
+  working until it ended and was then finished once, and beside the
+  `npm run dev` it started it was finished with the server still up. Found
+  in the review: a replay put the root before the work, so a turn held by a
+  subagent came back from a relaunch as finished; the work now goes first
+  when it held the turn.
 - **2026-11-20. A terminal out of sight follows its window, once a resize
   ends.** It kept its size while hidden, so what its agent printed after a
   window resize was laid out for a width it would never be shown at, and

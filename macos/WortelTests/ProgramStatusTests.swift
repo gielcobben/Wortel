@@ -150,14 +150,60 @@ final class ProgramStatusTests: XCTestCase {
                        ProgramStatus(state: .done))
     }
 
-    /// A finished turn with a background command still going is still at
-    /// work; once the command is gone it is the finished turn again.
+    /// A finished turn with a piece of its work still going is still at
+    /// work; once the work is gone it is the finished turn again.
     func testWorkingChildrenKeepTheProgramAtWork() {
-        var records = records("state=working:id=bash-1", "state=done:app=claude-code")
-        XCTAssertEqual(records.effective, ProgramStatus(state: .working, app: "claude-code"))
-        XCTAssertEqual(records.root, ProgramStatus(state: .done, app: "claude-code"))
+        var records = records("state=working:id=bash-1", "state=done:app=codex")
+        XCTAssertEqual(records.effective, ProgramStatus(state: .working, app: "codex"))
+        XCTAssertEqual(records.root, ProgramStatus(state: .done, app: "codex"))
         records.apply(.clearRecord("bash-1"))
+        XCTAssertEqual(records.effective, ProgramStatus(state: .done, app: "codex"))
+    }
+
+    /// Claude Code's background agent holds its finished turn open, as any
+    /// program's work does.
+    func testAClaudeCodeAgentKeepsTheTurnAtWork() {
+        var records = records("state=working:app=claude-code:id=a3k9x2m1q", "state=done:app=claude-code")
+        XCTAssertEqual(records.effective, ProgramStatus(state: .working, app: "claude-code"))
+        records.apply(.clearRecord("a3k9x2m1q"))
         XCTAssertEqual(records.effective, ProgramStatus(state: .done, app: "claude-code"))
+        // A remote agent, a teammate and a workflow are agents too.
+        for id in ["r3k9x2m1q", "t3k9x2m1q", "w3k9x2m1q"] {
+            XCTAssertEqual(self.records("state=working:app=claude-code:id=\(id)", "state=done:app=claude-code")
+                .effective?.state, .working, id)
+        }
+    }
+
+    /// A server Claude Code started (or any other command it left running in
+    /// the background) is not the turn: the turn ends when Claude Code says
+    /// so, and the server goes on in the running processes popover.
+    func testAClaudeCodeServerDoesNotHoldTheTurn() {
+        let server = records("state=working:app=claude-code:id=b7f3k2p9z", "state=done:app=claude-code")
+        XCTAssertEqual(server.effective, ProgramStatus(state: .done, app: "claude-code"))
+        XCTAssertFalse(server.hasUnfinishedWork)
+        // Its monitors, MCP tasks and housekeeping are not agents either.
+        for id in ["m7f3k2p9z", "s7f3k2p9z", "k7f3k2p9z", "d7f3k2p9z", "p7f3k2p9z"] {
+            XCTAssertEqual(records("state=working:app=claude-code:id=\(id)", "state=done:app=claude-code")
+                .effective?.state, .done, id)
+        }
+        // The app is the root's when a record leaves it out.
+        XCTAssertEqual(records("state=working:id=b7f3k2p9z", "state=done:app=claude-code").effective?.state, .done)
+        // An agent is still held beside a running server.
+        XCTAssertEqual(records("state=working:app=claude-code:id=b7f3k2p9z",
+                               "state=working:app=claude-code:id=a3k9x2m1q",
+                               "state=done:app=claude-code").effective?.state, .working)
+        // And a piece of work blocked on the person holds whatever it is.
+        XCTAssertEqual(records("state=blocked:kind=question:app=claude-code:id=b7f3k2p9z",
+                               "state=done:app=claude-code").block?.state, .blocked)
+    }
+
+    func testClaudeCodeAgentIDs() {
+        XCTAssertTrue(ProgramRecords.isClaudeCodeAgent("a0123456z"))
+        XCTAssertFalse(ProgramRecords.isClaudeCodeAgent("b0123456z"))
+        XCTAssertFalse(ProgramRecords.isClaudeCodeAgent("a012345"))      // too short
+        XCTAssertFalse(ProgramRecords.isClaudeCodeAgent("a0123456Z"))    // upper case
+        XCTAssertFalse(ProgramRecords.isClaudeCodeAgent("agent-7xy"))
+        XCTAssertFalse(ProgramRecords.isClaudeCodeAgent(""))
     }
 
     /// A piece of work blocked on the user is the program waiting on the

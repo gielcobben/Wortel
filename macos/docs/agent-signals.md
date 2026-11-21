@@ -116,7 +116,11 @@ terminal, or resumed from sleep) stayed silent for their whole run
 since the output is read with or without a surface. What the program wrote
 while Wortel was closed reaches the app as the keeper's tail of the session's
 output (`OutputTail`), and is old news: of it, only what it leaves standing is passed on, marked as replayed: a `clear` if there was one, the last root
-report, each child record still there, and the last notification. Not heard
+report, each child record still there, and the last notification. The
+children come before the root when the root's `done` was held open by them
+(below), since only work already there when `done` arrives holds it; a
+replay put the root first until 2026-11-21, and a turn held by a subagent
+came back from a relaunch as finished. Not heard
 at all: a session on the exec backend (no keeper), where libghostty owns the
 pty, and whose notifications libghostty still forwards.
 
@@ -135,9 +139,23 @@ while a piece of its work is still unfinished (`working`, or `blocked` on a
 question) is held open (`ProgramRecords.standing`, `finishHeld`): the spinner
 stays, and the turn is announced finished once the last of those pieces has
 ended, after 3 s instead of 0.4 s (`settleAfterWork`), because Claude Code
-carries on by itself with what a background command left. Only a `done` is
+carries on by itself with what a background agent left. Only a `done` is
 held (an `idle` is a stop, Esc), and work listed after a turn was over changes
-nothing. Deep sleep, a half-typed prompt's protection and what a relaunch
+nothing.
+
+Of Claude Code's work, only a subagent holds a turn open
+(`ProgramRecords.holdsTurnOpen`, 2026-11-21). Its record ids name the kind
+of task, a letter and eight of `[0-9a-z]`: `a`, `r`, `t` and `w` are its
+agents, `b` a background command, and the rest monitors and its own
+housekeeping. A dev server it started is a `b` record `working` for hours,
+and holding the turn on it kept the spinner on and every "finished" dot away
+for as long as the server ran; the server is in the running processes
+popover instead. A command Claude Code does wait on is said by its root
+anyway: it reports `working` ("1 shell still running") after a turn while a
+command started since the last message runs that it does not read as a
+server or watcher, and while a monitor runs, and `done` beside a server. A
+piece blocked on a question holds whatever it is, and other programs' pieces
+hold as before. Deep sleep, a half-typed prompt's protection and what a relaunch
 remembers (`said`) go by the root, so nothing restored can spin with no record
 left to end it.
 
@@ -227,7 +245,12 @@ session's name first, which read as disabled and was cut off at the sidebar's
 width. An agent that does not report in any version
 (Gemini CLI, goose, aider, cline) gets neither: there is nothing to update to.
 
-**Known limits.** Codex's own (openai/codex issues, read 2026-11-19):
+**Known limits.** A server Claude Code does not read as one (it knows
+`vite`, `next`, `nodemon`, `serve`, `uvicorn`, `gunicorn`, `streamlit`, and a
+package script named `dev`, `start`, `serve`, `watch`, `preview` and the
+like; not `python3 -m http.server` or `rails s`) is a command it says it
+waits on, so its row is working until the next message is sent.
+Codex's own (openai/codex issues, read 2026-11-19):
 approvals inside background subagent threads are not reported (#61124), a
 stalled subagent can hold `working` (#60325), and startup dialogs are not
 covered (#61778). A crashed agent leaves `working` until the marker sweep
@@ -247,10 +270,14 @@ effect is not in the test target, so that half is checked in a running copy
 of the app: `scripts/verify-agent-status.py` starts stand-in agents that say
 what a script tells them to, under the names the shell integration knows
 (`codex`, `claude`, `pi`, `opencode`, `gemini`), and reads the app's log for
-what it decided. Forty-four cases: a turn, a block and its answer, timing,
+what it decided. Fifty-three cases: a turn, a block and its answer, timing,
 rubbish, programs that never say `done`, old versions, plain programs,
-terminals dropped out of sight, and the app closed and reopened around five sessions.
-`--real` adds the real Claude Code being put to sleep and woken. `--soak`
+background agents and servers, terminals dropped out of sight, and the app
+closed and reopened around five sessions. `--real` adds the real Claude Code
+being put to sleep and woken, and the real Claude Code waiting on a `sleep 20`
+it started in the background and then starting a dev server (`npm run dev`)
+and finishing beside it (2.1.330, 2026-11-21: working until the command
+ended, then one turn-done; turn-done with the server still running). `--soak`
 is the nearest thing to a day of use: twenty stand-ins, forty random changes
 of state each, some standing and some flickering past faster than an
 announcement settles, held against the log three ways (every report sent was

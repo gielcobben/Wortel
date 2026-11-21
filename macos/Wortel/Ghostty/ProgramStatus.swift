@@ -322,12 +322,12 @@ struct ProgramRecords: Equatable {
     /// Whether the program is at work, as the person is shown it: its own
     /// record, except that one at rest (`done` or `idle`) with a piece of its
     /// work still `working` is working. Claude Code ends a turn with `done`
-    /// while a background command, a monitor or a remote agent it started is
-    /// still going, and when that ends it carries on by itself; its root
-    /// says `working` for that wait only sometimes. So the turn is not over,
-    /// and the row keeps its spinner until everything is done
-    /// (2026-11-20, chosen by the person: busy until all done, even for a
-    /// monitor that runs for hours). Only a `done` holds, and only with work
+    /// while a background agent it started is still going, and when that
+    /// ends it carries on by itself. So the turn is not over, and the row
+    /// keeps its spinner until the agent is done (2026-11-20). Which work
+    /// counts is `holdsTurnOpen`: since 2026-11-21 not a server, nor any
+    /// other background command, whose wait Claude Code's root reports
+    /// itself. Only a `done` holds, and only with work
     /// unfinished at that moment (`finishHeld`): `idle` is a stop (Esc), and
     /// work listed after a turn was announced does not take the
     /// announcement back. `blocked` and `error` stand as they are: they are
@@ -337,10 +337,48 @@ struct ProgramRecords: Equatable {
         return ProgramStatus(state: .working, app: root.app)
     }
 
-    /// A piece of work still going, or waiting on the person: a background
-    /// agent that asked a question carries on once answered.
+    /// A piece of work still going, or waiting on the person, that the turn
+    /// is waiting on: a background agent that asked a question carries on
+    /// once answered (`holdsTurnOpen`).
     var hasUnfinishedWork: Bool {
-        children.values.contains { $0.state == .working || $0.state == .blocked }
+        children.values.contains { Self.holdsTurnOpen($0, program: root?.app) }
+    }
+
+    /// Whether a piece of work keeps a turn that said `done` open.
+    ///
+    /// One blocked on the person always does: that is a question, and the
+    /// program carries on once it is answered. One still working does, except
+    /// Claude Code's background commands: a dev server it started runs for
+    /// hours, and held the row's spinner, and with it every "finished" dot,
+    /// for as long as it ran. A server already has its place in the running
+    /// processes popover. So of Claude Code's work only a subagent holds the
+    /// turn (2026-11-21, chosen by the person: only subagents are busy, a
+    /// server is not). Its own root still says `working` for a command it
+    /// waits on (one started this turn that is not a server or a watcher, by
+    /// its own reading of the command, and a monitor), so a long build or
+    /// release it is waiting for keeps the spinner on that word.
+    static func holdsTurnOpen(_ work: ProgramStatus, program: String?) -> Bool {
+        switch work.state {
+        case .blocked: return true
+        case .working:
+            guard (work.app ?? program) == "claude-code" else { return true }
+            return work.id.map(isClaudeCodeAgent) ?? false
+        case .idle, .done, .error: return false
+        }
+    }
+
+    /// Whether a Claude Code record's id is one of its agents. Its records
+    /// are its tasks, each id a letter for the kind of task and eight of
+    /// `[0-9a-z]` (2.1.330, read in its own code on 2026-11-21): `a` a
+    /// background agent, `r` a remote agent, `t` a teammate, `w` a workflow.
+    /// The rest are not agents: `b` a background command or monitor, `m` and
+    /// `s` monitors, `k` an MCP task, `d`, `e` and `p` its own housekeeping.
+    /// An id of any other shape is not taken for an agent, so a change to
+    /// the format leaves the root to speak for the turn, as it does anyway.
+    static func isClaudeCodeAgent(_ id: String) -> Bool {
+        let bytes = Array(id.utf8)
+        guard bytes.count == 9, "artw".utf8.contains(bytes[0]) else { return false }
+        return bytes.dropFirst().allSatisfy { (0x30...0x39).contains($0) || (0x61...0x7A).contains($0) }
     }
 
     /// What the session comes to, in one status: blocked if anything in it

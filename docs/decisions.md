@@ -677,6 +677,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   press or hover in it belongs to no row. As room above the next header it had
   to change that header's height beside the fold, and the two animations made
   the title jump.
+- **2026-11-21. A folded section with a session at work shows the three
+  dots.** Its header showed only the loudest attention dot of what it hid, so
+  a folder of working agents looked like one of idle shells. Now, when
+  nothing in it is louder, the header has a row's working dots after its
+  chevron (`SessionManager.isWorking(inFolder:)`, and for Pinned and
+  Sessions). A dot still wins, as on a row. A pinned session is spoken for by
+  Pinned only, no longer by its folder too, and a header speaks only for its
+  own window's sessions: folding is shared by every window, and the dot of a
+  folder folded in two windows showed what the other window was hiding.
 - **2026-11-17. One sidebar toggle and one pair of arrows, over all the rows.**
   There were three sets (the sidebar's row, and the main area's or the
   column's once it was collapsed), swapped with `isHidden`: the arrows were

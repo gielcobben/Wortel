@@ -1311,11 +1311,11 @@ struct SidebarOutlineView: NSViewRepresentable {
                 cell.dragTitle = session.session.leafName
                 cell.setGapBelow(gapBelow(item))
             } else if item is PinnedItem || item is LooseHeaderItem {
-                content = AnyView(SidebarSectionHeaderContent(manager: manager, isPinned: item is PinnedItem))
+                content = AnyView(SidebarSectionHeaderContent(manager: manager, window: home, isPinned: item is PinnedItem))
                 cell = SidebarCellView(content: content)
                 return cell
             } else if let folder = item as? FolderItem {
-                content = AnyView(SidebarHeaderContent(manager: manager, folder: folder.name))
+                content = AnyView(SidebarHeaderContent(manager: manager, window: home, folder: folder.name))
                 cell = SidebarCellView(content: content)
                 cell.dragTitle = folder.name
                 cell.dragIsHeader = true

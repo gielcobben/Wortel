@@ -650,11 +650,22 @@ final class SessionManager {
 
     /// What a folded Pinned or Sessions header shows for the sessions it
     /// hides, as `attention(inFolder:)` does for a folder.
-    func attention(inPinned pinned: Bool) -> AttentionKind? {
+    func attention(inPinned pinned: Bool, of window: SessionWindow) -> AttentionKind? {
         guard pinned ? pinnedCollapsed : looseCollapsed else { return nil }
-        return AttentionKind.loudest(of: sessions.lazy.filter {
+        return AttentionKind.loudest(of: sessionsHidden(inPinned: pinned, of: window).map(\.attention))
+    }
+
+    /// Whether a folded Pinned or Sessions header is hiding a session at
+    /// work, as `isWorking(inFolder:)` does for a folder.
+    func isWorking(inPinned pinned: Bool, of window: SessionWindow) -> Bool {
+        guard pinned ? pinnedCollapsed : looseCollapsed else { return false }
+        return sessionsHidden(inPinned: pinned, of: window).contains(where: Self.showsWorking)
+    }
+
+    private func sessionsHidden(inPinned pinned: Bool, of window: SessionWindow) -> some Sequence<Session> {
+        sessions(in: window).lazy.filter {
             pinned ? self.isPinned($0) : (!self.isPinned($0) && $0.folderPath == nil)
-        }.map(\.attention))
+        }
     }
 
     /// Folders made on purpose (⌘O, or a worktree of a repository with no
@@ -5442,10 +5453,34 @@ final class SessionManager {
     /// *hidden* — a blocked agent behind a collapsed folder is otherwise
     /// completely silent in the sidebar, which is the one thing the attention
     /// system exists to prevent.
-    func attention(inFolder folder: String) -> AttentionKind? {
+    func attention(inFolder folder: String, of window: SessionWindow) -> AttentionKind? {
         guard collapsedFolders.contains(folder) else { return nil }
-        return AttentionKind.loudest(
-            of: sessions.lazy.filter { $0.folderPath == folder }.map(\.attention))
+        return AttentionKind.loudest(of: sessionsHidden(inFolder: folder, of: window).map(\.attention))
+    }
+
+    /// Whether a collapsed folder is hiding a session at work: the three dots
+    /// its header shows when nothing in it is louder (`attention(inFolder:)`).
+    /// Without it a folded folder of working agents looked exactly like one
+    /// of idle shells, and the only way to see that something was under way
+    /// was to open it.
+    func isWorking(inFolder folder: String, of window: SessionWindow) -> Bool {
+        guard collapsedFolders.contains(folder) else { return false }
+        return sessionsHidden(inFolder: folder, of: window).contains(where: Self.showsWorking)
+    }
+
+    /// The sessions a folder's header speaks for: those drawn under it, in
+    /// that window's sidebar. A pinned one is drawn in Pinned, whose header
+    /// speaks for it. Folding is shared by every window, but each lists only
+    /// its own sessions, so a folder folded in two windows speaks for
+    /// different ones in each.
+    private func sessionsHidden(inFolder folder: String, of window: SessionWindow) -> some Sequence<Session> {
+        sessions(in: window).lazy.filter { $0.folderPath == folder && !self.isPinned($0) }
+    }
+
+    /// Whether a session's row shows the three dots: at work, or a worktree on
+    /// its way (`SessionStatusIndicator`).
+    static func showsWorking(_ session: Session) -> Bool {
+        session.isBusy || (session.preparation.map { $0.failure == nil } ?? false)
     }
 
     /// Dock badge = number of background sessions waiting on the user.

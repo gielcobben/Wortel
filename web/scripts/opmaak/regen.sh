@@ -1,6 +1,9 @@
 #!/bin/bash
 # The site's app windows, from the design canvas.
 #
+# A maintainer-only tool: it needs the private `opmaak` CLI. Contributors don't
+# need it, because the generated src/app/gen is committed.
+#
 #   scripts/opmaak/regen.sh            write src/app/gen, fetch new images
 #   scripts/opmaak/regen.sh --check    change nothing, say what would change
 #

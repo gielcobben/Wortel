@@ -1,4 +1,6 @@
 // Opmaak JSX dump -> compact HTML fragment for an .astro component.
+// A maintainer-only tool, run by regen.sh, which needs the private `opmaak` CLI.
+// Contributors don't need it: the generated web/src/app/gen is committed.
 // Usage: node jsx2astro.mjs <in.jsx> <out.astro> [--select "Name"] [--assets ids.txt]
 // Follows JSX whitespace rules exactly so whitespace-pre terminal rows survive.
 import { parse } from '@babel/parser';

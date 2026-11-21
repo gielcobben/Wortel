@@ -68,6 +68,10 @@ scripts/og/                render.mjs: the inner pages' social cards -> public/o
 
 ### The app window is live HTML, not a screenshot
 
+Regenerating these windows is maintainer-only: it needs the private `opmaak`
+CLI, and contributors don't need it, because the generated `src/app/gen` is
+committed and the site builds from it as it is.
+
 Every window on the site is built from the Opmaak canvas "Wortel"
 (https://opmaak.dev/c/2v3opz6osv), whose panes are Tailwind markup over the
 app's measured tokens. To pick up a change made on the canvas:

@@ -1,6 +1,9 @@
 #!/bin/bash
 # How far the app has moved since the design canvas last showed it.
 #
+# A maintainer-only tool, for keeping the private design canvas current.
+# Contributors don't need it: the generated web/src/app/gen is committed.
+#
 #   scripts/opmaak/drift.sh           the commits since, in two lists
 #   scripts/opmaak/drift.sh --count   only the size of the first list
 #

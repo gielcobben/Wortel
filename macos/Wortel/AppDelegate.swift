@@ -471,6 +471,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// When this launch started, for the uptime bucket on quit.
     private let launchedAt = Date()
+    /// Set once a quit has begun (`applicationShouldTerminate`).
+    private(set) static var isQuitting = false
 
     /// Whether launch has finished: windows `restore` brings back are not
     /// windows opened.
@@ -1088,6 +1090,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// calls are idempotent and `applicationWillTerminate` runs them again for
     /// the termination paths that never reach here.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Read by Restart to Update's fallback, so it doesn't ask a second
+        // time while this quit is still saving.
+        Self.isQuitting = true
         manager?.saveNow()
         // The banners left with Notification Center are for now: under each
         // session's name as it is on the way out.

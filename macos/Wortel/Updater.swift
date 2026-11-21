@@ -113,9 +113,35 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     /// Install the downloaded update and relaunch. Sparkle quits Wortel, which
     /// saves everything on the way out as any quit does; the keeper holds the
     /// shells across it.
+    ///
+    /// Sparkle's quit is a request from its helper process, and on 2026-11-20
+    /// a click on Restart Now did nothing on a laptop whose update had waited
+    /// 2.5 hours: the installer had the click (⌘Q later installed *and*
+    /// reopened, which only a click asks for) but Wortel was never asked to
+    /// quit. It did not reproduce in a test copy (straight away, after 35
+    /// minutes, after a Sparkle relaunch), so the cause is not known. So
+    /// Restart does not rely on that request: if Wortel is still here a few
+    /// seconds after the click, it quits itself, which is the ⌘Q that finished
+    /// the update by hand. `quitFallback` is well past the second or so the
+    /// request takes when it works.
+    ///
+    /// A run-loop timer, never a `Task` or `DispatchQueue.main` block: quitting
+    /// defers (`terminateLater`) and is answered from the main queue, which
+    /// cannot run while the quit was started from inside one of its blocks.
+    /// Measured: started from a `Task`, the quit hung for good and every later
+    /// quit request was ignored as "already terminating".
     func restartToUpdate() {
-        installNow?()
+        guard let installNow else { return }
+        installNow()
+        Timer.scheduledTimer(withTimeInterval: Self.quitFallback, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                guard !AppDelegate.isQuitting else { return }
+                NSApp.terminate(nil)
+            }
+        }
     }
+
+    private static let quitFallback: TimeInterval = 3
 
     /// Whether this build updates itself at all (a development build doesn't).
     var isAvailable: Bool { controller != nil }

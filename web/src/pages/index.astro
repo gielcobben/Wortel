@@ -4,10 +4,10 @@
 // it, the branches under them, what happens when you quit, what it is made of.
 import Layout from '../layouts/Layout.astro';
 import Hero from '../components/home/Hero.astro';
-import Panes from '../components/home/Panes.astro';
+import Start from '../components/home/Start.astro';
 import Agents from '../components/home/Agents.astro';
-import Worktrees from '../components/home/Worktrees.astro';
-import Survival from '../components/home/Survival.astro';
+import Panes from '../components/home/Panes.astro';
+import Bento from '../components/home/Bento.astro';
 import Glance from '../components/home/Glance.astro';
 import { homeSchema } from '../data/schema';
 import { latestRelease } from '../data/release';
@@ -17,10 +17,10 @@ const schema = homeSchema(await latestRelease());
 
 <Layout path="/" schema={schema} markdown="/index.md">
   <Hero />
-  <Panes />
+  <Start />
   <Agents />
-  <Worktrees />
-  <Survival />
+  <Panes />
+  <Bento />
   <Glance />
 </Layout>
 

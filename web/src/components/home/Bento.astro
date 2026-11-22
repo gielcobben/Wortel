@@ -1,0 +1,318 @@
+---
+// The bento: Wortel at a glance, as one poster.
+//
+// Built the way Apple closes a keynote section, studied from its 2025 slides
+// (iPhone 17 Pro, iPhone Air, Watch Ultra, macOS, iPadOS):
+//   - the product itself in the middle, larger than anything else;
+//   - tiles of very different sizes on one tight grid: 14 columns, 6 rows;
+//   - ONE piece of the product per tile and a label of a few words. No
+//     sentences, and almost no tile that is only type: on the macOS slide
+//     one in fourteen is, and here two small ones are;
+//   - a fragment of the interface, never a whole screen, large and cut by the
+//     tile where it does not fit;
+//   - each tile its own background: white, or its own crop of ONE photo. A
+//     photo behind the whole poster was tried and read as wallpaper; three
+//     different photos were tried and did not belong together;
+//   - light tiles on a darker panel (black on dark grey at night), no
+//     borders, no shadows on the tiles themselves.
+// Inside a tile things are centred, which the rest of the site never does:
+// a poster is read at a glance, not down a left edge.
+//
+// Everything drawn is the real app, generated from the canvas, 1:1 and never
+// scaled. The panes are rendered once into a <template>, and scripts/bento.ts
+// lifts the named part each tile shows out of them (the diff, the commits,
+// the rendered Markdown, the browser page), so nothing is redrawn here.
+// What macOS draws is drawn as macOS does (the Dock icon). Cursors stand
+// still, as the app's does. The copy is BENTO in data/site.ts; a tile's
+// sentence is there for screen readers and is not shown.
+import { BENTO } from '../../data/site';
+import Window from '../Window.astro';
+import Lead from '../Lead.astro';
+import Lights from '../Lights.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import Terminal from '../../app/gen/Terminal.astro';
+import Palette from '../../app/gen/Palette.astro';
+import Changes from '../../app/gen/Changes.astro';
+import FileMain from '../../app/gen/FileMain.astro';
+import Browser from '../../app/gen/Browser.astro';
+
+// The order the tiles arrive in: the terminal first, then outwards from it.
+const ARRIVE = ['hero', 'agents', 'browser', 'plan', 'palette', 'worktree', 'diff', 'status', 'settings', 'quit', 'free', 'send', 'looks'];
+// The commands on the agents tile, as typed. Nine of the agents Wortel knows
+// by name; anything else runs the same.
+const AGENTS = ['claude', 'codex', 'gemini', 'opencode', 'pi', 'amp', 'goose', 'aider', 'crush'];
+const delay = (scene: string) => `--d:${ARRIVE.indexOf(scene) * 50}ms`;
+// A tile that shows a part lifted out of a pane: which part, by its name.
+const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
+---
+<section class="sec" id="more">
+  <span id="worktrees" class="anchor"></span><span id="survival" class="anchor"></span>
+  <span id="zero-config" class="anchor"></span><span id="ghostty-engine" class="anchor"></span><span id="specs" class="anchor"></span>
+  <div class="page">
+    <div class="bhead" data-reveal>
+      <h2 class="h2">{BENTO.title} <span class="tone">{BENTO.tone}</span></h2>
+    </div>
+    <ul class="bento" data-bento data-reveal>
+      {BENTO.tiles.map((t) => (
+        <li class:list={['tile', t.scene]} data-tile={t.scene} style={delay(t.scene)}>
+          {!t.big && t.scene !== 'looks' && <p class="cap">{t.label}</p>}
+
+          {t.scene === 'hero' && (
+            <Window data-win="hero" style="--w:720px;--h:560px">
+              <div class="flex min-h-0 min-w-[80px] flex-1 self-stretch"><Terminal /></div>
+              <Lights slot="over" />
+            </Window>
+          )}
+
+          {t.scene === 'browser' && (
+            <Window data-win="browser" style="--w:720px;--h:400px">
+              <div class="flex min-h-0 min-w-[80px] flex-1 self-stretch"><Browser /></div>
+              <Lights slot="over" />
+            </Window>
+          )}
+
+          {t.scene === 'worktree' && (
+            <div class="wapp rows" data-rows inert>
+              <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+              <div class="relative flex w-[234px]"><Sidebar /></div>
+            </div>
+          )}
+
+          {t.scene === 'agents' && (
+            <div class="wapp chips"><div class="belt">{[...AGENTS, ...AGENTS].map((a, i) => (
+              <span class="chip bg-background font-mono text-[14px] font-medium leading-[19px] tracking-[-0.155px] text-[#1f2328] dark:text-[#e6edf3]" aria-hidden={i >= AGENTS.length ? 'true' : undefined}><span class="text-[#116329] dark:text-[#3fb950]">➜ </span>{a}</span>
+            ))}</div></div>
+          )}
+
+          {t.scene === 'send' && (
+            <div class="wapp cmd"><p class="bg-background font-mono text-[14px] font-medium leading-[19px] tracking-[-0.155px] text-[#1f2328] dark:text-[#e6edf3]"><span class="text-[#666666] dark:text-[#999999]">$ </span>wortel send tests "run it"<i></i></p></div>
+          )}
+
+          {PART[t.scene] && <div class="wapp part bg-background" data-part={PART[t.scene]} inert></div>}
+
+          {t.scene === 'palette' && <div class="wapp pal" inert><Palette /></div>}
+
+          {t.scene === 'quit' && <div class="app"><img src="/icon-512.png" width="56" height="56" alt="" /><i></i></div>}
+
+          {t.scene === 'status' && (
+            <div class="wapp dots">
+              <span class="wave"><i></i><i></i><i></i></span>
+              <i class="bg-chart-1 breathe"></i>
+              <i class="bg-chart-2 breathe"></i>
+              <i class="bg-chart-5"></i>
+            </div>
+          )}
+
+          {t.scene === 'looks' && (
+            ['day', 'night'].map((half) => (
+              <div class:list={['half', half]} aria-hidden="true">
+                <p class="ps1"><b class="a">➜</b> <b class="b">wortel</b> <b class="c">git:(</b><b class="d">main</b><b class="c">)</b> <i></i></p>
+                <p class="cap">{t.label}</p>
+              </div>
+            ))
+          )}
+
+          {t.big && (
+            <>
+              <p class="big">{t.big}</p>
+              <p class="cap sub">{t.label}</p>
+            </>
+          )}
+
+          <p class="vh">{t.body}</p>
+        </li>
+      ))}
+    </ul>
+    <!-- The panes the tiles take their parts from, and what a window with no
+         sidebar gains in its bar. Never shown: scripts/bento.ts clones from them. -->
+    <template data-src><Changes /><FileMain /></template>
+    <template data-tpl="lead"><Lead /></template>
+  </div>
+</section>
+
+<script>
+  import { initBento } from '../../scripts/bento';
+  initBento();
+</script>
+
+<style>
+  /* The poster: a panel, and the tiles on it. 14 columns and 6 rows, so a
+     small tile is 2 by 1, the terminal 6 by 3, and nothing is a row of equals. */
+  .bento {
+    /* The site's blue, under a name the app's own tokens do not take (inside
+       .wapp, --accent is the app's). */
+    --gap: 16px; --cursor: var(--accent);
+    list-style: none; margin: 0; padding: var(--gap); border-radius: 32px;
+    display: grid; gap: var(--gap);
+    grid-template-columns: repeat(14, minmax(0, 1fr)); grid-template-rows: repeat(6, 136px);
+    background: var(--fog-2);
+  }
+  .tile {
+    position: relative; overflow: hidden; isolation: isolate; min-width: 0; border-radius: 20px;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 16px;
+    padding: 24px 16px; text-align: center;
+    background: var(--fog-0); color: var(--ink);
+  }
+  .worktree { grid-area: 1 / 1 / 3 / 5; }
+  .plan     { grid-area: 3 / 1 / 5 / 5; }
+  .quit     { grid-area: 5 / 1 / 6 / 3; }
+  .status   { grid-area: 5 / 3 / 6 / 5; }
+  .send     { grid-area: 6 / 1 / 7 / 5; }
+  .agents   { grid-area: 1 / 5 / 2 / 11; }
+  .hero     { grid-area: 2 / 5 / 5 / 11; }
+  .browser  { grid-area: 5 / 5 / 7 / 11; }
+  .diff     { grid-area: 1 / 11 / 3 / 15; }
+  .palette  { grid-area: 3 / 11 / 5 / 15; }
+  .settings { grid-area: 5 / 11 / 6 / 13; }
+  .free     { grid-area: 5 / 13 / 6 / 15; }
+  .looks    { grid-area: 6 / 11 / 7 / 15; }
+
+  /* ---- what a tile stands on -------------------------------------------------
+     White, and three tiles that are each their own crop of one photo. Two
+     other looks were tried side by side (those three in deep green; a faint
+     wash of each tile's colour) and this one was kept. */
+  .worktree, .hero, .quit { background: #2b3328; }
+  .worktree::before, .hero::before, .quit::before {
+    content: ''; position: absolute; inset: 0; z-index: -1;
+    background: linear-gradient(rgb(16 22 15 / 0.3), rgb(16 22 15 / 0.3)), var(--lake-veil), url(/img/skye.jpg) var(--at) / var(--zoom) no-repeat;
+  }
+  .worktree { --at: 18% 62%; --zoom: 300% auto; }
+  .hero { --at: 62% 78%; --zoom: 210% auto; }
+  .quit { --at: 0% 92%; --zoom: 520% auto; }
+  .worktree .cap, .hero .cap, .quit .cap { color: #fff; text-shadow: 0 1px 12px rgb(0 0 0 / 0.3); }
+
+
+  /* It assembles, as the slide does: the terminal, then the tiles around it.
+     The panel itself does not move. */
+  :global(.js) .bento[data-reveal] { opacity: 1; translate: none; filter: none; }
+  :global(.js) .bento[data-reveal] .tile {
+    opacity: 0; scale: 0.92;
+    transition: opacity 500ms var(--ease-out) var(--d), scale 800ms var(--ease-settle) var(--d);
+  }
+  :global(.js) .bento[data-reveal]:global(.in) .tile { opacity: 1; scale: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.js) .bento[data-reveal] .tile { scale: 1; transition: opacity 400ms ease var(--d); }
+  }
+
+  /* One label, a few words, the same size on every tile, over its picture. */
+  .cap { position: relative; z-index: 2; margin: 0; flex: none; font: 600 17px/24px var(--font-display); letter-spacing: -0.012em; text-wrap: balance; color: var(--ink); }
+  .cap.sub { font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: 0; color: var(--ink-2); }
+
+  /* ---- the terminal, in the middle ------------------------------------------ */
+  /* The window is taller than the tile: the agent's whole screen fits in it,
+     and the tile cuts its foot, so its name and the request stay in view. */
+  /* Wider than the tile, so the agent's lines run as they would in a real
+     window instead of wrapping; the tile cuts its right edge and its foot. */
+  .hero :global(.win) { position: absolute; left: 16px; top: 64px; width: var(--w); max-width: none; text-align: left; }
+  .hero :global([data-solo] header[data-name="Main bar"]) { padding-left: 78px; }
+
+  /* ---- parts of the app, at their own size, cut by the tile ------------------ */
+  .part, .pal, .rows { text-align: left; }
+  /* A part lifted out of a pane: a page of the app with one corner showing. */
+  .part {
+    position: absolute; left: 20px; top: 64px; display: flex; flex-direction: column; overflow: hidden;
+    border-radius: 12px 0 0 0; box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.1);
+  }
+  .diff .part { width: 420px; height: 240px; }
+  .plan .part { width: 560px; height: 420px; }
+
+  .part > :global(*) { flex: none; width: 100%; }
+  /* The browser as it is in the app: a session's window with its tabs, the
+     address bar and the page. The page is the site itself (public/img,
+     browser-light and -dark, this homepage at the tab's width), since the one
+     the canvas drew dates; bento.ts sets it. */
+  .browser :global(.win) { position: absolute; left: 24px; top: 72px; width: var(--w); max-width: none; text-align: left; }
+  .browser :global([data-solo] header[data-name="Main bar"]) { padding-left: 78px; }
+  .browser :global([data-name="Web page"]) { object-fit: cover; object-position: 50% 0; }
+
+  /* The top of the command palette. */
+  .pal { position: absolute; left: 20px; top: 64px; width: 560px; }
+  .pal :global([data-name="Command palette"]) { box-shadow: 0 0 0 1px var(--line), 0 16px 40px rgb(0 0 0 / 0.16); }
+
+  /* Three rows of the real sidebar on its own glass, as wide as the sidebar
+     is: bento.ts leaves one folder and its worktree sessions. */
+  .rows { position: relative; display: flex; width: 234px; overflow: hidden; border-radius: 14px; box-shadow: 0 16px 40px rgb(0 0 0 / 0.3), 0 0 0 0.5px rgb(0 0 0 / 0.3); }
+  .rows :global([data-name="Sidebar bar"]), .rows :global([data-name="Sidebar footer"]) { display: none; }
+  .rows :global([data-name="Sessions"]) { overflow: hidden; padding-block: 6px; }
+  .rows :global([data-name="Working"] > div) { animation: wave 1.4s ease-in-out infinite; }
+  .rows :global([data-name="Working"] > div:nth-child(2)) { animation-delay: 0.18s; }
+  .rows :global([data-name="Working"] > div:nth-child(3)) { animation-delay: 0.36s; }
+
+  /* The agents, each as it is typed at a prompt, passing slowly by: the list
+     twice over on one belt, which moves by exactly one list and starts again,
+     so it never ends. Constant motion, so linear; with Reduce Motion it
+     stands still and the tile cuts it. */
+  .agents { gap: 12px; }
+  .chips { align-self: stretch; overflow: hidden; padding: 4px 0 12px;
+    mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent); }
+  .belt { display: flex; gap: 8px; width: max-content; animation: belt 28s linear infinite; }
+  .chip { flex: none; padding: 8px 14px; border-radius: 999px; white-space: pre; box-shadow: 0 0 0 1px var(--line), 0 4px 12px rgb(0 0 0 / 0.05); }
+  /* Half the belt plus half a gap: the second list then sits where the first began. */
+  @keyframes belt { to { transform: translateX(calc(-50% - 4px)); } }
+
+  /* One command, in the terminal's own type, with the cursor after it. */
+  .send { flex-direction: column-reverse; justify-content: center; gap: 12px; }
+  .cmd { overflow: hidden; border-radius: 999px; box-shadow: 0 0 0 1px var(--line), 0 4px 16px rgb(0 0 0 / 0.06); }
+  .cmd p { margin: 0; padding: 8px 20px; white-space: pre; display: flex; align-items: center; }
+  .cmd i { width: 8.5px; height: 17px; margin-left: 8.5px; background: var(--cursor); }
+
+  /* ---- the small tiles: one thing, and its word under it ---------------------- */
+  .quit, .status, .settings, .free { flex-direction: column-reverse; justify-content: center; gap: 8px; padding: 12px; }
+  .quit .cap, .status .cap { font-size: 15px; line-height: 20px; }
+  /* The app in the Dock, with the dot that says it is running. */
+  .app { position: relative; width: 56px; height: 62px; }
+  .app img { display: block; width: 56px; height: 56px; filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.35)); }
+  .app i { position: absolute; bottom: 0; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.3); }
+  /* The sidebar's statuses, the only colour the app has: working, needs you,
+     done, finished. */
+  .dots { display: flex; align-items: center; gap: 14px; height: 48px; }
+  .dots > i { width: 18px; height: 18px; border-radius: 50%; }
+  .wave { display: flex; gap: 4px; }
+  .wave i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); animation: wave 1.4s ease-in-out infinite; }
+  .wave i:nth-child(2) { animation-delay: 0.18s; }
+  .wave i:nth-child(3) { animation-delay: 0.36s; }
+  .breathe { animation: breathe 2.4s ease-in-out infinite; }
+  @keyframes wave { 50% { opacity: 0.25; } }
+  @keyframes breathe { 50% { opacity: 0.55; } }
+  /* A number or a word that is its own picture: only these two. */
+  .settings, .free { flex-direction: column; gap: 4px; }
+  .big {
+    margin: 0; font: 600 48px/52px var(--font-display); letter-spacing: -0.04em;
+    background: linear-gradient(180deg, var(--ink), var(--ink-2)); -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .settings .big { font-size: 68px; line-height: 60px; }
+
+  /* The same line by day and by night, in the terminal's two themes (GitHub
+     Light and Dark, the app's own colours). Both halves hold the same thing
+     in the same place, and each is cut to its side of one diagonal. */
+  .looks { padding: 0; }
+  .half {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: #ffffff; --fg: #1f2328; --a: #116329; --b: #1b7c83; --c: #0969da; --d: #cf222e; --k: #0969da;
+    clip-path: polygon(0 0, 58% 0, 42% 100%, 0 100%);
+  }
+  .half.night {
+    background: #0d1117; --fg: #e6edf3; --a: #3fb950; --b: #39c5cf; --c: #58a6ff; --d: #ff7b72; --k: #3081f7;
+    clip-path: polygon(58% 0, 100% 0, 100% 100%, 42% 100%);
+  }
+  .half .cap { color: var(--fg); }
+  .ps1 { margin: 0; white-space: pre; font: 500 14px/19px var(--font-mono); letter-spacing: -0.155px; color: var(--fg); }
+  .ps1 b { font-weight: 700; }
+  .ps1 .a { color: var(--a); font-weight: 500; } .ps1 .b { color: var(--b); } .ps1 .c { color: var(--c); } .ps1 .d { color: var(--d); }
+  .ps1 i { display: inline-block; width: 8.5px; height: 17px; vertical-align: -3px; background: var(--k); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wave i, .breathe, .belt, .rows :global([data-name="Working"] > div) { animation: none; }
+  }
+
+  /* Narrower than the poster can hold: the same tiles on four columns, the
+     terminal first. */
+  @media (max-width: 960px) {
+    .bento { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: 136px; border-radius: 28px; }
+    .tile { grid-area: auto; grid-column: span 4; }
+    .hero { order: -1; grid-row: span 3; }
+    .worktree, .diff, .plan, .palette, .browser { grid-row: span 2; }
+    .quit, .status, .settings, .free { grid-column: span 2; }
+    .cmd p { padding-inline: 16px; }
+  }
+</style>

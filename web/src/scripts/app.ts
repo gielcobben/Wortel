@@ -147,6 +147,23 @@ export function withHeader(root: HTMLElement, path?: string) {
 
 // ---- the sidebar ----------------------------------------------------------
 
+/**
+ * Show only part of a sidebar. The canvas draws a full one (six folders,
+ * fifteen sessions), which is a power user's window: a window on the page
+ * shows as much of it as its own story needs, and the page lets it grow from
+ * a short flat list to folders and branches as it goes down.
+ *
+ * `layout` is what is shown, top to bottom: session names, and 'Section x'
+ * for a header. Everything else is hidden. The rows are the canvas's own,
+ * moved, so a session can be listed under another header than it was drawn.
+ */
+export function showSidebar(nav: HTMLElement, layout: string[]) {
+  const keep = layout.map((name) => named(nav, name)).filter((r): r is HTMLElement => !!r);
+  for (const el of Array.from(nav.children) as HTMLElement[]) el.hidden = !keep.includes(el);
+  nav.append(...keep);
+  fitSidebar(nav);
+}
+
 export type Status = 'working' | 'attention' | 'done' | 'none';
 
 export class Sidebar {
@@ -177,21 +194,61 @@ export class Sidebar {
     return row;
   }
 
+  /** Show only part of the sidebar (showSidebar). Before clickable(). */
+  show(layout: string[]) { showSidebar(this.nav, layout); }
+
   /** The session rows, top to bottom (not the folder headers). */
   rows() {
     return (Array.from(this.nav.children) as HTMLElement[]).filter((r) => r.dataset.name && !r.dataset.name.startsWith('Section '));
   }
 
-  /** Move the selection to a row, the way a click does. */
-  select(name: string, animate = true) {
+  /**
+   * Move the selection to a row, the way a click does: at once, as the app
+   * switches on the press. The session left goes on the Back list.
+   */
+  select(name: string) {
     const to = this.row(name);
     if (!to || name === this.selected) return;
-    const from = this.pill.getBoundingClientRect();
+    if (!this.walking) { this.back.push(this.selected); this.ahead = []; }
     to.prepend(this.pill);
     this.selected = name;
-    if (!animate || !from.height) return;
-    const now = this.pill.getBoundingClientRect();
-    gsap.fromTo(this.pill, { y: from.top - now.top, height: from.height }, { y: 0, height: now.height, duration: 0.3, ease: 'power3.out', clearProps: 'transform,height' });
+    this.arrows();
+  }
+
+  // ---- Back and Forward: the sessions you were on -----------------------------
+  private back: string[] = [];
+  private ahead: string[] = [];
+  private walking = false;
+  private go?: (name: string) => void;
+
+  /** Make Back and Forward work. `go` switches the scene to a session. */
+  navigable(go: (name: string) => void) {
+    this.go = go;
+    named(this.root, 'Back')?.addEventListener('click', () => this.walk(this.back, this.ahead));
+    named(this.root, 'Forward')?.addEventListener('click', () => this.walk(this.ahead, this.back));
+    this.arrows();
+  }
+
+  private walk(from: string[], to: string[]) {
+    const name = from.pop();
+    if (!name || !this.go) return;
+    to.push(this.selected);
+    this.walking = true;
+    try { this.go(name); } finally { this.walking = false; }
+    this.arrows();
+  }
+
+  /** A button with nowhere to go is drawn dimmed and does not press. */
+  private arrows() {
+    if (!this.go) return;
+    for (const [name, list] of [['Back', this.back], ['Forward', this.ahead]] as const) {
+      const button = named(this.root, name);
+      const glyph = named(this.root, `${name} glyph`);
+      if (!button || !glyph) continue;
+      button.toggleAttribute('data-press', list.length > 0);
+      glyph.classList.toggle('bg-sidebar-accent-foreground', list.length > 0);
+      glyph.classList.toggle('bg-sidebar-ring', !list.length);
+    }
   }
 
   /** Give a row a status the way the app marks one. */
@@ -205,6 +262,7 @@ export class Sidebar {
       dot.classList.remove('bg-chart-1', 'bg-chart-2');
       dot.classList.add(status === 'attention' ? 'bg-chart-1' : 'bg-chart-2');
       gsap.fromTo(dot, { scale: 0.5, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.35, ease: 'back.out(1.7)', clearProps: 'transform,opacity' });
+      requestAnimationFrame(() => ping(dot));
     }
     row.classList.remove('pr-3'); row.classList.add('pr-[34px]');
     row.appendChild(el);
@@ -285,6 +343,10 @@ export class Terminal {
   /** Replace what is on screen with another session's lines. */
   swap(nodes: HTMLElement[]) {
     this.clear();
+    // Another agent's screen brings its own input box (codexScreen, piScreen):
+    // Claude's is hidden while it is up (styles/app.css).
+    const other = nodes.find((n) => n.dataset.agent)?.dataset.agent;
+    if (other) this.root.dataset.agent = other; else delete this.root.dataset.agent;
     nodes.forEach((n) => this.root.insertBefore(n, this.anchor));
     this.fit();
   }
@@ -348,17 +410,21 @@ export class Terminal {
     p.dataset.name = 'Status';
     p.className = 'relative shrink-0 whitespace-pre-wrap pl-[17px] pr-1 [overflow-wrap:anywhere]';
     p.innerHTML = '';
+    // Its glyph steps through Claude Code's spinner, and the words shimmer.
     const glyph = document.createElement('span');
-    glyph.className = 'spin absolute top-0 left-[0px] text-[#d77757]';
+    glyph.className = 'claude-spin absolute top-0 left-[0px] text-[#d77757]';
+    glyph.dataset.claudeSpin = '';
     glyph.textContent = '✽';
     const said = document.createElement('span');
-    said.className = 'text-[#d77757]';
-    said.textContent = text + ' ';
+    said.className = 'glimmer text-[#d77757]';
+    said.textContent = text;
+    const space = document.createTextNode(' ');
     const meta = document.createElement('span');
     meta.className = 'text-[#666666] dark:text-[#999999]';
     meta.textContent = `(${detail})`;
-    p.append(glyph, said, meta);
+    p.append(glyph, said, space, meta);
     this.root.insertBefore(p, this.anchor);
+    claudeSpin();
     if (this.mode && !this.mode.querySelector('[data-esc]')) {
       const esc = document.createElement('span');
       esc.dataset.esc = '';
@@ -375,6 +441,34 @@ export class Terminal {
     this.root.querySelector(':scope > [data-name="Status"]')?.remove();
     this.mode?.querySelector('[data-esc]')?.remove();
   }
+}
+
+// Claude Code's spinner: the glyph steps out through these and back, as its
+// own does. One timer for every spinner on the page, only while one is drawn.
+const CLAUDE = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
+let claudeTimer = 0;
+function claudeSpin() {
+  if (claudeTimer || reduced()) return;
+  let k = 0;
+  claudeTimer = window.setInterval(() => {
+    const all = document.querySelectorAll<HTMLElement>('[data-claude-spin]');
+    if (!all.length) { clearInterval(claudeTimer); claudeTimer = 0; return; }
+    k = (k + 1) % CLAUDE.length;
+    all.forEach((el) => { if (el.offsetParent) el.textContent = CLAUDE[k]; });
+  }, 120);
+}
+
+/** An expanding ring from a status dot that just appeared: here is news. */
+export function ping(dot: Element | null) {
+  if (!dot || reduced()) return;
+  const r = dot.getBoundingClientRect();
+  if (!r.width) return;
+  const ring = document.createElement('span');
+  const color = getComputedStyle(dot).backgroundColor;
+  ring.style.cssText = `position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 1.5px ${color};pointer-events:none`;
+  (dot as HTMLElement).style.position = 'relative';
+  dot.append(ring);
+  gsap.fromTo(ring, { scale: 1, opacity: 0.9 }, { scale: 3.2, opacity: 0, duration: 0.9, ease: 'power2.out', onComplete: () => ring.remove() });
 }
 
 // ---- what each session on the canvas is doing -----------------------------
@@ -403,6 +497,228 @@ export function sessionScreen(term: Terminal, name: string) {
     term.print('Claude', agent);
     term.gap();
   });
+}
+
+// ---- Codex and Pi, as they draw themselves ------------------------------------
+// Captured from codex-cli 0.170.0 and pi 0.82.1 in a 100-column pty, a light
+// terminal and a dark one (Codex doing a small real job; Pi's requests were
+// refused by its provider, so its working line and dark colours are read off
+// its own source and theme): what is drawn here is those screens, line for
+// line and colour for colour. Only the folder and the requests are ours.
+// A screen is a list of rows to hand to Terminal.swap; its first row says
+// whose it is, so Claude's own input box is hidden while it is up.
+
+type Part = [text: string, cls?: string];
+/** A terminal row. A band runs the full width of the terminal, past its padding. */
+export function termRow(parts: Part[], band = '') {
+  const p = document.createElement('p');
+  p.className = 'min-h-[19px] shrink-0 whitespace-pre-wrap [overflow-wrap:anywhere]' + (band ? ` -ml-[5px] -mr-[7.5px] pl-[5px] ${band}` : '');
+  for (const [text, cls] of parts) {
+    const span = document.createElement('span');
+    if (cls) span.className = cls;
+    span.textContent = text;
+    p.append(span);
+  }
+  return p;
+}
+const blank = (band = '') => termRow([['']], band);
+const spring = () => { const d = document.createElement('div'); d.className = 'flex-1'; return d; };
+
+const CX = {
+  blue: 'text-[#1c64c8] dark:text-[#63a8f8]', file: 'text-[#40a02b] dark:text-[#a6e3a1]',
+  dim: 'text-[#747679] dark:text-[#8f959b]', key: 'font-bold text-[#404348] dark:text-[#e6edf3]',
+  model: 'text-[#a06c24] dark:text-[#f6e2b7]', path: 'text-[#3e862f] dark:text-[#abdfa7]',
+  shimmer: 'text-[#8f9193] dark:text-[#797f85]', hint: 'text-[#666666] dark:text-[#999999]',
+  add: 'text-[#00cd00]', del: 'text-[#cd0000]', ran: 'font-bold text-[#00cd00]',
+  asked: 'bg-[#f9f9f9] dark:bg-[#33373c]', composer: 'bg-[#f4f4f4] dark:bg-[#2a2d32]',
+};
+/** Codex's lines, as it prints them. */
+export const codex = {
+  /** A sentence of its own. File names in it are drawn as Codex draws them. */
+  say: (text: string) => termRow([['• '], ...text.split(/(\S+\.(?:swift|md|ts|json|yml))/).map((t, i): Part => [t, i % 2 ? CX.file : undefined])]),
+  explored: (reads: string[]) => [
+    termRow([['• '], ['Explored', 'font-bold']]),
+    ...reads.map((f, i) => termRow([[i ? '    ' : '  └ '], ['Read', CX.blue], [` ${f}`]])),
+    termRow([['    + Show details']]),
+  ],
+  edited: (file: string, add: number, del: number) => [
+    termRow([['• '], ['Edited', 'font-bold'], [` ${file} (`], [`+${add}`, CX.add], [' '], [`-${del}`, CX.del], [')']]),
+    termRow([['    + Show details']]),
+  ],
+  ran: (command: string, output: string) => [
+    termRow([['•', CX.ran], [' '], ['Ran', 'font-bold'], [` ${command}`]]),
+    termRow([[`  └ ${output}`]]),
+  ],
+  working: (seconds: number) => termRow([['•', 'font-bold'], [' '], ['Working', CX.shimmer], [` (${seconds}s • `], ['esc', CX.key], [' to interrupt)']]),
+  worked: (took: string) => termRow([[`  Worked for ${took} • 9:41 AM`]]),
+  blank,
+};
+
+const codexHeader = (path: string, first: HTMLElement) => [
+  first,
+  termRow([['  >_ ', CX.blue], ['OpenAI Codex', 'font-bold'], [' (v0.170.0)']]),
+  termRow([[`     ${path}`]]),
+];
+const codexFoot = (path: string, field: HTMLElement) => [
+  blank(CX.composer), field, blank(CX.composer), blank(),
+  termRow([['  GPT-6-Luna default', CX.model], [' · ', CX.dim], [path, CX.path]]),
+  termRow([['  ←', CX.key], [' for agents · ', CX.dim], ['?', CX.key], [' for shortcuts', CX.dim]]),
+];
+
+/** Codex just started: what it suggests, and its input box, which `type` fills. */
+export function codexFresh(path = '~/Developer/wortel') {
+  const typed = document.createElement('span');
+  const hint = document.createElement('span');
+  hint.className = CX.hint; hint.textContent = 'Ask Codex to do anything';
+  const field = termRow([['›', 'font-bold'], [' ']], CX.composer);
+  field.append(typed, hint);
+  const top = termRow([['']]);
+  top.dataset.agent = 'codex';
+  const nodes = [
+    ...codexHeader(path, top),
+    blank(),
+    termRow([['  To get started, describe a task or try one of these commands:']]),
+    blank(),
+    termRow([['  /init - create an AGENTS.md file with instructions for Codex']]),
+    termRow([['  /status - show current session configuration']]),
+    termRow([['  /permissions - choose what Codex is allowed to do']]),
+    termRow([['  /model - choose what model and reasoning effort to use']]),
+    termRow([['  /review - review any changes and find issues']]),
+    spring(),
+    ...codexFoot(path, field),
+  ];
+  return { nodes, type: (text: string) => { typed.textContent = text; hint.hidden = !!text; } };
+}
+
+/** A Codex session after a request: its header, the request, then `log`. */
+export function codexScreen(asked: string, log: HTMLElement[] = [], path = '~/Developer/wortel') {
+  const hint = document.createElement('span');
+  hint.className = CX.hint; hint.textContent = 'Ask Codex to do anything';
+  const field = termRow([['›', 'font-bold'], [' ']], CX.composer);
+  field.append(hint);
+  const top = termRow([['']]);
+  top.dataset.agent = 'codex';
+  const body = document.createElement('div');
+  body.className = 'flex shrink-0 flex-col';
+  body.append(...log.flatMap((r, i) => (i && r.textContent?.startsWith('•') ? [blank(), r] : [r])));
+  const nodes = [
+    ...codexHeader(path, top),
+    blank(), blank(),
+    blank(CX.asked), termRow([['›', 'font-bold'], [` ${asked}`]], CX.asked), blank(CX.asked),
+    blank(),
+    body,
+    spring(),
+    ...codexFoot(path, field),
+  ];
+  // While it works: its working line under what it said. One empty row
+  // separates blocks; the request already has one under it.
+  let busy: HTMLElement[] = [];
+  const said = () => body.childElementCount - busy.length > 0;
+  const working = (seconds: number | null) => {
+    busy.forEach((r) => r.remove());
+    busy = seconds === null ? [] : [...(said() ? [blank()] : []), codex.working(seconds)];
+    body.append(...busy);
+  };
+  /** Add a block to what it said, under the last, above its working line. */
+  const add = (rows: HTMLElement[]) => {
+    const at = busy[0] ?? null;
+    [...(said() ? [blank()] : []), ...rows].forEach((r) => body.insertBefore(r, at));
+    // The working line now has something above it: give it its empty row.
+    if (busy.length === 1) { const gap = blank(); body.insertBefore(gap, busy[0]); busy.unshift(gap); }
+  };
+  return { nodes, body, working, add };
+}
+
+const PI = {
+  accent: 'text-[#5a8080] dark:text-[#8abeb7]', dim: 'text-[#767676] dark:text-[#666666]',
+  muted: 'text-[#6c6c6c] dark:text-[#808080]', rule: 'bg-[#5a8080] dark:bg-[#81a2be]',
+  asked: 'bg-[#e8e8e8] dark:bg-[#343541]', tool: 'bg-[#e8f0e8] dark:bg-[#283228]',
+  out: 'text-[#6c6c6c] dark:text-[#808080]',
+};
+/** Pi's lines, as it prints them (its components, read off its source). */
+export const pi = {
+  /** What it says: plain text, one column in. */
+  say: (text: string) => [termRow([[` ${text}`]])],
+  /** What you sent it: a box on the message colour. */
+  you: (text: string) => [blank(PI.asked), termRow([[` ${text}`]], PI.asked), blank(PI.asked)],
+  /** A finished tool: a box on the tool colour, its name bold, then its argument. */
+  tool: (name: string, arg: string, output: string[] = []) => [
+    blank(PI.tool),
+    termRow([[' '], [name, 'font-bold'], [' '], [arg, name === 'read' || name === 'edit' ? PI.accent : 'font-bold']], PI.tool),
+    ...output.map((o) => termRow([[` ${o}`, PI.out]], PI.tool)),
+    blank(PI.tool),
+  ],
+};
+// Pi's spinner turns every 80 ms, through the braille frames its loader uses.
+const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+let spinning = 0;
+const spin = () => {
+  if (spinning || reduced()) return;
+  let k = 0;
+  spinning = window.setInterval(() => {
+    const all = document.querySelectorAll<HTMLElement>('[data-pi-spin]');
+    if (!all.length) return;
+    k = (k + 1) % FRAMES.length;
+    all.forEach((el) => { if (el.offsetParent) el.textContent = FRAMES[k]; });
+  }, 80);
+};
+
+/** A Pi session after a request: its header, the request, `log`, and while
+ *  it works its spinner. */
+export function piScreen(asked: string, log: HTMLElement[] = [], path = '~/Developer/wortel') {
+  // A terminal draws box characters as one solid line; a browser's font
+  // leaves gaps between them, so the rule is drawn as Claude's is.
+  const rule = () => {
+    const r = document.createElement('div');
+    r.className = 'flex h-[19px] shrink-0 items-center';
+    const l = document.createElement('div');
+    l.className = `h-px w-full ${PI.rule}`;
+    r.append(l);
+    return r;
+  };
+  const top = termRow([['']]);
+  top.dataset.agent = 'pi';
+  const body = document.createElement('div');
+  body.className = 'flex shrink-0 flex-col';
+  // Its editor, between the two rules: what you type goes here.
+  const typed = document.createElement('span');
+  const field = termRow([[' ']]);
+  field.append(typed);
+  const nodes = [
+    top,
+    termRow([[' '], ['pi', `font-bold ${PI.accent}`], [' v0.82.1', PI.dim]]),
+    termRow([[' '], ['escape', PI.dim], [' interrupt · ', PI.muted], ['ctrl+c/ctrl+d', PI.dim], [' clear/exit · ', PI.muted], ['/', PI.dim], [' commands · ', PI.muted], ['!', PI.dim], [' bash · ', PI.muted], ['ctrl+o', PI.dim], [' more', PI.muted]]),
+    termRow([[' Press ctrl+o to show full startup help and loaded resources.', PI.dim]]),
+    blank(),
+    termRow([[' Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.', PI.dim]]),
+    blank(),
+    blank(PI.asked), termRow([[` ${asked}`]], PI.asked), blank(PI.asked),
+    body,
+    spring(),
+    rule(), field, rule(),
+    termRow([[` ${path}`, PI.dim]]),
+    termRow([[' $0.000 (sub) 0.0%/1.0M (auto)', PI.dim]]),
+  ];
+  // While it works: its loader, an empty row and the spinner line.
+  let busy: HTMLElement[] = [];
+  const working = (on: boolean) => {
+    busy.forEach((r) => r.remove());
+    if (!on) { busy = []; return; }
+    const line = termRow([[' '], ['⠋', PI.accent], [' Working...', PI.muted]]);
+    (line.children[1] as HTMLElement).dataset.piSpin = '';
+    busy = [blank(), line];
+    body.append(...busy);
+    spin();
+  };
+  /** Add a component under the last, with the one empty row Pi leaves. */
+  const add = (rows: HTMLElement[]) => {
+    const at = busy[0] ?? null;
+    [blank(), ...rows].forEach((r) => body.insertBefore(r, at));
+  };
+  log.forEach((r) => body.append(r));
+  working(true);
+  const type = (text: string) => { typed.textContent = text; };
+  return { nodes, body, working, add, type };
 }
 
 // ---- hands ------------------------------------------------------------------

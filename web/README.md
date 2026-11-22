@@ -45,7 +45,7 @@ src/
   pages/*.md.ts            /index.md, /docs.md, /compare.md, /updates.md: pages as Markdown
   data/markdown.ts         the renderers behind those and llms-full.txt
   pages/404.astro          the not-found page (dist/404.html)
-  components/home/         Hero, Panes, Agents, Worktrees, Survival, Glance (specs + FAQ)
+  components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Bento (Wortel at a glance: one poster of pieces of the real app, in the manner of Apple's keynote summaries), Glance (the FAQ)
   app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
   components/Stage.astro   a scene: the heading (its grey half changes per chapter), then the lake
                            with the chapter tabs and play/pause over the window
@@ -54,7 +54,8 @@ src/
   scripts/film.ts          a film with chapters: autoplay, tabs, arrow keys, captions
   scripts/hero.ts          the landing sequence (one GSAP timeline)
   scripts/panes.ts         the panes scene: a state per place, a target layout per chapter
-  scripts/scenes.ts        the agents, worktrees and survival scenes
+  scripts/scenes.ts        the agents scene and the terminal-first scene
+  scripts/bento.ts         puts the real app into the bento's tiles: parts cloned out of the generated panes
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
 public/
@@ -110,9 +111,10 @@ on screen; a tab, the arrow keys, the pause button, or anything pressed in the
 window itself stops that, and play picks it up again. Nothing the films do is
 tied to scroll; only the photos drift a little against it (below).
 
-The windows answer to the pointer: sessions select, folders fold, the sidebar
-and column buttons and the tabs work (panes), the notification and the
-prompt's choices work (agents), the Dock icon quits and reopens (survival).
+The windows answer to the pointer: sessions select at once, as in the app,
+folders fold, Back and Forward walk the sessions you were on, the sidebar and
+column buttons and the tabs work (panes), and the notification and the
+prompt's choices work (agents).
 Anything pressable is marked `data-row`, `data-fold` or `data-press` and gets
 the app's own hover from `styles/app.css`.
 
@@ -463,10 +465,10 @@ crop that keeps fog behind the words.
 
 | File | Where | Source |
 |---|---|---|
-| `lake.jpg` | Hero, Worktrees, the homepage's closing call | the "Foggy Lake" shot on the Opmaak canvas, found on Unsplash |
-| `skye.jpg` | Panes, /download, the closing call on /updates | https://unsplash.com/photos/LGOX15iP0u0 |
+| `lake.jpg` | Hero, the homepage's closing call | the "Foggy Lake" shot on the Opmaak canvas, found on Unsplash |
+| `skye.jpg` | Panes, three bento tiles (each its own crop), /download, the closing call on /updates | https://unsplash.com/photos/LGOX15iP0u0 |
 | `haze.jpg` | Agents, the closing call on /docs and /about | https://unsplash.com/photos/dDKjrFzijbM |
-| `hills.jpg` | Survival and the closing call on /compare (cropped to the forest and fog; the flower at the bottom stays out) | https://unsplash.com/photos/Mg1AQZnCgJE |
+| `hills.jpg` | Start (a terminal first) and the closing call on /compare (cropped to the forest and fog; the flower at the bottom stays out) | https://unsplash.com/photos/Mg1AQZnCgJE |
 
 The three newer ones were picked for colour: the closest of ~30 misty-lake
 photos to the lake by their Lab distribution. Saved at 2400px, quality 76,

@@ -1,0 +1,19 @@
+---
+// What the main bar gains when the sidebar is hidden, as the canvas draws
+// its "No sidebar" and "Terminal" states: Show Sidebar, Back and Forward.
+// Put in a <template> and cloned into a pane's bar by a script (panes.ts,
+// bento.ts), since the bar itself is generated.
+---
+<div data-lead class="contents">
+  <div data-name="Show Sidebar" class="flex size-7 shrink-0 items-center justify-center">
+    <div class="h-[15px] w-[20px] shrink-0 bg-sidebar-accent-foreground [mask-image:url(/app/c804bc011fff44d7ff3a76bab3d40e38.png)] [mask-size:100%_100%]"></div>
+  </div>
+  <div data-name="Back and Forward" class="flex shrink-0 gap-1">
+    <div class="flex size-7 shrink-0 items-center justify-center">
+      <div class="h-[14px] w-[11px] shrink-0 bg-sidebar-accent-foreground [mask-image:url(/app/acdd01364b7ff6a1ea67ea95134701f8.png)] [mask-size:100%_100%]"></div>
+    </div>
+    <div class="flex size-7 shrink-0 items-center justify-center">
+      <div class="h-[14px] w-[11px] shrink-0 bg-sidebar-ring [mask-image:url(/app/9ec6755acab17a098748e05ef189ea76.png)] [mask-size:100%_100%]"></div>
+    </div>
+  </div>
+</div>

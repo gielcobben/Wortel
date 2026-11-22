@@ -29,8 +29,8 @@ export const SITE = {
   title: 'Wortel: a native macOS terminal for coding agents',
   /** ~151 chars, inside the ~155-160 shown in a result snippet. */
   description:
-    'A native macOS terminal on Ghostty’s real engine. Named sessions instead of tabs, a worktree per agent, and shells that keep running when you quit.',
-  tagline: 'A native macOS terminal your agents can live in.',
+    'A native macOS terminal on Ghostty’s real engine, built for coding agents: ⌘N starts yours, each gets a worktree, and shells keep running when you quit.',
+  tagline: 'A real terminal, with your agents one key away.',
   author: 'Giel Cobben',
   authorUrl: 'https://gielcobben.com',
   /** release.sh --publish always mirrors the newest signed zip here. */
@@ -87,7 +87,10 @@ export const SECTIONS: Section[] = [
     lead: 'A sidebar of names. Several agents, none of them in each other’s way.',
     blocks: [
       {
-        p: 'Wortel is a fully native macOS terminal built on Ghostty’s engine: Swift and AppKit, no web view. Open it and the work is where you left it, every session still named and still in its own directory. No grid of panes to tile.',
+        p: 'Agent apps put a terminal in a box, and terminals leave the agents to you. Wortel is a real terminal first: every session is a shell on Ghostty’s engine, and an agent is one more command in it, so Claude Code, Codex, Gemini, opencode, Pi or anything else runs as it is. Once you name yours in Settings, ⌘N opens every new session with it already running.',
+      },
+      {
+        p: 'It is fully native: Swift and AppKit, no web view. Open it and the work is where you left it, every session still named and still in its own directory. No grid of panes to tile.',
       },
       {
         p: 'Point it at a repository and each agent gets its own branch and its own files, with the diff of what they did beside them. None of it stops when you quit.',
@@ -202,6 +205,46 @@ export const SECTIONS: Section[] = [
     ],
   },
 ];
+
+// ---- the bento: Wortel at a glance -------------------------------------------
+// One poster of what Wortel is, built the way Apple closes a keynote section
+// (studied from its 2025 slides): the product itself in the middle, tiles of
+// very different sizes around it, and on each tile ONE piece of the product
+// and a label of a few words. Almost no tile is only type: on Apple's macOS
+// slide one in fourteen is. No sentences on the poster: `body` is the
+// sentence a screen reader and a crawler get instead. `big` is for the rare
+// tile whose picture is its own word or number.
+// The same facts are SPECS below, which the Markdown pages render as a table.
+export type Tile = {
+  scene:
+    | 'worktree' | 'agents' | 'send' | 'diff' | 'plan' | 'hero' | 'palette' | 'quit' | 'status'
+    | 'browser' | 'settings' | 'free' | 'looks';
+  label: string;
+  big?: string;
+  body: string;
+};
+
+export const BENTO: { title: string; tone: string; tiles: Tile[] } = {
+  title: 'Wortel, at a glance.',
+  tone: 'A real terminal for whichever agent you use, and everything a day of them needs around it.',
+  tiles: [
+    { scene: 'worktree', label: 'A worktree per agent', body: 'A session on a branch gets its own directory and files, so several agents share one repository without colliding.' },
+    // The commands, as you would type them: a few of the agents Wortel
+    // recognises by name. Any other command runs the same way.
+    { scene: 'agents', label: 'Whichever agent you use', body: 'Claude Code, Codex, Gemini, opencode, Pi, Amp, Goose, Aider: an agent is one more command in a real terminal, so whichever you use runs as it is.' },
+    { scene: 'send', label: 'Agents that work together', body: 'Every session has the wortel command on its PATH. One agent can hand another a task, wait for it, and read what it said.' },
+    { scene: 'diff', label: 'Every change, beside it', body: 'The working tree file by file, with syntax-highlighted diffs and somewhere to write the commit.' },
+    { scene: 'plan', label: 'Plans, rendered', body: 'A file opens in a tab of its own: source, the diff, or rendered Markdown.' },
+    { scene: 'hero', label: 'Ghostty’s engine, in every session', body: 'Every session is a real terminal on Ghostty’s engine, unmodified. An agent is one more command in it.' },
+    { scene: 'palette', label: 'Every command on ⇧⌘P', body: 'A command palette on ⇧⌘P runs any command, and ⌘P goes to any session by name.' },
+    { scene: 'quit', label: 'Outlives the app', body: 'Shells run outside the app. After a quit, an update or a crash, each session is as you left it.' },
+    { scene: 'status', label: 'Who needs you', body: 'Agents report whether they are working, waiting on you, done or failed, and the sidebar shows it.' },
+    { scene: 'browser', label: 'A browser in the window', body: 'A browser tab beside the terminal, to preview the site an agent is building.' },
+    { scene: 'settings', big: '5', label: 'settings', body: 'The font, the theme and the keybinds were chosen once. Settings is five rows long.' },
+    { scene: 'free', big: 'Free', label: 'No account', body: 'Wortel is free, and has no account.' },
+    { scene: 'looks', label: 'Follows light and dark', body: 'Every terminal follows the system between light and dark, at once.' },
+  ],
+};
 
 // ==========================================================================
 // /docs: the reference the homepage stopped being.
@@ -412,7 +455,7 @@ export const DOCS_SECTIONS: Section[] = [
 const FAQ_AUTHORED: { q: string; a: string }[] = [
   {
     q: 'What is Wortel?',
-    a: 'Wortel is a fully native macOS terminal emulator built on Ghostty’s engine. It replaces tabs and splits with a sidebar of named, persistent sessions, gives each coding agent its own git worktree so several can work one repository at once, keeps those shells running after you quit the app, and ships with no configuration to maintain. A git panel, a file tree and agent activity detection are built in.',
+    a: 'Wortel is a fully native macOS terminal emulator built on Ghostty’s engine, made for working next to coding agents. It is a real terminal first: an agent is one more command in a session, and ⌘N can start yours for you. It replaces tabs and splits with a sidebar of named, persistent sessions, gives each coding agent its own git worktree so several can work one repository at once, keeps those shells running after you quit the app, and ships with no configuration to maintain. A git panel, a file tree and agent activity detection are built in.',
   },
   {
     q: 'Is Wortel free?',

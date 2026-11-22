@@ -16,12 +16,17 @@ type Layout = Record<Place, string> & { session: string };
 
 const HOME = 'Quicker panes', WEB = 'Landing page hero';
 const CHAPTERS: Layout[] = [
-  { session: HOME, sidebar: 'sidebar', main: 'terminal', side: 'changes', strip: 'strip' }, // everything
-  { session: HOME, sidebar: 'sidebar', main: 'terminal', side: 'history', strip: 'hidden' }, // reviewing
-  { session: WEB, sidebar: 'sidebar', main: 'browser', side: 'hidden', strip: 'strip' }, // previewing
-  { session: HOME, sidebar: 'sidebar', main: 'file', side: 'files', strip: 'hidden' }, // reading
-  { session: HOME, sidebar: 'hidden', main: 'terminal', side: 'hidden', strip: 'hidden' }, // quiet
+  { session: HOME, sidebar: 'sidebar', main: 'terminal', side: 'changes', strip: 'strip' }, // changes
+  { session: HOME, sidebar: 'sidebar', main: 'terminal', side: 'history', strip: 'hidden' }, // history
+  { session: WEB, sidebar: 'sidebar', main: 'browser', side: 'hidden', strip: 'hidden' }, // browser
+  { session: HOME, sidebar: 'sidebar', main: 'file', side: 'files', strip: 'hidden' }, // files
+  { session: HOME, sidebar: 'sidebar', main: 'terminal', side: 'hidden', strip: 'hidden' }, // terminal
 ];
+// The file tree is a list of names, so the column holding it is as narrow
+// as the sidebar. The window keeps its size in every chapter: a compact
+// window for "Terminal" was tried and dropped, the app's own width reads
+// better.
+const COLUMN: Record<string, number> = { files: 234 };
 
 export function initPanes() {
   const root = document.querySelector<HTMLElement>('[data-film="panes"]');
@@ -35,12 +40,16 @@ export function initPanes() {
   const bars = Array.from(win.querySelectorAll<HTMLElement>('[data-slot="main"] header'));
 
   const sb = new Sidebar(named(win, 'Sidebar')!);
+  // The first sidebar on the page with a folder and a branch in it: one
+  // repository's sessions together, and two loose ones.
+  sb.show(['Section wortel', 'Sparkle appcast cleanup', WEB, 'Marketing screenshots', 'Section Sessions', HOME, 'Changelog typography']);
   const term = new Terminal(named(pane('terminal'), 'Terminal')!);
   const title = named(pane('terminal'), 'Title')!;
   const screens = new Map<string, HTMLElement[]>([[HOME, term.lines()]]);
 
   const state: Layout = { ...CHAPTERS[0] };
   const size = { sidebar: 234, side: 384, strip: slot('strip').offsetHeight || 200 };
+  const wide = (place: Place, value: string) => (place === 'side' ? COLUMN[value] ?? size.side : size.sidebar);
   const FOLD = { duration: 0.5, ease: 'power3.inOut' };
   // The buttons the main bar gains with no sidebar: Show Sidebar, Back, Forward.
   const LEAD = 28 + 8 + 60 + 8;
@@ -81,11 +90,14 @@ export function initPanes() {
       const s = slot(place);
       if (place === 'strip') gsap.to(s, { height: open ? size.strip : 0, ...FOLD, duration: FOLD.duration * d, delay });
       else {
-        gsap.to(s, { width: open ? size[place] : 0, ...FOLD, duration: FOLD.duration * d, delay });
+        gsap.to(s, { width: open ? wide(place, value) : 0, ...FOLD, duration: FOLD.duration * d, delay });
         gsap.to(div(place), { autoAlpha: open ? 1 : 0, duration: 0.2 * d, delay: delay + (open ? 0 : 0.35 * d) });
       }
       if (place === 'sidebar') lead(!open, d, delay);
       if (place === 'side') gsap.delayedCall(delay + (open ? 0 : 0.3 * d), () => trail(!open));
+    } else if (place === 'side' && from !== value && wide('side', from) !== wide('side', value)) {
+      // The column changes width with what it holds.
+      gsap.to(slot('side'), { width: wide('side', value), ...FOLD, duration: FOLD.duration * d, delay });
     }
 
     // Swap what the place holds: the old pane out, then the new one in.
@@ -101,20 +113,20 @@ export function initPanes() {
     }
   }
 
-  function session(name: string, animate: boolean) {
+  function session(name: string) {
     if (state.session === name) return;
     state.session = name;
-    sb.select(name, animate);
+    // Instant, as in the app: no fade, no slide.
+    sb.select(name);
     title.textContent = name;
     if (!screens.has(name)) screens.set(name, sessionScreen(term, name));
     term.swap(screens.get(name)!);
-    if (animate && state.main === 'terminal') gsap.fromTo(term.root, { opacity: 0 }, { opacity: 1, duration: 0.28, clearProps: 'opacity' });
   }
 
   // ---- a whole arrangement, a place at a time -------------------------------
   const ORDER: Place[] = ['main', 'side', 'strip', 'sidebar'];
   function arrange(to: Layout, animate: boolean) {
-    session(to.session, animate);
+    session(to.session);
     let k = 0;
     for (const place of ORDER) {
       if (state[place] === to[place]) continue;
@@ -150,8 +162,8 @@ export function initPanes() {
     'Changes tab': () => set('side', 'changes'),
     'History tab': () => set('side', 'history'),
     'Files tab': () => set('side', 'files'),
-    'Quicker panes tab': () => { session(HOME, true); set('main', 'terminal'); },
-    'Landing page hero tab': () => { session(WEB, true); set('main', 'terminal'); },
+    'Quicker panes tab': () => { session(HOME); set('main', 'terminal'); },
+    'Landing page hero tab': () => { session(WEB); set('main', 'terminal'); },
   };
   function press() {
     for (const name of Object.keys(PRESS)) win!.querySelectorAll<HTMLElement>(`[data-name="${name}"]`).forEach((el) => (el.dataset.press = ''));
@@ -167,7 +179,9 @@ export function initPanes() {
     PRESS[hit.dataset.name!]?.();
     settle();
   });
-  sb.clickable((name) => { session(name, true); set('main', 'terminal'); settle(); });
+  const pick = (name: string) => { session(name); set('main', 'terminal'); settle(); };
+  sb.clickable(pick);
+  sb.navigable(pick);
 
   // The canvas drew the file and browser bars with no column beside them.
   trail(false);

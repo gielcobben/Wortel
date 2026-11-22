@@ -1367,3 +1367,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   release skill reports how many drawing commits have landed since, and the
   `sync-visuals` skill does the work. That day the site matched the canvas
   byte for byte and the canvas was 52 such commits behind the app.
+- **2026-11-21. The homepage tells the hybrid: a real terminal first, agents
+  one key away.** A stage of its own shows a shell, an agent typed into it,
+  the field in Settings that names it, and ⌘N starting it. The agents take
+  turns on the page (Claude Code, Codex, Pi), so it never reads as a Claude
+  terminal; Codex was captured from a real run, Pi from its source and theme
+  because it could not run here. Dropped: the worktree and survival stages
+  (every agent app keeps its sessions; they are tiles now), the specs list
+  (merged into the bento), a wordmark in the bento's middle (read as a logo),
+  a photo behind the whole bento (read as wallpaper), and a compact window for
+  the panes film's Terminal chapter. The bento follows Apple's keynote summary
+  slides: one piece of the real product per tile, tiles of uneven size.

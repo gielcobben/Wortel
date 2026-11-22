@@ -36,7 +36,7 @@ export function film(root: HTMLElement, make: (f: Film) => Scene[], still = 0): 
   const row = root.querySelector<HTMLElement>('.chapters');
   const thumb = root.querySelector<HTMLElement>('.thumb');
   const play = root.querySelector<HTMLButtonElement>('[data-play]');
-  let current = -1, auto = !reduced(), onScreen = false;
+  let current = -1, auto = !reduced(), onScreen = false, seen = false;
   let advance = 0;
   const pending = new Set<number>();
 
@@ -130,6 +130,10 @@ export function film(root: HTMLElement, make: (f: Film) => Scene[], still = 0): 
 
   new IntersectionObserver(([e]) => {
     onScreen = e.isIntersecting;
+    // The first chapter was drawn finished, before anyone saw it: the first
+    // time the stage is on screen, play it out (a test run streams, an agent
+    // works) instead of moving on from its last frame.
+    if (onScreen && !seen && auto) { seen = true; f.go(current); return; }
     if (onScreen) schedule(); else { clearTimeout(advance); root.classList.remove('auto'); }
   }, { threshold: 0.45 }).observe(root);
   return f;

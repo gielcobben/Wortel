@@ -1,0 +1,52 @@
+---
+// A terminal first: what makes Wortel a hybrid, shown before anything else.
+// The agent apps put a terminal in a box; here the session is a real shell,
+// an agent is one more command in it, and ⌘N can start that agent for you.
+// Four chapters (scripts/scenes.ts): a shell at work, an agent typed into
+// it, the one field in Settings that names your agent, and new sessions
+// that open with it already running. The Settings window is the real one,
+// generated from the canvas like every other window.
+//
+// The plain shell's lines are the canvas's own: the prompt and the output
+// line are cloned from the bottom strip's terminal, which is why that pane
+// is here in a template.
+import Stage from '../Stage.astro';
+import Window from '../Window.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import Terminal from '../../app/gen/Terminal.astro';
+import BottomStrip from '../../app/gen/BottomStrip.astro';
+import Settings from '../../app/gen/Settings.astro';
+
+const chapters = [
+  { label: 'A shell', caption: 'Every session is a real shell on Ghostty’s engine. Whatever you can type, it runs.' },
+  { label: 'An agent', caption: 'An agent is one more command: codex, claude, pi, whichever you use. Ask it something and it sets to work.' },
+  { label: 'Settings', caption: 'Or name your agent once, in Settings. Any agent, any command, with whatever flags you like.' },
+  { label: '⌘N', caption: 'From then on, every ⌘N is a new session with your agent already running. Ask it something and the session takes its name.' },
+];
+---
+<section class="sec" id="terminal-first">
+  <div class="page">
+    <Stage title="A terminal first." film="start" chapters={chapters} photo="hills" at="0% 12%" zoom="200%">
+      <Window>
+        <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
+        <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
+        <div class="flex min-h-0 self-stretch min-w-[80px] flex-1"><Terminal /></div>
+      </Window>
+      <div class="wapp prefs" data-settings aria-hidden="true" inert><Settings /></div>
+      <div class="keys glass" data-keys="new" aria-hidden="true"><kbd>⌘</kbd><kbd>N</kbd></div>
+      <template data-tpl="shell"><BottomStrip /></template>
+    </Stage>
+  </div>
+</section>
+
+<style>
+  .keys { left: 50%; bottom: 48px; translate: -50% 0; }
+  /* Settings opens over the window, as it does over the app. Its edge is the
+     canvas's, less the near-black ring drawn for a black artboard. */
+  .prefs { position: absolute; z-index: 3; left: 50%; top: 144px; margin-left: -190px; opacity: 0; visibility: hidden; }
+  .prefs :global([data-name="Window"]) { box-shadow: 0 18px 50px 6px rgb(0 0 0 / 0.3), 0 0 0 0.5px rgb(0 0 0 / 0.22); }
+  @media (prefers-color-scheme: dark) {
+    .prefs :global([data-name="Window"]) { box-shadow: 0 18px 50px 6px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(0 0 0 / 0.85); }
+  }
+  @media (max-width: 760px) { .keys { left: calc(50% - 8px); } .prefs { left: 16px; margin-left: 0; top: 112px; } }
+</style>

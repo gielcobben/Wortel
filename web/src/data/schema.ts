@@ -42,6 +42,7 @@ export function homeSchema(LATEST: Release | null) {
       url: SITE.url,
     },
     featureList: [
+      'A real terminal first: an agent is one more command, and a new session can start yours',
       'Named, persistent terminal sessions instead of tabs',
       'Instant session switching with no flash or rebuild',
       'Runs Ghostty’s VT parser, Metal renderer and glyph atlas via libghostty',

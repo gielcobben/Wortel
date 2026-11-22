@@ -6,7 +6,7 @@
 // time, so the whole sequence can be retimed in one place. ?t=<seconds> seeks
 // it and holds (for screenshots); reduced motion skips straight to the end.
 import { gsap } from 'gsap';
-import { Terminal, fitTerminal, named, reduced, wholeRows } from './app';
+import { Terminal, fitTerminal, named, reduced, showSidebar, wholeRows } from './app';
 
 const q = (root: ParentNode, sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
 
@@ -53,6 +53,8 @@ export function playHero() {
   const rows = changes ? q(changes, '[data-name$=".swift"], [data-name$=".md"]') : [];
   const header = changes?.querySelector('span');
   const diff = named(win, 'Diff');
+  // The first window a visitor sees: four sessions, one of them at work.
+  showSidebar(named(win, 'Sessions')!, ['Section Sessions', 'Quicker panes', 'Marketing screenshots', 'Changelog typography', 'Pricing FAQ copy']);
   const sidebarDots = q(win, '[data-name="Working"] > div');
 
   const live = () => tl.isActive() && !frozen;

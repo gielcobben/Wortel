@@ -196,7 +196,7 @@ kbd {
 }
 @keyframes drift { from { translate: 0 -40px; } to { translate: 0 40px; } }
 /* The window: the size is the scene's. Its edge is drawn once, here, for
-   every window on the site:
+   every window on the site, on a stage or in a bento tile:
    - one clip (overflow + radius) that everything inside is cut to;
    - one hairline just inside that edge, as a real border, because a border is
      snapped to whole device pixels and a 0.5px box-shadow is not (it smears to
@@ -205,25 +205,25 @@ kbd {
      for a black artboard and is a hard outline on anything lighter.
    At night the hairline is light, as a dark macOS window's is, and a dark
    hairline outside it keeps the window's shape against the lake. */
-.stage .win {
+:is(.stage, .tile) .win {
   position: relative; display: flex; flex: none; overflow: hidden;
-  width: min(var(--w, 1104px), 100%); height: var(--h, 664px);
+  width: min(var(--w, 1104px), 100%); height: var(--h, 704px);
   border-radius: 18px; box-shadow: 0 18px 50px 6px rgb(0 0 0 / 0.38);
   /* Its own stacking context: the hairline stays inside the window, under
      whatever floats over it (a notification, the pointer, keys). */
   isolation: isolate;
 }
-.stage .win::after {
+:is(.stage, .tile) .win::after {
   content: ''; position: absolute; inset: 0; z-index: 20; pointer-events: none;
   border-radius: inherit; border: 0.5px solid rgb(0 0 0 / 0.22);
 }
 @media (prefers-color-scheme: dark) {
-  .stage .win { box-shadow: 0 18px 50px 6px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(0 0 0 / 0.6); }
-  .stage .win::after { border-color: rgb(255 255 255 / 0.17); }
+  :is(.stage, .tile) .win { box-shadow: 0 18px 50px 6px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(0 0 0 / 0.6); }
+  :is(.stage, .tile) .win::after { border-color: rgb(255 255 255 / 0.17); }
 }
 /* A generated window brings the canvas's own edge; ours replaces it. */
-.stage .win [data-name="Window"] { box-shadow: none; border-radius: 0; }
-.stage .win [data-name="Rim"] { display: none; }
+:is(.stage, .tile) .win [data-name="Window"] { box-shadow: none; border-radius: 0; }
+:is(.stage, .tile) .win [data-name="Rim"] { display: none; }
 /* Where the window and anything beside it stand. */
 .stage .set { position: relative; display: flex; flex-direction: column; align-items: center; width: 100%; }
 
@@ -238,10 +238,11 @@ kbd {
 .controls { display: flex; align-items: center; justify-content: center; gap: 8px; max-width: 100%; flex: none; }
 
 /* The chapters are a segmented control. The thumb is a second, lit copy of
-   the labels (black pill, white words) clipped to the current tab, so a label
-   turns white exactly where the pill is while it slides, never as a separate
-   fade. While the scene plays by itself the pill fills to show how long the
-   chapter has left. */
+   the labels (a pill of translucent white, dark words) clipped to the current
+   tab, so a label changes exactly where the pill is while it slides, never as
+   a separate fade. While the scene plays by itself the pill fills, under its
+   words, to show how long the chapter has left: with solid white at night,
+   and by day (where white would not show on the light bar) a shade darker. */
 .chapters { position: relative; display: flex; flex: 0 1 auto; min-width: 0; padding: 4px; border-radius: 999px; overflow-x: auto; scrollbar-width: none; }
 .chapters::-webkit-scrollbar { display: none; }
 .chapters button {
@@ -253,18 +254,20 @@ kbd {
 .chapters button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .thumb {
   position: absolute; left: 0; top: 4px; z-index: 2; display: flex; width: max-content; height: 32px; padding-left: 4px;
-  background: var(--btn); color: var(--btn-ink); pointer-events: none;
+  --pill: rgb(27 27 23 / 0.07); --fill: rgb(27 27 23 / 0.14);
+  background: var(--pill); color: #1b1b17; pointer-events: none;
   clip-path: inset(0 calc(100% - var(--tx, 0px) - var(--tw, 0px)) 0 var(--tx, 0px) round 999px);
   transition: clip-path 300ms var(--ease-out), opacity 200ms ease;
 }
-.thumb > span { flex: none; padding: 0 12px; font: 500 13px/32px var(--font-sans); white-space: nowrap; }
+.thumb > span { position: relative; z-index: 1; flex: none; padding: 0 12px; font: 500 13px/32px var(--font-sans); white-space: nowrap; }
 .thumb::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: var(--tw, 0px); transform: translateX(var(--tx, 0px));
-  background: linear-gradient(color-mix(in srgb, var(--btn-ink) 18%, transparent), color-mix(in srgb, var(--btn-ink) 18%, transparent)) no-repeat 0 0 / 0% 100%;
+  background: linear-gradient(var(--fill), var(--fill)) no-repeat 0 0 / 0% 100%;
   transition: transform 300ms var(--ease-out), width 300ms var(--ease-out);
 }
 .auto .thumb::after { background-size: 100% 100%; transition: transform 300ms var(--ease-out), width 300ms var(--ease-out), background-size var(--hold, 4s) linear; }
 .thumb.still, .thumb.still::after { transition: none; }
+@media (prefers-color-scheme: dark) { .thumb { --pill: rgb(255 255 255 / 0.5); --fill: #fff; } }
 .own .thumb { opacity: 0; }
 
 /* Play and pause: a round button of its own beside the tabs. */
@@ -298,7 +301,7 @@ kbd {
   /* The window keeps a real width and the stage crops it: never scaled. */
   .stage { --r: 16px; padding: 16px; gap: 16px; align-items: flex-start; }
   .stage .set { align-items: flex-start; overflow: hidden; margin: 0 -16px -16px 0; padding: 0 0 16px; width: calc(100% + 16px); }
-  .stage .win { width: var(--w, 1104px); max-width: none; height: min(var(--h, 664px), 560px); }
+  .stage .win { width: var(--w, 1104px); max-width: none; height: min(var(--h, 704px), 560px); }
   .controls { justify-content: flex-start; width: 100%; }
 }
 

@@ -12,10 +12,10 @@ const latest = await latestRelease();
     <div class="bhead">
       <h1 class="display">
         <span class="vh">Wortel: a native macOS terminal for coding agents. </span>
-        <span class="line" data-fade>Many agents.</span><br /><span class="line tone" data-fade>One calm terminal.</span>
+        <span class="line" data-fade>A real terminal.</span><br /><span class="line tone" data-fade>Your agents, one key away.</span>
       </h1>
       <p class="lead" data-fade>
-        Wortel is a native macOS terminal on Ghostty’s engine. Every agent gets a named session and its own worktree, and the sidebar tells you which one needs you.
+        Agent apps put the terminal in a box. Terminals leave the agents to you. Wortel is both at once: Ghostty’s engine, unmodified, in a window that starts whichever agent you use, Claude Code, Codex, Pi or any other, keeps them apart and tells you which one needs you.
       </p>
       <div class="ctas" data-fade>
         <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="hero" data-ph-version={latest?.version}>Download for macOS</a>
@@ -24,7 +24,7 @@ const latest = await latestRelease();
       <p class="label" data-fade>Free · macOS {SITE.minMacOS} {SITE.minMacOSName} or later</p>
     </div>
 
-    <Stage h={704} class="first" reveal="manual">
+    <Stage class="first" reveal="manual">
       <div class="win wapp" data-win data-ph-demo aria-hidden="true" inert>
         <HeroWindow />
       </div>
@@ -40,7 +40,7 @@ const latest = await latestRelease();
 <style>
   .hero { padding-top: 144px; }
   .bhead { margin-bottom: 64px; }
-  .lead { max-width: 560px; margin-top: 24px; }
+  .lead { max-width: 600px; margin-top: 24px; }
   .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
   .label { margin-top: 16px; }
   .hero :global(.stage.first) { padding-top: 48px; }

@@ -1,22 +1,7 @@
 ---
-// What it is made of, and the questions. Same parts as every other section:
-// a heading, then facts on the grid.
-import { SPECS, FAQ } from '../../data/site';
+// The questions. What Wortel is made of is in the bento above (Bento.astro).
+import { FAQ } from '../../data/site';
 ---
-<section class="sec" id="zero-config">
-  <span id="ghostty-engine" class="anchor"></span><span id="specs" class="anchor"></span>
-  <div class="page">
-    <div class="bhead" data-reveal>
-      <h2 class="h2">Native to the core, with almost nothing to configure. <span class="tone">Swift and AppKit around Ghostty’s own engine, unmodified. The font, the theme and the keybinds were chosen once. Settings is five rows long.</span></h2>
-    </div>
-    <dl class="facts specs" data-reveal-group="0.04">
-      {SPECS.map(([k, v]) => (
-        <div class="fact" data-reveal><dt class="label">{k}</dt><dd class="h3">{v}</dd></div>
-      ))}
-    </dl>
-  </div>
-</section>
-
 <section class="sec" id="faq">
   <div class="page">
     <div class="bhead" data-reveal>
@@ -34,9 +19,6 @@ import { SPECS, FAQ } from '../../data/site';
 </section>
 
 <style>
-  .specs { margin-top: 0; }
-  .specs dt { margin-bottom: 8px; }
-  .specs dd { margin: 0; font-weight: 500; }
   .bhead .link { color: inherit; }
 
   .list { display: flex; flex-direction: column; }

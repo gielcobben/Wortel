@@ -30,7 +30,7 @@ export const SITE = {
   /** ~151 chars, inside the ~155-160 shown in a result snippet. */
   description:
     'A native macOS terminal on Ghostty’s real engine, built for coding agents: ⌘N starts yours, each gets a worktree, and shells keep running when you quit.',
-  tagline: 'A real terminal, with your agents one key away.',
+  tagline: 'A terminal for your agents. Any of them, side by side.',
   author: 'Giel Cobben',
   authorUrl: 'https://gielcobben.com',
   /** release.sh --publish always mirrors the newest signed zip here. */
@@ -87,7 +87,7 @@ export const SECTIONS: Section[] = [
     lead: 'A sidebar of names. Several agents, none of them in each other’s way.',
     blocks: [
       {
-        p: 'Agent apps put a terminal in a box, and terminals leave the agents to you. Wortel is a real terminal first: every session is a shell on Ghostty’s engine, and an agent is one more command in it, so Claude Code, Codex, Gemini, opencode, Pi or anything else runs as it is. Once you name yours in Settings, ⌘N opens every new session with it already running.',
+        p: 'Most agent apps are a chat window with a small terminal inside, and an ordinary terminal runs your agents but does not keep track of them. Wortel is a real terminal first: every session is a shell on Ghostty’s engine, and an agent is one more command in it, so Claude Code, Codex, Gemini, opencode, Pi or anything else runs as it is. Once you name yours in Settings, ⌘N opens every new session with it already running.',
       },
       {
         p: 'It is fully native: Swift and AppKit, no web view. Open it and the work is where you left it, every session still named and still in its own directory. No grid of panes to tile.',

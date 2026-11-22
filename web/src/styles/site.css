@@ -117,17 +117,20 @@ a { color: inherit; text-decoration: none; }
 .display, .h2, .h3 { margin: 0; color: var(--ink); font-family: var(--font-display); font-weight: 600; }
 /* Sizes step rather than flow, and every line-height is whole pixels: a
    heading that is 119.84px tall puts every window under it on a fraction of a
-   pixel, and its hairlines go soft. */
+   pixel, and its hairlines go soft.
+   Wrapping: a heading is balanced, so its lines come out close in length; a
+   paragraph, the hero's lead included, is pretty, so it reads as a paragraph
+   and never ends on one word alone (balancing the lead broke it mid-phrase). */
 .display { font-size: 56px; line-height: 60px; letter-spacing: -0.034em; text-wrap: balance; }
-.h2 { font-size: 32px; line-height: 40px; letter-spacing: -0.024em; text-wrap: pretty; }
+.h2 { font-size: 32px; line-height: 40px; letter-spacing: -0.024em; text-wrap: balance; }
 @media (max-width: 1000px) { .display { font-size: 44px; line-height: 48px; } .h2 { font-size: 28px; line-height: 36px; } }
 @media (max-width: 640px) { .display { font-size: 36px; line-height: 40px; } .h2 { font-size: 24px; line-height: 32px; } }
-.h3 { font-size: 16px; line-height: 24px; letter-spacing: -0.01em; }
+.h3 { font-size: 16px; line-height: 24px; letter-spacing: -0.01em; text-wrap: balance; }
 .tone { color: var(--tone); }
 .lead { margin: 0; font-size: 19px; line-height: 28px; color: var(--ink-2); letter-spacing: -0.01em; text-wrap: pretty; }
 .body { margin: 0; font-size: 15px; line-height: 24px; color: var(--ink-2); text-wrap: pretty; }
-.small { margin: 0; font-size: 14px; line-height: 24px; color: var(--ink-2); }
-.label { margin: 0; font-size: 13px; line-height: 16px; color: var(--ink-3); }
+.small { margin: 0; font-size: 14px; line-height: 24px; color: var(--ink-2); text-wrap: pretty; }
+.label { margin: 0; font-size: 13px; line-height: 16px; color: var(--ink-3); text-wrap: pretty; }
 .mono { font-family: var(--font-mono); font-size: 0.88em; }
 kbd {
   display: inline-flex; align-items: center; justify-content: center;

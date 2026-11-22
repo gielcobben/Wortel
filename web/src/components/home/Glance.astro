@@ -28,6 +28,7 @@ import { FAQ } from '../../data/site';
     list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 24px;
     padding-block: 20px; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--ink);
   }
+  summary span { text-wrap: balance; }
   summary::-webkit-details-marker { display: none; }
   summary i { position: relative; width: 12px; height: 12px; flex: none; }
   summary i::before, summary i::after { content: ''; position: absolute; left: 0; top: 5px; width: 12px; height: 1.5px; background: var(--ink-3); border-radius: 1px; transition: transform 0.3s var(--ease-out); }

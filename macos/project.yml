@@ -301,7 +301,7 @@ targets:
         SUAutomaticallyUpdate: true
         SUScheduledCheckInterval: 14400
         # EdDSA public key — private half lives in the login Keychain (shared
-        # publisher key, same as Wakker/Opslan).
+        # publisher key, shared with the maintainer's other apps).
         SUPublicEDKey: +IarWSgiwu1pxk25kk/8Rcl9Mf/AXwH/Z2qFoOYXEGI=
 
   # The `wortel` command line tool. A plain executable — no libghostty, no
@@ -394,6 +394,9 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: true
+        # DataDirectory gives the tests a throwaway folder: what they drive
+        # (TerminalModeRecorder.shared, for one) writes there on its own.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) WORTEL_TESTS
     sources:
       - path: WortelTests
       - path: Wortel/Git/GitModels.swift

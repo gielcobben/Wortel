@@ -71,12 +71,27 @@ enum DataDirectory {
     /// Nil is also what "a test copy, or something like one" is read from
     /// (`ChatFolder`, `AgentSkill`): a Debug build on its own folder keeps its
     /// agents' folders inside it and leaves the installed app's skill alone.
-    static let custom: String? = resolve(
-        environment: ProcessInfo.processInfo.environment[variable],
-        debugBuild: isDebugBuild,
-        applicationSupport: applicationSupport,
-        currentDirectory: FileManager.default.currentDirectoryPath,
-        fileExists: { FileManager.default.fileExists(atPath: $0) })
+    static let custom: String? = {
+        #if WORTEL_TESTS
+        // The unit tests compile this file themselves (project.yml sets the
+        // flag on that target only). What they drive reaches the data folder
+        // on its own: `TerminalModeRecorder.shared` loads and saves
+        // `terminal-modes.json`, and its `keepOnly` prunes it to the sessions
+        // it knows. Pointed at the real folder, a test run rewrote the running
+        // Wortel's file with test sessions. So, without an explicit
+        // `WORTEL_DATA_DIR`, the tests get a folder of their own per run.
+        if ProcessInfo.processInfo.environment[variable]?.isEmpty ?? true {
+            return (NSTemporaryDirectory() as NSString)
+                .appendingPathComponent("wortel-tests-\(ProcessInfo.processInfo.processIdentifier)")
+        }
+        #endif
+        return resolve(
+            environment: ProcessInfo.processInfo.environment[variable],
+            debugBuild: isDebugBuild,
+            applicationSupport: applicationSupport,
+            currentDirectory: FileManager.default.currentDirectoryPath,
+            fileExists: { FileManager.default.fileExists(atPath: $0) })
+    }()
 
     /// The decision, apart from the process it is made in.
     static func resolve(environment: String?, debugBuild: Bool, applicationSupport: String,

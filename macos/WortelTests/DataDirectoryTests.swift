@@ -50,6 +50,15 @@ final class DataDirectoryTests: XCTestCase {
         XCTAssertNil(resolve("", debug: false))
     }
 
+    /// A test run never reads or writes the folder of a Wortel running on this
+    /// Mac: `TerminalModeRecorder.shared` used to rewrite its
+    /// `terminal-modes.json` with test sessions.
+    func testTheTestsUseAFolderOfTheirOwn() {
+        let path = DataDirectory.url.path
+        XCTAssertFalse(path.hasPrefix(support + "/"), path)
+        XCTAssertTrue(path.hasPrefix(NSTemporaryDirectory()) || ProcessInfo.processInfo.environment[DataDirectory.variable] != nil, path)
+    }
+
     /// `scripts/debug-bundle-id.sh` looks for the same file by name.
     func testTheMarkerNameMatchesTheBuildScript() throws {
         let script = URL(fileURLWithPath: #filePath)

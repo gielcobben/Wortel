@@ -1463,3 +1463,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-11-21. Contributions are under the project's licence,
   GPL-3.0-or-later, and there is no contributor licence agreement.** What
   comes in goes out under the same terms (`CONTRIBUTING.md`).
+- **2026-11-21. Wortel is GPL-3.0-or-later.** Chosen over MIT so nobody can
+  ship a closed fork of the whole app, and it sits with the three shell
+  integration scripts that are GPL already (from Kitty, via Ghostty). The name
+  and icon stay outside the licence (`TRADEMARKS.md`); the official builds
+  stay free for any use. The Terms said "not open source" and "you may not
+  sell it" until this day; the GPL allows selling, so that line went.
+- **2026-11-21. The tests get a data folder of their own.** `WortelTests`
+  compiles `DataDirectory` with `WORTEL_TESTS`, which points it at a per-run
+  folder in `$TMPDIR` unless `WORTEL_DATA_DIR` says otherwise. Before, a test
+  that drove a terminal reached `TerminalModeRecorder.shared`, which loaded
+  and saved `terminal-modes.json` in the real folder and pruned it to the
+  test's sessions: every test run rewrote the running Wortel's file.

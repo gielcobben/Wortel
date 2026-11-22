@@ -43,6 +43,22 @@ What is in scope is anything that crosses that line:
 - **The network.** A web page in a browser tab, a link you click, or an update
   that is not the one that was signed.
 
+## Known limits
+
+These are known and accepted, so please don't report them as new:
+
+- **A repository's own git drivers.** Wortel runs `git status` and `git diff`
+  in the folder a session is in. Wortel's own git calls turn off external
+  diff programs, textconv and signature checks. A filter driver or merge driver
+  that the repository's config and attributes set up can still run, because
+  git has no switch that turns them off without also breaking Git LFS. That is
+  the same exposure as a shell prompt that shows git status. See
+  `macos/docs/architecture/git-panel.md`.
+- **Pasting what a program put on the clipboard.** Programs may write the
+  clipboard (OSC 52), and a paste is not confirmed. In a shell without
+  bracketed paste, such as macOS's own bash 3.2, a pasted line runs. See
+  `docs/decisions.md`.
+
 ## Not here
 
 A problem in the terminal engine itself (parsing, rendering, input) is

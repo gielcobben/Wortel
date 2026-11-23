@@ -669,7 +669,7 @@ final class SessionManager {
     }
 
     /// Folders made on purpose (⌘O, or a worktree of a repository with no
-    /// folder yet). Unlike folders that emerge from a "giel/…" name, these
+    /// folder yet). Unlike folders that emerge from a "team/…" name, these
     /// persist as sections even when empty. Ordered; persisted to UserDefaults.
     private(set) var declaredFolders: [String] = [] {
         didSet { UserDefaults.standard.set(declaredFolders, forKey: Self.declaredFoldersKey) }
@@ -689,9 +689,9 @@ final class SessionManager {
     /// The directory each folder stands for, keyed by folder name. A folder
     /// without one is what every folder used to be: a label.
     ///
-    /// This is what makes "New Session in “GFPC”" mean GFPC. Before it, a
+    /// This is what makes "New Session in “Acme”" mean Acme. Before it, a
     /// folder was purely the part of a session's name before the last slash, so
-    /// that command filed a session under GFPC and started it wherever the
+    /// that command filed a session under Acme and started it wherever the
     /// *selected* session happened to be standing — which looked like it had
     /// worked. Same shelf as the other three: view state about the sidebar, not
     /// session data, so UserDefaults rather than `sessions.json`.
@@ -860,7 +860,7 @@ final class SessionManager {
     ///
     /// Without this, the feature ships switched off for everyone who already has
     /// folders: each one would be a label until pointed at a directory by hand,
-    /// and "New Session in “GFPC”" would go on doing the wrong thing until then.
+    /// and "New Session in “Acme”" would go on doing the wrong thing until then.
     /// The rules that keep the guess quiet live in `FolderRoot.derived`.
     private func adoptFolderRoots() {
         let home = NSHomeDirectory()
@@ -1802,9 +1802,9 @@ final class SessionManager {
     /// 1. **An explicit `cwd`.** The CLI's `--cwd`, a worktree checkout, the
     ///    directory ⌘O just picked. Somebody named a path; nothing outranks that.
     /// 2. **The named folder's directory.** `folder` is only ever passed when
-    ///    the request was *about* that folder ("New Session in “GFPC”"), and
-    ///    what it means is GFPC. This is the case that used to be silently
-    ///    wrong: the session was filed under GFPC and started wherever the
+    ///    the request was *about* that folder ("New Session in “Acme”"), and
+    ///    what it means is Acme. This is the case that used to be silently
+    ///    wrong: the session was filed under Acme and started wherever the
     ///    selection was standing, which looked exactly like it had worked.
     /// 3. **The selected session's folder's directory.** This is the "same
     ///    folder as the one I'm in" case, which is why a plain ⌘N stays next to
@@ -3316,7 +3316,7 @@ final class SessionManager {
         // the model may touch this session again.
         session.nameSource = .user
         nameBranchForWork(session)
-        // A rename can re-folder the session ("hello" -> "giel/hello"): keep the
+        // A rename can re-folder the session ("hello" -> "team/hello"): keep the
         // flat order matching the render order, and make sure the row it moved
         // to is actually visible.
         normalizeOrder()
@@ -5936,7 +5936,7 @@ final class SessionManager {
     /// what it looks like it should be. A session's birth directory reads like
     /// the better answer, but in practice almost every session is opened from
     /// home and then `cd`s into the project: on this machine every persisted
-    /// `originCwd` was `/Users/giel`, which `ProjectRoots` rightly refuses as
+    /// `originCwd` was the home directory, which `ProjectRoots` rightly refuses as
     /// too broad, so nothing was ever remembered and no orphan could ever be
     /// attributed. Where the shell actually is *is* the project.
     private func rememberProjectRoots() {

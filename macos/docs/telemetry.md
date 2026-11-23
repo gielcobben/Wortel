@@ -128,9 +128,8 @@ xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Release build
 
 If a change here moves it, the change is wrong.
 
-**`measure.sh` kills every running Wortel**, so it cannot be run from a terminal
-inside Wortel, which is how this app is usually developed. Run it from
-Terminal.app, or from a session you are willing to lose.
+`measure.sh` runs a throwaway copy of the build on a data folder of its own and
+stops only that copy, so it can be run from a session inside Wortel.
 
 ## Adding an event
 

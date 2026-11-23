@@ -158,20 +158,20 @@ final class GitWorktreeTests: XCTestCase {
     /// The whole point: what goes in a name can never be read back as a folder.
     func testNoBranchCanInventAFolder() {
         for branch in ["worktree/brave-river-1a2f", "fix/login", "a/b/c", "main", "worktree/"] {
-            let name = "GFPC/" + GitWorktree.sessionLeaf(forBranch: branch)
-            XCTAssertEqual(SessionName.folder(of: name), "GFPC", branch)
+            let name = "Acme/" + GitWorktree.sessionLeaf(forBranch: branch)
+            XCTAssertEqual(SessionName.folder(of: name), "Acme", branch)
         }
     }
 
     // MARK: - Undoing the folder an earlier build invented
 
     /// The real thing this was written for: two sessions sitting in a folder
-    /// called "GFPC/worktree" beside the GFPC they belong to.
+    /// called "Acme/worktree" beside the Acme they belong to.
     func testTheInventedFolderIsStrippedFromTheName() {
         XCTAssertEqual(
             GitWorktree.repairedSessionName(
-                "GFPC/worktree/wakker-menubar-demo", branch: "worktree/wakker-slide"),
-            "GFPC/wakker-menubar-demo")
+                "Acme/worktree/menubar-demo", branch: "worktree/menubar-slide"),
+            "Acme/menubar-demo")
     }
 
     /// A worktree session that was never in a folder ends up at the top level,
@@ -179,7 +179,7 @@ final class GitWorktreeTests: XCTestCase {
     func testATopLevelWorktreeSessionLosesItsFolderEntirely() {
         XCTAssertEqual(
             GitWorktree.repairedSessionName("worktree/dvd-screensaver-icon",
-                                            branch: "worktree/pontueel-ios-icon"),
+                                            branch: "worktree/app-ios-icon"),
             "dvd-screensaver-icon")
     }
 
@@ -187,28 +187,28 @@ final class GitWorktreeTests: XCTestCase {
     /// deliberately named this is somebody's project, not our bookkeeping.
     func testAnUnrelatedFolderIsLeftAlone() {
         XCTAssertNil(GitWorktree.repairedSessionName(
-            "GFPC/wakker-menubar-demo", branch: "worktree/wakker-slide"))
+            "Acme/menubar-demo", branch: "worktree/menubar-slide"))
         XCTAssertNil(GitWorktree.repairedSessionName(
             "worktree extras/thing", branch: "worktree/x"))
         XCTAssertNil(GitWorktree.repairedSessionName(
-            "GFPC/worktree/thing", branch: "main"), "a branch with no namespace")
-        XCTAssertNil(GitWorktree.repairedSessionName("GFPC", branch: "worktree/x"),
+            "Acme/worktree/thing", branch: "main"), "a branch with no namespace")
+        XCTAssertNil(GitWorktree.repairedSessionName("Acme", branch: "worktree/x"),
                      "no folder half at all")
     }
 
     /// Branch namespaces nest, and so does the folder one of them invented.
     func testAMultiLevelNamespaceComesOffWhole() {
         XCTAssertEqual(
-            GitWorktree.repairedSessionName("GFPC/a/b/thing", branch: "a/b/c"),
-            "GFPC/thing")
+            GitWorktree.repairedSessionName("Acme/a/b/thing", branch: "a/b/c"),
+            "Acme/thing")
     }
 
     /// It runs on every launch, so the second one must find nothing to do.
     func testRepairIsIdempotent() {
         let once = GitWorktree.repairedSessionName(
-            "GFPC/worktree/wakker-menubar-demo", branch: "worktree/wakker-slide")
-        XCTAssertEqual(once, "GFPC/wakker-menubar-demo")
-        XCTAssertNil(GitWorktree.repairedSessionName(once!, branch: "worktree/wakker-slide"))
+            "Acme/worktree/menubar-demo", branch: "worktree/menubar-slide")
+        XCTAssertEqual(once, "Acme/menubar-demo")
+        XCTAssertNil(GitWorktree.repairedSessionName(once!, branch: "worktree/menubar-slide"))
     }
 
     // MARK: - Typed branch names
@@ -236,7 +236,7 @@ final class GitWorktreeTests: XCTestCase {
 
     /// A good name is left exactly as typed, case and all.
     func testAValidNameIsUntouched() {
-        for name in ["main", "worktree/calm-river-1a2f", "Giel/Mode_Toolbar.v2", "fix/1482"] {
+        for name in ["main", "worktree/calm-river-1a2f", "Someone/Mode_Toolbar.v2", "fix/1482"] {
             XCTAssertEqual(GitWorktree.branchName(from: name), name)
         }
     }

@@ -9,10 +9,40 @@ the source of truth. After a fresh checkout or any change to `project.yml`:
 scripts/build-ghostty.sh   # Ghostty from source, once per pinned commit (cached)
 xcodegen generate          # regenerate Wortel.xcodeproj from project.yml
 xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug build
-open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.app
+open "$(xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug \
+  -showBuildSettings 2>/dev/null \
+  | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')/Wortel.app"
 ```
 
+Resolve `BUILT_PRODUCTS_DIR` rather than globbing DerivedData: there is a
+`Wortel-<hash>` folder per checkout path, most of them stale, and `open` opens
+every one a glob matches.
+
 - Release build (used by benchmarks): `-configuration Release`.
+- **A Debug build is its own app, unless this Mac says otherwise.** Out of a
+  fresh clone it uses `~/Library/Application Support/Wortel Dev` and the
+  bundle id `com.gielcobben.Wortel.dev`: its own sessions, keeper, `wortel`
+  socket and UserDefaults, so it never meets an installed Wortel. Without
+  that, a Debug build either brought the installed app forward and quit, or
+  adopted its sessions, and a keeper speaking another protocol was replaced,
+  which ends every shell in it (`docs/architecture/keeper.md`).
+
+  The maintainer's daily Wortel is a Debug build, from whichever worktree was
+  built last, so the opt-in is per Mac rather than per checkout. On that Mac,
+  once:
+
+  ```sh
+  touch ~/Library/Application\ Support/Wortel/debug-builds-share-this-folder
+  ```
+
+  With that file there, a Debug build uses the usual folder
+  (`DataDirectory`, read by the app, the keeper and the `wortel` command
+  alike) and gets the bundle id `com.gielcobben.Wortel`
+  (`scripts/debug-bundle-id.sh`, the app's last build phase, before signing).
+  Build again after adding or removing it: a build keeps the bundle id it was
+  made with. `WORTEL_DATA_DIR` beats both rules. A Release build is never
+  isolated: it is the real app, on the usual folder, unless it is given
+  `WORTEL_DATA_DIR`.
 - **One Wortel per data folder.** A second copy launched while one is running
   (any build, any worktree) brings the running one forward and exits
   (`InstanceLock`), because two copies sharing `~/Library/Application
@@ -27,8 +57,9 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
 
   Keep the path short (sockets live in it; 104-byte limit). Its keeper keeps
   its shells after it quits, like the real one; stop it by pid when done.
-  UserDefaults (sidebar width, folder roots) are still shared, by bundle ID.
-- **Proper signed release:** `./scripts/release.sh` builds Release, signs it
+  UserDefaults (sidebar width, folder roots) are still shared, by bundle ID;
+  the `test-copy` skill gives a copy its own.
+- **Proper signed release (maintainer only):** `./scripts/release.sh` builds Release, signs it
   with your Developer ID (auto-detected), installs to `/Applications`, and
   launches it. This is required for anything that needs a real, registered app
   rather than an ad-hoc Debug build — notably **macOS notifications**: an
@@ -40,6 +71,11 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   `--publish` refuses uncommitted changes and runs `WortelTests` and the
   `updates/` tests before it builds (`--allow-dirty`, `--no-tests` to
   override); it uploads with the wrangler pinned in `updates/`.
+  Its install step quits the running Wortel and replaces
+  `/Applications/Wortel.app`, the bundle your installed app's keeper runs
+  from, so it is not a contributor's tool. A change to notifications can't be
+  seen in a Debug build: say so in the pull request, and it is checked in a
+  signed build before it ships.
 - **Ghostty is built here, from source** (`scripts/build-ghostty.sh`, into
   `GhosttyKit/Frameworks/`, gitignored). The inputs are tracked in
   `GhosttyKit/`: `ghostty.ref` (the Ghostty commit), `spm.ref` (the
@@ -51,9 +87,13 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   Never link both into one binary: they share C dependencies. A build is
   cached by a hash of its inputs in `~/Library/Caches/sh.wortel.ghostty`,
   shared by every checkout, so a second worktree costs a copy. A full build is
-  about five minutes and needs Zig (`brew install zig`, the version in
-  `zig.version`) and Xcode's Metal toolchain (`xcodebuild -downloadComponent
-  MetalToolchain`). `check.sh` and `release.sh` run it first. To move Ghostty:
+  about five minutes and needs Zig at exactly the version in `zig.version`
+  (the script refuses any other) and Xcode's Metal toolchain
+  (`xcodebuild -downloadComponent MetalToolchain`). `brew install zig` gives
+  whatever Homebrew has today, which is the pinned version only until Zig
+  moves on; otherwise take that exact release from
+  <https://ziglang.org/download/>, unpack it, and put its folder first on your
+  `PATH`. `check.sh` and `release.sh` run it first. To move Ghostty:
   change the two refs, run it, fix what the patches no longer apply to (they
   fail loudly on a changed anchor), and run `check-terminals.sh`. Then bring
   the two resource copies along: the shell integration (`docs/debugging.md`,

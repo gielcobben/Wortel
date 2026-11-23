@@ -6,12 +6,12 @@ final class SessionSwitcherMatchTests: XCTestCase {
 
     private let wortel = C(id: UUID(), name: "Wortel app design and UX improvements", folder: "Wortel",
                            branch: nil, path: "~/Developer/wortel")
-    private let emdash = C(id: UUID(), name: "EmDash site build", folder: "slimmersmullen",
-                           branch: nil, path: "~/Developer/slimmersmullen")
-    private let market = C(id: UUID(), name: "add-pre-post-market-prices", folder: "networth",
-                           branch: "worktree/pre-post", path: "~/.wortel/worktrees/networth/pre-post")
-    private let run = C(id: UUID(), name: "Run locally", folder: "GFPC",
-                        branch: nil, path: "~/Developer/gielcobben-2026")
+    private let emdash = C(id: UUID(), name: "EmDash site build", folder: "kitchen",
+                           branch: nil, path: "~/Developer/kitchen")
+    private let market = C(id: UUID(), name: "add-pre-post-market-prices", folder: "ledger",
+                           branch: "worktree/pre-post", path: "~/.wortel/worktrees/ledger/pre-post")
+    private let run = C(id: UUID(), name: "Run locally", folder: "Acme",
+                        branch: nil, path: "~/Developer/homepage-2026")
 
     private var all: [C] { [wortel, emdash, market, run] }
 
@@ -31,9 +31,9 @@ final class SessionSwitcherMatchTests: XCTestCase {
     }
 
     func testFolderBranchAndPathFindSessionsToo() {
-        XCTAssertEqual(first("slimmer"), emdash, "the folder")
+        XCTAssertEqual(first("kitch"), emdash, "the folder")
         XCTAssertEqual(first("pre-post"), market)
-        XCTAssertEqual(first("gielcobben"), run, "the path")
+        XCTAssertEqual(first("homepage"), run, "the path")
     }
 
     /// Every word has to match somewhere; together they narrow.

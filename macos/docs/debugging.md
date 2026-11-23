@@ -10,9 +10,10 @@ a minute.
 
 ## First, which build is running
 
-A Debug build in DerivedData and `/Applications/Wortel.app` are different apps
-that share one data folder and one keeper. The Dock and Spotlight open the
-installed one.
+A Debug build in DerivedData and `/Applications/Wortel.app` are different apps.
+On a Mac that shares its data folder with Debug builds (`building.md`) they
+share one data folder and one keeper; anywhere else the Debug build keeps to
+`Wortel Dev`. The Dock and Spotlight open the installed one.
 
 ```sh
 ps -axo pid=,comm= | grep Wortel          # which bundle the running app is

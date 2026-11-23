@@ -20,8 +20,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 ## The product
 
 - **2026-07-10. The name is Wortel.** It was Vellum for the first two days
-  (`240164f`). A rename to Terminaal was built on the branch
-  `rename-to-terminaal` on 2026-07-29 and parked there. `main` is Wortel.
+  (`240164f`). A rename to Terminaal was built on 2026-07-29 and not merged:
+  the name stayed Wortel.
 - **2026-07-08. Configuration is the bundled `wortel.conf` and nothing else.**
   The user's Ghostty config is never loaded, and neither are CLI arguments,
   which on macOS means Xcode's debug flags (`0197ac4`).
@@ -674,6 +674,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   be repainted, since when it last set to work was not saved and anything
   typed since it started counts; and zsh says `terminated` for a Codex ended
   this way, which is true.
+- **2026-11-21. A program never reads the clipboard; the user's paste is
+  still not confirmed.** Every clipboard confirmation was approved, so an
+  OSC 52 read in any output (a `cat`ed file, an ssh host) had the clipboard
+  written back into the pty. Now only a paste is approved; an OSC 52 or kitty
+  read is refused through `ghostty_surface_deny_clipboard_request`, which
+  answers the program (empty, or EPERM) so nothing waits. In code, not as
+  `clipboard-read = deny` in wortel.conf: that would answer nothing at all.
+  OSC 52 writes stay on, so planted text can reach the clipboard; the paste
+  approval of 2026-08-10 stands because a paste is the user's keystroke,
+  bracketed paste (zsh, fish, bash 5.1, the agents) makes a newline harmless
+  and ESC is stripped from every paste. A shell without bracketed paste is
+  the case left open.
 - **2026-11-23. Text from an input method is typed, not pasted.** Dictation,
   the emoji picker and an input method's commit went to libghostty as a
   paste (`ghostty_surface_text`), so an agent with bracketed paste on showed
@@ -1260,6 +1272,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   call every minute (`c80edaf`, `3c0646b`).
 - **2026-10-21. The panes show the session's own folder**, not where its shell
   or its agent has gone inside the same repository (`8ffb707`, `c704b8a`).
+- **2026-11-21. Every diff git prints for us is git's own:
+  `--no-ext-diff --no-textconv`.** git runs in any folder a terminal reports
+  (OSC 7, which any output can send), and a repository's config can name a
+  program for git to run on a diff. A binary file shows as binary even where
+  the user configured a textconv for it; that is the price. Filter and merge
+  drivers (`git status`, `merge-tree`) can't be turned off by a flag and are
+  not covered.
+- **2026-11-21. Every git we run gets `log.showSignature=false`**, so a
+  repository can't make `log` and `show` start its own `gpg.program`.
+  `gpg.program` is not blanked: the Commit button signs with the user's. The
+  filter-driver gap stays, as for any git-aware prompt
+  (`macos/docs/architecture/git-panel.md`).
 
 ## Files, previews, browser
 
@@ -1325,6 +1349,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   a table like GitHub's (front matter nests) and not hidden (it is part of the
   file). Detection is strict, because `---` is also a rule and a setext
   underline.
+- **2026-11-21. A browser tab hands only a web address to another app.** A
+  page's response the tab can't show went to `NSWorkspace.open` whatever its
+  scheme, so a local page linking to a `.command` file would have run it.
+  Now `http` and `https` go to the browser, a `file:` is shown in the
+  Finder, and anything else stays put. `mailto:` never reaches this point:
+  it is asked about before it loads (2026-11-09).
 
 ## Running processes
 
@@ -1351,6 +1381,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **Rejected when the reach verbs were planned:** usage meters and rate-limit
   auto-continue (agents show that themselves), nested child sessions,
   user-named sections.
+- **2026-11-21. Both sockets serve only this user.** The CLI's and the
+  keeper's socket are owner-only from the moment they are bound (the umask is
+  narrowed around `bind`; a chmod after it left a window, and a Unix socket
+  can't be fchmod'ed first), and a connection whose peer is another user, or
+  can't be named, is closed unread (`getpeereid`).
 
 ## Shell integration
 
@@ -1438,3 +1473,57 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   release skill reports how many drawing commits have landed since, and the
   `sync-visuals` skill does the work. That day the site matched the canvas
   byte for byte and the canvas was 52 such commits behind the app.
+
+## Contributing
+
+- **2026-11-21. A Debug build is its own app unless the Mac opted in.** Out
+  of a fresh clone it uses `Wortel Dev` and the bundle id
+  `com.gielcobben.Wortel.dev`, so it can't adopt an installed Wortel's
+  sessions, replace its keeper (which ends every shell when the protocols
+  differ) or prune its UserDefaults. The maintainer's daily Wortel is a Debug
+  build from whichever worktree was built last, so the way back is one file
+  per Mac, `debug-builds-share-this-folder` in the usual data folder, read by
+  `DataDirectory` (the app, the keeper and the `wortel` command) and by
+  `scripts/debug-bundle-id.sh` (the bundle id, at build time). Not a
+  gitignored file in the checkout: every worktree Wortel makes would lack it.
+  Not an environment variable: a launch from the Dock or Finder doesn't carry
+  one, and the keeper and the command must reach the same answer as the app.
+  Not a bundle id from an `xcodebuild` variable: that would be a second
+  opt-in to keep in step with the first.
+- **2026-11-21. `bench/measure.sh` measures a throwaway copy.** It used to
+  `pkill -9` every running Wortel, the one running the script included. A
+  copy with its own bundle id and data folder is stopped by path and pid.
+- **2026-11-21. Contributions are under the project's licence,
+  GPL-3.0-or-later, and there is no contributor licence agreement.** What
+  comes in goes out under the same terms (`CONTRIBUTING.md`).
+- **2026-11-21. Wortel is GPL-3.0-or-later.** Chosen over MIT so nobody can
+  ship a closed fork of the whole app, and it sits with the three shell
+  integration scripts that are GPL already (from Kitty, via Ghostty). The name
+  and icon stay outside the licence (`TRADEMARKS.md`); the official builds
+  stay free for any use. The Terms said "not open source" and "you may not
+  sell it" until this day; the GPL allows selling, so that line went.
+- **2026-11-21. The tests get a data folder of their own.** `WortelTests`
+  compiles `DataDirectory` with `WORTEL_TESTS`, which points it at a per-run
+  folder in `$TMPDIR` unless `WORTEL_DATA_DIR` says otherwise. Before, a test
+  that drove a terminal reached `TerminalModeRecorder.shared`, which loaded
+  and saved `terminal-modes.json` in the real folder and pruned it to the
+  test's sessions: every test run rewrote the running Wortel's file.
+- **2026-11-23. CI leaves out `KeeperTerminalProtocolTests`, for now.** The
+  first CI runs failed it every time, a different two of its nine tests each
+  run, always the same way: a second attach to a live session got a channel
+  that ended with no snapshot and no output, and the keeper logged nothing
+  (none of `attachTerminal`'s three logged exits). It reproduces on `main`
+  (9e7f675) on this Mac with the class run under `taskpolicy -b`: two of four
+  runs failed. So it is a keeper race that load exposes, possibly what a blank
+  terminal after a reattach is, and it is open. CI skips the class through
+  `XCODEBUILD_FLAGS` in `.github/workflows/macos.yml`; `./scripts/check.sh`
+  still runs it. Remove the skip with the fix.
+- **2026-11-23. CI runs only what a change touches.** The first day of CI
+  used about 75 macOS minutes, which a private repository bills at ten times
+  a Linux minute, and GitHub warned about the monthly limit. The one
+  workflow became two with path filters: `macos.yml` (the app, `check.sh`,
+  the licence files) and `web.yml` (`web/`, `updates/`), so docs and site
+  changes never start a Mac. A newer push cancels the run before it, on
+  `main` too. The Ghostty build is saved as soon as it exists rather than
+  only when every test passes: no run had reused one, so every run spent
+  five minutes building it again. A hung run stops at 30 minutes, not 60.

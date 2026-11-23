@@ -42,7 +42,7 @@ final class AgentTitleTests: XCTestCase {
 
     /// A shell's own title has no marker and is not an agent's.
     func testShellTitlesAreIgnored() {
-        XCTAssertNil(AgentTitle.sessionName(fromTitle: "giel@mac: ~/Developer/wortel"))
+        XCTAssertNil(AgentTitle.sessionName(fromTitle: "me@mac: ~/Developer/wortel"))
         XCTAssertNil(AgentTitle.sessionName(fromTitle: "npm run build"))
         XCTAssertNil(AgentTitle.sessionName(fromTitle: ""))
         XCTAssertNil(AgentTitle.sessionName(fromTitle: "✳"))

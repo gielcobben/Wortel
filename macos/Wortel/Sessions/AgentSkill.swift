@@ -12,7 +12,8 @@ import Foundation
 /// Code is on the Mac (`~/.claude` exists), and again with each update for as
 /// long as the file is exactly what Wortel last wrote. Edited, it is the
 /// person's and is left alone. Deleted after Wortel wrote it, it stays
-/// deleted. A test copy (`WORTEL_DATA_DIR`) never writes it.
+/// deleted. A copy on a data folder of its own (`WORTEL_DATA_DIR`, or a Debug
+/// build's `Wortel Dev`) never writes it: the installed app's is left alone.
 enum AgentSkill {
     enum Action: Equatable {
         case install

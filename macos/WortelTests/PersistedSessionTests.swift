@@ -45,7 +45,7 @@ final class PersistedSessionTests: XCTestCase {
     func testVisibilityRoundTrips() throws {
         for visible in [true, false] {
             let original = PersistedSession(
-                id: UUID(), name: "Wakker/Manager", title: "shell", cwd: "/tmp",
+                id: UUID(), name: "Acme/Manager", title: "shell", cwd: "/tmp",
                 selected: true, nameSource: "user", gitPanelVisible: visible)
             let data = try JSONEncoder().encode([original])
             let decoded = try JSONDecoder().decode([PersistedSession].self, from: data)
@@ -299,11 +299,11 @@ final class PersistedSessionTests: XCTestCase {
     /// too, with the next one inheriting the drift again.
     func testOriginIsSeparateFromTheDriftedDirectory() throws {
         let session = try decode(#"""
-        {"id":"\#(UUID())","cwd":"/Users/giel/Developer/wortel/macos/Wortel/Sessions",
-         "originCwd":"/Users/giel/Developer/wortel"}
+        {"id":"\#(UUID())","cwd":"/Users/me/Developer/wortel/macos/Wortel/Sessions",
+         "originCwd":"/Users/me/Developer/wortel"}
         """#)
-        XCTAssertEqual(session.cwd, "/Users/giel/Developer/wortel/macos/Wortel/Sessions")
-        XCTAssertEqual(session.originCwd, "/Users/giel/Developer/wortel")
+        XCTAssertEqual(session.cwd, "/Users/me/Developer/wortel/macos/Wortel/Sessions")
+        XCTAssertEqual(session.originCwd, "/Users/me/Developer/wortel")
     }
 
     /// A file written before origins existed left it out, and there is nothing
@@ -313,7 +313,7 @@ final class PersistedSessionTests: XCTestCase {
     /// what the old behaviour inherited, so the launch that reads an old file
     /// behaves as it always did and the drift stops from the next session on.
     func testAbsentOriginIsLeftForRestoreToResolve() throws {
-        let session = try decode(#"{"id":"\#(UUID())","cwd":"/Users/giel/Developer/wortel"}"#)
+        let session = try decode(#"{"id":"\#(UUID())","cwd":"/Users/me/Developer/wortel"}"#)
         XCTAssertNil(session.originCwd, "an older file recorded no origin")
     }
 
@@ -322,13 +322,13 @@ final class PersistedSessionTests: XCTestCase {
     func testOriginRoundTrips() throws {
         let original = PersistedSession(
             id: UUID(), name: "Wortel/macos", title: "shell",
-            cwd: "/Users/giel/Developer/wortel/macos",
-            originCwd: "/Users/giel/Developer/wortel",
+            cwd: "/Users/me/Developer/wortel/macos",
+            originCwd: "/Users/me/Developer/wortel",
             selected: true, nameSource: "placeholder", gitPanelVisible: nil)
         let data = try JSONEncoder().encode([original])
         let decoded = try JSONDecoder().decode([PersistedSession].self, from: data)
-        XCTAssertEqual(decoded.first?.originCwd, "/Users/giel/Developer/wortel")
-        XCTAssertEqual(decoded.first?.cwd, "/Users/giel/Developer/wortel/macos")
+        XCTAssertEqual(decoded.first?.originCwd, "/Users/me/Developer/wortel")
+        XCTAssertEqual(decoded.first?.cwd, "/Users/me/Developer/wortel/macos")
     }
 
     // MARK: - Older files
@@ -338,14 +338,14 @@ final class PersistedSessionTests: XCTestCase {
     /// flag. The rest of the fields must survive that read untouched.
     func testPreVisibilityFileDecodes() throws {
         let sessions = try decodeList("""
-        [{"id":"\(UUID())","name":"Wakker/Manager","title":"shell",
-          "cwd":"/Users/giel/Developer/wakker","selected":true,"nameIsUserSet":true},
-         {"id":"\(UUID())","name":"Wakker/Worker","title":"shell",
-          "cwd":"/Users/giel/Developer/wortel","selected":false,"nameIsUserSet":true}]
+        [{"id":"\(UUID())","name":"Acme/Manager","title":"shell",
+          "cwd":"/Users/me/Developer/acme","selected":true,"nameIsUserSet":true},
+         {"id":"\(UUID())","name":"Acme/Worker","title":"shell",
+          "cwd":"/Users/me/Developer/wortel","selected":false,"nameIsUserSet":true}]
         """)
         XCTAssertEqual(sessions.count, 2)
         XCTAssertTrue(sessions.allSatisfy { $0.gitPanelVisible == nil })
-        XCTAssertEqual(sessions.first?.name, "Wakker/Manager")
+        XCTAssertEqual(sessions.first?.name, "Acme/Manager")
         XCTAssertEqual(sessions.first?.selected, true)
     }
 

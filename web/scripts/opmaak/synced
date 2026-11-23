@@ -1,3 +1,4 @@
+# Maintainer-only: contributors don't need to touch this.
 # The app the design canvas shows. Read by drift.sh, and moved by the
 # sync-visuals skill in the commit that brings the canvas up to date.
 #

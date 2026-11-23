@@ -16,6 +16,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Modified by Giel Cobben for Wortel, July to November 2026, from Ghostty's
+# copy of this file. Most changes are marked "Wortel:" or "WORTEL:" below:
+# the bundled `wortel` command on PATH, the cwd reported as localhost, the
+# agent markers, and the command title cut to 200 characters. Every change
+# and its date is in the history of https://github.com/gielcobben/wortel.
+# This file stays under GPLv3 or later, as above.
 
 #
 # Enables integration between zsh and ghostty.

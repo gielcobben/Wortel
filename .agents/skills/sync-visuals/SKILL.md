@@ -5,6 +5,10 @@ description: Bring the design canvas (the Opmaak file) and the app windows on wo
 
 # Bring the canvas and the site up to date with the app
 
+This is a maintainer-only tool: it needs the private `opmaak` CLI and the
+design canvas, and contributors don't need it. The site's windows it produces,
+`web/src/app/gen/`, are committed, so the site builds without it.
+
 The picture of the app flows one way, and each step has its own tool:
 
 | From, to | How | How to tell it is behind |
@@ -105,8 +109,9 @@ makes folders newest first. To match the canvas, quit the copy (Wortel ▸ Quit
 through its menu, below), then write both and launch it again:
 
 ```sh
-defaults write $ID WortelFolderOrder -array ikoon wortel web opmaak todays.design portfolio
-defaults write $ID WortelCollapsedFolders -array todays.design portfolio
+# the canvas's sidebar folders, top to bottom, then the ones it shows folded
+defaults write $ID WortelFolderOrder -array <folder> <folder> …
+defaults write $ID WortelCollapsedFolders -array <folder> …
 defaults write $ID "NSSplitView Subview Frames main-split" -array \
   "0, 0, 234, 815, NO, NO" "235, 0, 1075, 815, NO, NO" "1310, 0, 384, 815, YES, YES"
 ```

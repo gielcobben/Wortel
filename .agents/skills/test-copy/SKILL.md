@@ -16,6 +16,11 @@ UserDefaults are still shared, because they go by bundle id, and a first launch
 prunes folder order and pinned sessions there. So the
 copy gets its own bundle id as well.
 
+A Debug build is already isolated on a Mac that has not opted in (its own
+`Wortel Dev` folder and `.dev` bundle id; see the run-build skill), but where
+the owner has opted in, the Debug build *is* their running Wortel. Make the
+copy the same way either way: `WORTEL_DATA_DIR` always wins over both rules.
+
 ## Make it
 
 ```sh

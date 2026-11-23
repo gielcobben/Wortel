@@ -1022,7 +1022,7 @@ struct SessionRow: View {
                         .padding(.leading, -2)
                 } else {
                     // The folder prefix lives in the section header, so the row
-                    // shows just the leaf ("giel/hello" -> "hello"). The rename
+                    // shows just the leaf ("team/hello" -> "hello"). The rename
                     // field still edits the full name (SidebarRenameField), so
                     // retyping the prefix is how you move between folders — but
                     // it opens with only the leaf selected.
@@ -1870,7 +1870,7 @@ private struct TerminalPages: View {
 /// the keyboard left AppKit's field editor dangling, and the sidebar stopped
 /// taking clicks.
 ///
-/// It opens with the leaf selected ("Worker" in "Wakker/Worker"): the name it
+/// It opens with the leaf selected ("Worker" in "Acme/Worker"): the name it
 /// edits is the full one, and a first keystroke taking the folder with it
 /// moved the session out of its folder without saying so. Retyping the prefix
 /// is still how you move one between folders.

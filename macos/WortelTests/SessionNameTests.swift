@@ -11,8 +11,8 @@ final class SessionNameTests: XCTestCase {
     /// Last slash, not first. A name is one folder plus one leaf, so a nested
     /// path is folder "a/b" — not a tree, and not folder "a" with leaf "b/c".
     func testSplitsOnTheLastSlash() {
-        XCTAssertEqual(SessionName.folder(of: "Wakker/Worker"), "Wakker")
-        XCTAssertEqual(SessionName.leaf(of: "Wakker/Worker"), "Worker")
+        XCTAssertEqual(SessionName.folder(of: "Acme/Worker"), "Acme")
+        XCTAssertEqual(SessionName.leaf(of: "Acme/Worker"), "Worker")
 
         XCTAssertEqual(SessionName.folder(of: "a/b/c"), "a/b")
         XCTAssertEqual(SessionName.leaf(of: "a/b/c"), "c")
@@ -26,8 +26,8 @@ final class SessionNameTests: XCTestCase {
     /// Both halves are trimmed, so a name typed with spaces around the slash
     /// groups with the same folder as one without.
     func testTrimsAroundTheSlash() {
-        XCTAssertEqual(SessionName.folder(of: "Wakker / Worker"), "Wakker")
-        XCTAssertEqual(SessionName.leaf(of: "Wakker / Worker"), "Worker")
+        XCTAssertEqual(SessionName.folder(of: "Acme / Worker"), "Acme")
+        XCTAssertEqual(SessionName.leaf(of: "Acme / Worker"), "Worker")
     }
 
     /// Names that are all prefix or all leaf have no usable other half. Falling
@@ -36,8 +36,8 @@ final class SessionNameTests: XCTestCase {
         XCTAssertNil(SessionName.folder(of: "/Worker"), "no prefix is a top-level session")
         XCTAssertEqual(SessionName.leaf(of: "/Worker"), "Worker")
 
-        XCTAssertEqual(SessionName.folder(of: "Wakker/"), "Wakker")
-        XCTAssertEqual(SessionName.leaf(of: "Wakker/"), "Wakker/", "no leaf to show, so show the name")
+        XCTAssertEqual(SessionName.folder(of: "Acme/"), "Acme")
+        XCTAssertEqual(SessionName.leaf(of: "Acme/"), "Acme/", "no leaf to show, so show the name")
     }
 
     // MARK: - Automatic names
@@ -70,8 +70,8 @@ final class SessionNameTests: XCTestCase {
     /// Prefixing the safe leaf with a folder, as `applyAutoName` does, must land
     /// the session in exactly that folder and nowhere deeper.
     func testAutomaticNameUnderAFolderStaysInThatFolder() {
-        let name = "Wakker/" + SessionName.asLeaf("Debug web/src build")
-        XCTAssertEqual(SessionName.folder(of: name), "Wakker")
+        let name = "Acme/" + SessionName.asLeaf("Debug web/src build")
+        XCTAssertEqual(SessionName.folder(of: name), "Acme")
         XCTAssertEqual(SessionName.leaf(of: name), "Debug web\u{2215}src build")
     }
 
@@ -82,11 +82,11 @@ final class SessionNameTests: XCTestCase {
     /// folder prefix and the session jumped to the top level. Selecting only the
     /// leaf has to leave the prefix — and therefore the folder — intact.
     func testTypingOverTheSelectionKeepsTheFolder() throws {
-        let name = "Wakker/Worker"
+        let name = "Acme/Worker"
         let range = try XCTUnwrap(SessionName.leafRange(of: name))
 
         let renamed = (name as NSString).replacingCharacters(in: range, with: "Boss")
-        XCTAssertEqual(renamed, "Wakker/Boss")
+        XCTAssertEqual(renamed, "Acme/Boss")
         XCTAssertEqual(SessionName.folder(of: renamed), SessionName.folder(of: name),
                        "a rename through the selection must not move the session")
     }
@@ -105,7 +105,7 @@ final class SessionNameTests: XCTestCase {
     /// The selection covers what the row displayed — no leading space picked up
     /// from a name typed with spaces around the slash.
     func testSelectionMatchesTheDisplayedLeaf() {
-        for name in ["Wakker/Worker", "Wakker / Worker", "a/b/c", "🚀/Worker"] {
+        for name in ["Acme/Worker", "Acme / Worker", "a/b/c", "🚀/Worker"] {
             let range = SessionName.leafRange(of: name)
             let selected = range.map { (name as NSString).substring(with: $0) }
             XCTAssertEqual(selected, SessionName.leaf(of: name), "for \(name)")
@@ -117,7 +117,7 @@ final class SessionNameTests: XCTestCase {
     /// leaf. Both are the pre-existing select-all behaviour, deliberately.
     func testNoLeafToSelect() {
         XCTAssertNil(SessionName.leafRange(of: "Manager"), "no slash, so select all as before")
-        XCTAssertNil(SessionName.leafRange(of: "Wakker/"), "nothing after the slash")
-        XCTAssertNil(SessionName.leafRange(of: "Wakker/   "), "nothing but spaces after the slash")
+        XCTAssertNil(SessionName.leafRange(of: "Acme/"), "nothing after the slash")
+        XCTAssertNil(SessionName.leafRange(of: "Acme/   "), "nothing but spaces after the slash")
     }
 }

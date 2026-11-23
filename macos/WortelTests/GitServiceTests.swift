@@ -301,6 +301,87 @@ final class GitServiceTests: XCTestCase {
         XCTAssertEqual(added, ["staged", "unstaged"])
     }
 
+    /// Wortel runs git in any folder a terminal reports, and a repository's own
+    /// config can name a program for git to run on a diff. Every diff Wortel
+    /// shows must be git's own, with none of those programs started: each kind
+    /// of driver is configured here, pointed at a script that leaves a mark.
+    func testNoDiffRunsAProgramTheRepositoryNames() async {
+        repo = GitFixture.newRepo("diff-drivers")
+        let script = repo.appendingPathComponent("driver.sh")
+        let mark = repo.appendingPathComponent("ran")
+        try? "#!/bin/sh\necho \"$*\" >> '\(mark.path)'\necho DRIVER\n"
+            .write(to: script, atomically: true, encoding: .utf8)
+        GitFixture.sh("chmod +x driver.sh && printf 'driver.sh\\nran\\n' > .git/info/exclude", in: repo)
+        GitFixture.sh("printf '*.txt diff=evil\\n' > .gitattributes "
+                      + "&& printf 'one\\n' > a.txt && git add -A && git commit -q -m first "
+                      + "&& printf 'two\\n' > a.txt && git commit -q -am second", in: repo)
+        GitFixture.sh("printf 'staged\\n' >> a.txt && git add a.txt "
+                      + "&& printf 'unstaged\\n' >> a.txt && printf 'new\\n' > fresh.txt", in: repo)
+        let quoted = GitFixture.shellQuoted(script.path)
+        GitFixture.sh("git config diff.external \(quoted) "
+                      + "&& git config diff.evil.command \(quoted) "
+                      + "&& git config diff.evil.textconv \(quoted)", in: repo)
+        let head = GitFixture.sh("git rev-parse HEAD", in: repo)
+
+        let patches = [
+            await GitService.commitDiff(root: repo.path, sha: head),
+            await GitService.commitFileDiff(root: repo.path, sha: head, path: "a.txt",
+                                            originalPath: nil),
+            await GitService.diffAgainstHead(root: repo.path, path: "a.txt"),
+            await GitService.diff(root: repo.path, change: GitFileChange(
+                path: "a.txt", originalPath: nil, statusCode: "M", staged: true, untracked: false)),
+            await GitService.diff(root: repo.path, change: GitFileChange(
+                path: "a.txt", originalPath: nil, statusCode: "M", staged: false, untracked: false)),
+            await GitService.untrackedDiff(root: repo.path, path: "fresh.txt"),
+            await GitService.stagedDiff(root: repo.path)?.patch ?? "",
+        ]
+        let files = await GitService.commitFiles(root: repo.path, sha: head)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mark.path),
+                       "a diff ran the repository's program: "
+                       + ((try? String(contentsOf: mark, encoding: .utf8)) ?? ""))
+        for patch in patches {
+            XCTAssertTrue(patch.contains("diff --git"), "git's own diff, got: \(patch)")
+            XCTAssertFalse(patch.contains("DRIVER"))
+        }
+        XCTAssertEqual(files.map(\.path), ["a.txt"])
+        XCTAssertEqual(files.first?.additions, 1)
+    }
+
+    /// The same for signatures: a repository can turn `log.showSignature` on
+    /// and name its own `gpg.program`, and then every `log` and `show` starts it
+    /// for a signed commit. The commit here carries a signature header written
+    /// by hand, which is all git needs to try to verify it.
+    func testHistoryNeverRunsTheRepositorysSignatureProgram() async {
+        repo = GitFixture.newRepo("signatures")
+        let script = repo.appendingPathComponent("gpg.sh")
+        let mark = repo.appendingPathComponent("ran")
+        try? "#!/bin/sh\necho \"$*\" >> '\(mark.path)'\ncat > /dev/null\n"
+            .write(to: script, atomically: true, encoding: .utf8)
+        GitFixture.sh("chmod +x gpg.sh && printf 'gpg.sh\\nran\\n' > .git/info/exclude", in: repo)
+        GitFixture.sh("""
+            printf 'one\\n' > a.txt && git add a.txt && tree=$(git write-tree) && \
+            commit=$(printf 'tree %s\\nauthor t <t@t> 1700000000 +0000\\ncommitter t <t@t> 1700000000 +0000\\ngpgsig -----BEGIN PGP SIGNATURE-----\\n \\n abc\\n -----END PGP SIGNATURE-----\\n\\nsigned\\n' "$tree" \
+              | git hash-object -t commit -w --stdin) && git update-ref refs/heads/main "$commit"
+            """, in: repo)
+        GitFixture.sh("git config log.showSignature true && git config gpg.program "
+                      + GitFixture.shellQuoted(script.path), in: repo)
+        // The fixture is sound: plain git does run it.
+        GitFixture.sh("git log -n 1 --format=%s", in: repo)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: mark.path))
+        try? FileManager.default.removeItem(at: mark)
+
+        let commits = await GitService.log(root: repo.path, limit: 10)
+        let subjects = await GitService.recentCommitSubjects(root: repo.path)
+        let patch = await GitService.commitDiff(root: repo.path, sha: commits.first?.sha ?? "HEAD")
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mark.path),
+                       "git ran the repository's gpg.program")
+        XCTAssertEqual(commits.map(\.subject), ["signed"])
+        XCTAssertEqual(subjects, ["signed"])
+        XCTAssertTrue(patch.contains("+one"))
+    }
+
     /// A path outside the repo, a repo with no commits, a deleted file: none of
     /// these should throw or hang a window that is only asking which view to open
     /// on.

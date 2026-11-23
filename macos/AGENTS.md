@@ -88,10 +88,14 @@ of what looks unfinished here was tried, measured and taken out.
 - **For a test of your own, use a throwaway copy**, never the real app and its
   data: the `test-copy` skill. A second Wortel on the same data folder, from
   any bundle, only brings the first one forward (`InstanceLock`).
-- **A Debug build and the installed app share one data folder and one keeper.**
-  An older build opens a newer `sessions.json`, ignores the fields it doesn't
-  know and saves it back without them. Install the new version before launching
-  the installed app, not after.
+- **A Debug build is its own app unless the Mac opted in.** Without
+  `~/Library/Application Support/Wortel/debug-builds-share-this-folder` it uses
+  `Wortel Dev` and the bundle id `com.gielcobben.Wortel.dev`. With it (the
+  owner's Mac), a Debug build and the installed app share one data folder and
+  one keeper: an older build opens a newer `sessions.json`, ignores the fields
+  it doesn't know and saves it back without them, so install the new version
+  before launching the installed app, not after. Never create or remove that
+  file yourself (`docs/building.md`).
 - **Notifications need a signed build in `/Applications`.** An ad-hoc Debug
   build is told `granted`, posts without error, and nothing is shown.
 - **Test with real agents and real processes when the change is about them.**

@@ -85,9 +85,24 @@ final class WortelCLIServer: @unchecked Sendable {
         // a live peer and refuses to bind.
         _ = fcntl(socketFD, F_SETFD, FD_CLOEXEC)
 
+        // Ours alone, from the moment it has a name. The socket carries "open
+        // this file", "start a shell here" — everything a login session can
+        // do — so it is not a thing to leave group- or world-writable on a
+        // shared machine. `bind` creates the file with the umask's mode, and a
+        // chmod after it leaves a moment when another user with write access
+        // could connect; a Unix socket can't be fchmod'ed before it is bound.
+        // So the umask is narrowed around the bind instead. It is
+        // process-wide: a file another thread creates in those microseconds
+        // comes out owner-only, which costs nothing in a per-user app. The
+        // chmod stays, for a socket bound under a different mask. Each
+        // connection is also checked for its user (`isOwnUser`), which holds
+        // whatever the file's mode is.
+        let mask = umask(0o077)
         do {
             try bind(socketFD)
+            umask(mask)
         } catch {
+            umask(mask)
             close(socketFD)
             throw error
         }
@@ -96,9 +111,6 @@ final class WortelCLIServer: @unchecked Sendable {
             close(socketFD)
             throw WortelCLI.SocketError.failed("listen", errno: code)
         }
-        // Ours alone. The socket carries "open this file", "start a shell here"
-        // — everything a login session can do — so it is not a thing to leave
-        // group- or world-writable on a shared machine.
         chmod(path, 0o600)
 
         descriptor = socketFD
@@ -157,6 +169,10 @@ final class WortelCLIServer: @unchecked Sendable {
         let client = accept(socketFD, nil, nil)
         guard client >= 0 else { return }
         _ = fcntl(client, F_SETFD, FD_CLOEXEC)
+        guard Self.isOwnUser(client) else {
+            close(client)
+            return
+        }
         var timeout = Self.connectionTimeout
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
@@ -201,6 +217,16 @@ final class WortelCLIServer: @unchecked Sendable {
 
     /// The pid of the process on the other end, from the kernel rather than
     /// from anything the peer says about itself.
+    /// Whether the process at the other end of `client` runs as this user.
+    /// Anyone else, or a peer the kernel can't name, is hung up on unread:
+    /// the socket's mode already says so, and this says it again for a
+    /// socket file whose mode was changed, or a folder that let someone in.
+    static func isOwnUser(_ client: Int32) -> Bool {
+        var uid: uid_t = 0
+        var gid: gid_t = 0
+        return getpeereid(client, &uid, &gid) == 0 && uid == geteuid()
+    }
+
     private static func peerPID(of client: Int32) -> pid_t? {
         var pid: pid_t = 0
         var length = socklen_t(MemoryLayout<pid_t>.size)

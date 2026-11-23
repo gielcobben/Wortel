@@ -1,0 +1,47 @@
+name: Bug report
+description: Something in Wortel doesn't work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem goes privately instead: see SECURITY.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: The shortest way to make it happen again. Which program was running in the session helps (a shell, an agent, an editor).
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: wortel-version
+    attributes:
+      label: Wortel version
+      description: Wortel ▸ About Wortel. For your own build, the commit.
+      placeholder: "2026.47.4"
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: Apple menu ▸ About This Mac.
+      placeholder: "macOS 26.1"
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: A screenshot or a recording, or a crash report from Console ▸ Crash Reports. Check it for anything private first.

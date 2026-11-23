@@ -178,10 +178,10 @@ final class GitPanelModel {
     /// worktree list` per repository, read again when its `.git/worktrees`
     /// changes, so switching between sessions of one repository reads nothing.
     /// **What's in each is read only when asked** (`readCheckoutCounts`): a
-    /// list opening. Not a watch per worktree, not a timer. On the work laptop's monorepo, where `git status` takes
-    /// seven seconds, the panel used to keep a recursive watch on every other
-    /// worktree and a scan going behind each write an agent made in one, for
-    /// as long as it was up.
+    /// list opening. Not a watch per worktree, not a timer. On a large monorepo,
+    /// where `git status` takes seven seconds, the panel used to keep a
+    /// recursive watch on every other worktree and a scan going behind each
+    /// write an agent made in one, for as long as it was up.
     private(set) var checkouts: [Checkout] = []
     /// The root of the session's own checkout (`homeFolder`'s).
     private(set) var terminalCheckout: String?

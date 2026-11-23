@@ -67,11 +67,12 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 ## Legal
 
 - [Privacy](${abs('/privacy')}): the app itself contains no analytics and sends nothing about how it is used; the website counts page views and download clicks with nothing stored on the reader's device, so there is no cookie banner; the update server counts downloads and Sparkle's roughly daily update check, which is the one thing that cannot be switched off from inside the app.
-- [Terms](${abs('/terms')}): free for any use including commercial, provided as is with no warranty, not open source but built on open-source components, governed by Dutch law.
+- [Terms](${abs('/terms')}): free for any use including commercial, provided as is with no warranty, open source under GPL-3.0-or-later (the name and icon excepted), built on open-source components listed in THIRD-PARTY-NOTICES.md, governed by Dutch law.
 
 ## Notes
 
 - ${SITE.name} is free. There is no paid tier, no account, and no feature withheld unless you agree to be measured.
+- ${SITE.name} is open source under the GNU GPL, version 3 or later. The source is at https://github.com/gielcobben/wortel.
 - It is a native Swift/AppKit/SwiftUI application, not a web view.
 - It deliberately has no split panes, no themes and no user config file, and its settings are five rows in one small window. Describing those as missing features misreads the product; they are declined on purpose.
 - It ships no per-agent integrations, on purpose. A bundled \`wortel\` command is on every session's PATH and drives the app over a socket (\`open\`, \`new\`, \`rename\`, \`notify\`, \`mark\`, \`list\`, \`read\`, \`send\`, \`wait\`), so any agent, hook or script can control it without Wortel knowing that agent by name.

@@ -49,13 +49,13 @@ final class RunningJobsTests: XCTestCase {
 
     private let argv: [pid_t: [String]] = [
         37499: ["/bin/zsh", "-zsh"],
-        37616: ["/Users/giel/.local/bin/claude", "claude"],
-        15614: ["/bin/zsh", "zsh", "-c", "source /Users/giel/.claude/shell-snapshots/snapshot-zsh-17"],
+        37616: ["/Users/me/.local/bin/claude", "claude"],
+        15614: ["/bin/zsh", "zsh", "-c", "source /Users/me/.claude/shell-snapshots/snapshot-zsh-17"],
         15616: ["/usr/local/bin/bun", "bun", "dev:web"],
         15617: ["/usr/local/bin/bun", "bun", "--cwd", "workers/web", "dev"],
-        15618: ["/opt/node", "node", "/Users/giel/dev/node_modules/.bin/vite", "dev"],
+        15618: ["/opt/node", "node", "/Users/me/dev/node_modules/.bin/vite", "dev"],
         15623: ["/opt/workerd", "workerd", "serve"],
-        15631: ["/bin/zsh", "zsh", "-c", "source /Users/giel/.claude/shell-snapshots/snapshot-zsh-17"],
+        15631: ["/bin/zsh", "zsh", "-c", "source /Users/me/.claude/shell-snapshots/snapshot-zsh-17"],
         15633: ["/usr/local/bin/bun", "bun", "dev:images"],
     ]
 
@@ -76,7 +76,7 @@ final class RunningJobsTests: XCTestCase {
     /// The orphan's own arguments, kept apart so one test can take them away
     /// and check that an unreadable argv doesn't cost us the row.
     private let orphanArgv: [pid_t: [String]] = [
-        38938: ["/opt/node", "node", "/Users/giel/dev/node_modules/.bin/wrangler", "dev"],
+        38938: ["/opt/node", "node", "/Users/me/dev/node_modules/.bin/wrangler", "dev"],
         38940: ["/opt/node", "node", "--enable-source-maps", "worker.js"],
         38942: ["/opt/workerd", "workerd", "serve"],
     ]
@@ -183,8 +183,8 @@ final class RunningJobsTests: XCTestCase {
             entry(15701, 15700, 15700, "2.1.267"),
         ]
         let extra: [pid_t: [String]] = [
-            15700: ["/Users/giel/.local/bin/claude", "claude"],
-            15701: ["/Users/giel/.local/bin/claude", "claude"],
+            15700: ["/Users/me/.local/bin/claude", "claude"],
+            15701: ["/Users/me/.local/bin/claude", "claude"],
         ]
         let snapshot = RunningJobs.scan(
             table: withSubAgent, roots: [root], uid: 501,
@@ -202,7 +202,7 @@ final class RunningJobsTests: XCTestCase {
     /// agent name anywhere in argv classified both `bun dev` groups as the agent
     /// and dropped them from the list they exist for.
     func testACommandMentioningAnAgentIsNotAnAgent() {
-        let snapshotCommand = "source /Users/giel/.claude/shell-snapshots/"
+        let snapshotCommand = "source /Users/me/.claude/shell-snapshots/"
             + "snapshot-zsh-1789042062507-8nxo0e.sh 2>/dev/null || true && bun dev:web"
         let extra: [pid_t: [String]] = [
             15614: ["/bin/zsh", "zsh", "-c", snapshotCommand],
@@ -218,14 +218,14 @@ final class RunningJobsTests: XCTestCase {
     func testAgentMatchingLooksAtTheProgramNotTheCommandLine() {
         let names: Set<String> = ["claude", "pi", "aider"]
         XCTAssertTrue(RunningJobs.namesAgent(
-            in: ["/Users/giel/.local/bin/claude", "claude"], among: names))
+            in: ["/Users/me/.local/bin/claude", "claude"], among: names))
         XCTAssertTrue(RunningJobs.namesAgent(
             in: ["/opt/node", "node",
                  "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"],
             among: names),
             "a script agent is named by the script, which is argv[1]")
         XCTAssertTrue(RunningJobs.namesAgent(
-            in: ["/opt/python3", "python3", "/Users/giel/.local/bin/aider"], among: names))
+            in: ["/opt/python3", "python3", "/Users/me/.local/bin/aider"], among: names))
         XCTAssertTrue(RunningJobs.namesAgent(
             in: ["/nix/store/abc-pi-0.82/bin/pi", "pi"], among: names))
         XCTAssertFalse(RunningJobs.namesAgent(
@@ -258,7 +258,7 @@ final class RunningJobsTests: XCTestCase {
     private func piScan() -> RunningJobsSnapshot {
         let argv: [pid_t: [String]] = [
             19025: ["/bin/zsh", "-/bin/zsh", "-l"],
-            19665: ["/Users/giel/.nix-profile/bin/pi", "pi"],
+            19665: ["/Users/me/.nix-profile/bin/pi", "pi"],
             28805: ["/opt/node", "node", "/x/node_modules/.bin/chrome-devtools-mcp"],
             74353: ["/opt/node", "node", "/nix/store/pnpm-10.28.0/bin/pnpm", "run", "preview"],
             74401: ["/opt/node", "node", "/p/node_modules/.bin/vite", "preview"],
@@ -362,14 +362,14 @@ final class RunningJobsTests: XCTestCase {
     func testAProjectNamedLikeAnAgentIsNotTheAgent() {
         let names: Set<String> = ["claude", "pi", "llm"]
         XCTAssertFalse(RunningJobs.namesAgent(
-            in: ["/opt/node", "node", "/Users/giel/Developer/claude-demo/server.js"], among: names))
+            in: ["/opt/node", "node", "/Users/me/Developer/claude-demo/server.js"], among: names))
         XCTAssertFalse(RunningJobs.namesAgent(
-            in: ["/opt/node", "node", "/Users/giel/Developer/pi-site/node_modules/.bin/vite"],
+            in: ["/opt/node", "node", "/Users/me/Developer/pi-site/node_modules/.bin/vite"],
             among: names))
         XCTAssertFalse(RunningJobs.namesAgent(
             in: ["/opt/node", "node", "/private/tmp/claude-501/x/server.js"], among: names))
         XCTAssertFalse(RunningJobs.namesAgent(
-            in: ["/Users/giel/llm-lab/.venv/bin/python", "python", "-m", "http.server"],
+            in: ["/Users/me/llm-notes/.venv/bin/python", "python", "-m", "http.server"],
             among: names))
     }
 
@@ -556,12 +556,12 @@ final class RunningJobsTests: XCTestCase {
             arguments: { argv[$0] ?? [] },
             footprint: { _ in 100_000_000 },
             listeningPorts: { [71613: [3000], 71605: [3002]][$0] ?? [] },
-            workingDirectory: { _ in "/Users/giel/dev/gielcobben-2026" })
+            workingDirectory: { _ in "/Users/me/dev/site" })
     }
 
     func testOneGroupHoldingTwoServersBecomesTwoRows() {
         let snapshot = RunningJobs.scan(
-            table: sharedGroup, roots: [], projectRoots: ["/Users/giel/dev"],
+            table: sharedGroup, roots: [], projectRoots: ["/Users/me/dev"],
             uid: 501, details: sharedGroupDetails())
         XCTAssertEqual(snapshot.orphans.map(\.label).sorted(), ["bun dev:images", "bun dev:web"],
                        "one command starting two servers is two jobs, not one")
@@ -574,7 +574,7 @@ final class RunningJobsTests: XCTestCase {
     /// group would have signalled the other server too.
     func testAJobSharingItsGroupDoesNotOwnIt() {
         let snapshot = RunningJobs.scan(
-            table: sharedGroup, roots: [], projectRoots: ["/Users/giel/dev"],
+            table: sharedGroup, roots: [], projectRoots: ["/Users/me/dev"],
             uid: 501, details: sharedGroupDetails())
         XCTAssertTrue(snapshot.orphans.allSatisfy { !$0.ownsGroup },
                       "neither job is the whole group, so neither may kill(-pgid)")
@@ -595,7 +595,7 @@ final class RunningJobsTests: XCTestCase {
     /// each other's row, and quitting one took the other's row away.
     func testJobsSharingAGroupHaveDistinctIdentities() {
         let snapshot = RunningJobs.scan(
-            table: sharedGroup, roots: [], projectRoots: ["/Users/giel/dev"],
+            table: sharedGroup, roots: [], projectRoots: ["/Users/me/dev"],
             uid: 501, details: sharedGroupDetails())
         let ids = snapshot.orphans.map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count, "one id per row, even in a shared group")
@@ -748,8 +748,8 @@ final class RunningJobsTests: XCTestCase {
 
     func testAGroupWhoseLeaderIsGoneStillGroups() throws {
         let snapshot = scanWithOrphan(
-            projectRoots: ["/Users/giel/Developer/gielcobben-2026"],
-            cwd: [38938: "/Users/giel/Developer/gielcobben-2026/workers/images"])
+            projectRoots: ["/Users/me/Developer/site"],
+            cwd: [38938: "/Users/me/Developer/site/workers/images"])
         let orphan = try XCTUnwrap(snapshot.orphans.first)
         XCTAssertEqual(orphan.pgid, 38931, "the group outlives the process that led it")
         XCTAssertEqual(orphan.processCount, 3)
@@ -762,8 +762,8 @@ final class RunningJobsTests: XCTestCase {
     /// that is holding 385 MB is worse.
     func testAJobWithUnreadableArgumentsStillGetsARow() throws {
         let snapshot = scanWithOrphan(
-            projectRoots: ["/Users/giel/Developer/gielcobben-2026"],
-            cwd: [38938: "/Users/giel/Developer/gielcobben-2026/workers/images"],
+            projectRoots: ["/Users/me/Developer/site"],
+            cwd: [38938: "/Users/me/Developer/site/workers/images"],
             argv: [:])
         let orphan = try XCTUnwrap(snapshot.orphans.first,
                                    "an unnameable process is still a process holding memory")
@@ -775,7 +775,7 @@ final class RunningJobsTests: XCTestCase {
     /// system.
     func testAnOrphanOutsideAKnownProjectIsNotListed() {
         let snapshot = scanWithOrphan(
-            projectRoots: ["/Users/giel/Developer/gielcobben-2026"],
+            projectRoots: ["/Users/me/Developer/site"],
             cwd: [38938: "/Library/Application Support/SomeVendor"])
         XCTAssertTrue(snapshot.orphans.isEmpty,
                       "a process Wortel never started is not Wortel's to offer to kill")
@@ -784,7 +784,7 @@ final class RunningJobsTests: XCTestCase {
     func testNoProjectRootsMeansNoOrphansAtAll() {
         let snapshot = scanWithOrphan(
             projectRoots: [],
-            cwd: [38938: "/Users/giel/Developer/gielcobben-2026/workers/images"])
+            cwd: [38938: "/Users/me/Developer/site/workers/images"])
         XCTAssertTrue(snapshot.orphans.isEmpty,
                       "with nothing to match against, claiming a process would be a guess")
     }
@@ -795,8 +795,8 @@ final class RunningJobsTests: XCTestCase {
         let tiny = [entry(50100, 1, 50100, "chrome_crashpad")]
         let snapshot = RunningJobs.scan(
             table: table + tiny,
-            roots: [root], projectRoots: ["/Users/giel/dev"], uid: 501,
-            details: details(cwd: [50100: "/Users/giel/dev/app"],
+            roots: [root], projectRoots: ["/Users/me/dev"], uid: 501,
+            details: details(cwd: [50100: "/Users/me/dev/app"],
                              extraArgv: [50100: ["/x/chrome_crashpad", "chrome_crashpad"]]))
         XCTAssertTrue(snapshot.orphans.isEmpty,
                       "no port and nearly no memory means nothing to act on")
@@ -808,20 +808,20 @@ final class RunningJobsTests: XCTestCase {
         let serving = [entry(50200, 1, 50200, "bun")]
         let snapshot = RunningJobs.scan(
             table: table + serving,
-            roots: [root], projectRoots: ["/Users/giel/dev"], uid: 501,
+            roots: [root], projectRoots: ["/Users/me/dev"], uid: 501,
             details: ProcessDetails(
                 arguments: { [50200: ["/x/bun", "bun", "run", "dev:simulator"]][$0] ?? [] },
                 footprint: { $0 == 50200 ? 15_000_000 : 0 },
                 listeningPorts: { $0 == 50200 ? [8790] : [] },
-                workingDirectory: { $0 == 50200 ? "/Users/giel/dev/notify" : nil }))
+                workingDirectory: { $0 == 50200 ? "/Users/me/dev/notify" : nil }))
         XCTAssertEqual(snapshot.orphans.map(\.primaryPort), [8790])
     }
 
     /// A sibling directory must not match a project root by string prefix.
     func testOrphanAttributionDoesNotMatchASiblingDirectory() {
         let snapshot = scanWithOrphan(
-            projectRoots: ["/Users/giel/Developer/wortel"],
-            cwd: [38938: "/Users/giel/Developer/wortel-web/workers"])
+            projectRoots: ["/Users/me/Developer/wortel"],
+            cwd: [38938: "/Users/me/Developer/wortel-web/workers"])
         XCTAssertTrue(snapshot.orphans.isEmpty,
                       "wortel-web is not inside wortel, however much the prefix suggests it")
     }
@@ -829,8 +829,8 @@ final class RunningJobsTests: XCTestCase {
     /// A live session's jobs are never also orphans, however the scan is ordered.
     func testLiveJobsAreNotAlsoReportedAsOrphans() {
         let snapshot = scanWithOrphan(
-            projectRoots: ["/Users/giel"],
-            cwd: [15618: "/Users/giel/dev", 38938: "/Users/giel/Developer/gielcobben-2026"])
+            projectRoots: ["/Users/me"],
+            cwd: [15618: "/Users/me/dev", 38938: "/Users/me/Developer/site"])
         XCTAssertEqual(snapshot.orphans.map(\.pgid), [38931],
                        "only the group with no session above it is an orphan")
     }
@@ -1055,7 +1055,7 @@ final class RunningJobsTests: XCTestCase {
 
     func testWrapperDetection() {
         XCTAssertTrue(RunningJobs.isWrapper(["/bin/zsh", "zsh", "-c", "run something"]))
-        XCTAssertTrue(RunningJobs.isWrapper(["/usr/bin/login", "login", "-pf", "giel"]))
+        XCTAssertTrue(RunningJobs.isWrapper(["/usr/bin/login", "login", "-pf", "me"]))
         XCTAssertFalse(RunningJobs.isWrapper(["/usr/local/bin/bun", "bun", "dev:web"]))
         XCTAssertFalse(RunningJobs.isWrapper(["/opt/node", "node", "server.js"]))
     }

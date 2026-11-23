@@ -30,14 +30,37 @@ signed and notarized
 
 ## Status and licence
 
-**There is no LICENSE file in this repository yet**, which means the default
-applies: all rights reserved, and you may read this code but not fork,
-redistribute or build on it. That is an omission rather than an intention and it
-is the first thing to fix. Until then, please treat the source as
-look-but-do-not-copy.
+Wortel is free software, under the GNU General Public License, version 3 or
+later:
 
-Third-party dependencies carry their own licences, which are not superseded by
-anything here. See [Third-party code](#third-party-code).
+```text
+Copyright (C) 2026 Giel Cobben
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+```
+
+The licence text is [`LICENSE`](LICENSE). In short: you can use, study, change
+and share it, and sell it too, and if you distribute a build, changed or not,
+you pass on the same freedoms with its source.
+
+Three things sit beside the GPL:
+
+- **Third-party code keeps its own licence.** Ghostty, Sparkle, tree-sitter and
+  the rest are listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md),
+  with their notices. See [Third-party code](#third-party-code).
+- **The name and the icon are not licensed by the GPL.** A build you publish
+  uses its own name, icon and bundle id, and its own update feed and telemetry
+  key. [`TRADEMARKS.md`](TRADEMARKS.md) says what to change.
+- **The official builds** from [wortel.sh](https://wortel.sh) are free, for any
+  use. The [Terms](https://wortel.sh/terms) cover downloading them and the
+  site.
 
 ---
 
@@ -93,8 +116,16 @@ and each is read when it is needed rather than all at once.
 ### Requirements
 
 - macOS 14 (Sonoma) or later to **run**
-- **Xcode 26 or later** to build, for the macOS 26 SDK
+- **Xcode 26 or later** to build, for the macOS 26 SDK, and its Metal
+  toolchain, which Xcode downloads separately:
+  `xcodebuild -downloadComponent MetalToolchain`
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
+- **[Zig](https://ziglang.org) at exactly the version in
+  [`macos/GhosttyKit/zig.version`](macos/GhosttyKit/zig.version)**, to build
+  Ghostty. `brew install zig` gives whatever Homebrew has today, which is the
+  pinned version only until Zig moves on. Otherwise take that exact release
+  from [ziglang.org/download](https://ziglang.org/download/), unpack it, and
+  put its folder first on your `PATH`. The build refuses any other version.
 - Node 22.18 or later, only for `web/` and `updates/`
 
 The SDK requirement and the deployment target are deliberately far apart. The
@@ -104,21 +135,31 @@ drafting a commit message), and that framework only exists in the macOS 26 SDK.
 Both are gated behind `@available(macOS 26.0, *)` and an Apple Intelligence
 capability check, so on anything older they are simply absent.
 
-**The `.xcodeproj` is generated and gitignored.** `macos/project.yml` is the
-source of truth, so a fresh clone has no project file until you make one. This
-catches everybody once:
+### Build
 
 ```sh
-git clone git@github.com:gielcobben/wortel.git
+git clone https://github.com/gielcobben/wortel.git
 cd wortel/macos
+scripts/build-ghostty.sh     # Ghostty from source: about five minutes, once
 xcodegen generate
 xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug build
 ```
 
+**Ghostty is built here, from source**, at the commit in
+`macos/GhosttyKit/ghostty.ref` with Wortel's patches on top. The result is
+cached in `~/Library/Caches/sh.wortel.ghostty` by a hash of its inputs, so a
+second checkout costs a copy, and the script does nothing when the build is
+already in place. Run it again after pulling a change to `macos/GhosttyKit/`.
+
+**The `.xcodeproj` is generated and gitignored.** `macos/project.yml` is the
+source of truth, so a fresh clone has no project file until you make one.
 Re-run `xcodegen generate` after any change to `project.yml`, and after pulling
-a change to it. The first build resolves twenty-odd Swift packages (libghostty,
-Sparkle, and one tree-sitter grammar per supported language), so it needs a
-network and takes a few minutes; later builds do not.
+a change to it. The first build resolves twenty-odd Swift packages (Sparkle and
+one tree-sitter grammar per supported language), so it needs a network and
+takes a few minutes; later builds do not.
+
+[`macos/docs/building.md`](macos/docs/building.md) has the rest: signing,
+pinned packages, the test target and how to move Ghostty.
 
 To run what you just built:
 
@@ -131,19 +172,31 @@ open "$(xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug
 Resolve `BUILT_PRODUCTS_DIR` rather than globbing DerivedData. A glob happily
 matches several stale build directories and opens all of them.
 
-### A caveat about Debug builds
+### Your Debug build is its own app
 
-An ad-hoc-signed Debug build in DerivedData is not registered with macOS's
-notification daemon. `UNUserNotificationCenter` will report `granted`, accept
-every post without error, and display nothing. If you are working on the
-attention system you need a properly signed build in `/Applications`:
+A Debug build never touches the Wortel you have installed. It keeps its
+sessions, its keeper (the process that holds the shells) and its `wortel`
+socket in `~/Library/Application Support/Wortel Dev`, and it has its own
+bundle id, `com.gielcobben.Wortel.dev`, so its settings are its own too. It
+runs beside your installed Wortel, and quitting or rebuilding it never
+touches your real sessions.
 
-```sh
-./scripts/release.sh          # signed Release, installed, launched
-```
+(The maintainer's daily Wortel is a Debug build, so a Mac can opt in to Debug
+builds sharing the real folder. Leave that off on yours;
+[`macos/docs/building.md`](macos/docs/building.md) has the details.)
 
-It auto-detects a Developer ID (falling back to Apple Development). Override
-with `WORTEL_SIGN_IDENTITY`.
+A Release build is the real app: it uses the real folder unless you give it
+another one with `WORTEL_DATA_DIR`.
+
+### What a Debug build can't show
+
+**Notifications.** An ad-hoc-signed build in DerivedData is not registered
+with macOS's notification daemon. `UNUserNotificationCenter` reports
+`granted`, accepts every post without error, and displays nothing. Showing
+one needs a signed build in `/Applications`, which only the release script
+makes, and that script quits Wortel and replaces your installed copy, so it is
+not for contributors. If your change is about notifications, say so in the
+pull request and it is checked in a signed build before it ships.
 
 ### `web/` and `updates/`
 
@@ -187,7 +240,7 @@ it and using it.
 
 ```sh
 cd macos
-./bench/measure.sh     # cold launch + memory, Release only
+./bench/measure.sh     # cold launch + memory, Release only, in a throwaway copy
 ./bench/compare.sh     # throughput against every terminal you have installed
 ```
 
@@ -215,9 +268,11 @@ surface, each in one window.
   full `NSTextInputClient` IME dance) and geometry.
 - **`SessionManager`** is the single source of truth for the session list and
   the selection, and the one path that lazily spawns a surface.
-- **`TerminalHostViewController`** keeps *every* session's view in the hierarchy
-  and switches with `isHidden` and first-responder changes. Nothing is ever
-  removed or rebuilt, which is what makes switching instant with no flash.
+- **`TerminalHostViewController`** keeps every open session's view in the
+  hierarchy and switches with `isHidden` and first-responder changes, so a
+  switch rebuilds nothing and shows no flash. A terminal out of sight for a
+  minute gives back its surface (about 70 MB), and one shown again is restored
+  from the keeper's copy before it takes keys (`Sessions/Hibernation.swift`).
 - **The keeper** (`Wortel/Keeper/`, `WortelKeeper/`) is a small helper process
   that owns the ptys. It knows nothing about terminals, git or rendering: it
   forks what it is told to fork and keeps reading when nobody is attached. Its
@@ -225,10 +280,16 @@ surface, each in one window.
 
 Two rules run through the whole codebase:
 
-**Main thread only**, for everything Wortel owns. Only libghostty's callbacks
-cross threads, and they marshal immediately. The telemetry client is the single
-deliberate exception, because it is the only thing here that touches the network
-and it must never make the terminal wait.
+**The main thread, for everything the window shows.** Sessions, the sidebar
+and the panels live there, and libghostty's callbacks hop to it at once. What
+runs elsewhere is named and small: the code that reads ptys and sockets
+(`PtyHost`, `ProgramStatusWatch`, the `wortel` command's server
+`WortelCLIServer`, and in the keeper `KeeperServer`) runs on queues of its
+own, so a terminal under load never waits for the main thread and the main
+thread never waits on a socket; diff highlighting and background `git status`
+are actors; and the telemetry client is an actor, because it touches the
+network and must never make the terminal wait. The comment at the top of each
+says what it shares and how.
 
 **Cost tracks the window on screen, not the size of the repository.** The
 terminal beside the git panel has to stay smooth on a monorepo, so: the commit
@@ -335,7 +396,18 @@ Design record: [`macos/docs/cli.md`](macos/docs/cli.md).
 
 ---
 
+## Contributing
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) says how to build, test and send a
+change, and which rules a pull request is held to. Security problems go
+privately, as [`SECURITY.md`](SECURITY.md) describes, never in a public issue.
+
+---
+
 ## Releasing
+
+Maintainer only. It needs the Developer ID, the update signing key and the
+Cloudflare account, and nothing in a contribution depends on it.
 
 ```sh
 cd macos
@@ -400,5 +472,12 @@ tree-sitter external scanners whose upstream packaging does not build under
 Xcode; [`macos/Grammars/README.md`](macos/Grammars/README.md) explains which and
 why.
 
-Each of these is under its own licence. A `THIRD-PARTY-NOTICES.md` collecting
-them is still to be written, and belongs with the LICENSE file.
+Each of these is under its own licence, and none of it is relicensed by
+Wortel's. [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) lists every
+component in the app and in this repository, with its licence and the full
+notice it asks for: Ghostty and the libraries and fonts its build compiles into
+libghostty, the shell integration (three of whose scripts are GPL, from Kitty),
+the themes, Sparkle, tree-sitter and its grammars, herdr's word lists, and the
+site's photos. The app ships a copy of it, and of `LICENSE`, in
+`Contents/Resources`. When a dependency is added or a pin moves, update it in
+the same commit.

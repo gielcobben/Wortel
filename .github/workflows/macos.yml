@@ -85,8 +85,11 @@ jobs:
           path: ~/Library/Caches/sh.wortel.ghostty/builds
           key: ghostty-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/GhosttyKit/ghostty.ref', 'macos/GhosttyKit/spm.ref', 'macos/GhosttyKit/zig.version', 'macos/GhosttyKit/Patches/**', 'macos/scripts/build-ghostty.sh') }}
 
+      # From macos/, as check.sh calls it: the script reads itself by $0
+      # after changing folder, for its cache key.
       - name: Ghostty
-        run: macos/scripts/build-ghostty.sh
+        working-directory: macos
+        run: scripts/build-ghostty.sh
 
       - name: Save the Ghostty build
         if: steps.ghostty-cache.outputs.cache-hit != 'true'
